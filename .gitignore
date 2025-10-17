@@ -1,22 +1,15 @@
-# --------------------------------------------------
-# IGNORE EVERYTHING BY DEFAULT
-# --------------------------------------------------
+# Ignore everything by default
 *
 
-# --------------------------------------------------
-# ALLOW PROJECT FILES
-# --------------------------------------------------
+# Allow Git basics
 !.gitignore
 !README.md
 
-# ---- App Projekt ----
+# ---- Keep app source ----
 !app/
-app/data/tmp/
-app/data/cache/
-app/data/exports/
-app/data/logs/
+!app/**
 
-# ---- ROS Packages (nur deine drei) ----
+# ---- Keep THESE ROS packages only ----
 !ws_moveit/src/
 !ws_moveit/src/mecademic_bringup/
 !ws_moveit/src/mecademic_bringup/**
@@ -25,29 +18,19 @@ app/data/logs/
 !ws_moveit/src/mecademic_moveit_config/
 !ws_moveit/src/mecademic_moveit_config/**
 
-# Alles andere aus ws_moveit ignorieren
+# Ignore build and cache
 ws_moveit/build/
 ws_moveit/install/
 ws_moveit/log/
-ws_moveit/**/*.pyc
-ws_moveit/**/__pycache__/
-
-# ---- Python Ignore ----
-__pycache__/
+**/__pycache__/
 *.pyc
-*.pyo
 *.log
 
-# ---- VSCode ----
-!.vscode/
-.vscode/*
-!.vscode/settings.json
-
-# ---- System/ROS Kram ignorieren ----
-.bash_history
-.python_history
+# Ignore temp files and env
 .ros/
 .rviz2/
+.ssh/
 .cache/
 .ccache/
-.ssh/
+.bash_history
+.python_history
