@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="spray_nozzle_01" params="parent">
+    <link name="spray_nozzle_01_link">
+
+      <!-- VISUAL -->
+      <visual>
+        <origin xyz="-0.0215 -0.323 -0.189" rpy="-0.7156 0 0"/>
+        <geometry>
+          <mesh filename="package://mecademic_description/meshes/spray_nozzle.STL" scale="0.001 0.001 0.001"/>
+        </geometry>
+      </visual>
+
+      <!-- COLLISION (NEU) -->
+      <collision>
+        <origin xyz="-0.0215 -0.323 -0.189" rpy="-0.7156 0 0"/>
+        <geometry>
+          <mesh filename="package://mecademic_description/meshes/spray_nozzle.STL" scale="0.001 0.001 0.001"/>
+        </geometry>
+      </collision>
+
+    </link>
+
+    <!-- JOINT TO TOOL MOUNT -->
+    <joint name="spray_nozzle_01_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child  link="spray_nozzle_01_link"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </joint>
+
+    <!-- TCP -->
+    <link name="tcp"/>
+    <joint name="tcp_joint" type="fixed">
+      <parent link="spray_nozzle_01_link"/>
+      <child  link="tcp"/>
+      <origin xyz="0.085 0 0.07" rpy="0 -1.5708 0"/>
+    </joint>
+  </xacro:macro>
+
+</robot>
