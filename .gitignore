@@ -1,0 +1,32 @@
+# ROS / colcon
+build/
+install/
+log/
+.colcon_release
+colcon-core/
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# System / Editor
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# ROS junk
+*.db
+*.bag
+*.rviz
+
+# App runtime
+data/logs/
+data/cache/
+data/tmp/
+
+# Ignore everything in ws_moveit except my 3 packages
+ws_moveit/src/*
+!ws_moveit/src/mecademic_bringup/
+!ws_moveit/src/mecademic_ros2/
+!ws_moveit/src/mecademic_moveit/
