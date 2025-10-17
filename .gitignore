@@ -1,36 +1,24 @@
 # Ignore everything by default
 *
 
-# Allow Git basics
-!.gitignore
-!README.md
-
-# ---- Keep app source ----
+# Allow these folders
 !app/
-!app/**
-
-# ---- Keep THESE ROS packages only ----
+!ws_moveit/
 !ws_moveit/src/
 !ws_moveit/src/mecademic_bringup/
-!ws_moveit/src/mecademic_bringup/**
 !ws_moveit/src/mecademic_description/
-!ws_moveit/src/mecademic_description/**
 !ws_moveit/src/mecademic_moveit_config/
-!ws_moveit/src/mecademic_moveit_config/**
 
-# Ignore build and cache
+# Ignore build/install/log from ROS
 ws_moveit/build/
 ws_moveit/install/
 ws_moveit/log/
-**/__pycache__/
-*.pyc
-*.log
 
-# Ignore temp files and env
-.ros/
-.rviz2/
-.ssh/
-.cache/
-.ccache/
-.bash_history
-.python_history
+# Ignore Python trash
+__pycache__/
+*.pyc
+
+# Ignore local configs
+*.log
+*.tmp
+.env
