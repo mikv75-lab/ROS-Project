@@ -1,32 +1,53 @@
-# ROS / colcon
-build/
-install/
-log/
-.colcon_release
-colcon-core/
+# --------------------------------------------------
+# IGNORE EVERYTHING BY DEFAULT
+# --------------------------------------------------
+*
 
-# Python Cache
+# --------------------------------------------------
+# ALLOW PROJECT FILES
+# --------------------------------------------------
+!.gitignore
+!README.md
+
+# ---- App Projekt ----
+!app/
+app/data/tmp/
+app/data/cache/
+app/data/exports/
+app/data/logs/
+
+# ---- ROS Packages (nur deine drei) ----
+!ws_moveit/src/
+!ws_moveit/src/mecademic_bringup/
+!ws_moveit/src/mecademic_bringup/**
+!ws_moveit/src/mecademic_description/
+!ws_moveit/src/mecademic_description/**
+!ws_moveit/src/mecademic_moveit_config/
+!ws_moveit/src/mecademic_moveit_config/**
+
+# Alles andere aus ws_moveit ignorieren
+ws_moveit/build/
+ws_moveit/install/
+ws_moveit/log/
+ws_moveit/**/*.pyc
+ws_moveit/**/__pycache__/
+
+# ---- Python Ignore ----
 __pycache__/
 *.pyc
+*.pyo
+*.log
 
-# System / Editor
-*.swp
-*.swo
-.vscode/
-.idea/
+# ---- VSCode ----
+!.vscode/
+.vscode/*
+!.vscode/settings.json
 
-# ROS junk
-*.db
-*.bag
-*.rviz
-
-# App runtime
-data/logs/
-data/cache/
-data/tmp/
-
-# Ignore everything in ws_moveit except my 3 packages
-ws_moveit/src/*
-!ws_moveit/src/mecademic_bringup/
-!ws_moveit/src/mecademic_ros2/
-!ws_moveit/src/mecademic_moveit/
+# ---- System/ROS Kram ignorieren ----
+.bash_history
+.python_history
+.ros/
+.rviz2/
+.cache/
+.ccache/
+.ssh/
