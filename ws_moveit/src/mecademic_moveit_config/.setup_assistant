@@ -1,0 +1,25 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: mecademic_description
+    relative_path: urdf/meca_500_r3.urdf.xacro
+  srdf:
+    relative_path: config/meca_500_r3.srdf
+  package_settings:
+    author_name: vincent.mikl@htwg-konstanz.de
+    author_email: vincent.mikl@htwg-konstanz.de
+    generated_timestamp: 1760235863
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity
+  modified_urdf:
+    xacros:
+      - control_xacro
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity
