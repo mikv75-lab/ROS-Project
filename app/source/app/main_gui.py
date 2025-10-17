@@ -4,22 +4,27 @@
 import os
 import sys
 
+# Stelle sicher, dass /root/app im Pythonpfad liegt
+APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+if APP_ROOT not in sys.path:
+    sys.path.insert(0, APP_ROOT)
+
 from PyQt5.QtWidgets import QApplication, QTabWidget
 from PyQt5.QtCore import QCoreApplication
 import rclpy
 
 # Bridge (kapselt Tool/Motion/Jog/Scene usw.)
-from ros.bridge.ui_bridge import UIBridge
+from source.ros.bridge.ui_bridge import UIBridge
 
 # Tabs
-from gui.tabs.process import ProcessTab
-from gui.tabs.spray_path import SprayPathTab
-from gui.tabs.service import ServiceTab
-from gui.tabs.system import SystemTab
+from source.gui.tabs.process import ProcessTab
+from source.gui.tabs.spray_path import SprayPathTab
+from source.gui.tabs.service import ServiceTab
+from source.gui.tabs.system import SystemTab
 
 # Bringup
-from app.bringup import ensure_clean_graph_then_launch, shutdown_bringup
-from app.startup import LaunchConfig
+from source.app.bringup import ensure_clean_graph_then_launch, shutdown_bringup
+from source.app.startup import LaunchConfig
 
 import sys
 from PyQt5 import QtCore
@@ -29,6 +34,7 @@ LAUNCH_CMD = ["ros2", "launch", "mecademic_bringup", "bringup.launch.py"]
 
 
 def main():
+        
     # -------- ENV Fix für PyQt / ROS in Docker --------
     os.environ.setdefault("XDG_RUNTIME_DIR", "/tmp/runtime-root")
     os.makedirs(os.environ["XDG_RUNTIME_DIR"], exist_ok=True)
@@ -58,11 +64,11 @@ def main():
     spinner = None
 
     if USE_THREAD_SPINNER:
-        from ros.exec.spin import spin_in_thread
+        from source.ros.exec.spin import spin_in_thread
         spinner = spin_in_thread(bridge, rate_hz=100)
         print("[app] ROS spin mode: THREAD (100 Hz)", flush=True)
     else:
-        from ros.exec.spin import start_qt_spin
+        from source.ros.exec.spin import start_qt_spin
         timer = start_qt_spin(bridge, interval_ms=10)
         print("[app] ROS spin mode: QT (10ms interval)", flush=True)
 

@@ -65,8 +65,12 @@ class Topics:
         return _join(self.base_ns, "meca", "tool", "set")
 
     @property
-    def tool_current(self) -> str:                 # std_msgs/String (ToolManager -> App)
+    def tool_current(self) -> str:                 # std_msgs/String (ToolManager -> App, latched)
         return _join(self.base_ns, "meca", "tool", "current")
+
+    @property
+    def tool_republish(self) -> str:               # std_msgs/Empty (App -> ToolManager)
+        return _join(self.base_ns, "meca", "tool", "republish")
 
     # -------- Posen --------
     @property
@@ -83,14 +87,50 @@ class Topics:
     def pose_set(self, name: str) -> str:          # optional: geometry_msgs/PoseStamped
         return _join(self.base_ns, "meca", "poses", "set", name)
 
-    # -------- Workspace / Substrate --------
+    # -------- Substrate / Mount / Environment --------
+    # Substrate
     @property
-    def workspace_load(self) -> str:               # std_msgs/String (Pfad zur STL)
-        return _join(self.base_ns, "meca", "workspace", "load")
+    def substrate_load(self) -> str:               # std_msgs/String (Pfad zur STL)
+        return _join(self.base_ns, "meca", "substrate", "load")
 
     @property
-    def workspace_remove(self) -> str:             # std_msgs/Empty
-        return _join(self.base_ns, "meca", "workspace", "remove")
+    def substrate_remove(self) -> str:             # std_msgs/Empty
+        return _join(self.base_ns, "meca", "substrate", "remove")
+
+    @property
+    def substrate_current(self) -> str:            # std_msgs/String (latched; aktuelles Substrat)
+        return _join(self.base_ns, "meca", "substrate", "current")
+
+    # Mount
+    @property
+    def mount_load(self) -> str:                   # std_msgs/String (Pfad zur STL)
+        return _join(self.base_ns, "meca", "mount", "load")
+
+    @property
+    def mount_current(self) -> str:                # std_msgs/String (latched; aktueller Mount)
+        return _join(self.base_ns, "meca", "mount", "current")
+
+    # Environment
+    @property
+    def environment_load(self) -> str:             # std_msgs/String (Pfad zur STL)
+        return _join(self.base_ns, "meca", "environment", "load")
+
+    @property
+    def environment_current(self) -> str:          # std_msgs/String (latched; aktuelles Env)
+        return _join(self.base_ns, "meca", "environment", "current")
+
+    # --- Alias für Rückwärtskompatibilität (ehemals "workspace_*") ---
+    @property
+    def workspace_load(self) -> str:               # std_msgs/String -> Alias auf substrate_load
+        return self.substrate_load
+
+    @property
+    def workspace_remove(self) -> str:             # std_msgs/Empty  -> Alias auf substrate_remove
+        return self.substrate_remove
+
+    @property
+    def workspace_current(self) -> str:            # std_msgs/String -> Alias auf substrate_current
+        return self.substrate_current
 
     # -------- Spray-Pfad (Datenquelle, NICHT Visualisierung) --------
     @property
