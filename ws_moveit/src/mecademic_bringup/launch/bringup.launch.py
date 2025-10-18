@@ -4,18 +4,10 @@ from launch.actions import OpaqueFunction, SetEnvironmentVariable, IncludeLaunch
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-import math, os, yaml
+import os, yaml
+from mecademic_bringup.scene.utils import rpy_deg_to_quat
+from mecademic_bringup.common.params import PARAM_SCENE_CONFIG,PARAM_POSES_CONFIG, PARAM_TOOL_CONFIG, PARAM_USE_FAKE_HW
 
-def _rpy_deg_to_quat(r, p, y):
-    rx, ry, rz = map(math.radians, (r, p, y))
-    cr, sr = math.cos(rx/2), math.sin(rx/2)
-    cp, sp = math.cos(ry/2), math.sin(ry/2)
-    cy, sy = math.cos(rz/2), math.sin(rz/2)
-    qw = cr*cp*cy + sr*sp*sy
-    qx = sr*cp*cy - cr*sp*sy
-    qy = cr*sp*cy + sr*cp*sy
-    qz = cr*cp*sy - cr*sp*cy
-    return qx, qy, qz, qw
 
 def generate_launch_description():
     def launch_setup(context):
@@ -23,7 +15,7 @@ def generate_launch_description():
         parent_frame = "meca_mount"
         world_xyz = (0.0, 0.0, 0.0)
         world_rpy_deg = (0.0, 0.0, 90.0)  # yaw 90°
-        qx, qy, qz, qw = _rpy_deg_to_quat(*world_rpy_deg)
+        qx, qy, qz, qw = rpy_deg_to_quat(*world_rpy_deg)
 
         pkg_share = FindPackageShare("mecademic_bringup").perform(context)
 
@@ -71,8 +63,8 @@ def generate_launch_description():
                 executable="tool_manager",
                 name="tool_manager",
                 parameters=[{
-                    "tool_config": tool_yaml,
-                    "use_fake_hw": True,   # Schalter bleibt wie gehabt in robot_with_tool.launch.py
+                    PARAM_TOOL_CONFIG: tool_yaml,
+                    PARAM_USE_FAKE_HW: True,
                 }],
                 output="screen",
             ),
@@ -83,7 +75,7 @@ def generate_launch_description():
                 executable="poses_manager",
                 name="poses_manager",
                 parameters=[{
-                    "poses_yaml": poses_yaml,
+                    PARAM_POSES_CONFIG: poses_yaml,
                 }],
                 output="screen",
             ),
@@ -94,8 +86,16 @@ def generate_launch_description():
                 executable="scene_manager",
                 name="scene_manager",
                 parameters=[{
-                    "scene_config": scene_yaml,
+                    PARAM_SCENE_CONFIG: scene_yaml,
                 }],
+                output="screen",
+            ),
+            
+            # 4b) Spray Path Manager (visualisiert Linien in lila)
+            Node(
+                package="mecademic_bringup",
+                executable="spray_path_manager",
+                name="spray_path_manager",
                 output="screen",
             ),
 

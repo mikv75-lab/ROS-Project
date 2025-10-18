@@ -3,10 +3,8 @@
 # --- Global reference frames ---
 FRAME_WORLD = "world"
 FRAME_MECA_MOUNT = "meca_mount"  # Roboteraufspannpunkt
-
-# --- Robot frames ---
-FRAME_MECA_BASE = "meca_base"  # Roboterbasis
 FRAME_TCP = "tcp"              # Tool Center Point (aktives Tool)
+
 
 # --- Defined poses from fixed_positions.yaml ---
 FRAME_POSE_HOME = "pose_home"
@@ -22,7 +20,6 @@ FRAME_SUBSTRATE = "substrate"  # aufgelegtes Teil, Wafer etc.
 VALID_FRAMES = {
     FRAME_WORLD,
     FRAME_MECA_MOUNT,
-    FRAME_MECA_BASE,
     FRAME_TCP,
     FRAME_POSE_HOME,
     FRAME_POSE_PREDISPENSE,

@@ -11,7 +11,6 @@ TOPIC_TOOL_CURRENT = "/tool/current"
 
 # --- Pose topics ---
 TOPIC_POSES_PREFIX = "/poses"
-TOPIC_POSE_SET_PREFIX = "/poses/set"
 TOPIC_POSE_SET_FROM_TCP = "/poses/set_from_tcp"
 
 # --- Scene topics ---
@@ -30,6 +29,7 @@ TOPIC_SCENE_ENV_INFO  = "/scene/environment/info"
 # --- Spray path topics ---
 TOPIC_SCENE_SPRAY_SET   = "/scene/spraypath/set"
 TOPIC_SCENE_SPRAY_CLEAR = "/scene/spraypath/clear"
+TOPIC_SCENE_SPRAY_INF = "/scene/spraypath/clear"
 
 # --- Visualization topics ---
 TOPIC_VISUALIZATION_MARKER = "visualization_marker"  # default RViz Marker

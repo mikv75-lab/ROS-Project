@@ -1,169 +1,140 @@
-# mecademic_bringup/scene/scene_manager_node.py
+#!/usr/bin/env python3
 from __future__ import annotations
 import os
+import sys
+import yaml
+
 import rclpy
 from rclpy.node import Node
-from rclpy.duration import Duration
-from geometry_msgs.msg import Pose, TransformStamped
-from std_msgs.msg import String, Empty
+from geometry_msgs.msg import Pose
+from moveit_msgs.msg import CollisionObject
+from shape_msgs.msg import Mesh, MeshTriangle
+from visualization_msgs.msg import MarkerArray, Marker
 from tf2_ros import StaticTransformBroadcaster
 
-from mecademic_bringup.common.frames import (
-    FRAME_WORLD, FRAME_SUBSTRATE_MOUNT, FRAME_SCENE, FRAME_SUBSTRATE, VALID_FRAMES
-)
-from mecademic_bringup.common.topics import (
-    TOPIC_SCENE_MOUNT_SET, TOPIC_SCENE_MOUNT_CLEAR, TOPIC_SCENE_MOUNT_INFO,
-    TOPIC_SCENE_SUBSTRATE_SET, TOPIC_SCENE_SUBSTRATE_CLEAR, TOPIC_SCENE_SUBSTRATE_INFO,
-    TOPIC_SCENE_ENV_SET, TOPIC_SCENE_ENV_CLEAR, TOPIC_SCENE_ENV_INFO,
-    TOPIC_SCENE_SPRAY_SET, TOPIC_SCENE_SPRAY_CLEAR,
-)
-from mecademic_bringup.common.params import PARAM_SCENE_CONFIG, PARAM_SCENE_PARENT_FRAME
-from mecademic_bringup.scene.object_registry import ObjectRegistry, SceneObjectState
-from mecademic_bringup.scene.mesh_manager import MeshManager
-from mecademic_bringup.scene.scene_loader import load_scene_yaml
 from mecademic_bringup.utils import rpy_deg_to_quat, resolve_mesh_path
+from mecademic_bringup.common.params import PARAM_SCENE_CONFIG
 
-class SceneManagerNode(Node):
+VALID_FRAMES = {"world", "scene", "meca_mount"}
+
+
+class SceneManager(Node):
     def __init__(self):
         super().__init__("scene_manager")
 
-        # Params
+        # ---- Parameter: scene_yaml ----
         self.declare_parameter(PARAM_SCENE_CONFIG, "")
-        self.declare_parameter(PARAM_SCENE_PARENT_FRAME, FRAME_SUBSTRATE_MOUNT)  # scene hängt IMMER an substrate_mount
-        self._scene_yaml = self.get_parameter(PARAM_SCENE_CONFIG).get_parameter_value().string_value
-        self._scene_parent = self.get_parameter(PARAM_SCENE_PARENT_FRAME).get_parameter_value().string_value
+        yaml_file = self.get_parameter(PARAM_SCENE_CONFIG).get_parameter_value().string_value
 
-        # Infra
-        self._tf_static = StaticTransformBroadcaster(self)
-        self._registry = ObjectRegistry()
-        self._meshes = MeshManager(self)
+        if not yaml_file or not os.path.exists(yaml_file):
+            self.get_logger().error(f"❌ Szene YAML nicht gefunden: {yaml_file}")
+            sys.exit(1)
 
-        # Scene Topics (deine originalen Namen)
-        self.create_subscription(String, TOPIC_SCENE_MOUNT_SET,   self._on_mount_set,   10)
-        self.create_subscription(Empty,  TOPIC_SCENE_MOUNT_CLEAR, self._on_mount_clear, 10)
-        self.create_subscription(Empty,  TOPIC_SCENE_MOUNT_INFO,  self._on_mount_info,  10)
+        self.get_logger().info(f"📄 Szene YAML geladen: {yaml_file}")
 
-        self.create_subscription(String, TOPIC_SCENE_SUBSTRATE_SET,   self._on_substrate_set,   10)
-        self.create_subscription(Empty,  TOPIC_SCENE_SUBSTRATE_CLEAR, self._on_substrate_clear, 10)
-        self.create_subscription(Empty,  TOPIC_SCENE_SUBSTRATE_INFO,  self._on_substrate_info,  10)
+        # ---- Publisher ----
+        self.pub_markers = self.create_publisher(MarkerArray, "/scene/visual", 10)
+        self.pub_collision = self.create_publisher(CollisionObject, "/collision_object", 10)
 
-        self.create_subscription(String, TOPIC_SCENE_ENV_SET,   self._on_env_set,   10)
-        self.create_subscription(Empty,  TOPIC_SCENE_ENV_CLEAR, self._on_env_clear, 10)
-        self.create_subscription(Empty,  TOPIC_SCENE_ENV_INFO,  self._on_env_info,  10)
+        self.scene_objects = self._load_scene_yaml(yaml_file)
 
-        # Spraypath (nur Clear/Set-Trigger – eigentliche Marker macht SprayPathManager)
-        self.create_subscription(Empty,  TOPIC_SCENE_SPRAY_CLEAR, lambda _: self.get_logger().info("[scene] spraypath clear request"), 10)
-        self.create_subscription(String, TOPIC_SCENE_SPRAY_SET,   lambda msg: self.get_logger().info(f"[scene] spraypath set: {msg.data}"), 10)
+        # ---- Publish Scene ----
+        self.publish_scene_full()
 
-        # Statische TF-Kette (immer!):
-        # world -> substrate_mount
-        self._publish_static_tf(FRAME_WORLD, FRAME_SUBSTRATE_MOUNT, (0,0,0), (0,0,0))
-        # substrate_mount -> scene  (ehem. workspace_center)
-        self._publish_static_tf(FRAME_SUBSTRATE_MOUNT, FRAME_SCENE, (0,0,0), (0,0,0))
-        # scene -> substrate
-        self._publish_static_tf(FRAME_SCENE, FRAME_SUBSTRATE, (0,0,0), (0,0,0))
+    # ============================================================
+    #    YAML LOAD
+    # ============================================================
+    def _load_scene_yaml(self, path):
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
 
-        # Szene aus YAML laden (optional)
-        if self._scene_yaml:
-            path = resolve_mesh_path(self._scene_yaml)
-            for state in load_scene_yaml(path):
-                self._registry.set(state)
-                self._try_visualize(state)
+        if "scene_objects" not in data or not isinstance(data["scene_objects"], list):
+            raise RuntimeError("scene_yaml muss eine Liste 'scene_objects' enthalten")
 
-        self.get_logger().info(f"[scene_manager] ✅ gestartet. parent(scene)='{self._scene_parent}', yaml='{self._scene_yaml or '-'}'")
+        objects = []
+        for o in data["scene_objects"]:
+            for key in ["id", "mesh", "frame", "position", "rpy_deg"]:
+                if key not in o:
+                    raise RuntimeError(f"{key} fehlt in Szeneobjekt: {o}")
 
-    # --- Helper TF ---
-    def _publish_static_tf(self, parent: str, child: str, xyz, rpy_deg):
-        if parent not in VALID_FRAMES:
-            self.get_logger().warning(f"[scene_manager] parent frame '{parent}' nicht in VALID_FRAMES")
-        if child not in VALID_FRAMES:
-            self.get_logger().warning(f"[scene_manager] child frame '{child}' nicht in VALID_FRAMES")
+            if o["frame"] not in VALID_FRAMES:
+                raise RuntimeError(f"Ungültiger Frame '{o['frame']}', erlaubt: {VALID_FRAMES}")
 
-        qx,qy,qz,qw = rpy_deg_to_quat(*rpy_deg)
-        tf = TransformStamped()
-        tf.header.frame_id = parent
-        tf.child_frame_id = child
-        tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z = xyz
-        tf.transform.rotation.x, tf.transform.rotation.y, tf.transform.rotation.z, tf.transform.rotation.w = qx,qy,qz,qw
-        self._tf_static.sendTransform([tf])
+            mesh_file = resolve_mesh_path(o["mesh"])
+            if not os.path.exists(mesh_file):
+                raise RuntimeError(f"Mesh existiert nicht: {mesh_file}")
 
-    # --- Mesh visualize/update ---
-    def _try_visualize(self, state: SceneObjectState):
-        p = Pose()
-        p.position.x, p.position.y, p.position.z = state.xyz
-        # Orientierung kommt ggf. aus Mesh selbst/ist neutral – RPY ist hier 0
-        self._meshes.publish_mesh(
-            obj_id=state.id,
-            frame_id=state.frame,
-            mesh_resource=state.mesh_resource,
-            pose=p,
-            scale=state.scale,
-            color=(0.7, 0.7, 0.7, 1.0),
-        )
+            objects.append({
+                "id": o["id"],
+                "mesh": mesh_file,
+                "frame": o["frame"],
+                "position": list(map(float, o["position"])),
+                "rpy_deg": list(map(float, o["rpy_deg"])),
+                "optional": o.get("optional", False)
+            })
+        return objects
 
-    # --- Topic handlers (Mount) ---
-    def _on_mount_set(self, msg: String):
-        # payload: mesh_path [optional scale_x scale_y scale_z]
-        parts = msg.data.split()
-        mesh = resolve_mesh_path(parts[0]) if parts else ""
-        scale = tuple(map(float, parts[1:4])) if len(parts) >= 4 else (1.0, 1.0, 1.0)
-        s = SceneObjectState(id="substrate_mount", frame=FRAME_WORLD, mesh_resource=mesh, scale=scale)
-        self._registry.set(s); self._try_visualize(s)
-        self.get_logger().info(f"[scene] substrate_mount set: mesh='{mesh}', scale={scale}")
+    # ============================================================
+    #    SCENE PUBLISH
+    # ============================================================
+    def publish_scene_full(self):
+        marker_array = MarkerArray()
 
-    def _on_mount_clear(self, _):
-        self._registry.clear("substrate_mount")
-        from mecademic_bringup.scene.mesh_manager import MeshManager as _MM  # only for id calc
-        self._meshes.delete_mesh("substrate_mount", FRAME_WORLD)
-        self.get_logger().info("[scene] substrate_mount cleared")
+        for o in self.scene_objects:
+            m = Marker()
+            m.header.frame_id = o["frame"]
+            m.ns = "scene"
+            m.id = hash(o["id"]) % 10000
+            m.type = Marker.MESH_RESOURCE
+            m.mesh_resource = "file://" + o["mesh"]
+            m.pose.position.x, m.pose.position.y, m.pose.position.z = o["position"]
+            q = rpy_deg_to_quat(*o["rpy_deg"])
+            m.pose.orientation.x, m.pose.orientation.y, m.pose.orientation.z, m.pose.orientation.w = q
+            m.scale.x = m.scale.y = m.scale.z = 1.0
+            m.color.r, m.color.g, m.color.b, m.color.a = (0.7, 0.7, 0.7, 1.0)
+            marker_array.markers.append(m)
 
-    def _on_mount_info(self, _):
-        s = self._registry.get("substrate_mount")
-        self.get_logger().info(f"[scene] substrate_mount: {s}")
+            collision = CollisionObject()
+            collision.id = o["id"]
+            collision.header.frame_id = o["frame"]
+            collision.meshes = [self._load_mesh(o["mesh"])]
+            pose = Pose()
+            pose.position.x, pose.position.y, pose.position.z = o["position"]
+            pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = q
+            collision.mesh_poses.append(pose)
+            collision.operation = CollisionObject.ADD
 
-    # --- Topic handlers (Substrate) ---
-    def _on_substrate_set(self, msg: String):
-        # payload: mesh_path [optional scale_x scale_y scale_z]
-        parts = msg.data.split()
-        mesh = resolve_mesh_path(parts[0]) if parts else ""
-        scale = tuple(map(float, parts[1:4])) if len(parts) >= 4 else (1.0, 1.0, 1.0)
-        s = SceneObjectState(id="substrate", frame=FRAME_SCENE, mesh_resource=mesh, scale=scale)
-        self._registry.set(s); self._try_visualize(s)
-        self.get_logger().info(f"[scene] substrate set: mesh='{mesh}', scale={scale}")
+            self.pub_collision.publish(collision)
+            self.get_logger().info(f"🧱 Collision hinzugefügt: {o['id']}")
 
-    def _on_substrate_clear(self, _):
-        self._registry.clear("substrate")
-        self._meshes.delete_mesh("substrate", FRAME_SCENE)
-        self.get_logger().info("[scene] substrate cleared")
+        self.pub_markers.publish(marker_array)
+        self.get_logger().info("✅ Szene geladen + publiziert")
 
-    def _on_substrate_info(self, _):
-        s = self._registry.get("substrate")
-        self.get_logger().info(f"[scene] substrate: {s}")
+    # ============================================================
+    #    MESH LOAD
+    # ============================================================
+    def _load_mesh(self, mesh_path):
+        from trimesh.exchange.stl import load_stl
+        mesh_data = load_stl(mesh_path, solid=True)
 
-    # --- Topic handlers (Environment) ---
-    def _on_env_set(self, msg: String):
-        parts = msg.data.split()
-        mesh = resolve_mesh_path(parts[0]) if parts else ""
-        scale = tuple(map(float, parts[1:4])) if len(parts) >= 4 else (1.0, 1.0, 1.0)
-        s = SceneObjectState(id="environment", frame=FRAME_WORLD, mesh_resource=mesh, scale=scale)
-        self._registry.set(s); self._try_visualize(s)
-        self.get_logger().info(f"[scene] environment set: mesh='{mesh}', scale={scale}")
-
-    def _on_env_clear(self, _):
-        self._registry.clear("environment")
-        self._meshes.delete_mesh("environment", FRAME_WORLD)
-        self.get_logger().info("[scene] environment cleared")
-
-    def _on_env_info(self, _):
-        s = self._registry.get("environment")
-        self.get_logger().info(f"[scene] environment: {s}")
+        mesh = Mesh()
+        for triangle in mesh_data.faces:
+            tri = MeshTriangle()
+            tri.vertex_indices = triangle
+            mesh.triangles.append(tri)
+        for vertex in mesh_data.vertices:
+            pt = type(mesh.vertices[0])() if mesh.vertices else type(mesh.vertices.append)  # Safe type
+            mesh.vertices.append(vertex)
+        return mesh
 
 
 def main():
     rclpy.init()
-    node = SceneManagerNode()
+    node = SceneManager()
     rclpy.spin(node)
+    node.destroy_node()
     rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()

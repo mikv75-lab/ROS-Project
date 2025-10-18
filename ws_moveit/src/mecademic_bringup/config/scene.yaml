@@ -18,5 +18,3 @@ scene_objects:
     rpy_deg: [0.0, 0.0, 0.0]
     optional: true
 
-spray_path_file: "config/spray_path.yaml"
-spray_path_frame: "scene"

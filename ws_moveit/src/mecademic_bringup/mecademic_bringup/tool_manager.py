@@ -19,25 +19,10 @@ from ament_index_python.packages import get_package_share_directory
 from mecademic_bringup.common.topics import TOPIC_TOOL_SET, TOPIC_TOOL_CURRENT
 from mecademic_bringup.common.params import PARAM_TOOL_CONFIG
 
+from utils import rpy_deg_to_quat
 # optional: MoveIt Commander (für Collision-Mesh)
-try:
-    import moveit_commander
-    HAVE_MOVEIT = True
-except Exception:
-    HAVE_MOVEIT = False
+import moveit_commander
 
-
-def rpy_deg_to_quat(r, p, y):
-    rx, ry, rz = map(math.radians, (r, p, y))
-    cr, sr = math.cos(rx / 2.0), math.sin(rx / 2.0)
-    cp, sp = math.cos(ry / 2.0), math.sin(ry / 2.0)
-    cy, sy = math.cos(rz / 2.0), math.sin(rz / 2.0)
-    qw = cr * cp * cy + sr * sp * sy
-    qx = sr * cp * cy - cr * sp * sy
-    qy = cr * sp * cy + sr * cp * sy
-    qz = cr * cp * sy - sr * sp * cy
-    n = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw) or 1.0
-    return (qx / n, qy / n, qz / n, qw / n)
 
 
 def resolve_package_url(url: str) -> str:
@@ -66,16 +51,13 @@ class ToolManager(Node):
         self.static_tf = StaticTransformBroadcaster(self)
 
         # --- (optional) MoveIt-Scene für Collision-Mesh ---
-        if HAVE_MOVEIT:
-            try:
-                moveit_commander.roscpp_initialize(sys.argv)
-            except Exception:
-                pass
-            self.scene = moveit_commander.PlanningSceneInterface(synchronous=True)
-            self.get_logger().info("🧩 MoveIt Commander verfügbar – Collision-Mesh wird unterstützt.")
-        else:
-            self.scene = None
-            self.get_logger().warning("🧩 MoveIt Commander NICHT gefunden – Mesh-Attach wird übersprungen (nur TF/TCP).")
+        try:
+            moveit_commander.roscpp_initialize(sys.argv)
+        except Exception:
+            pass
+        self.scene = moveit_commander.PlanningSceneInterface(synchronous=True)
+        self.get_logger().info("🧩 MoveIt Commander verfügbar – Collision-Mesh wird unterstützt.")
+       
 
         # --- Topics ---
         self.pub_current = self.create_publisher(String, TOPIC_TOOL_CURRENT, 10)
@@ -131,9 +113,6 @@ class ToolManager(Node):
 
     # ------------- Mesh Attach / Detach --------------
     def _attach_mesh(self, tool_name: str, mount_link: str, mesh_uri: str, mesh_pose: Pose | None = None, scale=(1.0, 1.0, 1.0)):
-        if not HAVE_MOVEIT:
-            self.get_logger().info(f"🧩 Überspringe Mesh-Attach (MoveIt Commander fehlt): {tool_name}")
-            return
         mesh_path = resolve_package_url(mesh_uri)
         if not os.path.exists(mesh_path):
             self.get_logger().warning(f"⚠️ Mesh-Datei nicht gefunden: {mesh_path} – versuche dennoch zu attachen.")
@@ -150,8 +129,6 @@ class ToolManager(Node):
         self.get_logger().info(f"🧩 Mesh attached: tool='{tool_name}', link='{mount_link}', file='{mesh_path}', scale={scale}")
 
     def _detach_mesh(self, tool_name: str, mount_link: str):
-        if not HAVE_MOVEIT:
-            return
         try:
             self.scene.remove_attached_object(mount_link, name=tool_name)
         except Exception:
