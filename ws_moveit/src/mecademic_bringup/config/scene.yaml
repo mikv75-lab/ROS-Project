@@ -1,0 +1,22 @@
+scene_objects:
+  - id: environment
+    mesh: "resource/environment/cage_closed_1m.stl"
+    frame: "world"
+    position: [0.0, 0.0, 0.0]
+    rpy_deg: [0.0, 0.0, 0.0]
+
+  - id: substrate_mount
+    mesh: "resource/substrate_mounts/substrate_mount_flat_240x240x50.stl"
+    frame: "world"
+    position: [0.0, 0.0, 0.0]
+    rpy_deg: [0.0, 0.0, 0.0]
+
+  - id: substrate
+    mesh: ""
+    frame: "workspace_center"
+    position: [0.0, 0.0, 0.0]
+    rpy_deg: [0.0, 0.0, 0.0]
+    optional: true
+
+spray_path_file: "config/spray_path.yaml"
+spray_path_frame: "workspace_center"
