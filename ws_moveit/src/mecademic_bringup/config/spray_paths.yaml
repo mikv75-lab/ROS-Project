@@ -1,0 +1,3 @@
+spray_paths:
+  dir: "spray_paths"              # Ordner mit allen Spray-Rezepten relativ zum Package
+  current: "circle.yaml"         # aktuell geladenes / aktives Rezept
