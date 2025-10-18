@@ -12,8 +12,7 @@ PARAM_SCENE_CONFIG = "scene_yaml"
 PARAM_SCENE_PARENT_FRAME = "scene_parent_frame"
 
 # Spray Path Manager
-PARAM_SPRAY_PATH_FILE = "spray_path_file"
-PARAM_SPRAY_PATH_FRAME = "spray_path_frame"
+PARAM_SPRAY_PATH_CONFIG = "spray_paths_yaml"
 
 # Recipe Manager
 PARAM_RECIPE_DIR = "recipe_dir"
