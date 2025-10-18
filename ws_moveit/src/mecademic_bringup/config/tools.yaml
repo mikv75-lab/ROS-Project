@@ -1,7 +1,11 @@
+active_tool: "none"
+
 tools:
   none:
     description: "Kein Tool aktiv"
+
   spray_nozzle_01:
     description: "Spray Nozzle 01"
+
   spray_nozzle_02:
     description: "Spray Nozzle 02"

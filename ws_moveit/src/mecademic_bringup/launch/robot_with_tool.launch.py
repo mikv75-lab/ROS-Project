@@ -39,6 +39,7 @@ def generate_launch_description():
         desc_pkg = FindPackageShare("mecademic_description").perform(context)
         cfg_pkg = FindPackageShare("mecademic_moveit_config").perform(context)
 
+
         moveit_config = (
             MoveItConfigsBuilder("meca_500_r3", package_name="mecademic_moveit_config")
             .robot_description(

@@ -1,7 +1,11 @@
-from typing import List, Tuple
+# mecademic_bringup/scene/spray_path_manager.py
+from typing import List
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Pose
 from rclpy.node import Node
+
+from mecademic_bringup.common.topics import TOPIC_SPRAY_PATH_MARKERS
+from mecademic_bringup.common.frames import FRAME_SCENE
 
 def _pt(x,y,z):
     P = type("P", (), {})()
@@ -9,10 +13,10 @@ def _pt(x,y,z):
     return P
 
 class SprayPathManager:
-    def __init__(self, node: Node, frame: str = "workspace_center"):
+    def __init__(self, node: Node, frame: str = FRAME_SCENE):
         self._node = node
         self._frame = frame
-        self._pub = node.create_publisher(MarkerArray, "spray_path/markers", 10)
+        self._pub = node.create_publisher(MarkerArray, TOPIC_SPRAY_PATH_MARKERS, 10)
         self._axes_last = 0
 
     def clear(self):
@@ -28,14 +32,13 @@ class SprayPathManager:
             ma.markers.append(m)
         # axes
         for i in range(self._axes_last):
-            for axis in range(3):
-                m = Marker()
-                m.header.frame_id = self._frame
-                m.header.stamp = self._node.get_clock().now().to_msg()
-                m.ns = "spray_axes"
-                m.id = 400000 + i*3 + axis
-                m.action = Marker.DELETE
-                ma.markers.append(m)
+            arr = Marker()
+            arr.header.frame_id = self._frame
+            arr.header.stamp = self._node.get_clock().now().to_msg()
+            arr.ns = "spray_axes"
+            arr.id = 400000 + i
+            arr.action = Marker.DELETE
+            ma.markers.append(arr)
         self._pub.publish(ma)
         self._axes_last = 0
 
@@ -45,6 +48,7 @@ class SprayPathManager:
             return
         now = self._node.get_clock().now().to_msg()
         ma = MarkerArray()
+
         # line
         line = Marker()
         line.header.frame_id = self._frame; line.header.stamp = now
@@ -53,6 +57,7 @@ class SprayPathManager:
         line.scale.x = line_w
         line.points = [_pt(p.position.x, p.position.y, p.position.z) for p in poses]
         ma.markers.append(line)
+
         # points
         pts = Marker()
         pts.header.frame_id = self._frame; pts.header.stamp = now
@@ -61,17 +66,18 @@ class SprayPathManager:
         pts.scale.x = pts.scale.y = pts.scale.z = point_d
         pts.points = [_pt(p.position.x, p.position.y, p.position.z) for p in poses]
         ma.markers.append(pts)
-        # axes
+
+        # axes (nur Z als Pfeil zur Übersicht)
         if axes and axis_len > 0.0 and axis_th > 0.0:
             for i, p in enumerate(poses):
-                # Z-Achse anzeigen (einfach)
                 tip = _pt(p.position.x, p.position.y, p.position.z + axis_len)
                 arr = Marker()
                 arr.header.frame_id = self._frame; arr.header.stamp = now
-                arr.ns = "spray_axes"; arr.id = 400000 + i*3 + 2
+                arr.ns = "spray_axes"; arr.id = 400000 + i
                 arr.type = Marker.ARROW; arr.action = Marker.ADD
                 arr.points = [_pt(p.position.x, p.position.y, p.position.z), tip]
                 arr.scale.x = axis_th; arr.scale.y = axis_th*2.0; arr.scale.z = axis_th*2.5
                 ma.markers.append(arr)
             self._axes_last = len(poses)
+
         self._pub.publish(ma)

@@ -1,30 +1,28 @@
-from dataclasses import dataclass
-from typing import Optional, Dict
+# mecademic_bringup/scene/object_registry.py
+from dataclasses import dataclass, field
+from typing import Dict, Optional, Tuple
 
 @dataclass
 class SceneObjectState:
     id: str
-    frame: str
-    mesh: str = ""    # resolved absolute path (or "" for none)
+    frame: str               # parent frame
+    mesh_resource: str = ""  # resolved mesh path (optional)
+    scale: Tuple[float, float, float] = (1.0, 1.0, 1.0)
+    xyz: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    rpy_deg: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 
 class ObjectRegistry:
     def __init__(self):
-        self._objs: Dict[str, SceneObjectState] = {}
+        self._state: Dict[str, SceneObjectState] = {}
 
-    def set(self, obj: SceneObjectState):
-        self._objs[obj.id] = obj
-
-    def update_mesh(self, obj_id: str, mesh_abs: str):
-        if obj_id not in self._objs:
-            return
-        self._objs[obj_id].mesh = mesh_abs
+    def set(self, state: SceneObjectState):
+        self._state[state.id] = state
 
     def get(self, obj_id: str) -> Optional[SceneObjectState]:
-        return self._objs.get(obj_id)
+        return self._state.get(obj_id)
 
-    def mesh(self, obj_id: str) -> str:
-        st = self._objs.get(obj_id)
-        return st.mesh if st else ""
+    def clear(self, obj_id: str):
+        self._state.pop(obj_id, None)
 
-    def exists(self, obj_id: str) -> bool:
-        return obj_id in self._objs
+    def items(self):
+        return list(self._state.items())

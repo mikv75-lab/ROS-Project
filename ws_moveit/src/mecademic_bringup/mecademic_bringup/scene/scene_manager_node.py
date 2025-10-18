@@ -1,214 +1,168 @@
-#!/usr/bin/env python3
+# mecademic_bringup/scene/scene_manager_node.py
+from __future__ import annotations
 import os
 import rclpy
 from rclpy.node import Node
+from rclpy.duration import Duration
+from geometry_msgs.msg import Pose, TransformStamped
 from std_msgs.msg import String, Empty
-from geometry_msgs.msg import PoseArray
-from ament_index_python.packages import get_package_share_directory
+from tf2_ros import StaticTransformBroadcaster
 
-from .utils import resolve_mesh_path
-from .object_registry import ObjectRegistry, SceneObjectState
-import yaml
-from .mesh_manager import MeshManager
-from .spray_path_manager import SprayPathManager
-
-PKG = 'mecademic_bringup'
-
-# Topics (final)
-TOPICS = {
-    "mount_set":        "/scene/mount/set",
-    "mount_clear":      "/scene/mount/clear",
-    "mount_info":       "/scene/mount/info",
-    "substrate_set":    "/scene/substrate/set",
-    "substrate_clear":  "/scene/substrate/clear",
-    "substrate_info":   "/scene/substrate/info",
-    "env_set":          "/scene/environment/set",
-    "env_clear":        "/scene/environment/clear",
-    "env_info":         "/scene/environment/info",
-    "spray_set":        "/scene/spraypath/set",
-    "spray_clear":      "/scene/spraypath/clear",
-}
-
-
-def load_scene_yaml(path: str):
-    with open(path, "r") as f:
-        data = yaml.safe_load(f) or {}
-    return data.get("scene_objects", [])
+from mecademic_bringup.common.frames import (
+    FRAME_WORLD, FRAME_SUBSTRATE_MOUNT, FRAME_SCENE, FRAME_SUBSTRATE, VALID_FRAMES
+)
+from mecademic_bringup.common.topics import (
+    TOPIC_SCENE_MOUNT_SET, TOPIC_SCENE_MOUNT_CLEAR, TOPIC_SCENE_MOUNT_INFO,
+    TOPIC_SCENE_SUBSTRATE_SET, TOPIC_SCENE_SUBSTRATE_CLEAR, TOPIC_SCENE_SUBSTRATE_INFO,
+    TOPIC_SCENE_ENV_SET, TOPIC_SCENE_ENV_CLEAR, TOPIC_SCENE_ENV_INFO,
+    TOPIC_SCENE_SPRAY_SET, TOPIC_SCENE_SPRAY_CLEAR,
+)
+from mecademic_bringup.common.params import PARAM_SCENE_CONFIG, PARAM_SCENE_PARENT_FRAME
+from mecademic_bringup.scene.object_registry import ObjectRegistry, SceneObjectState
+from mecademic_bringup.scene.mesh_manager import MeshManager
+from mecademic_bringup.scene.scene_loader import load_scene_yaml
+from mecademic_bringup.utils import rpy_deg_to_quat, resolve_mesh_path
 
 class SceneManagerNode(Node):
     def __init__(self):
         super().__init__("scene_manager")
 
         # Params
-        pkg_share = get_package_share_directory(PKG)
-        default_scene = os.path.join(pkg_share, "config", "scene.yaml")
-        self.declare_parameter("scene_config", default_scene)
+        self.declare_parameter(PARAM_SCENE_CONFIG, "")
+        self.declare_parameter(PARAM_SCENE_PARENT_FRAME, FRAME_SUBSTRATE_MOUNT)  # scene hängt IMMER an substrate_mount
+        self._scene_yaml = self.get_parameter(PARAM_SCENE_CONFIG).get_parameter_value().string_value
+        self._scene_parent = self.get_parameter(PARAM_SCENE_PARENT_FRAME).get_parameter_value().string_value
 
-        # State & helpers
-        self.registry = ObjectRegistry()
-        self.mesh = MeshManager(self)
-        self.spray = SprayPathManager(self, frame="workspace_center")
+        # Infra
+        self._tf_static = StaticTransformBroadcaster(self)
+        self._registry = ObjectRegistry()
+        self._meshes = MeshManager(self)
 
-        # Register known objects (ids + frames). Mesh wird dynamisch gesetzt.
-        self.registry.set(SceneObjectState(id="environment",     frame="world"))
-        self.registry.set(SceneObjectState(id="substrate_mount", frame="world"))
-        self.registry.set(SceneObjectState(id="substrate",       frame="workspace_center"))
+        # Scene Topics (deine originalen Namen)
+        self.create_subscription(String, TOPIC_SCENE_MOUNT_SET,   self._on_mount_set,   10)
+        self.create_subscription(Empty,  TOPIC_SCENE_MOUNT_CLEAR, self._on_mount_clear, 10)
+        self.create_subscription(Empty,  TOPIC_SCENE_MOUNT_INFO,  self._on_mount_info,  10)
 
-        # Publishers (info)
-        self.pub_mount_info     = self.create_publisher(String, TOPICS["mount_info"], 10)
-        self.pub_substrate_info = self.create_publisher(String, TOPICS["substrate_info"], 10)
-        self.pub_env_info       = self.create_publisher(String, TOPICS["env_info"], 10)
+        self.create_subscription(String, TOPIC_SCENE_SUBSTRATE_SET,   self._on_substrate_set,   10)
+        self.create_subscription(Empty,  TOPIC_SCENE_SUBSTRATE_CLEAR, self._on_substrate_clear, 10)
+        self.create_subscription(Empty,  TOPIC_SCENE_SUBSTRATE_INFO,  self._on_substrate_info,  10)
 
-        # Subscriptions
-        self.create_subscription(String, TOPICS["mount_set"],       self._on_mount_set, 10)
-        self.create_subscription(Empty,  TOPICS["mount_clear"],     self._on_mount_clear, 10)
+        self.create_subscription(String, TOPIC_SCENE_ENV_SET,   self._on_env_set,   10)
+        self.create_subscription(Empty,  TOPIC_SCENE_ENV_CLEAR, self._on_env_clear, 10)
+        self.create_subscription(Empty,  TOPIC_SCENE_ENV_INFO,  self._on_env_info,  10)
 
-        self.create_subscription(String, TOPICS["substrate_set"],   self._on_substrate_set, 10)
-        self.create_subscription(Empty,  TOPICS["substrate_clear"], self._on_substrate_clear, 10)
+        # Spraypath (nur Clear/Set-Trigger – eigentliche Marker macht SprayPathManager)
+        self.create_subscription(Empty,  TOPIC_SCENE_SPRAY_CLEAR, lambda _: self.get_logger().info("[scene] spraypath clear request"), 10)
+        self.create_subscription(String, TOPIC_SCENE_SPRAY_SET,   lambda msg: self.get_logger().info(f"[scene] spraypath set: {msg.data}"), 10)
 
-        self.create_subscription(String, TOPICS["env_set"],         self._on_env_set, 10)
-        self.create_subscription(Empty,  TOPICS["env_clear"],       self._on_env_clear, 10)
+        # Statische TF-Kette (immer!):
+        # world -> substrate_mount
+        self._publish_static_tf(FRAME_WORLD, FRAME_SUBSTRATE_MOUNT, (0,0,0), (0,0,0))
+        # substrate_mount -> scene  (ehem. workspace_center)
+        self._publish_static_tf(FRAME_SUBSTRATE_MOUNT, FRAME_SCENE, (0,0,0), (0,0,0))
+        # scene -> substrate
+        self._publish_static_tf(FRAME_SCENE, FRAME_SUBSTRATE, (0,0,0), (0,0,0))
 
-        self.create_subscription(PoseArray, TOPICS["spray_set"],    self._on_spray_set, 10)
-        self.create_subscription(Empty,     TOPICS["spray_clear"],  self._on_spray_clear, 10)
+        # Szene aus YAML laden (optional)
+        if self._scene_yaml:
+            path = resolve_mesh_path(self._scene_yaml)
+            for state in load_scene_yaml(path):
+                self._registry.set(state)
+                self._try_visualize(state)
 
-        # Boot: scene.yaml laden und vorhandene Meshes anzeigen
-        scene_file = self.get_parameter("scene_config").get_parameter_value().string_value
-        self._load_initial_scene(scene_file)
+        self.get_logger().info(f"[scene_manager] ✅ gestartet. parent(scene)='{self._scene_parent}', yaml='{self._scene_yaml or '-'}'")
 
-    
-    # ---- init scene ----
-    def _load_initial_scene(self, scene_file: str):
-        self.get_logger().info(f"📦 Scene laden: {scene_file}")
+    # --- Helper TF ---
+    def _publish_static_tf(self, parent: str, child: str, xyz, rpy_deg):
+        if parent not in VALID_FRAMES:
+            self.get_logger().warn(f"[scene_manager] parent frame '{parent}' nicht in VALID_FRAMES")
+        if child not in VALID_FRAMES:
+            self.get_logger().warn(f"[scene_manager] child frame '{child}' nicht in VALID_FRAMES")
 
-        try:
-            cfg = load_scene_yaml(scene_file)
-        except Exception as e:
-            self.get_logger().error(f"❌ Scene konnte nicht geladen werden: {scene_file}: {e}")
-            return
+        qx,qy,qz,qw = rpy_deg_to_quat(*rpy_deg)
+        tf = TransformStamped()
+        tf.header.frame_id = parent
+        tf.child_frame_id = child
+        tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z = xyz
+        tf.transform.rotation.x, tf.transform.rotation.y, tf.transform.rotation.z, tf.transform.rotation.w = qx,qy,qz,qw
+        self._tf_static.sendTransform([tf])
 
-        if not cfg:
-            self.get_logger().warn("⚠️ Scene YAML enthält keine 'scene_objects'.")
-            return
+    # --- Mesh visualize/update ---
+    def _try_visualize(self, state: SceneObjectState):
+        p = Pose()
+        p.position.x, p.position.y, p.position.z = state.xyz
+        # Orientierung kommt ggf. aus Mesh selbst/ist neutral – RPY ist hier 0
+        self._meshes.publish_mesh(
+            obj_id=state.id,
+            frame_id=state.frame,
+            mesh_resource=state.mesh_resource,
+            pose=p,
+            scale=state.scale,
+            color=(0.7, 0.7, 0.7, 1.0),
+        )
 
-        for o in cfg:
-            obj_id = o.get("id")
-            if obj_id not in ("environment", "substrate_mount", "substrate"):
-                continue  # andere Objekte aktuell ignorieren
-
-            mesh_rel = o.get("mesh", "")
-            mesh_abs = resolve_mesh_path(mesh_rel) if mesh_rel else ""
-
-            # Optional-Flag berücksichtigen
-            optional = o.get("optional", False)
-            if not mesh_abs:
-                if optional:
-                    self.get_logger().info(f"ℹ️ Optionales Objekt '{obj_id}' ohne Mesh – übersprungen.")
-                    continue
-                else:
-                    self.get_logger().warn(f"⚠️ Objekt '{obj_id}' hat kein Mesh gesetzt!")
-                    continue
-
-            # Zustandsdaten im Registry pflegen
-            st = self.registry.get(obj_id)
-            if not st:
-                self.get_logger().warn(f"⚠️ Unbekanntes Scene-Objekt in YAML: '{obj_id}'")
-                continue
-
-            # Mesh laden
-            pos = o.get("position", [0,0,0])
-            rpy = o.get("rpy_deg", [0,0,0])
-            self.registry.update_mesh(obj_id, mesh_abs)
-            self.mesh.show_or_update(
-                obj_id=obj_id,
-                parent=st.frame,
-                mesh_abs=mesh_abs,
-                xyz=pos,
-                rpy_deg=rpy
-            )
-
-            self.get_logger().info(f"✅ {obj_id} geladen: {mesh_abs} @ {st.frame}")
-
-        # Status publizieren
-        self._publish_infos()
-
-
-
-
-    # ---- infos ----
-    def _publish_infos(self):
-        s = String()
-        s.data = self.registry.mesh("substrate_mount")
-        self.pub_mount_info.publish(s)
-        s = String()
-        s.data = self.registry.mesh("substrate")
-        self.pub_substrate_info.publish(s)
-        s = String()
-        s.data = self.registry.mesh("environment")
-        self.pub_env_info.publish(s)
-
-    # ---- handlers: mount ----
+    # --- Topic handlers (Mount) ---
     def _on_mount_set(self, msg: String):
-        p = resolve_mesh_path(msg.data.strip())
-        if not os.path.isfile(p):
-            self.get_logger().error(f"Mount: Datei nicht gefunden: {p}")
-            return
-        self.registry.update_mesh("substrate_mount", p)
-        st = self.registry.get("substrate_mount")
-        self.mesh.show_or_update(obj_id="substrate_mount", parent=st.frame, mesh_abs=p)
-        self._publish_infos()
+        # payload: mesh_path [optional scale_x scale_y scale_z]
+        parts = msg.data.split()
+        mesh = resolve_mesh_path(parts[0]) if parts else ""
+        scale = tuple(map(float, parts[1:4])) if len(parts) >= 4 else (1.0, 1.0, 1.0)
+        s = SceneObjectState(id="substrate_mount", frame=FRAME_WORLD, mesh_resource=mesh, scale=scale)
+        self._registry.set(s); self._try_visualize(s)
+        self.get_logger().info(f"[scene] substrate_mount set: mesh='{mesh}', scale={scale}")
 
-    def _on_mount_clear(self, _msg: Empty):
-        st = self.registry.get("substrate_mount")
-        self.mesh.clear(obj_id="substrate_mount", parent=st.frame)
-        self.registry.update_mesh("substrate_mount", "")
-        self._publish_infos()
+    def _on_mount_clear(self, _):
+        self._registry.clear("substrate_mount")
+        from mecademic_bringup.scene.mesh_manager import MeshManager as _MM  # only for id calc
+        self._meshes.delete_mesh("substrate_mount", FRAME_WORLD)
+        self.get_logger().info("[scene] substrate_mount cleared")
 
-    # ---- handlers: substrate ----
+    def _on_mount_info(self, _):
+        s = self._registry.get("substrate_mount")
+        self.get_logger().info(f"[scene] substrate_mount: {s}")
+
+    # --- Topic handlers (Substrate) ---
     def _on_substrate_set(self, msg: String):
-        p = resolve_mesh_path(msg.data.strip())
-        if not os.path.isfile(p):
-            self.get_logger().error(f"Substrate: Datei nicht gefunden: {p}")
-            return
-        self.registry.update_mesh("substrate", p)
-        st = self.registry.get("substrate")
-        self.mesh.show_or_update(obj_id="substrate", parent=st.frame, mesh_abs=p)
-        self._publish_infos()
+        # payload: mesh_path [optional scale_x scale_y scale_z]
+        parts = msg.data.split()
+        mesh = resolve_mesh_path(parts[0]) if parts else ""
+        scale = tuple(map(float, parts[1:4])) if len(parts) >= 4 else (1.0, 1.0, 1.0)
+        s = SceneObjectState(id="substrate", frame=FRAME_SCENE, mesh_resource=mesh, scale=scale)
+        self._registry.set(s); self._try_visualize(s)
+        self.get_logger().info(f"[scene] substrate set: mesh='{mesh}', scale={scale}")
 
-    def _on_substrate_clear(self, _msg: Empty):
-        st = self.registry.get("substrate")
-        self.mesh.clear(obj_id="substrate", parent=st.frame)
-        self.registry.update_mesh("substrate", "")
-        self._publish_infos()
+    def _on_substrate_clear(self, _):
+        self._registry.clear("substrate")
+        self._meshes.delete_mesh("substrate", FRAME_SCENE)
+        self.get_logger().info("[scene] substrate cleared")
 
-    # ---- handlers: environment ----
+    def _on_substrate_info(self, _):
+        s = self._registry.get("substrate")
+        self.get_logger().info(f"[scene] substrate: {s}")
+
+    # --- Topic handlers (Environment) ---
     def _on_env_set(self, msg: String):
-        p = resolve_mesh_path(msg.data.strip())
-        if not os.path.isfile(p):
-            self.get_logger().error(f"Environment: Datei nicht gefunden: {p}")
-            return
-        self.registry.update_mesh("environment", p)
-        st = self.registry.get("environment")
-        self.mesh.show_or_update(obj_id="environment", parent=st.frame, mesh_abs=p, rgba=(0.5,0.7,0.9,0.35))
-        self._publish_infos()
+        parts = msg.data.split()
+        mesh = resolve_mesh_path(parts[0]) if parts else ""
+        scale = tuple(map(float, parts[1:4])) if len(parts) >= 4 else (1.0, 1.0, 1.0)
+        s = SceneObjectState(id="environment", frame=FRAME_WORLD, mesh_resource=mesh, scale=scale)
+        self._registry.set(s); self._try_visualize(s)
+        self.get_logger().info(f"[scene] environment set: mesh='{mesh}', scale={scale}")
 
-    def _on_env_clear(self, _msg: Empty):
-        st = self.registry.get("environment")
-        self.mesh.clear(obj_id="environment", parent=st.frame)
-        self.registry.update_mesh("environment", "")
-        self._publish_infos()
+    def _on_env_clear(self, _):
+        self._registry.clear("environment")
+        self._meshes.delete_mesh("environment", FRAME_WORLD)
+        self.get_logger().info("[scene] environment cleared")
 
-    # ---- handlers: spray ----
-    def _on_spray_set(self, msg: PoseArray):
-        # ignoriert frame_id absichtlich – wir zeichnen immer in 'workspace_center'
-        self.spray.draw(list(msg.poses))
+    def _on_env_info(self, _):
+        s = self._registry.get("environment")
+        self.get_logger().info(f"[scene] environment: {s}")
 
-    def _on_spray_clear(self, _msg: Empty):
-        self.spray.clear()
 
 def main():
     rclpy.init()
-    rclpy.spin(SceneManagerNode())
+    node = SceneManagerNode()
+    rclpy.spin(node)
     rclpy.shutdown()
 
 if __name__ == "__main__":

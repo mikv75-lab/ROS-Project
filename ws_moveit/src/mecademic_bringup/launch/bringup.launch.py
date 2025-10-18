@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction, SetEnvironmentVariable
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.actions import OpaqueFunction, SetEnvironmentVariable, IncludeLaunchDescription
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
-import math
-
-def _parse_vec3(s: str):
-    parts = [p for p in s.replace(",", " ").split() if p]
-    if len(parts) != 3:
-        raise RuntimeError(f"expected 3 floats, got: {s!r}")
-    return [float(parts[0]), float(parts[1]), float(parts[2])]
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+import math, os, yaml
 
 def _rpy_deg_to_quat(r, p, y):
     rx, ry, rz = map(math.radians, (r, p, y))
@@ -20,35 +14,36 @@ def _rpy_deg_to_quat(r, p, y):
     qw = cr*cp*cy + sr*sp*sy
     qx = sr*cp*cy - cr*sp*sy
     qy = cr*sp*cy + sr*cp*sy
-    qz = cr*cp*sy - sr*sp*cy
+    qz = cr*cp*sy - cr*sp*cy
     return qx, qy, qz, qw
 
 def generate_launch_description():
-    # --- Args ---
-    world_xyz_arg = DeclareLaunchArgument("world_to_meca_xyz", default_value="0 0 0")
-    world_rpy_arg = DeclareLaunchArgument("world_to_meca_rpy_deg", default_value="0 0 90")
-    scene_file_arg = DeclareLaunchArgument(
-        "scene_file",
-        default_value=PathJoinSubstitution([FindPackageShare("mecademic_bringup"), "config", "scene.yaml"]),
-        description="Scene YAML to load on startup",
-    )
-    start_toolmgr_arg = DeclareLaunchArgument(
-        "start_tool_manager", default_value="false",
-        description="Start tool_manager (robot bringup handled elsewhere)"
-    )
-
     def launch_setup(context):
+        # Feste Frames / Default-Lage
         parent_frame = "meca_mount"
+        world_xyz = (0.0, 0.0, 0.0)
+        world_rpy_deg = (0.0, 0.0, 90.0)  # yaw 90°
+        qx, qy, qz, qw = _rpy_deg_to_quat(*world_rpy_deg)
 
-        world_xyz = _parse_vec3(LaunchConfiguration("world_to_meca_xyz").perform(context))
-        world_rpy = _parse_vec3(LaunchConfiguration("world_to_meca_rpy_deg").perform(context))
-        qx, qy, qz, qw = _rpy_deg_to_quat(*world_rpy)
+        pkg_share = FindPackageShare("mecademic_bringup").perform(context)
 
-        scene_file = LaunchConfiguration("scene_file").perform(context)
-        start_toolmgr = LaunchConfiguration("start_tool_manager").perform(context).lower() == "true"
+        poses_yaml = f"{pkg_share}/config/poses.yaml"
+        scene_yaml = f"{pkg_share}/config/scene.yaml"
+        tool_yaml  = f"{pkg_share}/config/tools.yaml"
+        rviz_config = f"{pkg_share}/config/bringup.rviz"
+
+        # Aktives Tool aus tools.yaml lesen
+        try:
+            with open(tool_yaml, "r") as f:
+                tools_data = yaml.safe_load(f) or {}
+            active_tool = tools_data.get("active_tool", "none")
+            if active_tool not in (tools_data.get("tools") or {}):
+                active_tool = "none"
+        except Exception:
+            active_tool = "none"
 
         nodes = [
-            # Env fixes
+            # Env
             SetEnvironmentVariable("RMW_IMPLEMENTATION", "rmw_fastrtps_cpp"),
             SetEnvironmentVariable("XDG_RUNTIME_DIR", "/tmp/runtime-root"),
 
@@ -71,58 +66,62 @@ def generate_launch_description():
                 output="screen",
             ),
 
-            # 2) Poses Manager
+            # 2) ToolManager (verwaltet nur Tool-State)
+            Node(
+                package="mecademic_bringup",
+                executable="tool_manager",
+                name="tool_manager",
+                parameters=[{
+                    "tool_config": tool_yaml,
+                    "use_fake_hw": True,   # Schalter bleibt wie gehabt in robot_with_tool.launch.py
+                }],
+                output="screen",
+            ),
+
+            # 3) Poses Manager (persistente Posen)
             Node(
                 package="mecademic_bringup",
                 executable="poses_manager",
                 name="poses_manager",
                 parameters=[{
-                    "positions_yaml": PathJoinSubstitution([
-                        FindPackageShare("mecademic_bringup"), "config", "fixed_positions.yaml"
-                    ]),
-                    "parent_frame": parent_frame,
+                    "poses_yaml": poses_yaml,
                 }],
                 output="screen",
             ),
 
-            # 3) Scene Manager (lädt scene.yaml automatisch)
+            # 4) Scene Manager (lädt scene.yaml)
             Node(
                 package="mecademic_bringup",
                 executable="scene_manager",
                 name="scene_manager",
-                parameters=[{"scene_config": scene_file}],
+                parameters=[{
+                    "scene_config": scene_yaml,
+                }],
                 output="screen",
             ),
 
-            # 4) RViz immer starten
+            # 5) Robot & MoveIt (immer fest hier starten) – Tool aus tools.yaml
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(pkg_share, "launch", "robot_with_tool.launch.py")
+                ),
+                launch_arguments={
+                    "tool": active_tool,
+                    # use_fake_hw-Schalter bleibt wie in robot_with_tool.launch.py definiert (default true)
+                }.items(),
+            ),
+
+            # 6) RViz (immer an)
             Node(
                 package="rviz2",
                 executable="rviz2",
-                arguments=["-d", PathJoinSubstitution([
-                    FindPackageShare("mecademic_bringup"), "config", "bringup.rviz"
-                ])],
+                arguments=["-d", rviz_config],
                 output="screen",
             ),
         ]
 
-        # Optional: tool_manager nur wenn explizit gewünscht
-        if start_toolmgr:
-            nodes.append(Node(
-                package="mecademic_bringup",
-                executable="tool_manager",
-                name="tool_manager",
-                # Achtung: Ob der ToolManager wirklich keinen Roboter startet,
-                # hängt von seiner internen Logik/YAML ab. Hier setzen wir KEINE Auto-Starts.
-                parameters=[{"start_robot": False}],
-                output="screen",
-            ))
-
         return nodes
 
     return LaunchDescription([
-        world_xyz_arg,
-        world_rpy_arg,
-        scene_file_arg,
-        start_toolmgr_arg,
         OpaqueFunction(function=launch_setup),
     ])

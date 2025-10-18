@@ -12,7 +12,7 @@ scene_objects:
     rpy_deg: [0.0, 0.0, 0.0]
 
   - id: substrate
-    mesh: ""
+    mesh: "resource/substrates/wafer_d200_h2.stl"
     frame: "workspace_center"
     position: [0.0, 0.0, 0.0]
     rpy_deg: [0.0, 0.0, 0.0]

@@ -1,3 +1,4 @@
+# mecademic_bringup/utils.py
 import os, math
 from ament_index_python.packages import get_package_share_directory
 
@@ -17,6 +18,6 @@ def rpy_deg_to_quat(r, p, y):
     qw = cr*cp*cy + sr*sp*sy
     qx = sr*cp*cy - cr*sp*sy
     qy = cr*sp*cy + sr*cp*sy
-    qz = cr*cp*sy - sr*sp*cy
+    qz = cr*cp*sy - cr*sp*cy
     n = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
     return (qx/n, qy/n, qz/n, qw/n)

@@ -1,93 +1,81 @@
 #!/usr/bin/env python3
 import os
-import signal
-import subprocess
-from typing import Optional
-
+import yaml
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+from launch_ros.substitutions import FindPackageShare
 
-PERSIST_FILE = "/root/ws_moveit/src/mecademic_bringup/config/active_tool.txt"
-ROS_SETUP = "/opt/ros/rolling/setup.bash"
-WS_SETUP = "/root/ws_moveit/install/setup.bash"
+# zentrale Imports
+from mecademic_bringup.common.topics import TOPIC_TOOL_SET, TOPIC_TOOL_CURRENT
+from mecademic_bringup.common.params import PARAM_TOOL_CONFIG, PARAM_USE_FAKE_HW
 
 
 class ToolManager(Node):
     def __init__(self):
         super().__init__("tool_manager")
 
-        # Aktuelles Tool laden
-        self.current_tool = self.load_tool()
-        self.process: Optional[subprocess.Popen] = None
+        # Default-Pfad zu tools.yaml
+        pkg = FindPackageShare("mecademic_bringup").find("mecademic_bringup")
+        default_tools_yaml = os.path.join(pkg, "config", "tools.yaml")
 
-        # Start: Roboter direkt hochfahren
-        self.start_robot(self.current_tool)
+        # Parameter laden
+        self.declare_parameter(PARAM_TOOL_CONFIG, default_tools_yaml)
+        self.declare_parameter(PARAM_USE_FAKE_HW, True)
 
-        # Subscriber für Toolwechsel
-        self.create_subscription(String, "/meca/tool/set", self.on_tool_change, 10)
+        self.tools_yaml_path = self.get_parameter(PARAM_TOOL_CONFIG).value
+        self.use_fake_hw = self.get_parameter(PARAM_USE_FAKE_HW).value
 
-        # Topics publizieren (optional)
-        self.pub_current = self.create_publisher(String, "/meca/tool/current", 10)
-        self.publish_current()
+        # Tools laden
+        self.tools_data = self._load_tools_yaml()
+        self.current_tool = self.tools_data.get("active_tool", "none")
 
-        self.get_logger().info(f"[ToolManager] ✅ gestartet mit Tool: {self.current_tool}")
+        # Publisher & Subscriber
+        self.tool_pub = self.create_publisher(String, TOPIC_TOOL_CURRENT, 10)
+        self.create_subscription(String, TOPIC_TOOL_SET, self.on_tool_change, 10)
 
-    def load_tool(self) -> str:
-        if os.path.exists(PERSIST_FILE):
-            return open(PERSIST_FILE).read().strip() or "none"
-        return "none"
+        # Initial publish
+        self.publish_current_tool()
+        self.get_logger().info(f"✅ ToolManager gestartet – aktives Tool: '{self.current_tool}'")
 
-    def save_tool(self):
-        os.makedirs(os.path.dirname(PERSIST_FILE), exist_ok=True)
-        with open(PERSIST_FILE, "w") as f:
-            f.write(self.current_tool)
+    def _load_tools_yaml(self):
+        if not os.path.exists(self.tools_yaml_path):
+            raise FileNotFoundError(f"❌ tools.yaml nicht gefunden: {self.tools_yaml_path}")
+        with open(self.tools_yaml_path, "r") as f:
+            return yaml.safe_load(f) or {}
 
-    def publish_current(self):
-        self.pub_current.publish(String(data=self.current_tool))
+    def _save_active_tool(self):
+        self.tools_data["active_tool"] = self.current_tool
+        with open(self.tools_yaml_path, "w") as f:
+            yaml.dump(self.tools_data, f)
+        self.get_logger().info(f"💾 tools.yaml gespeichert – active_tool='{self.current_tool}'")
 
-    def stop_robot(self):
-        if self.process:
-            try:
-                os.killpg(os.getpgid(self.process.pid), signal.SIGINT)
-            except Exception:
-                pass
-            self.process = None
-
-    def start_robot(self, tool: str):
-        # Kill RViz vorher, damit keine doppelte Session stört
-        os.system("pkill -9 -f rviz2 || true")
-
-        # Stop alten Roboterprozess
-        self.stop_robot()
-
-        # Neues Tool starten
-        launch = f'''
-            source {ROS_SETUP}
-            source {WS_SETUP}
-            exec ros2 launch mecademic_bringup robot_with_tool.launch.py tool:={tool} rviz:=true use_fake_hw:=true
-        '''
-        self.process = subprocess.Popen(["/bin/bash", "-lc", launch], preexec_fn=os.setsid)
-        self.get_logger().info(f"[ToolManager] 🚀 Roboter gestartet mit Tool: {tool}")
+    def publish_current_tool(self):
+        self.tool_pub.publish(String(data=self.current_tool))
 
     def on_tool_change(self, msg: String):
-        new_tool = msg.data.strip()
+        new_tool = (msg.data or "").strip()
+        tools = self.tools_data.get("tools") or {}
+        if new_tool not in tools:
+            self.get_logger().error(f"❌ Tool '{new_tool}' nicht definiert in tools.yaml")
+            return
         if new_tool == self.current_tool:
-            self.get_logger().info("[ToolManager] Tool ist gleich – kein Neustart.")
+            self.get_logger().info(f"ℹ Tool '{new_tool}' ist bereits aktiv – keine Änderung")
             return
 
-        self.get_logger().info(f"[ToolManager] 🔧 Toolwechsel: {self.current_tool} → {new_tool}")
         self.current_tool = new_tool
-        self.save_tool()
-        self.publish_current()
-        self.start_robot(new_tool)
+        self._save_active_tool()
+        self.publish_current_tool()
+        self.get_logger().info(f"🔧 Tool geändert: now active → '{new_tool}' (ohne Neustart)")
 
 
 def main():
     rclpy.init()
     node = ToolManager()
-    rclpy.spin(node)
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    finally:
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":
