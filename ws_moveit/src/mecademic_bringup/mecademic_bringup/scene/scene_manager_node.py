@@ -18,173 +18,129 @@ import trimesh
 
 VALID_FRAMES = {"world", "scene", "meca_mount"}
 
+SUBSTRATE_MOUNT_CONFIG = "config/substrate_mounts.yaml"  # <-- neue Mount YAML
+
 
 class SceneManager(Node):
     def __init__(self):
         super().__init__("scene_manager")
 
-        # ---- Parameter: scene_yaml ----
+        # ---- Szene YAML laden ----
         self.declare_parameter(PARAM_SCENE_CONFIG, "")
-        yaml_file = self.get_parameter(PARAM_SCENE_CONFIG).get_parameter_value().string_value
+        scene_yaml = self.get_parameter(PARAM_SCENE_CONFIG).get_parameter_value().string_value
 
-        if not yaml_file or not os.path.exists(yaml_file):
-            self.get_logger().error(f"❌ Szene YAML nicht gefunden: {yaml_file}")
+        if not scene_yaml or not os.path.exists(scene_yaml):
+            self.get_logger().error(f"❌ Szene YAML nicht gefunden: {scene_yaml}")
             sys.exit(1)
 
-        self.get_logger().info(f"📄 Szene YAML geladen: {yaml_file}")
+        # ---- Substrate Mount YAML laden ----
+        mount_yaml = resolve_mesh_path(SUBSTRATE_MOUNT_CONFIG)
+        if not os.path.exists(mount_yaml):
+            self.get_logger().error(f"❌ substrate_mounts.yaml nicht gefunden: {mount_yaml}")
+            sys.exit(1)
 
-        # ---- Publisher (nur Visualisierung) ----
+        self.mount_data = self._load_mount_yaml(mount_yaml)
+        self.scene_objects = self._load_scene_yaml(scene_yaml)
+
+        # ---- Publisher ----
         self.pub_markers = self.create_publisher(MarkerArray, "/scene/visual", 10)
-
-        # ---- ApplyPlanningScene-Service-Client ----
         self.apply_client = self.create_client(ApplyPlanningScene, "/apply_planning_scene")
-        if not self.apply_client.wait_for_service(timeout_sec=5.0):
-            self.get_logger().warn("⏳ /apply_planning_scene noch nicht verfügbar – warte weiter...")
-            # nochmal länger warten, weil move_group oft später hochkommt
-            if not self.apply_client.wait_for_service(timeout_sec=20.0):
-                self.get_logger().error("❌ Service /apply_planning_scene nicht verfügbar. Beende.")
-                sys.exit(1)
+        self.apply_client.wait_for_service()
 
-        # ---- Szene aus YAML laden ----
-        self.scene_objects = self._load_scene_yaml(yaml_file)
-
-        # ---- Szene publizieren ----
+        # Starte Szene
         self.publish_scene_full()
 
-    # ============================================================
-    #    YAML LOAD
-    # ============================================================
+    def _load_mount_yaml(self, path):
+        with open(path, "r") as f:
+            mount_config = yaml.safe_load(f)
+        active = mount_config.get("active_mount")
+        mounts = mount_config.get("mounts", {})
+        if active not in mounts:
+            raise RuntimeError(f"Active mount '{active}' fehlt in substrate_mounts.yaml!")
+        return mounts[active]
+
     def _load_scene_yaml(self, path):
         with open(path, "r") as f:
-            data = yaml.safe_load(f)
+            return yaml.safe_load(f).get("scene_objects", [])
 
-        if "scene_objects" not in data or not isinstance(data["scene_objects"], list):
-            raise RuntimeError("scene_yaml muss eine Liste 'scene_objects' enthalten")
-
-        objects = []
-        for o in data["scene_objects"]:
-            for key in ["id", "mesh", "frame", "position", "rpy_deg"]:
-                if key not in o:
-                    raise RuntimeError(f"{key} fehlt in Szeneobjekt: {o}")
-
-            if o["frame"] not in VALID_FRAMES:
-                raise RuntimeError(f"Ungültiger Frame '{o['frame']}', erlaubt: {VALID_FRAMES}")
-
-            mesh_file = resolve_mesh_path(o["mesh"])
-            if not os.path.exists(mesh_file):
-                raise RuntimeError(f"Mesh existiert nicht: {mesh_file}")
-
-            objects.append({
-                "id": o["id"],
-                "mesh": mesh_file,
-                "frame": o["frame"],
-                "position": list(map(float, o["position"])),
-                "rpy_deg": list(map(float, o["rpy_deg"])),
-                "optional": o.get("optional", False),
-            })
-        return objects
-
-    # ============================================================
-    #    SCENE PUBLISH
-    # ============================================================
     def publish_scene_full(self):
-        """Baut Marker (RViz) + CollisionObjects und sendet sie per ApplyPlanningScene (Diff) an MoveIt."""
         marker_array = MarkerArray()
         collision_objects = []
 
-        for o in self.scene_objects:
-            # --- RViz Marker ---
-            m = Marker()
-            m.header.frame_id = o["frame"]
-            m.header.stamp = self.get_clock().now().to_msg()
-            m.ns = "scene"
-            m.id = hash(o["id"]) % 10000
-            m.type = Marker.MESH_RESOURCE
-            m.mesh_resource = "file://" + o["mesh"]
-            m.pose.position.x, m.pose.position.y, m.pose.position.z = o["position"]
-            q = rpy_deg_to_quat(*o["rpy_deg"])
-            m.pose.orientation.x, m.pose.orientation.y, m.pose.orientation.z, m.pose.orientation.w = q
-            m.scale.x = m.scale.y = m.scale.z = 1.0
-            m.color.r, m.color.g, m.color.b, m.color.a = (0.7, 0.7, 0.7, 1.0)
-            marker_array.markers.append(m)
+        # --- Substrate Mount zuerst ---
+        mount_mesh = resolve_mesh_path(self.mount_data["mesh"])
+        scene_offset = self.mount_data["scene_offset"]["xyz"]
+        scene_rpy = self.mount_data["scene_offset"]["rpy_deg"]
 
-            # --- MoveIt CollisionObject ---
-            co = CollisionObject()
-            co.id = o["id"]
-            co.header.frame_id = o["frame"]
-            co.header.stamp = self.get_clock().now().to_msg()
+        mount_co = self._make_collision_object(
+            "substrate_mount",
+            mount_mesh,
+            "world",
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+        )
+        collision_objects.append(mount_co)
 
-            mesh_msg = self._load_mesh(o["mesh"])
-            co.meshes = [mesh_msg]
+        # --- Dynamischen frame "scene" simulieren ---
+        # Alle scene-Objekte bekommen automatisch Offset aus Mount YAML
+        for obj in self.scene_objects:
+            mesh_file = resolve_mesh_path(obj["mesh"])
+            pos = obj["position"]
+            rpy = obj["rpy_deg"]
 
-            pose = Pose()
-            pose.position.x, pose.position.y, pose.position.z = o["position"]
-            pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = q
-            co.mesh_poses.append(pose)
+            if obj["frame"] == "scene":
+                obj["frame"] = "world"
+                pos = [
+                    pos[0] + scene_offset[0],
+                    pos[1] + scene_offset[1],
+                    pos[2] + scene_offset[2],
+                ]
 
-            co.operation = CollisionObject.ADD
+            co = self._make_collision_object(obj["id"], mesh_file, obj["frame"], pos, rpy)
             collision_objects.append(co)
 
-            self.get_logger().info(f"🧱 Collision vorbereitet: {o['id']}")
-
-        # --- Visualisierung raus ---
-        self.pub_markers.publish(marker_array)
-
-        # --- ApplyPlanningScene (Diff) senden ---
         ps = PlanningScene()
-        ps.is_diff = True  # wichtig: nur Änderungen anwenden
+        ps.is_diff = True
         ps.world.collision_objects = collision_objects
 
         req = ApplyPlanningScene.Request()
         req.scene = ps
+        self.apply_client.call_async(req)
 
-        future = self.apply_client.call_async(req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=10.0)
+        self.get_logger().info("✅ Szene aufgebaut mit substrate_mount + scene-Offset.")
 
-        if not future.done() or future.result() is None or not future.result().success:
-            self.get_logger().error("❌ ApplyPlanningScene fehlgeschlagen – Szene wurde nicht übernommen.")
-        else:
-            self.get_logger().info("✅ Szene an MoveIt übergeben (ApplyPlanningScene).")
+    def _make_collision_object(self, obj_id, mesh_path, frame, pos, rpy):
+        co = CollisionObject()
+        co.id = obj_id
+        co.header.frame_id = frame
 
-    # ============================================================
-    #    MESH LOAD
-    # ============================================================
-    def _load_mesh(self, mesh_path: str) -> Mesh:
-        """Load STL mesh and convert to shape_msgs/Mesh"""
-        try:
-            mesh = trimesh.load(mesh_path, force='mesh')
-        except Exception as e:
-            self.get_logger().error(f"❌ Could not load mesh: {mesh_path} ({e})")
-            raise
+        pose = Pose()
+        pose.position.x, pose.position.y, pose.position.z = pos
+        q = rpy_deg_to_quat(*rpy)
+        pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = q
 
-        if mesh.is_empty:
-            raise RuntimeError(f"Mesh is empty: {mesh_path}")
+        co.meshes = [self._load_mesh(mesh_path)]
+        co.mesh_poses = [pose]
+        co.operation = CollisionObject.ADD
+        return co
 
-        mesh_msg = Mesh()
-
-        # Convert vertices
-        for vertex in mesh.vertices:
-            p = Point()
-            p.x, p.y, p.z = float(vertex[0]), float(vertex[1]), float(vertex[2])
-            mesh_msg.vertices.append(p)
-
-        # Convert faces
-        for face in mesh.faces:
-            tri = MeshTriangle()
-            tri.vertex_indices[0] = int(face[0])
-            tri.vertex_indices[1] = int(face[1])
-            tri.vertex_indices[2] = int(face[2])
-            mesh_msg.triangles.append(tri)
-
-        return mesh_msg
+    def _load_mesh(self, mesh_path):
+        mesh = trimesh.load(mesh_path)
+        msg = Mesh()
+        for v in mesh.vertices:
+            p = Point(x=v[0], y=v[1], z=v[2])
+            msg.vertices.append(p)
+        for f in mesh.faces:
+            tri = MeshTriangle(vertex_indices=f)
+            msg.triangles.append(tri)
+        return msg
 
 
 def main():
-    rclpy.init()
-    node = SceneManager()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+        rclpy.init()
+        node = SceneManager()
+        rclpy.spin(node)
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":
