@@ -1,20 +1,25 @@
 scene_objects:
-  - id: environment
+  - id: cage
     mesh: "resource/environment/cage_closed_1m.stl"
-    frame: "world"
-    position: [0.0, 0.0, 0.0]     # nur Floats
+    frame: "meca_mount"
+    position: [0.0, 0.0, 0.0]
     rpy_deg: [0.0, 0.0, 0.0]
 
   - id: substrate_mount
     mesh: "resource/substrate_mounts/substrate_mount_flat_240x240x50.stl"
-    frame: "world"
-    position: [0.0, 0.0, 0.0]
+    frame: "meca_mount"
+    position: [0.4, 0.0, 0.0]  # 40cm vor Roboter
+    rpy_deg: [0.0, 0.0, 0.0]
+
+  - id: scene
+    mesh: ""
+    frame: "substrate_mount"
+    position: [0.0, 0.0, 0.05]
     rpy_deg: [0.0, 0.0, 0.0]
 
   - id: substrate
     mesh: "resource/substrates/wafer_d200_h2.stl"
-    frame: "scene"     # ganz wichtig
+    optional: true
+    frame: "scene"
     position: [0.0, 0.0, 0.0]
     rpy_deg: [0.0, 0.0, 0.0]
-    optional: true
-

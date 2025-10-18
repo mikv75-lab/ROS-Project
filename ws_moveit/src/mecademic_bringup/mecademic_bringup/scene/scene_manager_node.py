@@ -1,147 +1,226 @@
 #!/usr/bin/env python3
-from __future__ import annotations
-import os
-import sys
-import yaml
+# mecademic_bringup/scene/scene_manager_node.py
 
+from __future__ import annotations
+
+import os
+import math
+import yaml
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Pose, Point
-from moveit_msgs.msg import CollisionObject, PlanningScene
-from moveit_msgs.srv import ApplyPlanningScene
-from shape_msgs.msg import Mesh, MeshTriangle
-from visualization_msgs.msg import MarkerArray, Marker
+from geometry_msgs.msg import PoseStamped
+from shape_msgs.msg import Mesh as RosMesh
+from shape_msgs.msg import MeshTriangle
+from geometry_msgs.msg import Point
+from moveit_msgs.msg import CollisionObject
+from std_msgs.msg import Header
+from tf2_ros import StaticTransformBroadcaster
+from geometry_msgs.msg import TransformStamped
 
-from mecademic_bringup.utils import rpy_deg_to_quat, resolve_mesh_path
+# Paket-Utils
+from mecademic_bringup.common.frames import FRAME_WORLD
 from mecademic_bringup.common.params import PARAM_SCENE_CONFIG
-import trimesh
+from mecademic_bringup.utils import rpy_deg_to_quat
 
-VALID_FRAMES = {"world", "scene", "meca_mount"}
+# ---- Helfer -----------------------------------------------------------------
 
-SUBSTRATE_MOUNT_CONFIG = "config/substrate_mounts.yaml"  # <-- neue Mount YAML
+def _deg_to_rad_list(rpy_deg):
+    r, p, y = rpy_deg
+    return [math.radians(r), math.radians(p), math.radians(y)]
 
+def _make_static_tf(parent: str, child: str, xyz, rpy_deg) -> TransformStamped:
+    rx, ry, rz = _deg_to_rad_list(rpy_deg)
+    qx, qy, qz, qw = rpy_deg_to_quat(rx, ry, rz)
+
+    tf = TransformStamped()
+    tf.header.frame_id = parent
+    tf.child_frame_id = child
+    tf.transform.translation.x = float(xyz[0])
+    tf.transform.translation.y = float(xyz[1])
+    tf.transform.translation.z = float(xyz[2])
+    tf.transform.rotation.x = qx
+    tf.transform.rotation.y = qy
+    tf.transform.rotation.z = qz
+    tf.transform.rotation.w = qw
+    return tf
+
+def _load_stl_as_shape_msgs_mesh(abs_path: str, logger) -> RosMesh | None:
+    """
+    Sehr robuste Mesh-Ladung:
+    - Prüft Existenz
+    - Keine Exceptions nach oben (nur Warnungen), damit der Node niemals crasht.
+    - Nutzt eine minimalistische STL-Lesung ohne externe Abhängigkeiten,
+      wenn trimesh nicht verfügbar oder fehlschlägt.
+    """
+    if not abs_path:
+        return None
+    if not os.path.isabs(abs_path):
+        logger.warn(f"Mesh-Pfad ist nicht absolut: '{abs_path}'")
+    if not os.path.exists(abs_path):
+        logger.warn(f"Mesh-Datei nicht gefunden: '{abs_path}'")
+        return None
+
+    # Versuch 1: trimesh (falls installiert)
+    try:
+        import trimesh  # type: ignore
+        mesh_raw = trimesh.load(abs_path, force='mesh')
+        if mesh_raw is None or mesh_raw.is_empty:
+            logger.warn(f"Mesh leer oder unlesbar: '{abs_path}'")
+            return None
+
+        ros_mesh = RosMesh()
+        # Vertices
+        for v in mesh_raw.vertices:
+            ros_mesh.vertices.append(Point(x=float(v[0]), y=float(v[1]), z=float(v[2])))
+        # Faces
+        for f in mesh_raw.faces:
+            tri = MeshTriangle(vertex_indices=[int(f[0]), int(f[1]), int(f[2])])
+            ros_mesh.triangles.append(tri)
+        return ros_mesh
+
+    except Exception as e:
+        logger.warn(f"trimesh Fehler für '{abs_path}': {e}. Versuche Fallback.")
+
+    # Fallback: einfacher ASCII-STL Parser (nur triangles, robust für unsere Zwecke)
+    try:
+        vertices = []
+        triangles = []
+
+        current = []
+        with open(abs_path, "r", errors="ignore") as f:
+            for line in f:
+                line = line.strip().lower()
+                if line.startswith("vertex"):
+                    _, x, y, z = line.split()
+                    current.append((float(x), float(y), float(z)))
+                    if len(current) == 3:
+                        # Vertex-Index-Management
+                        base = len(vertices)
+                        vertices.extend([Point(x=a, y=b, z=c) for a, b, c in current])
+                        triangles.append(MeshTriangle(vertex_indices=[base, base + 1, base + 2]))
+                        current = []
+
+        if not vertices or not triangles:
+            logger.warn(f"Fallback-Parser fand keine Dreiecke in '{abs_path}'")
+            return None
+
+        ros_mesh = RosMesh(vertices=vertices, triangles=triangles)
+        return ros_mesh
+    except Exception as e:
+        logger.warn(f"Fallback-Parser Fehler für '{abs_path}': {e}")
+        return None
+
+# ---- Node -------------------------------------------------------------------
 
 class SceneManager(Node):
+    """
+    Liest scene.yaml und:
+      1) Sendet IMMER die statischen TFs (auch ohne Mesh).
+      2) Lädt und publiziert CollisionObjects NUR, wenn ein gültiges Mesh existiert.
+    """
+
     def __init__(self):
         super().__init__("scene_manager")
 
-        # ---- Szene YAML laden ----
+        # Parameter: Pfad zur scene.yaml
         self.declare_parameter(PARAM_SCENE_CONFIG, "")
-        scene_yaml = self.get_parameter(PARAM_SCENE_CONFIG).get_parameter_value().string_value
+        scene_yaml = self.get_parameter(PARAM_SCENE_CONFIG).value
 
         if not scene_yaml or not os.path.exists(scene_yaml):
             self.get_logger().error(f"❌ Szene YAML nicht gefunden: {scene_yaml}")
-            sys.exit(1)
+            raise FileNotFoundError(f"Scene YAML fehlt: {scene_yaml}")
 
-        # ---- Substrate Mount YAML laden ----
-        mount_yaml = resolve_mesh_path(SUBSTRATE_MOUNT_CONFIG)
-        if not os.path.exists(mount_yaml):
-            self.get_logger().error(f"❌ substrate_mounts.yaml nicht gefunden: {mount_yaml}")
-            sys.exit(1)
+        with open(scene_yaml, "r") as f:
+            doc = yaml.safe_load(f) or {}
 
-        self.mount_data = self._load_mount_yaml(mount_yaml)
-        self.scene_objects = self._load_scene_yaml(scene_yaml)
+        self.scene_objects = doc.get("scene_objects", [])
+        if not isinstance(self.scene_objects, list):
+            self.get_logger().error("❌ 'scene_objects' muss eine Liste sein.")
+            self.scene_objects = []
 
-        # ---- Publisher ----
-        self.pub_markers = self.create_publisher(MarkerArray, "/scene/visual", 10)
-        self.apply_client = self.create_client(ApplyPlanningScene, "/apply_planning_scene")
-        self.apply_client.wait_for_service()
+        # TF Broadcaster
+        self.static_tf = StaticTransformBroadcaster(self)
 
-        # Starte Szene
-        self.publish_scene_full()
+        # Publisher für CollisionObjects
+        self.co_pub = self.create_publisher(CollisionObject, "collision_object", 10)
 
-    def _load_mount_yaml(self, path):
-        with open(path, "r") as f:
-            mount_config = yaml.safe_load(f)
-        active = mount_config.get("active_mount")
-        mounts = mount_config.get("mounts", {})
-        if active not in mounts:
-            raise RuntimeError(f"Active mount '{active}' fehlt in substrate_mounts.yaml!")
-        return mounts[active]
+        # Basis-Verzeichnis für relative Mesh-Pfade (= Ordner der YAML-Datei)
+        self.base_dir = os.path.dirname(os.path.abspath(scene_yaml))
 
-    def _load_scene_yaml(self, path):
-        with open(path, "r") as f:
-            return yaml.safe_load(f).get("scene_objects", [])
+        # Ausführen
+        self._publish_static_tfs_and_meshes()
 
-    def publish_scene_full(self):
-        marker_array = MarkerArray()
-        collision_objects = []
+    # -- Hauptlogik -----------------------------------------------------------
 
-        # --- Substrate Mount zuerst ---
-        mount_mesh = resolve_mesh_path(self.mount_data["mesh"])
-        scene_offset = self.mount_data["scene_offset"]["xyz"]
-        scene_rpy = self.mount_data["scene_offset"]["rpy_deg"]
+    def _publish_static_tfs_and_meshes(self):
+        tfs: list[TransformStamped] = []
 
-        mount_co = self._make_collision_object(
-            "substrate_mount",
-            mount_mesh,
-            "world",
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0],
-        )
-        collision_objects.append(mount_co)
+        for entry in self.scene_objects:
+            try:
+                obj_id: str = entry["id"]
+                parent: str = entry.get("frame", FRAME_WORLD)
 
-        # --- Dynamischen frame "scene" simulieren ---
-        # Alle scene-Objekte bekommen automatisch Offset aus Mount YAML
-        for obj in self.scene_objects:
-            mesh_file = resolve_mesh_path(obj["mesh"])
-            pos = obj["position"]
-            rpy = obj["rpy_deg"]
+                # Position/Orientierung (defaults)
+                xyz = entry.get("position", [0.0, 0.0, 0.0])
+                rpy_deg = entry.get("rpy_deg", [0.0, 0.0, 0.0])
 
-            if obj["frame"] == "scene":
-                obj["frame"] = "world"
-                pos = [
-                    pos[0] + scene_offset[0],
-                    pos[1] + scene_offset[1],
-                    pos[2] + scene_offset[2],
-                ]
+                # 1) Immer TF senden
+                tf = _make_static_tf(parent, obj_id, xyz, rpy_deg)
+                tfs.append(tf)
 
-            co = self._make_collision_object(obj["id"], mesh_file, obj["frame"], pos, rpy)
-            collision_objects.append(co)
+                # 2) Optional: Mesh laden & CollisionObject publizieren
+                mesh_rel = entry.get("mesh", "")
+                optional = bool(entry.get("optional", False))
 
-        ps = PlanningScene()
-        ps.is_diff = True
-        ps.world.collision_objects = collision_objects
+                if mesh_rel:
+                    abs_path = mesh_rel
+                    if not os.path.isabs(abs_path):
+                        abs_path = os.path.join(self.base_dir, mesh_rel)
 
-        req = ApplyPlanningScene.Request()
-        req.scene = ps
-        self.apply_client.call_async(req)
+                    ros_mesh = _load_stl_as_shape_msgs_mesh(abs_path, self.get_logger())
+                    if ros_mesh is None:
+                        msg = f"⚠️ Mesh für '{obj_id}' nicht geladen → {mesh_rel}"
+                        if optional:
+                            self.get_logger().warning(msg + " (optional, übersprungen)")
+                            continue
+                        else:
+                            self.get_logger().warning(msg + " (nicht optional, übersprungen)")
+                            continue
 
-        self.get_logger().info("✅ Szene aufgebaut mit substrate_mount + scene-Offset.")
+                    # CollisionObject zusammenbauen
+                    co = CollisionObject()
+                    co.header = Header(frame_id=obj_id)  # Mesh im lokalen Frame des Objektes
+                    co.id = obj_id
+                    co.meshes = [ros_mesh]
 
-    def _make_collision_object(self, obj_id, mesh_path, frame, pos, rpy):
-        co = CollisionObject()
-        co.id = obj_id
-        co.header.frame_id = frame
+                    # Pose des Mesh relativ zu seinem eigenen Frame → Identität
+                    mesh_pose = PoseStamped()
+                    mesh_pose.header.frame_id = obj_id
+                    mesh_pose.pose.orientation.w = 1.0
+                    co.mesh_poses.append(mesh_pose.pose)
 
-        pose = Pose()
-        pose.position.x, pose.position.y, pose.position.z = pos
-        q = rpy_deg_to_quat(*rpy)
-        pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = q
+                    co.operation = CollisionObject.ADD
+                    self.co_pub.publish(co)
+                    self.get_logger().info(f"✅ Mesh geladen & publiziert: {obj_id} ← {mesh_rel}")
+                else:
+                    # Kein Mesh → nur TF (genau so gewollt)
+                    self.get_logger().info(f"ℹ️ Nur TF (kein Mesh): {obj_id}")
 
-        co.meshes = [self._load_mesh(mesh_path)]
-        co.mesh_poses = [pose]
-        co.operation = CollisionObject.ADD
-        return co
+            except Exception as e:
+                self.get_logger().warning(f"⚠️ Fehler in Szene-Eintrag {entry}: {e}")
 
-    def _load_mesh(self, mesh_path):
-        mesh = trimesh.load(mesh_path)
-        msg = Mesh()
-        for v in mesh.vertices:
-            p = Point(x=v[0], y=v[1], z=v[2])
-            msg.vertices.append(p)
-        for f in mesh.faces:
-            tri = MeshTriangle(vertex_indices=f)
-            msg.triangles.append(tri)
-        return msg
+        # Alle TFs auf einmal senden
+        if tfs:
+            self.static_tf.sendTransform(tfs)
+            self.get_logger().info("✅ Static TFs gesendet (aus scene.yaml)")
 
+# ---- main -------------------------------------------------------------------
 
 def main():
-        rclpy.init()
-        node = SceneManager()
-        rclpy.spin(node)
-        rclpy.shutdown()
-
+    rclpy.init()
+    node = SceneManager()
+    rclpy.spin(node)
+    rclpy.shutdown()
 
 if __name__ == "__main__":
     main()

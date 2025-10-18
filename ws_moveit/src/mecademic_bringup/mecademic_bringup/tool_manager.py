@@ -6,16 +6,16 @@ import importlib
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-from geometry_msgs.msg import Pose, TransformStamped
+from geometry_msgs.msg import Pose, TransformStamped, Point
 from tf2_ros import StaticTransformBroadcaster
 from moveit_msgs.msg import PlanningScene, CollisionObject, AttachedCollisionObject
 from shape_msgs.msg import Mesh, MeshTriangle
 from builtin_interfaces.msg import Duration
 from ament_index_python.packages import get_package_share_directory
 
-from mecademic_bringup.common.topics import TOPIC_TOOL_SET, TOPIC_TOOL_CURRENT
-from mecademic_bringup.common.params import PARAM_TOOL_CONFIG
-from mecademic_bringup.scene.utils import rpy_deg_to_quat
+from common.topics import TOPIC_TOOL_SET, TOPIC_TOOL_CURRENT
+from common.params import PARAM_TOOL_CONFIG
+from scene.utils import rpy_deg_to_quat
 
 
 def resolve_package_url(url: str):
@@ -70,34 +70,42 @@ class ToolManager(Node):
 
     # ------------------- Mesh Loader -------------------
     def _load_mesh(self, mesh_path: str) -> Mesh:
+        """Robust STL Loader – unterstützt ASCII + Binary STL"""
         if not os.path.exists(mesh_path):
             raise FileNotFoundError(f"Mesh-Datei nicht gefunden: {mesh_path}")
 
-        mesh = Mesh()
-        vertices = []
-        triangles = []
-        with open(mesh_path, "r") as f:
-            for line in f:
-                parts = line.strip().split()
-                if parts and parts[0] == "vertex":
-                    vertices.append([float(parts[1]), float(parts[2]), float(parts[3])])
-                elif parts and parts[0] == "facet":
-                    triangles.append([])
+        try:
+            import trimesh
+            mesh = trimesh.load(mesh_path, force='mesh')
+        except Exception as e:
+            self.get_logger().error(f"❌ Konnte STL nicht laden: {mesh_path} ({e})")
+            raise
 
-                if parts and parts[0] == "endfacet":
-                    if len(vertices) >= 3:
-                        i = len(vertices)
-                        triangles[-1] = [i - 3, i - 2, i - 1]
+        if mesh.is_empty:
+            raise RuntimeError(f"❌ STL Mesh ist leer: {mesh_path}")
 
-        mesh.vertices = [self._to_point(v) for v in vertices]
-        mesh.triangles = [MeshTriangle(vertex_indices=t) for t in triangles]
-        return mesh
+        mesh_msg = Mesh()
+
+        # 🧱 Vertices übernehmen
+        for v in mesh.vertices:
+            p = self._to_point(v)
+            mesh_msg.vertices.append(p)
+
+        # 🔺 Dreiecke übernehmen
+        for face in mesh.faces:
+            tri = MeshTriangle()
+            tri.vertex_indices[0] = int(face[0])
+            tri.vertex_indices[1] = int(face[1])
+            tri.vertex_indices[2] = int(face[2])
+            mesh_msg.triangles.append(tri)
+
+        return mesh_msg
 
     def _to_point(self, v):
-        from geometry_msgs.msg import Point
         p = Point()
-        p.x, p.y, p.z = v
+        p.x, p.y, p.z = float(v[0]), float(v[1]), float(v[2])
         return p
+
 
     # ------------------- Apply Tool -------------------
     def _apply_tool(self, tool_name, init=False):
