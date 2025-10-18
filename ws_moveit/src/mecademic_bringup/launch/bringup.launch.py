@@ -30,7 +30,6 @@ def generate_launch_description():
         poses_yaml = f"{pkg_share}/config/poses.yaml"
         scene_yaml = f"{pkg_share}/config/scene.yaml"
         tool_yaml  = f"{pkg_share}/config/tools.yaml"
-        rviz_config = f"{pkg_share}/config/bringup.rviz"
 
         # Aktives Tool aus tools.yaml lesen
         try:
@@ -103,20 +102,12 @@ def generate_launch_description():
             # 5) Robot & MoveIt (immer fest hier starten) – Tool aus tools.yaml
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
-                    os.path.join(pkg_share, "launch", "robot_with_tool.launch.py")
+                    os.path.join(pkg_share, "launch", "robot.launch.py")
                 ),
                 launch_arguments={
                     "tool": active_tool,
                     # use_fake_hw-Schalter bleibt wie in robot_with_tool.launch.py definiert (default true)
                 }.items(),
-            ),
-
-            # 6) RViz (immer an)
-            Node(
-                package="rviz2",
-                executable="rviz2",
-                arguments=["-d", rviz_config],
-                output="screen",
             ),
         ]
 

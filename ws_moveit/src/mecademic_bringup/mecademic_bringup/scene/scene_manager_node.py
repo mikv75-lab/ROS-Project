@@ -75,9 +75,9 @@ class SceneManagerNode(Node):
     # --- Helper TF ---
     def _publish_static_tf(self, parent: str, child: str, xyz, rpy_deg):
         if parent not in VALID_FRAMES:
-            self.get_logger().warn(f"[scene_manager] parent frame '{parent}' nicht in VALID_FRAMES")
+            self.get_logger().warning(f"[scene_manager] parent frame '{parent}' nicht in VALID_FRAMES")
         if child not in VALID_FRAMES:
-            self.get_logger().warn(f"[scene_manager] child frame '{child}' nicht in VALID_FRAMES")
+            self.get_logger().warning(f"[scene_manager] child frame '{child}' nicht in VALID_FRAMES")
 
         qx,qy,qz,qw = rpy_deg_to_quat(*rpy_deg)
         tf = TransformStamped()

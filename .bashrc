@@ -84,4 +84,4 @@ source ~/ws_moveit/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
 # --- MECAD..IC DEV ALIAS (dein Wunsch) ---
-alias mecademic_colcon_build='cd ~/ws_moveit && clear && rm -rf build/mecademic_* install/mecademic_* log && colcon build --packages-select mecademic_description mecademic_moveit_config mecademic_bringup --cmake-clean-first && source install/setup.bash && ros2 launch mecademic_bringup bringup.launch.py spawm_platform:=true'
+alias mecademic_colcon_build='cd ~/ws_moveit && clear && rm -rf build/mecademic_* install/mecademic_* log && colcon build --packages-select mecademic_description mecademic_moveit_config mecademic_bringup --cmake-clean-first && source install/setup.bash && ros2 launch mecademic_bringup bringup.launch.py'

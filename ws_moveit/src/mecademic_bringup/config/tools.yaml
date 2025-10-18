@@ -3,9 +3,24 @@ active_tool: "none"
 tools:
   none:
     description: "Kein Tool aktiv"
+    mount_frame: "tool_mount"
+    tcp_offset: [0.0, 0.0, 0.0]
+    tcp_rpy:    [0.0, 0.0, 0.0]
+    mesh: ""           # kein Mesh
+    mesh_scale: [1.0, 1.0, 1.0]
 
   spray_nozzle_01:
     description: "Spray Nozzle 01"
+    mount_frame: "tool_mount"
+    tcp_offset: [0.0, 0.0, 0.120]   # Beispiel
+    tcp_rpy:    [0.0, 0.0, 0.0]
+    mesh: "package://mecademic_bringup/resource/tools/spray_nozzle_01.STL"
+    mesh_scale: [0.001, 0.001, 0.001]  # falls STL in mm
 
   spray_nozzle_02:
     description: "Spray Nozzle 02"
+    mount_frame: "tool_mount"
+    tcp_offset: [0.0, 0.0, 0.135]
+    tcp_rpy:    [0.0, 0.0, 0.0]
+    mesh: "package://mecademic_bringup/resource/tools/spray_nozzle_02.STL"
+    mesh_scale: [0.001, 0.001, 0.001]

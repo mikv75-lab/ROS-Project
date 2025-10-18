@@ -1,31 +1,30 @@
-<?xml version="1.0" ?>
+<?xml version="1.0"?>
 <robot name="meca_500_r3">
 
-  <!-- Arm Kinematik -->
+  <!-- Arm-Kinematik: fester Tip = tool_mount -->
   <group name="meca_arm_group">
-    <chain base_link="meca_mount" tip_link="tcp"/>
+    <chain base_link="meca_mount" tip_link="tool_mount"/>
   </group>
 
-  <!-- Endeffektor-Gruppe (nur TCP) -->
+  <!-- EEF-Gruppe referenziert tool_mount; der dynamische Frame 'tcp' kommt vom ToolManager -->
   <group name="eef_group">
-    <link name="tcp"/>
+    <link name="tool_mount"/>
   </group>
 
-  <!-- Endeffektor Definition -->
   <end_effector
       name="spray_eef"
-      parent_link="tcp"
+      parent_link="tool_mount"
       group="eef_group"
       parent_group="meca_arm_group"/>
 
-  <!-- Virtual Joint (Welt zu Basis) -->
+  <!-- Virtuelles Welt-Joint -->
   <virtual_joint
       name="world_joint"
       type="fixed"
       parent_frame="world"
       child_link="meca_mount"/>
 
-  <!-- Kollisionsmatrix -->
+  <!-- Kollisionsmatrix (deine Einträge, ggf. unverändert übernehmen) -->
   <disable_collisions link1="meca_axis_1_link" link2="meca_axis_2_link" reason="Adjacent"/>
   <disable_collisions link1="meca_axis_1_link" link2="meca_axis_3_link" reason="Never"/>
   <disable_collisions link1="meca_axis_1_link" link2="meca_base_link" reason="Adjacent"/>

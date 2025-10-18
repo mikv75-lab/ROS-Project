@@ -9,9 +9,9 @@ FRAME_MECA_BASE = "meca_base"  # Roboterbasis
 FRAME_TCP = "tcp"              # Tool Center Point (aktives Tool)
 
 # --- Defined poses from fixed_positions.yaml ---
-FRAME_POSE_HOME = "meca_pose_home"
-FRAME_POSE_PREDISPENSE = "meca_pose_predispense"
-FRAME_POSE_SERVICE = "meca_pose_service"
+FRAME_POSE_HOME = "pose_home"
+FRAME_POSE_PREDISPENSE = "pose_predispense"
+FRAME_POSE_SERVICE = "pose_service"
 
 # --- Scene frames (Workspace / Produktionszelle) ---
 FRAME_SUBSTRATE_MOUNT = "substrate_mount"  # Halterung/Fixture auf Tisch

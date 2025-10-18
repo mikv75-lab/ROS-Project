@@ -2,7 +2,7 @@ scene_objects:
   - id: environment
     mesh: "resource/environment/cage_closed_1m.stl"
     frame: "world"
-    position: [0.0, 0.0, 0.0]
+    position: [0.0, 0.0, 0.0]     # nur Floats
     rpy_deg: [0.0, 0.0, 0.0]
 
   - id: substrate_mount
@@ -13,10 +13,10 @@ scene_objects:
 
   - id: substrate
     mesh: "resource/substrates/wafer_d200_h2.stl"
-    frame: "workspace_center"
+    frame: "scene"     # ganz wichtig
     position: [0.0, 0.0, 0.0]
     rpy_deg: [0.0, 0.0, 0.0]
     optional: true
 
 spray_path_file: "config/spray_path.yaml"
-spray_path_frame: "workspace_center"
+spray_path_frame: "scene"
