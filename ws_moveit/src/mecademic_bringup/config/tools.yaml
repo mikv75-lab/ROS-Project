@@ -14,7 +14,7 @@ tools:
     mount_frame: "tool_mount"
     tcp_offset: [0.0, 0.0, 0.120]   # Beispiel
     tcp_rpy:    [0.0, 0.0, 0.0]
-    mesh: "package://mecademic_bringup/resource/tools/spray_nozzle_01.STL"
+    mesh: "package://mecademic_bringup/resource/tools/spray_nozzle_01.stl"
     mesh_scale: [0.001, 0.001, 0.001]  # falls STL in mm
 
   spray_nozzle_02:
@@ -22,5 +22,5 @@ tools:
     mount_frame: "tool_mount"
     tcp_offset: [0.0, 0.0, 0.135]
     tcp_rpy:    [0.0, 0.0, 0.0]
-    mesh: "package://mecademic_bringup/resource/tools/spray_nozzle_02.STL"
+    mesh: "package://mecademic_bringup/resource/tools/spray_nozzle_02.stl"
     mesh_scale: [0.001, 0.001, 0.001]

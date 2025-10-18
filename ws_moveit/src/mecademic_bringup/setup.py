@@ -26,6 +26,8 @@ setup(
          glob('resource/substrate_mounts/*.stl')),
         (os.path.join('share', package_name, 'resource/substrates'),
          glob('resource/substrates/*.stl')),
+        (os.path.join('share', package_name, 'resource/tools'),
+         glob('resource/tools/*.stl')),
 
         # ✅ SprayPath Rezepte installieren
         (os.path.join('share', package_name, 'spray_paths'),

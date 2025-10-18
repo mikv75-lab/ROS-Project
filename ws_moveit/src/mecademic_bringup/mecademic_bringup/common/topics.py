@@ -8,6 +8,8 @@ Keine Hardcoded Strings mehr im Code!
 # --- Tool control topics ---
 TOPIC_TOOL_SET = "/tool/set"
 TOPIC_TOOL_CURRENT = "/tool/current"
+TOPIC_SCENE_TOOL_ATTACH = "/scene/tool/attach"
+TOPIC_SCENE_TOOL_DETACH = "/scene/tool/detach"
 
 # --- Pose topics ---
 TOPIC_POSES_PREFIX = "/poses"
@@ -29,7 +31,7 @@ TOPIC_SCENE_ENV_INFO  = "/scene/environment/info"
 # --- Spray path topics ---
 TOPIC_SCENE_SPRAY_SET   = "/scene/spraypath/set"
 TOPIC_SCENE_SPRAY_CLEAR = "/scene/spraypath/clear"
-TOPIC_SCENE_SPRAY_INF = "/scene/spraypath/clear"
+TOPIC_SCENE_SPRAY_INFO  = "/scene/spraypath/info"
 
 # --- Visualization topics ---
 TOPIC_VISUALIZATION_MARKER = "visualization_marker"  # default RViz Marker

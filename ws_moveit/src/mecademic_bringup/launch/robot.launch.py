@@ -17,6 +17,7 @@ def generate_launch_description():
 
         desc_pkg = FindPackageShare("mecademic_description").perform(context)
         cfg_pkg = FindPackageShare("mecademic_moveit_config").perform(context)
+        bringup_pkg = FindPackageShare("mecademic_bringup").perform(context)
 
         # --- MoveIt Config ohne Tool ---
         moveit_config = (
@@ -119,7 +120,7 @@ def generate_launch_description():
         )
         
         # --- RViz mit MoveIt-Konfiguration ---
-        rviz_config = os.path.join(cfg_pkg, "config", "moveit.rviz")
+        rviz_config = os.path.join(bringup_pkg, "config", "bringup.rviz")
         rviz_node = Node(
             package="rviz2",
             executable="rviz2",
