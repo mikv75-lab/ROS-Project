@@ -74,13 +74,22 @@ class ToolManager(Node):
         return uri
 
     def publish_tcp(self, parent, xyz, rpy):
-        q = rpy_deg_to_quat(*rpy)
+        # Stempel + Liste an StaticTransformBroadcaster -> stabil in RViz
+        qx, qy, qz, qw = rpy_deg_to_quat(*rpy)
         tf = TransformStamped()
+        tf.header.stamp = self.get_clock().now().to_msg()
         tf.header.frame_id = parent
         tf.child_frame_id = TCP_FRAME
-        tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z = xyz
-        tf.transform.rotation.x, tf.transform.rotation.y, tf.transform.rotation.z, tf.transform.rotation.w = q
-        self.static_tf.sendTransform(tf)
+        tf.transform.translation.x = float(xyz[0])
+        tf.transform.translation.y = float(xyz[1])
+        tf.transform.translation.z = float(xyz[2])
+        tf.transform.rotation.x = qx
+        tf.transform.rotation.y = qy
+        tf.transform.rotation.z = qz
+        tf.transform.rotation.w = qw
+        # als Liste senden (API-kompatibel)
+        self.static_tf.sendTransform([tf])
+
 
     def load_mesh(self, mesh_path):
         if mesh_path in self.mesh_cache:
@@ -95,14 +104,32 @@ class ToolManager(Node):
         self.mesh_cache[mesh_path] = mesh
         return mesh
 
-    def msg_attach(self, mount_frame, mesh):
+    def msg_attach(self, mount_frame, mesh, mesh_offset, mesh_rpy):
+        # Pose relativ zu 'mount_frame'
+        pose = Pose()
+        pose.position.x = float(mesh_offset[0])
+        pose.position.y = float(mesh_offset[1])
+        pose.position.z = float(mesh_offset[2])
+
+        # ⚠️ wichtig: mesh_rpy sind in Grad -> Quaternion konvertieren
+        qx, qy, qz, qw = rpy_deg_to_quat(*mesh_rpy)
+        pose.orientation.x = qx
+        pose.orientation.y = qy
+        pose.orientation.z = qz
+        pose.orientation.w = qw
+
         msg = AttachedCollisionObject()
-        msg.link_name = mount_frame
+        msg.link_name = mount_frame  # attach relativ zum Toolflansch
         msg.object.id = ATTACHED_OBJ_ID
         msg.object.header.frame_id = mount_frame
         msg.object.meshes = [mesh]
-        msg.object.mesh_poses = [Pose()]
+        msg.object.mesh_poses = [pose]
         msg.object.operation = CollisionObject.ADD
+        msg.object.pose = pose 
+        # DEBUG Ausgabe
+        self.get_logger().info(
+            f"Mesh attach @ {mount_frame}: offset={mesh_offset}, rpy={mesh_rpy}° → quat=({qx:.3f},{qy:.3f},{qz:.3f},{qw:.3f})"
+        )
         return msg
 
     def msg_detach(self, mount_frame):
@@ -156,23 +183,53 @@ class ToolManager(Node):
     def apply_tool(self, name):
         tool = self.tools.get(name, {})
         mount_frame = tool.get("mount_frame", "tool_mount")
+
+        # 1) Vorheriges Tool entfernen
         self.attached_pub.publish(self.msg_detach(mount_frame))
 
-        self.publish_tcp(mount_frame, tool.get("tcp_offset", [0, 0, 0]), tool.get("tcp_rpy", [0, 0, 0]))
-
+        # 2) TCP & Mesh-Parameter lesen
+        tcp_xyz = tool.get("tcp_offset", [0.0, 0.0, 0.0])
+        tcp_rpy = tool.get("tcp_rpy",   [0.0, 0.0, 0.0])
         mesh_uri = tool.get("mesh", "")
+        mesh_offset = tool.get("mesh_offset", [0.0, 0.0, 0.0])
+        mesh_rpy    = tool.get("mesh_rpy",    [0.0, 0.0, 0.0])
+
+        # 3) TCP leicht verzögert senden (sichert, dass RViz/TF-Listener dran sind)
+        def _send_tcp_once():
+            try:
+                self.publish_tcp(mount_frame, tcp_xyz, tcp_rpy)
+                self.get_logger().info(f"TCP @ {mount_frame} -> xyz={tcp_xyz}, rpy_deg={tcp_rpy}")
+            finally:
+                tcp_timer.cancel()
+        tcp_timer = self.create_timer(0.5, _send_tcp_once)
+
+        # 4) Mesh vorbereiten & ebenfalls verzögert attachen
         if mesh_uri:
             mesh_path = self.resolve_mesh_path(mesh_uri)
             mesh = self.load_mesh(mesh_path)
-            self.attached_pub.publish(self.msg_attach(mount_frame, mesh))
+            attach_msg = self.msg_attach(mount_frame, mesh, mesh_offset, mesh_rpy)
 
+            def _send_attach_once():
+                try:
+                    self.attached_pub.publish(attach_msg)
+                    self.get_logger().info(f"📦 AttachedCollisionObject publiziert (mesh='{mesh_path}', offset={mesh_offset}, rpy_deg={mesh_rpy})")
+                finally:
+                    attach_timer.cancel()
+            attach_timer = self.create_timer(1.0, _send_attach_once)
+        else:
+            self.get_logger().info("Kein Mesh konfiguriert (mesh: \"\")")
+
+        # 5) Aktives Tool veröffentlichen & Retry-Check starten
         self.pub_current.publish(String(data=name))
         self._start_retry_timer()
 
     def on_tool_change(self, msg):
         tool = msg.data.strip()
         if tool in self.tools:
+            self.get_logger().info(f"🔧 Toolwechsel: {tool}")
             self.apply_tool(tool)
+        else:
+            self.get_logger().error(f"❌ Unbekanntes Tool: {tool}")
 
 def main():
     rclpy.init()
