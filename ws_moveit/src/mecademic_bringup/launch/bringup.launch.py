@@ -12,7 +12,9 @@ from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 import os
+import yaml
 
+from mecademic_bringup.utils import rpy_deg_to_quat
 from mecademic_bringup.common.params import (
     PARAM_SCENE_CONFIG,
     PARAM_POSES_CONFIG,
@@ -24,10 +26,18 @@ def generate_launch_description():
     use_fake_hw_arg = DeclareLaunchArgument("use_fake_hw", default_value="true")
 
     def launch_setup(context):
-        world_frame = "world"
-        base_frame = "meca_mount"
-
         pkg_share = FindPackageShare("mecademic_bringup").perform(context)
+
+        # Load mount YAML
+        mount_yaml = os.path.join(pkg_share, "config", "meca_mount.yaml")
+        with open(mount_yaml, "r") as f:
+            mount = yaml.safe_load(f)["meca_mount"]
+
+        world_frame = mount["parent"]
+        xyz = mount["xyz"]
+        rpy_deg = mount["rpy_deg"]
+        qx, qy, qz, qw = rpy_deg_to_quat(*rpy_deg)
+
         poses_yaml = os.path.join(pkg_share, "config", "poses.yaml")
         scene_yaml = os.path.join(pkg_share, "config", "scene.yaml")
         tool_yaml = os.path.join(pkg_share, "config", "tools.yaml")
@@ -37,15 +47,16 @@ def generate_launch_description():
             SetEnvironmentVariable("XDG_RUNTIME_DIR", "/tmp/runtime-root"),
         ]
 
+        # ---- Static TF world → meca_mount ----
         static_tf = Node(
             package='tf2_ros',
             executable='static_transform_publisher',
-            name='tf_world_to_mecamount',
+            name='tf_world_to_meca_mount',
             arguments=[
-                "--x", "0", "--y", "0", "--z", "0",
-                "--qx", "0", "--qy", "0", "--qz", "0", "--qw", "1",
+                "--x", str(xyz[0]), "--y", str(xyz[1]), "--z", str(xyz[2]),
+                "--qx", str(qx), "--qy", str(qy), "--qz", str(qz), "--qw", str(qw),
                 "--frame-id", world_frame,
-                "--child-frame-id", base_frame
+                "--child-frame-id", "meca_mount"
             ],
             output="screen"
         )
@@ -56,6 +67,7 @@ def generate_launch_description():
             )
         )
 
+        # Managers
         scene_manager = Node(
             package="mecademic_bringup",
             executable="scene_manager",
