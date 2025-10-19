@@ -6,7 +6,7 @@ import numpy as np
 import trimesh
 
 # ---- Parameter (mm) ----
-L = 1000.0       # Kantenlänge außen
+L = 500.0       # Kantenlänge außen
 T = 30.0         # Balkenquerschnitt (quadratisch T x T)
 Z0 = 0.0         # Boden bei z=0 (Ursprung in der Bodenmitte)
 Z1 = Z0 + L

@@ -1,10 +1,10 @@
 scene_objects:
   - id: cage
-    mesh: "../resource/environment/cage_closed_1m.stl"
+    mesh: "../resource/environment/cage_closed_0_5m.stl"
     frame: "world"
-    position: [0.0, 0.5, 0.0]
+    position: [0.0, 0.25, 0.0]
     rpy_deg: [0.0, 0.0, 0.0]
-    mesh_offset: [0.0, 0.5, 0.0]   # Verschiebung relativ zum TF-Frame
+    mesh_offset: [0.0, 0.0, 0.0]   # Verschiebung relativ zum TF-Frame
     mesh_rpy:    [0.0, 0.0, 0.0]   # Rotation vom Mesh (lokal)
 
   - id: substrate_mount
