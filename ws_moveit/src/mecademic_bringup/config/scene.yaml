@@ -1,14 +1,14 @@
 scene_objects:
   - id: cage
-    mesh: "resource/environment/cage_closed_1m.stl"
-    frame: "meca_mount"
+    mesh: "../resource/environment/cage_closed_1m.stl"
+    frame: "world"
     position: [0.0, 0.0, 0.0]
     rpy_deg: [0.0, 0.0, 0.0]
 
   - id: substrate_mount
-    mesh: "resource/substrate_mounts/substrate_mount_flat_240x240x50.stl"
-    frame: "meca_mount"
-    position: [0.4, 0.0, 0.0]  # 40cm vor Roboter
+    mesh: "../resource/substrate_mounts/substrate_mount_flat_240x240x50.stl"
+    frame: "world"
+    position: [0.0, 0.4, 0.0]  # 40cm vor Roboter
     rpy_deg: [0.0, 0.0, 0.0]
 
   - id: scene
@@ -18,7 +18,7 @@ scene_objects:
     rpy_deg: [0.0, 0.0, 0.0]
 
   - id: substrate
-    mesh: "resource/substrates/wafer_d200_h2.stl"
+    mesh: "../resource/substrates/wafer_d200_h2.stl"
     optional: true
     frame: "scene"
     position: [0.0, 0.0, 0.0]

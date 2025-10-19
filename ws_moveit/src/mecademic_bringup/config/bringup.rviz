@@ -229,13 +229,7 @@ Visualization Manager:
           Value: true
         meca_mount:
           Value: true
-        meca_pose_home:
-          Value: true
-        meca_pose_predispense:
-          Value: true
-        meca_pose_service:
-          Value: true
-        meca_pose_workspace_center:
+        _home:
           Value: true
         pose_home:
           Value: true
@@ -267,20 +261,6 @@ Visualization Manager:
                           tool_mount:
                             tcp:
                               {}
-            meca_pose_home:
-              {}
-            meca_pose_predispense:
-              {}
-            meca_pose_service:
-              {}
-            meca_pose_workspace_center:
-              {}
-            pose_home:
-              {}
-            pose_predispense:
-              {}
-            pose_service:
-              {}
       Update Interval: 0
       Value: true
     - Alpha: 1

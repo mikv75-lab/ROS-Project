@@ -55,9 +55,9 @@ def _load_stl_as_shape_msgs_mesh(abs_path: str, logger) -> RosMesh | None:
     if not abs_path:
         return None
     if not os.path.isabs(abs_path):
-        logger.warn(f"Mesh-Pfad ist nicht absolut: '{abs_path}'")
+        logger.warning(f"Mesh-Pfad ist nicht absolut: '{abs_path}'")
     if not os.path.exists(abs_path):
-        logger.warn(f"Mesh-Datei nicht gefunden: '{abs_path}'")
+        logger.warning(f"Mesh-Datei nicht gefunden: '{abs_path}'")
         return None
 
     # Versuch 1: trimesh (falls installiert)
@@ -65,7 +65,7 @@ def _load_stl_as_shape_msgs_mesh(abs_path: str, logger) -> RosMesh | None:
         import trimesh  # type: ignore
         mesh_raw = trimesh.load(abs_path, force='mesh')
         if mesh_raw is None or mesh_raw.is_empty:
-            logger.warn(f"Mesh leer oder unlesbar: '{abs_path}'")
+            logger.warning(f"Mesh leer oder unlesbar: '{abs_path}'")
             return None
 
         ros_mesh = RosMesh()
@@ -79,36 +79,7 @@ def _load_stl_as_shape_msgs_mesh(abs_path: str, logger) -> RosMesh | None:
         return ros_mesh
 
     except Exception as e:
-        logger.warn(f"trimesh Fehler für '{abs_path}': {e}. Versuche Fallback.")
-
-    # Fallback: einfacher ASCII-STL Parser (nur triangles, robust für unsere Zwecke)
-    try:
-        vertices = []
-        triangles = []
-
-        current = []
-        with open(abs_path, "r", errors="ignore") as f:
-            for line in f:
-                line = line.strip().lower()
-                if line.startswith("vertex"):
-                    _, x, y, z = line.split()
-                    current.append((float(x), float(y), float(z)))
-                    if len(current) == 3:
-                        # Vertex-Index-Management
-                        base = len(vertices)
-                        vertices.extend([Point(x=a, y=b, z=c) for a, b, c in current])
-                        triangles.append(MeshTriangle(vertex_indices=[base, base + 1, base + 2]))
-                        current = []
-
-        if not vertices or not triangles:
-            logger.warn(f"Fallback-Parser fand keine Dreiecke in '{abs_path}'")
-            return None
-
-        ros_mesh = RosMesh(vertices=vertices, triangles=triangles)
-        return ros_mesh
-    except Exception as e:
-        logger.warn(f"Fallback-Parser Fehler für '{abs_path}': {e}")
-        return None
+        logger.warning(f"trimesh Fehler für '{abs_path}': {e}. Versuche Fallback.")
 
 # ---- Node -------------------------------------------------------------------
 

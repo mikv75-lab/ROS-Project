@@ -56,6 +56,17 @@ def generate_launch_description():
                 ],
                 output="screen",
             ),
+            
+            # 5) Robot & MoveIt (immer fest hier starten) – Tool aus tools.yaml
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(pkg_share, "launch", "robot.launch.py")
+                ),
+                launch_arguments={
+                    "tool": active_tool,
+                    # use_fake_hw-Schalter bleibt wie in robot_with_tool.launch.py definiert (default true)
+                }.items(),
+            ),
 
             # 2) ToolManager (verwaltet nur Tool-State)
             Node(
@@ -99,16 +110,7 @@ def generate_launch_description():
                 output="screen",
             ),
 
-            # 5) Robot & MoveIt (immer fest hier starten) – Tool aus tools.yaml
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(pkg_share, "launch", "robot.launch.py")
-                ),
-                launch_arguments={
-                    "tool": active_tool,
-                    # use_fake_hw-Schalter bleibt wie in robot_with_tool.launch.py definiert (default true)
-                }.items(),
-            ),
+            
         ]
 
         return nodes

@@ -13,9 +13,9 @@ from shape_msgs.msg import Mesh, MeshTriangle
 from builtin_interfaces.msg import Duration
 from ament_index_python.packages import get_package_share_directory
 
-from common.topics import TOPIC_TOOL_SET, TOPIC_TOOL_CURRENT
-from common.params import PARAM_TOOL_CONFIG
-from scene.utils import rpy_deg_to_quat
+from mecademic_bringup.common.topics import TOPIC_TOOL_SET, TOPIC_TOOL_CURRENT
+from mecademic_bringup.common.params import PARAM_TOOL_CONFIG
+from mecademic_bringup.scene.utils import rpy_deg_to_quat
 
 
 def resolve_package_url(url: str):
