@@ -8,13 +8,13 @@ scene_objects:
   - id: substrate_mount
     mesh: "../resource/substrate_mounts/substrate_mount_flat_240x240x50.stl"
     frame: "world"
-    position: [0.0, 0.4, 0.0]  # 40cm vor Roboter
+    position: [0.0, 0.25, 0.0]  # 40cm vor Roboter
     rpy_deg: [0.0, 0.0, 0.0]
 
   - id: scene
     mesh: ""
     frame: "substrate_mount"
-    position: [0.0, 0.0, 0.05]
+    position: [0.0, 0.0, 0.0]
     rpy_deg: [0.0, 0.0, 0.0]
 
   - id: substrate
