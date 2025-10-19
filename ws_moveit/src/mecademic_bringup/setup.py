@@ -1,51 +1,36 @@
-from setuptools import find_packages, setup
-import os
+from setuptools import setup, find_packages
 from glob import glob
+import os
 
-package_name = 'mecademic_bringup'
+package_name = "mecademic_bringup"
 
 setup(
     name=package_name,
-    version='0.1.0',
-    packages=find_packages(include=['mecademic_bringup', 'mecademic_bringup.*']),
+    version="0.1.0",
+    packages=find_packages(exclude=["test"]),
     data_files=[
-        # ROS2 package index
-        ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
-        # Package manifest
-        ('share/' + package_name, ['package.xml']),
-        # Install launch files
-        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
-        # Install configs
-        (os.path.join('share', package_name, 'config'),
-         glob('config/*.yaml') + glob('config/*.txt') + glob('config/*.rviz')),
-
-        # Install STL resources
-        (os.path.join('share', package_name, 'resource/environment'),
-         glob('resource/environment/*.stl')),
-        (os.path.join('share', package_name, 'resource/substrate_mounts'),
-         glob('resource/substrate_mounts/*.stl')),
-        (os.path.join('share', package_name, 'resource/substrates'),
-         glob('resource/substrates/*.stl')),
-        (os.path.join('share', package_name, 'resource/tools'),
-         glob('resource/tools/*.stl')),
-
-        # ✅ SprayPath Rezepte installieren
-        (os.path.join('share', package_name, 'spray_paths'),
-         glob('spray_paths/*.yaml')),
+        ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
+        ("share/" + package_name, ["package.xml"]),
+        ("share/" + package_name + "/launch", glob("launch/*.launch.py")),
+        ("share/" + package_name + "/config", glob("config/*.yaml") + glob("config/*.rviz")),
+        ("share/" + package_name + "/resource/environment", glob("resource/environment/*.stl")),
+        ("share/" + package_name + "/resource/substrate_mounts", glob("resource/substrate_mounts/*.stl")),
+        ("share/" + package_name + "/resource/substrates", glob("resource/substrates/*.stl")),
+        ("share/" + package_name + "/resource/tools", glob("resource/tools/*.stl")),
+        ("share/" + package_name + "/spray_paths", glob("spray_paths/*.yaml")),
     ],
-    install_requires=['setuptools'],
+    install_requires=["setuptools"],
     zip_safe=True,
-    maintainer='miklv',
-    maintainer_email='miklv75@googlemail.com',
-    description='Bringup package for Mecademic robot integration (scene, tools, workspace, spray paths)',
-    license='Apache-2.0',
-    tests_require=['pytest'],
+    maintainer="miklv",
+    maintainer_email="miklv75@googlemail.com",
+    description="Mecademic Robot Bringup: TF frames, scenes, tools, spray paths.",
+    license="Apache-2.0",
     entry_points={
-        'console_scripts': [
-            'tool_manager = mecademic_bringup.tool_manager:main',
-            'poses_manager = mecademic_bringup.poses_manager:main',
-            'scene_manager = mecademic_bringup.scene.scene_manager_node:main',
-            'spray_path_manager = mecademic_bringup.scene.spray_path_manager:main',
+        "console_scripts": [
+            "tool_manager = mecademic_bringup.tool_manager:main",
+            "poses_manager = mecademic_bringup.poses_manager:main",
+            "scene_manager = mecademic_bringup.scene.scene_manager_node:main",
+            "spray_path_manager = mecademic_bringup.scene.spray_path_manager:main",
         ],
     },
 )

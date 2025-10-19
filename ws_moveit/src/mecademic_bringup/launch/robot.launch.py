@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, GroupAction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from moveit_configs_utils import MoveItConfigsBuilder
-
 
 def generate_launch_description():
     use_fake_hw_arg = DeclareLaunchArgument("use_fake_hw", default_value="true")
@@ -19,7 +18,7 @@ def generate_launch_description():
         cfg_pkg = FindPackageShare("mecademic_moveit_config").perform(context)
         bringup_pkg = FindPackageShare("mecademic_bringup").perform(context)
 
-        # --- MoveIt Config ohne Tool ---
+        # MoveIt Config (ohne Tool – Tool übernimmt ToolManager)
         moveit_config = (
             MoveItConfigsBuilder("meca_500_r3", package_name="mecademic_moveit_config")
             .robot_description(
@@ -118,8 +117,8 @@ def generate_launch_description():
                 moveit_config.joint_limits,
             ],
         )
-        
-        # --- RViz mit MoveIt-Konfiguration ---
+
+        # RViz mit deiner Config (unverändert)
         rviz_config = os.path.join(bringup_pkg, "config", "bringup.rviz")
         rviz_node = Node(
             package="rviz2",
@@ -134,8 +133,8 @@ def generate_launch_description():
             ],
         )
 
-
-        return [
+        # Einheitlicher Rückgabestil
+        return [GroupAction([
             robot_state_pub,
             ros2_control,
             joint_state_broadcaster,
@@ -143,7 +142,7 @@ def generate_launch_description():
             move_group,
             servo_node,
             rviz_node,
-        ]
+        ])]
 
     return LaunchDescription([
         use_fake_hw_arg,
