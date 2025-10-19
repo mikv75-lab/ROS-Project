@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction, GroupAction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, GroupAction, TimerAction, ExecuteProcess
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -12,13 +12,17 @@ def generate_launch_description():
 
     def launch_setup(context):
         use_fake_hw = LaunchConfiguration("use_fake_hw").perform(context)
-        print(f"[launch_robot] Starting neutral robot (no tool), fake_hw = {use_fake_hw}")
 
         desc_pkg = FindPackageShare("mecademic_description").perform(context)
         cfg_pkg = FindPackageShare("mecademic_moveit_config").perform(context)
         bringup_pkg = FindPackageShare("mecademic_bringup").perform(context)
 
-        # MoveIt Config (ohne Tool – Tool übernimmt ToolManager)
+        # ✅ Lockfile Cleanup FIX
+        cleanup_lock = ExecuteProcess(
+            cmd=["bash", "-c", "rm -f /tmp/ros2-control-controller-spawner.lock"],
+            shell=True
+        )
+
         moveit_config = (
             MoveItConfigsBuilder("meca_500_r3", package_name="mecademic_moveit_config")
             .robot_description(
@@ -45,7 +49,6 @@ def generate_launch_description():
             .to_moveit_configs()
         )
 
-        # --- Nodes ---
         robot_state_pub = Node(
             package="robot_state_publisher",
             executable="robot_state_publisher",
@@ -63,18 +66,25 @@ def generate_launch_description():
             output="screen",
         )
 
-        joint_state_broadcaster = Node(
-            package="controller_manager",
-            executable="spawner",
-            arguments=["joint_state_broadcaster"],
-            output="screen",
+        # ✅ FIX: Controller sequentiell starten
+        joint_state_broadcaster = TimerAction(
+            period=2.0,
+            actions=[Node(
+                package="controller_manager",
+                executable="spawner",
+                arguments=["joint_state_broadcaster"],
+                output="screen",
+            )]
         )
 
-        arm_controller = Node(
-            package="controller_manager",
-            executable="spawner",
-            arguments=["meca_arm_group_controller"],
-            output="screen",
+        arm_controller = TimerAction(
+            period=4.0,
+            actions=[Node(
+                package="controller_manager",
+                executable="spawner",
+                arguments=["meca_arm_group_controller"],
+                output="screen",
+            )]
         )
 
         move_group = Node(
@@ -118,14 +128,12 @@ def generate_launch_description():
             ],
         )
 
-        # RViz mit deiner Config (unverändert)
-        rviz_config = os.path.join(bringup_pkg, "config", "bringup.rviz")
         rviz_node = Node(
             package="rviz2",
             executable="rviz2",
             name="moveit_rviz",
             output="screen",
-            arguments=["-d", rviz_config],
+            arguments=["-d", os.path.join(bringup_pkg, "config", "bringup.rviz")],
             parameters=[
                 moveit_config.robot_description,
                 moveit_config.robot_description_semantic,
@@ -133,8 +141,8 @@ def generate_launch_description():
             ],
         )
 
-        # Einheitlicher Rückgabestil
         return [GroupAction([
+            cleanup_lock,  # ✅ Important
             robot_state_pub,
             ros2_control,
             joint_state_broadcaster,

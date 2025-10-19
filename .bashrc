@@ -81,7 +81,17 @@ fi
 # --- ROS2 + Workspace Umgebung laden ---
 source /opt/ros/rolling/setup.bash
 source ~/ws_moveit/install/setup.bash
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
-# --- MECAD..IC DEV ALIAS (dein Wunsch) ---
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE=""     # wichtig
+export RMW_FASTRTPS_USE_QOS_FROM_XML=0
+export ROS_DISABLE_SHARED_MEMORY=1           # <--- FIX
+export RMW_TRANSPORT_SHARED_MEMORY_ENABLED=0 # <--- FIX
+
+# --- Alias Build, Kill ---
 alias mecademic_colcon_build='cd ~/ws_moveit && clear && rm -rf build/mecademic_* install/mecademic_* log && colcon build --packages-select mecademic_description mecademic_moveit_config mecademic_bringup --cmake-clean-first && source install/setup.bash && ros2 launch mecademic_bringup bringup.launch.py'
+alias kill_ros="python3 ~/app/source/app/kill_all_ros.py && echo '✅ ROS beendet in ws_moveit'"
+
+cd ~/ws_moveit
+rm -rf build/ install/ log/
+rosdep install --from-paths src --ignore-src -r -y

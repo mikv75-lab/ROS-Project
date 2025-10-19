@@ -13,6 +13,7 @@ from mecademic_bringup.common.topics import TOPIC_TOOL_SET, TOPIC_TOOL_CURRENT
 from mecademic_bringup.common.params import PARAM_TOOL_CONFIG
 from mecademic_bringup.utils import rpy_deg_to_quat
 import trimesh
+from moveit_msgs.srv import GetPlanningScene
 
 ATTACHED_OBJ_ID = "active_tool_mesh"
 TCP_FRAME = "tcp"
@@ -42,8 +43,11 @@ class ToolManager(Node):
         self.current_has_mesh = False
         self.first_publish_done = False
 
-        # ✅ Timer MUSS VOR apply_tool existieren
+        # ✅ Timer für Publish Retry
         self.timer = self.create_timer(1.0, self._refresh)
+
+        # Service Client für Scene-Check
+        self.scene_client = self.create_client(GetPlanningScene, "/get_planning_scene")
 
         # Tool initial anwenden
         self._apply_tool(self.current_tool, init=True)
@@ -123,21 +127,28 @@ class ToolManager(Node):
         self.first_publish_done = False
         self.timer.reset()
 
+    def _object_in_scene(self):
+        if not self.scene_client.wait_for_service(timeout_sec=0.2):
+            return False
+        req = GetPlanningScene.Request()
+        req.components.components = req.components.WORLD_OBJECT_NAMES
+        future = self.scene_client.call_async(req)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=0.2)
+        if not future.result():
+            return False
+        return any(o.id == ATTACHED_OBJ_ID for o in future.result().scene.world.collision_objects)
+
     def _refresh(self):
         if self.first_publish_done:
             return
-        try:
-            tool = self.tools.get(self.current_tool, {})
-            self._publish_tcp(self.mount_frame, tool.get("tcp_offset", [0, 0, 0]), tool.get("tcp_rpy", [0, 0, 0]))
-            self.attached_pub.publish(self._msg_detach())
-            if self.current_has_mesh:
-                mesh = self._load_mesh(self._resolve_mesh(tool["mesh"]))
-                self.attached_pub.publish(self._msg_attach(mesh))
-            self.get_logger().info("✅ Tool erfolgreich veröffentlicht – Timer gestoppt.")
+
+        if self._object_in_scene():
+            self.get_logger().info("✅ Tool ist im PlanningScene – Timer gestoppt.")
             self.first_publish_done = True
             self.timer.cancel()
-        except Exception as e:
-            self.get_logger().warn(f"Warte auf TF/MoveIt... {e}")
+            return
+        else:
+            self.get_logger().warning("⏳ Tool noch nicht im PlanningScene – retry...")
 
     def on_tool_change(self, msg):
         tool = msg.data.strip()

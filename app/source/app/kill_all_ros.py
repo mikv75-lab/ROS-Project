@@ -25,27 +25,52 @@ def kill_all_ros(extra_patterns: Iterable[str] = ()) -> None:
     Erst sanft (TERM/INT), dann hart (KILL).
     """
     patterns = [
-        "ros2 launch",
-        "ros2 daemon",
-        "move_group",
-        "ros2_control_node",
-        "joint_state_broadcaster",
-        "joint_trajectory_controller",
-        "robot_state_publisher",
-        "static_transform_publisher",
+        # ROS2 Core & Launch
+        "ros2 launch", "ros2 daemon", "ros2cli", "ros2 run",
+        "ros2_control_node", "controller_manager",
+        "spawner", "spawner_joint_state_broadcaster", "spawner_meca_arm_group_controller",
+
+        # MoveIt
+        "move_group", "moveit_servo", "servo_node",
+        "moveit_ros", "trajectory_execution",
+
+        # TF & Robot Description
+        "static_transform_publisher", "robot_state_publisher",
+
+        # Visualization
         "rviz2",
-        "servo_node",
+
+        # Nodes aus deinem Projekt
+        "mecademic_bringup", "scene_manager", "poses_manager",
+        "tool_manager", "spray_path_manager",
+
+        # Joint Controllers
+        "joint_state_broadcaster", "joint_trajectory_controller",
+        "meca_arm_group_controller",
+
+        # Gazebo/Ignition
+        "gzserver", "gzclient", "ign gazebo", "ignition.gz",
+
+        # Warehouse / MongoDB (MoveIt Memory)
         "warehouse_ros", "mongodb_server",
-        "gzserver", "gzclient", "ign gazebo",
-        "spawn_platform", "spawn_mesh",
-        "tool_manager", "poses_manager", "workpiece_manager",
-        "mecademic_bringup",
-        "rosout",
-        # häufige Python-Nodes
-        "python3 .* ros/bridge/ui_bridge.py",
-        "python3 .* ros_service.py",
+
+        # Python ROS Nodes
+        "python3 .*ros", "python3 .*node",
+
+        # DDS Kommunikationsschichten
+        "rmw_fastrtps", "rmw_cyclonedds", "fastdds", "microxrcedds",
+
+        # ROS Utility Prozesse
+        "rosout", "parameter_server", "topic_monitor",
+
+        # Debugging / Rosbridge
+        "rosbridge", "websocket", "foxglove",
+
+        # Dein Framework (Sicherheit)
+        "bringup", "launch.py", "meca_", "mecademic", "workspace"
     ]
     patterns.extend(list(extra_patterns))
+
 
     print("[kill] sending TERM/INT …", flush=True)
     _pkill("TERM", patterns)

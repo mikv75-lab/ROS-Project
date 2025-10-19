@@ -105,8 +105,8 @@ def generate_launch_description():
         delayed_start = TimerAction(
             period=10.0,
             actions=[
-                scene_manager,
-                tool_manager,
+                tool_manager,      # ✅ Tool zuerst laden
+                scene_manager,     # ✅ dann Szene veröffentlichen
                 poses_manager,
                 spray_path_manager,
             ]

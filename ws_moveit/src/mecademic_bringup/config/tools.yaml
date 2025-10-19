@@ -6,14 +6,18 @@ tools:
     mount_frame: "tool_mount"
     tcp_offset: [0.0, 0.0, 0.0]
     tcp_rpy:    [0.0, 0.0, 0.0]
-    mesh: ""           # kein Mesh
+    mesh: ""
+    mesh_offset: [0.0, 0.0, 0.0]
+    mesh_rpy:    [0.0, 0.0, 0.0]
 
   spray_nozzle_01:
     description: "Spray Nozzle 01"
     mount_frame: "tool_mount"
-    tcp_offset: [0.0, 0.0, 0.0]   # Beispiel
+    tcp_offset: [0.0, 0.0, 0.0]
     tcp_rpy:    [0.0, 90.0, 0.0]
     mesh: "package://mecademic_bringup/resource/tools/spray_nozzle_01.stl"
+    mesh_offset: [0.0, 0.05, 0.02]   # << z.B. korrigieren
+    mesh_rpy:    [0.0, 0.0, 0.0]
 
   spray_nozzle_02:
     description: "Spray Nozzle 02"
@@ -21,3 +25,5 @@ tools:
     tcp_offset: [0.0, 0.0, 0.0]
     tcp_rpy:    [0.0, 0.0, 0.0]
     mesh: "package://mecademic_bringup/resource/tools/spray_nozzle_02.stl"
+    mesh_offset: [0.0, 0.0, 0.0]
+    mesh_rpy:    [0.0, 0.0, 0.0]
