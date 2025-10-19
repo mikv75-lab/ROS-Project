@@ -92,6 +92,3 @@ export RMW_TRANSPORT_SHARED_MEMORY_ENABLED=0 # <--- FIX
 alias mecademic_colcon_build='cd ~/ws_moveit && clear && rm -rf build/mecademic_* install/mecademic_* log && colcon build --packages-select mecademic_description mecademic_moveit_config mecademic_bringup --cmake-clean-first && source install/setup.bash && ros2 launch mecademic_bringup bringup.launch.py'
 alias kill_ros="python3 ~/app/source/app/kill_all_ros.py && echo '✅ ROS beendet in ws_moveit'"
 
-cd ~/ws_moveit
-rm -rf build/ install/ log/
-rosdep install --from-paths src --ignore-src -r -y
