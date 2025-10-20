@@ -18,51 +18,42 @@ import trimesh
 
 ATTACHED_OBJ_ID = "active_tool_mesh"
 TCP_FRAME = "tcp"
-
-RETRY_PERIOD_SEC = 0.5
-RETRY_TIMEOUT_SEC = 30.0
-SCENE_WAIT_TIMEOUT = 30.0  # ✅ NEU: Wartezeit bevor Tool gestartet wird
-
+SCENE_WAIT_TIMEOUT = 30.0  # max. warten bis PlanningScene-Dienst da ist
 
 class ToolManager(Node):
     def __init__(self):
         super().__init__("tool_manager")
 
+        # Publisher / Subscriptions
         self.static_tf = StaticTransformBroadcaster(self)
         self.attached_pub = self.create_publisher(AttachedCollisionObject, "/attached_collision_object", 10)
         self.pub_current = self.create_publisher(String, TOPIC_TOOL_CURRENT, 10)
         self.create_subscription(String, TOPIC_TOOL_SET, self.on_tool_change, 10)
 
-        self.ps_client = self.create_client(GetPlanningScene, "/get_planning_scene")
-
-        self._retry_timer = None
-        self._retry_deadline = 0.0
-        self._last_mount_frame = "tool_mount"
-
-        config_path = os.path.join(get_package_share_directory("mecademic_bringup"), "config", "tools.yaml")
-        self.declare_parameter(PARAM_TOOL_CONFIG, config_path)
+        # Config laden
+        default_cfg = os.path.join(get_package_share_directory("mecademic_bringup"), "config", "tools.yaml")
+        self.declare_parameter(PARAM_TOOL_CONFIG, default_cfg)
         self.tools_data = self._load_yaml(self.get_parameter(PARAM_TOOL_CONFIG).value)
         self.tools = self.tools_data.get("tools", {})
         self.current_tool = self.tools_data.get("active_tool", "none")
+
         self.mesh_cache = {}
 
-        # ✅ NEU: Warten bis PlanningScene bereit
-        self.scene_wait_start = time.time()
-        self.scene_wait_timer = self.create_timer(1.0, self._wait_for_scene_ready)
+        # MoveIt Scene Service
+        self.ps_client = self.create_client(GetPlanningScene, "/get_planning_scene")
 
-        self.get_logger().info("⏳ Warte auf MoveIt PlanningScene bevor Tool geladen wird...")
+        # State
+        self._scene_ready = False
+        self._armed_to_publish = False  # wird auf True gesetzt, sobald Scene ready ist (nach 3s Pause)
+        self._publish_done = False      # einmalig senden, danach nie wieder automatisch
 
-    # ✅ NEU: warte bis MoveIt bereit ist
-    def _wait_for_scene_ready(self):
-        if self.ps_client.wait_for_service(timeout_sec=1.0):
-            self.scene_wait_timer.cancel()
-            self.get_logger().info("✅ MoveIt PlanningScene bereit – Tool wird geladen!")
-            self.apply_tool(self.current_tool)
-        elif time.time() - self.scene_wait_start > SCENE_WAIT_TIMEOUT:
-            self.scene_wait_timer.cancel()
-            self.get_logger().warning("⚠️ MoveIt nicht verfügbar – starte ToolManager trotzdem.")
-            self.apply_tool(self.current_tool)
+        # Timer: auf Scene warten
+        self._scene_wait_start = time.time()
+        self._scene_wait_timer = self.create_timer(0.5, self._check_scene_ready)
 
+        self.get_logger().info("⏳ Warte auf MoveIt PlanningScene – nichts wird davor publiziert.")
+
+    # ---------- Hilfsfunktionen ----------
     def _load_yaml(self, path):
         with open(path, "r") as f:
             return yaml.safe_load(f) or {}
@@ -73,9 +64,21 @@ class ToolManager(Node):
             return os.path.join(get_package_share_directory(pkg), rel)
         return uri
 
-    def publish_tcp(self, parent, xyz, rpy):
-        # Stempel + Liste an StaticTransformBroadcaster -> stabil in RViz
-        qx, qy, qz, qw = rpy_deg_to_quat(*rpy)
+    def load_mesh(self, mesh_path):
+        if mesh_path in self.mesh_cache:
+            return self.mesh_cache[mesh_path]
+        tri = trimesh.load(mesh_path)
+        tri.apply_scale(0.001)
+        mesh = Mesh()
+        for v in tri.vertices:
+            mesh.vertices.append(Point(x=float(v[0]), y=float(v[1]), z=float(v[2])))
+        for f in tri.faces:
+            mesh.triangles.append(MeshTriangle(vertex_indices=[int(f[0]), int(f[1]), int(f[2])]))
+        self.mesh_cache[mesh_path] = mesh
+        return mesh
+
+    def publish_tcp_once(self, parent, xyz, rpy_deg):
+        qx, qy, qz, qw = rpy_deg_to_quat(*rpy_deg)
         tf = TransformStamped()
         tf.header.stamp = self.get_clock().now().to_msg()
         tf.header.frame_id = parent
@@ -87,155 +90,136 @@ class ToolManager(Node):
         tf.transform.rotation.y = qy
         tf.transform.rotation.z = qz
         tf.transform.rotation.w = qw
-        # als Liste senden (API-kompatibel)
         self.static_tf.sendTransform([tf])
+        self.get_logger().info(f"🔹 TCP gesetzt @ {parent} -> xyz={xyz}, rpy_deg={rpy_deg}")
 
-
-    def load_mesh(self, mesh_path):
-        if mesh_path in self.mesh_cache:
-            return self.mesh_cache[mesh_path]
-        tri = trimesh.load(mesh_path)
-        tri.apply_scale(0.001)
-        mesh = Mesh()
-        for v in tri.vertices:
-            mesh.vertices.append(Point(x=v[0], y=v[1], z=v[2]))
-        for f in tri.faces:
-            mesh.triangles.append(MeshTriangle(vertex_indices=list(f)))
-        self.mesh_cache[mesh_path] = mesh
-        return mesh
-
-    def msg_attach(self, mount_frame, mesh, mesh_offset, mesh_rpy):
-        # Pose relativ zu 'mount_frame'
+    def make_attach_msg(self, mount_frame, mesh, mesh_offset, mesh_rpy_deg):
         pose = Pose()
         pose.position.x = float(mesh_offset[0])
         pose.position.y = float(mesh_offset[1])
         pose.position.z = float(mesh_offset[2])
-
-        # ⚠️ wichtig: mesh_rpy sind in Grad -> Quaternion konvertieren
-        qx, qy, qz, qw = rpy_deg_to_quat(*mesh_rpy)
+        qx, qy, qz, qw = rpy_deg_to_quat(*mesh_rpy_deg)
         pose.orientation.x = qx
         pose.orientation.y = qy
         pose.orientation.z = qz
         pose.orientation.w = qw
 
         msg = AttachedCollisionObject()
-        msg.link_name = mount_frame  # attach relativ zum Toolflansch
+        msg.link_name = mount_frame
         msg.object.id = ATTACHED_OBJ_ID
         msg.object.header.frame_id = mount_frame
         msg.object.meshes = [mesh]
         msg.object.mesh_poses = [pose]
         msg.object.operation = CollisionObject.ADD
-        msg.object.pose = pose 
-        # DEBUG Ausgabe
-        self.get_logger().info(
-            f"Mesh attach @ {mount_frame}: offset={mesh_offset}, rpy={mesh_rpy}° → quat=({qx:.3f},{qy:.3f},{qz:.3f},{qw:.3f})"
-        )
         return msg
 
-    def msg_detach(self, mount_frame):
-        msg = AttachedCollisionObject()
-        msg.link_name = mount_frame
-        msg.object.id = ATTACHED_OBJ_ID
-        msg.object.operation = CollisionObject.REMOVE
-        return msg
-
-    def _start_retry_timer(self):
-        if self._retry_timer is not None:
-            self._retry_timer.cancel()
-            self._retry_timer = None
-        self._retry_deadline = time.time() + RETRY_TIMEOUT_SEC
-        self._retry_timer = self.create_timer(RETRY_PERIOD_SEC, self._check_tool_attached)
-
-    def _stop_retry_timer(self):
-        if self._retry_timer is not None:
-            self._retry_timer.cancel()
-            self._retry_timer = None
-
-    def _check_tool_attached(self):
-        if time.time() > self._retry_deadline:
-            self._stop_retry_timer()
-            self.get_logger().error("❌ Timeout – Tool wurde nicht in MoveIt erkannt.")
+    # ---------- Scene-Wait-Logik ----------
+    def _check_scene_ready(self):
+        # Timeout?
+        if (time.time() - self._scene_wait_start) > SCENE_WAIT_TIMEOUT:
+            self.get_logger().warning("⚠️ PlanningScene-Dienst nicht rechtzeitig da – sende trotzdem in 3s einmalig.")
+            self._arm_and_delay_publish()
             return
 
+        if not self.ps_client.wait_for_service(timeout_sec=0.2):
+            return  # weiter warten, NICHTS publizieren
+
+        # Einmaliger Service-Call (nur zur Anwesenheitsprüfung)
         req = GetPlanningScene.Request()
-        req.components.components = (
-            PlanningSceneComponents.ROBOT_STATE_ATTACHED_OBJECTS |
-            PlanningSceneComponents.WORLD_OBJECT_NAMES
-        )
+        req.components.components = PlanningSceneComponents.SCENE_SETTINGS
         future = self.ps_client.call_async(req)
+        future.add_done_callback(self._on_scene_service_ok)
 
-        def _done(_):
+        # Warten stoppen, bis Callback entscheidet
+        self._scene_wait_timer.cancel()
+
+    def _on_scene_service_ok(self, future):
+        try:
+            _ = future.result()
+            self.get_logger().info("✅ PlanningScene erreichbar – sende in 3s einmalig TCP + Tool.")
+        except Exception as e:
+            self.get_logger().warning(f"⚠️ PlanningScene-Check fehlgeschlagen ({e}) – sende trotzdem in 3s einmalig.")
+        finally:
+            self._arm_and_delay_publish()
+
+    def _arm_and_delay_publish(self):
+        # 3s Verzögerung, dann EINMALIG publish
+        if self._armed_to_publish or self._publish_done:
+            return
+        self._armed_to_publish = True
+        def _do_once():
             try:
-                res = future.result()
-            except Exception as e:
-                self.get_logger().error(f"PlanningScene Fehler: {e}")
-                return
+                self._publish_once()
+            finally:
+                delay_timer.cancel()
+        delay_timer = self.create_timer(3.0, _do_once)
 
-            attached_ids = [a.object.id for a in res.scene.robot_state.attached_collision_objects]
-            if ATTACHED_OBJ_ID in attached_ids:
-                self.get_logger().info("✅ Tool erfolgreich in MoveIt attached!")
-                self._stop_retry_timer()
-            else:
-                self.get_logger().warning("⏳ Tool noch nicht übernommen – retry...")
+    # ---------- Einmaliges Publizieren ----------
+    def _publish_once(self):
+        if self._publish_done:
+            return
+        self._publish_done = True
 
-        future.add_done_callback(_done)
-
-    def apply_tool(self, name):
+        name = self.current_tool
         tool = self.tools.get(name, {})
         mount_frame = tool.get("mount_frame", "tool_mount")
 
-        # 1) Vorheriges Tool entfernen
-        self.attached_pub.publish(self.msg_detach(mount_frame))
-
-        # 2) TCP & Mesh-Parameter lesen
+        # TCP
         tcp_xyz = tool.get("tcp_offset", [0.0, 0.0, 0.0])
         tcp_rpy = tool.get("tcp_rpy",   [0.0, 0.0, 0.0])
+        self.publish_tcp_once(mount_frame, tcp_xyz, tcp_rpy)
+
+        # Mesh (optional)
         mesh_uri = tool.get("mesh", "")
-        mesh_offset = tool.get("mesh_offset", [0.0, 0.0, 0.0])
-        mesh_rpy    = tool.get("mesh_rpy",    [0.0, 0.0, 0.0])
-
-        # 3) TCP leicht verzögert senden (sichert, dass RViz/TF-Listener dran sind)
-        def _send_tcp_once():
-            try:
-                self.publish_tcp(mount_frame, tcp_xyz, tcp_rpy)
-                self.get_logger().info(f"TCP @ {mount_frame} -> xyz={tcp_xyz}, rpy_deg={tcp_rpy}")
-            finally:
-                tcp_timer.cancel()
-        tcp_timer = self.create_timer(0.5, _send_tcp_once)
-
-        # 4) Mesh vorbereiten & ebenfalls verzögert attachen
         if mesh_uri:
             mesh_path = self.resolve_mesh_path(mesh_uri)
-            mesh = self.load_mesh(mesh_path)
-            attach_msg = self.msg_attach(mount_frame, mesh, mesh_offset, mesh_rpy)
-
-            def _send_attach_once():
-                try:
-                    self.attached_pub.publish(attach_msg)
-                    self.get_logger().info(f"📦 AttachedCollisionObject publiziert (mesh='{mesh_path}', offset={mesh_offset}, rpy_deg={mesh_rpy})")
-                finally:
-                    attach_timer.cancel()
-            attach_timer = self.create_timer(1.0, _send_attach_once)
+            try:
+                mesh = self.load_mesh(mesh_path)
+                attach_msg = self.make_attach_msg(
+                    mount_frame,
+                    mesh,
+                    tool.get("mesh_offset", [0.0, 0.0, 0.0]),
+                    tool.get("mesh_rpy",    [0.0, 0.0, 0.0]),
+                )
+                self.attached_pub.publish(attach_msg)
+                self.get_logger().info(f"📦 Tool-Mesh attached (mesh='{mesh_path}')")
+            except Exception as e:
+                self.get_logger().error(f"❌ Mesh laden/attachen fehlgeschlagen: {e}")
         else:
-            self.get_logger().info("Kein Mesh konfiguriert (mesh: \"\")")
+            self.get_logger().info("ℹ️ Kein Mesh konfiguriert – nur TCP veröffentlicht.")
 
-        # 5) Aktives Tool veröffentlichen & Retry-Check starten
+        # Aktives Tool bekanntgeben (informativ)
         self.pub_current.publish(String(data=name))
-        self._start_retry_timer()
+        self.get_logger().info("✅ ToolManager: einmalige Publikation abgeschlossen.")
 
-    def on_tool_change(self, msg):
-        tool = msg.data.strip()
-        if tool in self.tools:
-            self.get_logger().info(f"🔧 Toolwechsel: {tool}")
-            self.apply_tool(tool)
-        else:
-            self.get_logger().error(f"❌ Unbekanntes Tool: {tool}")
+    # ---------- Toolwechsel (manuell) ----------
+    def on_tool_change(self, msg: String):
+        # Toolwechsel sind erlaubt – aber nur EINMALIGE Publikation erneut durchführen
+        name = msg.data.strip()
+        if name not in self.tools:
+            self.get_logger().error(f"❌ Unbekanntes Tool: {name}")
+            return
+        self.current_tool = name
+        self.get_logger().info(f"🔧 Toolwechsel zu: {name}")
+
+        # Nur wenn die erste Publikation bereits erfolgt ist, sofort einmalig wiederholen;
+        # wenn noch nicht publiziert wurde (Scene noch nicht ready), bleiben wir im Wartezustand.
+        if self._publish_done:
+            # "Einmalig" für neues Tool erneut
+            self._publish_done = False
+            self._armed_to_publish = True
+            # kleine Verzögerung (0.5s) damit RViz/MoveIt sauber updaten kann
+            def _repub():
+                try:
+                    self._publish_once()
+                finally:
+                    timer.cancel()
+            timer = self.create_timer(0.5, _repub)
 
 def main():
     rclpy.init()
     rclpy.spin(ToolManager())
     rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()

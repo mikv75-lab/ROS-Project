@@ -1,85 +1,121 @@
 #!/usr/bin/env python3
-# make_cage_closed_1m.py
-# erzeugt: resource/stl/environment/cage_closed_1m.stl
 import os
 import numpy as np
 import trimesh
 
-# ---- Parameter (mm) ----
-L = 500.0       # Kantenlänge außen
-T = 30.0         # Balkenquerschnitt (quadratisch T x T)
-Z0 = 0.0         # Boden bei z=0 (Ursprung in der Bodenmitte)
-Z1 = Z0 + L
+# ==============================
+# ✅ KONFIGURATION
+# ==============================
+L = 500.0            # Außenmaß (mm)
+T = 30.0             # Balkendicke (mm)
+WALL_THICKNESS = 5.0 # Wanddicke (mm)
 
-# Hilfen
+# ✅ Wände aktivieren/deaktivieren
+ADD_FLOOR = True
+ADD_CEILING = False
+ADD_WALL_FRONT = False   # +Y
+ADD_WALL_BACK = True    # -Y
+ADD_WALL_LEFT = False    # -X
+ADD_WALL_RIGHT = False   # +X
+
+# ==============================
+# ✅ Hilfsfunktionen
+# ==============================
 def edge_beam(p0, p1, thickness=T):
-    """
-    Erzeugt einen quaderförmigen Balken (box) entlang der Kante p0->p1.
-    p0, p1: 3D-Punkte (mm)
-    thickness: Balkenquerschnitt (mm)
-    """
     p0 = np.asarray(p0, float)
     p1 = np.asarray(p1, float)
     center = (p0 + p1) / 2.0
     vec = p1 - p0
     length = np.linalg.norm(vec)
-    if length < 1e-6:
-        raise ValueError("Edge length ~ 0")
-    # Lokale Box: Achsen-aligned entlang X -> (length, T, T)
-    box = trimesh.creation.box(extents=[length, thickness, thickness])
-    # Ausrichtung: rotiere X-Achse auf vec
     x_axis = np.array([1.0, 0.0, 0.0])
     v = vec / length
-    # Rotationsmatrix (align x_axis -> v)
     c = np.dot(x_axis, v)
     if c > 0.999999:
         R = np.eye(3)
     elif c < -0.999999:
-        # 180° um beliebige Achse senkrecht zu x_axis (z.B. y)
-        R = trimesh.transformations.rotation_matrix(np.pi, [0,1,0])[:3,:3]
+        R = trimesh.transformations.rotation_matrix(np.pi, [0, 1, 0])[:3, :3]
     else:
         axis = np.cross(x_axis, v)
         angle = np.arccos(c)
-        R = trimesh.transformations.rotation_matrix(angle, axis)[:3,:3]
+        R = trimesh.transformations.rotation_matrix(angle, axis)[:3, :3]
     Tm = np.eye(4)
-    Tm[:3,:3] = R
+    Tm[:3, :3] = R
     Tm[:3, 3] = center
+    box = trimesh.creation.box(extents=[length, thickness, thickness])
     box.apply_transform(Tm)
     return box
 
-# ---- Kanten-Endpunkte (Ursprung: Bodenmittelpunkt) ----
-# X, Y von -L/2 .. +L/2, Z von 0 .. L
+# ==============================
+# ✅ Erstellung Cage
+# ==============================
 h = L * 0.5
-xs = (-h, h)
-ys = (-h, h)
-z0, z1 = Z0, Z1
+Z0 = 0.0
+Z1 = L
 
-edges = []
+edges = [
+    # Untere Kanten
+    ((-h, -h, Z0), ( h, -h, Z0)),
+    (( h, -h, Z0), ( h,  h, Z0)),
+    (( h,  h, Z0), (-h,  h, Z0)),
+    ((-h,  h, Z0), (-h, -h, Z0)),
+    # Obere Kanten
+    ((-h, -h, Z1), ( h, -h, Z1)),
+    (( h, -h, Z1), ( h,  h, Z1)),
+    (( h,  h, Z1), (-h,  h, Z1)),
+    ((-h,  h, Z1), (-h, -h, Z1)),
+    # Vertikal
+    ((-h, -h, Z0), (-h, -h, Z1)),
+    (( h, -h, Z0), ( h, -h, Z1)),
+    (( h,  h, Z0), ( h,  h, Z1)),
+    ((-h,  h, Z0), (-h,  h, Z1)),
+]
 
-# 4 Boden-Kanten (Z=z0)
-edges += [((-h, -h, z0), ( h, -h, z0))]
-edges += [(( h, -h, z0), ( h,  h, z0))]
-edges += [(( h,  h, z0), (-h,  h, z0))]
-edges += [((-h,  h, z0), (-h, -h, z0))]
+parts = [edge_beam(a, b) for a, b in edges]
 
-# 4 Top-Kanten (Z=z1)
-edges += [((-h, -h, z1), ( h, -h, z1))]
-edges += [(( h, -h, z1), ( h,  h, z1))]
-edges += [(( h,  h, z1), (-h,  h, z1))]
-edges += [((-h,  h, z1), (-h, -h, z1))]
+# ==============================
+# ✅ Wände hinzufügen (optional)
+# ==============================
+# Boden
+if ADD_FLOOR:
+    floor = trimesh.creation.box([L, L, WALL_THICKNESS])
+    floor.apply_translation([0, 0, Z0 - WALL_THICKNESS / 2])
+    parts.append(floor)
 
-# 4 Vertikale Kanten
-edges += [((-h, -h, z0), (-h, -h, z1))]
-edges += [(( h, -h, z0), ( h, -h, z1))]
-edges += [(( h,  h, z0), ( h,  h, z1))]
-edges += [((-h,  h, z0), (-h,  h, z1))]
+# Decke
+if ADD_CEILING:
+    ceil = trimesh.creation.box([L, L, WALL_THICKNESS])
+    ceil.apply_translation([0, 0, Z1 + WALL_THICKNESS / 2])
+    parts.append(ceil)
 
-# ---- Beams zusammensetzen ----
-beams = [edge_beam(a, b, T) for (a, b) in edges]
-cage = trimesh.util.concatenate(beams)
+# Rückwand Y-
+if ADD_WALL_BACK:
+    back = trimesh.creation.box([L, WALL_THICKNESS, L])
+    back.apply_translation([0, -h - WALL_THICKNESS / 2, Z0 + L / 2])
+    parts.append(back)
 
-# ---- Export ----
+# Frontwand Y+
+if ADD_WALL_FRONT:
+    front = trimesh.creation.box([L, WALL_THICKNESS, L])
+    front.apply_translation([0, h + WALL_THICKNESS / 2, Z0 + L / 2])
+    parts.append(front)
+
+# Linke Wand X-
+if ADD_WALL_LEFT:
+    left = trimesh.creation.box([WALL_THICKNESS, L, L])
+    left.apply_translation([-h - WALL_THICKNESS / 2, 0, Z0 + L / 2])
+    parts.append(left)
+
+# Rechte Wand X+
+if ADD_WALL_RIGHT:
+    right = trimesh.creation.box([WALL_THICKNESS, L, L])
+    right.apply_translation([h + WALL_THICKNESS / 2, 0, Z0 + L / 2])
+    parts.append(right)
+
+# ==============================
+# ✅ Export
+# ==============================
+cage = trimesh.util.concatenate(parts)
 out_path = "resource/stl/environment/cage_closed_1m.stl"
 os.makedirs(os.path.dirname(out_path), exist_ok=True)
 cage.export(out_path)
-print(f"OK: {out_path} geschrieben. Ursprung ist Bodenmitte (0,0,0).")
+print(f"✅ Fertig: {out_path} geschrieben.")

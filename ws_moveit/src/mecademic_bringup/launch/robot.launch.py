@@ -133,14 +133,16 @@ def generate_launch_description():
             executable="rviz2",
             name="moveit_rviz",
             output="screen",
-            arguments=["-d", os.path.join(bringup_pkg, "config", "bringup.rviz")],
+            arguments=[
+                "-d", os.path.join(bringup_pkg, "config", "bringup.rviz"),
+                "--ros-args", "--log-level", "error"   # 👈 WARNINGS ausblenden
+            ],
             parameters=[
                 moveit_config.robot_description,
                 moveit_config.robot_description_semantic,
                 moveit_config.robot_description_kinematics,
             ],
         )
-
         return [GroupAction([
             cleanup_lock,  # ✅ Important
             robot_state_pub,

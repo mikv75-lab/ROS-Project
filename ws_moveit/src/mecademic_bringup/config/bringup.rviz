@@ -10,9 +10,11 @@ Panels:
         - /MotionPlanning1/Planning Request1
         - /MotionPlanning1/Planning Metrics1
         - /MotionPlanning1/Planned Path1
+        - /TF1
+        - /TF1/Frames1
         - /RobotModel1
         - /MarkerArray1
-      Splitter Ratio: 0.5
+      Splitter Ratio: 0.5014492869377136
     Tree Height: 294
   - Class: rviz_common/Help
     Name: Help
@@ -149,7 +151,7 @@ Visualization Manager:
       Robot Description: robot_description
       Scene Geometry:
         Scene Alpha: 1
-        Scene Color: 50; 230; 50
+        Scene Color: 211; 211; 211
         Scene Display Time: 0.009999999776482582
         Show Scene Geometry: true
         Voxel Coloring: Z-Axis
@@ -216,43 +218,43 @@ Visualization Manager:
       Filter (whitelist): ""
       Frame Timeout: 15
       Frames:
-        All Enabled: true
+        All Enabled: false
         cage:
-          Value: true
+          Value: false
         home:
-          Value: true
+          Value: false
         meca_axis_1_link:
-          Value: true
+          Value: false
         meca_axis_2_link:
-          Value: true
+          Value: false
         meca_axis_3_link:
-          Value: true
+          Value: false
         meca_axis_4_link:
-          Value: true
+          Value: false
         meca_axis_5_link:
-          Value: true
+          Value: false
         meca_axis_6_link:
-          Value: true
+          Value: false
         meca_base_link:
-          Value: true
+          Value: false
         meca_mount:
-          Value: true
+          Value: false
         predispense:
-          Value: true
+          Value: false
         scene:
-          Value: true
+          Value: false
         service:
-          Value: true
+          Value: false
         substrate:
-          Value: true
+          Value: false
         substrate_mount:
-          Value: true
+          Value: false
         tcp:
           Value: true
         tool_mount:
           Value: true
         world:
-          Value: true
+          Value: false
       Marker Scale: 1
       Name: TF
       Show Arrows: true
@@ -383,7 +385,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.6562999486923218
+      Distance: 1.7760660648345947
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -398,10 +400,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5899999737739563
+      Pitch: -0.21000005304813385
       Target Frame: meca_mount
       Value: Orbit (rviz_default_plugins)
-      Yaw: 0.1869998425245285
+      Yaw: 1.7420018911361694
     Saved: ~
 Window Geometry:
   Displays:

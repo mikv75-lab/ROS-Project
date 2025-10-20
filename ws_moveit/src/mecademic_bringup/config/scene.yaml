@@ -18,7 +18,7 @@ scene_objects:
   - id: scene
     mesh: ""
     frame: "substrate_mount"
-    position: [0.0, 0.0, 0.0]
+    position: [0.0, 0.0, 0.05]
     rpy_deg: [0.0, 0.0, 0.0]
     mesh_offset: [0.0, 0.0, 0.0]
     mesh_rpy:    [0.0, 0.0, 0.0]
@@ -27,7 +27,7 @@ scene_objects:
     mesh: "../resource/substrates/wafer_d200_h2.stl"
     optional: true
     frame: "scene"
-    position: [0.0, 0.0, 0.05]
+    position: [0.0, 0.0, 0.0]
     rpy_deg: [0.0, 0.0, 0.0]
     mesh_offset: [0.0, 0.0, 0.0]   # z.B. später Höhe anpassen?
     mesh_rpy:    [0.0, 0.0, 0.0]
