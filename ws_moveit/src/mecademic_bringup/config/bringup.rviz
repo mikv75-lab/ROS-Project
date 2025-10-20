@@ -4,9 +4,13 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
+        - /MotionPlanning1
+        - /MotionPlanning1/Scene Geometry1
+        - /MotionPlanning1/Scene Robot1
+        - /MotionPlanning1/Planning Request1
+        - /MotionPlanning1/Planning Metrics1
+        - /MotionPlanning1/Planned Path1
         - /RobotModel1
-        - /PlanningScene1
-        - /PlanningScene1/Scene Robot1
         - /MarkerArray1
       Splitter Ratio: 0.5
     Tree Height: 294
@@ -213,6 +217,10 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: true
+        cage:
+          Value: true
+        home:
+          Value: true
         meca_axis_1_link:
           Value: true
         meca_axis_2_link:
@@ -229,13 +237,15 @@ Visualization Manager:
           Value: true
         meca_mount:
           Value: true
-        _home:
+        predispense:
           Value: true
-        pose_home:
+        scene:
           Value: true
-        pose_predispense:
+        service:
           Value: true
-        pose_service:
+        substrate:
+          Value: true
+        substrate_mount:
           Value: true
         tcp:
           Value: true
@@ -250,6 +260,10 @@ Visualization Manager:
       Show Names: false
       Tree:
         world:
+          cage:
+            {}
+          home:
+            {}
           meca_mount:
             meca_base_link:
               meca_axis_1_link:
@@ -261,6 +275,14 @@ Visualization Manager:
                           tool_mount:
                             tcp:
                               {}
+          predispense:
+            {}
+          service:
+            {}
+          substrate_mount:
+            scene:
+              substrate:
+                {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -332,74 +354,6 @@ Visualization Manager:
       Update Interval: 0
       Value: true
       Visual Enabled: true
-    - Class: moveit_rviz_plugin/PlanningScene
-      Enabled: true
-      Move Group Namespace: ""
-      Name: PlanningScene
-      Planning Scene Topic: /monitored_planning_scene
-      Robot Description: robot_description
-      Scene Geometry:
-        Scene Alpha: 0.8999999761581421
-        Scene Color: 50; 230; 50
-        Scene Display Time: 0.009999999776482582
-        Show Scene Geometry: true
-        Voxel Coloring: Z-Axis
-        Voxel Rendering: Occupied Voxels
-      Scene Robot:
-        Attached Body Color: 150; 50; 150
-        Links:
-          All Links Enabled: true
-          Expand Joint Details: false
-          Expand Link Details: false
-          Expand Tree: false
-          Link Tree Style: Links in Alphabetic Order
-          meca_axis_1_link:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          meca_axis_2_link:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          meca_axis_3_link:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          meca_axis_4_link:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          meca_axis_5_link:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          meca_axis_6_link:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          meca_base_link:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          meca_mount:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-          tool_mount:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-        Robot Alpha: 1
-        Show Robot Collision: false
-        Show Robot Visual: true
-      Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: MarkerArray
