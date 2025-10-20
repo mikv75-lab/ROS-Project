@@ -86,7 +86,13 @@ def generate_launch_description():
             executable="move_group",
             output="screen",
             parameters=[
-                moveit_config.to_dict(),
+                moveit_config.robot_description,
+                moveit_config.robot_description_semantic,
+                moveit_config.robot_description_kinematics,  # ✅ WICHTIG HINZUGEFÜGT
+                moveit_config.joint_limits,
+                moveit_config.planning_pipelines,
+                moveit_config.trajectory_execution,
+                moveit_config.planning_scene_monitor,
                 {"moveit_controller_manager": "moveit_ros_control_interface/Ros2ControlManager"},
             ],
         )
@@ -129,14 +135,17 @@ def generate_launch_description():
             output="screen",
             arguments=[
                 "-d", os.path.join(bringup_pkg, "config", "bringup.rviz"),
-                "--ros-args", "--log-level", "error"   # 👈 WARNINGS ausblenden
+                "--ros-args", "--log-level", "error"
             ],
             parameters=[
                 moveit_config.robot_description,
                 moveit_config.robot_description_semantic,
                 moveit_config.robot_description_kinematics,
+                moveit_config.joint_limits,              # ✅ wichtig!
+                moveit_config.planning_pipelines,        # ✅ wichtig!
             ],
         )
+        
         return [GroupAction([
             robot_state_pub,
             ros2_control,

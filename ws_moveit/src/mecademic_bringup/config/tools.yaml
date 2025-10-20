@@ -3,6 +3,7 @@ active_tool: "spray_nozzle_01"
 tools:
   none:
     description: "Kein Tool aktiv"
+    plugin: "none"
     mount_frame: "tool_mount"
     tcp_offset: [0.0, 0.0, 0.0]
     tcp_rpy:    [0.0, 0.0, 0.0]
@@ -12,6 +13,7 @@ tools:
 
   spray_nozzle_01:
     description: "Spray Nozzle 01"
+    plugin: "spray_nozzle_01"
     mount_frame: "tool_mount"
     tcp_offset: [0.086, 0.0, 0.04]
     tcp_rpy:    [90.0, 0.0, -90.0]
@@ -21,6 +23,7 @@ tools:
 
   spray_nozzle_02:
     description: "Spray Nozzle 02"
+    plugin: "spray_nozzle_02"
     mount_frame: "tool_mount"
     tcp_offset: [0.05, 0.0, 0.05]
     tcp_rpy:    [0.0, -90.0, 0.0]

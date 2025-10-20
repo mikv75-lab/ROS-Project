@@ -27,7 +27,7 @@ setup(
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
-            "tool_manager = mecademic_bringup.tool_manager:main",
+            "tool_manager = mecademic_bringup.tools.tool_manager:main",
             "poses_manager = mecademic_bringup.poses_manager:main",
             "scene_manager = mecademic_bringup.scene_manager:main",
             "spray_path_manager = mecademic_bringup.spray_path_manager:main",
