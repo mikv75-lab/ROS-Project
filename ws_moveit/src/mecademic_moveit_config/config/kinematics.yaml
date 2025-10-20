@@ -4,3 +4,4 @@ meca_arm_group:
     kinematics_solver_attempts: 5
     kinematics_solver_search_resolution: 0.005
     position_only_ik: false
+    solve_type: Distance   # Alternativen: Speed, Manipulation1, Manipulation2

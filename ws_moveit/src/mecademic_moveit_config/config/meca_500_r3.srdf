@@ -8,17 +8,17 @@
       parent_frame="world"
       child_link="meca_mount"/>
 
-  <!-- Haupt-Gruppe: bis zum Flansch -->
+  <!-- Arm-Gruppe -->
   <group name="meca_arm_group">
     <chain base_link="meca_mount" tip_link="tool_mount"/>
   </group>
 
-  <!-- Endeffektor definieren -->
+  <!-- Endeffektor -->
   <end_effectors>
     <end_effector name="ee" parent_link="tool_mount" group="meca_arm_group"/>
   </end_effectors>
 
-  <!-- Self-Collision (nur Roboter-intern) -->
+  <!-- Self-Collision -->
   <disable_collisions link1="meca_axis_1_link" link2="meca_axis_2_link" reason="Adjacent"/>
   <disable_collisions link1="meca_axis_1_link" link2="meca_axis_3_link" reason="Never"/>
   <disable_collisions link1="meca_axis_1_link" link2="meca_base_link" reason="Adjacent"/>

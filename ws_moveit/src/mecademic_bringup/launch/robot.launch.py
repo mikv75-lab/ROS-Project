@@ -140,9 +140,11 @@ def generate_launch_description():
             parameters=[
                 moveit_config.robot_description,
                 moveit_config.robot_description_semantic,
-                moveit_config.robot_description_kinematics,
+                #moveit_config.robot_description_kinematics,
                 moveit_config.joint_limits,              # ✅ wichtig!
                 moveit_config.planning_pipelines,        # ✅ wichtig!
+                moveit_config.pilz_cartesian_limits, 
+                {"robot_description_kinematics": moveit_config.robot_description_kinematics["robot_description_kinematics"]},
             ],
         )
         
