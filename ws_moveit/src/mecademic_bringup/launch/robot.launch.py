@@ -17,12 +17,6 @@ def generate_launch_description():
         cfg_pkg = FindPackageShare("mecademic_moveit_config").perform(context)
         bringup_pkg = FindPackageShare("mecademic_bringup").perform(context)
 
-        # ✅ Lockfile Cleanup FIX
-        cleanup_lock = ExecuteProcess(
-            cmd=["bash", "-c", "rm -f /tmp/ros2-control-controller-spawner.lock"],
-            shell=True
-        )
-
         moveit_config = (
             MoveItConfigsBuilder("meca_500_r3", package_name="mecademic_moveit_config")
             .robot_description(
@@ -144,7 +138,6 @@ def generate_launch_description():
             ],
         )
         return [GroupAction([
-            cleanup_lock,  # ✅ Important
             robot_state_pub,
             ros2_control,
             joint_state_broadcaster,
