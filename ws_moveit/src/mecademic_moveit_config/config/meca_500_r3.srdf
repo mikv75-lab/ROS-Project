@@ -6,7 +6,8 @@
   </group>
 
   <!-- Endeffektor sitzt auf tool_mount und gehört zur meca_arm_group -->
-  <end_effector name="meca_ee" parent_link="tool_mount" group="meca_arm_group"/>
+  <!-- Setze jetzt TCP als Endeffektor -->
+  <end_effector name="tcp" parent_link="tool_mount" group="meca_arm_group"/>
 
   <!-- (optional) Named joint states -->
   <group_state name="zero_joints" group="meca_arm_group">

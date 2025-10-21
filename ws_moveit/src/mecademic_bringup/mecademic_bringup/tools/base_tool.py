@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import os, trimesh
+import os
+import trimesh
 from moveit_msgs.msg import PlanningScene, AttachedCollisionObject, CollisionObject
 from geometry_msgs.msg import Pose, Point
 from shape_msgs.msg import Mesh, MeshTriangle
@@ -14,19 +15,35 @@ class ToolPluginBase:
     """Basisverhalten für alle Tools: TCP-Offset setzen + Mesh anhängen/entfernen."""
 
     def _resolve_mesh_path(self, uri: str) -> str:
+        """
+        Auflösen des Mesh-Pfads von der 'package://' URI.
+        Wenn der Pfad mit 'package://' beginnt, wird er zum absoluten Pfad aufgelöst.
+        """
         if uri.startswith("package://"):
             pkg, rel = uri[10:].split("/", 1)
             return os.path.join(get_package_share_directory(pkg), rel)
         return uri
 
     def _load_mesh(self, mesh_path: str) -> Mesh:
+        """
+        Mesh aus einer Datei laden und in ein ROS Mesh-Objekt konvertieren.
+        Der Mesh wird aus der STL-Datei geladen und skaliert.
+        """
+        # Lade das Mesh mit trimesh
         tri = trimesh.load(mesh_path)
-        tri.apply_scale(0.001)
+        tri.apply_scale(0.001)  # Skaliere die Einheiten von mm zu m (falls nötig)
+        
+        # Erstelle ein ROS Mesh
         mesh = Mesh()
+        
+        # Füge die Vertices hinzu
         for v in tri.vertices:
             mesh.vertices.append(Point(x=float(v[0]), y=float(v[1]), z=float(v[2])))
+        
+        # Füge die Faces als Triangles hinzu
         for f in tri.faces:
             mesh.triangles.append(MeshTriangle(vertex_indices=list(map(int, f))))
+        
         return mesh
 
     # ------------------------------------------------------------------
@@ -50,6 +67,8 @@ class ToolPluginBase:
 
         # Mesh vorbereiten
         mesh = self._load_mesh(self._resolve_mesh_path(mesh_uri))
+        
+        # Erstelle das Attach-Msg
         aco = self._make_attach_msg(mount, mesh, mesh_off, mesh_rpy)
 
         # Scene-Diff erzeugen
@@ -58,6 +77,7 @@ class ToolPluginBase:
         scene.robot_state.is_diff = True
         scene.robot_state.attached_collision_objects = [aco]
 
+        # Scene-Diff veröffentlichen
         node.scene_pub.publish(scene)
         node.get_logger().info("📤 Scene-Diff (Attached Object) publiziert")
         return True
@@ -85,13 +105,17 @@ class ToolPluginBase:
     # Helper
     # ------------------------------------------------------------------
     def _make_attach_msg(self, mount, mesh, offset, rpy):
+        """
+        Hilfsfunktion, um eine Nachricht für das Anhängen eines Meshes zu erstellen.
+        Diese Nachricht wird verwendet, um das Mesh an den Roboter zu hängen.
+        """
         pose = Pose()
         pose.position.x, pose.position.y, pose.position.z = offset
         qx, qy, qz, qw = rpy_deg_to_quat(*rpy)
         pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = qx, qy, qz, qw
 
         msg = AttachedCollisionObject()
-        msg.object.header.frame_id = mount        # ✅ nur dieses Feld existiert
+        msg.object.header.frame_id = mount  # Der Frame, an dem das Mesh hängt
         msg.link_name = mount
         msg.object.id = ATTACHED_OBJ_ID
         msg.object.meshes = [mesh]

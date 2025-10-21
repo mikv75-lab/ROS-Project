@@ -132,6 +132,14 @@ def generate_launch_description():
             parameters=[cfg],
         )
 
+        # --- Servo Jog Node hinzufügen ---
+        servo_jog_node = Node(
+            package="mecademic_bringup",
+            executable="servo_jog_node",  # Der Name des C++-Servo-Jogging-Nodes
+            name="servo_jog_node",
+            output="screen",
+        )
+
         # --- Reihenfolge + Delays ---
         scene_after_tool = RegisterEventHandler(
             OnProcessStart(
@@ -163,6 +171,14 @@ def generate_launch_description():
             on_exit=[TimerAction(period=3.0, actions=[motion_manager])],
         )
 
+        # --- Servo Jogging-Node nach Motion Manager starten ---
+        servo_after_motion = RegisterEventHandler(
+            OnProcessStart(
+                target_action=motion_manager,
+                on_start=[TimerAction(period=3.0, actions=[servo_jog_node])],
+            )
+        )
+
         return [
             robot_launch,
             tool_manager,
@@ -170,6 +186,7 @@ def generate_launch_description():
             poses_after_scene,
             spray_after_poses,
             topic_watcher,
+            servo_after_motion,  # Füge den Servo-Node hinzu
         ]
 
     return LaunchDescription([

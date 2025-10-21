@@ -2,7 +2,7 @@
 from __future__ import annotations
 import os, time, yaml, importlib
 from typing import Optional
-
+from moveit.planning import MoveItPy
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -11,7 +11,6 @@ from moveit_msgs.msg import PlanningScene, PlanningSceneComponents
 from moveit_msgs.srv import GetPlanningScene
 from tf2_ros import TransformBroadcaster
 from ament_index_python.packages import get_package_share_directory
-
 from mecademic_bringup.utils import rpy_deg_to_quat
 from mecademic_bringup.common.frames import FRAMES
 from mecademic_bringup.common.topics import Topics
@@ -48,7 +47,7 @@ class ToolManager(Node):
         self.declare_parameter(PARAM_TOOL_CONFIG, default_cfg)
         self.tools_data = self._load_yaml(self.get_parameter(PARAM_TOOL_CONFIG).value)
         self.tools = self.tools_data.get("tools", {})
-        self.current_tool = self.tools_data.get("active_tool", "no_tool")
+        self.current_tool = self.tools_data.get("active_tool", "none")
 
         # --- MoveIt Scene Client ---
         self.ps_client = self.create_client(GetPlanningScene, self.topics.get_planning_scene)
@@ -71,6 +70,23 @@ class ToolManager(Node):
         self._scene_wait_timer = self.create_timer(0.5, self._check_scene_ready)
 
         self.get_logger().info("⏳ Warte auf MoveIt PlanningScene – ToolAttach folgt danach.")
+
+    # ------------------------------------------------------------------
+    # Funktion zum Setzen des TCP als Endeffektor
+    # ------------------------------------------------------------------
+    def set_tcp_as_ee(self):
+        """Setzt das TCP als Endeffektor (EE) im MoveIt-Plan."""
+        try:
+            # Initialisiere den MoveIt-Client mit der Robotergruppe
+            moveit_client = MoveItPy("meca_arm_group")
+            moveit_client.wait_for_ready()
+
+            # Setze den TCP als Endeffektor
+            tcp_frame = "tool_mount"  # Ersetze mit deinem tatsächlichen TCP-Link
+            moveit_client.set_end_effector(tcp_frame)
+            self.get_logger().info(f"✅ TCP {tcp_frame} als Endeffektor gesetzt.")
+        except Exception as e:
+            self.get_logger().error(f"❌ Fehler beim Setzen des TCP als Endeffektor: {e}")
 
     # ------------------------------------------------------------------
     # TCP Update (Offset-only)
