@@ -31,6 +31,7 @@ setup(
             "poses_manager = mecademic_bringup.poses_manager:main",
             "scene_manager = mecademic_bringup.scene_manager:main",
             "spray_path_manager = mecademic_bringup.spray_path_manager:main",
+            'servo_teleop = mecademic_bringup.servo_teleop:main',
         ],
     },
 )

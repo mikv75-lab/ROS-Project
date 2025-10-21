@@ -5,6 +5,7 @@ from launch.actions import (
     OpaqueFunction,
     IncludeLaunchDescription,
     GroupAction,
+    TimerAction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
@@ -14,6 +15,7 @@ from mecademic_bringup.common.params import (
     PARAM_SCENE_CONFIG,
     PARAM_POSES_CONFIG,
     PARAM_TOOL_CONFIG,
+    PARAM_SPRAY_PATH_CONFIG,
 )
 
 
@@ -27,6 +29,7 @@ def generate_launch_description():
         tool_yaml = os.path.join(bringup_pkg, "config", "tools.yaml")
         scene_yaml = os.path.join(bringup_pkg, "config", "scene.yaml")
         poses_yaml = os.path.join(bringup_pkg, "config", "poses.yaml")
+        spray_path_yaml = os.path.join(bringup_pkg, "config", "spray_paths.yaml")
 
         # --- Roboter-Setup (MoveIt + ros2_control) ---
         robot_launch = IncludeLaunchDescription(
@@ -64,17 +67,20 @@ def generate_launch_description():
             package="mecademic_bringup",
             executable="spray_path_manager",
             name="spray_path_manager",
+            parameters=[{PARAM_SPRAY_PATH_CONFIG: spray_path_yaml}],
             output="screen",
         )
 
         # --- Gruppierte Aktionen ---
-        return [GroupAction([
+        main_group = GroupAction([
             robot_launch,
             tool_manager,
             scene_manager,
             poses_manager,
             spray_path_manager,
-        ])]
+        ])
+
+        return [main_group]
 
     return LaunchDescription([
         OpaqueFunction(function=launch_setup),

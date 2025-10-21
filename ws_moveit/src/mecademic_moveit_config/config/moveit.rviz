@@ -14,6 +14,7 @@ Panels:
         - /TF1/Frames1
         - /RobotModel1
         - /MarkerArray1
+        - /PoseArray1
       Splitter Ratio: 0.5014492869377136
     Tree Height: 294
   - Class: rviz_common/Help
@@ -365,7 +366,28 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /scene/visual
+        Value: /spray_path/markers
+      Value: true
+    - Alpha: 1
+      Arrow Length: 0
+      Axes Length: 0.009999999776482582
+      Axes Radius: 0.0010000000474974513
+      Class: rviz_default_plugins/PoseArray
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.07000000029802322
+      Head Radius: 0.029999999329447746
+      Name: PoseArray
+      Shaft Length: 0.23000000417232513
+      Shaft Radius: 0.009999999776482582
+      Shape: Axes
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /spray_path/poses
       Value: true
   Enabled: true
   Global Options:
@@ -384,27 +406,64 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Class: rviz_default_plugins/Orbit
-      Distance: 2.1958155632019043
+      Class: rviz_default_plugins/FrameAligned
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
-      Focal Point:
-        X: -0.10000000149011612
-        Y: 0.25
-        Z: 0.30000001192092896
-      Focal Shape Fixed Size: true
-      Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
+      Lock Camera: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.12499992549419403
-      Target Frame: meca_mount
-      Value: Orbit (rviz_default_plugins)
-      Yaw: 1.3520005941390991
-    Saved: ~
+      Pitch: 0.4949997663497925
+      Point towards: -z axis
+      Position:
+        X: -0.6370433568954468
+        Y: 0.2831016778945923
+        Z: 0.40379613637924194
+      Target Frame: substrate
+      Value: FrameAligned (rviz_default_plugins)
+      Yaw: 5.913595676422119
+    Saved:
+      - Class: rviz_default_plugins/FrameAligned
+        Enable Stereo Rendering:
+          Stereo Eye Separation: 0.05999999865889549
+          Stereo Focal Distance: 1
+          Swap Stereo Eyes: false
+          Value: false
+        Invert Z Axis: false
+        Lock Camera: false
+        Name: FrameAligned
+        Near Clip Distance: 0.009999999776482582
+        Pitch: 0.4049997627735138
+        Point towards: -z axis
+        Position:
+          X: -0.883208155632019
+          Y: 0.3784637153148651
+          Z: 0.5463055968284607
+        Target Frame: substrate
+        Value: FrameAligned (rviz_default_plugins)
+        Yaw: 5.798595905303955
+      - Class: rviz_default_plugins/FrameAligned
+        Enable Stereo Rendering:
+          Stereo Eye Separation: 0.05999999865889549
+          Stereo Focal Distance: 1
+          Swap Stereo Eyes: false
+          Value: false
+        Invert Z Axis: false
+        Lock Camera: false
+        Name: FrameAligned
+        Near Clip Distance: 0.009999999776482582
+        Pitch: 0.4949997663497925
+        Point towards: -z axis
+        Position:
+          X: -0.6370433568954468
+          Y: 0.2831016778945923
+          Z: 0.40379613637924194
+        Target Frame: substrate
+        Value: FrameAligned (rviz_default_plugins)
+        Yaw: 5.913595676422119
 Window Geometry:
   Displays:
     collapsed: false
