@@ -1,6 +1,0 @@
-move_group:
-  planning_pipelines:
-    pipeline_names: ["ompl"]
-  default_planning_pipeline: "ompl"
-  ompl:
-    planning_plugin: "ompl_interface/OMPLPlanner"

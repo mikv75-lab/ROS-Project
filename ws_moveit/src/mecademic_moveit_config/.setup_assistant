@@ -2,12 +2,13 @@ moveit_setup_assistant_config:
   urdf:
     package: mecademic_description
     relative_path: urdf/meca_500_r3.urdf.xacro
+    xacro_args: use_fake_hw:=true
   srdf:
     relative_path: config/meca_500_r3.srdf
   package_settings:
-    author_name: vincent.mikl@htwg-konstanz.de
-    author_email: vincent.mikl@htwg-konstanz.de
-    generated_timestamp: 1760235863
+    author_name: vincent
+    author_email: vi851mik@htwg-konstanz.de
+    generated_timestamp: 1760998012
   control_xacro:
     command:
       - position

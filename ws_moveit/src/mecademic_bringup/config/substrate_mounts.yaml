@@ -1,0 +1,17 @@
+active_mount: "flat_240x240"
+
+mounts:
+
+  flat_240x240:
+    description: "Standard Flachhalter 240x240mm"
+    mesh: "resource/substrate_mounts/substrate_mount_flat_240x240x50.stl"
+    scene_offset:
+      xyz: [0.0, 0.0, 0.050]     # scene liegt 50mm über Mount-Oberfläche
+      rpy_deg: [0.0, 0.0, 0.0]
+
+  circle_d240:
+    description: "Rundhalter Durchmesser 240mm"
+    mesh: "resource/substrate_mounts/substrate_mount_circle_d240_h50.stl"
+    scene_offset:
+      xyz: [0.0, 0.0, 0.050]
+      rpy_deg: [0.0, 0.0, 0.0]
