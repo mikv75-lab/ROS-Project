@@ -4,16 +4,12 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /MotionPlanning1
         - /MotionPlanning1/Scene Geometry1
         - /MotionPlanning1/Scene Robot1
         - /MotionPlanning1/Planning Request1
         - /MotionPlanning1/Planning Metrics1
         - /MotionPlanning1/Planned Path1
-        - /TF1
         - /TF1/Frames1
-        - /RobotModel1
-        - /MarkerArray1
         - /PoseArray1
       Splitter Ratio: 0.5014492869377136
     Tree Height: 294
@@ -357,19 +353,8 @@ Visualization Manager:
       Update Interval: 0
       Value: true
       Visual Enabled: true
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
-      Name: MarkerArray
-      Namespaces: true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /spray_path/markers
-      Value: true
     - Alpha: 1
-      Arrow Length: 0
+      Arrow Length: 0.30000001192092896
       Axes Length: 0.009999999776482582
       Axes Radius: 0.0010000000474974513
       Class: rviz_default_plugins/PoseArray
@@ -387,7 +372,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /spray_path/poses
+        Value: /meca/spray_path/poses
       Value: true
   Enabled: true
   Global Options:
@@ -416,15 +401,15 @@ Visualization Manager:
       Lock Camera: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4949997663497925
+      Pitch: 0.33499979972839355
       Point towards: -z axis
       Position:
-        X: -0.6370433568954468
-        Y: 0.2831016778945923
-        Z: 0.40379613637924194
+        X: -0.771903395652771
+        Y: 0.13541251420974731
+        Z: 0.26815927028656006
       Target Frame: substrate
       Value: FrameAligned (rviz_default_plugins)
-      Yaw: 5.913595676422119
+      Yaw: 6.078596115112305
     Saved:
       - Class: rviz_default_plugins/FrameAligned
         Enable Stereo Rendering:
@@ -464,6 +449,25 @@ Visualization Manager:
         Target Frame: substrate
         Value: FrameAligned (rviz_default_plugins)
         Yaw: 5.913595676422119
+      - Class: rviz_default_plugins/FrameAligned
+        Enable Stereo Rendering:
+          Stereo Eye Separation: 0.05999999865889549
+          Stereo Focal Distance: 1
+          Swap Stereo Eyes: false
+          Value: false
+        Invert Z Axis: false
+        Lock Camera: false
+        Name: FrameAligned
+        Near Clip Distance: 0.009999999776482582
+        Pitch: 0.35999974608421326
+        Point towards: -z axis
+        Position:
+          X: -1.0595009326934814
+          Y: 0.4843605160713196
+          Z: 0.5799328684806824
+        Target Frame: substrate
+        Value: FrameAligned (rviz_default_plugins)
+        Yaw: 5.838595867156982
 Window Geometry:
   Displays:
     collapsed: false
