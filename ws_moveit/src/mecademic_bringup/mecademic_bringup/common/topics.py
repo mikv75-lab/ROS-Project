@@ -81,15 +81,22 @@ class Topics:
     @property
     def environment_current(self) -> str: return _join(self.base_ns, "meca", "environment", "current")
 
-    # --- Spray Path ---
+        # --- Spray Path ---
     @property
-    def spray_path_set(self) -> str: return _join(self.base_ns, "meca", "spray_path", "set")
+    def spray_path_set(self) -> str:
+        return _join(self.base_ns, "meca", "spray_path", "set")
+
     @property
-    def spray_path_clear(self) -> str: return _join(self.base_ns, "meca", "spray_path", "clear")
+    def spray_path_clear(self) -> str:
+        return _join(self.base_ns, "meca", "spray_path", "clear")
+
     @property
-    def spray_path_current(self) -> str: return _join(self.base_ns, "meca", "spray_path", "current")
+    def spray_path_poses(self) -> str:
+        return _join(self.base_ns, "meca", "spray_path", "poses")
+
     @property
-    def spray_path_markers(self) -> str: return _join(self.base_ns, "meca", "spray_path", "markers")
+    def spray_path_current(self) -> str:
+        return _join(self.base_ns, "meca", "spray_path", "current")
 
     # --- Visualization ---
     @property
