@@ -48,7 +48,7 @@ class ToolManager(Node):
         self.declare_parameter(PARAM_TOOL_CONFIG, default_cfg)
         self.tools_data = self._load_yaml(self.get_parameter(PARAM_TOOL_CONFIG).value)
         self.tools = self.tools_data.get("tools", {})
-        self.current_tool = self.tools_data.get("active_tool", "none")
+        self.current_tool = self.tools_data.get("active_tool", "no_tool")
 
         # --- MoveIt Scene Client ---
         self.ps_client = self.create_client(GetPlanningScene, self.topics.get_planning_scene)
