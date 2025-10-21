@@ -21,10 +21,6 @@ from mecademic_bringup.common.params import (
     PARAM_SPRAY_PATH_CONFIG,
 )
 
-from launch.actions.set_environment_variable import SetEnvironmentVariable
-
-SetEnvironmentVariable(name="RMW_IMPLEMENTATION", value="rmw_cyclonedds_cpp"),
-
 def generate_launch_description():
 
     def launch_setup(context):
@@ -80,12 +76,52 @@ def generate_launch_description():
             output="screen",
         )
 
-        # --- MoveIt Grundkonfiguration ---
+        # --- MoveIt Grundkonfiguration (URDF, SRDF, Kinematics etc.) ---
         moveit_config = (
             MoveItConfigsBuilder("meca_500_r3", package_name="mecademic_moveit_config")
             .to_moveit_configs()
         )
+
+        # Dict aus Builder erzeugen
         cfg = moveit_config.to_dict()
+
+        # --- Planungspipelines manuell hinzufügen (Workaround für Builder-Bug) ---
+        cfg["planning_pipelines"] = {
+            "pipeline_names": ["ompl", "pilz_industrial_motion_planner", "chomp", "stomp"],
+            "default_planning_pipeline": "ompl",
+            "ompl": {
+                "planning_plugin": "ompl_interface/OMPLPlanner",
+                "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization",
+                "start_state_max_bounds_error": 0.1,
+                "parameter_namespace": "ompl_planning",
+            },
+            "pilz_industrial_motion_planner": {
+                "planning_plugin": "pilz_industrial_motion_planner/CommandPlanner",
+                "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization",
+                "start_state_max_bounds_error": 0.1,
+                "parameter_namespace": "pilz_industrial_motion_planner_planning",
+            },
+            "chomp": {
+                "planning_plugin": "chomp_interface/CHOMPPlanner",
+                "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization",
+                "start_state_max_bounds_error": 0.1,
+                "parameter_namespace": "chomp_planning",
+            },
+            "stomp": {
+                "planning_plugin": "stomp_moveit/StompPlanner",
+                "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization",
+                "start_state_max_bounds_error": 0.1,
+                "parameter_namespace": "stomp_planning",
+            },
+        }
+
+        # --- Zusätzliche Struktur für MoveItCPP (Sicherheitsnetz) ---
+        cfg["moveit_cpp"] = {
+            "planning_pipelines": {
+                "pipeline_names": ["ompl"],
+                "default_planning_pipeline": "ompl",
+            }
+        }
 
         # --- Motion Manager Node ---
         motion_manager = Node(
@@ -114,7 +150,7 @@ def generate_launch_description():
         spray_after_poses = RegisterEventHandler(
             OnProcessStart(
                 target_action=poses_manager,
-                on_start=[TimerAction(period=5.0, actions=[spray_path_manager])],
+                on_start=[TimerAction(period=3.0, actions=[spray_path_manager])],
             )
         )
 

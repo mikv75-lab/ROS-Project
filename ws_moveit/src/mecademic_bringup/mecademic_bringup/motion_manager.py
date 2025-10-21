@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Bool
@@ -14,7 +13,6 @@ from mecademic_bringup.common.params import load_params, AppParams
 
 # --- MoveItPy ---
 from moveit.planning import MoveItPy
-from moveit_configs_utils import MoveItConfigsBuilder
 
 
 class MotionManager(Node):
@@ -32,7 +30,7 @@ class MotionManager(Node):
         super().__init__("motion_manager")
         self.get_logger().info("🚀 MotionManager gestartet")
 
-        # Parameter + Setup
+        # --- Setup ---
         self.params: AppParams = load_params(self)
         self.frames = FRAMES
         self.topics = Topics()
@@ -41,14 +39,13 @@ class MotionManager(Node):
 
         # --- MoveItPy Initialisierung ---
         try:
-            self._moveit = MoveItPy()
+            self._moveit = MoveItPy(node_name="motion_manager")
             self._arm = self._moveit.get_planning_component("meca_arm_group")
             self.get_logger().info("🤖 MoveItPy erfolgreich initialisiert (Parameter aus Launch).")
         except Exception as e:
             self._moveit = None
             self._arm = None
             self.get_logger().warning(f"⚠️ MoveItPy konnte nicht initialisiert werden: {e}")
-
 
         # --- Subscriptions ---
         self.create_subscription(String, self.topics.motion_cmd, self._on_cmd, qos_default())
@@ -57,17 +54,16 @@ class MotionManager(Node):
         # --- Publishers ---
         self._result_pub = self.create_publisher(String, self.topics.motion_result, qos_default())
         self._ready_pub = self.create_publisher(Bool, self.topics.state_ready, qos_latched())
-        self._traj_planned_pub = self.create_publisher(JointTrajectory, "/meca/motion/planned_traj", qos_latched())
+        self._traj_planned_pub = self.create_publisher(JointTrajectory, self.topics.motion_last_traj, qos_latched())
         self._traj_executed_pub = self.create_publisher(JointTrajectory, "/meca/motion/executed_traj", qos_latched())
 
-        # Ready-Flag
+        # --- Ready flag ---
         self._ready_pub.publish(Bool(data=True))
         self.get_logger().info("✅ MotionManager bereit und hört auf Topics")
 
     # ==================================================================
     # --- CALLBACKS -----------------------------------------------------
     # ==================================================================
-
     def _on_cmd(self, msg: String):
         cmd = msg.data.strip()
         self.get_logger().info(f"📩 Motion-Command empfangen: {cmd}")
@@ -79,17 +75,13 @@ class MotionManager(Node):
 
         try:
             if cmd.startswith("plan_to_named:"):
-                name = cmd.split(":", 1)[1]
-                ok = self._plan_named(name, execute=False)
+                ok = self._plan_named(cmd.split(":", 1)[1], execute=False)
             elif cmd.startswith("move_to_named:"):
-                name = cmd.split(":", 1)[1]
-                ok = self._plan_named(name, execute=True)
-            elif cmd.startswith("move_to_pose:"):
-                name = cmd.split(":", 1)[1]
-                ok = self.move_to_pose_name(name, execute=True)
+                ok = self._plan_named(cmd.split(":", 1)[1], execute=True)
             elif cmd.startswith("plan_to_pose:"):
-                name = cmd.split(":", 1)[1]
-                ok = self.move_to_pose_name(name, execute=False)
+                ok = self._move_to_pose_name(cmd.split(":", 1)[1], execute=False)
+            elif cmd.startswith("move_to_pose:"):
+                ok = self._move_to_pose_name(cmd.split(":", 1)[1], execute=True)
             elif cmd == "plan_to_pose":
                 ok = self._plan_pose(execute=False)
             elif cmd == "move_to_pose":
@@ -107,73 +99,19 @@ class MotionManager(Node):
     # ==================================================================
     # --- PLANUNG & AUSFÜHRUNG ----------------------------------------
     # ==================================================================
-
-    # ==================================================================
-    # --- MOVE TO POSE BY NAME ----------------------------------------
-    # ==================================================================
-    def move_to_pose_name(self, name: str, execute: bool = True) -> bool:
-        """
-        Holt Pose von /meca/poses/<name>, plant und (optional) führt aus.
-        """
-        from geometry_msgs.msg import PoseStamped
-        import rclpy
-
-        topic = f"/meca/poses/{name}"
-        self.get_logger().info(f"🎯 Warte auf Pose '{name}' ({topic}) ...")
-
-        try:
-            pose_msg = rclpy.wait_for_message(PoseStamped, topic, self, timeout=3.0)
-        except Exception as e:
-            self.get_logger().error(f"❌ Fehler beim Empfangen von Pose '{name}': {e}")
-            return False
-
-        if pose_msg is None:
-            self.get_logger().error(f"❌ Keine Pose '{name}' empfangen – Timeout.")
-            return False
-
-        self.get_logger().info(f"📦 Pose '{name}' empfangen aus Frame '{pose_msg.header.frame_id}'")
-
-        try:
-            self._arm.set_start_state_to_current_state()
-            self._arm.set_goal_state(pose_stamped=pose_msg)
-            plan_result = self._arm.plan()
-            if not plan_result or not plan_result.trajectory:
-                self.get_logger().warning(f"❌ Planung zu Pose '{name}' fehlgeschlagen.")
-                return False
-
-            traj = plan_result.trajectory
-            self._traj_planned_pub.publish(traj)
-            self._last_traj = traj
-            self.get_logger().info(f"🟩 Trajektorie zu '{name}' geplant")
-
-            if execute:
-                self._arm.execute()
-                self._publish_executed()
-                self.get_logger().info(f"✅ Pose '{name}' erfolgreich erreicht")
-            return True
-
-        except Exception as e:
-            self.get_logger().error(f"❌ Fehler bei move_to_pose_name('{name}'): {e}")
-            return False
-
-
     def _plan_named(self, name: str, execute: bool) -> bool:
         self.get_logger().info(f"🧭 Plan to named pose: {name} (execute={execute})")
         self._arm.set_start_state_to_current_state()
         self._arm.set_goal_state(configuration_name=name)
-        plan_result = self._arm.plan()
-        if not plan_result or not plan_result.trajectory:
+        plan = self._arm.plan()
+
+        if not plan or not plan.trajectory:
             self.get_logger().warning("❌ Planung fehlgeschlagen.")
             return False
 
-        traj = plan_result.trajectory
-        self._traj_planned_pub.publish(traj)
-        self._last_traj = traj
-        self.get_logger().info("🟩 Geplante Trajektorie veröffentlicht")
-
+        self._publish_plan(plan.trajectory)
         if execute:
-            self._arm.execute()
-            self._publish_executed()
+            self._execute_plan()
         return True
 
     def _plan_pose(self, execute: bool) -> bool:
@@ -185,29 +123,69 @@ class MotionManager(Node):
         self.get_logger().info(f"🎯 Plane zu Pose ({pose.header.frame_id}) (execute={execute})")
         self._arm.set_start_state_to_current_state()
         self._arm.set_goal_state(pose_stamped=pose)
-        plan_result = self._arm.plan()
+        plan = self._arm.plan()
 
-        if not plan_result or not plan_result.trajectory:
+        if not plan or not plan.trajectory:
             self.get_logger().warning("❌ Planung zu Pose fehlgeschlagen.")
             return False
 
-        traj = plan_result.trajectory
+        self._publish_plan(plan.trajectory)
+        if execute:
+            self._execute_plan()
+        return True
+
+    def _move_to_pose_name(self, name: str, execute: bool = True) -> bool:
+        """Pose von /meca/poses/<name> abfragen, planen & ausführen."""
+        topic = f"/meca/poses/{name}"
+        from rclpy.task import Future
+        from rclpy.qos import QoSProfile, ReliabilityPolicy
+
+        qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE)
+        future: Future = rclpy.task.Future()
+
+        def _cb(msg: PoseStamped):
+            future.set_result(msg)
+
+        sub = self.create_subscription(PoseStamped, topic, _cb, qos)
+        self.get_logger().info(f"🎯 Warte auf Pose '{name}' ({topic}) …")
+
+        rclpy.spin_until_future_complete(self, future, timeout_sec=3.0)
+        self.destroy_subscription(sub)
+
+        if not future.done():
+            self.get_logger().error(f"❌ Keine Pose '{name}' empfangen – Timeout.")
+            return False
+
+        pose_msg: PoseStamped = future.result()
+        self.get_logger().info(f"📦 Pose '{name}' empfangen aus Frame '{pose_msg.header.frame_id}'")
+
+        self._arm.set_start_state_to_current_state()
+        self._arm.set_goal_state(pose_stamped=pose_msg)
+        plan = self._arm.plan()
+
+        if not plan or not plan.trajectory:
+            self.get_logger().warning(f"❌ Planung zu Pose '{name}' fehlgeschlagen.")
+            return False
+
+        self._publish_plan(plan.trajectory)
+        if execute:
+            self._execute_plan()
+        return True
+
+    def _publish_plan(self, traj: JointTrajectory):
         self._traj_planned_pub.publish(traj)
         self._last_traj = traj
         self.get_logger().info("🟩 Geplante Trajektorie veröffentlicht")
 
-        if execute:
-            self._arm.execute()
-            self._publish_executed()
-        return True
+    def _execute_plan(self):
+        self._arm.execute()
+        self._publish_executed()
 
     def _execute_last(self) -> bool:
         if not self._last_traj:
             self.get_logger().warning("❌ Keine gespeicherte Trajektorie vorhanden.")
             return False
-        self.get_logger().info("▶️ Führe letzte Trajektorie aus …")
-        self._arm.execute()
-        self._publish_executed()
+        self._execute_plan()
         return True
 
     def _publish_executed(self):
@@ -224,7 +202,6 @@ class MotionManager(Node):
     # ==================================================================
     # --- POSE CALLBACK ------------------------------------------------
     # ==================================================================
-
     def _on_pose(self, msg: PoseStamped):
         self._pending_pose = msg
         self.get_logger().info(
