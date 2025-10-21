@@ -100,39 +100,40 @@ def generate_launch_description():
         disable_internal_servo = SetEnvironmentVariable(
             name="MOVEIT_SERVO_AUTO_START", value="false"
         )
-
         servo_node = Node(
             package="moveit_servo",
             executable="servo_node",
             name="meca_servo",
             output="screen",
-            #arguments=["--ros-args", "--log-level", ""],
+            # arguments=["--ros-args", "--log-level", "debug"],  # optional
             parameters=[
-                # 1. MoveIt model data → ohne die crasht der Servo!
                 moveit_config.robot_description,
                 moveit_config.robot_description_semantic,
                 moveit_config.robot_description_kinematics,
                 moveit_config.joint_limits,
-
-                # 2. Servo-Parameter direkt, nicht aus YAML verschachtelt:
                 {
-                    "moveit_servo.move_group_name": "meca_arm_group",
-                    "moveit_servo.planning_frame": "world",
-                    "moveit_servo.command_type": "velocity",
-                    "moveit_servo.cartesian_command_in_topic": "/meca_servo/delta_twist_cmds",
-                    "moveit_servo.command_out_topic": "/meca_arm_group_controller/joint_trajectory",
-                    "moveit_servo.command_out_type": "trajectory_msgs/JointTrajectory",
-                    "moveit_servo.publish_period": 0.01,
-                    "moveit_servo.scale.linear": 0.3,
-                    "moveit_servo.scale.rotational": 0.8,
-                    "moveit_servo.scale.joint": 0.6,
-                    "moveit_servo.allow_missing_joints": True,
-                    "moveit_servo.use_smoothing": False,
-                    "moveit_servo.check_collisions": False,
-                    "moveit_servo.use_servo_services": True,
+                    "moveit_servo": {
+                        # EINHEITEN, nicht Befehlstyp:
+                        "command_in_type": "unitless",  # oder "speed_units"
+                        "move_group_name": "meca_arm_group",
+                        "planning_frame": "world",
+                        "cartesian_command_in_topic": "/meca_servo/delta_twist_cmds",
+                        "joint_command_in_topic": "/meca_servo/delta_joint_cmds",
+                        "pose_command_in_topic": "/meca_servo/delta_pose_cmds",
+                        "command_out_topic": "/meca_arm_group_controller/joint_trajectory",
+                        "command_out_type": "trajectory_msgs/JointTrajectory",
+                        "publish_period": 0.01,
+                        "scale.linear": 0.3,
+                        "scale.rotational": 0.8,
+                        "scale.joint": 0.6,
+                        "use_servo_services": True,
+                        "check_collisions": False,
+                    }
                 },
             ],
         )
+
+
 
         rviz_config_path = PathJoinSubstitution(
             [FindPackageShare("mecademic_moveit_config"), "config", "moveit.rviz"]

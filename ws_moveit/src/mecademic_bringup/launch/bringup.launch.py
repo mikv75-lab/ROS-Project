@@ -18,27 +18,26 @@ from mecademic_bringup.common.params import (
     PARAM_SPRAY_PATH_CONFIG,
 )
 
-
 def generate_launch_description():
     def launch_setup(context):
-        # --- Package-Pfade ---
+        # --- Package Paths ---
         bringup_pkg = FindPackageShare("mecademic_bringup").perform(context)
         moveit_pkg = FindPackageShare("mecademic_moveit_config").perform(context)
 
-        # --- YAML-Konfigurationen ---
+        # --- YAML Configs ---
         tool_yaml = os.path.join(bringup_pkg, "config", "tools.yaml")
         scene_yaml = os.path.join(bringup_pkg, "config", "scene.yaml")
         poses_yaml = os.path.join(bringup_pkg, "config", "poses.yaml")
         spray_path_yaml = os.path.join(bringup_pkg, "config", "spray_paths.yaml")
 
-        # --- Roboter-Setup (MoveIt + ros2_control) ---
+        # --- Robot (MoveIt + ros2_control) ---
         robot_launch = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(moveit_pkg, "launch", "robot.launch.py")
             )
         )
 
-        # --- Manager Nodes ---
+        # --- Core Managers ---
         tool_manager = Node(
             package="mecademic_bringup",
             executable="tool_manager",
@@ -71,13 +70,32 @@ def generate_launch_description():
             output="screen",
         )
 
-        # --- Gruppierte Aktionen ---
+        # --- Motion + Visualization ---
+        motion_manager = Node(
+            package="mecademic_bringup",
+            executable="motion_manager.py",
+            name="motion_manager",
+            output="screen",
+        )
+
+        trajectory_marker = Node(
+            package="mecademic_bringup",
+            executable="trajectory_marker_node.py",
+            name="trajectory_marker_node",
+            output="screen",
+        )
+
+        # --- Grouped Startup Sequence ---
         main_group = GroupAction([
             robot_launch,
             tool_manager,
             scene_manager,
             poses_manager,
             spray_path_manager,
+
+            # Motion components
+            TimerAction(period=3.0, actions=[motion_manager]),
+            TimerAction(period=4.0, actions=[trajectory_marker]),
         ])
 
         return [main_group]
