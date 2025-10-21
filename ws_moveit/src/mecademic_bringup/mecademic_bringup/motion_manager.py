@@ -84,6 +84,12 @@ class MotionManager(Node):
             elif cmd.startswith("move_to_named:"):
                 name = cmd.split(":", 1)[1]
                 ok = self._plan_named(name, execute=True)
+            elif cmd.startswith("move_to_pose:"):
+                name = cmd.split(":", 1)[1]
+                ok = self.move_to_pose_name(name, execute=True)
+            elif cmd.startswith("plan_to_pose:"):
+                name = cmd.split(":", 1)[1]
+                ok = self.move_to_pose_name(name, execute=False)
             elif cmd == "plan_to_pose":
                 ok = self._plan_pose(execute=False)
             elif cmd == "move_to_pose":
@@ -101,6 +107,55 @@ class MotionManager(Node):
     # ==================================================================
     # --- PLANUNG & AUSFÜHRUNG ----------------------------------------
     # ==================================================================
+
+    # ==================================================================
+    # --- MOVE TO POSE BY NAME ----------------------------------------
+    # ==================================================================
+    def move_to_pose_name(self, name: str, execute: bool = True) -> bool:
+        """
+        Holt Pose von /meca/poses/<name>, plant und (optional) führt aus.
+        """
+        from geometry_msgs.msg import PoseStamped
+        import rclpy
+
+        topic = f"/meca/poses/{name}"
+        self.get_logger().info(f"🎯 Warte auf Pose '{name}' ({topic}) ...")
+
+        try:
+            pose_msg = rclpy.wait_for_message(PoseStamped, topic, self, timeout=3.0)
+        except Exception as e:
+            self.get_logger().error(f"❌ Fehler beim Empfangen von Pose '{name}': {e}")
+            return False
+
+        if pose_msg is None:
+            self.get_logger().error(f"❌ Keine Pose '{name}' empfangen – Timeout.")
+            return False
+
+        self.get_logger().info(f"📦 Pose '{name}' empfangen aus Frame '{pose_msg.header.frame_id}'")
+
+        try:
+            self._arm.set_start_state_to_current_state()
+            self._arm.set_goal_state(pose_stamped=pose_msg)
+            plan_result = self._arm.plan()
+            if not plan_result or not plan_result.trajectory:
+                self.get_logger().warning(f"❌ Planung zu Pose '{name}' fehlgeschlagen.")
+                return False
+
+            traj = plan_result.trajectory
+            self._traj_planned_pub.publish(traj)
+            self._last_traj = traj
+            self.get_logger().info(f"🟩 Trajektorie zu '{name}' geplant")
+
+            if execute:
+                self._arm.execute()
+                self._publish_executed()
+                self.get_logger().info(f"✅ Pose '{name}' erfolgreich erreicht")
+            return True
+
+        except Exception as e:
+            self.get_logger().error(f"❌ Fehler bei move_to_pose_name('{name}'): {e}")
+            return False
+
 
     def _plan_named(self, name: str, execute: bool) -> bool:
         self.get_logger().info(f"🧭 Plan to named pose: {name} (execute={execute})")

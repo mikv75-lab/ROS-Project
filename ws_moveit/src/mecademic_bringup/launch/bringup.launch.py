@@ -21,6 +21,10 @@ from mecademic_bringup.common.params import (
     PARAM_SPRAY_PATH_CONFIG,
 )
 
+from launch.actions.set_environment_variable import SetEnvironmentVariable
+
+SetEnvironmentVariable(name="RMW_IMPLEMENTATION", value="rmw_cyclonedds_cpp"),
+
 def generate_launch_description():
 
     def launch_setup(context):
@@ -110,7 +114,7 @@ def generate_launch_description():
         spray_after_poses = RegisterEventHandler(
             OnProcessStart(
                 target_action=poses_manager,
-                on_start=[TimerAction(period=3.0, actions=[spray_path_manager])],
+                on_start=[TimerAction(period=5.0, actions=[spray_path_manager])],
             )
         )
 

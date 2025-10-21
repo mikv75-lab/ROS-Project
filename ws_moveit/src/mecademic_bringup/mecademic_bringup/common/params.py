@@ -8,7 +8,7 @@ class AppParams:
     group_name: str = "meca_arm_group"
     controller_name: str = "meca_arm_group_controller"
     ee_link_candidates: Sequence[Optional[str]] = field(
-        default_factory=lambda: ("tcp", "meca_axis_6_link", "tool0", "flange", None)
+        default_factory=lambda: ("tcp")
     )
 
     # Planning
@@ -23,7 +23,7 @@ class AppParams:
     jog_angular_scale: float = 0.5
 
     # Frames
-    pose_parent_frame: str = "meca_base"
+    pose_parent_frame: str = "meca_mount"
 
 
 def load_params(node) -> AppParams:

@@ -13,6 +13,7 @@ from mecademic_bringup.common.frames import FRAMES
 from mecademic_bringup.common.qos import qos_latched, qos_default
 from mecademic_bringup.common.topics import Topics
 from mecademic_bringup.common.params import PARAM_POSES_CONFIG
+from tf_transformations import euler_from_quaternion
 
 class PosesManager(Node):
     """
@@ -121,36 +122,51 @@ class PosesManager(Node):
     def set_from_tcp(self, msg: String):
         """Aktualisiert eine Pose basierend auf einem TCP-Frame."""
         try:
-            pose_name, frame = msg.data.split()
-            if pose_name not in self.poses:
-                self.get_logger().warning(f"⚠️ Unbekannte Pose '{pose_name}'")
-                return
+            # Eingabe flexibel parsen (z. B. "service", "service scene", "service:scene")
+            parts = msg.data.replace(":", " ").split()
+            pose_name = parts[0]
+            frame = parts[1] if len(parts) > 1 else self.frames.get("scene", "scene")
 
+            if pose_name not in self.poses:
+                self.get_logger().warning(f"⚠️ Unbekannte Pose '{pose_name}' — wird neu angelegt.")
+                self.poses[pose_name] = {}
+
+            # Transform vom Frame zur Base
             tf = self.tf_buffer.lookup_transform(
-                self.frames["meca_base"],
+                self.frames["meca_mount"],
                 frame,
                 rclpy.time.Time(),
                 timeout=Duration(seconds=1.0),
             )
 
+            # Quaternion → Euler (in Grad)
+            q = tf.transform.rotation
+            roll, pitch, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
+            rpy_deg = [round(math.degrees(a), 3) for a in (roll, pitch, yaw)]
+
+            # Pose speichern (Euler statt Quaternion)
             self.poses[pose_name] = {
+                "frame": frame,
                 "xyz": [
-                    tf.transform.translation.x,
-                    tf.transform.translation.y,
-                    tf.transform.translation.z,
+                    round(tf.transform.translation.x, 4),
+                    round(tf.transform.translation.y, 4),
+                    round(tf.transform.translation.z, 4),
                 ],
-                "rpy_deg": [0.0, 0.0, 0.0],  # TODO: Quaternion → Euler umrechnen
-                "frame": self.frames["meca_base"],
+                "rpy_deg": rpy_deg,
             }
 
-            self.publish_all()
+            # Speichern + publizieren
             with open(self.yaml_path, "w") as f:
-                yaml.dump(self.poses, f)
+                yaml.dump(self.poses, f, sort_keys=False)
 
-            self.get_logger().info(f"✅ Pose '{pose_name}' aktualisiert aus Frame '{frame}'")
+            self.publish_all()
+            self.get_logger().info(
+                f"💾 Pose '{pose_name}' aus Frame '{frame}' gespeichert "
+                f"→ XYZ={self.poses[pose_name]['xyz']} RPY={rpy_deg}"
+            )
+
         except Exception as e:
             self.get_logger().error(f"❌ Fehler bei set_from_tcp: {e}")
-
 # ------------------------------------------------------------------
 
 def main(args=None):

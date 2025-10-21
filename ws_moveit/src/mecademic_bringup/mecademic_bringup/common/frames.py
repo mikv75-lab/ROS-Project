@@ -8,11 +8,11 @@ from typing import Dict, Optional
 FRAMES_BASE: Dict[str, str] = {
     "tcp": "tcp",
     "world": "world",
-    "meca_base": "meca_base",
+    "meca_mount": "meca_mount",
     "home": "home",
     "predispense": "predispense",
     "service": "service",
-    "workspace_center": "workspace_center",
+    "scene": "scene",
     "substrate": "substrate",
     "substrate_mount": "substrate_mount",
     "cage": "cage",

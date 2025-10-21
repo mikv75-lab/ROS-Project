@@ -11,6 +11,7 @@ Panels:
         - /MotionPlanning1/Planned Path1
         - /TF1/Frames1
         - /PoseArray1
+        - /Marker1
       Splitter Ratio: 0.5014492869377136
     Tree Height: 294
   - Class: rviz_common/Help
@@ -374,6 +375,18 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /meca/spray_path/poses
       Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Marker
+      Namespaces: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /meca/spray_path/markers
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -401,7 +414,7 @@ Visualization Manager:
       Lock Camera: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.33499979972839355
+      Pitch: 0.3499997854232788
       Point towards: -z axis
       Position:
         X: -0.771903395652771
@@ -409,7 +422,7 @@ Visualization Manager:
         Z: 0.26815927028656006
       Target Frame: substrate
       Value: FrameAligned (rviz_default_plugins)
-      Yaw: 6.078596115112305
+      Yaw: 6.073596000671387
     Saved:
       - Class: rviz_default_plugins/FrameAligned
         Enable Stereo Rendering:
