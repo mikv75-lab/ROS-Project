@@ -2,7 +2,6 @@
 import os
 from launch import LaunchDescription
 from launch.actions import (
-    DeclareLaunchArgument,
     OpaqueFunction,
     IncludeLaunchDescription,
     GroupAction,
@@ -17,32 +16,26 @@ from mecademic_bringup.common.params import (
     PARAM_TOOL_CONFIG,
 )
 
-def generate_launch_description():
-    use_fake_hw_arg = DeclareLaunchArgument(
-        "use_fake_hw", default_value="true", description="Use fake hardware"
-    )
 
+def generate_launch_description():
     def launch_setup(context):
+        # --- Package-Pfade ---
         bringup_pkg = FindPackageShare("mecademic_bringup").perform(context)
         moveit_pkg = FindPackageShare("mecademic_moveit_config").perform(context)
 
-        # --- Manager-Konfigurationen ---
-        tool_yaml  = os.path.join(bringup_pkg, "config", "tools.yaml")
+        # --- YAML-Konfigurationen ---
+        tool_yaml = os.path.join(bringup_pkg, "config", "tools.yaml")
         scene_yaml = os.path.join(bringup_pkg, "config", "scene.yaml")
         poses_yaml = os.path.join(bringup_pkg, "config", "poses.yaml")
 
-        # --- Haupt-Roboter (MoveIt, ros2_control, RViz, TF, etc.) ---
+        # --- Roboter-Setup (MoveIt + ros2_control) ---
         robot_launch = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(moveit_pkg, "launch", "robot.launch.py")
-            ),
-            launch_arguments={
-                "use_fake_hw": "true",
-                "rviz_config": "moveit.rviz",
-            }.items(),
+            )
         )
 
-        # --- Zusatz-Manager ---
+        # --- Manager Nodes ---
         tool_manager = Node(
             package="mecademic_bringup",
             executable="tool_manager",
@@ -74,6 +67,7 @@ def generate_launch_description():
             output="screen",
         )
 
+        # --- Gruppierte Aktionen ---
         return [GroupAction([
             robot_launch,
             tool_manager,
@@ -83,6 +77,5 @@ def generate_launch_description():
         ])]
 
     return LaunchDescription([
-        use_fake_hw_arg,
         OpaqueFunction(function=launch_setup),
     ])

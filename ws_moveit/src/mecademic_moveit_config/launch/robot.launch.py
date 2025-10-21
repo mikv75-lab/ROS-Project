@@ -17,18 +17,17 @@ from tf_transformations import quaternion_from_euler
 
 def generate_launch_description():
     def launch_setup(context):
-        # --- Package Paths ---
+        # --- Package Path ---
         cfg_pkg = FindPackageShare("mecademic_moveit_config").perform(context)
-        bringup_pkg = FindPackageShare("mecademic_bringup").perform(context)
 
-        # --- Static TF (world → meca_mount) ---
-        mount_yaml = os.path.join(bringup_pkg, "config", "meca_mount.yaml")
+        # --- Static TF (world → meca_mount) aus YAML ---
+        mount_yaml = os.path.join(cfg_pkg, "config", "meca_mount.yaml")
         with open(mount_yaml, "r") as f:
             mount = yaml.safe_load(f)["meca_mount"]
 
-        xyz = mount["xyz"]
-        rpy_deg = mount["rpy_deg"]
-        world_frame = mount["parent"]
+        xyz = mount.get("xyz", [0.0, 0.0, 0.0])
+        rpy_deg = mount.get("rpy_deg", [0.0, 0.0, 0.0])
+        world_frame = mount.get("parent", "world")
 
         qx, qy, qz, qw = quaternion_from_euler(
             radians(rpy_deg[0]), radians(rpy_deg[1]), radians(rpy_deg[2])
@@ -135,7 +134,7 @@ def generate_launch_description():
             ],
         )
 
-        # --- RViz Node (immer moveit.rviz) ---
+        # --- RViz Node (immer moveit.rviz aus config/) ---
         rviz_config_path = PathJoinSubstitution(
             [FindPackageShare("mecademic_moveit_config"), "config", "moveit.rviz"]
         )

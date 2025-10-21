@@ -1,4 +1,0 @@
-meca_mount:
-  parent: "world"
-  xyz: [0.0, 0.01, 0.35]      # m
-  rpy_deg: [0.0, 90.0, 90.0]  # Grad
