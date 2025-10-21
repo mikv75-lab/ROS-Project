@@ -16,11 +16,14 @@ def _join(*parts: Optional[str]) -> str:
             cleaned.append(s)
     return "/".join(cleaned)
 
+
 def resolve_topic(node, name: str) -> str:
     return node.resolve_topic_name(name)
 
+
 def resolve_service(node, name: str) -> str:
     return node.resolve_service_name(name)
+
 
 # ------------------------------------------------------------
 # Topics model
@@ -38,6 +41,18 @@ class Topics:
     def tool_current(self) -> str: return _join(self.base_ns, "meca", "tool", "current")
     @property
     def tool_republish(self) -> str: return _join(self.base_ns, "meca", "tool", "republish")
+
+    # -------- Motion --------
+    @property
+    def motion_cmd(self) -> str: return _join(self.base_ns, "meca", "motion", "cmd")
+    @property
+    def motion_target_pose(self) -> str: return _join(self.base_ns, "meca", "motion", "target_pose")
+    @property
+    def motion_result(self) -> str: return _join(self.base_ns, "meca", "motion", "result")
+    @property
+    def motion_last_traj(self) -> str: return _join(self.base_ns, "meca", "motion", "last_traj")
+    @property
+    def state_ready(self) -> str: return _join(self.base_ns, "meca", "state", "ready")
 
     # -------- Posen --------
     @property
@@ -73,6 +88,8 @@ class Topics:
     def spray_path_clear(self) -> str: return _join(self.base_ns, "meca", "spray_path", "clear")
     @property
     def spray_path_current(self) -> str: return _join(self.base_ns, "meca", "spray_path", "current")
+    @property
+    def spray_path_markers(self) -> str: return _join(self.base_ns, "meca", "spray_path", "markers")
 
     # --- Visualization ---
     @property
@@ -112,14 +129,9 @@ class Topics:
 
     # --- Collision / Planning Scene ---
     @property
-    def collision_object(self) -> str:
-        return _join(self.base_ns, "attached_collision_object")
+    def collision_object(self) -> str: return _join(self.base_ns, "attached_collision_object")
 
-    @property
-    def spray_path_markers(self) -> str:
-        return _join(self.base_ns, "meca", "spray_path", "markers")
-
-    # --- Factories ---
+    # --- Factory ---
     @classmethod
     def for_node(cls, node, *, base_ns: Optional[str] = None,
                  controller: Optional[str] = None, servo_ns: Optional[str] = None) -> Topics:
@@ -128,6 +140,7 @@ class Topics:
             controller=controller or cls.controller,  # type: ignore[attr-defined]
             servo_ns=servo_ns or cls.servo_ns,        # type: ignore[attr-defined]
         )
+
 
 # Default ohne Namespace
 TOPICS = Topics()

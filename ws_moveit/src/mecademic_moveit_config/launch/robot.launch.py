@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-import os
-os.environ["MOVEIT_SERVO_AUTO_START"] = "false"
-import yaml
+import os, yaml
 from math import radians
 from launch import LaunchDescription
 from launch.actions import OpaqueFunction, TimerAction, SetEnvironmentVariable
@@ -16,7 +14,7 @@ def generate_launch_description():
     def launch_setup(context):
         cfg_pkg = FindPackageShare("mecademic_moveit_config").perform(context)
 
-        # --- Static TF (world → meca_mount) ---
+        # --- Static TF world → meca_mount ---
         mount_yaml = os.path.join(cfg_pkg, "config", "meca_mount.yaml")
         with open(mount_yaml, "r") as f:
             mount = yaml.safe_load(f)["meca_mount"]
@@ -42,12 +40,13 @@ def generate_launch_description():
             output="screen",
         )
 
-        # --- MoveIt Config ---
-        moveit_config = MoveItConfigsBuilder(
-            "meca_500_r3", package_name="mecademic_moveit_config"
-        ).to_moveit_configs()
+        # --- MoveIt Config inkl. Pipelines laden ---
+        moveit_config = (
+            MoveItConfigsBuilder("meca_500_r3", package_name="mecademic_moveit_config")
+            .to_moveit_configs()
+        )
 
-        # --- Nodes ---
+        # --- ROS2 Control + Publisher + Controllers ---
         ros2_control = Node(
             package="controller_manager",
             executable="ros2_control_node",
@@ -89,6 +88,7 @@ def generate_launch_description():
             ],
         )
 
+        # --- MoveGroup + Servo + RViz ---
         move_group_node = Node(
             package="moveit_ros_move_group",
             executable="move_group",
@@ -100,12 +100,12 @@ def generate_launch_description():
         disable_internal_servo = SetEnvironmentVariable(
             name="MOVEIT_SERVO_AUTO_START", value="false"
         )
+
         servo_node = Node(
             package="moveit_servo",
             executable="servo_node",
             name="meca_servo",
             output="screen",
-            # arguments=["--ros-args", "--log-level", "debug"],  # optional
             parameters=[
                 moveit_config.robot_description,
                 moveit_config.robot_description_semantic,
@@ -113,8 +113,7 @@ def generate_launch_description():
                 moveit_config.joint_limits,
                 {
                     "moveit_servo": {
-                        # EINHEITEN, nicht Befehlstyp:
-                        "command_in_type": "unitless",  # oder "speed_units"
+                        "command_in_type": "unitless",
                         "move_group_name": "meca_arm_group",
                         "planning_frame": "world",
                         "cartesian_command_in_topic": "/meca_servo/delta_twist_cmds",
@@ -133,27 +132,26 @@ def generate_launch_description():
             ],
         )
 
-
-
         rviz_config_path = PathJoinSubstitution(
             [FindPackageShare("mecademic_moveit_config"), "config", "moveit.rviz"]
         )
+
         rviz_node = Node(
             package="rviz2",
             executable="rviz2",
             name="rviz2",
-            output="log",
+            output="screen",
             arguments=["-d", rviz_config_path],
             parameters=[
                 moveit_config.robot_description,
                 moveit_config.robot_description_semantic,
-                moveit_config.planning_pipelines,
                 moveit_config.robot_description_kinematics,
                 moveit_config.joint_limits,
+                moveit_config.pilz_cartesian_limits,
+                {"use_sim_time": False},
             ],
         )
 
-        # --- Rückgabe aller Nodes ---
         return [
             static_tf,
             robot_state_pub,

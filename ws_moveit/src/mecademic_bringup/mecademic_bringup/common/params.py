@@ -31,6 +31,14 @@ def load_params(node) -> AppParams:
     Lädt Parameter (mit Defaults), falls im Node gesetzt/geremapped.
     Nutze in __init__: self.params = load_params(self)
     """
+    
+    # --- Parameter deklarieren, falls sie noch nicht existieren ---
+    node.declare_parameter("ee_link_candidates", ["tool_mount"])
+    node.declare_parameter("planning_group", "meca_arm_group")
+    node.declare_parameter("default_planner", "ompl")
+    node.declare_parameter("velocity_scaling", 0.5)
+    node.declare_parameter("acceleration_scaling", 0.5)
+    node.declare_parameter("servo_namespace", "meca_servo")
     p = AppParams()
 
     def _declare(name: str, value):

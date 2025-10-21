@@ -26,14 +26,12 @@ setup(
     description="Mecademic Robot Bringup: TF frames, scenes, tools, spray paths.",
     license="Apache-2.0",
     entry_points={
-        "console_scripts": [
-            "tool_manager = mecademic_bringup.tools.tool_manager:main",
-            "poses_manager = mecademic_bringup.poses_manager:main",
-            "scene_manager = mecademic_bringup.scene_manager:main",
-            "spray_path_manager = mecademic_bringup.spray_path_manager:main",
-            'servo_teleop = mecademic_bringup.servo_teleop:main',
+        'console_scripts': [
             'motion_manager = mecademic_bringup.motion_manager:main',
-            'trajectory_marker_node = mecademic_bringup.trajectory_marker_node:main',
+            'scene_manager = mecademic_bringup.scene_manager:main',
+            'poses_manager = mecademic_bringup.poses_manager:main',
+            'tool_manager = mecademic_bringup.tools.tool_manager:main',
+            'spray_path_manager = mecademic_bringup.spray_path_manager:main',
         ],
     },
 )
