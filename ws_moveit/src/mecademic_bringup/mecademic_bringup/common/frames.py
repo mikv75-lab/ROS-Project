@@ -1,30 +1,63 @@
-# common/frames.py
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import Dict, Optional
 
-# --- Global reference frames ---
-FRAME_WORLD = "world"
-FRAME_MECA_MOUNT = "meca_mount"  # Roboteraufspannpunkt
-FRAME_TCP = "tcp"              # Tool Center Point (aktives Tool)
-
-
-# --- Defined poses from fixed_positions.yaml ---
-FRAME_POSE_HOME = "pose_home"
-FRAME_POSE_PREDISPENSE = "pose_predispense"
-FRAME_POSE_SERVICE = "pose_service"
-
-# --- Scene frames (Workspace / Produktionszelle) ---
-FRAME_SUBSTRATE_MOUNT = "substrate_mount"  # Halterung/Fixture auf Tisch
-FRAME_SCENE = "scene"  # war workspace_center – TF für Arbeitsbereich
-FRAME_SUBSTRATE = "substrate"  # aufgelegtes Teil, Wafer etc.
-
-# --- Registry of valid frames (zentral für Prüfung & Konsistenz) ---
-VALID_FRAMES = {
-    FRAME_WORLD,
-    FRAME_MECA_MOUNT,
-    FRAME_TCP,
-    FRAME_POSE_HOME,
-    FRAME_POSE_PREDISPENSE,
-    FRAME_POSE_SERVICE,
-    FRAME_SUBSTRATE_MOUNT,
-    FRAME_SCENE,
-    FRAME_SUBSTRATE,
+# ------------------------------------------------------------
+# Kanonische Frames
+# ------------------------------------------------------------
+FRAMES_BASE: Dict[str, str] = {
+    "tcp": "tcp",
+    "world": "world",
+    "meca_base": "meca_base",
+    "home": "home",
+    "predispense": "predispense",
+    "service": "service",
+    "workspace_center": "workspace_center",
+    "substrate": "substrate",
+    "substrate_mount": "substrate_mount",
+    "cage": "cage",
+    "tool_mount": "tool_mount",
 }
+
+# ------------------------------------------------------------
+# Helper
+# ------------------------------------------------------------
+def _join(prefix: Optional[str], name: str) -> str:
+    name = name.strip().strip("/")
+    if not prefix:
+        return name
+    return f"{prefix.strip().strip('/')}/{name}"
+
+# ------------------------------------------------------------
+# Namespace-Ansicht auf Frames
+# ------------------------------------------------------------
+@dataclass(frozen=True)
+class FramesNS:
+    """
+    Namespace-Ansicht auf Frames mit optionalem Prefix (z. B. 'robot1').
+
+    Beispiel:
+        f = FramesNS(prefix='robot1')
+        f['tcp']  -> 'robot1/tcp'
+        f.all()   -> dict mit allen geprefixten Frames
+    """
+    prefix: Optional[str] = None
+
+    def __getitem__(self, key: str) -> str:
+        base = FRAMES_BASE.get(key)
+        if base is None:
+            raise KeyError(f"Unknown frame key: {key!r}")
+        return _join(self.prefix, base)
+
+    def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        base = FRAMES_BASE.get(key)
+        return _join(self.prefix, base) if base is not None else default
+
+    def all(self) -> Dict[str, str]:
+        return {k: _join(self.prefix, v) for k, v in FRAMES_BASE.items()}
+
+
+# Bequemer Default ohne Prefix
+FRAMES = FramesNS()
+
+__all__ = ["FRAMES_BASE", "FramesNS", "FRAMES"]
