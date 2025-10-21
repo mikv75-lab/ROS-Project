@@ -1,25 +1,14 @@
 <?xml version="1.0" ?>
 <robot name="meca_500_r3">
-
-  <!-- =========================
-       Gruppen / Kinematik
-       ========================= -->
-  <!-- Kette: world->meca_mount (via virtual_joint in SRDF) -> ... -> tool_mount -->
+  <!-- Planungsgruppe: komplette Kette meca_mount -> tool_mount -->
   <group name="meca_arm_group">
     <chain base_link="meca_mount" tip_link="tool_mount"/>
   </group>
 
-  <!-- Endeffektor am Tip-Link der Gruppe -->
+  <!-- Endeffektor sitzt auf tool_mount und gehört zur meca_arm_group -->
   <end_effector name="meca_ee" parent_link="tool_mount" group="meca_arm_group"/>
 
-  <!-- Welt-Fixierung (entspricht deinem Static TF world->meca_mount) -->
-  <virtual_joint
-      name="world_joint"
-      type="fixed"
-      parent_frame="world"
-      child_link="meca_mount"/>
-
-  <!-- Optional: benannte Gelenkzustände -->
+  <!-- (optional) Named joint states -->
   <group_state name="zero_joints" group="meca_arm_group">
     <joint name="meca_axis_1_joint" value="0"/>
     <joint name="meca_axis_2_joint" value="0"/>
@@ -29,10 +18,7 @@
     <joint name="meca_axis_6_joint" value="0"/>
   </group_state>
 
-  <!-- =========================
-       Kollisionsausnahmen
-       (adjacent links)
-       ========================= -->
+  <!-- Kollisionen zwischen adjazenten Links deaktivieren -->
   <disable_collisions link1="meca_base_link" link2="meca_axis_1_link" reason="Adjacent"/>
   <disable_collisions link1="meca_axis_1_link" link2="meca_axis_2_link" reason="Adjacent"/>
   <disable_collisions link1="meca_axis_2_link" link2="meca_axis_3_link" reason="Adjacent"/>
@@ -40,5 +26,4 @@
   <disable_collisions link1="meca_axis_4_link" link2="meca_axis_5_link" reason="Adjacent"/>
   <disable_collisions link1="meca_axis_5_link" link2="meca_axis_6_link" reason="Adjacent"/>
   <disable_collisions link1="meca_axis_6_link" link2="tool_mount"       reason="Adjacent"/>
-
 </robot>

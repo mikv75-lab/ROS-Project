@@ -1,12 +1,12 @@
 active_tool: "spray_nozzle_01"
 
 tools:
-  none:
+  no_tool:
     description: "Kein Tool aktiv"
-    plugin: "none"
+    plugin: "no_tool"
     mount_frame: "tool_mount"
     tcp_offset: [0.0, 0.0, 0.0]
-    tcp_rpy:    [0.0, 0.0, 0.0]
+    tcp_rpy:    [90.0, 0.0, -90.0]
     mesh: ""
     mesh_offset: [0.0, 0.0, 0.0]
     mesh_rpy:    [0.0, 0.0, 0.0]
