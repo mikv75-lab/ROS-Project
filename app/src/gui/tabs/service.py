@@ -17,12 +17,12 @@ from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Pose, PoseArray, PoseStamped, Point, Quaternion, TwistStamped
 from moveit_msgs.msg import ServoStatus
 
-from source.ros.common.topics import Topics
-from source.ros.common.frames import FRAMES
-from source.ros.clients.tool_client import ToolClient
-from source.ros.clients.jogging_client import JoggingClient
-from source.ros.clients.motion_client import MotionClient
-from source.ros.clients.poses_client import PosesClient
+from src.ros.common.topics import Topics
+from src.ros.common.frames import FRAMES
+from src.ros.clients.tool_client import ToolClient
+from src.ros.clients.jogging_client import JoggingClient
+from src.ros.clients.motion_client import MotionClient
+from src.ros.clients.poses_client import PosesClient
 
 # -------- Pfade (anpassen falls nötig) --------
 APP_ROOT            = "/root/app"
@@ -66,7 +66,7 @@ class ServiceTab(QWidget):
         super().__init__(parent)
 
         # UI laden
-        ui_path = os.path.join(APP_ROOT, "source", "gui", "ui", "service_tab.ui")
+        ui_path = os.path.join(APP_ROOT, "src", "gui", "ui", "service_tab.ui")
         uic.loadUi(ui_path, self)
 
         # ROS
