@@ -1,89 +1,62 @@
 #!/usr/bin/env python3
 from launch import LaunchDescription
 from launch.actions import (
-    DeclareLaunchArgument,
-    SetEnvironmentVariable,
-    GroupAction,
     OpaqueFunction,
-    TimerAction,
     IncludeLaunchDescription,
+    RegisterEventHandler,
+    TimerAction,
+    ExecuteProcess,
 )
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.event_handlers import OnProcessStart
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import PathJoinSubstitution
+from moveit_configs_utils import MoveItConfigsBuilder
 import os
-import yaml
-
-from mecademic_bringup.utils import rpy_deg_to_quat
 from mecademic_bringup.common.params import (
     PARAM_SCENE_CONFIG,
     PARAM_POSES_CONFIG,
     PARAM_TOOL_CONFIG,
-    PARAM_USE_FAKE_HW,
+    PARAM_SPRAY_PATH_CONFIG,
 )
 
 def generate_launch_description():
-    use_fake_hw_arg = DeclareLaunchArgument("use_fake_hw", default_value="true")
 
     def launch_setup(context):
-        pkg_share = FindPackageShare("mecademic_bringup").perform(context)
+        bringup_pkg = FindPackageShare("mecademic_bringup").perform(context)
 
-        # Load mount YAML
-        mount_yaml = os.path.join(pkg_share, "config", "meca_mount.yaml")
-        with open(mount_yaml, "r") as f:
-            mount = yaml.safe_load(f)["meca_mount"]
+        # --- YAML Pfade ---
+        tool_yaml = PathJoinSubstitution([bringup_pkg, "config", "tools.yaml"])
+        scene_yaml = PathJoinSubstitution([bringup_pkg, "config", "scene.yaml"])
+        poses_yaml = PathJoinSubstitution([bringup_pkg, "config", "poses.yaml"])
+        spray_path_yaml = PathJoinSubstitution([bringup_pkg, "config", "spray_paths.yaml"])
 
-        world_frame = mount["parent"]
-        xyz = mount["xyz"]
-        rpy_deg = mount["rpy_deg"]
-        qx, qy, qz, qw = rpy_deg_to_quat(*rpy_deg)
-
-        poses_yaml = os.path.join(pkg_share, "config", "poses.yaml")
-        scene_yaml = os.path.join(pkg_share, "config", "scene.yaml")
-        tool_yaml = os.path.join(pkg_share, "config", "tools.yaml")
-
-        env = [
-            SetEnvironmentVariable("RMW_IMPLEMENTATION", "rmw_fastrtps_cpp"),
-            SetEnvironmentVariable("XDG_RUNTIME_DIR", "/tmp/runtime-root"),
-        ]
-
-        # ---- Static TF world → meca_mount ----
-        static_tf = Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='tf_world_to_meca_mount',
-            arguments=[
-                "--x", str(xyz[0]), "--y", str(xyz[1]), "--z", str(xyz[2]),
-                "--qx", str(qx), "--qy", str(qy), "--qz", str(qz), "--qw", str(qw),
-                "--frame-id", world_frame,
-                "--child-frame-id", "meca_mount"
-            ],
-            output="screen"
-        )
-
+        # --- MoveIt + ros2_control starten ---
         robot_launch = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
-                os.path.join(pkg_share, "launch", "robot.launch.py")
+                PathJoinSubstitution([
+                    FindPackageShare("mecademic_moveit_config"),
+                    "launch",
+                    "robot.launch.py",
+                ])
             )
         )
 
-        # Managers
+        # --- Manager Nodes ---
+        tool_manager = Node(
+            package="mecademic_bringup",
+            executable="tool_manager",
+            name="tool_manager",
+            parameters=[{PARAM_TOOL_CONFIG: tool_yaml}],
+            output="screen",
+        )
+
         scene_manager = Node(
             package="mecademic_bringup",
             executable="scene_manager",
             name="scene_manager",
             parameters=[{PARAM_SCENE_CONFIG: scene_yaml}],
-            output="screen",
-        )
-
-        tool_manager = Node(
-            package="mecademic_bringup",
-            executable="tool_manager",
-            name="tool_manager",
-            parameters=[{
-                PARAM_TOOL_CONFIG: tool_yaml,
-                PARAM_USE_FAKE_HW: True,
-            }],
             output="screen",
         )
 
@@ -99,29 +72,123 @@ def generate_launch_description():
             package="mecademic_bringup",
             executable="spray_path_manager",
             name="spray_path_manager",
+            parameters=[{PARAM_SPRAY_PATH_CONFIG: spray_path_yaml}],
             output="screen",
         )
 
-        delayed_start = TimerAction(
-            period=10.0,
-            actions=[
-                tool_manager,      # ✅ Tool zuerst laden
-                scene_manager,     # ✅ dann Szene veröffentlichen
-                poses_manager,
-                spray_path_manager,
-            ]
+        # --- MoveIt Grundkonfiguration (URDF, SRDF, Kinematics etc.) ---
+        moveit_config = (
+            MoveItConfigsBuilder("meca_500_r3", package_name="mecademic_moveit_config")
+            .to_moveit_configs()
+        )
+
+        # Dict aus Builder erzeugen
+        cfg = moveit_config.to_dict()
+
+        # --- Planungspipelines manuell hinzufügen (Workaround für Builder-Bug) ---
+        cfg["planning_pipelines"] = {
+            "pipeline_names": ["ompl", "pilz_industrial_motion_planner", "chomp", "stomp"],
+            "default_planning_pipeline": "ompl",
+            "ompl": {
+                "planning_plugin": "ompl_interface/OMPLPlanner",
+                "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization",
+                "start_state_max_bounds_error": 0.1,
+                "parameter_namespace": "ompl_planning",
+            },
+            "pilz_industrial_motion_planner": {
+                "planning_plugin": "pilz_industrial_motion_planner/CommandPlanner",
+                "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization",
+                "start_state_max_bounds_error": 0.1,
+                "parameter_namespace": "pilz_industrial_motion_planner_planning",
+            },
+            "chomp": {
+                "planning_plugin": "chomp_interface/CHOMPPlanner",
+                "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization",
+                "start_state_max_bounds_error": 0.1,
+                "parameter_namespace": "chomp_planning",
+            },
+            "stomp": {
+                "planning_plugin": "stomp_moveit/StompPlanner",
+                "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization",
+                "start_state_max_bounds_error": 0.1,
+                "parameter_namespace": "stomp_planning",
+            },
+        }
+
+        # --- Zusätzliche Struktur für MoveItCPP (Sicherheitsnetz) ---
+        cfg["moveit_cpp"] = {
+            "planning_pipelines": {
+                "pipeline_names": ["ompl"],
+                "default_planning_pipeline": "ompl",
+            }
+        }
+
+        # --- Motion Manager Node ---
+        motion_manager = Node(
+            package="mecademic_bringup",
+            executable="motion_manager",
+            name="motion_manager",
+            output="screen",
+            parameters=[cfg],
+        )
+
+        # --- Servo Jog Node hinzufügen ---
+        servo_jog_node = Node(
+            package="mecademic_bringup",
+            executable="servo_jog_node",  # Der Name des C++-Servo-Jogging-Nodes
+            name="servo_jog_node",
+            output="screen",
+        )
+
+        # --- Reihenfolge + Delays ---
+        scene_after_tool = RegisterEventHandler(
+            OnProcessStart(
+                target_action=tool_manager,
+                on_start=[TimerAction(period=3.0, actions=[scene_manager])],
+            )
+        )
+
+        poses_after_scene = RegisterEventHandler(
+            OnProcessStart(
+                target_action=scene_manager,
+                on_start=[TimerAction(period=3.0, actions=[poses_manager])],
+            )
+        )
+
+        spray_after_poses = RegisterEventHandler(
+            OnProcessStart(
+                target_action=poses_manager,
+                on_start=[TimerAction(period=3.0, actions=[spray_path_manager])],
+            )
+        )
+
+        # --- Topic-Watcher: wartet auf Scene ---
+        topic_watcher = ExecuteProcess(
+            cmd=["ros2", "topic", "echo", "/meca/scene/current", "--once"],
+            output="screen",
+            shell=False,
+            additional_env={"RCUTILS_LOGGING_BUFFERED_STREAM": "1"},
+            on_exit=[TimerAction(period=3.0, actions=[motion_manager])],
+        )
+
+        # --- Servo Jogging-Node nach Motion Manager starten ---
+        servo_after_motion = RegisterEventHandler(
+            OnProcessStart(
+                target_action=motion_manager,
+                on_start=[TimerAction(period=3.0, actions=[servo_jog_node])],
+            )
         )
 
         return [
-            GroupAction([
-                *env,
-                static_tf,
-                robot_launch,
-                delayed_start
-            ])
+            robot_launch,
+            tool_manager,
+            scene_after_tool,
+            poses_after_scene,
+            spray_after_poses,
+            topic_watcher,
+            servo_after_motion,  # Füge den Servo-Node hinzu
         ]
 
     return LaunchDescription([
-        use_fake_hw_arg,
-        OpaqueFunction(function=launch_setup)
+        OpaqueFunction(function=launch_setup),
     ])

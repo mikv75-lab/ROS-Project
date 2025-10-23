@@ -4,9 +4,15 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /RobotModel1
-        - /RobotModel1/Status1
-      Splitter Ratio: 0.5
+        - /MotionPlanning1/Scene Geometry1
+        - /MotionPlanning1/Scene Robot1
+        - /MotionPlanning1/Planning Request1
+        - /MotionPlanning1/Planning Metrics1
+        - /MotionPlanning1/Planned Path1
+        - /TF1/Frames1
+        - /PoseArray1
+        - /Marker1
+      Splitter Ratio: 0.5014492869377136
     Tree Height: 294
   - Class: rviz_common/Help
     Name: Help
@@ -106,10 +112,6 @@ Visualization Manager:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          tcp:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
           tool_mount:
             Alpha: 1
             Show Axes: false
@@ -147,7 +149,7 @@ Visualization Manager:
       Robot Description: robot_description
       Scene Geometry:
         Scene Alpha: 1
-        Scene Color: 50; 230; 50
+        Scene Color: 211; 211; 211
         Scene Display Time: 0.009999999776482582
         Show Scene Geometry: true
         Voxel Coloring: Z-Axis
@@ -160,6 +162,49 @@ Visualization Manager:
           Expand Link Details: false
           Expand Tree: false
           Link Tree Style: Links in Alphabetic Order
+          meca_axis_1_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          meca_axis_2_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          meca_axis_3_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          meca_axis_4_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          meca_axis_5_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          meca_axis_6_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          meca_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          meca_mount:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tool_mount:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
         Robot Alpha: 0.5
         Show Robot Collision: false
         Show Robot Visual: true
@@ -171,17 +216,41 @@ Visualization Manager:
       Filter (whitelist): ""
       Frame Timeout: 15
       Frames:
-        All Enabled: true
+        All Enabled: false
+        cage:
+          Value: false
+        home:
+          Value: true
+        meca_axis_1_link:
+          Value: false
+        meca_axis_2_link:
+          Value: false
+        meca_axis_3_link:
+          Value: false
+        meca_axis_4_link:
+          Value: false
+        meca_axis_5_link:
+          Value: false
         meca_axis_6_link:
-          Value: true
+          Value: false
         meca_base_link:
-          Value: true
+          Value: false
         meca_mount:
+          Value: false
+        predispense:
           Value: true
+        scene:
+          Value: true
+        service:
+          Value: true
+        substrate:
+          Value: false
+        substrate_mount:
+          Value: false
         tcp:
           Value: true
         tool_mount:
-          Value: true
+          Value: false
         world:
           Value: true
       Marker Scale: 1
@@ -191,9 +260,29 @@ Visualization Manager:
       Show Names: false
       Tree:
         world:
+          cage:
+            {}
+          home:
+            {}
           meca_mount:
             meca_base_link:
-              {}
+              meca_axis_1_link:
+                meca_axis_2_link:
+                  meca_axis_3_link:
+                    meca_axis_4_link:
+                      meca_axis_5_link:
+                        meca_axis_6_link:
+                          tool_mount:
+                            tcp:
+                              {}
+          predispense:
+            {}
+          service:
+            {}
+          substrate_mount:
+            scene:
+              substrate:
+                {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -253,10 +342,6 @@ Visualization Manager:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-        tcp:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
         tool_mount:
           Alpha: 1
           Show Axes: false
@@ -269,6 +354,39 @@ Visualization Manager:
       Update Interval: 0
       Value: true
       Visual Enabled: true
+    - Alpha: 1
+      Arrow Length: 0.30000001192092896
+      Axes Length: 0.009999999776482582
+      Axes Radius: 0.0010000000474974513
+      Class: rviz_default_plugins/PoseArray
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.07000000029802322
+      Head Radius: 0.029999999329447746
+      Name: PoseArray
+      Shaft Length: 0.23000000417232513
+      Shaft Radius: 0.009999999776482582
+      Shape: Axes
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /meca/spray_path/poses
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Marker
+      Namespaces: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /meca/spray_path/markers
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -286,27 +404,83 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Class: rviz_default_plugins/Orbit
-      Distance: 8.726985931396484
+      Class: rviz_default_plugins/FrameAligned
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
-      Focal Point:
-        X: -0.10000000149011612
-        Y: 0.25
-        Z: 0.30000001192092896
-      Focal Shape Fixed Size: true
-      Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
+      Lock Camera: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5099999904632568
-      Target Frame: meca_mount
-      Value: Orbit (rviz_default_plugins)
-      Yaw: 5.685185432434082
-    Saved: ~
+      Pitch: 0.3499997854232788
+      Point towards: -z axis
+      Position:
+        X: -0.771903395652771
+        Y: 0.13541251420974731
+        Z: 0.26815927028656006
+      Target Frame: substrate
+      Value: FrameAligned (rviz_default_plugins)
+      Yaw: 6.073596000671387
+    Saved:
+      - Class: rviz_default_plugins/FrameAligned
+        Enable Stereo Rendering:
+          Stereo Eye Separation: 0.05999999865889549
+          Stereo Focal Distance: 1
+          Swap Stereo Eyes: false
+          Value: false
+        Invert Z Axis: false
+        Lock Camera: false
+        Name: FrameAligned
+        Near Clip Distance: 0.009999999776482582
+        Pitch: 0.4049997627735138
+        Point towards: -z axis
+        Position:
+          X: -0.883208155632019
+          Y: 0.3784637153148651
+          Z: 0.5463055968284607
+        Target Frame: substrate
+        Value: FrameAligned (rviz_default_plugins)
+        Yaw: 5.798595905303955
+      - Class: rviz_default_plugins/FrameAligned
+        Enable Stereo Rendering:
+          Stereo Eye Separation: 0.05999999865889549
+          Stereo Focal Distance: 1
+          Swap Stereo Eyes: false
+          Value: false
+        Invert Z Axis: false
+        Lock Camera: false
+        Name: FrameAligned
+        Near Clip Distance: 0.009999999776482582
+        Pitch: 0.4949997663497925
+        Point towards: -z axis
+        Position:
+          X: -0.6370433568954468
+          Y: 0.2831016778945923
+          Z: 0.40379613637924194
+        Target Frame: substrate
+        Value: FrameAligned (rviz_default_plugins)
+        Yaw: 5.913595676422119
+      - Class: rviz_default_plugins/FrameAligned
+        Enable Stereo Rendering:
+          Stereo Eye Separation: 0.05999999865889549
+          Stereo Focal Distance: 1
+          Swap Stereo Eyes: false
+          Value: false
+        Invert Z Axis: false
+        Lock Camera: false
+        Name: FrameAligned
+        Near Clip Distance: 0.009999999776482582
+        Pitch: 0.35999974608421326
+        Point towards: -z axis
+        Position:
+          X: -1.0595009326934814
+          Y: 0.4843605160713196
+          Z: 0.5799328684806824
+        Target Frame: substrate
+        Value: FrameAligned (rviz_default_plugins)
+        Yaw: 5.838595867156982
 Window Geometry:
   Displays:
     collapsed: false
@@ -319,9 +493,9 @@ Window Geometry:
     collapsed: false
   MotionPlanning - Trajectory Slider:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000503fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb000000100044006900730070006c006100790073010000003b000001a7000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e006701000001e8000002480000017500fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a00560069006500770073010000043600000108000000a000ffffff000007460000050300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000503fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb000000100044006900730070006c006100790073010000003b000001a7000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e006701000001e8000002480000016900fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a00560069006500770073010000043600000108000000a000ffffff000007460000050300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
   Width: 2560
-  X: 1920
-  Y: 23
+  X: 1928
+  Y: 31

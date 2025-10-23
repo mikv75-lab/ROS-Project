@@ -1,0 +1,27 @@
+planning_pipelines:
+  pipeline_names: ["ompl", "pilz_industrial_motion_planner", "chomp", "stomp"]
+  default_planning_pipeline: "ompl"
+
+  ompl:
+    planning_plugin: "ompl_interface/OMPLPlanner"
+    request_adapters: "default_planner_request_adapters/AddTimeOptimalParameterization"
+    start_state_max_bounds_error: 0.1
+    parameter_namespace: "ompl_planning"
+
+  pilz_industrial_motion_planner:
+    planning_plugin: "pilz_industrial_motion_planner/CommandPlanner"
+    request_adapters: "default_planner_request_adapters/AddTimeOptimalParameterization"
+    start_state_max_bounds_error: 0.1
+    parameter_namespace: "pilz_industrial_motion_planner_planning"
+
+  chomp:
+    planning_plugin: "chomp_interface/CHOMPPlanner"
+    request_adapters: "default_planner_request_adapters/AddTimeOptimalParameterization"
+    start_state_max_bounds_error: 0.1
+    parameter_namespace: "chomp_planning"
+
+  stomp:
+    planning_plugin: "stomp_moveit/StompPlanner"
+    request_adapters: "default_planner_request_adapters/AddTimeOptimalParameterization"
+    start_state_max_bounds_error: 0.1
+    parameter_namespace: "stomp_planning"

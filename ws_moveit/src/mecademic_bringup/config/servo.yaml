@@ -1,0 +1,8 @@
+servo:
+  ros__parameters:
+    servo.default_mode: cartesian
+    servo.default_frame: tcp
+
+    servo.speed_limits.cart_linear_mm_s: 100.0
+    servo.speed_limits.cart_angular_deg_s: 30.0
+    servo.speed_limits.joint_scale: 0.5

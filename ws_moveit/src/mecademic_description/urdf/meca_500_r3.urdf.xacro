@@ -169,46 +169,4 @@
     <child  link="tool_mount"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
-
-  <!-- === ros2_control (optional Fake HW) === -->
-  <xacro:if value="$(arg use_fake_hw)">
-    <ros2_control name="FakeSystem" type="system">
-      <hardware>
-        <plugin>mock_components/GenericSystem</plugin>
-      </hardware>
-
-      <joint name="meca_axis_1_joint">
-        <command_interface name="position"/>
-        <state_interface   name="position"/>
-        <state_interface   name="velocity"/>
-      </joint>
-      <joint name="meca_axis_2_joint">
-        <command_interface name="position"/>
-        <state_interface   name="position"/>
-        <state_interface   name="velocity"/>
-      </joint>
-      <joint name="meca_axis_3_joint">
-        <command_interface name="position"/>
-        <state_interface   name="position"/>
-        <state_interface   name="velocity"/>
-      </joint>
-      <joint name="meca_axis_4_joint">
-        <command_interface name="position"/>
-        <state_interface   name="position"/>
-        <state_interface   name="velocity"/>
-      </joint>
-      <joint name="meca_axis_5_joint">
-        <command_interface name="position"/>
-        <state_interface   name="position"/>
-        <state_interface   name="velocity"/>
-      </joint>
-      <joint name="meca_axis_6_joint">
-        <command_interface name="position"/>
-        <state_interface   name="position"/>
-        <state_interface   name="velocity"/>
-      </joint>
-
-    </ros2_control>
-  </xacro:if>
-
 </robot>
