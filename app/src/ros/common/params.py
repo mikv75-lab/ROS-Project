@@ -12,16 +12,8 @@ class AppParams:
         default_factory=lambda: ("tcp", "meca_axis_6_link", "tool0", "flange", None)
     )
 
-    # Planning
-    planning_pipeline: str = "ompl"                     # "ompl" | "pilz" | "chomp" ...
-    planner_id: str = "RRTConnectkConfigDefault"
-    vel_scaling: float = 0.4
-    acc_scaling: float = 0.4
 
-    # Servo / Jogging
-    servo_ns: str = "moveit_servo"
-    jog_linear_scale: float = 0.5
-    jog_angular_scale: float = 0.5
+  
 
     # Frames (nur Namen; echte IDs kommen aus frames.py)
     pose_parent_frame: str = "meca_base"

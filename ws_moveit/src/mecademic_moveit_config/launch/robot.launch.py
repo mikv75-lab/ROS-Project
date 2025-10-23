@@ -11,7 +11,10 @@ from tf_transformations import quaternion_from_euler
 
 
 def generate_launch_description():
+<<<<<<< HEAD
     SetEnvironmentVariable('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4'),
+=======
+>>>>>>> d0074303c7c52e20c55ed7269d54acd529ed1c0d
     def launch_setup(context):
         cfg_pkg = FindPackageShare("mecademic_moveit_config").perform(context)
 
@@ -105,7 +108,11 @@ def generate_launch_description():
         servo_node = Node(
             package="moveit_servo",
             executable="servo_node",
+<<<<<<< HEAD
             name="servo",                              # <-- statt 'meca_servo'
+=======
+            name="meca_servo",
+>>>>>>> d0074303c7c52e20c55ed7269d54acd529ed1c0d
             output="screen",
             parameters=[
                 moveit_config.robot_description,
@@ -114,6 +121,7 @@ def generate_launch_description():
                 moveit_config.joint_limits,
                 {
                     "moveit_servo": {
+<<<<<<< HEAD
                         "command_in_type": "speed_units",            # Bridge liefert m/s & rad/s
                         "move_group_name": "meca_arm_group",
                         "planning_frame": "world",
@@ -128,13 +136,31 @@ def generate_launch_description():
                         "scale.rotational": 0.8,
                         "scale.joint": 0.6,
                         "use_servo_services": True,   # damit switch/pause Services aktiv sind
+=======
+                        "command_in_type": "unitless",
+                        "move_group_name": "meca_arm_group",
+                        "planning_frame": "world",
+                        "cartesian_command_in_topic": "/meca_servo/delta_twist_cmds",
+                        "joint_command_in_topic": "/meca_servo/delta_joint_cmds",
+                        "pose_command_in_topic": "/meca_servo/delta_pose_cmds",
+                        "command_out_topic": "/meca_arm_group_controller/joint_trajectory",
+                        "command_out_type": "trajectory_msgs/JointTrajectory",
+                        "publish_period": 0.01,
+                        "scale.linear": 0.3,
+                        "scale.rotational": 0.8,
+                        "scale.joint": 0.6,
+                        "use_servo_services": True,
+>>>>>>> d0074303c7c52e20c55ed7269d54acd529ed1c0d
                         "check_collisions": False,
                     }
                 },
             ],
         )
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> d0074303c7c52e20c55ed7269d54acd529ed1c0d
         rviz_config_path = PathJoinSubstitution(
             [FindPackageShare("mecademic_moveit_config"), "config", "moveit.rviz"]
         )

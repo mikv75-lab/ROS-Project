@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# app/source/app/main_gui.py
+# source/app/main_gui.py
 
 import os
 import sys
@@ -14,17 +14,17 @@ from PyQt5.QtCore import QCoreApplication
 import rclpy
 
 # Bridge (kapselt Tool/Motion/Jog/Scene usw.)
-from source.ros.bridge.ui_bridge import UIBridge
+from src.ros.bridge.ui_bridge import UIBridge
 
 # Tabs
-from source.gui.tabs.process import ProcessTab
-from source.gui.tabs.spray_path import SprayPathTab
-from source.gui.tabs.service import ServiceTab
-from source.gui.tabs.system import SystemTab
+from src.gui.tabs.process import ProcessTab
+from src.gui.tabs.spray_path import SprayPathTab
+from src.gui.tabs.service import ServiceTab
+from src.gui.tabs.system import SystemTab
 
 # Bringup
-from source.app.bringup import ensure_clean_graph_then_launch, shutdown_bringup
-from source.app.startup import LaunchConfig
+from src.app.bringup import ensure_clean_graph_then_launch, shutdown_bringup
+from src.app.startup import LaunchConfig
 
 import sys
 from PyQt5 import QtCore
@@ -64,11 +64,11 @@ def main():
     spinner = None
 
     if USE_THREAD_SPINNER:
-        from source.ros.exec.spin import spin_in_thread
+        from src.ros.exec.spin import spin_in_thread
         spinner = spin_in_thread(bridge, rate_hz=100)
         print("[app] ROS spin mode: THREAD (100 Hz)", flush=True)
     else:
-        from source.ros.exec.spin import start_qt_spin
+        from src.ros.exec.spin import start_qt_spin
         timer = start_qt_spin(bridge, interval_ms=10)
         print("[app] ROS spin mode: QT (10ms interval)", flush=True)
 
