@@ -4,7 +4,8 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Bool
 from geometry_msgs.msg import PoseStamped
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from trajectory_msgs.msg import JointTrajectory  # (bleibt für Typen, falls du’s brauchst)
+from moveit_msgs.msg import RobotTrajectory      # <-- neu: passend zu MoveItPy
 
 from mecademic_bringup.common.qos import qos_default, qos_latched
 from mecademic_bringup.common.topics import Topics
@@ -16,46 +17,40 @@ from moveit.planning import MoveItPy
 
 
 class MotionManager(Node):
-    """
-    MotionManager
-    -------------
-    Steuert Bewegungen über Topics:
-      - /meca/motion/cmd
-      - /meca/motion/target_pose
-      - /meca/motion/planned_traj
-      - /meca/motion/executed_traj
-    """
-
     def __init__(self):
         super().__init__("motion_manager")
         self.get_logger().info("🚀 MotionManager gestartet")
-        return
+
         # --- Setup ---
         self.params: AppParams = load_params(self)
         self.frames = FRAMES
         self.topics = Topics()
         self._pending_pose: PoseStamped | None = None
-        self._last_traj: JointTrajectory | None = None
+
+        self._last_rt: RobotTrajectory | None = None   # <-- speichere RobotTrajectory
 
         # --- MoveItPy Initialisierung ---
         try:
             self._moveit = MoveItPy(node_name="motion_manager")
             self._arm = self._moveit.get_planning_component("meca_arm_group")
-            self.get_logger().info("🤖 MoveItPy erfolgreich initialisiert (Parameter aus Launch).")
+            self._executor = self._moveit.get_trajectory_executor()  # <-- wichtig
+            self.get_logger().info("🤖 MoveItPy erfolgreich initialisiert.")
         except Exception as e:
             self._moveit = None
             self._arm = None
+            self._executor = None
             self.get_logger().warning(f"⚠️ MoveItPy konnte nicht initialisiert werden: {e}")
 
-        # --- Subscriptions ---
-        self.create_subscription(String, self.topics.motion_cmd, self._on_cmd, qos_default())
-        self.create_subscription(PoseStamped, self.topics.motion_target_pose, self._on_pose, qos_latched())
+        # --- Subscriptions (Referenzen halten, sonst GC!) ---
+        self._subs = []
+        self._subs.append(self.create_subscription(String, self.topics.motion_cmd, self._on_cmd, qos_default()))
+        self._subs.append(self.create_subscription(PoseStamped, self.topics.motion_target_pose, self._on_pose, qos_latched()))
 
         # --- Publishers ---
-        self._result_pub = self.create_publisher(String, self.topics.motion_result, qos_default())
-        self._ready_pub = self.create_publisher(Bool, self.topics.state_ready, qos_latched())
-        self._traj_planned_pub = self.create_publisher(JointTrajectory, self.topics.motion_last_traj, qos_latched())
-        self._traj_executed_pub = self.create_publisher(JointTrajectory, "/meca/motion/executed_traj", qos_latched())
+        self._result_pub         = self.create_publisher(String, self.topics.motion_result, qos_default())
+        self._ready_pub          = self.create_publisher(Bool, self.topics.state_ready, qos_latched())
+        self._traj_planned_pub   = self.create_publisher(RobotTrajectory, self.topics.motion_last_traj, qos_latched())  # <-- RobotTrajectory
+        self._traj_executed_pub  = self.create_publisher(RobotTrajectory, "/meca/motion/executed_traj", qos_latched())
 
         # --- Ready flag ---
         self._ready_pub.publish(Bool(data=True))
@@ -67,10 +62,10 @@ class MotionManager(Node):
     def _on_cmd(self, msg: String):
         cmd = msg.data.strip()
         self.get_logger().info(f"📩 Motion-Command empfangen: {cmd}")
-        ok = False
 
-        if not self._arm:
+        if not self._arm or not self._executor:
             self.get_logger().warning("⚠️ Kein MoveItPy verfügbar, Befehl ignoriert.")
+            self._result_pub.publish(String(data=f"{cmd}:fail"))
             return
 
         try:
@@ -90,6 +85,7 @@ class MotionManager(Node):
                 ok = self._execute_last()
             else:
                 self.get_logger().warning(f"❓ Unbekanntes Kommando: {cmd}")
+                ok = False
         except Exception as e:
             self.get_logger().error(f"❌ Fehler bei '{cmd}': {e}")
             ok = False
@@ -109,9 +105,10 @@ class MotionManager(Node):
             self.get_logger().warning("❌ Planung fehlgeschlagen.")
             return False
 
-        self._publish_plan(plan.trajectory)
+        self._last_rt = plan.trajectory  # <-- RobotTrajectory
+        self._publish_plan(self._last_rt)
         if execute:
-            self._execute_plan()
+            return self._execute_last()
         return True
 
     def _plan_pose(self, execute: bool) -> bool:
@@ -129,13 +126,14 @@ class MotionManager(Node):
             self.get_logger().warning("❌ Planung zu Pose fehlgeschlagen.")
             return False
 
-        self._publish_plan(plan.trajectory)
+        self._last_rt = plan.trajectory
+        self._publish_plan(self._last_rt)
         if execute:
-            self._execute_plan()
+            return self._execute_last()
         return True
 
     def _move_to_pose_name(self, name: str, execute: bool = True) -> bool:
-        """Pose von /meca/poses/<name> abfragen, planen & ausführen."""
+        """Pose von /meca/poses/<name> abfragen, planen & (optional) ausführen."""
         topic = f"/meca/poses/{name}"
         from rclpy.task import Future
         from rclpy.qos import QoSProfile, ReliabilityPolicy
@@ -144,11 +142,11 @@ class MotionManager(Node):
         future: Future = rclpy.task.Future()
 
         def _cb(msg: PoseStamped):
-            future.set_result(msg)
+            if not future.done():
+                future.set_result(msg)
 
         sub = self.create_subscription(PoseStamped, topic, _cb, qos)
         self.get_logger().info(f"🎯 Warte auf Pose '{name}' ({topic}) …")
-
         rclpy.spin_until_future_complete(self, future, timeout_sec=3.0)
         self.destroy_subscription(sub)
 
@@ -167,37 +165,24 @@ class MotionManager(Node):
             self.get_logger().warning(f"❌ Planung zu Pose '{name}' fehlgeschlagen.")
             return False
 
-        self._publish_plan(plan.trajectory)
+        self._last_rt = plan.trajectory
+        self._publish_plan(self._last_rt)
         if execute:
-            self._execute_plan()
+            return self._execute_last()
         return True
 
-    def _publish_plan(self, traj: JointTrajectory):
-        self._traj_planned_pub.publish(traj)
-        self._last_traj = traj
+    def _publish_plan(self, rt: RobotTrajectory):
+        self._traj_planned_pub.publish(rt)
         self.get_logger().info("🟩 Geplante Trajektorie veröffentlicht")
 
-    def _execute_plan(self):
-        self._arm.execute()
-        self._publish_executed()
-
     def _execute_last(self) -> bool:
-        if not self._last_traj:
+        if not self._last_rt:
             self.get_logger().warning("❌ Keine gespeicherte Trajektorie vorhanden.")
             return False
-        self._execute_plan()
+        self._executor.execute(self._last_rt)       # <-- korrekt ausführen
+        self._traj_executed_pub.publish(self._last_rt)  # <-- einfache Rückmeldung
+        self.get_logger().info("🟦 Trajektorie ausgeführt & veröffentlicht")
         return True
-
-    def _publish_executed(self):
-        state = self._moveit.get_robot_state()
-        jt = JointTrajectory()
-        jt.joint_names = self._arm.joint_model_group_variable_names
-        pt = JointTrajectoryPoint()
-        pt.positions = state.joint_positions
-        pt.time_from_start.sec = 0
-        jt.points.append(pt)
-        self._traj_executed_pub.publish(jt)
-        self.get_logger().info("🟦 Gefahrene Trajektorie veröffentlicht")
 
     # ==================================================================
     # --- POSE CALLBACK ------------------------------------------------
@@ -209,9 +194,6 @@ class MotionManager(Node):
         )
 
 
-# ==================================================================
-# --- MAIN ----------------------------------------------------------
-# ==================================================================
 def main(args=None):
     rclpy.init(args=args)
     node = MotionManager()

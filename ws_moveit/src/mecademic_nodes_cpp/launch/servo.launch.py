@@ -99,8 +99,6 @@ def launch_setup(context, *args, **kwargs):
     )
 
     return [
-        # SHM in Containern oft problematisch → UDPv4
-        SetEnvironmentVariable("FASTDDS_BUILTIN_TRANSPORTS", "UDPv4"),
         node,
     ]
 

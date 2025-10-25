@@ -83,12 +83,15 @@ source /opt/ros/rolling/setup.bash
 source ~/ws_moveit/install/setup.bash
 
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-export FASTRTPS_DEFAULT_PROFILES_FILE=""     # wichtig
+export FASTRTPS_DEFAULT_PROFILES_FILE=""
 export RMW_FASTRTPS_USE_QOS_FROM_XML=0
-export ROS_DISABLE_SHARED_MEMORY=1           # <--- FIX
-export RMW_TRANSPORT_SHARED_MEMORY_ENABLED=0 # <--- FIX
+export ROS_DISABLE_SHARED_MEMORY=1
+export RMW_TRANSPORT_SHARED_MEMORY_ENABLED=0
 
 # --- Alias Build, Kill ---
 alias mecademic_colcon_build='cd ~/ws_moveit && clear && rm -rf build/mecademic_* install/mecademic_* log && colcon build --packages-select mecademic_description mecademic_moveit_config mecademic_bringup --cmake-clean-first && source install/setup.bash && ros2 launch mecademic_bringup bringup.launch.py'
 alias kill_ros="python3 ~/app/src/app/kill_all_ros.py && echo '✅ ROS beendet in ws_moveit'"
-
+alias servo_build_run= "clear && cd ~/ws_moveit && rm -rf build/mecademic_nodes_cpp* && colcon build --packages-select mecademic_nodes_cpp --cmake-clean-first && source install/setup.bash && ros2 launch mecademic_nodes_cpp servo.launch.py"
+alias servo_run='clear && cd ~/ws_moveit && rm -rf build/mecademic_nodes_cpp* && \
+  colcon build --packages-select mecademic_nodes_cpp --cmake-clean-first && \
+  source install/setup.bash && ros2 launch mecademic_nodes_cpp servo.launch.py'

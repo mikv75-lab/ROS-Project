@@ -1,6 +1,0 @@
-world_to_meca_mount:
-  xyz: [0.0, 0.0, 0.0]
-  rpy_deg: [0.0, 0.0, 90.0]
-
-robot:
-  use_robot: false  # kein echtes Robot-Startup beim bringup
