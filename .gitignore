@@ -1,26 +1,49 @@
-# Ignore everything by default
-*
+# Alles im Repo-Root ausblenden
+/*
 
-# Allow these folders
-!app/
+# Spraycoater komplett erlauben
+!Spraycoater/
+!Spraycoater/**
+
+# ws_moveit-Ordner selbst erlauben
 !ws_moveit/
 !ws_moveit/src/
-!ws_moveit/src/mecademic_bringup/
-!ws_moveit/src/mecademic_description/
-!ws_moveit/src/mecademic_moveit_config/
 
-# Ignore build/install/log from ROS
+# Zuerst ALLES unter ws_moveit/src ignorieren …
+ws_moveit/src/**
+
+# … und NUR diese Pakete wieder erlauben (jeweils rekursiv)
+!ws_moveit/src/mecademic_bringup/
+!ws_moveit/src/mecademic_bringup/**
+
+!ws_moveit/src/mecademic_description/
+!ws_moveit/src/mecademic_description/**
+
+!ws_moveit/src/mecademic_moveit_config/
+!ws_moveit/src/mecademic_moveit_config/**
+
+!ws_moveit/src/mecademic_nodes_cpp/
+!ws_moveit/src/mecademic_nodes_cpp/**
+
+!ws_moveit/src/mecademic_nodes_py/
+!ws_moveit/src/mecademic_nodes_py/**
+
+# ROS Build/Install/Log trotzdem ignorieren
 ws_moveit/build/
 ws_moveit/install/
 ws_moveit/log/
 
-# Ignore Python trash
-__pycache__/
-*.pyc
+# Spraycoater Runtime-Daten ignorieren, Platzhalter behalten
+Spraycoater/data/**
+!Spraycoater/data/.gitkeep
+!Spraycoater/data/README.md
 
-# Ignore local configs
+# Python Cache
+**/__pycache__/
+**/*.py[cod]
+
+# Logs & Temp
 *.log
+*.dump
 *.tmp
 .env
-.gitkeep
-.gitkeep
