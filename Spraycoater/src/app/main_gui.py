@@ -36,8 +36,8 @@ from ros.ros_launcher import (
 )
 
 # Logging/Warnungen-Setup
-from ..utils.logging_setup import configure_logging_from_yaml
-from ..utils.warnings_setup import enable_all_warnings
+from utils.logging_setup import configure_logging_from_yaml
+from utils.warnings_setup import enable_all_warnings
 
 
 def resource_path(*parts: str) -> str:
