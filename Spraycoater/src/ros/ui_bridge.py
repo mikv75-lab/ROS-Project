@@ -1,0 +1,2 @@
+class UIBridge:
+    pass

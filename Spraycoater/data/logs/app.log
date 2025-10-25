@@ -1,0 +1,10 @@
+2025-10-25 20:56:28 DEBUG [86537] app:30 - Logging konfiguriert (log_dir=/root/Spraycoater/data/logs)
+2025-10-25 20:56:28 INFO [86537] app:162 - === SprayCoater START === pid=86537 python=3.12.3 cwd=/root recipe_file=/root/Spraycoater/resource/config/recipes.yaml recipe_dir=/root/Spraycoater/data/recipes log_dir=/root/Spraycoater/data/logs bringup_log=/root/Spraycoater/data/logs/bringup.log ros.launch_ros=False ros.sim_robot=True
+2025-10-25 20:57:01 DEBUG [86950] app:30 - Logging konfiguriert (log_dir=/root/Spraycoater/data/logs)
+2025-10-25 20:57:01 INFO [86950] app:162 - === SprayCoater START === pid=86950 python=3.12.3 cwd=/root recipe_file=/root/Spraycoater/resource/config/recipes.yaml recipe_dir=/root/Spraycoater/data/recipes log_dir=/root/Spraycoater/data/logs bringup_log=/root/Spraycoater/data/logs/bringup.log ros.launch_ros=False ros.sim_robot=True
+2025-10-25 20:57:41 DEBUG [87428] app:30 - Logging konfiguriert (log_dir=/root/Spraycoater/data/logs)
+2025-10-25 20:57:41 INFO [87428] app:162 - === SprayCoater START === pid=87428 python=3.12.3 cwd=/root recipe_file=/root/Spraycoater/resource/config/recipes.yaml recipe_dir=/root/Spraycoater/data/recipes log_dir=/root/Spraycoater/data/logs bringup_log=/root/Spraycoater/data/logs/bringup.log ros.launch_ros=False ros.sim_robot=True
+2025-10-25 20:59:08 DEBUG [88374] app:30 - Logging konfiguriert (log_dir=/root/Spraycoater/data/logs)
+2025-10-25 20:59:08 INFO [88374] app:162 - === SprayCoater START === pid=88374 python=3.12.3 cwd=/root recipe_file=/root/Spraycoater/resource/config/recipes.yaml recipe_dir=/root/Spraycoater/data/recipes log_dir=/root/Spraycoater/data/logs bringup_log=/root/Spraycoater/data/logs/bringup.log ros.launch_ros=False ros.sim_robot=True
+2025-10-25 21:00:28 DEBUG [89218] app:30 - Logging konfiguriert (log_dir=/root/Spraycoater/data/logs)
+2025-10-25 21:00:28 INFO [89218] app:162 - === SprayCoater START === pid=89218 python=3.12.3 cwd=/root recipe_file=/root/Spraycoater/resource/config/recipes.yaml recipe_dir=/root/Spraycoater/data/recipes log_dir=/root/Spraycoater/data/logs bringup_log=/root/Spraycoater/data/logs/bringup.log ros.launch_ros=False ros.sim_robot=True
