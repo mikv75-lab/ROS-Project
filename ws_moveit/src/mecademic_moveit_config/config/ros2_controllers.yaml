@@ -1,0 +1,50 @@
+# mecademic_moveit_config/config/ros2_controllers.yaml
+
+controller_manager:
+  ros__parameters:
+    update_rate: 250        # Hz
+    use_sim_time: false     # echte Hardware → false (ohne /clock)
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    # Für MoveIt Servo (direkte Positions-Sollwerte)
+    meca_arm_position_controller:
+      type: forward_command_controller/ForwardCommandController
+
+    # Für geplante Ausführung (FollowJointTrajectory)
+    meca_arm_group_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+
+# --------- Controller-Parameter ---------
+
+meca_arm_position_controller:
+  ros__parameters:
+    interface_name: position
+    joints:
+      - meca_axis_1_joint
+      - meca_axis_2_joint
+      - meca_axis_3_joint
+      - meca_axis_4_joint
+      - meca_axis_5_joint
+      - meca_axis_6_joint
+
+meca_arm_group_controller:
+  ros__parameters:
+    joints:
+      - meca_axis_1_joint
+      - meca_axis_2_joint
+      - meca_axis_3_joint
+      - meca_axis_4_joint
+      - meca_axis_5_joint
+      - meca_axis_6_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    allow_nonzero_velocity_at_trajectory_end: true
+    constraints:
+      stopped_velocity_tolerance: 0.01
+      goal_time: 0.5

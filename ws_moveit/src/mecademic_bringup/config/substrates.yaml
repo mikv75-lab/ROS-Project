@@ -1,0 +1,74 @@
+version: 1
+substrates:
+
+  wafer_d100_h2:
+    label: "Wafer Ø100 × h2"
+    stl: "package://mecademic_bringup/resource/substrates/wafer_d100_h2.stl"
+    sides: ["top"]
+
+  wafer_d150_h2:
+    label: "Wafer Ø150 × h2"
+    stl: "package://mecademic_bringup/resource/substrates/wafer_d150_h2.stl"
+    sides: ["top"]
+
+  wafer_d200_h2:
+    label: "Wafer Ø200 × h2"
+    stl: "package://mecademic_bringup/resource/substrates/wafer_d200_h2.stl"
+    sides: ["top"]
+
+  cylinder_d100_h100:
+    label: "Zylinder Ø100 × h100"
+    stl: "package://mecademic_bringup/resource/substrates/cylinder_d100_h100.stl"
+    sides: ["top", "helix"]
+
+  cylinder_d150_h150:
+    label: "Zylinder Ø150 × h150"
+    stl: "package://mecademic_bringup/resource/substrates/cylinder_d150_h150.stl"
+    sides: ["top", "helix"]
+
+  cylinder_d200_h200:
+    label: "Zylinder Ø200 × h200"
+    stl: "package://mecademic_bringup/resource/substrates/cylinder_d200_h200.stl"
+    sides: ["top", "helix"]
+
+  hemisphere_d200:
+    label: "Halbkugel Ø200"
+    stl: "package://mecademic_bringup/resource/substrates/hemisphere_d200.stl"
+    sides: ["top"]
+
+  pyramid_d150_h150:
+    label: "Pyramide d150 × h150"
+    stl: "package://mecademic_bringup/resource/substrates/pyramid_d150_h150.stl"
+    sides: ["top"]
+
+  pyramid_d200_h200:
+    label: "Pyramide d200 × h200"
+    stl: "package://mecademic_bringup/resource/substrates/pyramid_d200_h200.stl"
+    sides: ["top"]
+
+  cube_100:
+    label: "Würfel 100"
+    stl: "package://mecademic_bringup/resource/substrates/cube_100.stl"
+    sides: ["top"]
+
+  cube_150:
+    label: "Würfel 150"
+    stl: "package://mecademic_bringup/resource/substrates/cube_150.stl"
+    sides: ["top"]
+
+  tube_ID5mm_t1p5mm_h100mm:
+    label: "Tube ID5 × t1.5 × H100"
+    stl: "package://mecademic_bringup/resource/substrates/tube_ID5mm_t1p5mm_h100mm.stl"
+    sides: ["helix"]
+
+  tube_ID10mm_t1p5mm_h100mm:
+    label: "Tube ID10 × t1.5 × H100"
+    stl: "package://mecademic_bringup/resource/substrates/tube_ID10mm_t1p5mm_h100mm.stl"
+    sides: ["helix"]
+
+  tube_ID20mm_t1p5mm_h100mm:
+    label: "Tube ID20 × t1.5 × H100"
+    stl: "package://mecademic_bringup/resource/substrates/tube_ID20mm_t1p5mm_h100mm.stl"
+    sides: ["helix"]
+
+default_substrate: "wafer_d150_h2"

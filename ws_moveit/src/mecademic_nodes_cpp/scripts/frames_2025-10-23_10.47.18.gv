@@ -1,0 +1,15 @@
+digraph G {
+"meca_base_link" -> "meca_axis_1_link"[label=" Broadcaster: default_authority\nAverage rate: 18.488\nBuffer length: 2.38\nMost recent transform: 1761216438.656439\nOldest transform: 1761216436.2765\n"];
+"meca_mount" -> "meca_base_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"meca_axis_1_link" -> "meca_axis_2_link"[label=" Broadcaster: default_authority\nAverage rate: 18.488\nBuffer length: 2.38\nMost recent transform: 1761216438.656439\nOldest transform: 1761216436.2765\n"];
+"meca_axis_2_link" -> "meca_axis_3_link"[label=" Broadcaster: default_authority\nAverage rate: 18.488\nBuffer length: 2.38\nMost recent transform: 1761216438.656439\nOldest transform: 1761216436.2765\n"];
+"meca_axis_3_link" -> "meca_axis_4_link"[label=" Broadcaster: default_authority\nAverage rate: 18.488\nBuffer length: 2.38\nMost recent transform: 1761216438.656439\nOldest transform: 1761216436.2765\n"];
+"meca_axis_4_link" -> "meca_axis_5_link"[label=" Broadcaster: default_authority\nAverage rate: 18.488\nBuffer length: 2.38\nMost recent transform: 1761216438.656439\nOldest transform: 1761216436.2765\n"];
+"meca_axis_5_link" -> "meca_axis_6_link"[label=" Broadcaster: default_authority\nAverage rate: 18.488\nBuffer length: 2.38\nMost recent transform: 1761216438.656439\nOldest transform: 1761216436.2765\n"];
+"world" -> "meca_mount"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"meca_axis_6_link" -> "tool_mount"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+edge [style=invis];
+ subgraph cluster_legend { style=bold; color=black; label ="view_frames Result";
+"Recorded at time: 1761216438.6665776"[ shape=plaintext ] ;
+}->"world";
+}
