@@ -12,7 +12,7 @@ handlers:
   # Konsole
   console_info:
     class: logging.StreamHandler
-    level: INFO
+    level: DEBUG              # <— vorher INFO
     formatter: brief
     stream: ext://sys.stdout
 
@@ -146,7 +146,6 @@ loggers:
     level: ERROR
     handlers: [stderr_file, console_err]
     propagate: false
-
 
 # Root kriegt nur die Konsole; Fach-Logger schreiben in ihre Files
 root:

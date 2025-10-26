@@ -1,4 +1,3 @@
-# Spraycoater/src/app/tabs/recipe/recipe_model.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
@@ -48,7 +47,7 @@ class Recipe:
             id=str(d.get("id", "")),
             description=str(d.get("description", "")),
             tool=str(d.get("tool", "")),
-            mount=str(d.get("mount", "")),
+            mount=str(d.get("mount", "") or d.get("substrate_mount", "")),
             substrate=str(d.get("substrate", "") or (d.get("substrates") or [None])[0] or ""),
             parameters=dict(d.get("parameters", {}) or {}),
             path=dict(d.get("path", {}) or {}),
@@ -57,17 +56,9 @@ class Recipe:
 
     def to_dict(self) -> Dict[str, Any]:
         out = asdict(self)
-        # kompat: altes Feld 'substrates' (einzelnes Element)
         out["substrates"] = [self.substrate] if self.substrate else []
+        out["substrate_mount"] = self.mount
         return out
-
-    # ---------- Convenience ----------
-    def getPath(self):
-        """Bevorzugte Punkte-Liste (mm) aus path zurückgeben."""
-        return (self.path.get("points_mm")
-                or self.path.get("polyline_mm")
-                or self.path.get("surface_points_mm")
-                or [])
 
     # ---------- Validation ----------
     def validate_required(self) -> List[str]:
@@ -102,5 +93,5 @@ class Recipe:
             subs = (substrates_yaml.get("substrates") or {})
             if self.substrate not in subs:
                 errs.append(f"Substrat '{self.substrate}' nicht in substrates.yaml")
-        self.valid = (len(errs) == 0 and self.valid)
+        self.valid = (len(errs) == 0)
         return errs

@@ -29,6 +29,7 @@
            <item><property name="text"><string>Meander (plane)</string></property></item>
            <item><property name="text"><string>Spiral (plane)</string></property></item>
            <item><property name="text"><string>Spiral (cylinder)</string></property></item>
+           <item><property name="text"><string>Explicit</string></property></item>
           </widget>
          </item>
          <item>
@@ -65,6 +66,7 @@
          <item><widget class="QPushButton" name="btnValidate"><property name="text"><string>Validieren</string></property></widget></item>
          <item><widget class="QPushButton" name="btnOptimize"><property name="text"><string>Optimieren</string></property></widget></item>
          <item><widget class="QPushButton" name="btnSaveRecipe"><property name="text"><string>Speichern…</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnPreview"><property name="text"><string>Preview aktualisieren</string></property></widget></item>
         </layout>
        </widget>
       </item>
@@ -100,15 +102,28 @@
           </widget>
          </item>
 
-         <!-- Seiten Mehrfachauswahl -->
+         <!-- Validitätsstatus -->
+         <item>
+          <widget class="QWidget" name="rowValid" native="true">
+           <layout class="QHBoxLayout" name="rowValidLayout">
+            <item><widget class="QLabel" name="lblValidTitle"><property name="text"><string>Status:</string></property></widget></item>
+            <item><widget class="QLabel" name="lblValid"><property name="text"><string>Unbekannt</string></property></widget></item>
+            <item><spacer name="validSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
+           </layout>
+          </widget>
+         </item>
+
+         <!-- Seiten Mehrfachauswahl (sichtbare Trajektorien) -->
          <item>
           <widget class="QWidget" name="rowSides" native="true">
            <layout class="QHBoxLayout" name="rowSidesLayout">
             <item><widget class="QLabel" name="lblSides"><property name="text"><string>Seiten:</string></property></widget></item>
-            <item><widget class="QCheckBox" name="checkSideFront"><property name="text"><string>Front</string></property><property name="checked"><bool>true</bool></property></widget></item>
+            <item><widget class="QCheckBox" name="checkSideTop"><property name="text"><string>Top</string></property><property name="checked"><bool>true</bool></property></widget></item>
+            <item><widget class="QCheckBox" name="checkSideFront"><property name="text"><string>Front</string></property></widget></item>
             <item><widget class="QCheckBox" name="checkSideBack"><property name="text"><string>Back</string></property></widget></item>
             <item><widget class="QCheckBox" name="checkSideLeft"><property name="text"><string>Left</string></property></widget></item>
             <item><widget class="QCheckBox" name="checkSideRight"><property name="text"><string>Right</string></property></widget></item>
+            <item><widget class="QCheckBox" name="checkSideHelix"><property name="text"><string>Helix</string></property></widget></item>
             <item><spacer name="sideSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
            </layout>
           </widget>
@@ -125,6 +140,8 @@
             <item><widget class="QPushButton" name="btnViewIso"><property name="text"><string>ISO</string></property></widget></item>
             <item><widget class="QPushButton" name="btnViewTop"><property name="text"><string>Top</string></property></widget></item>
             <item><widget class="QPushButton" name="btnViewFront"><property name="text"><string>Front</string></property></widget></item>
+            <item><widget class="QPushButton" name="btnViewBack"><property name="text"><string>Back</string></property></widget></item>
+            <item><widget class="QPushButton" name="btnViewLeft"><property name="text"><string>Left</string></property></widget></item>
             <item><widget class="QPushButton" name="btnViewRight"><property name="text"><string>Right</string></property></widget></item>
            </layout>
           </widget>
@@ -154,7 +171,7 @@
     </widget>
    </item>
 
-   <!-- RIGHT: RViz Host (shadow) -->
+   <!-- RIGHT: RViz Host (optional/Shadow) -->
    <item>
     <widget class="QFrame" name="rvizContainer">
      <property name="frameShape"><enum>QFrame::StyledPanel</enum></property>

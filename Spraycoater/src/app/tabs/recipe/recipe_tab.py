@@ -1,13 +1,13 @@
-# Spraycoater/src/app/tabs/recipe/recipe_tab.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import os
 import copy
-import yaml
+import glob
 import logging
 from typing import Any, Dict, List, Optional
 
-from PyQt5 import uic, QtCore, QtGui
+import pyvista as pv
+from PyQt5 import uic, QtGui
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QMessageBox, QShortcut, QFileDialog
 from pyvistaqt import QtInteractor
 
@@ -19,8 +19,8 @@ from .form_builder import (
 )
 from .preview import PreviewEngine
 from .recipe_model import Recipe
-from .trajectory_builder import TrajectoryBuilder
 from .path_builder import PathBuilder
+from .trajectory_builder import TrajectoryBuilder
 
 _LOG = logging.getLogger("app.tabs.recipe")
 
@@ -33,17 +33,18 @@ def _project_root() -> str:
 def _ui_path(filename: str) -> str:
     return os.path.join(_project_root(), "resource", "ui", filename)
 
+def _ws_moveit_resource_root() -> str:
+    # Dein Pfadbaum: ~/ws_moveit/src/mecademic_bringup/resource
+    return os.path.expanduser("~/ws_moveit/src/mecademic_bringup/resource")
+
 
 class RecipeTab(QWidget):
     """
-    Rezept-Editor (ohne Rezepte-Liste):
-      - Rezeptname-Feld + Seiten-Checkboxen (Front/Back/Left/Right) -> Mehrfach-Vorschau (Overlay; aktuell ohne Seiten-Transform)
-      - Speichern/Laden via Dateidialog (Startordner: ctx.paths.recipe_dir)
-      - Validate/Optimize: Recipe.validate_* + Bridge
-      - Kamera-Views: ISO / Top / Front / Right
-      - Dynamische Formulare über 'recipe_params' (globals + path-sections)
-      - Preview zeichnet die **echte TCP-Trajektorie** (1:1 ROS-Posen) aus PathData
-      - Optionales Resampling im Preview (Step in mm, optional Winkelbegrenzung)
+    Rezept-Editor:
+      - Formular mit form_builder
+      - Preview rendert Mount/Substrat (STL) + Trajektorie (append)
+      - Kamera-Buttons: ISO/Top/Front/Back/Left/Right
+      - Normals/Raycasts lassen sich live toggeln
     """
 
     def __init__(self, *, ctx, bridge, parent=None):
@@ -62,7 +63,7 @@ class RecipeTab(QWidget):
         self.plotContainer.layout().addWidget(self.plotter)
         self.preview = PreviewEngine(self.plotter)
 
-        # Trajektorien-Builder (echte TCP-Bahnen)
+        # Trajektorien-Builder
         self.traj_builder = TrajectoryBuilder()
 
         # Specs / Formularsteuerung
@@ -70,32 +71,32 @@ class RecipeTab(QWidget):
         self._param_widgets: Dict[str, Any] = {}
         self._visibility_rules: Dict[str, Any] = {}
 
-        # aktuelles Rezept (ein einzelnes, dict-Form für UI)
+        # aktuelles Rezept (dict fürs UI)
         self._current_recipe: Dict[str, Any] = self._default_recipe()
 
-        # Preview controls
+        # Kamera-Buttons
         if hasattr(self, "btnViewIso"):   self.btnViewIso.clicked.connect(self.preview.view_iso)
         if hasattr(self, "btnViewTop"):   self.btnViewTop.clicked.connect(self.preview.view_top)
         if hasattr(self, "btnViewFront"): self.btnViewFront.clicked.connect(self.preview.view_front)
+        if hasattr(self, "btnViewBack"):  self.btnViewBack.clicked.connect(self.preview.view_back)
+        if hasattr(self, "btnViewLeft"):  self.btnViewLeft.clicked.connect(self.preview.view_left)
         if hasattr(self, "btnViewRight"): self.btnViewRight.clicked.connect(self.preview.view_right)
-        if hasattr(self, "checkNormals"): self.checkNormals.toggled.connect(self._auto_preview)
-        if hasattr(self, "checkRaycasts"): self.checkRaycasts.toggled.connect(self._auto_preview)
-        for name in ("checkSideFront", "checkSideBack", "checkSideLeft", "checkSideRight"):
-            w = getattr(self, name, None)
-            if w is not None:
-                w.toggled.connect(self._auto_preview)
+
+        # Live-Toggles
+        if hasattr(self, "checkNormals"): self.checkNormals.toggled.connect(self._on_toggle_normals)
+        if hasattr(self, "checkRaycasts"): self.checkRaycasts.toggled.connect(self._on_toggle_rays)
+
+        # Optionaler „Preview aktualisieren“-Button, falls vorhanden
+        if hasattr(self, "btnPreview"): self.btnPreview.clicked.connect(self._on_update_preview)
+
         if hasattr(self, "editRecipeName"):
             self.editRecipeName.textChanged.connect(self._on_name_changed)
 
-        # Sampling-Controls (optional im UI vorhanden)
-        if hasattr(self, "checkSampling"):         self.checkSampling.toggled.connect(self._auto_preview)
-        if hasattr(self, "spinSamplingStep"):      self.spinSamplingStep.valueChanged.connect(self._auto_preview)
-        if hasattr(self, "spinSamplingMaxAngle"):  self.spinSamplingMaxAngle.valueChanged.connect(self._auto_preview)
+        # Typwechsel -> kein Auto-Rebuild
+        if hasattr(self, "comboRecipeType"):
+            self.comboRecipeType.currentIndexChanged.connect(self._on_type_changed)
 
-        # Typwechsel
-        self.comboRecipeType.currentIndexChanged.connect(self._on_type_changed)
-
-        # Aktionen
+        # Datei-Aktionen
         if hasattr(self, "btnSaveRecipe"):   self.btnSaveRecipe.clicked.connect(self._on_save_clicked)
         if hasattr(self, "btnLoadRecipe"):   self.btnLoadRecipe.clicked.connect(self._on_load_clicked)
         if hasattr(self, "btnValidate"):     self.btnValidate.clicked.connect(self._on_validate_clicked)
@@ -110,6 +111,8 @@ class RecipeTab(QWidget):
         if hasattr(self, "editRecipeName"):
             self.editRecipeName.setText(str(self._current_recipe.get("id") or ""))
         self._apply_side_to_ui(self._current_recipe.get("side"))
+
+        # einmaliger initialer Preview-Build
         self._build_preview_from_ui()
 
     # ---------------- Defaults ----------------
@@ -118,15 +121,15 @@ class RecipeTab(QWidget):
         return {
             "id": "unsaved",
             "description": "",
-            "tool": None,              # Pflicht (vor Start)
-            "substrate": None,         # genau eines, Pflicht (vor Start)
-            "substrates": [],          # legacy mirror
-            "substrate_mount": None,   # Pflicht (vor Start)
-            "mount": None,             # legacy mirror
-            "side": defaults.get("side", "front"),  # UI-speicher (einzeln)
+            "tool": None,
+            "substrate": None,
+            "substrates": [],
+            "substrate_mount": None,
+            "mount": None,
+            "side": defaults.get("side", "top"),
             "parameters": defaults,
             "path": {
-                "type": "meander",     # legacy + mode -> RecipeModel normalisiert intern
+                "type": "meander",
                 "mode": "plane"
             },
         }
@@ -145,7 +148,7 @@ class RecipeTab(QWidget):
             visibility_rules=self._visibility_rules
         )
 
-        # Path-seiten zurücksetzen
+        # Path-Seiten leeren
         for frm in (self.formMeanderPlane, self.formSpiralPlane, self.formSpiralCylinder, self.formExplicit):
             clear_form(frm)
 
@@ -200,49 +203,55 @@ class RecipeTab(QWidget):
         return "Meander (plane)"
 
     def _spec_key_for_page_index(self, idx: int) -> str:
-        return [
+        keys = [
             "path.meander.plane",
             "path.spiral.plane",
             "path.spiral.cylinder",
             "path.explicit",
-        ][idx]
+        ]
+        if idx < 0 or idx >= len(keys):
+            return keys[0]
+        return keys[idx]
 
     def _apply_side_to_ui(self, side: Optional[str]):
-        side = (side or "front").strip().lower()
-        self._set_side_checks(front=True, back=False, left=False, right=False)
-        if side == "back":
-            self._set_side_checks(front=False, back=True, left=False, right=False)
+        side = (side or "top").strip().lower()
+        self._set_side_checks(top=True, front=False, back=False, left=False, right=False, helix=False)
+        if side == "front":
+            self._set_side_checks(top=False, front=True, back=False, left=False, right=False, helix=False)
+        elif side == "back":
+            self._set_side_checks(top=False, front=False, back=True, left=False, right=False, helix=False)
         elif side == "left":
-            self._set_side_checks(front=False, back=False, left=True, right=False)
+            self._set_side_checks(top=False, front=False, back=False, left=True, right=False, helix=False)
         elif side == "right":
-            self._set_side_checks(front=False, back=False, left=False, right=True)
+            self._set_side_checks(top=False, front=False, back=False, left=False, right=True, helix=False)
+        elif side == "helix":
+            self._set_side_checks(top=False, front=False, back=False, left=False, right=False, helix=True)
 
-    def _set_side_checks(self, *, front: bool, back: bool, left: bool, right: bool):
-        for name, val in (("checkSideFront", front),
-                          ("checkSideBack",  back),
-                          ("checkSideLeft",  left),
-                          ("checkSideRight", right)):
+    def _set_side_checks(self, *, top: bool, front: bool, back: bool, left: bool, right: bool, helix: bool):
+        mapping = {
+            "checkSideTop": top, "checkSideFront": front, "checkSideBack": back,
+            "checkSideLeft": left, "checkSideRight": right, "checkSideHelix": helix
+        }
+        for name, val in mapping.items():
             w = getattr(self, name, None)
             if w is not None:
-                prev = w.blockSignals(True)  # _auto_preview nicht mehrfach feuern
+                prev = w.blockSignals(True)
                 w.setChecked(val)
                 w.blockSignals(prev)
 
     def _selected_sides(self) -> List[str]:
         sides = []
-        if getattr(self, "checkSideFront", None) and self.checkSideFront.isChecked():
-            sides.append("front")
-        if getattr(self, "checkSideBack", None) and self.checkSideBack.isChecked():
-            sides.append("back")
-        if getattr(self, "checkSideLeft", None) and self.checkSideLeft.isChecked():
-            sides.append("left")
-        if getattr(self, "checkSideRight", None) and self.checkSideRight.isChecked():
-            sides.append("right")
-        return sides or ["front"]
+        if getattr(self, "checkSideTop", None)   and self.checkSideTop.isChecked():   sides.append("top")
+        if getattr(self, "checkSideFront", None) and self.checkSideFront.isChecked(): sides.append("front")
+        if getattr(self, "checkSideBack", None)  and self.checkSideBack.isChecked():  sides.append("back")
+        if getattr(self, "checkSideLeft", None)  and self.checkSideLeft.isChecked():  sides.append("left")
+        if getattr(self, "checkSideRight", None) and self.checkSideRight.isChecked(): sides.append("right")
+        if getattr(self, "checkSideHelix", None) and self.checkSideHelix.isChecked(): sides.append("helix")
+        return sides or ["top"]
 
     def _single_saved_side(self) -> str:
         sel = self._selected_sides()
-        return sel[0] if len(sel) >= 1 else "front"
+        return sel[0] if len(sel) >= 1 else "top"
 
     # ---------------- Recipe-Objekt aus Formular ----------------
     def _collect_globals(self) -> Dict[str, Any]:
@@ -305,7 +314,6 @@ class RecipeTab(QWidget):
         if not rid:
             rid = src.get("id") or "recipe"
 
-        # Optional: Tool/Substrate/Mount aus Combos, falls vorhanden
         tool = src.get("tool")
         if hasattr(self, "comboTool") and self.comboTool.currentText():
             t = self.comboTool.currentText().strip()
@@ -328,19 +336,21 @@ class RecipeTab(QWidget):
             "substrate":        substrate,
             "substrates":       [substrate] if substrate else [],
             "substrate_mount":  substrate_mount,
-            "mount":            substrate_mount,   # legacy mirror
-            "side":             self._single_saved_side(),   # UI speichert eine Seite
+            "mount":            substrate_mount,
+            "side":             self._single_saved_side(),
             "parameters":       self._collect_globals(),
             "path":             self._collect_path_for(self._spec_key_for_page_index(self.stackTypes.currentIndex())),
         }
         return rec
 
     def _recipe_model_from_forms(self) -> Recipe:
-        """Konvertiert die aktuelle Formularlage in ein Recipe-Model (mit Normalisierung)."""
         d = self._build_recipe_from_forms()
         return Recipe.from_dict(d)
 
     # ---------------- Aktionen ----------------
+    def _on_update_preview(self):
+        self._build_preview_from_ui()
+
     def _on_save_clicked(self):
         rec = self._build_recipe_from_forms()
         if not rec:
@@ -354,9 +364,9 @@ class RecipeTab(QWidget):
             return
 
         try:
-            # über Recipe-Model serialisieren (schreibt neues Schema + Legacy-Spiegel)
             model = Recipe.from_dict(rec)
             with open(fname, "w", encoding="utf-8") as f:
+                import yaml
                 yaml.safe_dump(model.to_dict(), f, allow_unicode=True, sort_keys=False)
             QMessageBox.information(self, "Gespeichert", f"Rezept gespeichert:\n{fname}")
             self._current_recipe = model.to_dict()
@@ -371,12 +381,11 @@ class RecipeTab(QWidget):
         if not fname:
             return
         try:
-            model = Recipe.load_yaml(fname)  # nutzt Model-Normalisierung
+            model = Recipe.load_yaml(fname)
             rec = model.to_dict()
 
             self._current_recipe = rec
 
-            # UI neu aufbauen anhand des (legacy) type/mode aus rec (falls vorhanden)
             rtype = rec.get("path", {}).get("type", "meander")
             rmode = rec.get("path", {}).get("mode", "plane")
             self._rebuild_all_forms(active_index=self._page_index_for(rtype, rmode))
@@ -385,8 +394,8 @@ class RecipeTab(QWidget):
             if hasattr(self, "editRecipeName"):
                 self.editRecipeName.setText(str(rec.get("id") or ""))
 
-            # Seite in UI
             self._apply_side_to_ui(rec.get("side"))
+
             self._build_preview_from_ui()
 
             QMessageBox.information(self, "Geladen", f"Rezept geladen:\n{fname}")
@@ -395,11 +404,8 @@ class RecipeTab(QWidget):
 
     def _on_validate_clicked(self):
         model = self._recipe_model_from_forms()
-
-        # 1) lokale Pflicht-Prüfung
         errs = model.validate_required()
 
-        # 2) Referenzprüfung gegen verfügbare Kataloge (falls im ctx vorhanden)
         tools_yaml       = getattr(self.ctx, "tools_yaml", None)
         mounts_yaml      = getattr(self.ctx, "mounts_yaml", None)
         substrates_yaml  = getattr(self.ctx, "substrates_yaml", None)
@@ -411,7 +417,6 @@ class RecipeTab(QWidget):
             QMessageBox.warning(self, "Validate", "Fehler:\n- " + "\n- ".join(map(str, errs)))
             return
 
-        # 3) Bridge (volle Prüfung)
         try:
             resp = self.bridge.validate(model.to_dict(), syntactic_only=False, timeout=5.0)
             if getattr(resp, "ok", False):
@@ -423,13 +428,10 @@ class RecipeTab(QWidget):
 
     def _on_optimize_clicked(self):
         model = self._recipe_model_from_forms()
-
-        # Mindestprüfung
         errs = model.validate_required()
         if errs:
             QMessageBox.warning(self, "Optimize", "Fehler:\n- " + "\n- ".join(map(str, errs)))
             return
-
         try:
             resp = self.bridge.optimize(model.to_dict(), timeout=10.0)
             if getattr(resp, "ok", False):
@@ -447,57 +449,211 @@ class RecipeTab(QWidget):
     def _on_type_changed(self, idx: int):
         self.stackTypes.setCurrentIndex(idx)
         update_visibility_all(self._param_widgets, self._visibility_rules)
-        self._auto_preview()
+        # kein Auto-Preview – Nutzer drückt „Preview aktualisieren“ (oder initialer Build ist bereits erfolgt)
 
-    def _auto_preview(self):
-        self._build_preview_from_ui()
+    def _on_toggle_normals(self, checked: bool):
+        self.preview.set_normals_visible(bool(checked))
+
+    def _on_toggle_rays(self, checked: bool):
+        self.preview.set_rays_visible(bool(checked))
 
     def _build_preview_from_ui(self):
         """
-        Baut PathData (mm) aus Rezept, optional resampelt, erzeugt daraus die TCP-Trajektorie
-        und zeichnet sie (Skalierung auf mm nur in der Vorschau).
+        Baut Szene (Mount/Substrate) und Trajektorie und zeichnet sie.
         """
-        show_normals = bool(getattr(self, "checkNormals", None) and self.checkNormals.isChecked())
-        show_rays    = bool(getattr(self, "checkRaycasts", None) and self.checkRaycasts.isChecked())
-
-        # Seiten-Mehrfachauswahl bleibt für spätere Projektion/Seiten-Transforms bestehen,
-        # aktuell keine seitenspezifische Transformation.
-        _sides = self._selected_sides()
-        first = True
+        show_normals = bool(self.checkNormals.isChecked()) if hasattr(self, "checkNormals") else False
+        show_rays    = bool(self.checkRaycasts.isChecked()) if hasattr(self, "checkRaycasts") else False
 
         try:
             model = self._recipe_model_from_forms()
         except Exception as e:
             _LOG.exception("RecipeModel aus Formular fehlgeschlagen: %s", e)
+            self._set_valid_label(text="Fehler beim Lesen des Formulars", ok=False)
             return
 
-        # Sampling-Parameter aus UI ins Model spiegeln (nur Preview-relevant)
-        enable_sampling = bool(getattr(self, "checkSampling", None) and self.checkSampling.isChecked())
-        if enable_sampling:
-            try:
-                step = float(self.spinSamplingStep.value()) if hasattr(self, "spinSamplingStep") else 1.0
-                ang  = float(self.spinSamplingMaxAngle.value()) if hasattr(self, "spinSamplingMaxAngle") else 0.0
-            except Exception:
-                step, ang = 1.0, 0.0
-            model.parameters = dict(model.parameters or {})
-            model.parameters["sample_step_mm"] = step
-            model.parameters["max_angle_deg"]  = ang
+        errs = model.validate_required()
+        if errs:
+            self._set_valid_label(text="; ".join(errs), ok=False)
+        else:
+            self._set_valid_label(text="OK", ok=True)
 
+        # Szene zurücksetzen und Mount/Substrate einfügen
+        self.preview.clear()
+
+        # Mount-Mesh (grau), Substrate-Mesh (leicht blau)
         try:
-            # 1) Pfad (mm) unverändert/optional resampelt aus dem Rezept
-            path_data = PathBuilder.from_recipe(model)
-
-            # Hinweis: Wenn du echtes Resampling hier aktivieren willst,
-            # kannst du es innerhalb von PathBuilder anhand der Parameter
-            # sample_step_mm / max_angle_deg umsetzen.
-
-            # 2) Trajektorie aus PathData bauen (mm -> m, Orientierungen aus Normalen/Spraywinkel)
-            traj = self.traj_builder.build_from_pathdata(model, path_data)
-
-            # 3) Render (in mm skaliert)
-            self.preview.render_trajectory(traj, show_normals=show_normals, show_rays=show_rays, append=False)
-            first = False
-
+            self._try_add_scene_mesh(model.mount or model.to_dict().get("mount"), kind="mount",
+                                     color="lightgray", opacity=0.25)
         except Exception as e:
-            _LOG.exception("Preview/Build fehlgeschlagen: %s", e)
+            _LOG.warning("Mount-Mesh nicht geladen: %s", e)
+        try:
+            self._try_add_scene_mesh(model.substrate, kind="substrate",
+                                     color="#4c6ef5", opacity=0.30)
+        except Exception as e:
+            _LOG.warning("Substrate-Mesh nicht geladen: %s", e)
+
+        # Pfaddaten + Trajektorie
+        try:
+            path_data = PathBuilder.from_recipe(model)
+        except Exception as e:
+            _LOG.exception("PathBuilder fehlgeschlagen: %s", e)
             return
+
+        sides = self._selected_sides()
+        for _s in sides:
+            try:
+                traj = self.traj_builder.build_from_pathdata(model, path_data)
+                self.preview.render_trajectory(
+                    traj, show_normals=show_normals, show_rays=show_rays, append=True
+                )
+            except Exception as e:
+                _LOG.exception("Preview/Build fehlgeschlagen: %s", e)
+
+        # Standardkamera
+        self.preview.view_iso()
+
+    # ----- Scene mesh helpers -----
+    def _try_add_scene_mesh(self, name_or_path: Optional[str], *, kind: str, color: str, opacity: float):
+        if not name_or_path:
+            return
+        p = self._find_mesh_file(str(name_or_path), kind=kind)
+        if not p:
+            # second chance: Basisname ohne Endung
+            base = os.path.splitext(str(name_or_path))[0]
+            p = self._find_mesh_file(base, kind=kind)
+        if not p:
+            raise FileNotFoundError(f"Mesh für '{name_or_path}' (kind={kind}) nicht gefunden.")
+        mesh = pv.read(p)
+        self.preview.add_mesh(mesh, color=color, opacity=float(opacity))
+
+    # ---- robustes Suchen in ws_moveit + Projekt ----
+    def _find_mesh_file(self, name_or_path: str, *, kind: Optional[str] = None) -> Optional[str]:
+        """
+        Sucht STL/OBJ/VTP/VTPK für Mount/Substrate/Tool:
+        - exakter Pfad
+        - targeted roots (ws_moveit resource, nach 'kind' priorisiert)
+        - Projekt-Roots
+        - rekursiver Glob
+        - Mount-Aliase werden auf reale Dateinamen abgebildet
+        """
+        if not name_or_path:
+            return None
+
+        # 0) Vollpfad?
+        if os.path.isabs(name_or_path) and os.path.exists(name_or_path):
+            return name_or_path
+
+        # 1) ggf. Aliase für Mounts → mögliche Basen
+        candidates: List[str] = []
+        base = os.path.splitext(os.path.basename(name_or_path))[0]
+
+        if (kind or "").lower() == "mount":
+            candidates.extend(self._mount_alias_basenames(base))
+        else:
+            candidates.append(base)
+
+        # 2) Endungen
+        exts = (".stl", ".ply", ".obj", ".vtp", ".vtk")
+
+        # 3) Root-Verzeichnisse (Priorität: ws_moveit → Projekt)
+        r_ws = _ws_moveit_resource_root()
+        roots_ws_mounts = [os.path.join(r_ws, "substrate_mounts")]
+        roots_ws_subs   = [os.path.join(r_ws, "substrates")]
+        roots_ws_tools  = [os.path.join(r_ws, "tools")]
+        roots_ws_env    = [os.path.join(r_ws, "environment")]
+
+        proj = _project_root()
+        roots_proj = [
+            os.path.join(proj, "resource", "stl"),
+            os.path.join(proj, "resource", "meshes"),
+            os.path.join(proj, "resource", "models"),
+            os.path.join(proj, "data", "stl"),
+            os.path.join(proj, "data", "meshes"),
+            proj,
+        ]
+
+        # nach 'kind' ordnen
+        roots: List[str] = []
+        if (kind or "").lower() == "mount":
+            roots += roots_ws_mounts
+        elif (kind or "").lower() == "substrate":
+            roots += roots_ws_subs
+        elif (kind or "").lower() == "tool":
+            roots += roots_ws_tools
+        elif (kind or "").lower() == "environment":
+            roots += roots_ws_env
+
+        # Generische ws_moveit-Roots (falls z. B. falsches 'kind')
+        roots += roots_ws_mounts + roots_ws_subs + roots_ws_tools + roots_ws_env
+        # Projekt-Roots
+        roots += roots_proj
+        # aktuelle Working-Dir als allerletzter Versuch
+        roots += [os.getcwd()]
+
+        # 4) direkte Kandidaten
+        for r in roots:
+            for c in candidates:
+                for ext in exts:
+                    p = os.path.join(r, c + ext)
+                    if os.path.exists(p):
+                        return p
+
+        # 5) rekursiv suchen
+        for r in roots:
+            for c in candidates:
+                for ext in exts:
+                    pat = os.path.join(r, "**", c + ext)
+                    hits = glob.glob(pat, recursive=True)
+                    if hits:
+                        return hits[0]
+
+        return None
+
+    @staticmethod
+    def _mount_alias_basenames(alias: str) -> List[str]:
+        """
+        Abbildung häufiger Mount-Kurznamen auf die tatsächlichen DateibasEN.
+        Wir geben mehrere zurück (versuchsweise), um robust zu sein.
+        """
+        a = alias.lower().replace(" ", "").replace("-", "_")
+
+        # Handgemappte Aliase → exakte Basen (ohne Endung)
+        map_exact = {
+            "flat_240x240":      "substrate_mount_flat_240x240x50",
+            "flat240x240":       "substrate_mount_flat_240x240x50",
+            "circle_d240":       "substrate_mount_circle_d240_h50",
+            "circle240":         "substrate_mount_circle_d240_h50",
+            "circle_d240_h50":   "substrate_mount_circle_d240_h50",
+            "post_d30_h100":     "substrate_mount_post_d30mm_h100mm",
+            "postd30h100":       "substrate_mount_post_d30mm_h100mm",
+            "post_d30":          "substrate_mount_post_d30mm_h100mm",
+        }
+
+        # Wenn alias bereits exakt gemappt werden kann
+        if a in map_exact:
+            return [map_exact[a], a, "substrate_mount_" + a]
+
+        # Heuristische Varianten
+        cand = [a, "substrate_mount_" + a]
+
+        # Zahlen-Extraktion für typische Muster
+        if a.startswith("flat") and "240x240" in a:
+            cand.append("substrate_mount_flat_240x240x50")
+        if a.startswith("circle") and ("240" in a or "d240" in a):
+            cand.append("substrate_mount_circle_d240_h50")
+        if "post" in a and ("d30" in a or "30" in a) and ("h100" in a or "100" in a):
+            cand.append("substrate_mount_post_d30mm_h100mm")
+
+        # Duplikate entfernen, Reihenfolge erhalten
+        seen = set()
+        out: List[str] = []
+        for c in cand:
+            if c not in seen:
+                out.append(c); seen.add(c)
+        return out
+
+    def _set_valid_label(self, *, text: str, ok: bool):
+        if not hasattr(self, "lblValid"):
+            return
+        self.lblValid.setText("OK" if ok else f"Fehler: {text}")
+        self.lblValid.setStyleSheet("color: #0a0;" if ok else "color: #a00;")

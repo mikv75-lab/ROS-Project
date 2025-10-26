@@ -60,7 +60,7 @@ recipe_params:
     boustrophedon:     { type: boolean, default: true }
     start:             { type: enum, values: ["auto","minx_miny","minx_maxy","maxx_miny","maxx_maxy"], default: "auto" }
     lead_in_mm:        { type: number, min: 0.0, max: 200,  step: 0.1, unit: "mm", default: 5.0 }
-    
+
 # ------------------------------------------------------
 
 recipes:
