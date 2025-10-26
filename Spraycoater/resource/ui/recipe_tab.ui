@@ -4,22 +4,12 @@
  <widget class="QWidget" name="RecipeTab">
   <layout class="QHBoxLayout" name="rootLayout" stretch="0,1,0">
 
-   <!-- LEFT: Controls (schmal) -->
+   <!-- LEFT: Controls -->
    <item>
     <widget class="QWidget" name="leftPanel">
      <property name="minimumSize"><size><width>260</width><height>0</height></size></property>
      <property name="maximumSize"><size><width>320</width><height>16777215</height></size></property>
      <layout class="QVBoxLayout" name="leftLayout">
-
-      <!-- Rezepte-Liste -->
-      <item>
-       <widget class="QGroupBox" name="grpList">
-        <property name="title"><string>Rezepte</string></property>
-        <layout class="QVBoxLayout" name="grpListLayout">
-         <item><widget class="QListWidget" name="listRecipes"/></item>
-        </layout>
-       </widget>
-      </item>
 
       <!-- Globale Parameter -->
       <item>
@@ -39,7 +29,6 @@
            <item><property name="text"><string>Meander (plane)</string></property></item>
            <item><property name="text"><string>Spiral (plane)</string></property></item>
            <item><property name="text"><string>Spiral (cylinder)</string></property></item>
-           <item><property name="text"><string>Explicit</string></property></item>
           </widget>
          </item>
          <item>
@@ -67,34 +56,67 @@
        </widget>
       </item>
 
-      <!-- Preview (nur Hemisphäre + Meander/Spiral) -->
+      <!-- Aktionen -->
+      <item>
+       <widget class="QGroupBox" name="grpActions">
+        <property name="title"><string>Aktionen</string></property>
+        <layout class="QHBoxLayout" name="grpActionsLayout">
+         <item><widget class="QPushButton" name="btnLoadRecipe"><property name="text"><string>Laden…</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnValidate"><property name="text"><string>Validieren</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnOptimize"><property name="text"><string>Optimieren</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnSaveRecipe"><property name="text"><string>Speichern…</string></property></widget></item>
+        </layout>
+       </widget>
+      </item>
+
+      <item><spacer name="leftSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property>
+       <property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+     </layout>
+    </widget>
+   </item>
+
+   <!-- MIDDLE: Preview (oben) + PyVista (unten) -->
+   <item>
+    <widget class="QWidget" name="centerPanel">
+     <layout class="QVBoxLayout" name="centerLayout" stretch="0,1">
+
+      <!-- Preview -->
       <item>
        <widget class="QGroupBox" name="grpPreview">
         <property name="title"><string>Preview</string></property>
         <layout class="QVBoxLayout" name="grpPreviewLayout">
 
-         <!-- Shape -->
+         <!-- Rezeptname -->
          <item>
-          <widget class="QComboBox" name="comboShape">
-           <item><property name="text"><string>Hemisphäre</string></property></item>
+          <widget class="QWidget" name="rowName" native="true">
+           <layout class="QHBoxLayout" name="rowNameLayout">
+            <item><widget class="QLabel" name="lblName"><property name="text"><string>Rezeptname:</string></property></widget></item>
+            <item>
+             <widget class="QLineEdit" name="editRecipeName">
+              <property name="placeholderText"><string>Rezeptname/ID…</string></property>
+             </widget>
+            </item>
+           </layout>
           </widget>
          </item>
 
-         <!-- Path -->
+         <!-- Seiten Mehrfachauswahl -->
          <item>
-          <widget class="QComboBox" name="comboPath">
-           <item><property name="text"><string>Meander</string></property></item>
-           <item><property name="text"><string>Spiral</string></property></item>
+          <widget class="QWidget" name="rowSides" native="true">
+           <layout class="QHBoxLayout" name="rowSidesLayout">
+            <item><widget class="QLabel" name="lblSides"><property name="text"><string>Seiten:</string></property></widget></item>
+            <item><widget class="QCheckBox" name="checkSideFront"><property name="text"><string>Front</string></property><property name="checked"><bool>true</bool></property></widget></item>
+            <item><widget class="QCheckBox" name="checkSideBack"><property name="text"><string>Back</string></property></widget></item>
+            <item><widget class="QCheckBox" name="checkSideLeft"><property name="text"><string>Left</string></property></widget></item>
+            <item><widget class="QCheckBox" name="checkSideRight"><property name="text"><string>Right</string></property></widget></item>
+            <item><spacer name="sideSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
+           </layout>
           </widget>
          </item>
 
          <!-- Optionen -->
-         <item><widget class="QCheckBox" name="checkNormals">
-           <property name="text"><string>Normalen anzeigen</string></property>
-         </widget></item>
-         <item><widget class="QCheckBox" name="checkRaycasts">
-           <property name="text"><string>Raycasts anzeigen</string></property>
-         </widget></item>
+         <item><widget class="QCheckBox" name="checkNormals"><property name="text"><string>Normalen anzeigen</string></property></widget></item>
+         <item><widget class="QCheckBox" name="checkRaycasts"><property name="text"><string>Raycasts anzeigen</string></property></widget></item>
 
          <!-- Kamera-Views -->
          <item>
@@ -112,31 +134,22 @@
        </widget>
       </item>
 
-      <!-- Aktionen -->
+      <!-- PyVista Host -->
       <item>
-       <widget class="QGroupBox" name="grpActions">
-        <property name="title"><string>Aktionen</string></property>
-        <layout class="QHBoxLayout" name="grpActionsLayout">
-         <item><widget class="QPushButton" name="btnValidate"><property name="text"><string>Validieren</string></property></widget></item>
-         <item><widget class="QPushButton" name="btnOptimize"><property name="text"><string>Optimieren</string></property></widget></item>
-         <item><widget class="QPushButton" name="btnSaveRecipe"><property name="text"><string>Speichern…</string></property></widget></item>
+       <widget class="QFrame" name="plotContainer">
+        <property name="frameShape"><enum>QFrame::StyledPanel</enum></property>
+        <property name="frameShadow"><enum>QFrame::Raised</enum></property>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>0</horstretch><verstretch>1</verstretch>
+         </sizepolicy>
+        </property>
+        <layout class="QVBoxLayout" name="pvLayout">
+         <item><widget class="QLabel" name="lblViewerHint"><property name="text"><string>PyVista-Viewer wird hier initialisiert…</string></property></widget></item>
         </layout>
        </widget>
       </item>
 
-      <item><spacer name="leftSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property>
-       <property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
-     </layout>
-    </widget>
-   </item>
-
-   <!-- MIDDLE: PyVista host -->
-   <item>
-    <widget class="QFrame" name="plotContainer">
-     <property name="frameShape"><enum>QFrame::StyledPanel</enum></property>
-     <property name="frameShadow"><enum>QFrame::Raised</enum></property>
-     <layout class="QVBoxLayout" name="pvLayout">
-      <item><widget class="QLabel" name="lblViewerHint"><property name="text"><string>PyVista-Viewer wird hier initialisiert…</string></property></widget></item>
      </layout>
     </widget>
    </item>

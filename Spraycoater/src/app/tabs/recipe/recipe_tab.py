@@ -20,6 +20,7 @@ from .form_builder import (
 from .preview import PreviewEngine
 from .recipe_model import Recipe
 from .trajectory_builder import TrajectoryBuilder
+from .path_builder import PathBuilder
 
 _LOG = logging.getLogger("app.tabs.recipe")
 
@@ -36,12 +37,13 @@ def _ui_path(filename: str) -> str:
 class RecipeTab(QWidget):
     """
     Rezept-Editor (ohne Rezepte-Liste):
-      - Rezeptname-Feld + Seiten-Checkboxen (Front/Back/Left/Right) -> Mehrfach-Vorschau (Overlay)
+      - Rezeptname-Feld + Seiten-Checkboxen (Front/Back/Left/Right) -> Mehrfach-Vorschau (Overlay; aktuell ohne Seiten-Transform)
       - Speichern/Laden via Dateidialog (Startordner: ctx.paths.recipe_dir)
       - Validate/Optimize: Recipe.validate_* + Bridge
       - Kamera-Views: ISO / Top / Front / Right
       - Dynamische Formulare über 'recipe_params' (globals + path-sections)
-      - Preview zeichnet die **echte TCP-Trajektorie** (1:1 ROS-Posen)
+      - Preview zeichnet die **echte TCP-Trajektorie** (1:1 ROS-Posen) aus PathData
+      - Optionales Resampling im Preview (Step in mm, optional Winkelbegrenzung)
     """
 
     def __init__(self, *, ctx, bridge, parent=None):
@@ -60,7 +62,7 @@ class RecipeTab(QWidget):
         self.plotContainer.layout().addWidget(self.plotter)
         self.preview = PreviewEngine(self.plotter)
 
-        # Trajektorien-Builder (echte TCP-Bahnen, inkl. optionaler Mesh-Projektion)
+        # Trajektorien-Builder (echte TCP-Bahnen)
         self.traj_builder = TrajectoryBuilder()
 
         # Specs / Formularsteuerung
@@ -84,6 +86,11 @@ class RecipeTab(QWidget):
                 w.toggled.connect(self._auto_preview)
         if hasattr(self, "editRecipeName"):
             self.editRecipeName.textChanged.connect(self._on_name_changed)
+
+        # Sampling-Controls (optional im UI vorhanden)
+        if hasattr(self, "checkSampling"):         self.checkSampling.toggled.connect(self._auto_preview)
+        if hasattr(self, "spinSamplingStep"):      self.spinSamplingStep.valueChanged.connect(self._auto_preview)
+        if hasattr(self, "spinSamplingMaxAngle"):  self.spinSamplingMaxAngle.valueChanged.connect(self._auto_preview)
 
         # Typwechsel
         self.comboRecipeType.currentIndexChanged.connect(self._on_type_changed)
@@ -119,7 +126,7 @@ class RecipeTab(QWidget):
             "side": defaults.get("side", "front"),  # UI-speicher (einzeln)
             "parameters": defaults,
             "path": {
-                "type": "meander",
+                "type": "meander",     # legacy + mode -> RecipeModel normalisiert intern
                 "mode": "plane"
             },
         }
@@ -446,11 +453,16 @@ class RecipeTab(QWidget):
         self._build_preview_from_ui()
 
     def _build_preview_from_ui(self):
-        """Baut echte Trajektorien (pro ausgewählter Seite) und zeichnet sie."""
-        show_normals = bool(self.checkNormals.isChecked()) if hasattr(self, "checkNormals") else False
-        show_rays    = bool(self.checkRaycasts.isChecked()) if hasattr(self, "checkRaycasts") else False
+        """
+        Baut PathData (mm) aus Rezept, optional resampelt, erzeugt daraus die TCP-Trajektorie
+        und zeichnet sie (Skalierung auf mm nur in der Vorschau).
+        """
+        show_normals = bool(getattr(self, "checkNormals", None) and self.checkNormals.isChecked())
+        show_rays    = bool(getattr(self, "checkRaycasts", None) and self.checkRaycasts.isChecked())
 
-        sides = self._selected_sides()  # niemals leer (mind. 'front')
+        # Seiten-Mehrfachauswahl bleibt für spätere Projektion/Seiten-Transforms bestehen,
+        # aktuell keine seitenspezifische Transformation.
+        _sides = self._selected_sides()
         first = True
 
         try:
@@ -459,58 +471,33 @@ class RecipeTab(QWidget):
             _LOG.exception("RecipeModel aus Formular fehlgeschlagen: %s", e)
             return
 
-        # Substrat-Mesh (mm) versuchen zu laden; wenn None -> ohne Projektion
-        mesh_mm = self._load_preview_mesh_mm(model.substrate)
+        # Sampling-Parameter aus UI ins Model spiegeln (nur Preview-relevant)
+        enable_sampling = bool(getattr(self, "checkSampling", None) and self.checkSampling.isChecked())
+        if enable_sampling:
+            try:
+                step = float(self.spinSamplingStep.value()) if hasattr(self, "spinSamplingStep") else 1.0
+                ang  = float(self.spinSamplingMaxAngle.value()) if hasattr(self, "spinSamplingMaxAngle") else 0.0
+            except Exception:
+                step, ang = 1.0, 0.0
+            model.parameters = dict(model.parameters or {})
+            model.parameters["sample_step_mm"] = step
+            model.parameters["max_angle_deg"]  = ang
 
-        for side in sides:
-            try:
-                traj = self.traj_builder.build(
-                    model,
-                    mesh_mm=mesh_mm,
-                    side=side,              # Ray-Richtung für Projektion
-                    T_world_scene=None,     # Preview im Scene-Frame
-                    force_project=False     # bei planaren Typen projiziert er ohnehin
-                )
-                self.preview.render_trajectory(
-                    traj,
-                    show_normals=show_normals,
-                    show_rays=show_rays,
-                    append=(not first)
-                )
-                first = False
-            except Exception as e:
-                _LOG.exception("Preview/Build für Seite '%s' fehlgeschlagen: %s", side, e)
-                # weiter zur nächsten Seite
+        try:
+            # 1) Pfad (mm) unverändert/optional resampelt aus dem Rezept
+            path_data = PathBuilder.from_recipe(model)
 
-    # ---------------- Mesh-Lader (Preview) ----------------
-    def _load_preview_mesh_mm(self, substrate_key: Optional[str]):
-        """
-        Versucht ein PyVista-PolyData (mm) für das gegebene Substrat zu holen.
-        Falls nicht verfügbar, None zurückgeben -> Traj ohne Projektion.
-        Erwartete Integrationspunkte (projektabhängig):
-          - ctx.get_substrate_mesh_mm(key)
-          - ctx.mesh_cache[key]
-          - ctx.load_substrate_mesh_mm(key)
-        """
-        if not substrate_key:
-            return None
-        # 1) Direkter Getter am Kontext?
-        getter = getattr(self.ctx, "get_substrate_mesh_mm", None)
-        if callable(getter):
-            try:
-                return getter(substrate_key)
-            except Exception as e:
-                _LOG.debug("get_substrate_mesh_mm('%s') schlug fehl: %s", substrate_key, e)
-        # 2) Cache-Attr?
-        cache = getattr(self.ctx, "mesh_cache", None)
-        if isinstance(cache, dict) and substrate_key in cache:
-            return cache.get(substrate_key)
-        # 3) Loader-Funktion?
-        loader = getattr(self.ctx, "load_substrate_mesh_mm", None)
-        if callable(loader):
-            try:
-                return loader(substrate_key)
-            except Exception as e:
-                _LOG.debug("load_substrate_mesh_mm('%s') schlug fehl: %s", substrate_key, e)
-        # Kein Mesh verfügbar -> ohne Projektion rendern
-        return None
+            # Hinweis: Wenn du echtes Resampling hier aktivieren willst,
+            # kannst du es innerhalb von PathBuilder anhand der Parameter
+            # sample_step_mm / max_angle_deg umsetzen.
+
+            # 2) Trajektorie aus PathData bauen (mm -> m, Orientierungen aus Normalen/Spraywinkel)
+            traj = self.traj_builder.build_from_pathdata(model, path_data)
+
+            # 3) Render (in mm skaliert)
+            self.preview.render_trajectory(traj, show_normals=show_normals, show_rays=show_rays, append=False)
+            first = False
+
+        except Exception as e:
+            _LOG.exception("Preview/Build fehlgeschlagen: %s", e)
+            return
