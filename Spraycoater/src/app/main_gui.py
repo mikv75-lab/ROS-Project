@@ -70,11 +70,6 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 def main():
-    parser = argparse.ArgumentParser(prog="SprayCoater UI", add_help=True)
-    parser.add_argument("--validate-on-start", action="store_true",
-                        help="Optional: Rezepte beim Start validieren (derzeit ungenutzt).")
-    args = parser.parse_args()
-
     app = QApplication(sys.argv)
     splash = _make_splash()
     app.processEvents()
