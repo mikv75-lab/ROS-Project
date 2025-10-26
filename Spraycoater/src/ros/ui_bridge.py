@@ -12,9 +12,8 @@ Aktuell implementierte Features:
 - connect()/shutdown() -> ROS2 Node + Executor-Thread
 - publish_ui_cmd() -> JSON-Kommandos an /spray/ui_cmd
 - optionales "Request/Response" via /spray/ui_events (String JSON)
-- validate()/optimize() -> syntaktische Prüfung via RecipeValidator; falls
-  verbunden, zusätzlich ROS-Command absetzen (fire-and-forget bzw. mit optionalem Wait)
-- save_recipe() -> Datei speichern (vorher validate_recipe_for_save)
+- validate()/optimize() -> nur ROS-Command (UI führt syntaktische Checks selbst aus)
+- save_recipe() -> Datei speichern
 
 Service-/Topic-Namen an Ihr System anpassen.
 """
@@ -24,12 +23,8 @@ import json
 import logging
 import os
 import threading
-import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
-
-# Syntaktische Validierung aus Ihrem Projekt
-from config.startup import validate_recipe_for_save
 
 _LOG = logging.getLogger("ros.ui_bridge")
 
@@ -222,32 +217,23 @@ class UIBridge:
 
     def validate(self, recipe: Dict[str, Any], *, syntactic_only: bool = False, timeout: float = 0.0) -> BridgeResult:
         """
-        Syntaktische Validierung via RecipeValidator.
-        Optional (wenn verbunden & syntactic_only=False): ROS-Command 'validate'.
+        Validierung an ROS weiterreichen.
+        Die syntaktische Validierung passiert vorab in der UI (RecipeTab).
         """
-        # 1) Syntaktisch (immer)
-        try:
-            # recipe_params aus ctx; prüft NUR das EINE Rezept (UI-Speicherfall)
-            errs = validate_recipe_for_save(recipe, self.ctx.recipe_params)
-            if errs:
-                return BridgeResult(ok=False, message="; ".join(errs))
-        except Exception as e:
-            return BridgeResult(ok=False, message=str(e))
+        if syntactic_only:
+            # Nur Status zurückgeben: syntaktische Prüfung wurde upstream erledigt.
+            return BridgeResult(ok=True, message="Syntaktische Prüfung (UI) OK.")
 
-        # 2) Optional: ROS-Seite validieren (Kollisions-/Kinematikprüfung etc.)
-        if syntactic_only or not self.is_connected:
-            if not self.is_connected:
-                _LOG.info("validate(): ROS nicht verbunden – nur syntaktisch geprüft.")
-            return BridgeResult(ok=True, message="Syntaktische Prüfung OK (ROS nicht/optional).")
+        if not self.is_connected:
+            return BridgeResult(ok=False, message="Keine ROS-Verbindung für validate().")
 
         if timeout and timeout > 0:
             # Request/Response erwartet eine Antwort (Adapter in Ihren Nodes nötig)
-            resp = self.request_response("validate", {"recipe": recipe}, timeout=timeout)
-            return resp
+            return self.request_response("validate", {"recipe": recipe}, timeout=timeout)
 
         # Fire-and-forget (Nodes loggen/prüfen asynchron)
         self.publish_ui_cmd("validate", {"recipe": recipe})
-        return BridgeResult(ok=True, message="Syntaktische Prüfung OK; Validate an ROS gesendet.")
+        return BridgeResult(ok=True, message="Validate an ROS gesendet (async).")
 
     def optimize(self, recipe: Dict[str, Any], *, timeout: float = 0.0) -> BridgeResult:
         """
@@ -294,13 +280,9 @@ class UIBridge:
 
     def save_recipe(self, recipe: Dict[str, Any], *, filename: Optional[str] = None) -> BridgeResult:
         """
-        Lokales Speichern eines einzelnen Rezepts (YAML-Teil). Prüft vorher via RecipeValidator.
-        Speichert NUR das Rezeptobjekt; das globale recipes.yaml verwalten Sie selbst.
+        Lokales Speichern eines einzelnen Rezepts (YAML-Teil).
+        Die UI validiert vor dem Speichern.
         """
-        errs = validate_recipe_for_save(recipe, self.ctx.recipe_params)
-        if errs:
-            return BridgeResult(ok=False, message="; ".join(errs))
-
         fname = filename or f"{recipe.get('id','recipe')}.yaml"
         target = os.path.join(self.ctx.paths.recipe_dir, fname)
         try:
