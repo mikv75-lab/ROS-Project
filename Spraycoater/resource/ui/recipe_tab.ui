@@ -3,6 +3,7 @@
  <class>RecipeTab</class>
  <widget class="QWidget" name="RecipeTab">
   <layout class="QHBoxLayout" name="rootLayout" stretch="0,1,0">
+
    <!-- LEFT: Controls (schmal) -->
    <item>
     <widget class="QWidget" name="leftPanel">
@@ -10,6 +11,7 @@
      <property name="maximumSize"><size><width>320</width><height>16777215</height></size></property>
      <layout class="QVBoxLayout" name="leftLayout">
 
+      <!-- Rezepte-Liste -->
       <item>
        <widget class="QGroupBox" name="grpList">
         <property name="title"><string>Rezepte</string></property>
@@ -19,36 +21,15 @@
        </widget>
       </item>
 
+      <!-- Globale Parameter -->
       <item>
-       <widget class="QGroupBox" name="grpPreview">
-        <property name="title"><string>Preview</string></property>
-        <layout class="QVBoxLayout" name="grpPreviewLayout">
-         <item>
-          <widget class="QComboBox" name="comboShape">
-           <item><property name="text"><string>Würfel</string></property></item>
-           <item><property name="text"><string>Kugel</string></property></item>
-           <item><property name="text"><string>Zylinder</string></property></item>
-          </widget>
-         </item>
-         <item>
-          <widget class="QComboBox" name="comboPath">
-           <item><property name="text"><string>Raster</string></property></item>
-           <item><property name="text"><string>Spiral</string></property></item>
-          </widget>
-         </item>
-         <item><widget class="QCheckBox" name="checkNormals"><property name="text"><string>Normalen anzeigen</string></property></widget></item>
-         <item>
-          <widget class="QWidget" name="rowButtons" native="true">
-           <layout class="QHBoxLayout" name="rowButtonsLayout">
-            <item><widget class="QPushButton" name="btnGenerate"><property name="text"><string>Vorschau</string></property></widget></item>
-            <item><widget class="QPushButton" name="btnResetCam"><property name="text"><string>Kamera Reset</string></property></widget></item>
-           </layout>
-          </widget>
-         </item>
-        </layout>
+       <widget class="QGroupBox" name="grpGlobals">
+        <property name="title"><string>Globale Parameter</string></property>
+        <layout class="QFormLayout" name="formGlobals"/>
        </widget>
       </item>
 
+      <!-- Rezepttyp -->
       <item>
        <widget class="QGroupBox" name="grpTypes">
         <property name="title"><string>Rezepttyp</string></property>
@@ -86,10 +67,60 @@
        </widget>
       </item>
 
+      <!-- Preview (nur Hemisphäre + Meander/Spiral) -->
       <item>
-       <widget class="QGroupBox" name="grpGlobals">
-        <property name="title"><string>Globale Parameter</string></property>
-        <layout class="QFormLayout" name="formGlobals"/>
+       <widget class="QGroupBox" name="grpPreview">
+        <property name="title"><string>Preview</string></property>
+        <layout class="QVBoxLayout" name="grpPreviewLayout">
+
+         <!-- Shape -->
+         <item>
+          <widget class="QComboBox" name="comboShape">
+           <item><property name="text"><string>Hemisphäre</string></property></item>
+          </widget>
+         </item>
+
+         <!-- Path -->
+         <item>
+          <widget class="QComboBox" name="comboPath">
+           <item><property name="text"><string>Meander</string></property></item>
+           <item><property name="text"><string>Spiral</string></property></item>
+          </widget>
+         </item>
+
+         <!-- Optionen -->
+         <item><widget class="QCheckBox" name="checkNormals">
+           <property name="text"><string>Normalen anzeigen</string></property>
+         </widget></item>
+         <item><widget class="QCheckBox" name="checkRaycasts">
+           <property name="text"><string>Raycasts anzeigen</string></property>
+         </widget></item>
+
+         <!-- Kamera-Views -->
+         <item>
+          <widget class="QWidget" name="rowViews" native="true">
+           <layout class="QHBoxLayout" name="rowViewsLayout">
+            <item><widget class="QPushButton" name="btnViewIso"><property name="text"><string>ISO</string></property></widget></item>
+            <item><widget class="QPushButton" name="btnViewTop"><property name="text"><string>Top</string></property></widget></item>
+            <item><widget class="QPushButton" name="btnViewFront"><property name="text"><string>Front</string></property></widget></item>
+            <item><widget class="QPushButton" name="btnViewRight"><property name="text"><string>Right</string></property></widget></item>
+           </layout>
+          </widget>
+         </item>
+
+        </layout>
+       </widget>
+      </item>
+
+      <!-- Aktionen -->
+      <item>
+       <widget class="QGroupBox" name="grpActions">
+        <property name="title"><string>Aktionen</string></property>
+        <layout class="QHBoxLayout" name="grpActionsLayout">
+         <item><widget class="QPushButton" name="btnValidate"><property name="text"><string>Validieren</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnOptimize"><property name="text"><string>Optimieren</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnSaveRecipe"><property name="text"><string>Speichern…</string></property></widget></item>
+        </layout>
        </widget>
       </item>
 
@@ -112,7 +143,6 @@
 
    <!-- RIGHT: RViz Host (shadow) -->
    <item>
-    <!-- WICHTIG: objectName = rvizContainer, damit der Manager direkt attachen kann -->
     <widget class="QFrame" name="rvizContainer">
      <property name="frameShape"><enum>QFrame::StyledPanel</enum></property>
      <property name="frameShadow"><enum>QFrame::Raised</enum></property>
@@ -125,6 +155,7 @@
      </layout>
     </widget>
    </item>
+
   </layout>
  </widget>
  <resources/>
