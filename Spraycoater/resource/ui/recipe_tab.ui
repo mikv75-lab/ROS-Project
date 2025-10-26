@@ -110,15 +110,18 @@
     </widget>
    </item>
 
-   <!-- RIGHT: RViz Controls (optional, schmal) -->
+   <!-- RIGHT: RViz Host (shadow) -->
    <item>
-    <widget class="QWidget" name="rvizPanel">
-     <property name="minimumSize"><size><width>260</width><height>0</height></size></property>
-     <property name="maximumSize"><size><width>320</width><height>16777215</height></size></property>
+    <!-- WICHTIG: objectName = rvizContainer, damit der Manager direkt attachen kann -->
+    <widget class="QFrame" name="rvizContainer">
+     <property name="frameShape"><enum>QFrame::StyledPanel</enum></property>
+     <property name="frameShadow"><enum>QFrame::Raised</enum></property>
      <layout class="QVBoxLayout" name="rvizLayout">
-      <item><widget class="QLabel" name="lblRviz"><property name="text"><string>RViz Steuerung</string></property></widget></item>
-      <item><spacer name="rvizSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property>
-       <property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+      <item>
+       <widget class="QLabel" name="lblRviz">
+        <property name="text"><string>RViz (Shadow) wird hier eingebettet…</string></property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

@@ -1,19 +1,20 @@
-# Spraycoater/src/config/startup.py
 # -*- coding: utf-8 -*-
 """
-Strict startup loader (keine Fallbacks):
-- Erwartet in startup.yaml (liegt unter Spraycoater/resource/config/):
-    paths.recipe_file : YAML mit recipes + recipe_params (z. B. "recipes.yaml")
-    paths.recipe_dir  : Zielordner für Pläne (muss existieren)  -> z. B. "../../data/recipes"
-    paths.log_dir     : Log-Ordner (muss existieren)            -> z. B. "../../data/logs"
-    paths.bringup_log : Datei-Pfad für Bringup-Log              -> z. B. "../../data/logs/bringup.log"
-    ros.launch_ros    : bool
-    ros.sim_robot     : bool   (True = Simulation, False = echter Roboter)
+Strict startup loader (keine Fallbacks)
 
-- Lädt recipes.yaml strikt ('units' == 'mm', 'recipe_params', 'recipes')
-- Keine Auto-Validierung; nur explizite Wrapper:
-    validate_recipes_for_load(recipes_yaml)
-    validate_recipe_for_save(recipe, recipe_params)
+Erwartet in startup.yaml (unter Spraycoater/resource/config/):
+  paths.recipe_file : YAML mit 'units', 'recipe_params', 'recipes'
+  paths.recipe_dir  : Zielordner für Pläne (existiert)
+  paths.log_dir     : Log-Ordner (existiert)
+  paths.bringup_log : Datei-Pfad für Bringup-Log (Parent existiert)
+  paths.ros_setup   : OPTIONAL Pfad zu /opt/ros/.../setup.bash
+  paths.ws_setup    : OPTIONAL Pfad zu <ws>/install/setup.bash
+
+  rviz.live_config   : OPTIONAL Pfad zur RViz-Config (falls gesetzt: muss existieren)
+  rviz.shadow_config : OPTIONAL Pfad zur RViz-Config (falls gesetzt: muss existieren)
+
+  ros.launch_ros    : bool
+  ros.sim_robot     : bool
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ import os
 import io
 import yaml
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # Muss existieren (Achtung: darf NICHT wieder config.startup importieren!)
 from app.recipe_validator import RecipeValidator
@@ -47,6 +48,7 @@ def resolve_package_uri(uri: str) -> str:
 def _abspath_rel_to(base_dir: str, p: str) -> str:
     if not p:
         _err("Leerer Pfad übergeben.")
+    p = os.path.expanduser(p)  # ~ unterstützen
     if p.startswith("package://"):
         path = resolve_package_uri(p)
     else:
@@ -75,6 +77,14 @@ class AppPaths:
     recipe_dir: str
     log_dir: str
     bringup_log: str
+    # optional
+    ros_setup: Optional[str] = None
+    ws_setup: Optional[str] = None
+
+@dataclass(frozen=True)
+class RVizConfig:
+    live_config: Optional[str] = None
+    shadow_config: Optional[str] = None
 
 @dataclass(frozen=True)
 class ROSConfig:
@@ -89,6 +99,7 @@ class AppContext:
     recipes: List[Dict[str, Any]]
     recipe_params: Dict[str, Any]
     units: str
+    rviz: RVizConfig = RVizConfig()  # optionales Feld
 
 
 # ---------------- Loader ----------------
@@ -115,6 +126,18 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     recipe_dir_abs  = _abspath_rel_to(base, p["recipe_dir"])
     log_dir_abs     = _abspath_rel_to(base, p["log_dir"])
     bringup_log_abs = _abspath_rel_to(base, p["bringup_log"])
+
+    # OPTIONAL: ROS-Setups
+    ros_setup_abs: Optional[str] = None
+    ws_setup_abs: Optional[str] = None
+    if "ros_setup" in p and p["ros_setup"]:
+        ros_setup_abs = _abspath_rel_to(base, p["ros_setup"])
+        if not os.path.exists(ros_setup_abs):
+            _err(f"paths.ros_setup nicht gefunden: {ros_setup_abs}")
+    if "ws_setup" in p and p["ws_setup"]:
+        ws_setup_abs = _abspath_rel_to(base, p["ws_setup"])
+        if not os.path.exists(ws_setup_abs):
+            _err(f"paths.ws_setup nicht gefunden: {ws_setup_abs}")
 
     # Existenz prüfen (keine Erstellung hier!)
     if not os.path.isdir(recipe_dir_abs):
@@ -145,18 +168,38 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if "sim_robot" not in r or not isinstance(r["sim_robot"], bool):
         _err("startup.yaml: 'ros.sim_robot' fehlt oder ist kein Bool.")
 
+    # OPTIONAL: rviz
+    rviz_cfg = RVizConfig()
+    if "rviz" in su:
+        if not isinstance(su["rviz"], dict):
+            _err("startup.yaml: Abschnitt 'rviz' ist ungültig (kein Mapping).")
+        rv = su["rviz"]
+        if "live_config" in rv and rv["live_config"]:
+            live_abs = _abspath_rel_to(base, rv["live_config"])
+            if not os.path.exists(live_abs):
+                _err(f"rviz.live_config nicht gefunden: {live_abs}")
+            rviz_cfg = RVizConfig(live_config=live_abs, shadow_config=rviz_cfg.shadow_config)
+        if "shadow_config" in rv and rv["shadow_config"]:
+            shadow_abs = _abspath_rel_to(base, rv["shadow_config"])
+            if not os.path.exists(shadow_abs):
+                _err(f"rviz.shadow_config nicht gefunden: {shadow_abs}")
+            rviz_cfg = RVizConfig(live_config=rviz_cfg.live_config, shadow_config=shadow_abs)
+
     return AppContext(
         paths=AppPaths(
             recipe_file=recipe_file_abs,
             recipe_dir=recipe_dir_abs,
             log_dir=log_dir_abs,
             bringup_log=bringup_log_abs,
+            ros_setup=ros_setup_abs,
+            ws_setup=ws_setup_abs,
         ),
         ros=ROSConfig(launch_ros=r["launch_ros"], sim_robot=r["sim_robot"]),
         recipes_yaml=ry,
         recipes=ry["recipes"],
         recipe_params=ry["recipe_params"],
         units=ry["units"],
+        rviz=rviz_cfg,
     )
 
 

@@ -1,136 +1,92 @@
-# Spraycoater/src/ros/rviz_manager.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-
 import os
-import shlex
 import signal
 import subprocess
-import time
-from typing import Optional, Dict, List
 import logging
+from typing import Optional, List, Dict
+from PyQt5.QtWidgets import QWidget
 
-
-def _project_root() -> str:
-    here = os.path.abspath(os.path.dirname(__file__))  # .../src/ros
-    return os.path.abspath(os.path.join(here, "..", ".."))
-
-def resource_path(*parts: str) -> str:
-    return os.path.join(_project_root(), "resource", *parts)
-
+_LOG = logging.getLogger("ros.rviz")
 
 class _BaseRvizManager:
     """
-    Startet/stoppt genau EINE rviz2-Instanz.
-    - Kein Fallback: start() erfordert eine gültige .rviz-Config
-    - Stdout/err -> python-Logger 'ros.rviz.<name>'
+    Startet genau EINE rviz2-Instanz, optional mit display-config.
+    'attach(container)' ist aktuell ein No-Op (Platzhalter für echtes Embedding/Reparenting).
     """
     def __init__(self, name: str):
         self._name = name
         self._proc: Optional[subprocess.Popen] = None
-        self._log = logging.getLogger(f"ros.rviz.{name}")
+        self._alive = False
+        self._current_container: Optional[QWidget] = None
+        self._config_path: Optional[str] = None
 
-    # ---------------- status ----------------
     def is_running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
 
-    def pid(self) -> Optional[int]:
-        return self._proc.pid if self.is_running() else None
-
-    # ---------------- control ----------------
-    def start(self, config_path: str, extra_args: Optional[List[str]] = None, env: Optional[Dict[str, str]] = None) -> None:
-        if not config_path or not os.path.exists(config_path):
-            raise FileNotFoundError(f"{self._name}: RViz-Config fehlt: {config_path}")
-
+    def start(self, *, config_path: Optional[str] = None, extra_args: Optional[List[str]] = None,
+              env: Optional[Dict[str, str]] = None) -> None:
         if self.is_running():
-            self._log.info("rviz already running (pid=%s) -> restarting …", self._proc.pid)
-            self.stop()
+            _LOG.info("[%s] rviz already running (pid=%s)", self._name, self._proc.pid if self._proc else "?")
+            return
 
-        args = ["rviz2", "-d", config_path]
+        self._config_path = config_path
+        args = ["rviz2"]
+        if config_path and os.path.exists(config_path):
+            args += ["-d", config_path]
         if extra_args:
             args += list(extra_args)
 
-        env_merged = dict(os.environ)
+        run_env = dict(os.environ)
         if env:
-            env_merged.update(env)
-        env_merged.setdefault("LC_ALL", "C.UTF-8")
-        env_merged.setdefault("LANG", "C.UTF-8")
+            run_env.update(env)
+        run_env.setdefault("LC_ALL", "C.UTF-8")
+        run_env.setdefault("LANG", "C.UTF-8")
 
-        self._log.info("starting rviz: %s", " ".join(shlex.quote(a) for a in args))
+        _LOG.info("[%s] starting rviz: %s", self._name, " ".join(args))
         try:
             self._proc = subprocess.Popen(
                 args,
-                stdout=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
                 stderr=subprocess.STDOUT,
-                text=True, encoding="utf-8", errors="replace",
-                bufsize=1,
-                env=env_merged,
+                preexec_fn=os.setsid,  # eigene Prozessgruppe
+                env=run_env,
             )
-        except FileNotFoundError as e:
-            self._log.exception("rviz2 not found: %s", e)
+            self._alive = True
+        except FileNotFoundError:
+            _LOG.error("[%s] rviz2 binary not found in PATH", self._name)
             self._proc = None
-            return
+            self._alive = False
         except Exception as e:
-            self._log.exception("failed to start rviz2: %s", e)
+            _LOG.exception("[%s] failed to start rviz: %s", self._name, e)
             self._proc = None
-            return
+            self._alive = False
 
-        # asynchron stdout „tailen“
-        # (simpel: ohne Thread-Join; Prozessende wird über stop() gehandhabt)
-        def _pump(p: subprocess.Popen):
-            try:
-                for line in iter(p.stdout.readline, ""):
-                    if not line:
-                        break
-                    self._log.info(line.rstrip())
-            except Exception as e:
-                self._log.exception("rviz stream error: %s", e)
+    def attach(self, container: QWidget) -> None:
+        """
+        Platzhalter: hier später echtes Embedding (librviz/QWindow reparent).
+        Aktuell merken wir uns nur, wohin „gehängt“ werden soll.
+        """
+        self._current_container = container
+        obj = container.objectName() if container else "?"
+        _LOG.debug("[%s] attach requested to container=%s", self._name, obj)
 
-        import threading
-        t = threading.Thread(target=_pump, args=(self._proc,), daemon=True)
-        t.start()
-
-        time.sleep(0.3)
-        if self._proc.poll() is not None:
-            self._log.error("rviz exited immediately (code=%s)", self._proc.returncode)
-
-    def stop(self, timeout: float = 3.0) -> None:
+    def stop(self) -> None:
         if not self.is_running():
             self._proc = None
+            self._alive = False
             return
-        self._log.info("stopping rviz (pid=%s)…", self._proc.pid)
+        _LOG.info("[%s] stopping rviz …", self._name)
         try:
-            self._proc.terminate()
-        except Exception:
-            pass
-
-        t0 = time.time()
-        while time.time() - t0 < timeout and self.is_running():
-            time.sleep(0.1)
-
-        if self.is_running():
-            self._log.warning("rviz still alive -> SIGKILL")
-            try:
-                self._proc.kill()
-            except Exception:
-                pass
-
-        # cleanup
-        try:
-            if self._proc and self._proc.poll() is None:
-                self._proc.wait(timeout=0.5)
-        except Exception:
-            pass
+            pgid = os.getpgid(self._proc.pid)
+            os.killpg(pgid, signal.SIGTERM)
+        except Exception as e:
+            _LOG.warning("[%s] SIGTERM failed: %s", self._name, e)
+        # kein hartes KILL hier; rviz kann ordentlich schließen
         self._proc = None
-        self._log.info("rviz stopped.")
-
-    # convenience
-    def restart(self, config_path: str, extra_args: Optional[List[str]] = None, env: Optional[Dict[str, str]] = None) -> None:
-        self.stop()
-        self.start(config_path, extra_args=extra_args, env=env)
+        self._alive = False
 
 
-# ---------------- Singletons ----------------
 class LiveRvizManager(_BaseRvizManager):
     _inst: Optional["LiveRvizManager"] = None
 
