@@ -24,8 +24,6 @@ import yaml
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-# Muss existieren (Achtung: darf NICHT wieder config.startup importieren!)
-from app.recipe_validator import RecipeValidator
 
 
 def _err(msg: str) -> None:
@@ -201,27 +199,3 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         units=ry["units"],
         rviz=rviz_cfg,
     )
-
-
-# ---------------- explizite Checks NUR für Load/Save ----------------
-
-def validate_recipes_for_load(recipes_yaml: Dict[str, Any]) -> List[str]:
-    """Alle Rezepte aus recipes.yaml prüfen (nur auf Abruf)."""
-    if "recipe_params" not in recipes_yaml or "recipes" not in recipes_yaml:
-        _err("validate_recipes_for_load: 'recipe_params' oder 'recipes' fehlt.")
-    v = RecipeValidator(recipes_yaml["recipe_params"])
-    errors: List[str] = []
-    for rec in recipes_yaml["recipes"]:
-        errs = v.validate_recipe(rec)
-        if errs:
-            errors.extend(errs)
-    return errors
-
-
-def validate_recipe_for_save(recipe: Dict[str, Any], recipe_params: Dict[str, Any]) -> List[str]:
-    """Genau ein Rezept prüfen (vor Speichern/Export)."""
-    if not isinstance(recipe, dict) or not recipe:
-        _err("validate_recipe_for_save: 'recipe' ist leer oder kein Mapping.")
-    if not isinstance(recipe_params, dict) or not recipe_params:
-        _err("validate_recipe_for_save: 'recipe_params' ist leer oder kein Mapping.")
-    return RecipeValidator(recipe_params).validate_recipe(recipe)

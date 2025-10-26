@@ -1,144 +1,139 @@
-#!/usr/bin/env python3
-# app/kill_all_ros.py
+# Spraycoater/src/ros/kill_all_ros.py
+# -*- coding: utf-8 -*-
 from __future__ import annotations
+
 import os
-import sys
+import signal
 import time
-import shutil
-import subprocess
-from typing import Iterable, List
+import logging
+from typing import List
 
-# --- Terminal sofort leeren ---
-def term_clear() -> None:
+_LOG = logging.getLogger("ros.kill_all_ros")
+
+try:
+    import psutil  # type: ignore
+except Exception:
+    psutil = None
+
+# Prozesse, die wir typischerweise beenden möchten
+SAFE_NAME_MATCHES = {
+    "rviz2",
+    "gzserver",
+    "gzclient",
+    "ros2daemon",
+}
+
+# Kommandozeilen-Muster, die eindeutig ROS-CLIs/Launches kennzeichnen
+CLI_SUBSTRINGS = [
+    "ros2 launch",
+    "ros2 topic echo",
+    "ros2 topic pub",
+    "ros2 bag play",
+    "ros2 bag record",
+    "-m launch_ros",
+]
+
+# Dinge, die wir NIEMALS killen wollen (UI/Debugger etc.)
+EXCLUDE_SUBSTRINGS = [
+    "main_gui.py",
+    "debugpy",
+    "Spraycoater/src/app/main_gui.py",
+]
+
+def _matches_cli(cmd: List[str]) -> bool:
+    s = " ".join(cmd)
+    return any(sub in s for sub in CLI_SUBSTRINGS)
+
+def _should_exclude(pid: int, cmd: List[str]) -> bool:
+    if pid == os.getpid():
+        return True
+    s = " ".join(cmd)
+    return any(ex in s for ex in EXCLUDE_SUBSTRINGS)
+
+def _kill_pid(pid: int, sig=signal.SIGTERM) -> None:
     try:
-        if sys.stdout.isatty():
-            # bevorzuge echtes 'clear', sonst ANSI-Fallback
-            if shutil.which("clear"):
-                subprocess.run(["clear"], check=False)
-            else:
-                # ANSI: Screen löschen + Cursor Home
-                print("\033[2J\033[H", end="", flush=True)
-    except Exception:
-        # notfalls ignorieren
+        os.kill(pid, sig)
+    except ProcessLookupError:
         pass
+    except Exception as e:
+        _LOG.debug("kill(%s, %s) failed: %s", pid, sig, e)
 
-# Hilfsfunktionen
-def _run(cmd: List[str]) -> None:
-    try:
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-    except Exception:
-        pass
+def kill_all_ros(timeout: float = 2.0) -> None:
+    """
+    Beendet typische ROS-/RViz-/Gazebo-CLI-Prozesse, ohne die UI selbst zu treffen.
+    Erst TERM, dann (falls nötig) KILL nach kurzer Wartezeit.
+    """
+    if psutil is None:
+        _kill_fallback(timeout)
+        return
 
-def _sh(cmd: str) -> None:
-    try:
-        subprocess.run(["/bin/bash", "-lc", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-    except Exception:
-        pass
+    victims = []
+    for p in psutil.process_iter(attrs=["pid", "name", "cmdline"]):
+        try:
+            name = (p.info.get("name") or "").lower()
+            cmd  = p.info.get("cmdline") or []
+            if not cmd:
+                continue
+            if _should_exclude(p.pid, cmd):
+                continue
 
-def _pkill(sig: str, patterns: Iterable[str]) -> None:
-    for pat in patterns:
-        if not pat:
+            if name in SAFE_NAME_MATCHES or _matches_cli(cmd):
+                victims.append(p)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-        _run(["pkill", f"-{sig}", "-f", pat])
 
-def _sleep(sec: float) -> None:
-    try:
-        time.sleep(sec)
-    except Exception:
-        pass
+    if not victims:
+        _LOG.info("[kill] nothing to stop.")
+        return
 
-def kill_all_ros(extra_patterns: Iterable[str] = ()) -> None:
+    _LOG.info("[kill] stopping %d ROS-related processes…", len(victims))
+    for p in victims:
+        _LOG.debug(" -> TERM pid=%s name=%s cmd=%s", p.pid, p.info.get("name"), " ".join(p.info.get("cmdline") or []))
+        _kill_pid(p.pid, signal.SIGTERM)
+
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        all_gone = True
+        for p in victims:
+            try:
+                if p.is_running():
+                    all_gone = False
+                    break
+            except psutil.NoSuchProcess:
+                continue
+        if all_gone:
+            break
+        time.sleep(0.1)
+
+    # Eskalation
+    for p in victims:
+        try:
+            if p.is_running():
+                _LOG.debug(" -> KILL pid=%s", p.pid)
+                _kill_pid(p.pid, signal.SIGKILL)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+def _kill_fallback(timeout: float) -> None:
     """
-    Beendet gängige ROS/MoveIt/GUI/CLI-Prozesse.
-    Erst sanft (TERM/INT), dann hart (KILL).
-    Stoppt & leert außerdem den ros2-daemon-Cache.
+    Fallback ohne psutil: vorsichtige pkill-Aufrufe (exakte Namen + schmale -f Muster).
     """
-    # 1) harte Übeltäter: CLI-Spammer & Launch
-    cli_patterns = [
-        r"ros2 topic echo", r"ros2 topic pub", r"ros2 bag.*record",
-        r"python3 .*ros2cli", r"python3 -m ros2cli",
-        r"python3 .*launch",  r"python3 -m launch",
-        r"launch_ros", r"ros2 launch",
+    import subprocess
+    _LOG.info("[kill] psutil nicht verfügbar – fallback pkill wird verwendet.")
+    cmds = [
+        ["pkill", "-x", "rviz2"],
+        ["pkill", "-x", "gzserver"],
+        ["pkill", "-x", "gzclient"],
+        ["pkill", "-x", "ros2daemon"],
+        # vorsichtige CLI-Kills (keine UI/Debug-Muster):
+        ["pkill", "-f", "ros2 launch "],
+        ["pkill", "-f", "ros2 topic echo"],
+        ["pkill", "-f", "ros2 topic pub"],
+        ["pkill", "-f", "-m launch_ros"],
     ]
-
-    # 2) typische Nodes (ergänzt)
-    node_patterns = [
-        # dein Projekt
-        r"\bmecademic_bringup\b", r"\bservo\b", r"\bservo_node\b", r"moveit_servo",
-        r"\bscene_manager\b", r"\bposes_manager\b", r"\btool_manager\b", r"\bspray_path_manager\b",
-        r"\bmeca_arm_group_controller\b", r"spawner_meca_arm_group_controller",
-        r"spawner", r"spawner_joint_state_broadcaster",
-
-        # ROS2 core & control
-        r"ros2_control_node", r"\bcontroller_manager\b", r"ros2 daemon", r"ros2cli",
-        r"\brobot_state_publisher\b", r"\bstatic_transform_publisher\b",
-        r"\bjoint_state_broadcaster\b", r"\bjoint_trajectory_controller\b",
-
-        # MoveIt
-        r"\bmove_group\b", r"trajectory_execution", r"moveit_ros",
-
-        # Visualisierung
-        r"\brviz2\b", r"\brqt\b",
-
-        # DDS libs (falls Prozesse separat auftauchen)
-        r"rmw_fastrtps", r"rmw_cyclonedds", r"fastdds", r"microxrcedds",
-
-        # Gazebo/Ignition
-        r"\bgzserver\b", r"\bgzclient\b", r"ign gazebo", r"ignition.gz",
-    ]
-
-    node_patterns.extend(list(extra_patterns))
-
-    print("[kill] killing ROS2 CLI spam (echo/pub/launch) …", flush=True)
-    _pkill("TERM", cli_patterns)
-    _pkill("INT",  cli_patterns)
-    _sleep(0.3)
-    _pkill("KILL", cli_patterns)
-
-    print("[kill] killing nodes …", flush=True)
-    _pkill("TERM", node_patterns)
-    _pkill("INT",  node_patterns)
-    _sleep(0.6)
-    _pkill("KILL", node_patterns)
-    _sleep(0.2)
-
-    # manchmal hängen die Binaries noch unter ihrem Namen:
-    for binname in ["rviz2", "servo", "servo_node", "move_group",
-                    "ros2_control_node", "controller_manager"]:
-        _run(["killall", "-q", "-9", binname])
-
-    # 3) ros2 daemon stoppen & Cache leeren (verhindert Ghost-Topics)
-    print("[kill] stopping ros2 daemon + clearing cache …", flush=True)
-    _sh("ros2 daemon stop || true")
-    _sleep(0.2)
-    # CLI-Cache (versch. Homes berücksichtigen)
-    for path in ["~/.ros/ros2cli", "/root/.ros/ros2cli"]:
-        _sh(f"rm -rf {path}")
-
-    # 4) optional: Logs aufräumen (rein kosmetisch)
-    for path in ["~/.ros/log", "/root/.ros/log"]:
-        _sh(f"find {path} -maxdepth 1 -type d -mmin +5 -print0 2>/dev/null | xargs -0r rm -rf")
-
-    print("[kill] done.", flush=True)
-
-def show_live_graph() -> None:
-    print("\n[verify] LIVE Sicht (ohne Daemon-Cache):", flush=True)
-    try:
-        subprocess.run(["ros2", "node", "list", "--no-daemon"], check=False)
-        subprocess.run(["ros2", "topic", "list", "--no-daemon"], check=False)
-    except Exception:
-        pass
-
-def main():
-    term_clear()  # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-
-    # optionale Extra-Patterns aus ENV (Komma-getrennt)
-    extra_env = os.environ.get("KILL_EXTRA", "")
-    extra = [p.strip() for p in extra_env.split(",") if p.strip()] if extra_env else []
-
-    kill_all_ros(extra_patterns=extra)
-    _sleep(0.3)
-    show_live_graph()
-
-if __name__ == "__main__":
-    main()
+    for c in cmds:
+        try:
+            subprocess.run(c, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+    time.sleep(timeout)

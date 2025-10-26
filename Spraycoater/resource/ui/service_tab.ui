@@ -1,84 +1,161 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>ServiceTab</class>
- <widget class="QWidget" name="ServiceTab">
-  <layout class="QHBoxLayout" name="rootLayout" stretch="0,1">
+ <class>RecipeTab</class>
+ <widget class="QWidget" name="RecipeTab">
+  <layout class="QHBoxLayout" name="rootLayout" stretch="0,1,0">
+
+   <!-- LEFT: Controls (schmal) -->
    <item>
-    <widget class="QGroupBox" name="grpLive">
-     <property name="title"><string>RViz (Live)</string></property>
-     <property name="minimumSize">
-      <size><width>260</width><height>0</height></size>
-     </property>
-     <property name="maximumSize">
-      <size><width>320</width><height>16777215</height></size>
-     </property>
-     <layout class="QVBoxLayout" name="grpLiveLayout">
+    <widget class="QWidget" name="leftPanel">
+     <property name="minimumSize"><size><width>260</width><height>0</height></size></property>
+     <property name="maximumSize"><size><width>320</width><height>16777215</height></size></property>
+     <layout class="QVBoxLayout" name="leftLayout">
+
+      <!-- Rezepte-Liste -->
       <item>
-       <widget class="QLabel" name="lblLiveCfgCaption">
-        <property name="text"><string>Config:</string></property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QLabel" name="lblLiveCfg">
-        <property name="text"><string>…</string></property>
+       <widget class="QGroupBox" name="grpList">
+        <property name="title"><string>Rezepte</string></property>
+        <layout class="QVBoxLayout" name="grpListLayout">
+         <item><widget class="QListWidget" name="listRecipes"/></item>
+        </layout>
        </widget>
       </item>
 
+      <!-- Globale Parameter -->
       <item>
-       <widget class="QLabel" name="lblLiveStatusCaption">
-        <property name="text"><string>Status:</string></property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QLabel" name="lblLiveStatus">
-        <property name="text"><string>stopped</string></property>
+       <widget class="QGroupBox" name="grpGlobals">
+        <property name="title"><string>Globale Parameter</string></property>
+        <layout class="QFormLayout" name="formGlobals"/>
        </widget>
       </item>
 
+      <!-- Rezepttyp -->
       <item>
-       <widget class="QPushButton" name="btnLiveStart">
-        <property name="text"><string>Start</string></property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btnLiveStop">
-        <property name="text"><string>Stop</string></property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btnLiveRestart">
-        <property name="text"><string>Restart</string></property>
+       <widget class="QGroupBox" name="grpTypes">
+        <property name="title"><string>Rezepttyp</string></property>
+        <layout class="QVBoxLayout" name="grpTypesLayout">
+         <item>
+          <widget class="QComboBox" name="comboRecipeType">
+           <item><property name="text"><string>Meander (plane)</string></property></item>
+           <item><property name="text"><string>Spiral (plane)</string></property></item>
+           <item><property name="text"><string>Spiral (cylinder)</string></property></item>
+           <item><property name="text"><string>Explicit</string></property></item>
+          </widget>
+         </item>
+         <item>
+          <widget class="QStackedWidget" name="stackTypes">
+           <property name="currentIndex"><number>0</number></property>
+
+           <widget class="QWidget" name="pageMeanderPlane">
+            <layout class="QFormLayout" name="formMeanderPlane"/>
+           </widget>
+
+           <widget class="QWidget" name="pageSpiralPlane">
+            <layout class="QFormLayout" name="formSpiralPlane"/>
+           </widget>
+
+           <widget class="QWidget" name="pageSpiralCylinder">
+            <layout class="QFormLayout" name="formSpiralCylinder"/>
+           </widget>
+
+           <widget class="QWidget" name="pageExplicit">
+            <layout class="QFormLayout" name="formExplicit"/>
+           </widget>
+          </widget>
+         </item>
+        </layout>
        </widget>
       </item>
 
+      <!-- Preview (nur Hemisphäre + Meander/Spiral) -->
       <item>
-       <spacer name="leftSpacer">
-        <property name="orientation"><enum>Qt::Vertical</enum></property>
-        <property name="sizeHint" stdset="0">
-         <size><width>20</width><height>40</height></size>
-        </property>
-       </spacer>
+       <widget class="QGroupBox" name="grpPreview">
+        <property name="title"><string>Preview</string></property>
+        <layout class="QVBoxLayout" name="grpPreviewLayout">
+
+         <!-- Shape -->
+         <item>
+          <widget class="QComboBox" name="comboShape">
+           <item><property name="text"><string>Hemisphäre</string></property></item>
+          </widget>
+         </item>
+
+         <!-- Path -->
+         <item>
+          <widget class="QComboBox" name="comboPath">
+           <item><property name="text"><string>Meander</string></property></item>
+           <item><property name="text"><string>Spiral</string></property></item>
+          </widget>
+         </item>
+
+         <!-- Optionen -->
+         <item><widget class="QCheckBox" name="checkNormals">
+           <property name="text"><string>Normalen anzeigen</string></property>
+         </widget></item>
+         <item><widget class="QCheckBox" name="checkRaycasts">
+           <property name="text"><string>Raycasts anzeigen</string></property>
+         </widget></item>
+
+         <!-- Kamera-Views -->
+         <item>
+          <widget class="QWidget" name="rowViews" native="true">
+           <layout class="QHBoxLayout" name="rowViewsLayout">
+            <item><widget class="QPushButton" name="btnViewIso"><property name="text"><string>ISO</string></property></widget></item>
+            <item><widget class="QPushButton" name="btnViewTop"><property name="text"><string>Top</string></property></widget></item>
+            <item><widget class="QPushButton" name="btnViewFront"><property name="text"><string>Front</string></property></widget></item>
+            <item><widget class="QPushButton" name="btnViewRight"><property name="text"><string>Right</string></property></widget></item>
+           </layout>
+          </widget>
+         </item>
+
+        </layout>
+       </widget>
       </item>
+
+      <!-- Aktionen -->
+      <item>
+       <widget class="QGroupBox" name="grpActions">
+        <property name="title"><string>Aktionen</string></property>
+        <layout class="QHBoxLayout" name="grpActionsLayout">
+         <item><widget class="QPushButton" name="btnValidate"><property name="text"><string>Validieren</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnOptimize"><property name="text"><string>Optimieren</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnSaveRecipe"><property name="text"><string>Speichern…</string></property></widget></item>
+        </layout>
+       </widget>
+      </item>
+
+      <item><spacer name="leftSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property>
+       <property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
      </layout>
     </widget>
    </item>
 
+   <!-- MIDDLE: PyVista host -->
    <item>
-    <!-- WICHTIG: objectName = rvizContainer (vom Code erwartet) -->
+    <widget class="QFrame" name="plotContainer">
+     <property name="frameShape"><enum>QFrame::StyledPanel</enum></property>
+     <property name="frameShadow"><enum>QFrame::Raised</enum></property>
+     <layout class="QVBoxLayout" name="pvLayout">
+      <item><widget class="QLabel" name="lblViewerHint"><property name="text"><string>PyVista-Viewer wird hier initialisiert…</string></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+
+   <!-- RIGHT: RViz Host (shadow) -->
+   <item>
     <widget class="QFrame" name="rvizContainer">
      <property name="frameShape"><enum>QFrame::StyledPanel</enum></property>
      <property name="frameShadow"><enum>QFrame::Raised</enum></property>
      <layout class="QVBoxLayout" name="rvizLayout">
       <item>
-       <widget class="QLabel" name="lblRvizHint">
-        <property name="text">
-         <string>RViz (Live) wird als externer Prozess gestartet. Einbettung folgt.</string>
-        </property>
+       <widget class="QLabel" name="lblRviz">
+        <property name="text"><string>RViz (Shadow) wird hier eingebettet…</string></property>
        </widget>
       </item>
      </layout>
     </widget>
    </item>
+
   </layout>
  </widget>
  <resources/>
