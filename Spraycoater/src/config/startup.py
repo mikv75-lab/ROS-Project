@@ -1,45 +1,27 @@
 # -*- coding: utf-8 -*-
-"""
-Strict startup loader (keine Fallbacks)
-
-Erwartet in startup.yaml (unter Spraycoater/resource/config/):
-  paths.recipe_file : YAML mit 'units', 'recipe_params', 'recipes'
-  paths.recipe_dir  : Zielordner für Pläne (existiert)
-  paths.log_dir     : Log-Ordner (existiert)
-  paths.bringup_log : Datei-Pfad für Bringup-Log (Parent existiert)
-  paths.ros_setup   : OPTIONAL Pfad zu /opt/ros/.../setup.bash
-  paths.ws_setup    : OPTIONAL Pfad zu <ws>/install/setup.bash
-
-  # Optional (werden hier unterstützt):
-  paths.tools_file, paths.substrates_file, paths.substrate_mounts_file
-  paths.tools_dir, paths.substrates_dir, paths.substrate_mounts_dir
-
-  rviz.live_config   : OPTIONAL Pfad zur RViz-Config (falls gesetzt: muss existieren)
-  rviz.shadow_config : OPTIONAL Pfad zur RViz-Config (falls gesetzt: muss existieren)
-
-  tf.world_to_meca_mount.xyz, tf.world_to_meca_mount.rpy_deg : OPTIONAL
-
-  ros.launch_ros    : bool
-  ros.sim_robot     : bool
-"""
-
+# Minimaler Startup-Loader: liest nur die Configs, keine harten Fallbacks / Checks
 from __future__ import annotations
 import os
 import io
 import yaml
+import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 
+# ---------- kleine Helpers ----------
+
 def _err(msg: str) -> None:
     raise ValueError(msg)
 
-
 def resolve_package_uri(uri: str) -> str:
-    """Strikte ROS2 package:// Auflösung (harte Fehler bei Ungültigkeit)."""
-    if not uri.startswith("package://"):
+    """Einfache ROS2 package:// Auflösung. Wenn kein package://, unverändert zurück."""
+    if not isinstance(uri, str) or not uri.startswith("package://"):
         return uri
-    from ament_index_python.packages import get_package_share_directory
+    try:
+        from ament_index_python.packages import get_package_share_directory
+    except Exception as e:
+        _err(f"ament_index_python nicht verfügbar für package-URI '{uri}': {e}")
     try:
         pkg, rel = uri[len("package://"):].split("/", 1)
     except ValueError:
@@ -47,32 +29,40 @@ def resolve_package_uri(uri: str) -> str:
     base = get_package_share_directory(pkg)
     return os.path.join(base, rel)
 
-
 def _abspath_rel_to(base_dir: str, p: str) -> str:
     if not p:
         _err("Leerer Pfad übergeben.")
-    p = os.path.expanduser(p)  # ~ unterstützen
+    p = os.path.expanduser(p)
     if p.startswith("package://"):
         path = resolve_package_uri(p)
     else:
         path = p if os.path.isabs(p) else os.path.join(base_dir, p)
     return os.path.abspath(os.path.normpath(path))
 
+def _load_yaml(path_or_uri: str, *, strict: bool = True) -> Optional[Dict[str, Any]]:
+    """YAML laden. Bei strict=True -> harte Fehler; sonst: None bei Problemen."""
+    try:
+        path = resolve_package_uri(path_or_uri) if isinstance(path_or_uri, str) and path_or_uri.startswith("package://") else path_or_uri
+        path = os.path.abspath(os.path.normpath(path))
+        if not os.path.exists(path):
+            if strict:
+                _err(f"YAML nicht gefunden: {path}")
+            return None
+        with io.open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if data is None or not isinstance(data, dict) or not data:
+            if strict:
+                _err(f"YAML leer oder ungültig (kein Mapping): {path}")
+            return None
+        return data
+    except Exception as e:
+        if strict:
+            _err(str(e))
+        warnings.warn(f"YAML konnte nicht geladen werden ({path_or_uri}): {e}")
+        return None
 
-def _load_yaml_strict(path_or_uri: str) -> Dict[str, Any]:
-    """YAML strikt laden (Datei existiert, Mapping, nicht leer)."""
-    path = resolve_package_uri(path_or_uri) if path_or_uri.startswith("package://") else path_or_uri
-    path = os.path.abspath(os.path.normpath(path))
-    if not os.path.exists(path):
-        _err(f"YAML nicht gefunden: {path}")
-    with io.open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    if data is None or not isinstance(data, dict) or not data:
-        _err(f"YAML leer oder ungültig (kein Mapping): {path}")
-    return data
 
-
-# ---------------- Datamodel ----------------
+# ---------- Datenstrukturen ----------
 
 @dataclass(frozen=True)
 class AppPaths:
@@ -80,32 +70,21 @@ class AppPaths:
     recipe_dir: str
     log_dir: str
     bringup_log: str
-    # optional setups
+    # optional
     ros_setup: Optional[str] = None
     ws_setup: Optional[str] = None
-    # optionale Ressourcenverzeichnisse (können package:// sein)
     tools_dir: Optional[str] = None
     substrates_dir: Optional[str] = None
     substrate_mounts_dir: Optional[str] = None
-
-
-@dataclass(frozen=True)
-class RVizConfig:
-    live_config: Optional[str] = None
-    shadow_config: Optional[str] = None
-
+    substrate_mounts_file: Optional[str] = None  # optional direkte YAML-Datei
+    # optional RViz (nur Pfade, keine Validierung hier)
+    rviz_live_config: Optional[str] = None
+    rviz_shadow_config: Optional[str] = None
 
 @dataclass(frozen=True)
 class ROSConfig:
     launch_ros: bool
-    sim_robot: bool  # True = sim, False = real
-
-
-@dataclass(frozen=True)
-class TFWorldToMecaMount:
-    xyz: List[float]
-    rpy_deg: List[float]
-
+    sim_robot: bool
 
 @dataclass(frozen=True)
 class AppContext:
@@ -115,12 +94,11 @@ class AppContext:
     recipes: List[Dict[str, Any]]
     recipe_params: Dict[str, Any]
     units: str
-    rviz: RVizConfig = RVizConfig()  # optionales Feld
-    mounts_yaml: Optional[Dict[str, Any]] = None  # Mount-Katalog (optional)
-    tf: Optional[TFWorldToMecaMount] = None       # TF-Info (optional)
+    # optional
+    mounts_yaml: Optional[Dict[str, Any]] = None
 
 
-# ---------------- Loader ----------------
+# ---------- Loader ----------
 
 def load_startup(startup_yaml_path: str) -> AppContext:
     if not startup_yaml_path:
@@ -129,15 +107,17 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not os.path.exists(startup_yaml_path):
         _err(f"startup.yaml nicht gefunden: {startup_yaml_path}")
 
-    su = _load_yaml_strict(startup_yaml_path)
+    su = _load_yaml(startup_yaml_path, strict=True)
 
-    # paths
-    if "paths" not in su or not isinstance(su["paths"], dict):
+    # Pflicht: paths
+    p = su.get("paths") or {}
+    if not isinstance(p, dict):
         _err("startup.yaml: Abschnitt 'paths' fehlt oder ist ungültig.")
-    p = su["paths"]
-    for key in ("recipe_file", "recipe_dir", "log_dir", "bringup_log"):
-        if key not in p:
-            _err(f"startup.yaml: 'paths.{key}' fehlt.")
+
+    required_path_keys = ("recipe_file", "recipe_dir", "log_dir", "bringup_log")
+    for k in required_path_keys:
+        if k not in p:
+            _err(f"startup.yaml: 'paths.{k}' fehlt.")
 
     base = os.path.dirname(startup_yaml_path)
     recipe_file_abs = _abspath_rel_to(base, p["recipe_file"])
@@ -145,36 +125,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     log_dir_abs     = _abspath_rel_to(base, p["log_dir"])
     bringup_log_abs = _abspath_rel_to(base, p["bringup_log"])
 
-    # OPTIONAL: ROS-Setups
-    ros_setup_abs: Optional[str] = None
-    ws_setup_abs: Optional[str] = None
-    if "ros_setup" in p and p["ros_setup"]:
-        ros_setup_abs = _abspath_rel_to(base, p["ros_setup"])
-        if not os.path.exists(ros_setup_abs):
-            _err(f"paths.ros_setup nicht gefunden: {ros_setup_abs}")
-    if "ws_setup" in p and p["ws_setup"]:
-        ws_setup_abs = _abspath_rel_to(base, p["ws_setup"])
-        if not os.path.exists(ws_setup_abs):
-            _err(f"paths.ws_setup nicht gefunden: {ws_setup_abs}")
-
-    # optionale Ressourcen-Verzeichnisse (dürfen fehlen)
-    tools_dir_abs: Optional[str] = None
-    substrates_dir_abs: Optional[str] = None
-    substrate_mounts_dir_abs: Optional[str] = None
-    if "tools_dir" in p and p["tools_dir"]:
-        tools_dir_abs = _abspath_rel_to(base, p["tools_dir"])
-        if not os.path.isdir(tools_dir_abs):
-            _err(f"paths.tools_dir existiert nicht als Verzeichnis: {tools_dir_abs}")
-    if "substrates_dir" in p and p["substrates_dir"]:
-        substrates_dir_abs = _abspath_rel_to(base, p["substrates_dir"])
-        if not os.path.isdir(substrates_dir_abs):
-            _err(f"paths.substrates_dir existiert nicht als Verzeichnis: {substrates_dir_abs}")
-    if "substrate_mounts_dir" in p and p["substrate_mounts_dir"]:
-        substrate_mounts_dir_abs = _abspath_rel_to(base, p["substrate_mounts_dir"])
-        if not os.path.isdir(substrate_mounts_dir_abs):
-            _err(f"paths.substrate_mounts_dir existiert nicht als Verzeichnis: {substrate_mounts_dir_abs}")
-
-    # Existenz prüfen (keine Erstellung hier!)
+    # Existenz: nur was wir direkt brauchen
     if not os.path.isdir(recipe_dir_abs):
         _err(f"paths.recipe_dir existiert nicht als Verzeichnis: {recipe_dir_abs}")
     if not os.path.isdir(log_dir_abs):
@@ -183,112 +134,68 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not os.path.isdir(bl_parent):
         _err(f"Verzeichnis für paths.bringup_log existiert nicht: {bl_parent}")
 
-    # recipes.yaml strikt laden
-    ry = _load_yaml_strict(recipe_file_abs)
-    if "units" not in ry or not isinstance(ry["units"], str):
-        _err("recipes.yaml: Feld 'units' fehlt oder ist ungültig.")
-    if ry["units"] != "mm":
-        _err(f"recipes.yaml: units='{ry['units']}' nicht unterstützt (erwartet 'mm').")
-    if "recipe_params" not in ry or not isinstance(ry["recipe_params"], dict) or not ry["recipe_params"]:
-        _err("recipes.yaml: Abschnitt 'recipe_params' fehlt oder ist leer.")
-    if "recipes" not in ry or not isinstance(ry["recipes"], list) or not ry["recipes"]:
-        _err("recipes.yaml: Abschnitt 'recipes' fehlt oder ist leer.")
+    # Optional: weitere Pfade (keine harten Checks)
+    ros_setup_abs = _abspath_rel_to(base, p["ros_setup"]) if p.get("ros_setup") else None
+    ws_setup_abs  = _abspath_rel_to(base, p["ws_setup"])  if p.get("ws_setup")  else None
+    tools_dir_abs = _abspath_rel_to(base, p["tools_dir"]) if p.get("tools_dir") else None
+    subs_dir_abs  = _abspath_rel_to(base, p["substrates_dir"]) if p.get("substrates_dir") else None
+    mounts_dir_abs= _abspath_rel_to(base, p["substrate_mounts_dir"]) if p.get("substrate_mounts_dir") else None
+    mounts_file_abs = _abspath_rel_to(base, p["substrate_mounts_file"]) if p.get("substrate_mounts_file") else None
 
-    # ros
-    if "ros" not in su or not isinstance(su["ros"], dict):
+    # Optional RViz
+    rviz_live = _abspath_rel_to(base, (su.get("rviz") or {}).get("live_config")) if (su.get("rviz") or {}).get("live_config") else None
+    rviz_shadow = _abspath_rel_to(base, (su.get("rviz") or {}).get("shadow_config")) if (su.get("rviz") or {}).get("shadow_config") else None
+
+    # Pflicht: ros (nur Flags)
+    r = su.get("ros") or {}
+    if not isinstance(r, dict):
         _err("startup.yaml: Abschnitt 'ros' fehlt oder ist ungültig.")
-    r = su["ros"]
-    if "launch_ros" not in r or not isinstance(r["launch_ros"], bool):
-        _err("startup.yaml: 'ros.launch_ros' fehlt oder ist kein Bool.")
-    if "sim_robot" not in r or not isinstance(r["sim_robot"], bool):
-        _err("startup.yaml: 'ros.sim_robot' fehlt oder ist kein Bool.")
+    if "launch_ros" not in r or "sim_robot" not in r:
+        _err("startup.yaml: 'ros.launch_ros' und 'ros.sim_robot' müssen vorhanden sein.")
+    ros_cfg = ROSConfig(bool(r["launch_ros"]), bool(r["sim_robot"]))
 
-    # OPTIONAL: rviz
-    rviz_cfg = RVizConfig()
-    if "rviz" in su:
-        if not isinstance(su["rviz"], dict):
-            _err("startup.yaml: Abschnitt 'rviz' ist ungültig (kein Mapping).")
-        rv = su["rviz"]
-        if "live_config" in rv and rv["live_config"]:
-            live_abs = _abspath_rel_to(base, rv["live_config"])
-            if not os.path.exists(live_abs):
-                _err(f"rviz.live_config nicht gefunden: {live_abs}")
-            rviz_cfg = RVizConfig(live_config=live_abs, shadow_config=rviz_cfg.shadow_config)
-        if "shadow_config" in rv and rv["shadow_config"]:
-            shadow_abs = _abspath_rel_to(base, rv["shadow_config"])
-            if not os.path.exists(shadow_abs):
-                _err(f"rviz.shadow_config nicht gefunden: {shadow_abs}")
-            rviz_cfg = RVizConfig(live_config=rviz_cfg.live_config, shadow_config=shadow_abs)
+    # recipes.yaml laden (strict)
+    ry = _load_yaml(recipe_file_abs, strict=True)
+    units = ry.get("units")
+    if units != "mm":
+        _err("recipes.yaml: 'units' muss 'mm' sein.")
+    recipe_params = ry.get("recipe_params")
+    recipes_list  = ry.get("recipes")
+    if not isinstance(recipe_params, dict) or not recipe_params:
+        _err("recipes.yaml: 'recipe_params' fehlt oder ist leer.")
+    if not isinstance(recipes_list, list) or not recipes_list:
+        _err("recipes.yaml: 'recipes' fehlt oder ist leer.")
 
-    # OPTIONAL: tf.world_to_meca_mount
-    tf_cfg: Optional[TFWorldToMecaMount] = None
-    if "tf" in su:
-        if not isinstance(su["tf"], dict):
-            _err("startup.yaml: Abschnitt 'tf' ist ungültig (kein Mapping).")
-        tf = su["tf"]
-        if "world_to_meca_mount" in tf and tf["world_to_meca_mount"]:
-            wtm = tf["world_to_meca_mount"]
-            if not isinstance(wtm, dict):
-                _err("tf.world_to_meca_mount muss ein Mapping sein.")
-            if "xyz" not in wtm or "rpy_deg" not in wtm:
-                _err("tf.world_to_meca_mount benötigt 'xyz' und 'rpy_deg'.")
-            xyz = wtm["xyz"]; rpy = wtm["rpy_deg"]
-            if not (isinstance(xyz, list) and len(xyz) == 3):
-                _err("tf.world_to_meca_mount.xyz muss Liste mit 3 Werten sein.")
-            if not (isinstance(rpy, list) and len(rpy) == 3):
-                _err("tf.world_to_meca_mount.rpy_deg muss Liste mit 3 Werten sein.")
-            tf_cfg = TFWorldToMecaMount(xyz=[float(x) for x in xyz],
-                                        rpy_deg=[float(a) for a in rpy])
+    # Optional: substrate_mounts.yaml (nicht strict)
+    mounts_yaml = None
+    if mounts_file_abs:
+        mounts_yaml = _load_yaml(mounts_file_abs, strict=False)
+        # wenn vorhanden, ganz grob checken (ohne harte Fehler)
+        if mounts_yaml:
+            if not isinstance(mounts_yaml.get("mounts"), dict):
+                warnings.warn("substrate_mounts.yaml: 'mounts' fehlt/ungültig – wird ignoriert.")
 
-    # OPTIONAL: substrate_mounts.yaml (Katalog) strikt laden, wenn konfiguriert
-    mounts_yaml: Optional[Dict[str, Any]] = None
-    if "substrate_mounts_file" in p and p["substrate_mounts_file"]:
-        mounts_path = _abspath_rel_to(base, p["substrate_mounts_file"])
-        mounts_yaml = _load_yaml_strict(mounts_path)
-
-        # Minimal-Validierung
-        if "version" not in mounts_yaml:
-            _err("substrate_mounts.yaml: Feld 'version' fehlt.")
-        if "active_mount" not in mounts_yaml or not isinstance(mounts_yaml["active_mount"], str):
-            _err("substrate_mounts.yaml: Feld 'active_mount' fehlt oder ist kein String.")
-        if "mounts" not in mounts_yaml or not isinstance(mounts_yaml["mounts"], dict) or not mounts_yaml["mounts"]:
-            _err("substrate_mounts.yaml: Abschnitt 'mounts' fehlt oder ist leer.")
-
-        active = mounts_yaml["active_mount"]
-        if active not in mounts_yaml["mounts"]:
-            _err(f"substrate_mounts.yaml: active_mount '{active}' nicht in 'mounts' definiert.")
-
-        mdef = mounts_yaml["mounts"][active]
-        if "mesh" not in mdef or not isinstance(mdef["mesh"], str):
-            _err(f"substrate_mounts.yaml: mounts['{active}'].mesh fehlt/ungültig.")
-        if "scene_offset" not in mdef or not isinstance(mdef["scene_offset"], dict):
-            _err(f"substrate_mounts.yaml: mounts['{active}'].scene_offset fehlt/ungültig.")
-        so = mdef["scene_offset"]
-        if "xyz" not in so or "rpy_deg" not in so:
-            _err(f"substrate_mounts.yaml: mounts['{active}'].scene_offset benötigt xyz & rpy_deg.")
-        if not (isinstance(so["xyz"], list) and len(so["xyz"]) == 3):
-            _err(f"substrate_mounts.yaml: scene_offset.xyz muss Liste mit 3 Werten sein.")
-        if not (isinstance(so["rpy_deg"], list) and len(so["rpy_deg"]) == 3):
-            _err(f"substrate_mounts.yaml: scene_offset.rpy_deg muss Liste mit 3 Werten sein.")
+    paths = AppPaths(
+        recipe_file=recipe_file_abs,
+        recipe_dir=recipe_dir_abs,
+        log_dir=log_dir_abs,
+        bringup_log=bringup_log_abs,
+        ros_setup=ros_setup_abs,
+        ws_setup=ws_setup_abs,
+        tools_dir=tools_dir_abs,
+        substrates_dir=subs_dir_abs,
+        substrate_mounts_dir=mounts_dir_abs,
+        substrate_mounts_file=mounts_file_abs,
+        rviz_live_config=rviz_live,
+        rviz_shadow_config=rviz_shadow,
+    )
 
     return AppContext(
-        paths=AppPaths(
-            recipe_file=recipe_file_abs,
-            recipe_dir=recipe_dir_abs,
-            log_dir=log_dir_abs,
-            bringup_log=bringup_log_abs,
-            ros_setup=ros_setup_abs,
-            ws_setup=ws_setup_abs,
-            tools_dir=tools_dir_abs,
-            substrates_dir=substrates_dir_abs,
-            substrate_mounts_dir=substrate_mounts_dir_abs,
-        ),
-        ros=ROSConfig(launch_ros=r["launch_ros"], sim_robot=r["sim_robot"]),
+        paths=paths,
+        ros=ros_cfg,
         recipes_yaml=ry,
-        recipes=ry["recipes"],
-        recipe_params=ry["recipe_params"],
-        units=ry["units"],
-        rviz=rviz_cfg,
+        recipes=recipes_list,
+        recipe_params=recipe_params,
+        units=units,
         mounts_yaml=mounts_yaml,
-        tf=tf_cfg,
     )

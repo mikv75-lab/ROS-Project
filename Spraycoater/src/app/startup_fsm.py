@@ -27,7 +27,7 @@ class StartupResult:
 
 class _StepState(QtCore.QState):
     """
-    Mini-Utility-State: ruft 'fn' asynchron (singleShot 0 ms) auf,
+    Ruft 'fn' asynchron (singleShot 0 ms) auf,
     fängt Exceptions und triggert done/failed.
     """
     def __init__(self, name: str, machine: 'StartupMachine', fn: Callable[[], None], parent=None):
@@ -44,6 +44,7 @@ class _StepState(QtCore.QState):
         try:
             self._fn()
         except Exception as e:
+            logging.getLogger("app.startup").exception("%s failed", self._name)
             self._machine.warning.emit(f"{self._name}: {e}")
             if self._machine.abort_on_error:
                 self._machine._failed_sig.emit()
@@ -57,7 +58,7 @@ class StartupMachine(QtCore.QObject):
     """
     progress = QtCore.pyqtSignal(str)     # z.B. "LoadStartup"
     warning  = QtCore.pyqtSignal(str)     # gelbe Meldung auf Splash
-    error    = QtCore.pyqtSignal(str)     # (derzeit ungenutzt; s. abort_on_error)
+    error    = QtCore.pyqtSignal(str)     # (derzeit ungenutzt)
     ready    = QtCore.pyqtSignal(object, object)  # (ctx, bridge)
 
     # interne Trigger
@@ -91,24 +92,24 @@ class StartupMachine(QtCore.QObject):
         s_bridge = _StepState("ConnectBridge", self, self._step_bridge)
         s_ready  = QtCore.QFinalState()
 
-        # transitions: jedes _StepState wartet auf _done_sig und geht weiter
-        s_init.addTransition(self._done_sig, s_load)
-        s_load.addTransition(self._done_sig, s_log)
-        s_log.addTransition(self._done_sig, s_warn)
-        s_warn.addTransition(self._done_sig, s_bring)
-        s_bring.addTransition(self._done_sig, s_bridge)
+        # --- transitions (use bound-signal overload) ---
+        s_init.addTransition(self._done_sig,   s_load)
+        s_load.addTransition(self._done_sig,   s_log)
+        s_log.addTransition(self._done_sig,    s_warn)
+        s_warn.addTransition(self._done_sig,   s_bring)
+        s_bring.addTransition(self._done_sig,  s_bridge)
         s_bridge.addTransition(self._done_sig, s_ready)
 
-        # optionaler Abbruchpfad
+        # abort path
         for st in (s_load, s_log, s_warn, s_bring, s_bridge):
             st.addTransition(self._failed_sig, s_ready)
 
-        # onEntry init -> direkt "done" triggern, damit s_load beginnt
+        # kickoff
         def _kickoff():
             QtCore.QTimer.singleShot(0, self._done_sig.emit)
         s_init.entered.connect(_kickoff)
 
-        # final: ready-Signal feuern
+        # final
         self.m.finished.connect(self._emit_ready)
 
         self.m.addState(s_init)
@@ -126,10 +127,12 @@ class StartupMachine(QtCore.QObject):
         self.ctx = load_startup(self.startup_yaml_path)
         if self.ctx is None:
             raise RuntimeError("load_startup() returned None")
-        self._log.info("startup loaded")
+        self._log.info("startup loaded: %s", self.startup_yaml_path)
+
+        # In Containern SHM-Transport deaktivieren (FastDDS)
+        os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
 
     def _step_logging(self):
-        # braucht ctx.paths.log_dir
         configure_logging_from_yaml(
             logging_yaml_path=self.logging_yaml_path,
             log_dir=self.ctx.paths.log_dir
@@ -142,10 +145,11 @@ class StartupMachine(QtCore.QObject):
         self._log.info("warnings enabled")
 
     def _step_bringup(self):
+        # Falls ROS in startup.yaml deaktiviert: überspringen
         if not self.ctx.ros.launch_ros:
-            self._log.info("ROS launch disabled in startup.yaml")
+            self._log.info("ROS launch disabled in startup.yaml -> Bringup übersprungen")
             return
-        # Optional: SHM-Transport in Containern deaktivieren
+
         os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
 
         cmd, extra = make_bringup_cmd(self.ctx.ros.sim_robot)
@@ -163,13 +167,23 @@ class StartupMachine(QtCore.QObject):
             self.warning.emit(f"Bringup nicht gestartet. Log: {self.ctx.paths.bringup_log}")
 
     def _step_bridge(self):
-        # Bridge erstellen + verbinden (nicht fatal bei Fehlern)
+        """
+        Bridge nur verbinden, wenn Bringup gewollt ist.
+        """
+        if not self.ctx.ros.launch_ros:
+            self._log.info("ROS launch disabled -> Bridge-Verbindung übersprungen")
+            self.bridge = None
+            return
+
+        os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
+
         self.bridge = get_ui_bridge(self.ctx)
         try:
             self.bridge.connect()
             logging.getLogger("ros").info("UIBridge verbunden (node=%s).", self.bridge.node_name)
         except Exception as e:
             self.warning.emit(f"UIBridge nicht verbunden: {e}")
+            self.bridge = None  # ohne Bridge weiter
 
     # -------- Control --------
     def start(self):

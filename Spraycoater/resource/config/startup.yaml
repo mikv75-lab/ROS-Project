@@ -6,8 +6,8 @@ paths:
 
   # Optional weitere Kataloge (werden vom aktuellen Loader ignoriert, dürfen aber drin bleiben)
   tools_file:             "package://mecademic_bringup/config/tools.yaml"
-  substrates_file:        "package://mecademic_bringup/config/sa/substrates.yaml"
-  substrate_mounts_file:  "package://mecademic_bringup/config/sa/substrate_mounts.yaml"
+  substrates_file:        "package://mecademic_bringup/config/substrates.yaml"
+  substrate_mounts_file:  "package://mecademic_bringup/config/substrate_mounts.yaml"
 
   # STL-Verzeichnisse (falls du die ROS-Paketressourcen weiter verwenden willst)
   tools_dir:              "package://mecademic_bringup/resource/tools"

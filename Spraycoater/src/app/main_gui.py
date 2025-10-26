@@ -12,6 +12,15 @@ for p in (SRC_ROOT, RES_ROOT):
     if p not in sys.path:
         sys.path.insert(0, p)
 
+# Qt-Runtime dir fix (verhindert Warnungen & seltene Hänger in Containern)
+if "XDG_RUNTIME_DIR" not in os.environ:
+    tmp_run = f"/tmp/runtime-{os.getuid()}"
+    os.makedirs(tmp_run, exist_ok=True)
+    os.environ["XDG_RUNTIME_DIR"] = tmp_run
+
+# FastDDS SHM sicherheitshalber deaktivieren (verhindert Hänger in Containern)
+os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
+
 from app.tabs.process.process_tab import ProcessTab
 from app.tabs.recipe.recipe_tab import RecipeTab
 from app.tabs.service.service_tab import ServiceTab
@@ -82,7 +91,7 @@ def main():
     fsm = StartupMachine(
         startup_yaml_path=_startup_path_strict(),
         logging_yaml_path=resource_path("config", "logging.yaml"),
-        abort_on_error=True,   # <— wichtig: echte Fehler stoppen den Start
+        abort_on_error=True,   # echte Fehler stoppen die Pipline und wir öffnen ohne Bridge
     )
 
     fsm.progress.connect(lambda p: splash.showMessage(f"{p} …", Qt.AlignHCenter | Qt.AlignBottom, Qt.white))

@@ -23,7 +23,7 @@ _LOG = logging.getLogger("app.tabs.recipe.recipe_editor_panel")
 # ---------- Hilfsfunktionen für UI/Dateipfade ----------
 def _project_root() -> str:
     here = os.path.abspath(os.path.dirname(__file__))
-    return os.path.abspath(os.path.join(here, "..", "..", "..", ".."))
+    return os.path.abspath(os.path.join(here, "..","..", "..", "..", ".."))
 
 def _ui_path(filename: str) -> str:
     # UI liegt unter resource/ui/tabs/recipe/

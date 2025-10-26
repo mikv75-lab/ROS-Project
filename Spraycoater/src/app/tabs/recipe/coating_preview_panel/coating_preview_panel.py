@@ -23,17 +23,15 @@ from .raycast_projector import (
     quat_from_two_vectors,
 )
 
-_LOG = logging.getLogger("app.tabs.recipe.preview_panel")
+_LOG = logging.getLogger("app.tabs.recipe.coating_preview_panel")
 
 # ---------- Pfad-Helfer ----------
 def _project_root() -> str:
     here = os.path.abspath(os.path.dirname(__file__))
-    return os.path.abspath(os.path.join(here, "..", "..", "..", ".."))
+    return os.path.abspath(os.path.join(here, "..", "..", "..", "..", ".."))
 
 def _ui_path(filename: str) -> str:
-    # UI liegt unter resource/ui/tabs/recipe/
     return os.path.join(_project_root(), "resource", "ui", "tabs", "recipe", filename)
-
 
 class CoatingPreviewPanel(QWidget):
     """
