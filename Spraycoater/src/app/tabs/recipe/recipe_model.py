@@ -1,61 +1,33 @@
 # Spraycoater/src/app/tabs/recipe/recipe_model.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from dataclasses import dataclass, field, replace
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, field, asdict
+from typing import Any, Dict, Optional, List
 import os, yaml, logging
-from .recipe_validator import RecipeValidator
 
 _LOG = logging.getLogger("app.tabs.recipe.model")
 
-@dataclass(frozen=True)
+@dataclass
 class Recipe:
     id: str
     description: str = ""
-    tool: Optional[str] = None
-    substrate: Optional[str] = None          # <-- genau ein Substrat
-    mount: Optional[str] = None
-    side: Optional[str] = None
+    tool: str = ""          # Pflicht
+    mount: str = ""         # Pflicht (substrate_mount key)
+    substrate: str = ""     # Pflicht (substrate key)
     parameters: Dict[str, Any] = field(default_factory=dict)
     path: Dict[str, Any] = field(default_factory=dict)
-
-    @staticmethod
-    def from_dict(d: Dict[str, Any]) -> "Recipe":
-        if not isinstance(d, dict):
-            raise ValueError("Recipe.from_dict: input ist kein Mapping.")
-        # kompatibel: substrates (Liste) -> erstes nehmen
-        sub = d.get("substrate")
-        if sub is None:
-            lst = d.get("substrates") or []
-            if isinstance(lst, list) and lst:
-                sub = lst[0]
-        return Recipe(
-            id=str(d.get("id", "")),
-            description=str(d.get("description", "")),
-            tool=d.get("tool"),
-            substrate=sub,
-            mount=d.get("mount"),
-            side=d.get("side"),
-            parameters=dict(d.get("parameters", {}) or {}),
-            path=dict(d.get("path", {}) or {}),
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        # beides ausgeben, um alte Konsumenten nicht zu brechen
-        out = {
-            "id": self.id,
-            "description": self.description,
-            "tool": self.tool,
-            "substrate": self.substrate,
-            "substrates": [self.substrate] if self.substrate else [],
-            "mount": self.mount,
-            "side": self.side,
-            "parameters": dict(self.parameters),
-            "path": dict(self.path),
-        }
-        return out
+    valid: bool = False     # wird von validate_* gesetzt
 
     # ---------- IO ----------
+    @staticmethod
+    def load_yaml(file_path: str) -> "Recipe":
+        fp = os.path.abspath(os.path.normpath(file_path))
+        if not os.path.exists(fp):
+            raise FileNotFoundError(fp)
+        with open(fp, "r", encoding="utf-8") as f:
+            d = yaml.safe_load(f) or {}
+        return Recipe.from_dict(d)
+
     def save_yaml(self, dir_path: str, filename: Optional[str] = None) -> str:
         if not dir_path:
             raise ValueError("save_yaml: dir_path fehlt.")
@@ -69,43 +41,66 @@ class Recipe:
         _LOG.info("Recipe gespeichert: %s", target)
         return target
 
+    # ---------- Mapping ----------
     @staticmethod
-    def load_yaml(file_path: str) -> "Recipe":
-        fp = os.path.abspath(os.path.normpath(file_path))
-        if not os.path.exists(fp):
-            raise FileNotFoundError(fp)
-        with open(fp, "r", encoding="utf-8") as f:
-            d = yaml.safe_load(f)
-        return Recipe.from_dict(d)
+    def from_dict(d: Dict[str, Any]) -> "Recipe":
+        return Recipe(
+            id=str(d.get("id", "")),
+            description=str(d.get("description", "")),
+            tool=str(d.get("tool", "")),
+            mount=str(d.get("mount", "")),
+            substrate=str(d.get("substrate", "") or (d.get("substrates") or [None])[0] or ""),
+            parameters=dict(d.get("parameters", {}) or {}),
+            path=dict(d.get("path", {}) or {}),
+            valid=bool(d.get("valid", False)),
+        )
 
-    def delete_yaml(self, dir_path: str, filename: Optional[str] = None) -> bool:
-        fname = filename or f"{self.id or 'recipe'}.yaml"
-        fp = os.path.join(os.path.abspath(dir_path), fname)
-        try:
-            os.remove(fp)
-            _LOG.info("Recipe gelöscht: %s", fp)
-            return True
-        except FileNotFoundError:
-            return False
+    def to_dict(self) -> Dict[str, Any]:
+        out = asdict(self)
+        # kompat: altes Feld 'substrates' (einzelnes Element)
+        out["substrates"] = [self.substrate] if self.substrate else []
+        return out
 
-    # ---------- Validation / Optimize ----------
-    def validate_syntax(self, recipe_params: Dict[str, Any]) -> List[str]:
-        return RecipeValidator(recipe_params).validate_recipe(self.to_dict())
+    # ---------- Convenience ----------
+    def getPath(self):
+        """Bevorzugte Punkte-Liste (mm) aus path zurückgeben."""
+        return (self.path.get("points_mm")
+                or self.path.get("polyline_mm")
+                or self.path.get("surface_points_mm")
+                or [])
 
-    def validate_bridge(self, bridge, *, timeout: float = 0.0, syntactic_only: bool = False):
-        if bridge is None:
-            return {"ok": True, "message": "Kein Bridge-Check (bridge=None)."}
-        try:
-            res = bridge.validate(self.to_dict(), syntactic_only=syntactic_only, timeout=timeout)
-            return {"ok": bool(res.ok), "message": res.message, "data": res.data}
-        except Exception as e:
-            return {"ok": False, "message": str(e)}
+    # ---------- Validation ----------
+    def validate_required(self) -> List[str]:
+        errs: List[str] = []
+        if not self.id:        errs.append("id fehlt")
+        if not self.tool:      errs.append("tool fehlt")
+        if not self.mount:     errs.append("mount fehlt")
+        if not self.substrate: errs.append("substrate fehlt")
+        ptype = (self.path.get("type") or "").strip().lower()
+        if not ptype:
+            errs.append("path.type fehlt")
+        self.valid = (len(errs) == 0)
+        return errs
 
-    def optimize(self, bridge, *, timeout: float = 0.0):
-        if bridge is None:
-            return {"ok": False, "message": "optimize: bridge fehlt."}
-        try:
-            res = bridge.optimize(self.to_dict(), timeout=timeout)
-            return {"ok": bool(res.ok), "message": res.message, "data": res.data}
-        except Exception as e:
-            return {"ok": False, "message": str(e)}
+    def validate_references(
+        self,
+        *,
+        tools_yaml: Dict[str, Any] | None,
+        mounts_yaml: Dict[str, Any] | None,
+        substrates_yaml: Dict[str, Any] | None,
+    ) -> List[str]:
+        errs: List[str] = []
+        if tools_yaml is not None:
+            tools = (tools_yaml.get("tools") or {})
+            if self.tool not in tools:
+                errs.append(f"Tool '{self.tool}' nicht in tools.yaml")
+        if mounts_yaml is not None:
+            mounts = (mounts_yaml.get("mounts") or {})
+            if self.mount not in mounts:
+                errs.append(f"Mount '{self.mount}' nicht in substrate_mounts.yaml")
+        if substrates_yaml is not None:
+            subs = (substrates_yaml.get("substrates") or {})
+            if self.substrate not in subs:
+                errs.append(f"Substrat '{self.substrate}' nicht in substrates.yaml")
+        self.valid = (len(errs) == 0 and self.valid)
+        return errs
