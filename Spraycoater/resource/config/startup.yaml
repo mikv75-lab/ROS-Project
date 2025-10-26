@@ -25,5 +25,6 @@ tf:
     rpy_deg: [0.0, 0.0, 90.0]
 
 ros:
-  launch_ros: false
+  launch_ros: true
   sim_robot:  true
+
