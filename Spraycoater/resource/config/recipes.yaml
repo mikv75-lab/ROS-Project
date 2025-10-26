@@ -30,8 +30,8 @@ recipe_params:
 
   path.spiral.plane:
     center_xy_mm:     { type: vec2,   min: [-1000,-1000], max: [1000,1000], step: [0.1,0.1], unit: "mm", default: [0,0] }
-    r_outer_mm:       { type: number, min: 0.1,  max: 2000, step: 0.1, unit: "mm", default: 70.0 }   # Start außen
-    r_inner_mm:       { type: number, min: 0.0,  max: 1000, step: 0.1, unit: "mm", default: 10.0 }   # nach innen
+    r_outer_mm:       { type: number, min: 0.1,  max: 2000, step: 0.1, unit: "mm", default: 70.0 }
+    r_inner_mm:       { type: number, min: 0.0,  max: 1000, step: 0.1, unit: "mm", default: 10.0 }
     pitch_mm:         { type: number, min: 0.1,  max: 200,  step: 0.1, unit: "mm", default: 5.0 }
     z_mm:             { type: number, min: 0.0,  max: 500,  step: 0.1, unit: "mm", default: 10.0 }
     lead_in_mm:       { type: number, min: 0.0,  max: 200,  step: 0.1, unit: "mm", default: 5.0 }
@@ -41,7 +41,7 @@ recipe_params:
     outside_mm:       { type: number, min: 0.0, max: 100,  step: 0.1, unit: "mm", default: 1.0 }
     margin_top_mm:    { type: number, min: 0.0, max: 200,  step: 0.1, unit: "mm", default: 0.0 }
     margin_bottom_mm: { type: number, min: 0.0, max: 200,  step: 0.1, unit: "mm", default: 0.0 }
-    start_from:       { type: enum,   values: ["top","bottom"], default: "top" }   # Editor setzt Auswahl
+    start_from:       { type: enum,   values: ["top","bottom"], default: "top" }
     direction:        { type: enum,   values: ["cw","ccw"],     default: "ccw" }
     lead_in_mm:       { type: number, min: 0.0, max: 200,  step: 0.1, unit: "mm", default: 5.0 }
     lead_out_mm:      { type: number, min: 0.0, max: 200,  step: 0.1, unit: "mm", default: 0.0 }
@@ -62,16 +62,15 @@ recipe_params:
     lead_in_mm:        { type: number, min: 0.0, max: 200,  step: 0.1, unit: "mm", default: 5.0 }
 
 # ------------------------------------------------------
-
+# UI-Reihenfolge: Substrat → Mount → Parameter
+# Mögliche sides: ["top","front","back","left","right","helix"]
 recipes:
 
-  # MEANDER – Kreis (Wafer) – startet außen (lead_in_mm)
-  - id: "wafer_top_meander"
-    description: "Top-Meander (kreisförmig) auf Wafern"
-    # erlaubte Auswahlen
-    tools: ["spray_nozzle_01", "spray_nozzle_02"]
-    substrate_mounts: ["flat_240x240"]
+  # ===== WAFERS (nur TOP) =====
+  - id: "wafer_meander_top"
+    description: "Meander (kreisförmig) – Wafer TOP"
     substrates: ["wafer_d100_h2", "wafer_d150_h2", "wafer_d200_h2"]
+    substrate_mounts: ["circle_d240_h50", "flat_240x240x50"]
     sides: ["top"]
     parameters: {}
     path:
@@ -85,12 +84,10 @@ recipes:
       start: "auto"
       lead_in_mm: 5.0
 
-  # SPIRAL – plane (Wafer Top) – startet außen (r_outer -> r_inner)
-  - id: "wafer_top_spiral"
-    description: "Top-Spirale auf Wafern"
-    tools: ["spray_nozzle_01", "spray_nozzle_02"]
-    substrate_mounts: ["flat_240x240"]
+  - id: "wafer_spiral_top"
+    description: "Spiral – Wafer TOP"
     substrates: ["wafer_d100_h2", "wafer_d150_h2", "wafer_d200_h2"]
+    substrate_mounts: ["circle_d240_h50", "flat_240x240x50"]
     sides: ["top"]
     parameters: {}
     path:
@@ -102,25 +99,113 @@ recipes:
       z_mm: 10.0
       lead_in_mm: 5.0
 
-  # SPIRAL – cylinder (Helix) – Start oben oder unten, Richtung cw/ccw als Listen
-  - id: "tubes_helix"
-    description: "Helix auf Röhrchen ID5/10/20"
-    tools: ["spray_nozzle_01", "spray_nozzle_02"]
-    substrate_mounts: ["post_d30_h100"]
+  # ===== TUBES (nur HELIX) =====
+  - id: "tube_helix"
+    description: "Helix (Mantel) – Röhrchen"
     substrates: ["tube_ID5mm_t1p5mm_h100mm", "tube_ID10mm_t1p5mm_h100mm", "tube_ID20mm_t1p5mm_h100mm"]
-    sides: ["top", "helix"]
-    # Auswahl-Listen für den Editor; die gewählte Option schreibt ihr später in path.start_from / path.direction
+    substrate_mounts: ["post_d30mm_h100mm"]
+    sides: ["helix"]
     start_froms: ["top","bottom"]
     directions: ["cw","ccw"]
-    parameters:
-      spray_angle_deg: 10
-      speed_mm_s: 180.0
+    parameters: {}
     path:
       type: "spiral_cylinder"
       pitch_mm: 10.0
       outside_mm: 1.0
       margin_top_mm: 0.0
       margin_bottom_mm: 0.0
-      # start_from / direction werden vom Editor gesetzt (siehe Listen oben)
       lead_in_mm: 5.0
       lead_out_mm: 0.0
+
+  # ===== CYLINDERS (HELIX + TOP) =====
+  - id: "cylinder_helix"
+    description: "Helix (Mantel) – Vollzylinder"
+    substrates: ["cylinder_d100_h100", "cylinder_d150_h150", "cylinder_d200_h200"]
+    substrate_mounts: ["post_d30mm_h100mm"]
+    sides: ["helix"]
+    start_froms: ["top","bottom"]
+    directions: ["cw","ccw"]
+    parameters: {}
+    path:
+      type: "spiral_cylinder"
+      pitch_mm: 10.0
+      outside_mm: 1.0
+      margin_top_mm: 0.0
+      margin_bottom_mm: 0.0
+      lead_in_mm: 5.0
+      lead_out_mm: 0.0
+
+  - id: "cylinder_spiral_top"
+    description: "Spiral (Deckfläche) – Vollzylinder TOP"
+    substrates: ["cylinder_d100_h100", "cylinder_d150_h150", "cylinder_d200_h200"]
+    substrate_mounts: ["post_d30mm_h100mm"]
+    sides: ["top"]
+    parameters: {}
+    path:
+      type: "spiral_plane"
+      center_xy_mm: [0.0, 0.0]
+      r_outer_mm: 50.0
+      r_inner_mm: 5.0
+      pitch_mm: 4.0
+      z_mm: 10.0
+      lead_in_mm: 3.0
+
+  # ===== CUBES (alle Seiten) =====
+  - id: "cube_meander_rect"
+    description: "Meander (rechteckig) – Würfel/Quader (Seite wählen)"
+    substrates: ["cube_100", "cube_150"]
+    substrate_mounts: ["flat_240x240x50"]
+    sides: ["top","front","back","left","right"]
+    parameters: {}
+    path:
+      type: "meander_plane"
+      area:
+        shape: rect
+        center_xy_mm: [0.0, 0.0]
+        size_mm: [120.0, 120.0]
+      pitch_mm: 5.0
+      angle_deg: 0.0
+      edge_extend_mm: 0.0
+      margin_mm: 0.0
+      boustrophedon: true
+      start: "auto"
+      lead_in_mm: 5.0
+
+  # ===== HEMISPHERE (nur TOP) =====
+  - id: "hemisphere_top_meander"
+    description: "Meander (projiziert) – Halbkugel TOP"
+    substrates: ["hemisphere_d200"]
+    substrate_mounts: ["circle_d240_h50", "flat_240x240x50"]
+    sides: ["top"]
+    parameters: {}
+    path:
+      type: "meander_plane"
+      area: { shape: circle, center_xy_mm: [0.0, 0.0], radius_mm: 90.0 }
+      pitch_mm: 6.0
+      angle_deg: 0.0
+      edge_extend_mm: 0.0
+      margin_mm: 0.0
+      boustrophedon: true
+      start: "auto"
+      lead_in_mm: 5.0
+
+  # ===== PYRAMIDS (Seiten: front/back/left/right) =====
+  - id: "pyramid_side_meander"
+    description: "Meander (projiziert) – Pyramide (Seite wählen)"
+    substrates: ["pyramid_d150_h150", "pyramid_d200_h200"]
+    substrate_mounts: ["flat_240x240x50"]
+    sides: ["front","back","left","right"]
+    parameters: {}
+    path:
+      type: "meander_plane"
+      area:
+        shape: rect
+        center_xy_mm: [0.0, 0.0]
+        size_mm: [140.0, 140.0]
+      pitch_mm: 6.0
+      angle_deg: 0.0
+      edge_extend_mm: 0.0
+      margin_mm: 0.0
+      boustrophedon: true
+      start: "auto"
+      lead_in_mm: 5.0

@@ -26,6 +26,7 @@ def build_form_section(
     """
     Unterstützte Typen: number, boolean, enum, vec2
     Für vec2 sind min/max/step Listen mit 2 Werten.
+    Sichtbarkeitsregeln: 'visible_if': { '<andere.key>': <wert> }
     """
     layout = container.layout()
     if layout is None:
@@ -90,7 +91,6 @@ def _make_widget_for_spec(full_key: str, sch: Dict[str, Any], param_widgets: Dic
         if "default" in sch: sb.setValue(float(sch["default"]))
         if "unit" in sch:
             sb.setSuffix(" " + str(sch["unit"]))
-        sb.valueChanged.connect(lambda _v, k=full_key: _on_value_changed_number(k))
         param_widgets[full_key] = sb
         return sb
 
@@ -98,7 +98,6 @@ def _make_widget_for_spec(full_key: str, sch: Dict[str, Any], param_widgets: Dic
     if t == "boolean":
         cb = QtWidgets.QCheckBox()
         cb.setChecked(bool(sch.get("default", False)))
-        cb.toggled.connect(lambda _v, k=full_key: _on_value_changed_bool(k))
         param_widgets[full_key] = cb
         return cb
 
@@ -111,7 +110,6 @@ def _make_widget_for_spec(full_key: str, sch: Dict[str, Any], param_widgets: Dic
         if "default" in sch:
             idx = combo.findText(str(sch["default"]))
             combo.setCurrentIndex(0 if idx < 0 else idx)
-        combo.currentIndexChanged.connect(lambda _i, k=full_key: _on_value_changed_enum(k))
         param_widgets[full_key] = combo
         return combo
 
@@ -130,8 +128,9 @@ def _make_widget_for_spec(full_key: str, sch: Dict[str, Any], param_widgets: Dic
         ):
             sb.setDecimals(4)
             sb.setMinimum(mn); sb.setMaximum(mx); sb.setSingleStep(stp); sb.setValue(dv)
+
         if "unit" in sch:
-            # nur als Tooltip, damit keine zu langen Suffixe doppelt erscheinen
+            # als Tooltip, damit UI kompakt bleibt
             sbx.setToolTip(str(sch["unit"]))
             sby.setToolTip(str(sch["unit"]))
 
@@ -139,11 +138,8 @@ def _make_widget_for_spec(full_key: str, sch: Dict[str, Any], param_widgets: Dic
         hl = QtWidgets.QHBoxLayout(wrap); hl.setContentsMargins(0,0,0,0)
         hl.addWidget(sbx); hl.addWidget(sby)
 
-        # speichern als Tuple
+        # speichern als Tuple (Roh-Widgets)
         param_widgets[full_key] = (sbx, sby)
-        # value changed -> Sichtbarkeit neu prüfen
-        sbx.valueChanged.connect(lambda _v, k=full_key: _on_value_changed_number(k))
-        sby.valueChanged.connect(lambda _v, k=full_key: _on_value_changed_number(k))
         return wrap
 
     # Fallback: nicht unterstützt
@@ -153,8 +149,6 @@ def _as_widget(w) -> QtWidgets.QWidget:
     if isinstance(w, QtWidgets.QWidget):
         return w
     if isinstance(w, tuple):
-        # vec2 als zwei Spinboxen in einem Wrapper – _make_widget_for_spec liefert bereits Widget
-        # Falls hier Tuple kommt, packen wir es zusammen:
         wrap = QtWidgets.QWidget()
         hl = QtWidgets.QHBoxLayout(wrap); hl.setContentsMargins(0,0,0,0)
         for sb in w:
@@ -162,17 +156,8 @@ def _as_widget(w) -> QtWidgets.QWidget:
         return wrap
     return QtWidgets.QLabel("<unsupported>")
 
-def _on_value_changed_number(_key: str):  # noqa
-    # Platzhalter – Hook für spätere Logik
-    pass
-
-def _on_value_changed_bool(_key: str):  # noqa
-    pass
-
-def _on_value_changed_enum(_key: str):  # noqa
-    pass
-
 def _set_widget_value(w, value):
+    from PyQt5 import QtWidgets  # type: ignore
     if isinstance(w, QtWidgets.QDoubleSpinBox):
         try:
             w.setValue(float(value))
@@ -194,6 +179,7 @@ def _set_widget_value(w, value):
     # unbekannt: ignorieren
 
 def _get_widget_value(w):
+    from PyQt5 import QtWidgets  # type: ignore
     if isinstance(w, QtWidgets.QDoubleSpinBox):
         return float(w.value())
     if isinstance(w, QtWidgets.QCheckBox):

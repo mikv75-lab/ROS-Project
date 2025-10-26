@@ -1,5 +1,6 @@
 # Spraycoater/src/app/tabs/service/service_tab.py
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 import os
 import logging
 from PyQt5 import uic
@@ -7,26 +8,31 @@ from PyQt5.QtWidgets import QWidget
 
 from ros.rviz_manager import LiveRvizManager
 
+_LOG = logging.getLogger("app.tabs.service")
 
 def _project_root() -> str:
     here = os.path.abspath(os.path.dirname(__file__))  # .../src/app/tabs/service
     return os.path.abspath(os.path.join(here, "..", "..", "..", ".."))
 
 def _ui_path(filename: str) -> str:
-    return os.path.join(_project_root(), "resource", "ui", filename)
+    # neue Struktur: resource/ui/tabs/service/service_tab.ui
+    return os.path.join(_project_root(), "resource", "ui", "tabs", "service", filename)
 
 def _rviz_cfg_path() -> str:
-    return os.path.join(_project_root(), "resource", "config", "live.rviz")
-
+    # live.rviz liegt jetzt in resource/rviz/
+    return os.path.join(_project_root(), "resource", "rviz", "live.rviz")
 
 class ServiceTab(QWidget):
     def __init__(self, *, ctx, bridge, parent=None):
         super().__init__(parent)
         self.ctx = ctx
         self.bridge = bridge
-        uic.loadUi(_ui_path("service_tab.ui"), self)
 
-        self._log = logging.getLogger("app.tabs.service")
+        ui_file = _ui_path("service_tab.ui")
+        if not os.path.exists(ui_file):
+            _LOG.error("ServiceTab UI nicht gefunden: %s", ui_file)
+        uic.loadUi(ui_file, self)
+
         self._rviz = LiveRvizManager.instance()
         self._cfg = _rviz_cfg_path()
 

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PlanningPanel</class>
+ <widget class="QWidget" name="planningPanel">
+  <layout class="QVBoxLayout" name="vroot" stretch="0,1,0">
+   <!-- Ergebnis -->
+   <item>
+    <widget class="QGroupBox" name="groupResults">
+     <property name="title"><string>Results</string></property>
+     <layout class="QVBoxLayout" name="vResults">
+      <item><widget class="QPlainTextEdit" name="txtResults">
+        <property name="readOnly"><bool>true</bool></property>
+        <property name="placeholderText"><string>No results yet. Press &quot;Validate&quot; in the center panel…</string></property>
+      </widget></item>
+     </layout>
+    </widget>
+   </item>
+
+   <!-- Buttons -->
+   <item>
+    <widget class="QWidget" name="rowActions">
+     <layout class="QHBoxLayout" name="hActions">
+      <item><widget class="QPushButton" name="btnOptimize"><property name="text"><string>Optimize</string></property></widget></item>
+      <item><widget class="QPushButton" name="btnSave"><property name="text"><string>Save</string></property></widget></item>
+      <item><spacer name="spActions"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+     </layout>
+    </widget>
+   </item>
+
+   <!-- Spacer to push buttons up if needed -->
+   <item><spacer name="spBottom"><property name="orientation"><enum>Qt::Vertical</enum></property></spacer></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

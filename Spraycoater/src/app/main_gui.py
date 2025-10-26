@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-import os, sys, argparse, logging
+import os, sys, logging
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import QApplication, QMainWindow, QTabWidget, QSplashScreen
+from PyQt5.QtWidgets import QApplication, QMainWindow, QTabWidget, QSplashScreen, QMessageBox
 
-HERE         = os.path.abspath(os.path.dirname(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+HERE         = os.path.abspath(os.path.dirname(__file__))       # .../src/app
+PROJECT_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))  # .../
 SRC_ROOT     = os.path.join(PROJECT_ROOT, "src")
 RES_ROOT     = os.path.join(PROJECT_ROOT, "resource")
 for p in (SRC_ROOT, RES_ROOT):
@@ -18,6 +18,7 @@ from app.tabs.service.service_tab import ServiceTab
 from app.tabs.system.system_tab import SystemTab
 
 from app.startup_fsm import StartupMachine
+
 
 def resource_path(*parts: str) -> str:
     return os.path.join(RES_ROOT, *parts)
@@ -40,9 +41,12 @@ def _make_splash():
     splash.show()
     return splash
 
+
 class MainWindow(QMainWindow):
     def __init__(self, *, ctx, bridge, parent=None):
         super().__init__(parent)
+        if ctx is None:
+            raise RuntimeError("AppContext ist None – Startup fehlgeschlagen?")
         self.ctx = ctx
         self.bridge = bridge
         self.setWindowTitle("SprayCoater UI")
@@ -69,6 +73,7 @@ class MainWindow(QMainWindow):
             pass
         super().closeEvent(event)
 
+
 def main():
     app = QApplication(sys.argv)
     splash = _make_splash()
@@ -77,7 +82,7 @@ def main():
     fsm = StartupMachine(
         startup_yaml_path=_startup_path_strict(),
         logging_yaml_path=resource_path("config", "logging.yaml"),
-        abort_on_error=False,
+        abort_on_error=True,   # <— wichtig: echte Fehler stoppen den Start
     )
 
     fsm.progress.connect(lambda p: splash.showMessage(f"{p} …", Qt.AlignHCenter | Qt.AlignBottom, Qt.white))
@@ -85,6 +90,9 @@ def main():
     fsm.error.connect(lambda e: splash.showMessage(f"✖ {e}", Qt.AlignHCenter | Qt.AlignBottom, Qt.white))
 
     def _on_ready(ctx, bridge):
+        if ctx is None:
+            QMessageBox.critical(None, "Startup fehlgeschlagen", "Kein gültiger AppContext. Siehe Log.")
+            sys.exit(2)
         win = MainWindow(ctx=ctx, bridge=bridge)
         splash.finish(win)
         win.show()
@@ -93,6 +101,7 @@ def main():
     fsm.start()
 
     sys.exit(app.exec_())
+
 
 if __name__ == "__main__":
     main()

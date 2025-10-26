@@ -10,8 +10,14 @@ Erwartet in startup.yaml (unter Spraycoater/resource/config/):
   paths.ros_setup   : OPTIONAL Pfad zu /opt/ros/.../setup.bash
   paths.ws_setup    : OPTIONAL Pfad zu <ws>/install/setup.bash
 
+  # Optional (werden hier unterstützt):
+  paths.tools_file, paths.substrates_file, paths.substrate_mounts_file
+  paths.tools_dir, paths.substrates_dir, paths.substrate_mounts_dir
+
   rviz.live_config   : OPTIONAL Pfad zur RViz-Config (falls gesetzt: muss existieren)
   rviz.shadow_config : OPTIONAL Pfad zur RViz-Config (falls gesetzt: muss existieren)
+
+  tf.world_to_meca_mount.xyz, tf.world_to_meca_mount.rpy_deg : OPTIONAL
 
   ros.launch_ros    : bool
   ros.sim_robot     : bool
@@ -23,7 +29,6 @@ import io
 import yaml
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-
 
 
 def _err(msg: str) -> None:
@@ -75,19 +80,32 @@ class AppPaths:
     recipe_dir: str
     log_dir: str
     bringup_log: str
-    # optional
+    # optional setups
     ros_setup: Optional[str] = None
     ws_setup: Optional[str] = None
+    # optionale Ressourcenverzeichnisse (können package:// sein)
+    tools_dir: Optional[str] = None
+    substrates_dir: Optional[str] = None
+    substrate_mounts_dir: Optional[str] = None
+
 
 @dataclass(frozen=True)
 class RVizConfig:
     live_config: Optional[str] = None
     shadow_config: Optional[str] = None
 
+
 @dataclass(frozen=True)
 class ROSConfig:
     launch_ros: bool
     sim_robot: bool  # True = sim, False = real
+
+
+@dataclass(frozen=True)
+class TFWorldToMecaMount:
+    xyz: List[float]
+    rpy_deg: List[float]
+
 
 @dataclass(frozen=True)
 class AppContext:
@@ -98,6 +116,8 @@ class AppContext:
     recipe_params: Dict[str, Any]
     units: str
     rviz: RVizConfig = RVizConfig()  # optionales Feld
+    mounts_yaml: Optional[Dict[str, Any]] = None  # Mount-Katalog (optional)
+    tf: Optional[TFWorldToMecaMount] = None       # TF-Info (optional)
 
 
 # ---------------- Loader ----------------
@@ -136,6 +156,23 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         ws_setup_abs = _abspath_rel_to(base, p["ws_setup"])
         if not os.path.exists(ws_setup_abs):
             _err(f"paths.ws_setup nicht gefunden: {ws_setup_abs}")
+
+    # optionale Ressourcen-Verzeichnisse (dürfen fehlen)
+    tools_dir_abs: Optional[str] = None
+    substrates_dir_abs: Optional[str] = None
+    substrate_mounts_dir_abs: Optional[str] = None
+    if "tools_dir" in p and p["tools_dir"]:
+        tools_dir_abs = _abspath_rel_to(base, p["tools_dir"])
+        if not os.path.isdir(tools_dir_abs):
+            _err(f"paths.tools_dir existiert nicht als Verzeichnis: {tools_dir_abs}")
+    if "substrates_dir" in p and p["substrates_dir"]:
+        substrates_dir_abs = _abspath_rel_to(base, p["substrates_dir"])
+        if not os.path.isdir(substrates_dir_abs):
+            _err(f"paths.substrates_dir existiert nicht als Verzeichnis: {substrates_dir_abs}")
+    if "substrate_mounts_dir" in p and p["substrate_mounts_dir"]:
+        substrate_mounts_dir_abs = _abspath_rel_to(base, p["substrate_mounts_dir"])
+        if not os.path.isdir(substrate_mounts_dir_abs):
+            _err(f"paths.substrate_mounts_dir existiert nicht als Verzeichnis: {substrate_mounts_dir_abs}")
 
     # Existenz prüfen (keine Erstellung hier!)
     if not os.path.isdir(recipe_dir_abs):
@@ -183,6 +220,57 @@ def load_startup(startup_yaml_path: str) -> AppContext:
                 _err(f"rviz.shadow_config nicht gefunden: {shadow_abs}")
             rviz_cfg = RVizConfig(live_config=rviz_cfg.live_config, shadow_config=shadow_abs)
 
+    # OPTIONAL: tf.world_to_meca_mount
+    tf_cfg: Optional[TFWorldToMecaMount] = None
+    if "tf" in su:
+        if not isinstance(su["tf"], dict):
+            _err("startup.yaml: Abschnitt 'tf' ist ungültig (kein Mapping).")
+        tf = su["tf"]
+        if "world_to_meca_mount" in tf and tf["world_to_meca_mount"]:
+            wtm = tf["world_to_meca_mount"]
+            if not isinstance(wtm, dict):
+                _err("tf.world_to_meca_mount muss ein Mapping sein.")
+            if "xyz" not in wtm or "rpy_deg" not in wtm:
+                _err("tf.world_to_meca_mount benötigt 'xyz' und 'rpy_deg'.")
+            xyz = wtm["xyz"]; rpy = wtm["rpy_deg"]
+            if not (isinstance(xyz, list) and len(xyz) == 3):
+                _err("tf.world_to_meca_mount.xyz muss Liste mit 3 Werten sein.")
+            if not (isinstance(rpy, list) and len(rpy) == 3):
+                _err("tf.world_to_meca_mount.rpy_deg muss Liste mit 3 Werten sein.")
+            tf_cfg = TFWorldToMecaMount(xyz=[float(x) for x in xyz],
+                                        rpy_deg=[float(a) for a in rpy])
+
+    # OPTIONAL: substrate_mounts.yaml (Katalog) strikt laden, wenn konfiguriert
+    mounts_yaml: Optional[Dict[str, Any]] = None
+    if "substrate_mounts_file" in p and p["substrate_mounts_file"]:
+        mounts_path = _abspath_rel_to(base, p["substrate_mounts_file"])
+        mounts_yaml = _load_yaml_strict(mounts_path)
+
+        # Minimal-Validierung
+        if "version" not in mounts_yaml:
+            _err("substrate_mounts.yaml: Feld 'version' fehlt.")
+        if "active_mount" not in mounts_yaml or not isinstance(mounts_yaml["active_mount"], str):
+            _err("substrate_mounts.yaml: Feld 'active_mount' fehlt oder ist kein String.")
+        if "mounts" not in mounts_yaml or not isinstance(mounts_yaml["mounts"], dict) or not mounts_yaml["mounts"]:
+            _err("substrate_mounts.yaml: Abschnitt 'mounts' fehlt oder ist leer.")
+
+        active = mounts_yaml["active_mount"]
+        if active not in mounts_yaml["mounts"]:
+            _err(f"substrate_mounts.yaml: active_mount '{active}' nicht in 'mounts' definiert.")
+
+        mdef = mounts_yaml["mounts"][active]
+        if "mesh" not in mdef or not isinstance(mdef["mesh"], str):
+            _err(f"substrate_mounts.yaml: mounts['{active}'].mesh fehlt/ungültig.")
+        if "scene_offset" not in mdef or not isinstance(mdef["scene_offset"], dict):
+            _err(f"substrate_mounts.yaml: mounts['{active}'].scene_offset fehlt/ungültig.")
+        so = mdef["scene_offset"]
+        if "xyz" not in so or "rpy_deg" not in so:
+            _err(f"substrate_mounts.yaml: mounts['{active}'].scene_offset benötigt xyz & rpy_deg.")
+        if not (isinstance(so["xyz"], list) and len(so["xyz"]) == 3):
+            _err(f"substrate_mounts.yaml: scene_offset.xyz muss Liste mit 3 Werten sein.")
+        if not (isinstance(so["rpy_deg"], list) and len(so["rpy_deg"]) == 3):
+            _err(f"substrate_mounts.yaml: scene_offset.rpy_deg muss Liste mit 3 Werten sein.")
+
     return AppContext(
         paths=AppPaths(
             recipe_file=recipe_file_abs,
@@ -191,6 +279,9 @@ def load_startup(startup_yaml_path: str) -> AppContext:
             bringup_log=bringup_log_abs,
             ros_setup=ros_setup_abs,
             ws_setup=ws_setup_abs,
+            tools_dir=tools_dir_abs,
+            substrates_dir=substrates_dir_abs,
+            substrate_mounts_dir=substrate_mounts_dir_abs,
         ),
         ros=ROSConfig(launch_ros=r["launch_ros"], sim_robot=r["sim_robot"]),
         recipes_yaml=ry,
@@ -198,4 +289,6 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         recipe_params=ry["recipe_params"],
         units=ry["units"],
         rviz=rviz_cfg,
+        mounts_yaml=mounts_yaml,
+        tf=tf_cfg,
     )

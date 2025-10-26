@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>RecipeTab</class>
+ <widget class="QWidget" name="RecipeTab">
+  <layout class="QHBoxLayout" name="hRoot">
+   <item>
+    <widget class="QWidget" name="leftContainer">
+     <layout class="QVBoxLayout" name="vLeft"/>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="plotContainer">
+     <layout class="QVBoxLayout" name="vCenter"/>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="rightTop">
+     <layout class="QVBoxLayout" name="vRight"/>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

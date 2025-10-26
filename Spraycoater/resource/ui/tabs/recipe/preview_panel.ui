@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>CoatingPreviewPanel</class>
+ <widget class="QWidget" name="coatingPreviewPanel">
+  <layout class="QVBoxLayout" name="vroot">
+
+   <!-- Planner + Validate -->
+   <item>
+    <widget class="QWidget" name="rowPlanner">
+     <layout class="QHBoxLayout" name="hPlanner">
+      <item><widget class="QLabel" name="lblPlanner"><property name="text"><string>Planner:</string></property></widget></item>
+      <item><widget class="QComboBox" name="comboPlanner">
+        <item><property name="text"><string>ompl:RRTConnect</string></property></item>
+        <item><property name="text"><string>ompl:BiTRRT</string></property></item>
+        <item><property name="text"><string>ompl:RRTstar</string></property></item>
+        <item><property name="text"><string>ompl:PRM</string></property></item>
+        <item><property name="text"><string>chomp</string></property></item>
+        <item><property name="text"><string>stomp</string></property></item>
+      </widget></item>
+      <item><spacer name="spPlanner"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+      <item><widget class="QPushButton" name="btnValidate"><property name="text"><string>Validate</string></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+
+   <!-- Viewer Container -->
+   <item>
+    <widget class="QWidget" name="pvContainer">
+     <layout class="QVBoxLayout" name="pvLayout"/>
+    </widget>
+   </item>
+
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

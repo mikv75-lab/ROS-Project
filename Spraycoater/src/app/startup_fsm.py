@@ -3,11 +3,11 @@ from __future__ import annotations
 import os
 import logging
 from dataclasses import dataclass
-from typing import Optional, Callable, Tuple
+from typing import Optional, Callable
 
 from PyQt5 import QtCore
 
-# externe Helfer aus deinem Projekt
+# Projekt-Helfer (Pfad-Setup kommt aus main_gui.py)
 from config.startup import load_startup
 from app.utils.logging_setup import configure_logging_from_yaml
 from app.utils.warnings_setup import enable_all_warnings
@@ -124,6 +124,8 @@ class StartupMachine(QtCore.QObject):
     def _step_load(self):
         # Strict load
         self.ctx = load_startup(self.startup_yaml_path)
+        if self.ctx is None:
+            raise RuntimeError("load_startup() returned None")
         self._log.info("startup loaded")
 
     def _step_logging(self):
@@ -143,6 +145,9 @@ class StartupMachine(QtCore.QObject):
         if not self.ctx.ros.launch_ros:
             self._log.info("ROS launch disabled in startup.yaml")
             return
+        # Optional: SHM-Transport in Containern deaktivieren
+        os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
+
         cmd, extra = make_bringup_cmd(self.ctx.ros.sim_robot)
         env = {
             "SPRAY_LOG_DIR": self.ctx.paths.log_dir,
@@ -171,4 +176,6 @@ class StartupMachine(QtCore.QObject):
         self.m.start()
 
     def _emit_ready(self):
+        if self.ctx is None:
+            self.warning.emit("Startup finished without valid ctx (ctx=None).")
         self.ready.emit(self.ctx, self.bridge)
