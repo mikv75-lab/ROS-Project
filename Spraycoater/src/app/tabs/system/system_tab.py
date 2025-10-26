@@ -9,6 +9,8 @@ def _ui_path(filename: str) -> str:
     return os.path.join(root, "resource", "ui", filename)
 
 class SystemTab(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, *, ctx, bridge, parent=None):
         super().__init__(parent)
+        self.ctx = ctx
+        self.bridge = bridge
         uic.loadUi(_ui_path("system_tab.ui"), self)

@@ -1,8 +1,128 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>SprayPathTab</class>
- <widget class="QWidget" name="SprayPathTab">
-  <layout class="QVBoxLayout" name="verticalLayout"/>
+ <class>RecipeTab</class>
+ <widget class="QWidget" name="RecipeTab">
+  <layout class="QHBoxLayout" name="rootLayout" stretch="0,1,0">
+   <!-- LEFT: Controls (schmal) -->
+   <item>
+    <widget class="QWidget" name="leftPanel">
+     <property name="minimumSize"><size><width>260</width><height>0</height></size></property>
+     <property name="maximumSize"><size><width>320</width><height>16777215</height></size></property>
+     <layout class="QVBoxLayout" name="leftLayout">
+
+      <item>
+       <widget class="QGroupBox" name="grpList">
+        <property name="title"><string>Rezepte</string></property>
+        <layout class="QVBoxLayout" name="grpListLayout">
+         <item><widget class="QListWidget" name="listRecipes"/></item>
+        </layout>
+       </widget>
+      </item>
+
+      <item>
+       <widget class="QGroupBox" name="grpPreview">
+        <property name="title"><string>Preview</string></property>
+        <layout class="QVBoxLayout" name="grpPreviewLayout">
+         <item>
+          <widget class="QComboBox" name="comboShape">
+           <item><property name="text"><string>Würfel</string></property></item>
+           <item><property name="text"><string>Kugel</string></property></item>
+           <item><property name="text"><string>Zylinder</string></property></item>
+          </widget>
+         </item>
+         <item>
+          <widget class="QComboBox" name="comboPath">
+           <item><property name="text"><string>Raster</string></property></item>
+           <item><property name="text"><string>Spiral</string></property></item>
+          </widget>
+         </item>
+         <item><widget class="QCheckBox" name="checkNormals"><property name="text"><string>Normalen anzeigen</string></property></widget></item>
+         <item>
+          <widget class="QWidget" name="rowButtons" native="true">
+           <layout class="QHBoxLayout" name="rowButtonsLayout">
+            <item><widget class="QPushButton" name="btnGenerate"><property name="text"><string>Vorschau</string></property></widget></item>
+            <item><widget class="QPushButton" name="btnResetCam"><property name="text"><string>Kamera Reset</string></property></widget></item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+
+      <item>
+       <widget class="QGroupBox" name="grpTypes">
+        <property name="title"><string>Rezepttyp</string></property>
+        <layout class="QVBoxLayout" name="grpTypesLayout">
+         <item>
+          <widget class="QComboBox" name="comboRecipeType">
+           <item><property name="text"><string>Meander (plane)</string></property></item>
+           <item><property name="text"><string>Spiral (plane)</string></property></item>
+           <item><property name="text"><string>Spiral (cylinder)</string></property></item>
+           <item><property name="text"><string>Explicit</string></property></item>
+          </widget>
+         </item>
+         <item>
+          <widget class="QStackedWidget" name="stackTypes">
+           <property name="currentIndex"><number>0</number></property>
+
+           <widget class="QWidget" name="pageMeanderPlane">
+            <layout class="QFormLayout" name="formMeanderPlane"/>
+           </widget>
+
+           <widget class="QWidget" name="pageSpiralPlane">
+            <layout class="QFormLayout" name="formSpiralPlane"/>
+           </widget>
+
+           <widget class="QWidget" name="pageSpiralCylinder">
+            <layout class="QFormLayout" name="formSpiralCylinder"/>
+           </widget>
+
+           <widget class="QWidget" name="pageExplicit">
+            <layout class="QFormLayout" name="formExplicit"/>
+           </widget>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+
+      <item>
+       <widget class="QGroupBox" name="grpGlobals">
+        <property name="title"><string>Globale Parameter</string></property>
+        <layout class="QFormLayout" name="formGlobals"/>
+       </widget>
+      </item>
+
+      <item><spacer name="leftSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property>
+       <property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+     </layout>
+    </widget>
+   </item>
+
+   <!-- MIDDLE: PyVista host -->
+   <item>
+    <widget class="QFrame" name="plotContainer">
+     <property name="frameShape"><enum>QFrame::StyledPanel</enum></property>
+     <property name="frameShadow"><enum>QFrame::Raised</enum></property>
+     <layout class="QVBoxLayout" name="pvLayout">
+      <item><widget class="QLabel" name="lblViewerHint"><property name="text"><string>PyVista-Viewer wird hier initialisiert…</string></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+
+   <!-- RIGHT: RViz Controls (optional, schmal) -->
+   <item>
+    <widget class="QWidget" name="rvizPanel">
+     <property name="minimumSize"><size><width>260</width><height>0</height></size></property>
+     <property name="maximumSize"><size><width>320</width><height>16777215</height></size></property>
+     <layout class="QVBoxLayout" name="rvizLayout">
+      <item><widget class="QLabel" name="lblRviz"><property name="text"><string>RViz Steuerung</string></property></widget></item>
+      <item><spacer name="rvizSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property>
+       <property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
  </widget>
  <resources/>
  <connections/>

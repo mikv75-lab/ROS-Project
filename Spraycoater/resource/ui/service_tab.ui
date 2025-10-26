@@ -2,7 +2,40 @@
 <ui version="4.0">
  <class>ServiceTab</class>
  <widget class="QWidget" name="ServiceTab">
-  <layout class="QVBoxLayout" name="verticalLayout"/>
+  <layout class="QHBoxLayout" name="rootLayout" stretch="0,1">
+   <item>
+    <widget class="QGroupBox" name="grpLive">
+     <property name="title"><string>RViz (Live)</string></property>
+     <property name="minimumSize"><size><width>260</width><height>0</height></size></property>
+     <property name="maximumSize"><size><width>320</width><height>16777215</height></size></property>
+     <layout class="QVBoxLayout" name="grpLiveLayout">
+
+      <item><widget class="QLabel" name="lblLiveCfgCaption"><property name="text"><string>Config:</string></property></widget></item>
+      <item><widget class="QLabel" name="lblLiveCfg"><property name="text"><string>…</string></property></widget></item>
+
+      <item><widget class="QLabel" name="lblLiveStatusCaption"><property name="text"><string>Status:</string></property></widget></item>
+      <item><widget class="QLabel" name="lblLiveStatus"><property name="text"><string>stopped</string></property></widget></item>
+
+      <item><widget class="QPushButton" name="btnLiveStart"><property name="text"><string>Start</string></property></widget></item>
+      <item><widget class="QPushButton" name="btnLiveStop"><property name="text"><string>Stop</string></property></widget></item>
+      <item><widget class="QPushButton" name="btnLiveRestart"><property name="text"><string>Restart</string></property></widget></item>
+
+      <item><spacer name="leftSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property>
+       <property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+     </layout>
+    </widget>
+   </item>
+
+   <item>
+    <widget class="QFrame" name="rvizPanel">
+     <property name="frameShape"><enum>QFrame::StyledPanel</enum></property>
+     <property name="frameShadow"><enum>QFrame::Raised</enum></property>
+     <layout class="QVBoxLayout" name="rvizLayout">
+      <item><widget class="QLabel" name="lblRvizHint"><property name="text"><string>RViz (Live) wird als externer Prozess gestartet. Einbettung folgt.</string></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
  </widget>
  <resources/>
  <connections/>

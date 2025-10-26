@@ -27,17 +27,21 @@ from app.tabs.system.system_tab import SystemTab
 # Strict Loader (Rezepte nur auf Abruf validieren)
 from config.startup import load_startup, validate_recipes_for_load
 
-# ROS Launcher API
+# ROS Launcher API (ohne make_bringup_cmd)
 from ros.ros_launcher import (
     ensure_clean_graph_then_launch,
     shutdown_bringup,
     BRINGUP_RUNNING,
-    make_bringup_cmd,
 )
+
+from ros.ui_bridge import UIBridge  # <— NEU
 
 # Logging/Warnungen-Setup
 from utils.logging_setup import configure_logging_from_yaml
 from utils.warnings_setup import enable_all_warnings
+
+# RViz-Manager (Live + Shadow)
+from ros.rviz_manager import LiveRvizManager, ShadowRvizManager
 
 
 def resource_path(*parts: str) -> str:
@@ -78,26 +82,46 @@ class MainWindow(QMainWindow):
         # 4) STDERR:
         self._install_exception_logging()
 
+        # 5) Optional: Rezepte prüfen (nur auf Wunsch)
+        if validate_on_start:
+            try:
+                errs = validate_recipes_for_load(self.ctx.recipes_yaml)
+                if errs:
+                    msg = "• " + "\n• ".join(errs)
+                    logging.getLogger("app").error("Fehlerhafte Rezepte:\n%s", msg)
+                    QMessageBox.critical(self, "Fehlerhafte Rezepte", msg)
+                    sys.exit(2)
+            except Exception as e:
+                logging.getLogger("app").exception("Validierungsfehler: %s", e)
+                QMessageBox.critical(self, "Validierungsfehler", str(e))
+                sys.exit(2)
 
-        # 5) Startup-Banner in alle Logs schreiben
+        # 6) Startup-Banner in alle Logs schreiben
         self._log_startup_banner()
 
-        # 6) Tabs
+        # 7) Tabs (ctx an alle Tabs durchreichen!)
+        # Bridge einmal zentral anlegen und an Tabs übergeben
+        self.bridge = UIBridge(self.ctx, node_name="spray_ui", namespace=None)
+
+        # Tabs – ctx & bridge injizieren
         tabs = QTabWidget()
-        tabs.addTab(ProcessTab(), "Process")
-        tabs.addTab(RecipeTab(),  "Recipe")
-        tabs.addTab(ServiceTab(), "Service")
-        tabs.addTab(SystemTab(),  "System")
+        tabs.addTab(ProcessTab(ctx=self.ctx, bridge=self.bridge), "Process")
+        tabs.addTab(RecipeTab(ctx=self.ctx, bridge=self.bridge),  "Recipe")
+        tabs.addTab(ServiceTab(ctx=self.ctx, bridge=self.bridge), "Service")
+        tabs.addTab(SystemTab(ctx=self.ctx, bridge=self.bridge),  "System")
         self.setCentralWidget(tabs)
 
-        # 7) ROS ggf. aus dem MainWindow heraus starten (nachdem die UI steht)
+        # 8) ROS ggf. aus dem MainWindow heraus starten (nachdem die UI steht)
         QTimer.singleShot(0, self._maybe_start_ros)
 
     # --- ROS-Start ist Teil des MainWindow ---
     def _maybe_start_ros(self):
         try:
             if getattr(self.ctx, "ros", None) and self.ctx.ros.launch_ros:
-                cmd, extra = make_bringup_cmd(bool(self.ctx.ros.sim_robot))
+                # ros2 launch + sim-Flag explizit zusammenbauen
+                cmd = ["ros2", "launch", "mecademic_bringup", "bringup.launch.py"]
+                extra = [f"sim:={'true' if self.ctx.ros.sim_robot else 'false'}"]
+
                 # ENV für Nodes/Launch (optional; unschädlich wenn ungenutzt)
                 env = {
                     "SPRAY_LOG_DIR": self.ctx.paths.log_dir,
@@ -161,7 +185,6 @@ class MainWindow(QMainWindow):
             logger.info("faulthandler enabled -> %s", crash_path)
         except Exception as e:
             logger.warning("faulthandler enable failed: %s", e)
-  
 
     def _log_startup_banner(self):
         """
@@ -198,7 +221,16 @@ class MainWindow(QMainWindow):
         logging.getLogger().info(banner)  # Root (Konsole)
 
     def closeEvent(self, event):
-        # Sauber herunterfahren
+        # erst RViz-Prozesse
+        try:
+            LiveRvizManager.instance().stop()
+        except Exception:
+            pass
+        try:
+            ShadowRvizManager.instance().stop()
+        except Exception:
+            pass
+        # dann ROS-Bringup
         try:
             if BRINGUP_RUNNING():
                 shutdown_bringup()
