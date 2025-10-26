@@ -1,112 +1,193 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 import numpy as np
 import pyvista as pv
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
-from pyvistaqt import QtInteractor
 
 
-class ShapePreview:
+class PreviewEngine:
     """
-    Kapselt die PyVista-Ansicht:
-    - initialisiert QtInteractor in einen beliebigen Container
-    - bietet build_plot(...) & reset_camera()
+    Vorschau-Engine (nur Hemisphäre):
+      - Shape: obere Hemisphäre (z >= 0)
+      - Pfade: Meander (boustrophedon) oder Spiral
+      - Zeichnet einen durchgehenden Polyline-Pfad + optional Punkte + Normals + Raycasts
+      - flip=True = 180° Roll um X-Achse (Mesh, Punkte, Normale)
     """
-    def __init__(self, container: QWidget):
-        if container.layout() is None:
-            container.setLayout(QVBoxLayout(container))
-        self.plotter = QtInteractor(container)
-        container.layout().addWidget(self.plotter)
 
-    # ---- Public API ----
-    def reset_camera(self):
+    def __init__(self, plotter: pv.Plotter):
+        self.plotter = plotter
+
+    # ------------- public API -------------
+
+    def view_iso(self) -> None:
         self.plotter.view_isometric()
         self.plotter.reset_camera()
 
-    def build_plot(self, *, shape: str, path_type: str, show_normals: bool):
+    def view_top(self) -> None:
+        self.plotter.view_xy()
+        self.plotter.reset_camera()
+
+    def view_front(self) -> None:
+        self.plotter.view_yz()
+        self.plotter.reset_camera()
+
+    def view_right(self) -> None:
+        self.plotter.view_xz()
+        self.plotter.reset_camera()
+
+    def build_preview(
+        self,
+        shape_name: str,
+        path_name: str,
+        show_normals: bool,
+        *,
+        flip: bool = False,
+        show_rays: bool = False,
+    ) -> None:
+        """
+        Rendert die Hemisphäre + Pfad.
+        Unterstützt nur:
+          shape_name ∈ {"Hemisphäre", "Hemisphere"}
+          path_name  ∈ {"Meander","Spiral"}
+        """
         self.plotter.clear()
 
-        if shape == "Würfel":
-            mesh = pv.Cube(center=(0, 0, 0), x_length=2, y_length=2, z_length=2)
-            pts = self._raster_on_cube() if path_type == "Raster" else self._spiral_on_cube()
-        elif shape == "Kugel":
-            mesh = pv.Sphere(radius=1.0, center=(0, 0, 0), theta_resolution=60, phi_resolution=60)
-            pts = self._raster_on_sphere() if path_type == "Raster" else self._spiral_on_sphere()
-        elif shape == "Zylinder":
-            mesh = pv.Cylinder(center=(0, 0, 0), direction=(0, 0, 1), radius=1.0, height=2.0, resolution=100)
-            pts = self._raster_on_cylinder() if path_type == "Raster" else self._spiral_on_cylinder()
+        # --- 1) Mesh Hemisphäre ---
+        mesh = self._make_hemisphere()
+
+        # --- 2) Punkte + Normals für Hemisphäre ---
+        if path_name.lower().startswith("mea"):
+            pts = self._meander_on_hemisphere()
         else:
-            return
+            pts = self._spiral_on_hemisphere()
 
+        normals = self._compute_normals_sphere(pts)
+
+        # --- 3) Flip (Roll 180° um X) ---
+        if flip:
+            mesh = mesh.copy(deep=True)
+            try:
+                mesh.rotate_x(180.0, inplace=True)
+            except Exception:
+                poly = mesh.extract_geometry().copy(deep=True)
+                poly.rotate_x(180.0, inplace=True)
+                mesh = poly
+            pts = self._rot_x(pts, 180.0)
+            normals = self._rot_x(normals, 180.0)
+
+        # --- 4) Zeichnen: Mesh + Pfad als Polyline ---
         self.plotter.add_mesh(mesh, color="lightgray", opacity=0.3)
-        self.plotter.add_points(pts, color="red", point_size=8, render_points_as_spheres=True)
 
+        # Polyline bauen (eine zusammenhängende Linie)
+        line = pv.PolyData(pts)
+        n = len(pts)
+        if n >= 2:
+            line.lines = np.hstack(([n], np.arange(n))).astype(np.int64)
+            self.plotter.add_mesh(line, line_width=2)
+
+        # Punkte als Spheres (dezent)
+        self.plotter.add_points(pts, point_size=6, render_points_as_spheres=True)
+
+        # Normals anzeigen?
         if show_normals:
-            normals = self._compute_normals(shape, pts)
             arrows = pv.PolyData(pts)
             arrows["vectors"] = normals
-            glyphs = arrows.glyph(orient="vectors", scale=False, factor=0.15)
-            self.plotter.add_mesh(glyphs, color="green")
+            glyphs = arrows.glyph(orient="vectors", scale=False, factor=0.12)
+            self.plotter.add_mesh(glyphs)
 
-        self.reset_camera()
+        # Raycasts (kleine Linien entlang der Normale)?
+        if show_rays:
+            rays = self._normals_as_lines(pts, normals, length=0.25)
+            self.plotter.add_mesh(rays, line_width=1)
 
-    # ---- intern: simple Dummygeneratoren ----
-    def _compute_normals(self, shape: str, points: np.ndarray) -> np.ndarray:
-        normals = []
-        for p in points:
-            if shape == "Kugel":
-                v = p / (np.linalg.norm(p) + 1e-12)
-            elif shape == "Würfel":
-                v = np.sign(p); n = np.linalg.norm(v); v = v / n if n > 0 else np.array([0.0,0.0,1.0])
-            elif shape == "Zylinder":
-                v2 = np.array([p[0], p[1], 0.0]); n = np.linalg.norm(v2); v = v2 / n if n > 0 else np.array([0.0,0.0,1.0])
-            else:
-                v = np.array([0.0, 0.0, 1.0])
-            normals.append(v)
-        return np.array(normals)
+        self.view_iso()
 
-    def _raster_on_cube(self) -> np.ndarray:
-        x = np.linspace(-1, 1, 20); y = np.linspace(-1, 1, 20); z = 1.0
+    # ------------- geometry helpers -------------
+
+    @staticmethod
+    def _rot_x(arr: np.ndarray, deg: float) -> np.ndarray:
+        """Dreht Nx3-Vektoren um X-Achse (Roll) um 'deg' Grad."""
+        if arr is None or len(arr) == 0:
+            return arr
+        rad = np.deg2rad(deg)
+        c, s = np.cos(rad), np.sin(rad)
+        R = np.array([[1.0, 0.0, 0.0],
+                      [0.0,  c, -s ],
+                      [0.0,  s,  c ]], dtype=float)
+        return arr @ R.T
+
+    def _make_hemisphere(self) -> pv.PolyData:
+        # obere Hemisphäre (phi: 0..90°)
+        return pv.Sphere(
+            radius=1.0,
+            theta_resolution=80,
+            phi_resolution=40,
+            start_theta=0.0,
+            end_theta=360.0,
+            start_phi=0.0,
+            end_phi=90.0,
+        )
+
+    @staticmethod
+    def _compute_normals_sphere(points: np.ndarray) -> np.ndarray:
+        nrm = np.linalg.norm(points, axis=1, keepdims=True) + 1e-12
+        return points / nrm
+
+    @staticmethod
+    def _sph_to_xyz(phi: np.ndarray, theta: np.ndarray) -> np.ndarray:
+        # phi: 0..pi/2 (oben), theta: 0..2pi
+        sp, cp = np.sin(phi), np.cos(phi)
+        ct, st = np.cos(theta), np.sin(theta)
+        x = sp * ct
+        y = sp * st
+        z = cp
+        return np.vstack((x, y, z)).T
+
+    def _meander_on_hemisphere(self) -> np.ndarray:
+        """
+        Boustrophedon auf der oberen Hemisphäre:
+          - ϕ (lat) in 0..π/2 -> Ringe
+          - θ (lon) 0..2π, jede zweite Zeile invertiert
+        """
+        rows = 30
+        cols = 200
+        phis = np.linspace(0.0, 0.5 * np.pi, rows)
+        thetas = np.linspace(0.0, 2.0 * np.pi, cols)
         pts = []
-        for i, yy in enumerate(y):
-            row = [np.array([xx, yy, z]) for xx in (x if i % 2 == 0 else x[::-1])]
-            pts.extend(row)
-        return np.array(pts)
-
-    def _spiral_on_cube(self) -> np.ndarray:
-        th = np.linspace(0, 4*np.pi, 200); r = np.linspace(0.2, 1.0, 200)
-        x = r*np.cos(th); y = r*np.sin(th); z = np.ones_like(x)
-        return np.vstack((x,y,z)).T
-
-    def _raster_on_sphere(self) -> np.ndarray:
-        ph = np.linspace(0.0, np.pi, 30); th = np.linspace(0.0, 2*np.pi, 60)
-        pts = []
-        for i, p in enumerate(ph):
-            ring = [np.array([np.sin(p)*np.cos(t), np.sin(p)*np.sin(t), np.cos(p)])
-                    for t in (th if i % 2 == 0 else th[::-1])]
+        for i, phi in enumerate(phis):
+            th = thetas if (i % 2 == 0) else thetas[::-1]
+            ring = self._sph_to_xyz(np.full_like(th, phi), th)
             pts.extend(ring)
-        return np.array(pts)
+        return np.asarray(pts, dtype=float)
 
-    def _spiral_on_sphere(self) -> np.ndarray:
-        t = np.linspace(0, 6*np.pi, 400); z = np.linspace(-1, 1, 400)
-        r = np.sqrt(np.clip(1 - z*z, 0.0, 1.0))
-        x = r*np.cos(t); y = r*np.sin(t)
-        return np.vstack((x,y,z)).T
+    def _spiral_on_hemisphere(self) -> np.ndarray:
+        """
+        Sphärische Spiral auf oberer Hemisphäre (ϕ nimmt zu, θ windet sich).
+        """
+        k = 6.0  # Windungsfaktor
+        m = 1500
+        phi = np.linspace(0.0, 0.5 * np.pi, m)
+        theta = k * phi * (1.0 + 0.2 * np.sin(5.0 * phi))
+        return self._sph_to_xyz(phi, theta)
 
-    def _raster_on_cylinder(self) -> np.ndarray:
-        z = np.linspace(-1, 1, 120); ang = np.linspace(0, 2*np.pi, 160)
-        pts = []
-        for i, zz in enumerate(z):
-            circle = [np.array([np.cos(a), np.sin(a), zz])
-                      for a in (ang if i%2==0 else ang[::-versor(ang)])]
-            # small helper to reverse every second line
-            pts.extend(circle)
-        return np.array(pts)
+    @staticmethod
+    def _normals_as_lines(points: np.ndarray, normals: np.ndarray, *, length: float) -> pv.PolyData:
+        """
+        Erzeugt ein PolyData mit vielen kurzen Linien (Raycasts) entlang der Normale.
+        VTK-Konvention: lines = [2,p0,p1, 2,p2,p3, ...] für Segmente.
+        """
+        N = len(points)
+        all_pts = np.empty((2 * N, 3), dtype=float)
+        all_pts[0::2] = points
+        all_pts[1::2] = points + normals * float(length)
 
-    def _spiral_on_cylinder(self) -> np.ndarray:
-        th = np.linspace(0, 12*np.pi, 600); z = np.linspace(-1, 1, 600)
-        x = np.cos(th); y = np.sin(th)
-        return np.vstack((x,y,z)).T
+        # Jede Linie: 2-Punkte-Segment
+        seg_ids = np.arange(0, 2 * N, dtype=np.int64)
+        lines = np.empty((N, 3), dtype=np.int64)
+        lines[:, 0] = 2
+        lines[:, 1] = seg_ids[0::2]
+        lines[:, 2] = seg_ids[1::2]
+        lines = lines.reshape(-1)
 
-def versor(arr):
-    # returns reversed array (helper for readability)
-    return arr[::-1]
+        pd = pv.PolyData(all_pts)
+        pd.lines = lines
+        return pd
