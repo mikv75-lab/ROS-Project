@@ -2,28 +2,63 @@
 <ui version="4.0">
  <class>CoatingPreviewPanel</class>
  <widget class="QWidget" name="coatingPreviewPanel">
+  <property name="windowTitle">
+   <string>Coating Preview</string>
+  </property>
   <layout class="QVBoxLayout" name="vroot">
 
-   <!-- Planner + Validate -->
+   <!-- ========== Planner + Validate Row ========== -->
    <item>
     <widget class="QWidget" name="rowPlanner">
      <layout class="QHBoxLayout" name="hPlanner">
-      <item><widget class="QLabel" name="lblPlanner"><property name="text"><string>Planner:</string></property></widget></item>
-      <item><widget class="QComboBox" name="comboPlanner">
+      <item>
+       <widget class="QLabel" name="lblPlanner">
+        <property name="text">
+         <string>Planner:</string>
+        </property>
+       </widget>
+      </item>
+
+      <item>
+       <widget class="QComboBox" name="comboPlanner">
         <item><property name="text"><string>ompl:RRTConnect</string></property></item>
         <item><property name="text"><string>ompl:BiTRRT</string></property></item>
         <item><property name="text"><string>ompl:RRTstar</string></property></item>
         <item><property name="text"><string>ompl:PRM</string></property></item>
-        <item><property name="text"><string>chomp</string></property></item>
-        <item><property name="text"><string>stomp</string></property></item>
-      </widget></item>
-      <item><spacer name="spPlanner"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
-      <item><widget class="QPushButton" name="btnValidate"><property name="text"><string>Validate</string></property></widget></item>
+        <item><property name="text"><string>chomp:CHOMP</string></property></item>
+        <item><property name="text"><string>stomp:STOMP</string></property></item>
+       </widget>
+      </item>
+
+      <item>
+       <spacer name="spPlanner">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+
+      <item>
+       <widget class="QPushButton" name="btnValidate">
+        <property name="text">
+         <string>Validate</string>
+        </property>
+        <property name="toolTip">
+         <string>Validiert den aktuell erzeugten Pfad und plant eine Trajektorie</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>
 
-   <!-- Viewer Container -->
+   <!-- ========== Preview/Viewer Container ========== -->
    <item>
     <widget class="QWidget" name="pvContainer">
      <layout class="QVBoxLayout" name="pvLayout"/>

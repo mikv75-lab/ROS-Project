@@ -6,89 +6,64 @@
    <string>Recipe Editor</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_root">
+
+   <!-- Top Bar -->
    <item>
     <layout class="QHBoxLayout" name="layoutTopBar">
      <item>
       <widget class="QPushButton" name="btnDelete">
-       <property name="text">
-        <string>Delete</string>
-       </property>
-       <property name="toolTip">
-        <string>Rezeptdatei löschen</string>
-       </property>
+       <property name="text"><string>Delete</string></property>
+       <property name="toolTip"><string>Rezeptdatei löschen</string></property>
       </widget>
      </item>
      <item>
       <widget class="QPushButton" name="btnLoad">
-       <property name="text">
-        <string>Load</string>
-       </property>
-       <property name="toolTip">
-        <string>Rezept aus YAML laden</string>
-       </property>
+       <property name="text"><string>Load</string></property>
+       <property name="toolTip"><string>Rezept aus YAML laden</string></property>
       </widget>
      </item>
      <item>
       <widget class="QPushButton" name="btnCreate">
-       <property name="text">
-        <string>Create</string>
-       </property>
-       <property name="toolTip">
-        <string>Neues Rezept (Defaults)</string>
-       </property>
+       <property name="text"><string>Create</string></property>
+       <property name="toolTip"><string>Neues Rezept (Defaults)</string></property>
       </widget>
      </item>
      <item>
       <spacer name="spacerTopBar">
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
+       <property name="orientation"><enum>Qt::Horizontal</enum></property>
        <property name="sizeHint" stdset="0">
-        <size>
-         <width>40</width>
-         <height>20</height>
-        </size>
+        <size><width>40</width><height>20</height></size>
        </property>
       </spacer>
      </item>
      <item>
       <widget class="QLabel" name="lblName">
-       <property name="text">
-        <string>Recipe ID:</string>
-       </property>
+       <property name="text"><string>Recipe ID:</string></property>
       </widget>
      </item>
      <item>
       <widget class="QLineEdit" name="editRecipeName">
-       <property name="placeholderText">
-        <string>unsaved</string>
-       </property>
+       <property name="placeholderText"><string>unsaved</string></property>
       </widget>
      </item>
      <item>
       <widget class="QPushButton" name="btnUpdateViewer">
-       <property name="text">
-        <string>Update Viewer</string>
-       </property>
-       <property name="toolTip">
-        <string>Aktuellen Stand an Preview/Planning senden</string>
-       </property>
+       <property name="text"><string>Update Viewer</string></property>
+       <property name="toolTip"><string>Aktuellen Stand an Preview/Planning senden</string></property>
       </widget>
      </item>
     </layout>
    </item>
 
+   <!-- Selection -->
    <item>
-    <groupbox class="QGroupBox" name="grpSelectors">
-     <property name="title">
-      <string>Selection</string>
-     </property>
+    <widget class="QGroupBox" name="grpSelectors">
+     <property name="title"><string>Selection</string></property>
      <layout class="QGridLayout" name="gridSelectors">
+
       <item row="0" column="0">
        <widget class="QLabel" name="lblTool">
-        <property name="text">
-         <string>Tool</string>
-        </property>
+        <property name="text"><string>Tool</string></property>
        </widget>
       </item>
       <item row="0" column="1">
@@ -97,9 +72,7 @@
 
       <item row="1" column="0">
        <widget class="QLabel" name="lblSubstrate">
-        <property name="text">
-         <string>Substrate</string>
-        </property>
+        <property name="text"><string>Substrate</string></property>
        </widget>
       </item>
       <item row="1" column="1">
@@ -108,9 +81,7 @@
 
       <item row="2" column="0">
        <widget class="QLabel" name="lblMount">
-        <property name="text">
-         <string>Mount</string>
-        </property>
+        <property name="text"><string>Mount</string></property>
        </widget>
       </item>
       <item row="2" column="1">
@@ -118,68 +89,52 @@
       </item>
 
       <item row="0" column="2" rowspan="3">
-       <groupbox class="QGroupBox" name="grpSides">
-        <property name="title">
-         <string>Side</string>
-        </property>
+       <widget class="QGroupBox" name="grpSides">
+        <property name="title"><string>Side</string></property>
         <layout class="QGridLayout" name="gridSides">
          <item row="0" column="0">
           <widget class="QCheckBox" name="checkSideTop">
-           <property name="text">
-            <string>top</string>
-           </property>
-           <property name="checked">
-            <bool>true</bool>
-           </property>
+           <property name="text"><string>top</string></property>
+           <property name="checked"><bool>true</bool></property>
           </widget>
          </item>
          <item row="0" column="1">
           <widget class="QCheckBox" name="checkSideFront">
-           <property name="text">
-            <string>front</string>
-           </property>
+           <property name="text"><string>front</string></property>
           </widget>
          </item>
          <item row="1" column="0">
           <widget class="QCheckBox" name="checkSideBack">
-           <property name="text">
-            <string>back</string>
-           </property>
+           <property name="text"><string>back</string></property>
           </widget>
          </item>
          <item row="1" column="1">
           <widget class="QCheckBox" name="checkSideLeft">
-           <property name="text">
-            <string>left</string>
-           </property>
+           <property name="text"><string>left</string></property>
           </widget>
          </item>
          <item row="2" column="0">
           <widget class="QCheckBox" name="checkSideRight">
-           <property name="text">
-            <string>right</string>
-           </property>
+           <property name="text"><string>right</string></property>
           </widget>
          </item>
          <item row="2" column="1">
           <widget class="QCheckBox" name="checkSideHelix">
-           <property name="text">
-            <string>helix</string>
-           </property>
+           <property name="text"><string>helix</string></property>
           </widget>
          </item>
         </layout>
-       </groupbox>
+       </widget>
       </item>
+
      </layout>
-    </groupbox>
+    </widget>
    </item>
 
+   <!-- Globals -->
    <item>
-    <groupbox class="QGroupBox" name="grpGlobals">
-     <property name="title">
-      <string>Globals</string>
-     </property>
+    <widget class="QGroupBox" name="grpGlobals">
+     <property name="title"><string>Globals</string></property>
      <layout class="QVBoxLayout" name="layoutGlobals">
       <item>
        <widget class="QWidget" name="formGlobals">
@@ -187,22 +142,20 @@
        </widget>
       </item>
      </layout>
-    </groupbox>
+    </widget>
    </item>
 
+   <!-- Path -->
    <item>
-    <groupbox class="QGroupBox" name="grpPath">
-     <property name="title">
-      <string>Path</string>
-     </property>
+    <widget class="QGroupBox" name="grpPath">
+     <property name="title"><string>Path</string></property>
      <layout class="QVBoxLayout" name="layoutPath">
+
       <item>
        <layout class="QHBoxLayout" name="layoutTypeRow">
         <item>
          <widget class="QLabel" name="lblType">
-          <property name="text">
-           <string>Type:</string>
-          </property>
+          <property name="text"><string>Type:</string></property>
          </widget>
         </item>
         <item>
@@ -210,14 +163,9 @@
         </item>
         <item>
          <spacer name="spacerTypeRow">
-          <property name="orientation">
-           <enum>Qt::Horizontal</enum>
-          </property>
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
           <property name="sizeHint" stdset="0">
-           <size>
-            <width>40</width>
-            <height>20</height>
-           </size>
+           <size><width>40</width><height>20</height></size>
           </property>
          </spacer>
         </item>
@@ -226,14 +174,10 @@
 
       <item>
        <widget class="QStackedWidget" name="stackTypes">
-        <property name="currentIndex">
-         <number>0</number>
-        </property>
+        <property name="currentIndex"><number>0</number></property>
 
         <widget class="QWidget" name="pageMeanderPlane">
-         <attribute name="title">
-          <string>Meander (plane)</string>
-         </attribute>
+         <attribute name="title"><string>Meander (plane)</string></attribute>
          <layout class="QVBoxLayout" name="layoutMeanderPlane">
           <item>
            <widget class="QWidget" name="formMeanderPlane">
@@ -244,9 +188,7 @@
         </widget>
 
         <widget class="QWidget" name="pageSpiralPlane">
-         <attribute name="title">
-          <string>Spiral (plane)</string>
-         </attribute>
+         <attribute name="title"><string>Spiral (plane)</string></attribute>
          <layout class="QVBoxLayout" name="layoutSpiralPlane">
           <item>
            <widget class="QWidget" name="formSpiralPlane">
@@ -257,9 +199,7 @@
         </widget>
 
         <widget class="QWidget" name="pageSpiralCylinder">
-         <attribute name="title">
-          <string>Spiral (cylinder)</string>
-         </attribute>
+         <attribute name="title"><string>Spiral (cylinder)</string></attribute>
          <layout class="QVBoxLayout" name="layoutSpiralCylinder">
           <item>
            <widget class="QWidget" name="formSpiralCylinder">
@@ -270,9 +210,7 @@
         </widget>
 
         <widget class="QWidget" name="pageExplicit">
-         <attribute name="title">
-          <string>Explicit</string>
-         </attribute>
+         <attribute name="title"><string>Explicit</string></attribute>
          <layout class="QVBoxLayout" name="layoutExplicit">
           <item>
            <widget class="QWidget" name="formExplicit">
@@ -284,23 +222,21 @@
 
        </widget>
       </item>
+
      </layout>
-    </groupbox>
+    </widget>
    </item>
 
+   <!-- Bottom Spacer -->
    <item>
     <spacer name="spacerBottom">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
+     <property name="orientation"><enum>Qt::Vertical</enum></property>
      <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>20</height>
-      </size>
+      <size><width>20</width><height>20</height></size>
      </property>
     </spacer>
    </item>
+
   </layout>
  </widget>
  <resources/>
