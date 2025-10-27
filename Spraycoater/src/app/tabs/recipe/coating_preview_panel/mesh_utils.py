@@ -1,11 +1,16 @@
 # mesh_utils.py
 from __future__ import annotations
+
 import os
 import math
+import logging
 from typing import Tuple, Optional, Dict
 
 import numpy as np
 import pyvista as pv
+import meshio  # NEU: statt trimesh
+
+_LOG = logging.getLogger("app.tabs.recipe.mesh_utils")
 
 
 # ---------- Kontextbasierte Pfad-Helfer ----------
@@ -13,6 +18,7 @@ def _project_root(ctx) -> str:
     if ctx and getattr(ctx, "project_root", None):
         return os.path.abspath(ctx.project_root)
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+
 
 def _resource_root(ctx) -> str:
     if ctx and getattr(ctx, "resource_root", None):
@@ -71,37 +77,111 @@ def _resolve_mesh_path(uri_or_path: str, ctx=None) -> str:
 # ---------- Geometrie-Utils ----------
 def _rpy_deg_to_matrix(rpy_deg: Tuple[float, float, float]) -> np.ndarray:
     r, p, y = [math.radians(v) for v in rpy_deg]
-    Rx = np.array([[1, 0, 0],
-                   [0, math.cos(r), -math.sin(r)],
-                   [0, math.sin(r),  math.cos(r)]])
-    Ry = np.array([[ math.cos(p), 0, math.sin(p)],
-                   [0,            1, 0           ],
-                   [-math.sin(p), 0, math.cos(p)]])
-    Rz = np.array([[math.cos(y), -math.sin(y), 0],
-                   [math.sin(y),  math.cos(y), 0],
-                   [0,            0,           1]])
+    Rx = np.array(
+        [[1, 0, 0],
+         [0, math.cos(r), -math.sin(r)],
+         [0, math.sin(r),  math.cos(r)]]
+    )
+    Ry = np.array(
+        [[ math.cos(p), 0, math.sin(p)],
+         [0,            1, 0           ],
+         [-math.sin(p), 0, math.cos(p)]]
+    )
+    Rz = np.array(
+        [[math.cos(y), -math.sin(y), 0],
+         [math.sin(y),  math.cos(y), 0],
+         [0,            0,           1]]
+    )
     return Rz @ Ry @ Rx
 
-def apply_transform(mesh: pv.PolyData,
-                    *,
-                    translate_mm: Tuple[float, float, float] = (0.0, 0.0, 0.0),
-                    rpy_deg: Tuple[float, float, float] = (0.0, 0.0, 0.0)) -> pv.PolyData:
+
+def apply_transform(
+    mesh: pv.PolyData,
+    *,
+    translate_mm: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+    rpy_deg: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> pv.PolyData:
     out = mesh.copy(deep=True)
     R = _rpy_deg_to_matrix(rpy_deg)
-    out.points[:] = (out.points @ R.T) + np.asarray(translate_mm)[None, :]
+    out.points[:] = (out.points @ R.T) + np.asarray(translate_mm, dtype=float)[None, :]
     return out
+
+
+def __load_mesh_meshio(path: str) -> pv.PolyData:
+    """
+    Liest STL/OBJ/PLY via meshio und baut ein sauberes pv.PolyData.
+    Keine Fallbacks, keine SciPy/VTK-Filter – Normals per PyVista.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Mesh-Pfad existiert nicht: {path}")
+
+    m = meshio.read(path)
+
+    # --- Punkte robust holen (mind. 3 Spalten) ---
+    pts = np.asarray(m.points, dtype=np.float64)
+    if pts.ndim != 2 or pts.shape[1] < 3:
+        raise RuntimeError(f"Ungültige Punktmatrix: shape={pts.shape}")
+    pts = pts[:, :3].copy(order="C")  # nur XYZ, C-contiguous
+
+    # NaN/Inf raus
+    if not np.isfinite(pts).all():
+        bad = ~np.isfinite(pts).all(axis=1)
+        pts = pts[~bad]
+        if pts.size == 0:
+            raise RuntimeError("Alle Punkte sind nicht endlich (NaN/Inf).")
+
+    # --- Dreiecke holen: erst cells_dict, sonst über m.cells iterieren ---
+    tri = None
+    if hasattr(m, "cells_dict") and isinstance(m.cells_dict, dict):
+        for key in ("triangle", "triangles", "vtk_triangle", "Triangle", "TRIANGLE"):
+            cand = m.cells_dict.get(key)
+            if cand is not None:
+                cand = np.asarray(cand)
+                if cand.ndim == 2 and cand.shape[1] == 3 and cand.size:
+                    tri = cand
+                    break
+
+    if tri is None:
+        for cb in getattr(m, "cells", []):
+            data = getattr(cb, "data", None)
+            if data is None and isinstance(cb, (tuple, list)) and len(cb) == 2:
+                data = cb[1]  # meshio<=4
+            if data is None:
+                continue
+            arr = np.asarray(data)
+            if arr.ndim == 2 and arr.shape[1] == 3 and arr.size:
+                tri = arr
+                break
+
+    if tri is None:
+        raise RuntimeError("Keine triangular faces gefunden (erwartet Nx3).")
+
+    tri = tri.astype(np.int64, copy=False)
+
+    # --- Indexbereich absichern ---
+    n_pts = int(pts.shape[0])
+    if tri.min() < 0 or tri.max() >= n_pts:
+        raise ValueError(
+            f"Triangle-Index außerhalb 0..{n_pts-1}: min={tri.min()}, max={tri.max()}"
+        )
+
+    # --- PyVista-Faces bauen: [3,i,j,k, 3,i,j,k, ...] ---
+    faces = np.hstack([np.full((tri.shape[0], 1), 3, dtype=np.int64), tri]).ravel()
+
+    # --- PolyData + Clean + Normals ---
+    pv_mesh = pv.PolyData(pts, faces)
+    pv_mesh = pv_mesh.clean().triangulate().compute_normals()
+    return pv_mesh
+
+
+
 
 
 # ---------- Loader ----------
 def load_mesh(uri_or_path: str, ctx=None) -> pv.PolyData:
     path = _resolve_mesh_path(uri_or_path, ctx)
-    try:
-        mesh = pv.read(path)
-    except Exception as e:
-        raise RuntimeError(f"Mesh-Datei gefunden, aber Laden schlug fehl: {path} ({e})")
-    if not isinstance(mesh, pv.PolyData):
-        mesh = mesh.extract_surface().triangulate()
-    return mesh
+    _LOG.debug("load_mesh: resolved path = %s", path)
+    return __load_mesh_meshio(path)
 
 
 # ---------- Mounts: strikt aus substrate_mounts.yaml ----------
@@ -114,6 +194,7 @@ def _get_mounts_yaml(ctx) -> Dict:
         raise FileNotFoundError("ctx.mounts_yaml['mounts'] fehlt oder ist leer.")
     return mounts
 
+
 def _get_mount_entry_strict(ctx, mount_key: str) -> Dict:
     key = (mount_key or "").strip()
     if not key:
@@ -121,21 +202,36 @@ def _get_mount_entry_strict(ctx, mount_key: str) -> Dict:
     mounts = _get_mounts_yaml(ctx)
     entry = mounts.get(key)
     if not entry:
-        raise FileNotFoundError(f"Mount '{key}' nicht in mounts_yaml['mounts'] gefunden.")
+        keys = ", ".join(sorted(mounts.keys()))
+        raise FileNotFoundError(
+            f"Mount '{key}' nicht in mounts_yaml['mounts'] gefunden. Verfügbar: [{keys}]"
+        )
     return entry
 
-def load_mount_mesh_from_key(ctx, mount_key: str) -> pv.PolyData:
+
+def resolve_mount_mesh_path(ctx, mount_key: str) -> str:
+    """Validiert Mount-Eintrag & gibt den absolut aufgelösten Mesh-Pfad zurück."""
     entry = _get_mount_entry_strict(ctx, mount_key)
     mesh_uri = entry.get("mesh")
-    if not mesh_uri:
-        raise FileNotFoundError(f"Mount '{mount_key}' hat kein 'mesh'-Feld.")
-    return load_mesh(mesh_uri, ctx)
+    if not mesh_uri or not isinstance(mesh_uri, str):
+        raise FileNotFoundError(f"Mount '{mount_key}' hat kein gültiges 'mesh'-Feld.")
+    path = _resolve_mesh_path(mesh_uri, ctx)
+    _LOG.info("Mount '%s' mesh -> %s", mount_key, path)
+    return path
 
-def get_mount_scene_offset_from_key(ctx, mount_key: str) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+
+def load_mount_mesh_from_key(ctx, mount_key: str) -> pv.PolyData:
+    path = resolve_mount_mesh_path(ctx, mount_key)
+    _LOG.debug("load_mount_mesh_from_key: path = %s", path)
+    return __load_mesh_meshio(path)
+
+
+def get_mount_scene_offset_from_key(
+    ctx, mount_key: str
+) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
     entry = _get_mount_entry_strict(ctx, mount_key)
     so = entry.get("scene_offset")
     if not isinstance(so, dict):
-        # kein stilles Raten – explizit fordern
         raise FileNotFoundError(f"Mount '{mount_key}' hat keinen gültigen scene_offset-Eintrag.")
     xyz = tuple((so.get("xyz") or [0.0, 0.0, 0.0])[:3])
     rpy = tuple((so.get("rpy_deg") or [0.0, 0.0, 0.0])[:3])
@@ -168,7 +264,9 @@ def load_substrate_mesh_from_key(ctx, substrate_key: str) -> pv.PolyData:
 
 
 # ---------- Platzierung (strikt über mount_key) ----------
-def place_substrate_on_mount(ctx, substrate_mesh: pv.PolyData, *, mount_key: Optional[str]) -> pv.PolyData:
+def place_substrate_on_mount(
+    ctx, substrate_mesh: pv.PolyData, *, mount_key: Optional[str]
+) -> pv.PolyData:
     """
     Richtet das Substrat zuerst mit z_min → 0 aus und wendet DANN strikt den
     scene_offset des angegebenen mount_key aus substrate_mounts.yaml an.
@@ -176,7 +274,6 @@ def place_substrate_on_mount(ctx, substrate_mesh: pv.PolyData, *, mount_key: Opt
     if not mount_key:
         raise FileNotFoundError("place_substrate_on_mount: mount_key ist erforderlich.")
 
-    # Offset strikt aus YAML holen (wirft Fehler, wenn nicht vorhanden)
     xyz_mm, rpy_deg = get_mount_scene_offset_from_key(ctx, mount_key)
 
     sub = substrate_mesh.copy(deep=True)
