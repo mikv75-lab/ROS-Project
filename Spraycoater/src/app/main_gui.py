@@ -12,33 +12,33 @@ RES_ROOT     = os.path.join(PROJECT_ROOT, "resource")
 for p in (SRC_ROOT, RES_ROOT):
     if p not in sys.path:
         sys.path.insert(0, p)
+
 LOG_DIR = os.path.join(PROJECT_ROOT, "data", "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 CRASH_PATH = os.path.join(LOG_DIR, "crash.dump")
 
-# Ungepufferte/zeilenweise Log-Datei für faulthandler
+# Crashdump bei Start löschen, falls vorhanden
+try:
+    if os.path.exists(CRASH_PATH):
+        os.remove(CRASH_PATH)
+except Exception:
+    pass
+
+# Ungepufferte/zeilenweise Log-Datei für faulthandler (ohne periodische Dumps)
 try:
     _CRASH_FH = open(CRASH_PATH, "w", buffering=1, encoding="utf-8")
-    # 1) Python-Tracebacks aller Threads
+    # 1) Python-Tracebacks aller Threads aktivieren
     faulthandler.enable(file=_CRASH_FH, all_threads=True)
-    # 2) Native Crashes (SIGSEGV, SIGABRT, …) + TERM/INT
-    for _sig in (
-        signal.SIGSEGV, signal.SIGABRT, signal.SIGBUS, signal.SIGILL, signal.SIGFPE,
-        signal.SIGTERM, signal.SIGINT,
-    ):
+    # 2) Nur "echte" Crash-Signale registrieren (KEIN SIGTERM/SIGINT)
+    for _sig in (signal.SIGSEGV, signal.SIGABRT, signal.SIGBUS, signal.SIGILL, signal.SIGFPE):
         try:
             faulthandler.register(_sig, file=_CRASH_FH, all_threads=True)
         except Exception:
             pass
-    # 3) Optionaler Watchdog: regelmäßig Thread-Dump bei Hängern
-    try:
-        faulthandler.dump_traceback_later(15.0, repeat=True, file=_CRASH_FH)
-    except Exception:
-        pass
 except Exception:
     _CRASH_FH = None  # notfalls ohne faulthandler weiterlaufen
 
-# 4) Ungefangene Python-Exceptions -> Log + crash.dump + Thread-Dump
+# Ungefangene Python-Exceptions -> Log + crash.dump
 def _excepthook(exc_type, exc, tb):
     try:
         logging.critical("UNCAUGHT EXCEPTION", exc_info=(exc_type, exc, tb))
@@ -47,46 +47,33 @@ def _excepthook(exc_type, exc, tb):
     try:
         if _CRASH_FH:
             traceback.print_exception(exc_type, exc, tb, file=_CRASH_FH)
-            # kompletter Thread-Dump hilft bei Qt/Matplotlib-Problemen
-            faulthandler.dump_traceback(file=_CRASH_FH, all_threads=True)
             _CRASH_FH.flush()
     except Exception:
         pass
-    # nicht re-raisen, damit Qt sauber schließen kann
 sys.excepthook = _excepthook
 
-# 5) Beim Exit alles flushen + letzter Thread-Dump (auch bei „sauberem“ Exit)
+# Beim Exit nur flush/close (keine Dumps, kein Blockieren)
 def _on_exit_flush():
     try:
         if _CRASH_FH:
-            faulthandler.dump_traceback(file=_CRASH_FH, all_threads=True)
             _CRASH_FH.flush()
-    except Exception:
-        pass
-    try:
-        logging.shutdown()
-    except Exception:
-        pass
-    try:
-        if _CRASH_FH:
-            _CRASH_FH.close()
     except Exception:
         pass
 atexit.register(_on_exit_flush)
 # --- ENDE EARLY CRASH/DUMP SETUP ---
 
 # Qt-/Umgebungs-Prep
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QApplication, QMainWindow, QTabWidget, QSplashScreen, QMessageBox
 
-# Qt-Runtime dir fix (verhindert Warnungen & seltene Hänger in Containern)
+# Qt-Runtime dir fix
 if "XDG_RUNTIME_DIR" not in os.environ:
     tmp_run = f"/tmp/runtime-{os.getuid()}"
     os.makedirs(tmp_run, exist_ok=True)
     os.environ["XDG_RUNTIME_DIR"] = tmp_run
 
-# FastDDS SHM sicherheitshalber deaktivieren (verhindert Hänger in Containern)
+# FastDDS SHM sicherheitshalber deaktivieren
 os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
 
 from app.tabs.process.process_tab import ProcessTab
@@ -94,7 +81,6 @@ from app.tabs.recipe.recipe_tab import RecipeTab
 from app.tabs.service.service_tab import ServiceTab
 from app.tabs.system.system_tab import SystemTab
 from app.startup_fsm import StartupMachine
-
 
 def resource_path(*parts: str) -> str:
     return os.path.join(RES_ROOT, *parts)
@@ -117,7 +103,6 @@ def _make_splash():
     splash.showMessage("Lade…", Qt.AlignHCenter | Qt.AlignBottom, Qt.white)
     splash.show()
     return splash
-
 
 class MainWindow(QMainWindow):
     def __init__(self, *, ctx, bridge, parent=None):
@@ -142,21 +127,25 @@ class MainWindow(QMainWindow):
                 self.bridge.shutdown()
         except Exception:
             pass
-        from ros.ros_launcher import BRINGUP_RUNNING, shutdown_bringup
         try:
+            from ros.ros_launcher import BRINGUP_RUNNING, shutdown_bringup
             if BRINGUP_RUNNING():
                 shutdown_bringup()
         except Exception:
             pass
         super().closeEvent(event)
 
+def _nonblocking_logging_shutdown():
+    try:
+        logging.shutdown()
+    except Exception:
+        pass
 
 def main():
     app = QApplication(sys.argv)
 
-    # bei Qt-Exit noch einen Thread-Dump erzwingen (falls Qt „leise“ schließt)
-    if _CRASH_FH:
-        app.aboutToQuit.connect(lambda: faulthandler.dump_traceback(file=_CRASH_FH, all_threads=True))
+    # Keine Dumps bei normalem Exit – nur Logging sauber schließen
+    app.aboutToQuit.connect(lambda: QTimer.singleShot(0, _nonblocking_logging_shutdown))
 
     splash = _make_splash()
     app.processEvents()
@@ -164,7 +153,7 @@ def main():
     fsm = StartupMachine(
         startup_yaml_path=_startup_path_strict(),
         logging_yaml_path=resource_path("config", "logging.yaml"),
-        abort_on_error=True,
+        abort_on_error=False,   # fehlertolerant
     )
 
     splash_msg = lambda t: splash.showMessage(t, Qt.AlignHCenter | Qt.AlignBottom, Qt.white)
@@ -175,31 +164,26 @@ def main():
     def _on_ready(ctx, bridge):
         if ctx is None:
             QMessageBox.critical(None, "Startup fehlgeschlagen", "Kein gültiger AppContext. Siehe Log.")
-            sys.exit(2)
+            return
         win = MainWindow(ctx=ctx, bridge=bridge)
         splash.finish(win)
         win.show()
 
     fsm.ready.connect(_on_ready)
-    fsm.start()
+    # Asynchron starten (verhindert Race mit Splash/Qt)
+    QTimer.singleShot(0, fsm.start)
 
-    # Qt-Eventloop robust beenden (auch bei Exceptions wird geflusht)
     rc = 0
     try:
         rc = app.exec_()
     finally:
         try:
-            logging.shutdown()
-        except Exception:
-            pass
-        try:
             if _CRASH_FH:
-                faulthandler.dump_traceback(file=_CRASH_FH, all_threads=True)
                 _CRASH_FH.flush()
+                _CRASH_FH.close()
         except Exception:
             pass
     sys.exit(rc)
-
 
 if __name__ == "__main__":
     main()

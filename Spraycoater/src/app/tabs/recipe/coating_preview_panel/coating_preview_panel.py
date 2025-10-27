@@ -1,29 +1,34 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import logging
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Optional, Any, Iterable
 
-from PyQt5.QtCore import pyqtSignal, QTimer
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
-import sip
+from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
 
-# Matplotlib erst importieren, wenn wir die Canvas wirklich bauen
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from pyvistaqt import QtInteractor
 
-import numpy as np
-
-from .path_builder import PathBuilder, PathData  # deine vorhandenen Klassen
+from .preview import PreviewEngine
+from .mesh_utils import (
+    load_active_mount_mesh,
+    get_active_mount_scene_offset,
+    get_mount_scene_offset_from_key,
+    apply_transform,
+    load_substrate_mesh_from_key,
+    place_substrate_on_mount,
+    load_mount_mesh_from_key,
+)
 
 _LOG = logging.getLogger("app.tabs.recipe.coating_preview_panel")
 
 
 class CoatingPreviewPanel(QWidget):
     """
-    2D-Preview (Top-Down) – robust gegen Tab-Wechsel:
-      - MPL-Figure/Canvas wird erst bei der ersten Sichtbarkeit gebaut
-      - Render-Requests werden gepuffert, wenn unsichtbar
-      - Kein draw(), wenn Canvas/Widget disposed ist
+    Minimaler 3D-Preview (PyVistaQt) für Mount + Substrat.
+    Nutzt ausschließlich Felder des Recipe-Objekts:
+      - recipe.substrate ODER recipe.substrates[0]
+      - recipe.substrate_mount (optional)
+    API: render_from_model(recipe, sides)
     """
     readyChanged = pyqtSignal(bool, str)
 
@@ -31,137 +36,116 @@ class CoatingPreviewPanel(QWidget):
         super().__init__(parent)
         self.ctx = ctx
 
-        self._mpl_ready = False
-        self._fig: Optional[Figure] = None
-        self._ax = None
-        self._canvas: Optional[FigureCanvas] = None
+        # Layout + QtInteractor
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
 
-        self._visible = False
-        self._pending_render: Optional[Dict[str, Any]] = None
-        self._render_timer = QTimer(self)
-        self._render_timer.setSingleShot(True)
-        self._render_timer.timeout.connect(self._render_now)
+        self._pv = QtInteractor(self)  # QtInteractor ist selbst der Plotter
+        self._pv.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        root.addWidget(self._pv)
 
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-
-        self._last_traj: Optional[Dict[str, Any]] = None
-
-    # ---------- Lifecycle ----------
-    def showEvent(self, e):
-        super().showEvent(e)
-        self._visible = True
-        self._ensure_mpl()
-        if self._pending_render:
-            # leicht verzögert, damit Layout fertig ist
-            QTimer.singleShot(0, self._render_now)
-
-    def hideEvent(self, e):
-        super().hideEvent(e)
-        self._visible = False
-        self._render_timer.stop()
-
-    def _ensure_mpl(self):
-        if self._mpl_ready:
-            return
-        try:
-            self._fig = Figure()
-            self._canvas = FigureCanvas(self._fig)
-            self.layout().addWidget(self._canvas)
-            self._ax = self._fig.add_subplot(111)
-            self._ax.set_aspect("equal")
-            self._ax.grid(True)
-            self._ax.set_xlabel("X [mm]")
-            self._ax.set_ylabel("Y [mm]")
-            self._mpl_ready = True
-        except Exception as e:
-            _LOG.critical("MPL init failed: %s", e, exc_info=True)
-            self.readyChanged.emit(False, f"mpl init failed: {e}")
+        # PreviewEngine arbeitet direkt auf dem QtInteractor
+        self._engine: PreviewEngine = PreviewEngine(self._pv)
 
     # ---------- Public API ----------
     def render_from_model(self, model: Any, sides: Iterable[str]) -> None:
         """
-        Kann jederzeit aufgerufen werden. Wenn das Panel (Canvas) noch nicht sichtbar/ready ist,
-        wird der Render gespeichert und beim showEvent ausgeführt.
+        Rendert NUR Mount + Substrat anhand des Recipe-Objekts.
+        'sides' wird aktuell ignoriert.
         """
-        self._pending_render = {
-            "model": model,
-            "sides": list(sides),
-        }
-        if self._visible and self._mpl_ready:
-            # Debounce: in 30 ms zeichnen (bündelt mehrere Updates)
-            self._render_timer.start(30)
+        # 1) Mount-Key optional aus dem Recipe
+        mount_key = self._extract(model, "substrate_mount")
 
-    def last_trajectory_dict(self) -> Optional[Dict[str, Any]]:
-        return self._last_traj
-
-    # ---------- Intern ----------
-    def _render_now(self):
-        if not self._pending_render:
-            return
-        if not self._visible or not self._mpl_ready:
-            return
-        if sip.isdeleted(self) or (self._canvas and sip.isdeleted(self._canvas)):
+        # 2) Substrat-Key required
+        substrate_key = self._resolve_substrate_from_recipe(model)
+        if not substrate_key:
+            msg = "Recipe enthält kein 'substrate' und keine nichtleere 'substrates'-Liste."
+            _LOG.error(msg)
+            self.readyChanged.emit(False, msg)
             return
 
-        payload = self._pending_render
-        self._pending_render = None
+        # 3) Optional aktiven Mount im Context setzen (wenn API vorhanden)
+        if mount_key and hasattr(self.ctx, "set_active_mount") and callable(getattr(self.ctx, "set_active_mount")):
+            try:
+                self.ctx.set_active_mount(mount_key)
+            except Exception as e:
+                _LOG.warning("set_active_mount('%s') schlug fehl: %s", mount_key, e)
 
-        model = payload["model"]
-        sides = payload["sides"]
+        # 4) Rendern
+        self.render_mount_and_substrate(substrate_key=substrate_key, mount_key=mount_key)
 
+    def render_mount_and_substrate(
+        self,
+        *,
+        substrate_key: str,
+        mount_key: Optional[str] = None,
+        mount_color: str = "lightgray",
+        substrate_color: str = "orange",
+        substrate_opacity: float = 0.85,
+        show_edges: bool = False,
+    ) -> None:
+        """Mount + Substrat synchron in der Szene darstellen."""
         try:
-            # leere Achse
-            self._ax.clear()
-            self._ax.set_aspect("equal")
-            self._ax.grid(True)
-            self._ax.set_xlabel("X [mm]")
-            self._ax.set_ylabel("Y [mm]")
+            # Szene säubern
+            self._engine.clear_scene()
 
-            # jedes Side rendern
-            any_ok = False
-            for side in sides:
-                try:
-                    pd: PathData = PathBuilder.from_side(
-                        recipe=model,
-                        side=side,
-                        sample_step_mm=self._get_param(model, "sample_step_mm", 1.0),
-                        max_points=int(self._get_param(model, "max_points", 200_000)),
-                    )
-                    P2 = pd.points_mm[:, :2]
-                    if len(P2) > 1:
-                        self._ax.plot(P2[:, 0], P2[:, 1], linewidth=1.0)
-                        any_ok = True
-                except Exception as se:
-                    _LOG.error("Side '%s' render failed: %s", side, se, exc_info=True)
-
-            if any_ok:
-                self._ax.relim()
-                self._ax.autoscale()
-                self._safe_draw()
-                self.readyChanged.emit(True, "ok")
+            # --- Mount laden + platzieren ---
+            if mount_key:
+                mount_mesh = load_mount_mesh_from_key(self.ctx, mount_key)
+                xyz_mm, rpy_deg = get_mount_scene_offset_from_key(self.ctx, mount_key)
             else:
-                # nichts gezeichnet, aber nicht crashen
-                self._safe_draw()
-                self.readyChanged.emit(False, "no path drawn")
+                mount_mesh = load_active_mount_mesh(self.ctx)
+                xyz_mm, rpy_deg = get_active_mount_scene_offset(self.ctx)
+
+            mount_scene = apply_transform(mount_mesh, translate_mm=xyz_mm, rpy_deg=rpy_deg)
+            self._engine.add_mesh(
+                mount_scene,
+                color=mount_color,
+                opacity=1.0,
+                show_edges=show_edges,
+            )
+
+            # --- Substrat laden + auf Mount platzieren ---
+            sub_mesh = load_substrate_mesh_from_key(self.ctx, substrate_key)
+            sub_scene = place_substrate_on_mount(self.ctx, sub_mesh)
+            self._engine.add_mesh(
+                sub_scene,
+                color=substrate_color,
+                opacity=substrate_opacity,
+                show_edges=show_edges,
+            )
+
+            # Kamera
+            self._engine.view_iso()
+
+            self.readyChanged.emit(True, "ok")
 
         except Exception as e:
-            _LOG.error("render_now failed: %s", e, exc_info=True)
+            _LOG.error("Rendern fehlgeschlagen: %s", e, exc_info=True)
             self.readyChanged.emit(False, str(e))
 
-    def _safe_draw(self):
-        try:
-            if self._canvas and not sip.isdeleted(self._canvas):
-                # draw() statt draw_idle() -> synchron & sicher nach Tabwechsel
-                self._canvas.draw()
-        except Exception as e:
-            _LOG.error("canvas draw failed: %s", e, exc_info=True)
+    # ---------- Helpers ----------
+    def _resolve_substrate_from_recipe(self, model: Any) -> Optional[str]:
+        """Nur Recipe-Felder: substrate oder erstes aus substrates."""
+        # 1) Recipe.substrate
+        sub = self._extract(model, "substrate")
+        if isinstance(sub, str) and sub.strip():
+            return sub.strip()
+
+        # 2) Recipe.substrates[0]
+        subs = self._extract(model, "substrates")
+        if isinstance(subs, (list, tuple)) and subs:
+            first = subs[0]
+            if isinstance(first, str) and first.strip():
+                return first.strip()
+
+        return None
 
     @staticmethod
-    def _get_param(model: Any, key: str, default: Any) -> Any:
-        params = getattr(model, "parameters", None)
+    def _extract(model: Any, key: str):
+        """Unterstützt sowohl dataclass-Objekt als auch dict."""
+        if hasattr(model, key):
+            return getattr(model, key)
         if isinstance(model, dict):
-            params = model.get("parameters", params)
-        if isinstance(params, dict) and key in params:
-            return params[key]
-        return default
+            return model.get(key)
+        return None

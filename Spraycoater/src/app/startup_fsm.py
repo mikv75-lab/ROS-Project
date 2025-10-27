@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import annotations
 import os
 import logging
 from dataclasses import dataclass
@@ -7,7 +6,7 @@ from typing import Optional, Callable
 
 from PyQt5 import QtCore
 
-# Projekt-Helfer (Pfad-Setup kommt aus main_gui.py)
+# Projekt-Helfer
 from config.startup import load_startup
 from app.utils.logging_setup import configure_logging_from_yaml
 from app.utils.warnings_setup import enable_all_warnings
@@ -58,7 +57,7 @@ class StartupMachine(QtCore.QObject):
     """
     progress = QtCore.pyqtSignal(str)     # z.B. "LoadStartup"
     warning  = QtCore.pyqtSignal(str)     # gelbe Meldung auf Splash
-    error    = QtCore.pyqtSignal(str)     # (derzeit ungenutzt)
+    error    = QtCore.pyqtSignal(str)     # optional
     ready    = QtCore.pyqtSignal(object, object)  # (ctx, bridge)
 
     # interne Trigger
@@ -92,7 +91,7 @@ class StartupMachine(QtCore.QObject):
         s_bridge = _StepState("ConnectBridge", self, self._step_bridge)
         s_ready  = QtCore.QFinalState()
 
-        # --- transitions (use bound-signal overload) ---
+        # transitions
         s_init.addTransition(self._done_sig,   s_load)
         s_load.addTransition(self._done_sig,   s_log)
         s_log.addTransition(self._done_sig,    s_warn)
@@ -190,6 +189,7 @@ class StartupMachine(QtCore.QObject):
         self.m.start()
 
     def _emit_ready(self):
+        self._log.info("StartupMachine finished (ctx=%s, bridge=%s)", bool(self.ctx), bool(self.bridge))
         if self.ctx is None:
             self.warning.emit("Startup finished without valid ctx (ctx=None).")
         self.ready.emit(self.ctx, self.bridge)

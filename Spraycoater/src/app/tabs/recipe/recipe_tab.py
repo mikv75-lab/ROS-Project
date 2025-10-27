@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os
 import logging
+from dataclasses import dataclass
 from typing import Optional, Tuple, Any
 
 from PyQt5 import uic
@@ -13,6 +14,9 @@ from .recipe_editor_panel.recipe_editor_panel import RecipeEditorPanel
 from .planning_panel.planning_panel import PlanningPanel
 
 _LOG = logging.getLogger("app.tabs.recipe.tab")
+
+# Preview-Hartschalter über ENV
+SAFE_NO_PREVIEW = os.environ.get("SAFE_NO_PREVIEW", "0") == "1"
 
 
 def _project_root() -> str:
@@ -28,7 +32,7 @@ class RecipeTab(QWidget):
     """
     Orchestriert:
       [links]  RecipeEditorPanel
-      [mitte]  CoatingPreviewPanel (LAZY, erst wenn Tab sichtbar)
+      [mitte]  CoatingPreviewPanel (LAZY, optional deaktivierbar via SAFE_NO_PREVIEW)
       [rechts] PlanningPanel
     """
     def __init__(self, *, ctx, bridge, parent: Optional[QWidget] = None):
@@ -48,11 +52,9 @@ class RecipeTab(QWidget):
         self._mount_into(self.leftContainer, self.recipePanel)
         self._mount_into(self.rightTop,     self.planningPanel)
 
-        # Editor-Signal verbinden (Preview kann noch None sein; wir rendern dann später)
         if hasattr(self.recipePanel, "recipeChanged"):
             self.recipePanel.recipeChanged.connect(self._on_recipe_changed)
 
-        # Falls der Tab via QTabWidget verwaltet wird: Aktivierungs-Hook -> lazy init
         self._activation_timer = None
         self._connect_tab_activation()
 
@@ -64,6 +66,9 @@ class RecipeTab(QWidget):
 
     # ---------- Tab-Aktivierung ----------
     def _connect_tab_activation(self):
+        if SAFE_NO_PREVIEW:
+            return
+
         # gehe die Eltern hoch und suche QTabWidget
         p = self.parent()
         while p is not None and p.parent() is not None:
@@ -71,7 +76,6 @@ class RecipeTab(QWidget):
                 break
             p = p.parent()
         if p is None or p.metaObject().className() != "QTabWidget":
-            # kein QTabWidget – Preview beim ersten showEvent initialisieren
             self._schedule_initial_render(delay_ms=150)
             return
 
@@ -83,13 +87,11 @@ class RecipeTab(QWidget):
 
         def _on_current_changed(i: int):
             if i == idx:
-                # Wir sind jetzt sichtbar → Preview sicherstellen + initial render leicht verzögert
                 self._ensure_preview()
                 self._schedule_initial_render(delay_ms=120)
 
         tab_widget.currentChanged.connect(_on_current_changed)
 
-        # Falls der Tab initial bereits aktiv ist:
         try:
             if tab_widget.currentIndex() == idx:
                 self._ensure_preview()
@@ -99,16 +101,18 @@ class RecipeTab(QWidget):
 
     # ---------- Preview lazy ----------
     def _ensure_preview(self):
+        if SAFE_NO_PREVIEW:
+            return
         if self.previewPanel is not None and not sip.isdeleted(self.previewPanel):
             return
         try:
             from .coating_preview_panel.coating_preview_panel import CoatingPreviewPanel
             self.previewPanel = CoatingPreviewPanel(ctx=self.ctx, parent=self)
             self._mount_into(self.plotContainer, self.previewPanel)
+
             if hasattr(self.previewPanel, "readyChanged"):
                 self.previewPanel.readyChanged.connect(self._on_preview_ready_changed)
 
-            # Provider in Planning setzen
             if hasattr(self.planningPanel, "set_model_provider"):
                 self.planningPanel.set_model_provider(self.recipePanel.current_model)
             if hasattr(self.planningPanel, "set_traj_provider"):
@@ -122,6 +126,9 @@ class RecipeTab(QWidget):
             _LOG.critical("PreviewPanel init failed: %s", e, exc_info=True)
 
     def _schedule_initial_render(self, *, delay_ms: int = 120):
+        if SAFE_NO_PREVIEW:
+            return
+
         if self._activation_timer is not None:
             self._activation_timer.stop()
             self._activation_timer.deleteLater()
@@ -146,6 +153,8 @@ class RecipeTab(QWidget):
         self._activation_timer.start(delay_ms)
 
     def _initial_render(self):
+        if SAFE_NO_PREVIEW:
+            return
         if self.previewPanel is None or sip.isdeleted(self.previewPanel):
             self._ensure_preview()
             if self.previewPanel is None:
@@ -153,7 +162,8 @@ class RecipeTab(QWidget):
         model = self.recipePanel.current_model()
         pbs = getattr(model, "paths_by_side", None) or (model.get("paths_by_side") if isinstance(model, dict) else None)
         if not isinstance(pbs, dict) or not pbs:
-            raise RuntimeError("Initiales Rendern: paths_by_side fehlt oder ist leer.")
+            # Nichts zu rendern
+            return
         sides = list(pbs.keys())
         self._render_in_preview(model, sides=sides)
 
@@ -163,13 +173,11 @@ class RecipeTab(QWidget):
             model, sides = self._unpack_model_sides(args)
             pbs = getattr(model, "paths_by_side", None) or (model.get("paths_by_side") if isinstance(model, dict) else None)
             if not isinstance(pbs, dict) or not pbs:
-                raise RuntimeError("recipeChanged: paths_by_side fehlt oder ist leer.")
+                # Kein harter Fehler – Preview ignoriert
+                return
             if not sides:
                 sides = list(pbs.keys())
-                if not sides:
-                    raise RuntimeError("recipeChanged: keine Side angegeben & keine Sides im Modell.")
 
-            # Preview sicherstellen; wenn noch nicht da, wird Render beim Aktivieren nachgeholt
             self._ensure_preview()
             self._render_in_preview(model, sides=sides)
 
@@ -194,6 +202,8 @@ class RecipeTab(QWidget):
 
     # ---------- Render Helper ----------
     def _render_in_preview(self, model, *, sides):
+        if SAFE_NO_PREVIEW:
+            return
         if self.previewPanel is None or sip.isdeleted(self.previewPanel):
             return
         try:
@@ -211,5 +221,5 @@ class RecipeTab(QWidget):
         if len(args) >= 2 and isinstance(args[1], (list, tuple)):
             sides = list(args[1])
         else:
-            sides = []  # keine Default-Side; Validierung greift
+            sides = []
         return model, sides

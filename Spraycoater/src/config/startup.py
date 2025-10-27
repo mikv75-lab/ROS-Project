@@ -6,7 +6,7 @@ import io
 import yaml
 import warnings
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 # ---------- kleine Helpers ----------
@@ -70,16 +70,14 @@ class AppPaths:
     recipe_dir: str
     log_dir: str
     bringup_log: str
-    # optional
-    ros_setup: Optional[str] = None
-    ws_setup: Optional[str] = None
-    tools_dir: Optional[str] = None
-    substrates_dir: Optional[str] = None
+    # optional genutzt:
     substrate_mounts_dir: Optional[str] = None
-    substrate_mounts_file: Optional[str] = None  # optional direkte YAML-Datei
-    # optional RViz (nur Pfade, keine Validierung hier)
-    rviz_live_config: Optional[str] = None
-    rviz_shadow_config: Optional[str] = None
+    substrate_mounts_file: Optional[str] = None
+
+@dataclass(frozen=True)
+class TFWorldToMecaMount:
+    xyz: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    rpy_deg: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 
 @dataclass(frozen=True)
 class ROSConfig:
@@ -94,7 +92,8 @@ class AppContext:
     recipes: List[Dict[str, Any]]
     recipe_params: Dict[str, Any]
     units: str
-    # optional
+    tf_world_to_meca_mount: TFWorldToMecaMount
+    # optional, als dict belassen für in-place Updates:
     mounts_yaml: Optional[Dict[str, Any]] = None
 
 
@@ -135,16 +134,8 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         _err(f"Verzeichnis für paths.bringup_log existiert nicht: {bl_parent}")
 
     # Optional: weitere Pfade (keine harten Checks)
-    ros_setup_abs = _abspath_rel_to(base, p["ros_setup"]) if p.get("ros_setup") else None
-    ws_setup_abs  = _abspath_rel_to(base, p["ws_setup"])  if p.get("ws_setup")  else None
-    tools_dir_abs = _abspath_rel_to(base, p["tools_dir"]) if p.get("tools_dir") else None
-    subs_dir_abs  = _abspath_rel_to(base, p["substrates_dir"]) if p.get("substrates_dir") else None
-    mounts_dir_abs= _abspath_rel_to(base, p["substrate_mounts_dir"]) if p.get("substrate_mounts_dir") else None
+    mounts_dir_abs  = _abspath_rel_to(base, p["substrate_mounts_dir"])  if p.get("substrate_mounts_dir")  else None
     mounts_file_abs = _abspath_rel_to(base, p["substrate_mounts_file"]) if p.get("substrate_mounts_file") else None
-
-    # Optional RViz
-    rviz_live = _abspath_rel_to(base, (su.get("rviz") or {}).get("live_config")) if (su.get("rviz") or {}).get("live_config") else None
-    rviz_shadow = _abspath_rel_to(base, (su.get("rviz") or {}).get("shadow_config")) if (su.get("rviz") or {}).get("shadow_config") else None
 
     # Pflicht: ros (nur Flags)
     r = su.get("ros") or {}
@@ -153,6 +144,20 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if "launch_ros" not in r or "sim_robot" not in r:
         _err("startup.yaml: 'ros.launch_ros' und 'ros.sim_robot' müssen vorhanden sein.")
     ros_cfg = ROSConfig(bool(r["launch_ros"]), bool(r["sim_robot"]))
+
+    # Optional: tf.world_to_meca_mount
+    tf_cfg = TFWorldToMecaMount()
+    tf_node = (su.get("tf") or {}).get("world_to_meca_mount") if isinstance(su.get("tf"), dict) else None
+    if isinstance(tf_node, dict):
+        xyz = tf_node.get("xyz") or [0.0, 0.0, 0.0]
+        rpy = tf_node.get("rpy_deg") or [0.0, 0.0, 0.0]
+        try:
+            tf_cfg = TFWorldToMecaMount(
+                xyz=(float(xyz[0]), float(xyz[1]), float(xyz[2])),
+                rpy_deg=(float(rpy[0]), float(rpy[1]), float(rpy[2])),
+            )
+        except Exception:
+            warnings.warn("tf.world_to_meca_mount fehlerhaft – verwende Defaults (0,0,0).")
 
     # recipes.yaml laden (strict)
     ry = _load_yaml(recipe_file_abs, strict=True)
@@ -170,24 +175,16 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     mounts_yaml = None
     if mounts_file_abs:
         mounts_yaml = _load_yaml(mounts_file_abs, strict=False)
-        # wenn vorhanden, ganz grob checken (ohne harte Fehler)
-        if mounts_yaml:
-            if not isinstance(mounts_yaml.get("mounts"), dict):
-                warnings.warn("substrate_mounts.yaml: 'mounts' fehlt/ungültig – wird ignoriert.")
+        if mounts_yaml and not isinstance(mounts_yaml.get("mounts"), dict):
+            warnings.warn("substrate_mounts.yaml: 'mounts' fehlt/ungültig – wird ignoriert.")
 
     paths = AppPaths(
         recipe_file=recipe_file_abs,
         recipe_dir=recipe_dir_abs,
         log_dir=log_dir_abs,
         bringup_log=bringup_log_abs,
-        ros_setup=ros_setup_abs,
-        ws_setup=ws_setup_abs,
-        tools_dir=tools_dir_abs,
-        substrates_dir=subs_dir_abs,
         substrate_mounts_dir=mounts_dir_abs,
         substrate_mounts_file=mounts_file_abs,
-        rviz_live_config=rviz_live,
-        rviz_shadow_config=rviz_shadow,
     )
 
     return AppContext(
@@ -197,5 +194,6 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         recipes=recipes_list,
         recipe_params=recipe_params,
         units=units,
+        tf_world_to_meca_mount=tf_cfg,
         mounts_yaml=mounts_yaml,
     )

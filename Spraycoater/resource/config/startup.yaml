@@ -1,20 +1,9 @@
 version: 1
 
 paths:
-  # Lokale Rezepte-Datei (liegt neben dieser startup.yaml)
   recipe_file: "recipes.yaml"
-
-  # Optional weitere Kataloge (werden vom aktuellen Loader ignoriert, dürfen aber drin bleiben)
-  tools_file:             "package://mecademic_bringup/config/tools.yaml"
-  substrates_file:        "package://mecademic_bringup/config/substrates.yaml"
   substrate_mounts_file:  "package://mecademic_bringup/config/substrate_mounts.yaml"
-
-  # STL-Verzeichnisse (falls du die ROS-Paketressourcen weiter verwenden willst)
-  tools_dir:              "package://mecademic_bringup/resource/tools"
-  substrates_dir:         "package://mecademic_bringup/resource/substrates"
   substrate_mounts_dir:   "package://mecademic_bringup/resource/substrate_mounts"
-
-  # Rezepte & Logs (müssen existieren)
   recipe_dir:   "../../data/recipes"
   log_dir:      "../../data/logs"
   bringup_log:  "../../data/logs/bringup.log"
