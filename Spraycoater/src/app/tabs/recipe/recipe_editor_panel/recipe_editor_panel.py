@@ -30,25 +30,27 @@ class RecipeEditorPanel(QWidget):
         self.store = RecipeStore.from_ctx(ctx)
         uic.loadUi(_ui_path("recipe_editor_panel.ui"), self)
 
-        # Content-Widget MONTIEREN – ohne neues Layout zu erzeugen
+        # Content-Widget montieren (ohne doppelte Layout-Erzeugung)
         self.content = RecipeEditorContent(ctx=self.ctx, parent=self)
         host_layout = self.contentHost.layout()
         if host_layout is None:
             host_layout = QVBoxLayout()
             host_layout.setContentsMargins(0, 0, 0, 0)
             self.contentHost.setLayout(host_layout)
+        # nur einmal hinzufügen
         if host_layout.indexOf(self.content) == -1:
             if self.content.parent() is not self.contentHost:
                 self.content.setParent(self.contentHost)
             host_layout.addWidget(self.content)
 
         # --- Rezept-Auswahl-Combo (sichtbar + befüllen) ---
+        self._recipes_by_id: Dict[str, Dict[str, Any]] = {}
         if hasattr(self, "comboRecipeSelect"):
             self.comboRecipeSelect.setVisible(True)
             self._fill_recipe_select()
             self.comboRecipeSelect.currentIndexChanged.connect(self._on_recipe_select_changed)
 
-        # Defaults
+        # Defaults im Formular
         self.content.apply_defaults()
 
         # Buttons
@@ -57,14 +59,17 @@ class RecipeEditorPanel(QWidget):
         self.btnDelete.clicked.connect(self._on_delete_clicked)
         self.btnUpdatePreview.clicked.connect(self._emit_recipe_changed)
 
-        # Initial ein Rezept anwenden
+        # Initial eine Rezept-Seite anwenden
         if hasattr(self, "comboRecipeSelect") and self.comboRecipeSelect.count() > 0:
+            if self.comboRecipeSelect.currentIndex() < 0:
+                self.comboRecipeSelect.setCurrentIndex(0)
             self._on_recipe_select_changed(self.comboRecipeSelect.currentIndex())
 
     # ---------------- Rezepte / Auswahl ----------------
     def _fill_recipe_select(self) -> None:
         """Füllt die Combo mit IDs aus recipes.yaml und merkt ein Dict für schnellen Zugriff."""
-        self._recipes_by_id: Dict[str, Dict[str, Any]] = {}
+        self._recipes_by_id.clear()
+        self.comboRecipeSelect.blockSignals(True)
         self.comboRecipeSelect.clear()
         for rec in self.store.recipes:
             rid = str(rec.get("id") or "").strip()
@@ -72,6 +77,7 @@ class RecipeEditorPanel(QWidget):
                 continue
             self.comboRecipeSelect.addItem(rid)
             self._recipes_by_id[rid] = rec
+        self.comboRecipeSelect.blockSignals(False)
 
     def _current_recipe_def(self) -> Optional[Dict[str, Any]]:
         if not hasattr(self, "comboRecipeSelect"):
@@ -85,6 +91,8 @@ class RecipeEditorPanel(QWidget):
         if not rec:
             return
         self.content.apply_recipe_to_forms(rec)
+        # beim Wechsel direkt ein Model emittieren (damit Preview frisch ist)
+        self._emit_recipe_changed()
 
     # ---------------- UI Events ----------------
     def _on_new_clicked(self) -> None:
@@ -92,7 +100,7 @@ class RecipeEditorPanel(QWidget):
         self.content.apply_defaults()
         rec = self._current_recipe_def()
         if rec:
-            # Auswahl-spezifische Felder (Substrate/Mount/Sides/Defaults) wieder setzen
+            # Auswahl-spezifische Felder (Substrate/Mount/Tools/Sides/Defaults) erneut setzen
             self.content.apply_recipe_to_forms(rec)
         self._emit_recipe_changed()
 
@@ -111,7 +119,7 @@ class RecipeEditorPanel(QWidget):
             if getattr(model, "description", None):
                 self.content.e_desc.setText(model.description)
 
-            # selectors (substrate + mount)
+            # selectors: substrate + mount
             self.content.sel_substrate.clear()
             if model.substrates:
                 self.content.sel_substrate.addItems([str(s) for s in model.substrates])
@@ -124,6 +132,20 @@ class RecipeEditorPanel(QWidget):
             if model.mount or model.substrate_mount:
                 self.content.sel_mount.addItem(str(model.mount or model.substrate_mount))
                 self.content.sel_mount.setCurrentIndex(0)
+
+            # tool (falls im geladenen File vorhanden)
+            if hasattr(self.content, "sel_tool") and self.content.sel_tool is not None:
+                # Tools aus der aktuell ausgewählten Rezept-Definition beibehalten,
+                # aber falls model.tool gesetzt ist, darauf einstellen:
+                if model.tool:
+                    # Wenn das Tool bereits in der Liste ist -> auswählen
+                    idx = self.content.sel_tool.findText(str(model.tool))
+                    if idx >= 0:
+                        self.content.sel_tool.setCurrentIndex(idx)
+                    else:
+                        # sonst temporär hinzufügen
+                        self.content.sel_tool.addItem(str(model.tool))
+                        self.content.sel_tool.setCurrentIndex(self.content.sel_tool.count() - 1)
 
             # globals
             if model.parameters:

@@ -162,18 +162,43 @@ class RecipeEditorContent(QWidget):
         sf.addRow("mount", self.sel_mount)
         v.addWidget(sel_gb)
 
-        # befüllen
+        # substrates
+        self.sel_substrate.clear()
         subs = [str(s) for s in (rec.get("substrates") or [])]
         self.sel_substrate.addItems(subs)
-        if subs: self.sel_substrate.setCurrentIndex(0)
+        if subs:
+            self.sel_substrate.setCurrentIndex(0)
 
+        # mounts
+        self.sel_mount.clear()
         mounts = [str(m) for m in (rec.get("substrate_mounts") or [])]
         self.sel_mount.addItems(mounts)
-        if mounts: self.sel_mount.setCurrentIndex(0)
+        if mounts:
+            self.sel_mount.setCurrentIndex(0)
 
-        # tool (optional)
-        tool = rec.get("tool")
-        if tool: self.sel_tool.addItem(str(tool))
+        # tools (NEU: nutze Liste aus recipes.yaml -> rec["tools"])
+        self.sel_tool.clear()
+        tools_from_recipe = [str(t) for t in (rec.get("tools") or [])]
+
+        if tools_from_recipe:
+            tool_items = tools_from_recipe
+        else:
+            # optionaler Fallback: versuche ctx.tools_yaml
+            tool_items = []
+            tools_cfg = getattr(self.ctx, "tools_yaml", None)
+            if isinstance(tools_cfg, dict):
+                d = tools_cfg.get("tools") if isinstance(tools_cfg.get("tools"), dict) else tools_cfg
+                tool_items = list(d.keys())
+
+            if not tool_items:
+                # harter Fallback, damit nie leer
+                tool_items = ["spray_nozzle_01", "spray_nozzle_02"]
+
+        self.sel_tool.addItems(tool_items)
+        if tool_items:
+            self.sel_tool.setCurrentIndex(0)
+        # bei Bedarf frei editierbar:
+        # self.sel_tool.setEditable(True)
 
         # --- Sides/Editors ---
         self._side_editors = {}
@@ -202,6 +227,7 @@ class RecipeEditorContent(QWidget):
             self._side_editors[side_name] = editor
 
         # Spacer pro Seite
+        from PyQt5.QtWidgets import QSpacerItem, QSizePolicy
         v.addItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
         # Seite in Stack einsetzen
@@ -223,6 +249,7 @@ class RecipeEditorContent(QWidget):
         _opt_set("sample_step_mm", lambda v: self.g_sample.setValue(float(v)))
         _opt_set("max_points", lambda v: self.g_maxpts.setValue(int(v)))
         _opt_set("max_angle_deg", lambda v: self.g_maxang.setValue(float(v)))
+
 
     # ------------------- Collectors -------------------
     def collect_globals(self) -> Dict[str, Any]:

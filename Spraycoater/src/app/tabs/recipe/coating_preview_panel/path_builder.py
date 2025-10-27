@@ -2,7 +2,7 @@
 # Spraycoater/src/app/tabs/recipe/coating_preview_panel/path_builder.py
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 import math
 import numpy as np
 
@@ -23,88 +23,102 @@ class PathData:
 
 class PathBuilder:
     """
-    Baut den **rohen Pfad** (mm) aus dem Rezept:
-
-      - meander_plane:
-          path:
-            type: "meander" | "meander_plane"
-            area:
-              shape: "rect" | "rectangle" | "square" | "circle"
-              size_mm: [sx, sy]           # bei Rechteck
-              center_xy_mm: [cx, cy]
-              radius_mm: R                # bei Kreis
-            pitch_mm: 5.0
-            angle_deg: 0.0
-            boustrophedon: true
-            edge_extend_mm: 0.0
-
-      - spiral_plane:
-          path:
-            type: "spiral" | "spiral_plane"
-            center_xy_mm: [cx, cy]
-            r_outer_mm: 70
-            r_inner_mm: 10
-            pitch_mm: 5
-
-      - spiral_cylinder (Helix):
-          path:
-            type: "spiral_cylinder" | "helix"
-            radius_mm: 10
-            outside_mm: 1
-            height_mm: 100
-            pitch_mm: 10
-            margin_top_mm: 0
-            margin_bottom_mm: 0
-            start_from: "top" | "bottom"
-            direction: "ccw" | "cw"
-
-      - oder direkt:
-          path:
-            points_mm: [[x,y,z], ...]     # oder polyline_mm
-
-    Kein Offsetting, keine Normale, keine Raycasts!
+    Baut **roh**-Pfad-Geometrien (mm) aus einem Rezept.
+    - Unterstützt mehrere Sides: Rückgabe ist { "<side>": PathData, ... }
+    - Kein Offsetting, keine Normalen, keine Projektion – nur 3D-Pfade im Maschinenraum.
     """
 
+    # ------------------------------ Public API ------------------------------
     @staticmethod
-    def from_recipe(recipe: Any, *, sample_step_mm: float = 1.0, max_points: int = 200_000) -> PathData:
-        p = PathBuilder._extract_path_dict(recipe)
+    def from_recipe(
+        recipe: Any,
+        *,
+        sample_step_mm: float = 1.0,
+        max_points: int = 200_000
+    ) -> Dict[str, PathData]:
+        """
+        Erzeugt für **jede** Side des Rezepts einen Path.
+        Rückgabe: Dict[side, PathData]
+        """
+        paths_by_side = PathBuilder._extract_paths_by_side(recipe)
+        out: Dict[str, PathData] = {}
 
-        # Direkte Punkte?
-        pts = p.get("points_mm") or p.get("polyline_mm")
-        if pts is not None:
-            P = np.asarray(pts, dtype=float).reshape(-1, 3)
-            if len(P) > max_points:
-                stride = max(1, len(P) // max_points)
-                P = P[::stride]
-            return PathData(points_mm=P, meta={"source": "points"})
+        for side, p in paths_by_side.items():
+            # Direktpunkte?
+            pts = p.get("points_mm") or p.get("polyline_mm")
+            if pts is not None:
+                P = np.asarray(pts, dtype=float).reshape(-1, 3)
+                if len(P) > max_points:
+                    stride = max(1, len(P) // max_points)
+                    P = P[::stride]
+                out[side] = PathData(points_mm=P, meta={"source": "points", "side": side})
+                continue
 
-        # Generativ
-        ptype = str(p.get("type", "")).strip().lower()
-        if ptype in ("meander", "meander_plane"):
-            P = PathBuilder._meander_plane(p, sample_step_mm, max_points)
-            meta = {"source": "meander_plane"}
-        elif ptype in ("spiral", "spiral_plane"):
-            P = PathBuilder._spiral_plane(p, sample_step_mm, max_points)
-            meta = {"source": "spiral_plane"}
-        elif ptype in ("spiral_cylinder", "helix", "spiral_cyl"):
-            P = PathBuilder._spiral_cylinder_centerline(p, sample_step_mm, max_points)
-            meta = {"source": "spiral_cylinder"}
-        else:
-            raise ValueError(f"Unsupported path.type: {ptype!r}")
+            # Generativ
+            ptype = str(p.get("type", "")).strip().lower()
+            if ptype in ("meander", "meander_plane"):
+                P = PathBuilder._meander_plane(p, sample_step_mm, max_points)
+                meta = {"source": "meander_plane", "side": side}
+            elif ptype in ("spiral", "spiral_plane"):
+                P = PathBuilder._spiral_plane(p, sample_step_mm, max_points)
+                meta = {"source": "spiral_plane", "side": side}
+            elif ptype in ("spiral_cylinder", "helix", "spiral_cyl"):
+                P = PathBuilder._spiral_cylinder_centerline(p, sample_step_mm, max_points)
+                meta = {"source": "spiral_cylinder", "side": side}
+            else:
+                raise ValueError(f"Unsupported path.type: {ptype!r} (side='{side}')")
 
-        return PathData(points_mm=P, meta=meta)
+            out[side] = PathData(points_mm=P, meta=meta)
 
-    # ---------- helpers ----------
+        if not out:
+            raise ValueError("PathBuilder.from_recipe: keine Pfade generiert.")
+        return out
+
+    # ------------------------------ Extractors ------------------------------
     @staticmethod
-    def _extract_path_dict(recipe: Any) -> Dict[str, Any]:
-        if hasattr(recipe, "path"):
-            return dict(getattr(recipe, "path") or {})
+    def _extract_paths_by_side(recipe: Any) -> Dict[str, Dict[str, Any]]:
+        """
+        Erwartet preferiert: recipe.paths_by_side (dict).
+        Fallback (legacy): recipe.path + recipe.side -> {side: path}.
+        """
+        # Neue Struktur (Objekt)
+        if hasattr(recipe, "paths_by_side"):
+            pbs = getattr(recipe, "paths_by_side") or {}
+            if isinstance(pbs, dict) and pbs:
+                return {str(s): dict(p or {}) for s, p in pbs.items()}
+
+        # Neue Struktur (Plain-Dict)
         if isinstance(recipe, dict):
-            return dict(recipe.get("path", {}) or {})
-        raise TypeError("PathBuilder.from_recipe: recipe hat kein .path Feld.")
+            pbs = recipe.get("paths_by_side") or {}
+            if isinstance(pbs, dict) and pbs:
+                return {str(s): dict(p or {}) for s, p in pbs.items()}
 
+        # Legacy: single path
+        path = None
+        side = None
+        if hasattr(recipe, "path"):
+            path = getattr(recipe, "path") or {}
+            side = getattr(recipe, "side", None) or "top"
+        elif isinstance(recipe, dict) and "path" in recipe:
+            path = recipe.get("path") or {}
+            side = recipe.get("side") or "top"
+
+        if isinstance(path, dict) and path:
+            return {str(side): dict(path)}
+
+        raise TypeError("PathBuilder.from_recipe: recipe.paths_by_side fehlt oder ist leer.")
+
+    # ------------------------------ Builders ------------------------------
     @staticmethod
     def _meander_plane(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
+        """
+        Meander in XY-Ebene (Z=0):
+          area.shape: "rect"/"circle"
+          area.size_mm: [sx, sy]   (rect)
+          area.radius_mm: R        (circle)
+          area.center_xy_mm: [cx, cy]
+          pitch_mm, angle_deg, boustrophedon, edge_extend_mm
+        """
         area = p.get("area", {}) or {}
         shape = str(area.get("shape", "rect")).lower()
         cx, cy = (area.get("center_xy_mm") or [0.0, 0.0])
@@ -158,12 +172,14 @@ class PathBuilder:
 
     @staticmethod
     def _spiral_plane(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
+        """
+        Archimedische Spirale in XY-Ebene (Z=0) – von r_outer zu r_inner.
+        """
         cx, cy = (p.get("center_xy_mm") or [0.0, 0.0])
         r_outer = float(p.get("r_outer_mm", p.get("r_end_mm", 70.0)))
         r_inner = float(p.get("r_inner_mm", p.get("r_start_mm", 10.0)))
         pitch   = max(1e-6, float(p.get("pitch_mm", 5.0)))
 
-        # Anzahl Umdrehungen gemäß radialem Abstand
         turns = max(int((r_outer - r_inner) / pitch), 1)
         theta_max = 2.0 * math.pi * turns
 
@@ -184,11 +200,17 @@ class PathBuilder:
 
     @staticmethod
     def _spiral_cylinder_centerline(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
+        """
+        Helix mittige Bahn um Z-Achse:
+          - radius_mm + outside_mm -> effektiver Radius
+          - height_mm, pitch_mm, margins, start_from, direction
+        """
         pitch   = max(1e-6, float(p.get("pitch_mm", 10.0)))
         m_top   = float(p.get("margin_top_mm", 0.0))
         m_bot   = float(p.get("margin_bottom_mm", 0.0))
         start_from = str(p.get("start_from", "top")).lower()
         direction  = str(p.get("direction",  "ccw")).lower()
+
         radius = float(p.get("radius_mm", 10.0)) + float(p.get("outside_mm", 1.0))
         height = float(p.get("height_mm", 100.0))
 

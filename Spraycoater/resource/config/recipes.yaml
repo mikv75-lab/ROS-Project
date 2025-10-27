@@ -168,6 +168,7 @@ recipes:
   - id: "wafer"
     description: "Wafer – TOP (meander/spiral plane wählbar)"
     substrate_type: "wafer"
+    tools: ["spray_nozzle_01", "spray_nozzle_02"]
     substrates: ["wafer_d100_h2", "wafer_d150_h2", "wafer_d200_h2"]
     substrate_mounts: ["circle_d240_h50", "flat_240x240x50"]
     parameters: {}
@@ -175,13 +176,15 @@ recipes:
   - id: "tube"
     description: "Röhrchen – HELIX (Zylinder-Helix)"
     substrate_type: "tube"
+    tools: ["spray_nozzle_01", "spray_nozzle_02"]
     substrates: ["tube_ID5mm_t1p5mm_h100mm", "tube_ID10mm_t1p5mm_h100mm", "tube_ID20mm_t1p5mm_h100mm"]
     substrate_mounts: ["post_d30mm_h100mm"]
     parameters: {}
 
   - id: "cylinder"
-    description: "Vollzylinder – TOP (Deckfläche) oder HELIX (Mantel)"
+    description: "Vollzylinder – TOP (Deckfläche) und HELIX (Mantel)"
     substrate_type: "cylinder"
+    tools: ["spray_nozzle_01", "spray_nozzle_02"]
     substrates: ["cylinder_d100_h100", "cylinder_d150_h150", "cylinder_d200_h200"]
     substrate_mounts: ["post_d30mm_h100mm"]
     parameters: {}
@@ -189,6 +192,7 @@ recipes:
   - id: "cube"
     description: "Würfel/Quader – alle Seiten (plane)"
     substrate_type: "cube"
+    tools: ["spray_nozzle_01", "spray_nozzle_02"]
     substrates: ["cube_100", "cube_150"]
     substrate_mounts: ["flat_240x240x50"]
     parameters: {}
@@ -196,6 +200,7 @@ recipes:
   - id: "hemisphere"
     description: "Halbkugel – TOP (projiziert)"
     substrate_type: "hemisphere"
+    tools: ["spray_nozzle_01", "spray_nozzle_02"]
     substrates: ["hemisphere_d200"]
     substrate_mounts: ["circle_d240_h50", "flat_240x240x50"]
     parameters: {}
@@ -203,6 +208,7 @@ recipes:
   - id: "pyramid"
     description: "Pyramide – Seitenflächen (projiziert)"
     substrate_type: "pyramid"
+    tools: ["spray_nozzle_01", "spray_nozzle_02"]
     substrates: ["pyramid_d150_h150", "pyramid_d200_h200"]
     substrate_mounts: ["flat_240x240x50"]
     parameters: {}
