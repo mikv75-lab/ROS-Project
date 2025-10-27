@@ -114,12 +114,16 @@ class SidePathEditor(QWidget):
         self.s_pitch = QDoubleSpinBox(); self.s_pitch.setRange(0.0, 1e6); self.s_pitch.setSingleStep(0.1); self.s_pitch.setSuffix(" mm")
         self.s_z = QDoubleSpinBox(); self.s_z.setRange(-1e6, 1e6); self.s_z.setSingleStep(0.1); self.s_z.setSuffix(" mm")
         self.s_lead = QDoubleSpinBox(); self.s_lead.setRange(0.0, 1e6); self.s_lead.setSingleStep(0.1); self.s_lead.setSuffix(" mm")
+        self.s_direction = QComboBox();  # cw/ccw (optional – aus schema/YAML)
+        # Default-Werte einsetzen; tatsächliche Items werden ggf. durch apply_default_path(plane_enums=...) ersetzt
+        self.s_direction.addItems(["ccw", "cw"])
         f2.addRow("center_xy_mm", self.s_center)
         f2.addRow("r_outer_mm", self.s_rout)
         f2.addRow("r_inner_mm", self.s_rin)
         f2.addRow("pitch_mm", self.s_pitch)
         f2.addRow("z_mm", self.s_z)
         f2.addRow("lead_in_mm", self.s_lead)
+        f2.addRow("direction", self.s_direction)
 
         # --- Page: spiral_cylinder ---
         self.pg_spiral_cyl = QWidget()
@@ -176,7 +180,18 @@ class SidePathEditor(QWidget):
         self.type_combo.blockSignals(False)
         self._on_type_changed(self.type_combo.currentIndex())
 
-    def apply_default_path(self, path: Dict[str, Any], *, helix_enums: Optional[Dict[str, Any]] = None) -> None:
+    def apply_default_path(
+        self,
+        path: Dict[str, Any],
+        *,
+        helix_enums: Optional[Dict[str, Any]] = None,
+        plane_enums: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Setzt Defaultwerte gemäß path + (optional) Enum-Listen.
+        - helix_enums: {'start_froms': [...], 'directions': [...]}
+        - plane_enums: {'direction': [...]}
+        """
         t = str(path.get("type", "meander_plane"))
         if t not in ("meander_plane", "spiral_plane", "spiral_cylinder"):
             t = "meander_plane"
@@ -199,12 +214,19 @@ class SidePathEditor(QWidget):
             self.m_lead.setValue(float(path.get("lead_in_mm", 5.0)))
 
         elif t == "spiral_plane":
+            # Enums (direction) ggf. aus Schema setzen
+            if plane_enums and isinstance(plane_enums.get("direction"), list) and plane_enums["direction"]:
+                self.s_direction.clear()
+                self.s_direction.addItems([str(x) for x in plane_enums["direction"]])
+
             self.s_center.set(path.get("center_xy_mm", [0.0, 0.0]))
             self.s_rout.setValue(float(path.get("r_outer_mm", 45.0)))
             self.s_rin.setValue(float(path.get("r_inner_mm", 5.0)))
             self.s_pitch.setValue(float(path.get("pitch_mm", 4.0)))
             self.s_z.setValue(float(path.get("z_mm", 10.0)))
             self.s_lead.setValue(float(path.get("lead_in_mm", 3.0)))
+            # direction (falls vorhanden)
+            self.s_direction.setCurrentText(str(path.get("direction", self.s_direction.currentText())))
 
         else:  # spiral_cylinder
             self.c_pitch.setValue(float(path.get("pitch_mm", 10.0)))
@@ -214,12 +236,13 @@ class SidePathEditor(QWidget):
             self.c_lin.setValue(float(path.get("lead_in_mm", 5.0)))
             self.c_lout.setValue(float(path.get("lead_out_mm", 0.0)))
 
-        if helix_enums:
-            sfs = helix_enums.get("start_froms"); dirs = helix_enums.get("directions")
-            if isinstance(sfs, (list, tuple)) and sfs:
-                self.c_start_from.clear(); self.c_start_from.addItems([str(x) for x in sfs])
-            if isinstance(dirs, (list, tuple)) and dirs:
-                self.c_direction.clear(); self.c_direction.addItems([str(x) for x in dirs])
+            # helix enums (start_from / direction)
+            if helix_enums:
+                sfs = helix_enums.get("start_froms"); dirs = helix_enums.get("directions")
+                if isinstance(sfs, (list, tuple)) and sfs:
+                    self.c_start_from.clear(); self.c_start_from.addItems([str(x) for x in sfs])
+                if isinstance(dirs, (list, tuple)) and dirs:
+                    self.c_direction.clear(); self.c_direction.addItems([str(x) for x in dirs])
 
         self._sync_meander_area_visibility()
         self._lock_stack_height()
@@ -252,6 +275,7 @@ class SidePathEditor(QWidget):
                 "pitch_mm": float(self.s_pitch.value()),
                 "z_mm": float(self.s_z.value()),
                 "lead_in_mm": float(self.s_lead.value()),
+                "direction": self.s_direction.currentText(),
             })
         else:
             out.update({
@@ -280,16 +304,13 @@ class SidePathEditor(QWidget):
 
     def _lock_stack_height(self) -> None:
         """Fixiert die Stack-Höhe auf die sizeHint der aktiven Seite -> kein leerer Puffer."""
-        # Größe der aktiven Seite ermitteln
         w = self.stack.currentWidget()
         if w is None:
             return
         w.adjustSize()
         self.stack.adjustSize()
         h = max(w.sizeHint().height(), self.stack.sizeHint().height())
-        # Stack auf fixe Höhe setzen
         self.stack.setMinimumHeight(h)
         self.stack.setMaximumHeight(h)
         self.stack.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        # Gesamteditor auf kompakt trimmen
         self.adjustSize()

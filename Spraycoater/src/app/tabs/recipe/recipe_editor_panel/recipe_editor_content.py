@@ -145,7 +145,7 @@ class RecipeEditorContent(QWidget):
         """Erzeugt eine neue Stack-Seite für das konkrete Rezept (ohne description – das ist global)."""
         self._clear_recipe_page()
 
-        # description aus YAML in das globale Feld schreiben
+        # description aus YAML in das globale Feld schreiben (kann der User ändern)
         self.e_desc.setText(str(rec.get("description", "")))
 
         page = QWidget()
@@ -176,37 +176,45 @@ class RecipeEditorContent(QWidget):
         if mounts:
             self.sel_mount.setCurrentIndex(0)
 
-        # tools (NEU: nutze Liste aus recipes.yaml -> rec["tools"])
+        # tools (aus recipes.yaml -> rec["tools"])
         self.sel_tool.clear()
         tools_from_recipe = [str(t) for t in (rec.get("tools") or [])]
-
         if tools_from_recipe:
             tool_items = tools_from_recipe
         else:
-            # optionaler Fallback: versuche ctx.tools_yaml
+            # optionaler Fallback: ctx.tools_yaml
             tool_items = []
             tools_cfg = getattr(self.ctx, "tools_yaml", None)
             if isinstance(tools_cfg, dict):
                 d = tools_cfg.get("tools") if isinstance(tools_cfg.get("tools"), dict) else tools_cfg
                 tool_items = list(d.keys())
-
             if not tool_items:
-                # harter Fallback, damit nie leer
                 tool_items = ["spray_nozzle_01", "spray_nozzle_02"]
-
         self.sel_tool.addItems(tool_items)
         if tool_items:
             self.sel_tool.setCurrentIndex(0)
-        # bei Bedarf frei editierbar:
-        # self.sel_tool.setEditable(True)
 
         # --- Sides/Editors ---
         self._side_editors = {}
+
+        # substrate_types aus Store oder direkt aus YAML
         stype = str(rec.get("substrate_type") or "").strip()
         cfg = getattr(getattr(self.ctx, "store", None), "substrate_types", None)
         if cfg is None:
             cfg = (getattr(self.ctx, "recipes_yaml", {}) or {}).get("substrate_types", {})
         sides = dict((cfg.get(stype) or {}).get("sides") or {})
+
+        # plane_enums (für spiral_plane.direction) aus recipe_params holen
+        plane_enums: Optional[Dict[str, Any]] = None
+        schema = (getattr(self.ctx, "recipes_yaml", {}) or {}).get("recipe_params", {}) or {}
+        plane_schema = schema.get("path.spiral.plane") or {}
+        dir_values = []
+        if isinstance(plane_schema.get("direction"), dict):
+            vals = plane_schema["direction"].get("values")
+            if isinstance(vals, list) and vals:
+                dir_values = [str(x) for x in vals]
+        if dir_values:
+            plane_enums = {"direction": dir_values}
 
         for side_name, scfg in sides.items():
             gb = QGroupBox(f"Side: {side_name}")
@@ -215,19 +223,21 @@ class RecipeEditorContent(QWidget):
             vg.addWidget(editor)
 
             allowed = list(scfg.get("allowed_path_types") or [])
-            if not allowed: allowed = ["meander_plane"]
+            if not allowed:
+                allowed = ["meander_plane"]
             editor.set_allowed_types(allowed)
 
+            # Defaults & Enums anwenden
             editor.apply_default_path(
                 dict(scfg.get("default_path") or {}),
-                helix_enums={k: scfg[k] for k in ("start_froms","directions") if k in scfg}
+                helix_enums={k: scfg[k] for k in ("start_froms","directions") if k in scfg},
+                plane_enums=plane_enums
             )
 
             v.addWidget(gb)
             self._side_editors[side_name] = editor
 
         # Spacer pro Seite
-        from PyQt5.QtWidgets import QSpacerItem, QSizePolicy
         v.addItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
         # Seite in Stack einsetzen
@@ -249,7 +259,6 @@ class RecipeEditorContent(QWidget):
         _opt_set("sample_step_mm", lambda v: self.g_sample.setValue(float(v)))
         _opt_set("max_points", lambda v: self.g_maxpts.setValue(int(v)))
         _opt_set("max_angle_deg", lambda v: self.g_maxang.setValue(float(v)))
-
 
     # ------------------- Collectors -------------------
     def collect_globals(self) -> Dict[str, Any]:

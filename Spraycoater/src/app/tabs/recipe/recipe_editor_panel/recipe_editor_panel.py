@@ -199,13 +199,12 @@ class RecipeEditorPanel(QWidget):
         desc = self.content.get_description()
 
         return Recipe.from_dict({
-            "id": "recipe",
+            "id": "recipe",                # <- hier kannst du bei Bedarf den Namen aus der UI setzen
             "description": desc,
             "tool": tool,
             "substrate": sub,
             "substrates": [sub] if sub else [],
-            "substrate_mount": mnt,
-            "mount": mnt,
+            "substrate_mount": mnt,        # kein "mount" mehr
             "parameters": params,
             "paths_by_side": paths_by_side,
         })
