@@ -1,38 +1,56 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-import os
+
 import yaml
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Iterable, Tuple
 
 
 @dataclass
 class Recipe:
+    # Meta
     id: str
     description: str = ""
+
+    # Auswahl
     tool: Optional[str] = None
     substrate: Optional[str] = None
     substrates: List[str] = field(default_factory=list)
     substrate_mount: Optional[str] = None
     mount: Optional[str] = None
-    side: str = "top"
+
+    # Globale Parameter (für Spray-Tool etc.)
     parameters: Dict[str, Any] = field(default_factory=dict)
-    path: Dict[str, Any] = field(default_factory=dict)
+
+    # Kern: pro Side genau EIN Path-Objekt (z.B. {"type":"spiral_plane", ...})
+    paths_by_side: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     # ---------- Factory ----------
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "Recipe":
+        rid = str(d.get("id") or "recipe")
+        desc = str(d.get("description") or "")
+
+        tool = d.get("tool")
+        substrate = d.get("substrate")
+        substrates = list(d.get("substrates") or ([] if not substrate else [substrate]))
+
+        substrate_mount = d.get("substrate_mount")
+        mount = d.get("mount") or substrate_mount
+
+        parameters = dict(d.get("parameters") or {})
+        paths_by_side = dict(d.get("paths_by_side") or {})
+
         return Recipe(
-            id=str(d.get("id") or "recipe"),
-            description=str(d.get("description") or ""),
-            tool=d.get("tool"),
-            substrate=d.get("substrate"),
-            substrates=list(d.get("substrates") or ([] if not d.get("substrate") else [d.get("substrate")])),
-            substrate_mount=d.get("substrate_mount"),
-            mount=d.get("mount") or d.get("substrate_mount"),
-            side=str(d.get("side") or "top"),
-            parameters=dict(d.get("parameters") or {}),
-            path=dict(d.get("path") or {}),
+            id=rid,
+            description=desc,
+            tool=tool,
+            substrate=substrate,
+            substrates=substrates,
+            substrate_mount=substrate_mount,
+            mount=mount,
+            parameters=parameters,
+            paths_by_side=paths_by_side,
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -44,9 +62,8 @@ class Recipe:
             "substrates": self.substrates if self.substrates else ([self.substrate] if self.substrate else []),
             "substrate_mount": self.substrate_mount or self.mount,
             "mount": self.mount or self.substrate_mount,
-            "side": self.side,
             "parameters": dict(self.parameters or {}),
-            "path": dict(self.path or {}),
+            "paths_by_side": {str(s): dict(p or {}) for s, p in (self.paths_by_side or {}).items()},
         }
 
     # ---------- YAML IO ----------
@@ -61,19 +78,15 @@ class Recipe:
         errs: List[str] = []
         if not self.id:
             errs.append("id fehlt")
-        if not (self.tool and str(self.tool).strip()):
-            errs.append("tool fehlt")
         if not (self.mount or self.substrate_mount):
-            errs.append("substrate_mount fehlt")
-        if not (self.substrate and str(self.substrate).strip()):
+            errs.append("substrate_mount/mount fehlt")
+        if not (self.substrate or self.substrates):
             errs.append("substrate fehlt")
-
-        p = self.path or {}
-        if not p.get("type"):
-            errs.append("path.type fehlt")
-        # plane spiral/meander benötigen 'mode'
-        if p.get("type") in ("meander", "spiral") and not p.get("mode"):
-            errs.append("path.mode fehlt")
+        if not self.paths_by_side:
+            errs.append("paths_by_side fehlt oder leer")
+        for side, path in (self.paths_by_side or {}).items():
+            if not isinstance(path, dict) or not str(path.get("type") or "").strip():
+                errs.append(f'paths_by_side["{side}"].type fehlt')
         return errs
 
     def validate_references(
@@ -84,18 +97,24 @@ class Recipe:
         substrates_yaml: Optional[Dict[str, Any]] = None,
     ) -> List[str]:
         errs: List[str] = []
-        # Nur einfache Existenzchecks, passend zum 3-Panel Flow
+        # optionale, permissive Checks
         if tools_yaml and self.tool:
             tools = set((tools_yaml.get("tools") or {}).keys()) | set(tools_yaml.keys())
             if self.tool not in tools:
-                # permissiv: der Nutzer nutzt direkt Dateinamen; kein Hard-Fail
                 pass
         if mounts_yaml and (self.mount or self.substrate_mount):
             mounts = set((mounts_yaml.get("mounts") or {}).keys()) | set(mounts_yaml.keys())
             if (self.mount or self.substrate_mount) not in mounts:
                 pass
-        if substrates_yaml and self.substrate:
+        if substrates_yaml and (self.substrate or self.substrates):
             subs = set((substrates_yaml.get("substrates") or {}).keys()) | set(substrates_yaml.keys())
-            if self.substrate not in subs:
-                pass
+            for s in ([self.substrate] if self.substrate else []) + list(self.substrates or []):
+                if s and s not in subs:
+                    pass
         return errs
+
+    # ---------- Helpers ----------
+    def iter_paths(self) -> Iterable[Tuple[str, Dict[str, Any]]]:
+        """Ergibt (side, path)-Paare in Einfügereihenfolge."""
+        for s, p in (self.paths_by_side or {}).items():
+            yield s, p
