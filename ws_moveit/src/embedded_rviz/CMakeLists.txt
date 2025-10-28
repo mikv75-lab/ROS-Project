@@ -1,27 +1,36 @@
-# embedded_rviz/CMakeLists.txt
+cmake_minimum_required(VERSION 3.16)
+project(embedded_rviz VERSION 0.1.0 LANGUAGES CXX)
 
-cmake_minimum_required(VERSION 3.16)  # 3.16+ ist auf Rolling safe
-project(embedded_rviz LANGUAGES CXX)
-
-# ament / ROS 2
+# ---- ROS 2 / ament ----
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rviz_common REQUIRED)
 find_package(rviz_rendering REQUIRED)
 
-# Qt (Rolling RViz nutzt weiterhin Qt5)
+# ---- Qt (RViz2 nutzt Qt5 in Rolling) ----
 find_package(Qt5 REQUIRED COMPONENTS Widgets)
+set(CMAKE_AUTOMOC ON)
 
-# Für ament-Extras (IN_LIST in if()) – vermeidet deine Policy-Warnung
+# ---- PyBind11 ----
+# Versuch über Vendor, fällt auf System-Paket zurück (pybind11-dev)
+find_package(pybind11_vendor QUIET)
+if(pybind11_vendor_FOUND)
+  find_package(pybind11 CONFIG REQUIRED)
+else()
+  find_package(pybind11 REQUIRED)
+endif()
+
 if(POLICY CMP0057)
   cmake_policy(SET CMP0057 NEW)
 endif()
 
-# C++ Standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Bibliothek mit unserem Host
+# ====================================================================
+# Host-Bibliothek (C++)
+# ====================================================================
 add_library(embedded_rviz_host SHARED
   src/host.cpp
 )
@@ -45,18 +54,56 @@ target_link_libraries(embedded_rviz_host
   rviz_rendering::rviz_rendering
 )
 
-# Export für Downstream-Pakete (vermeidet "unknown export" Fehler)
+# ====================================================================
+# PyBind11-Modul (embedded_rviz_py)
+# ====================================================================
+pybind11_add_module(embedded_rviz_py MODULE
+  src/pybind.cpp
+)
+target_link_libraries(embedded_rviz_py PRIVATE
+  embedded_rviz_host
+  Qt5::Widgets
+  rclcpp::rclcpp
+  rviz_common::rviz_common
+  rviz_rendering::rviz_rendering
+)
+# unter lib/<pkg> installieren, damit ros2 run-Skript es findet
+install(TARGETS embedded_rviz_py
+  LIBRARY DESTINATION lib/${PROJECT_NAME}
+)
+
+# ====================================================================
+# Optionales C++-Mini-Demo
+# ====================================================================
+add_executable(panel_demo
+  src/panel_demo.cpp
+)
+target_link_libraries(panel_demo
+  PRIVATE embedded_rviz_host Qt5::Widgets
+)
+install(TARGETS panel_demo
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
+
+# ====================================================================
+# Install / Export
+# ====================================================================
 install(TARGETS embedded_rviz_host
   EXPORT embedded_rviz_hostTargets
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
-
 install(DIRECTORY include/ DESTINATION include)
 
-# ament-Exports
+# PyQt-Starter (ausführbares Skript)
+install(PROGRAMS
+  scripts/pyqt_embed_rviz
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_export_targets(embedded_rviz_hostTargets HAS_LIBRARY_TARGET)
 ament_export_dependencies(rclcpp rviz_common rviz_rendering)
+ament_export_include_directories(include)
 
 ament_package()

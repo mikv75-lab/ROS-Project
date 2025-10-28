@@ -2,7 +2,7 @@
 <package format="3">
   <name>embedded_rviz</name>
   <version>0.1.0</version>
-  <description>Embed an RViz RenderPanel as a QWidget and expose it to Python via pybind11.</description>
+  <description>Embed RViz2 RenderPanel as a QWidget and use it inside a PyQt5 window.</description>
 
   <maintainer email="you@example.com">Vinc</maintainer>
   <license>BSD-3-Clause</license>
@@ -15,13 +15,14 @@
   <depend>rviz_default_plugins</depend>
   <depend>pluginlib</depend>
 
-  <!-- Qt (rviz_common pulls it transitively, but we use it directly) -->
+  <!-- Qt5 Widgets direkt genutzt -->
   <build_depend>Qt5Widgets</build_depend>
   <exec_depend>Qt5Widgets</exec_depend>
 
-  <!-- pybind11 vendor package ships with ROS 2 -->
-  <build_depend>pybind11_vendor</build_depend>
-  <exec_depend>pybind11_vendor</exec_depend>
+  <!-- Für das Python-Frontend -->
+  <exec_depend>python3</exec_depend>
+  <exec_depend>python3-pyqt5</exec_depend>
+  <exec_depend>python3-sip</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

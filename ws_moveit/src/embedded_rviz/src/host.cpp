@@ -1,10 +1,10 @@
-#include <embedded_rviz/host.hpp>
+#include "embedded_rviz/host.hpp"
 
 #include <QVBoxLayout>
 #include <QString>
 
-#include <utility>   // std::move
-#include <memory>    // std::make_unique
+#include <utility>
+#include <memory>
 
 namespace embedded_rviz {
 
@@ -20,32 +20,37 @@ int Host::create(const std::string& node_name, const std::string& display_config
   ensure_rclcpp_init();
 
   auto inst = std::make_unique<Instance>();
-  inst->node_name  = node_name;
+  inst->node_name   = node_name;
   inst->config_path = display_config_path;
 
-  // UI Grundgerüst
+  // Root Qt widget
   inst->root_widget = new QWidget();
   auto* vlayout = new QVBoxLayout(inst->root_widget);
   vlayout->setContentsMargins(0, 0, 0, 0);
 
+  // RenderPanel
   inst->panel = new rviz_common::RenderPanel(inst->root_widget);
 
-  // Rolling: RosNodeAbstraction direkt konstruieren (ohne Factory-Header)
+  // ROS Node Abstraction
   rclcpp::NodeOptions opts;
   inst->ros_node = std::make_shared<rviz_common::ros_integration::RosNodeAbstraction>(
       node_name.c_str(), opts);
 
-  // VisualizationManager benötigt WeakPtr auf das Iface + Clock
+  // VisualizationManager
+  auto clock = inst->ros_node->get_raw_node()->get_clock();
   inst->manager = new rviz_common::VisualizationManager(
       inst->panel,
       rviz_common::ros_integration::RosNodeAbstractionIface::WeakPtr(inst->ros_node),
       /* window_manager = */ nullptr,
-      inst->ros_node->get_raw_node()->get_clock());
+      clock
+  );
 
-  // DisplayContext an RenderPanel binden
-  inst->panel->initialize(inst->manager);
+  // Initialisieren: Panel bekommt den DisplayContext -> hier: der Manager selbst
+  inst->panel->initialize(inst->manager /* DisplayContext* */, /*use_main_scene=*/false);
 
-  // Falls du eine .rviz-Konfig laden willst
+  // Manager initialisieren & ggf. Config laden
+  inst->manager->initialize();
+
   if (!inst->config_path.empty()) {
     rviz_common::YamlConfigReader reader;
     rviz_common::Config config;
@@ -53,8 +58,8 @@ int Host::create(const std::string& node_name, const std::string& display_config
     inst->manager->load(config);
   }
 
-  inst->manager->initialize();
-
+  // Update starten und Panel einhängen
+  inst->manager->startUpdate();
   vlayout->addWidget(inst->panel);
 
   const int id = next_id_++;
@@ -67,8 +72,11 @@ void Host::destroy(int id) {
   if (it == map_.end()) return;
 
   auto& inst = it->second;
+
   if (inst->manager) {
-    
+    inst->manager->stopUpdate();
+    delete inst->manager;
+    inst->manager = nullptr;
   }
   if (inst->panel) {
     delete inst->panel;
@@ -78,6 +86,7 @@ void Host::destroy(int id) {
     delete inst->root_widget;
     inst->root_widget = nullptr;
   }
+
   map_.erase(it);
 }
 

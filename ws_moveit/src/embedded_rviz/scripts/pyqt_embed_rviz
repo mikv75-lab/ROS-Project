@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import os
+import sys
+# Das .so liegt nach Installation neben diesem Skript:
+sys.path.insert(0, os.path.dirname(__file__))
+
+from PyQt5 import QtWidgets, QtGui
+from embedded_rviz_py import create, destroy
+
+def main():
+    app = QtWidgets.QApplication(sys.argv)
+
+    node_name = "embedded_rviz_pyqt"
+    cfg = os.environ.get("RVIZ_CONFIG", "")
+
+    rid, wid = create(node_name, cfg)
+
+    qwindow = QtGui.QWindow.fromWinId(wid)
+    container = QtWidgets.QWidget.createWindowContainer(qwindow)
+
+    win = QtWidgets.QMainWindow()
+    win.setWindowTitle("embedded_rviz – PyQt")
+    win.setCentralWidget(container)
+    win.resize(1000, 700)
+    win.show()
+
+    rc = app.exec_()
+    destroy(rid)
+    sys.exit(rc)
+
+if __name__ == "__main__":
+    main()
