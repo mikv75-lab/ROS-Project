@@ -9,7 +9,9 @@ from typing import Tuple, Optional, Dict
 import numpy as np
 import pyvista as pv
 import meshio  # NEU: statt trimesh
-
+import meshio
+import vtk
+from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
 _LOG = logging.getLogger("app.tabs.recipe.mesh_utils")
 
 
@@ -108,70 +110,54 @@ def apply_transform(
 
 
 def __load_mesh_meshio(path: str) -> pv.PolyData:
-    """
-    Liest STL/OBJ/PLY via meshio und baut ein sauberes pv.PolyData.
-    Keine Fallbacks, keine SciPy/VTK-Filter – Normals per PyVista.
-    """
+    import meshio
+    import numpy as np
+    import pyvista as pv
+    import os
+
     if not os.path.exists(path):
         raise FileNotFoundError(f"Mesh-Pfad existiert nicht: {path}")
 
     m = meshio.read(path)
 
-    # --- Punkte robust holen (mind. 3 Spalten) ---
     pts = np.asarray(m.points, dtype=np.float64)
     if pts.ndim != 2 or pts.shape[1] < 3:
         raise RuntimeError(f"Ungültige Punktmatrix: shape={pts.shape}")
-    pts = pts[:, :3].copy(order="C")  # nur XYZ, C-contiguous
+    pts = np.ascontiguousarray(pts[:, :3])
 
-    # NaN/Inf raus
-    if not np.isfinite(pts).all():
-        bad = ~np.isfinite(pts).all(axis=1)
-        pts = pts[~bad]
-        if pts.size == 0:
-            raise RuntimeError("Alle Punkte sind nicht endlich (NaN/Inf).")
-
-    # --- Dreiecke holen: erst cells_dict, sonst über m.cells iterieren ---
-    tri = None
-    if hasattr(m, "cells_dict") and isinstance(m.cells_dict, dict):
-        for key in ("triangle", "triangles", "vtk_triangle", "Triangle", "TRIANGLE"):
-            cand = m.cells_dict.get(key)
-            if cand is not None:
-                cand = np.asarray(cand)
-                if cand.ndim == 2 and cand.shape[1] == 3 and cand.size:
-                    tri = cand
-                    break
-
-    if tri is None:
+    # Triangles holen
+    cells = getattr(m, "cells_dict", None) or {}
+    tri = cells.get("triangle", None)
+    if tri is None or tri.size == 0:
         for cb in getattr(m, "cells", []):
             data = getattr(cb, "data", None)
             if data is None and isinstance(cb, (tuple, list)) and len(cb) == 2:
-                data = cb[1]  # meshio<=4
+                data = cb[1]
             if data is None:
                 continue
             arr = np.asarray(data)
             if arr.ndim == 2 and arr.shape[1] == 3 and arr.size:
                 tri = arr
                 break
-
-    if tri is None:
+    if tri is None or tri.size == 0:
         raise RuntimeError("Keine triangular faces gefunden (erwartet Nx3).")
 
-    tri = tri.astype(np.int64, copy=False)
+    tri = np.ascontiguousarray(tri, dtype=np.int64)
 
-    # --- Indexbereich absichern ---
-    n_pts = int(pts.shape[0])
+    n_pts = pts.shape[0]
     if tri.min() < 0 or tri.max() >= n_pts:
-        raise ValueError(
-            f"Triangle-Index außerhalb 0..{n_pts-1}: min={tri.min()}, max={tri.max()}"
-        )
+        raise ValueError(f"Triangle-Index außerhalb 0..{n_pts-1}: min={tri.min()}, max={tri.max()} (n_pts={n_pts})")
 
-    # --- PyVista-Faces bauen: [3,i,j,k, 3,i,j,k, ...] ---
-    faces = np.hstack([np.full((tri.shape[0], 1), 3, dtype=np.int64), tri]).ravel()
+    # PyVista-Faces: [3,i,j,k, 3,i,j,k, ...]
+    faces = np.empty((tri.shape[0], 4), dtype=np.int64)
+    faces[:, 0] = 3
+    faces[:, 1:] = tri
+    faces = faces.ravel(order="C")
 
-    # --- PolyData + Clean + Normals ---
+    # *** Kein clean(), kein triangulate(), keine Normals ***
     pv_mesh = pv.PolyData(pts, faces)
-    pv_mesh = pv_mesh.clean().triangulate().compute_normals()
     return pv_mesh
+
 
 
 

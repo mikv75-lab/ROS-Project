@@ -3,6 +3,7 @@
 from __future__ import annotations
 import numpy as np
 import pyvista as pv
+import vtk
 
 
 class TrajPose:
@@ -29,180 +30,203 @@ class Trajectory:
 
 class PreviewEngine:
     """
-    Zeichnet die **TCP-Trajektorie** in PyVista (Anzeige in mm).
-    - Scene-Actors (Mount/Substrate) separat von Traj/Overlay-Actors.
-    - Normals/Raycasts per Visibility-Toggle ohne Recompute.
-    - Vermeidet plotter.clear() → stabil gegen PyVista-Renderer-Fehler.
+    Scene-Setup:
+      - Durchgehender Boden als Grid (z=0) über ganze Ansicht
+      - Kleine Orientierungstriade unten links
+      - Bounding-Box 240×240×240 mm, Z von 0..240
+      - Achsen-Grid/Skala mit Z-Start bei 0
     """
 
-    def __init__(self, plotter: pv.Plotter):
+    def __init__(self, plotter: pv.Plotter, max_extent_mm: float = 240.0):
         self.plotter = plotter
-        # Actor-Gruppen
+
         self._actors_scene: list = []     # Mount/Substrate/etc.
         self._actors_lines: list = []     # Traj-Linien
         self._actors_points: list = []    # Traj-Punkte
         self._actors_normals: list = []   # Pfeil-Glyphs
         self._actors_rays: list = []      # Raycast-Linien
 
-    # ---------- Cameras ----------
-    def view_iso(self):   self.plotter.view_isometric(); self.plotter.reset_camera()
-    def view_top(self):   self.plotter.view_xy();        self.plotter.reset_camera()
-    def view_front(self): self.plotter.view_yz();        self.plotter.reset_camera()
-    def view_right(self): self.plotter.view_xz();        self.plotter.reset_camera()
-    def view_back(self):  self.plotter.view_yz();        self.plotter.reset_camera()
-    def view_left(self):  self.plotter.view_xz();        self.plotter.reset_camera()
+        self._max_extent_mm = float(max_extent_mm)
+        half = 0.5 * self._max_extent_mm
+        # feste Bounds: X/Y = ±half, Z = 0..max
+        self._bounds = (-half, half, -half, half, 0.0, self._max_extent_mm)
 
-    # ---------- Scene-Meshes ----------
-    def add_mesh(self, mesh: pv.PolyData | pv.UnstructuredGrid, **kwargs):
-        """
-        Fügt ein statisches Mesh (Mount/Substrate/Tool) hinzu und tracked den Actor.
-        Rückgabe: Actor (von PyVista).
-        """
-        act = self.plotter.add_mesh(mesh, **kwargs)
-        actor = act[0] if isinstance(act, tuple) else act
-        self._actors_scene.append(actor)
-        return actor
+        self._did_reset_after_first_mesh = False
+        self._bbox_actor = None
+        self._floor_actor = None
+        self._triad_on = False
 
-    def clear_scene(self):
-        """Entfernt NUR die statischen Scene-Meshes."""
-        self._remove_actors(self._actors_scene)
-        self._actors_scene.clear()
-        self.plotter.render()
+        self._install_default_scene()
 
-    # ---------- Trajectory ----------
-    def clear_trajectory(self):
-        """Entfernt Trajectory + Overlays."""
-        self._remove_actors(self._actors_lines)
-        self._remove_actors(self._actors_points)
-        self._remove_actors(self._actors_normals)
-        self._remove_actors(self._actors_rays)
-        self._actors_lines.clear()
-        self._actors_points.clear()
-        self._actors_normals.clear()
-        self._actors_rays.clear()
-        self.plotter.render()
+    # ---------- Camera ----------
+    def view_iso(self):
+        self.plotter.view_isometric()
+        self.plotter.reset_camera()
 
-    def clear(self):
-        """Komplett zurücksetzen (Szene + Traj). Kein plotter.clear()!"""
-        self.clear_trajectory()
-        self.clear_scene()
-
-    def render_trajectory(self, traj: Trajectory, *, show_normals: bool, show_rays: bool,
-                          append: bool = False) -> None:
-        """
-        Zeichnet eine Trajectory. Positionsdaten sind in **m**; Anzeige in **mm**.
-        Normals/Rays werden immer erzeugt; Sichtbarkeit wird per Toggle gesetzt.
-        """
-        P_m, Q, _T = traj.as_arrays()
-        if len(P_m) == 0:
-            if not append:
-                self.clear_trajectory()
-            return
-
-        # Anzeige in mm
-        P = P_m * 1000.0
-        if not append:
-            self.clear_trajectory()
-
-        # Polyline + Punkte
-        line_pd = pv.PolyData(P)
-        n = len(P)
-        if n >= 2:
-            line_pd.lines = np.hstack(([n], np.arange(n))).astype(np.int64)
-            act_line = self.plotter.add_mesh(line_pd, line_width=2)
-            self._actors_lines.append(act_line)
-        act_pts = self.plotter.add_points(P, point_size=6, render_points_as_spheres=True)
-        self._actors_points.append(act_pts)
-
-        # Sprayachsen (-Z) aus Quaternion
-        spray_dirs = self._spray_axes_from_quat(Q)  # (N,3) Unit
-
-        # Normals (Glyphs)
-        arrows = pv.PolyData(P)
-        arrows["vectors"] = spray_dirs
-        glyphs = arrows.glyph(orient="vectors", scale=False, factor=self._axis_len_mm(traj))
-        act_normals = self.plotter.add_mesh(glyphs)
+    # ---------- Default Scene ----------
+    def _install_default_scene(self):
+        xmin, xmax, ymin, ymax, zmin, zmax = self._bounds
         try:
-            act_normals.SetVisibility(bool(show_normals))
+            # Achsen-/Grid-Range so setzen, dass Z bei 0 startet
+            self.plotter.set_axes_range(xmin, xmax, ymin, ymax, zmin, zmax)
+            self.plotter.show_grid(
+                location="outer",
+                all_edges=True,
+                ticks="both",
+                color="gray",
+            )
         except Exception:
             pass
-        self._actors_normals.append(act_normals)
 
-        # Raycasts
-        rays_pd = self._raycasts_polydata(P, spray_dirs, self._stand_off_mm(traj))
-        act_rays = self.plotter.add_mesh(rays_pd, line_width=1)
-        try:
-            act_rays.SetVisibility(bool(show_rays))
-        except Exception:
-            pass
-        self._actors_rays.append(act_rays)
-
+        self._add_floor_grid()    # durchgehender Boden (Grid) bei Z=0
+        self._add_orientation_triad()
+        self._add_bounding_box()  # sichtbare Box 240×240×240 mm (Z 0..240)
         self.view_iso()
 
-    # ---------- Visibility-Toggles ----------
-    def set_normals_visible(self, visible: bool):
-        for act in self._actors_normals:
-            try: act.SetVisibility(bool(visible))
-            except Exception: pass
-        self.plotter.render()
+    def _add_orientation_triad(self):
+        if self._triad_on:
+            return
+        try:
+            axes = vtk.vtkAxesActor()
+            axes.SetTotalLength(30.0, 30.0, 30.0)  # Pixelgröße
+            self.plotter.add_orientation_widget(axes, interactive=False)
+            self._triad_on = True
+        except Exception:
+            self._triad_on = False
 
-    def set_rays_visible(self, visible: bool):
-        for act in self._actors_rays:
-            try: act.SetVisibility(bool(visible))
-            except Exception: pass
-        self.plotter.render()
+    def _add_floor_grid(self):
+        """Grid über die ganze Ansicht bei Z=0 (bevorzugt mit add_floor, sonst Fallback)."""
+        if self._floor_actor is not None:
+            return
 
-    # ---------- Intern ----------
-    def _remove_actors(self, actors: list):
-        for act in actors:
+        # 1) Versuch: eingebaute Bodenfläche (zeichnet ein View-umspannendes Grid)
+        try:
+            # PyVista >=0.41: add_floor(face='z', ...)
+            act = self.plotter.add_floor(
+                face='z',          # Ebene senkrecht zu Z
+                offset=0.0,        # bei Z=0
+                color=(0.96, 0.96, 0.96),
+                line_color=(0.8, 0.8, 0.8),
+                lighting=False,
+            )
+            self._floor_actor = act[0] if isinstance(act, tuple) else act
+            return
+        except Exception:
+            pass
+
+        # 2) Fallback: große fein unterteilte Plane mit Edge-Rendering als Grid
+        half = 0.5 * self._max_extent_mm
+        # viele Segmente, damit die Kanten ein Grid ergeben
+        seg = 20
+        plane = pv.Plane(
+            center=(0.0, 0.0, 0.0),
+            direction=(0.0, 0.0, 1.0),
+            i_size=2 * half, j_size=2 * half,
+            i_resolution=seg, j_resolution=seg,
+        )
+        self._floor_actor = self.plotter.add_mesh(
+            plane,
+            color=(0.98, 0.98, 0.98),
+            opacity=1.0,
+            smooth_shading=False,
+            lighting=False,
+            show_edges=True,
+            edge_color=(0.82, 0.82, 0.82),
+            reset_camera=False,
+        )
+        self._actors_scene.append(self._floor_actor)
+
+    def _add_bounding_box(self):
+        """Drahtgitter-Box mit Z von 0 bis max (nicht zentriert)."""
+        if self._bbox_actor is not None:
+            return
+        half = 0.5 * self._max_extent_mm
+        cube = pv.Cube(
+            center=(0.0, 0.0, self._max_extent_mm * 0.5),
+            x_length=2 * half, y_length=2 * half, z_length=self._max_extent_mm,
+        )
+        self._bbox_actor = self.plotter.add_mesh(
+            cube,
+            style="wireframe",
+            line_width=1.0,
+            opacity=0.0,                # Flächen unsichtbar, nur Kanten
+            color="gray",
+            lighting=False,
+            reset_camera=False,
+        )
+        self._actors_scene.append(self._bbox_actor)
+
+    # ---------- Scene Meshes ----------
+    def add_mesh(self, mesh: pv.PolyData | pv.UnstructuredGrid, **kwargs):
+        kwargs.pop("render_mode", None)  # Fremdparam aus älteren Pfaden ignorieren
+
+        m = mesh
+        if isinstance(m, pv.UnstructuredGrid):
+            m = m.extract_surface()
+
+        pts = np.asarray(m.points, dtype=np.float32, order="C")
+        if pts.ndim != 2 or pts.shape[0] == 0 or pts.shape[1] < 3:
+            pd = pv.PolyData()
+        else:
+            faces_arr = getattr(m, "faces", None)
+            lines_arr = getattr(m, "lines", None)
+            if isinstance(faces_arr, np.ndarray) and faces_arr.size > 0:
+                pd = pv.PolyData(pts[:, :3], faces=faces_arr)  # gemischte Faces direkt übergeben
+            elif isinstance(lines_arr, np.ndarray) and lines_arr.size > 0:
+                pd = pv.PolyData(pts[:, :3])
+                pd.lines = lines_arr
+            else:
+                pd = pv.PolyData(pts[:, :3])
+
+        # sichtbare Defaults
+        kwargs.setdefault("color", "lightgray")
+        kwargs.setdefault("opacity", 1.0)
+        kwargs.setdefault("smooth_shading", True)
+        kwargs.setdefault("lighting", False)
+        kwargs.setdefault("reset_camera", False)
+        kwargs.setdefault("show_edges", False)
+        kwargs.setdefault("copy_mesh", True)
+
+        act = self.plotter.add_mesh(pd, **kwargs)
+        actor = act[0] if isinstance(act, tuple) else act
+        self._actors_scene.append(actor)
+
+        try:
+            if not self._did_reset_after_first_mesh and pd.n_points > 0:
+                self.view_iso()
+                self._did_reset_after_first_mesh = True
+            self.plotter.render()
+        except Exception:
+            pass
+        return actor
+
+    # ---------- Clear ----------
+    def _remove_list(self, L):
+        for a in list(L):
             try:
-                self.plotter.remove_actor(act)
+                self.plotter.remove_actor(a)
             except Exception:
                 pass
+        L.clear()
 
-    @staticmethod
-    def _spray_axes_from_quat(Q: np.ndarray) -> np.ndarray:
-        """Liefert -Z in Weltkoordinaten für jede Orientierung (x,y,z,w)."""
-        if len(Q) == 0:
-            return np.zeros((0, 3))
-        v = np.array([0.0, 0.0, -1.0])
-        dirs = []
-        for q in Q:
-            x, y, z, w = q
-            R = np.array([
-                [1 - 2 * (y * y + z * z), 2 * (x * y - z * w),     2 * (x * z + y * w)],
-                [2 * (x * y + z * w),     1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-                [2 * (x * z - y * w),     2 * (y * z + x * w),     1 - 2 * (x * x + y * y)],
-            ], dtype=float)
-            dirs.append(R @ v)
-        D = np.vstack(dirs)
-        D /= (np.linalg.norm(D, axis=1, keepdims=True) + 1e-12)
-        return D
+    def clear_scene(self):
+        self._remove_list(self._actors_scene)
+        self._bbox_actor = None
+        self._floor_actor = None
+        self._did_reset_after_first_mesh = False
+        self._install_default_scene()
 
-    @staticmethod
-    def _stand_off_mm(traj: Trajectory) -> float:
+    def clear_trajectory(self):
+        self._remove_list(self._actors_lines)
+        self._remove_list(self._actors_points)
+        self._remove_list(self._actors_normals)
+        self._remove_list(self._actors_rays)
         try:
-            return float(traj.meta.get("stand_off_mm", 10.0))
+            self.plotter.render()
         except Exception:
-            return 10.0
+            pass
 
-    @staticmethod
-    def _axis_len_mm(traj: Trajectory) -> float:
-        so = PreviewEngine._stand_off_mm(traj)
-        return max(5.0, 0.6 * so)
-
-    @staticmethod
-    def _raycasts_polydata(P: np.ndarray, dirs: np.ndarray, stand_off_mm: float) -> pv.PolyData:
-        N = len(P)
-        if N == 0:
-            return pv.PolyData()
-        all_pts = np.empty((2 * N, 3), dtype=float)
-        all_pts[0::2] = P
-        all_pts[1::2] = P + dirs * float(stand_off_mm)
-        lines = np.empty((N, 3), dtype=np.int64)
-        lines[:, 0] = 2
-        lines[:, 1] = np.arange(0, 2 * N, 2, dtype=np.int64)
-        lines[:, 2] = np.arange(1, 2 * N, 2, dtype=np.int64)
-        poly = pv.PolyData(all_pts)
-        poly.lines = lines.reshape(-1)
-        return poly
+    def clear(self):
+        self.clear_trajectory()
+        self.clear_scene()
+        self.view_iso()
