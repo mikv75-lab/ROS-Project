@@ -174,8 +174,8 @@ def generate_launch_description():
             arm_controller,
             move_group_node,
             disable_internal_servo,
-            servo_node,
-            rviz_node,
+            #servo_node,
+            #rviz_node,
         ]
 
     return LaunchDescription([OpaqueFunction(function=launch_setup)])

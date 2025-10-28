@@ -37,6 +37,6 @@ def generate_launch_description():
         }.items()
     )
 
-    delayed_servo = TimerAction(period=3.0, actions=[servo])
+    #delayed_servo = TimerAction(period=3.0, actions=[servo])
 
-    return LaunchDescription(env + [robot, delayed_servo])
+    return LaunchDescription(env + [robot]) #, delayed_servo])

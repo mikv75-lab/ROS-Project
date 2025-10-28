@@ -5,6 +5,7 @@ import os
 import logging
 from PyQt5 import uic
 from PyQt5.QtWidgets import QWidget
+from PyQt5.QtCore import QTimer
 
 from ros.rviz_manager import LiveRvizManager
 
@@ -21,6 +22,23 @@ def _ui_path(filename: str) -> str:
 def _rviz_cfg_path() -> str:
     # live.rviz liegt jetzt in resource/rviz/
     return os.path.join(_project_root(), "resource", "rviz", "live.rviz")
+
+def _rviz_env() -> dict:
+    home = os.environ.get("HOME", "/root")
+    env = {
+        "HOME": home,
+        "ROS_LOG_DIR": os.path.join(home, ".ros", "log"),
+        "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", "/tmp/runtime-root"),
+        "RCUTILS_LOGGING_USE_STDOUT": os.environ.get("RCUTILS_LOGGING_USE_STDOUT", "1"),
+        "LC_ALL": "C.UTF-8",
+        "LANG": "C.UTF-8",
+    }
+    try:
+        os.makedirs(env["ROS_LOG_DIR"], exist_ok=True)
+        os.makedirs(env["XDG_RUNTIME_DIR"], exist_ok=True)
+    except Exception:
+        pass
+    return env
 
 class ProcessTab(QWidget):
     def __init__(self, *, ctx, bridge, parent=None):
@@ -43,26 +61,58 @@ class ProcessTab(QWidget):
         else:
             self.lblLiveCfg.setText(self._cfg)
 
+        # Zielcontainer für späteres Einbetten setzen
+        if hasattr(self, "rvizContainer"):
+            self._rviz.attach(self.rvizContainer)
+
+        # Buttons
         self.btnLiveStart.clicked.connect(self._on_start)
         self.btnLiveStop.clicked.connect(self._on_stop)
         self.btnLiveRestart.clicked.connect(self._on_restart)
 
-        self._refresh_status()
+        # --- Silent & Embedded Start direkt beim Tab-Init ---
+        if os.path.exists(self._cfg):
+            # minimal verzögert starten, damit das UI fertig konstruiert ist
+            QTimer.singleShot(50, self._auto_start_silent)
+        else:
+            self._safe_refresh()
 
+    # ---------- intern ----------
+    def _auto_start_silent(self):
+        # Start "silent": Fenster wird versteckt, eingebettet, dann sichtbar gemacht
+        self._rviz.start(config_path=self._cfg, extra_args=[], env=_rviz_env(), silent=True)
+        # kurze Delays, um das Window zu finden und einzubetten
+        QTimer.singleShot(350, self._embed_and_refresh)
+
+    def _embed_and_refresh(self):
+        # Falls attach noch nicht eingebettet hat, versuche es explizit
+        if hasattr(self, "rvizContainer"):
+            self._rviz.attach(self.rvizContainer)
+        QTimer.singleShot(100, self._safe_refresh)
+
+    # ---------- Button-Handler ----------
     def _on_start(self):
-        self._rviz.start(self._cfg)
-        self._refresh_status()
+        self._rviz.start(config_path=self._cfg, extra_args=[], env=_rviz_env(), silent=True)
+        QTimer.singleShot(300, self._embed_and_refresh)
 
     def _on_stop(self):
         self._rviz.stop()
-        self._refresh_status()
+        self._safe_refresh()
 
     def _on_restart(self):
-        self._rviz.restart(self._cfg)
-        self._refresh_status()
+        self._rviz.restart(config_path=self._cfg, extra_args=[], env=_rviz_env(), silent=True)
+        QTimer.singleShot(350, self._embed_and_refresh)
+
+    # ---------- UI-safe ----------
+    def _safe_refresh(self):
+        try:
+            self._refresh_status()
+        except RuntimeError:
+            pass
 
     def _refresh_status(self):
         if self._rviz.is_running():
-            self.lblLiveStatus.setText(f"running (pid={self._rviz.pid()})")
+            pid = self._rviz.pid() if hasattr(self._rviz, "pid") else "?"
+            self.lblLiveStatus.setText(f"running (pid={pid})")
         else:
             self.lblLiveStatus.setText("stopped")
