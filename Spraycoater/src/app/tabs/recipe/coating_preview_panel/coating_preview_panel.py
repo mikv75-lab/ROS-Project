@@ -17,7 +17,6 @@ from .mesh_utils import (
     load_mount_mesh_from_key,
 )
 from .path_builder import PathBuilder, PathData
-from .trajectory_builder import TrajectoryBuilder
 from .raycast_projector import cast_rays_for_side  # robust, mit Miss-Handling
 
 _LOG = logging.getLogger("app.tabs.recipe.coating_preview_panel")
@@ -31,6 +30,9 @@ class CoatingPreviewPanel(QWidget):
         self.ctx = ctx
         self._pv: pv.Plotter = BackgroundPlotter(show=True, title="Spraycoater Preview")
         self._engine: PreviewEngine = PreviewEngine(self._pv)
+        # Export-Zwischenspeicher für den Validate-Button
+        self._last_export_poses = None
+        self._last_export_frame = "scene"
 
     # ---------- Public ----------
     def render_from_model(self, model: Any, sides: Iterable[str]) -> None:
@@ -95,7 +97,7 @@ class CoatingPreviewPanel(QWidget):
 
         try:
             # ---------------------------
-            # 3 STEPS: PATH → (WELT)RAYCAST (seitenabhängig) → TRAJECTORY/VIS
+            # 3 STEPS: PATH → (WELT)RAYCAST (seitenabhängig) → DIREKTES RENDERING/EXPORT
             # ---------------------------
             side = next(iter(sides), "top") if sides else "top"
 
@@ -117,12 +119,13 @@ class CoatingPreviewPanel(QWidget):
                 return
 
             # --- 1b) „Blaue Maske“: dynamische Start-Ebene anhand Bounds + Offsets ---
-            path_offset_mm   = float(params.get("path_offset_mm", 0.0))     # Rezeptoffset entlang Anfahrachse
-            ray_clearance_mm = float(params.get("ray_clearance_mm", 100.0)) # 10 cm Freiraum
+            path_offset_mm   = float(params.get("path_offset_mm", 0.0))      # Rezeptoffset entlang Anfahr-Achse
+            ray_clearance_mm = float(params.get("ray_clearance_mm", 100.0))  # z.B. 100 mm Freiraum
 
+            # Welt-Punkte aus lokalem Pfad (z=0)
             P_local0 = np.array(pd_local.points_mm, dtype=float, copy=True)
             P_local0[:, 2] = 0.0
-            P_world_base = ((P_local0 + ground_shift) @ R_sub.T) + t_sub  # (N,3)
+            P_world_base = ((P_local0 + ground_shift) @ R_sub.T) + t_sub
 
             plane_axis, plane_value = _side_plane_from_bounds(
                 sub_mesh_world.bounds, side, path_offset_mm, ray_clearance_mm
@@ -130,7 +133,7 @@ class CoatingPreviewPanel(QWidget):
             P_world_start = P_world_base.copy()
             P_world_start[:, plane_axis] = plane_value
 
-            # Blaue Maske
+            # Blaue Maskenlinie
             line_mask = pv.lines_from_points(P_world_start, close=False)
             self._engine.add_mesh(
                 line_mask,
@@ -141,21 +144,24 @@ class CoatingPreviewPanel(QWidget):
                 line_width=2.0,
             )
 
-            # 2) RAYCAST (liefert Hits, Normals, reflektierte Richtungen, TCP)
+            # 2) RAYCAST in WELT
             stand_off_mm = float(params.get("stand_off_mm", 10.0))
             src = str(pd_local.meta.get("source", "")).lower()
 
-            rc, rays_hit_poly, _tcp_poly = cast_rays_for_side(
+            rc, rays_hit_poly, _ = cast_rays_for_side(
                 P_world_start,
                 sub_mesh_world=sub_mesh_world,
                 side=side,
                 source=src,
                 stand_off_mm=stand_off_mm,
                 ray_len_mm=1000.0,
+                start_lift_mm=10.0,               # 1 cm über dem blauen Pfad
+                flip_normals_to_face_rays=False,  # lokale KS nicht „auf der Rückseite“
+                invert_dirs=False,                # globales Umkehren der Ray-Richtung
                 lock_xy=True,
             )
 
-            # Hellblaue Messstrahlen
+            # Mess-Rays (hellblau)
             if rays_hit_poly.n_points > 0:
                 self._engine.add_mesh(
                     rays_hit_poly,
@@ -172,36 +178,45 @@ class CoatingPreviewPanel(QWidget):
                 self._focus_camera_isometric(sub_scene)
                 return
 
-            # --- Visualisierung direkt aus dem Raycaster ---
-            # Gelber Pfad = TCP (immer +stand_off in korrekter Richtung)
-            P_tcp = rc.tcp_mm[mask]                   # (N,3) mm
-            line_tcp = pv.lines_from_points(P_tcp, close=False)
-            self._engine.add_mesh(
-                line_tcp,
-                color="yellow",
-                opacity=1.0,
-                smooth_shading=False,
-                lighting=False,
-                line_width=2.0,
-            )
+            # Treffer & Normalen in Welt
+            P_world_hits = rc.hit_mm[mask]    # (N,3) mm
+            N_world      = rc.normal[mask]    # (N,3)
 
-            # Grüne Pfeile = reflektierte Richtung (Spray-Achse)
-            dirs = rc.refl_dir[mask]                  # (N,3) normiert
-            arrows_pd = pv.PolyData(P_tcp)
-            arrows_pd["vectors"] = dirs
-            factor = max(5.0, 0.6 * stand_off_mm)
-            glyphs = arrows_pd.glyph(orient="vectors", scale=False, factor=factor)
-            self._engine.add_mesh(
-                glyphs,
-                color="green",
-                opacity=1.0,
-                smooth_shading=False,
-                lighting=False,
-            )
+            # 3) DIREKT: TCP-Pfad (ohne TrajectoryBuilder)
+            P_tcp_mm, Q_xyzw = _poses_from_hits_and_normals(P_world_hits, N_world, stand_off_mm)
 
-            # (Optional) Wenn du dennoch eine Trajectory bauen willst, kannst du pd_world
-            # aus den Hitpunkten/Nromals erzeugen und TrajectoryBuilder nutzen – für
-            # die Visualisierung ist das oben aber korrekt & robust.
+            # Visualisierung: gelbe Linie der TCP-Positionen
+            if len(P_tcp_mm) >= 2:
+                line_tcp = pv.lines_from_points(P_tcp_mm, close=False)
+                self._engine.add_mesh(
+                    line_tcp,
+                    color="yellow",
+                    opacity=1.0,
+                    smooth_shading=False,
+                    lighting=False,
+                    line_width=2.0,
+                )
+
+            # --- Mini-Triads: zusätzliche 180°-Rotation um lokale Y-Achse nur für Visualisierung ---
+            q_y180 = np.array([0.0, 1.0, 0.0, 0.0], dtype=float)  # (x,y,z,w) für 180° um Y
+            Q_triads = np.empty_like(Q_xyzw)
+            for i in range(len(Q_xyzw)):
+                Q_triads[i] = _quat_mul(Q_xyzw[i], q_y180)  # rechts multiplizieren -> lokale Y
+
+            # Mini-Triads (10x kleiner als frühere Pfeile)
+            factor_old = max(5.0, 0.6 * stand_off_mm)
+            triad_len  = factor_old / 10.0  # mm
+            x_pd, y_pd, z_pd = _frames_triad_polydata(P_tcp_mm, Q_triads, triad_len)
+            if x_pd.n_points > 0:
+                self._engine.add_mesh(x_pd, color="red",   opacity=1.0, lighting=False, smooth_shading=False, line_width=1.5)
+            if y_pd.n_points > 0:
+                self._engine.add_mesh(y_pd, color="green", opacity=1.0, lighting=False, smooth_shading=False, line_width=1.5)
+            if z_pd.n_points > 0:
+                self._engine.add_mesh(z_pd, color="blue",  opacity=1.0, lighting=False, smooth_shading=False, line_width=1.5)
+
+            # Export-Daten für Validate (ohne die Y-Flip-Visualisierung!) vormerken
+            self._last_export_poses = _to_ros_pose_list_mm(P_tcp_mm, Q_xyzw)
+            self._last_export_frame = "scene"
 
         except Exception as e:
             _LOG.error("Path/Raycast/Trajectory fehlgeschlagen: %s", e, exc_info=True)
@@ -265,15 +280,8 @@ def _rpy_deg_to_matrix_np(rpy_deg):
 
 def _side_plane_from_bounds(bounds, side: str, path_offset_mm: float, clearance_mm: float) -> Tuple[int, float]:
     """
-    Liefert (axis, value) für die Start-Ebene der blauen Maske abhängig von der Side.
+    Bestimmt (axis, value) für die Start-Ebene der blauen Maske abhängig von der Side.
     axis: 0=x, 1=y, 2=z. value ist der Ebenenwert in Weltkoordinaten (mm).
-
-    Regeln:
-      - top:   z = z_max + offset + clearance
-      - front: y = y_max + offset + clearance
-      - back:  y = y_min - offset - clearance
-      - left:  x = x_min - offset - clearance
-      - right: x = x_max + offset + clearance
     """
     x_min, x_max, y_min, y_max, z_min, z_max = bounds
     s = (side or "").lower()
@@ -288,6 +296,130 @@ def _side_plane_from_bounds(bounds, side: str, path_offset_mm: float, clearance_
         return 0, float(x_min - path_offset_mm - clearance_mm)
     if s == "right":
         return 0, float(x_max + path_offset_mm + clearance_mm)
-
-    # Fallback wie "top"
     return 2, float(z_max + path_offset_mm + clearance_mm)
+
+def _segments_polydata(P0: np.ndarray, P1: np.ndarray) -> pv.PolyData:
+    assert P0.shape == P1.shape and P0.shape[1] == 3
+    N = P0.shape[0]
+    if N == 0:
+        return pv.PolyData()
+    all_pts = np.empty((2 * N, 3), dtype=float)
+    all_pts[0::2] = P0
+    all_pts[1::2] = P1
+    lines = np.empty((N, 3), dtype=np.int64)
+    lines[:, 0] = 2
+    lines[:, 1] = np.arange(0, 2 * N, 2, dtype=np.int64)
+    lines[:, 2] = np.arange(1, 2 * N, 2, dtype=np.int64)
+    poly = pv.PolyData(all_pts)
+    poly.lines = lines.reshape(-1)
+    return poly
+
+def _frames_triad_polydata(P_mm: np.ndarray, Q_xyzw: np.ndarray, scale_mm: float) -> Tuple[pv.PolyData, pv.PolyData, pv.PolyData]:
+    """
+    Baut drei PolyData-Objekte (X/Y/Z-Achsen) als kleine Triads an jeder Pose.
+    P_mm:   (N,3) Punkte in mm
+    Q_xyzw: (N,4) Quaternionen (x,y,z,w)
+    scale_mm: Achsenlänge in mm
+    """
+    if P_mm.size == 0 or Q_xyzw.size == 0:
+        return pv.PolyData(), pv.PolyData(), pv.PolyData()
+
+    N = P_mm.shape[0]
+    ex = np.array([1.0, 0.0, 0.0])
+    ey = np.array([0.0, 1.0, 0.0])
+    ez = np.array([0.0, 0.0, 1.0])
+
+    # Endpunkte sammeln
+    ends_x = np.empty_like(P_mm)
+    ends_y = np.empty_like(P_mm)
+    ends_z = np.empty_like(P_mm)
+
+    for i in range(N):
+        x, y, z, w = Q_xyzw[i]
+        Rm = np.array([
+            [1 - 2 * (y*y + z*z), 2 * (x*y - z*w),     2 * (x*z + y*w)],
+            [2 * (x*y + z*w),     1 - 2 * (x*x + z*z), 2 * (y*z - x*w)],
+            [2 * (x*z - y*w),     2 * (y*z + x*w),     1 - 2 * (x*x + y*y)],
+        ], dtype=float)
+        ax = Rm @ ex
+        ay = Rm @ ey
+        az = Rm @ ez
+        ends_x[i] = P_mm[i] + ax * scale_mm
+        ends_y[i] = P_mm[i] + ay * scale_mm
+        ends_z[i] = P_mm[i] + az * scale_mm
+
+    x_pd = _segments_polydata(P_mm, ends_x)
+    y_pd = _segments_polydata(P_mm, ends_y)
+    z_pd = _segments_polydata(P_mm, ends_z)
+    return x_pd, y_pd, z_pd
+
+# ---------- Orientation / Export helpers ----------
+
+def _quat_from_two_vectors(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Quaternion (x,y,z,w): rotiert Vektor a auf b. a,b: (3,)"""
+    a = a / (np.linalg.norm(a) + 1e-12)
+    b = b / (np.linalg.norm(b) + 1e-12)
+    v = np.cross(a, b)
+    w = 1.0 + float(np.dot(a, b))
+    if w < 1e-8:
+        # a ~ -b: 180° um beliebige senkrechte Achse (stabile Wahl)
+        axis = np.array([1.0, 0.0, 0.0])
+        if abs(a[0]) > 0.9:
+            axis = np.array([0.0, 1.0, 0.0])
+        v = np.cross(a, axis)
+        v = v / (np.linalg.norm(v) + 1e-12)
+        return np.array([v[0], v[1], v[2], 0.0], dtype=float)
+    q = np.array([v[0], v[1], v[2], w], dtype=float)
+    q /= (np.linalg.norm(q) + 1e-12)
+    return q  # xyzw
+
+def _quat_mul(q1_xyzw: np.ndarray, q2_xyzw: np.ndarray) -> np.ndarray:
+    """
+    Quaternion-Multiplikation (xyzw-Konvention).
+    Ergebnis entspricht erst q1, dann q2 (rechte Multiplikation = lokale Rotation).
+    """
+    x1, y1, z1, w1 = q1_xyzw
+    x2, y2, z2, w2 = q2_xyzw
+    # (x,y,z) = w1*v2 + w2*v1 + v1×v2
+    x = w1*x2 + w2*x1 + (y1*z2 - z1*y2)
+    y = w1*y2 + w2*y1 + (z1*x2 - x1*z2)
+    z = w1*z2 + w2*z1 + (x1*y2 - y1*x2)
+    w = w1*w2 - (x1*x2 + y1*y2 + z1*z2)
+    out = np.array([x, y, z, w], dtype=float)
+    out /= (np.linalg.norm(out) + 1e-12)
+    return out
+
+def _poses_from_hits_and_normals(P_hit_mm: np.ndarray, N_world: np.ndarray, stand_off_mm: float):
+    """
+    Aus Hitpunkten + Normalen finalen TCP-Pfad (Position+Quaternion) bauen.
+    - Position: hit + normal * stand_off_mm   (mm)
+    - Orientierung: -Z auf Normal (Sprührichtung -Z zeigt auf Oberfläche)
+    Rückgabe:
+      P_tcp_mm: (N,3) in mm
+      Q_xyzw:   (N,4)
+    """
+    N = len(P_hit_mm)
+    P_tcp_mm = np.empty_like(P_hit_mm)
+    Q_xyzw   = np.empty((N, 4), dtype=float)
+    zminus = np.array([0.0, 0.0, -1.0], dtype=float)
+    for i in range(N):
+        n = N_world[i] / (np.linalg.norm(N_world[i]) + 1e-12)
+        P_tcp_mm[i] = P_hit_mm[i] + n * float(stand_off_mm)
+        Q_xyzw[i]   = _quat_from_two_vectors(zminus, n)
+    return P_tcp_mm, Q_xyzw
+
+def _to_ros_pose_list_mm(P_mm: np.ndarray, Q_xyzw: np.ndarray):
+    """
+    Konvertiert mm->m und baut einfache ROS-Pose-Dicts (ohne Header).
+    Format:
+      {"position":{"x":...,"y":...,"z":...},
+       "orientation":{"x":...,"y":...,"z":...,"w":...}}
+    """
+    P_m = P_mm / 1000.0
+    out = []
+    for p, q in zip(P_m, Q_xyzw):
+        out.append({
+            "position": {"x": float(p[0]), "y": float(p[1]), "z": float(p[2])},
+            "orientation": {"x": float(q[0]), "y": float(q[1]), "z": float(q[2]), "w": float(q[3])},
+        })
+    return out

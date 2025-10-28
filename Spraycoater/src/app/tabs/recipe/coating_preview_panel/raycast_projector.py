@@ -174,16 +174,18 @@ def _bounds_center(bounds) -> np.ndarray:
 # ---------- High-level world-frame caster used by the panel ----------
 
 def cast_rays_for_side(
-    P_world5: np.ndarray,
+    P_world_start: np.ndarray,
     *,
     sub_mesh_world: pv.PolyData,
     side: str,
     source: str,
     stand_off_mm: float,
     ray_len_mm: float = 1000.0,
-    lock_xy: bool = True,          # bleibt erhalten; hier ohne riskante Post-Fixes
-    start_offset_mm: float = 10.0, # << NEU: Rays starten 10 mm vor dem Pfadpunkt
-) -> Tuple[RayProjectResult, pv.PolyData, pv.PolyData]:
+    start_lift_mm: float = 10.0,            # Rays starten 1 cm über der blauen Maske
+    flip_normals_to_face_rays: bool = True, # Normalen so drehen, dass sie dem Ray entgegen zeigen
+    invert_dirs: bool = False,              # wenn nötig, gesamte Ray-Richtung invertieren
+    lock_xy: bool = True,                   # Startpunkte bleiben auf der Maske/Ebene
+):
     """
     Welt-Frame: erzeugt Rays abhängig von side/source.
     Gibt (RayProjectResult, rays_hit_poly, tcp_poly) zurück.
@@ -192,10 +194,10 @@ def cast_rays_for_side(
     """
     if "Normals" not in sub_mesh_world.cell_data:
         sub_mesh_world = sub_mesh_world.compute_normals(
-            cell_normals=True, point_normals=False, inplace=False
+            cell_normals=True, point_normals=False, inplace=True
         )
 
-    P = np.asarray(P_world5, dtype=float).reshape(-1, 3)
+    P = np.asarray(P_world_start, dtype=float).reshape(-1, 3)
     N = len(P)
     if N == 0:
         empty = RayProjectResult(
@@ -207,7 +209,7 @@ def cast_rays_for_side(
         )
         return empty, pv.PolyData(), pv.PolyData()
 
-    # Basis-Richtung je Seite
+    # Basis-Richtung je Seite (Ray-Zielflugrichtung)
     side = str(side or "").lower()
     base_dir = {
         "top":   np.array([0.0,  0.0, -1.0], dtype=float),
@@ -217,7 +219,7 @@ def cast_rays_for_side(
         "right": np.array([-1.0, 0.0,  0.0], dtype=float),
     }.get(side, np.array([0.0, 0.0, -1.0], dtype=float))
 
-    # Sonderfall Helix / spiral_cylinder: radial in XY (nach innen)
+    # Helix / spiral_cylinder: radiale Richtung (nach innen)
     use_radial = ("spiral_cylinder" in (source or "").lower()) or ("helix" in (source or "").lower())
     if use_radial:
         c = _bounds_center(sub_mesh_world.bounds)[:2]
@@ -228,12 +230,15 @@ def cast_rays_for_side(
     else:
         D = np.tile(_normalize(base_dir), (N, 1))
 
-    # Ray-Segmente:
-    # Start = 10 mm entgegen der Strahlrichtung vom Pfadpunkt,
-    # Ende  = weit in Strahlrichtung hinein
+    # Optional gesamte Richtung invertieren (falls nötig)
+    if invert_dirs:
+        D = -D
+
+    # Rays sollen knapp über der Maske starten:
+    # Start = P - D * start_lift_mm  (bei top: D=-Z -> Start = +Z über P)
     ray_len = float(ray_len_mm)
-    starts = P - D * float(start_offset_mm)
-    ends   = P + D * (0.5 * ray_len)
+    starts = P - D * float(start_lift_mm)
+    ends   = P + D * ray_len
 
     # Ray-Trace
     hits = np.zeros((N, 3), dtype=float)
@@ -258,6 +263,11 @@ def cast_rays_for_side(
         hits[i] = hit
         n = np.array(cell_normals[cid], dtype=float)
         n /= (np.linalg.norm(n) + 1e-12)
+
+        # Optional: Normalen so drehen, dass sie dem Ray entgegenzeigen
+        if flip_normals_to_face_rays and np.dot(n, D[i]) > 0.0:
+            n = -n
+
         normals[i] = n
 
     # Reflektion + TCP (für gültige Indizes)
