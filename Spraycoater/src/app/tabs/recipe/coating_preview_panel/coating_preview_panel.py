@@ -8,8 +8,9 @@ from typing import Optional, Any, Iterable, Tuple, Dict
 import numpy as np
 import pyvista as pv
 from PyQt5 import uic
-from PyQt5.QtWidgets import QWidget
-from pyvistaqt import QtInteractor  # <-- eingebetteter Viewer
+from PyQt5.QtWidgets import QWidget, QVBoxLayout
+# Beide Plotter-Varianten:
+from pyvistaqt import QtInteractor, BackgroundPlotter
 
 from .preview import PreviewEngine
 from .mesh_utils import (
@@ -34,38 +35,54 @@ _LOG = logging.getLogger("app.tabs.recipe.coating_preview_panel")
 
 class CoatingPreviewPanel(QWidget):
     """
-    Eingebetteter 3D-Preview (QtInteractor in panel.ui) für Mount + Substrat + Pfad.
-    UI enthält:
-      - GroupBox "Preview"
-      - Planner-Combo + Validate-Button
-      - Checkboxes: Maske / Rays / Lokale KS
-      - Kamera-Buttons: Iso, Top, Front, Back, Left, Right
-      - QtInteractor namens 'pv' im Layout 'pvLayout'
+    3D-Preview für Mount + Substrat + Pfad.
+    Entweder eingebettet (QtInteractor) oder externes Fenster (BackgroundPlotter).
+
+    Args:
+        ctx: Kontext/Config
+        parent: Qt-Parent
+        embedded: Wenn True, QtInteractor im UI verwenden; sonst externes Fenster.
     """
 
-    def __init__(self, *, ctx, parent: Optional[QWidget] = None):
+    def __init__(self, *, ctx, parent: Optional[QWidget] = None, embedded: bool = False):
         super().__init__(parent)
         self.ctx = ctx
-        uic.loadUi(_ui_path("coating_preview_panel.ui"), self)       
-        # --- Plotter/Interactor finden oder erzeugen ---
-        self._pv: QtInteractor = self.findChild(QtInteractor, "pv")
-        if self._pv is None:
-            # Fallback: Interactor dynamisch in pvLayout einsetzen
-            self._pv = QtInteractor(self)
-            cont = self.findChild(QWidget, "pvContainer")
-            if cont is not None:
-                lay = self.findChild(type(self.layout()), "pvLayout") or cont.layout()
-                if lay is not None:
+        self._embedded = bool(embedded)
+
+        # UI laden (Buttons/Checkboxen/Kamera-Controls etc.)
+        uic.loadUi(_ui_path("coating_preview_panel.ui"), self)
+
+        # --- Plotter/Viewer wählen ---
+        if self._embedded:
+            # Eingebettet: QtInteractor im vorhandenen Container/Layout
+            self._pv: QtInteractor = self.findChild(QtInteractor, "pv")
+            if self._pv is None:
+                # Fallback: dynamisch einfügen
+                self._pv = QtInteractor(self)
+                cont = self.findChild(QWidget, "pvContainer")
+                if cont is not None:
+                    lay = cont.layout()
+                    if lay is None:
+                        lay = QVBoxLayout(cont)
+                        cont.setLayout(lay)
                     lay.addWidget(self._pv)
                 else:
-                    _LOG.warning("pvLayout nicht gefunden – füge Interactor direkt in pvContainer ein.")
-                    cont.setLayout(cont.layout() or None)  # safety
-                    cont.layout().addWidget(self._pv)
-            else:
-                _LOG.warning("pvContainer nicht gefunden – füge Interactor direkt ins Root ein.")
-                self.layout().addWidget(self._pv)
+                    # Ganz zur Not direkt in das Root-Layout
+                    root_lay = self.layout() or QVBoxLayout(self)
+                    if self.layout() is None:
+                        self.setLayout(root_lay)
+                    root_lay.addWidget(self._pv)
+        else:
+            # Extern: separates Fenster
+            self._pv: BackgroundPlotter = BackgroundPlotter(
+                show=True, title="Coating Preview", off_screen=False
+            )
+            # Den eingebetteten UI-Container ausblenden (optional)
+            cont = self.findChild(QWidget, "pvContainer")
+            if cont:
+                cont.setVisible(False)
 
-        # Engine auf eingebetteten Interactor aufsetzen
+        # Engine auf gewählten Plotter setzen
         self._engine: PreviewEngine = PreviewEngine(self._pv)
 
         # Sichtbarkeits-Handles (Actors) für UI-Toggles
@@ -84,6 +101,9 @@ class CoatingPreviewPanel(QWidget):
 
         # --- UI-Signale verbinden ---
         self._wire_ui_signals()
+
+        # Externen Plotter beim Widget-Abbau sauber schließen
+        self.destroyed.connect(self._shutdown_plotter)
 
     # ---------- UI WIRING ----------
     def _wire_ui_signals(self) -> None:
@@ -117,6 +137,15 @@ class CoatingPreviewPanel(QWidget):
         btn_validate = self.findChild(QWidget, "btnValidate")
         if btn_validate:
             btn_validate.clicked.connect(self._on_validate_clicked)
+
+    # --- Clean-up für externen Plotter ---
+    def _shutdown_plotter(self, *_args):
+        if not self._embedded and self._pv is not None:
+            try:
+                if hasattr(self._pv, "close"):
+                    self._pv.close()
+            except Exception:
+                pass
 
     def _set_actor_visible(self, key: str, visible: bool) -> None:
         actor = self._actors.get(key)
@@ -173,7 +202,7 @@ class CoatingPreviewPanel(QWidget):
         # Mount scene_offset (xyz + rpy)
         xyz_mm, rpy_deg = get_mount_scene_offset_from_key(self.ctx, mount_key)
         R_sub = _rpy_deg_to_matrix_np(rpy_deg)  # 3x3
-        t_sub = np.asarray(xyz_mm, dtype=float) # 3,
+        t_sub = np.asarray(xyz_mm, dtype=float)  # 3,
 
         # Substrat positionieren und rendern (hellgrau)
         sub_scene = place_substrate_on_mount(self.ctx, sub_mesh_local, mount_key=mount_key)

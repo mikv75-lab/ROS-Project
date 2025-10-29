@@ -4,25 +4,34 @@ from __future__ import annotations
 import os
 import logging
 from PyQt5 import uic
-from PyQt5.QtWidgets import QWidget
-
-from ros.rviz_manager import LiveRvizManager
+from PyQt5.QtWidgets import QWidget, QLabel
 
 _LOG = logging.getLogger("app.tabs.service")
+
 
 def _project_root() -> str:
     here = os.path.abspath(os.path.dirname(__file__))  # .../src/app/tabs/service
     return os.path.abspath(os.path.join(here, "..", "..", "..", ".."))
 
+
 def _ui_path(filename: str) -> str:
-    # neue Struktur: resource/ui/tabs/service/service_tab.ui
+    # Struktur: resource/ui/tabs/service/service_tab.ui
     return os.path.join(_project_root(), "resource", "ui", "tabs", "service", filename)
 
+
 def _rviz_cfg_path() -> str:
-    # live.rviz liegt jetzt in resource/rviz/
+    # live.rviz liegt in resource/rviz/
     return os.path.join(_project_root(), "resource", "rviz", "live.rviz")
 
+
 class ServiceTab(QWidget):
+    """
+    Minimaler Service-Tab:
+      - Keine Start/Stop-Buttons für RViz.
+      - Zeigt den Pfad zur RViz-Config im RViz-Container-Platzhalter (lblRvizHint).
+      - Läd ein schlichtes UI ohne Spezial-Properties.
+    """
+
     def __init__(self, *, ctx, bridge, parent=None):
         super().__init__(parent)
         self.ctx = ctx
@@ -33,36 +42,26 @@ class ServiceTab(QWidget):
             _LOG.error("ServiceTab UI nicht gefunden: %s", ui_file)
         uic.loadUi(ui_file, self)
 
-        self._rviz = LiveRvizManager.instance()
         self._cfg = _rviz_cfg_path()
+        self._show_config_in_container()
 
-        if not os.path.exists(self._cfg):
-            self.lblLiveCfg.setText(f"Fehlt: {self._cfg}")
-            self.btnLiveStart.setEnabled(False)
-            self.btnLiveRestart.setEnabled(False)
+    # ---------- intern ----------
+
+    def _show_config_in_container(self) -> None:
+        """
+        Schreibt die RViz-Config-Info in den Container-Platzhalter.
+        Erwartet im UI ein QLabel mit objectName 'lblRvizHint' innerhalb 'rvizContainer'.
+        """
+        label: QLabel = self.findChild(QLabel, "lblRvizHint")
+        if label is None:
+            _LOG.warning("lblRvizHint nicht gefunden – nichts anzuzeigen.")
+            return
+
+        if os.path.exists(self._cfg):
+            label.setText(f"RViz config:\n{self._cfg}")
+            # dezente Anzeige
+            label.setStyleSheet("")
         else:
-            self.lblLiveCfg.setText(self._cfg)
-
-        self.btnLiveStart.clicked.connect(self._on_start)
-        self.btnLiveStop.clicked.connect(self._on_stop)
-        self.btnLiveRestart.clicked.connect(self._on_restart)
-
-        self._refresh_status()
-
-    def _on_start(self):
-        self._rviz.start(self._cfg)
-        self._refresh_status()
-
-    def _on_stop(self):
-        self._rviz.stop()
-        self._refresh_status()
-
-    def _on_restart(self):
-        self._rviz.restart(self._cfg)
-        self._refresh_status()
-
-    def _refresh_status(self):
-        if self._rviz.is_running():
-            self.lblLiveStatus.setText(f"running (pid={self._rviz.pid()})")
-        else:
-            self.lblLiveStatus.setText("stopped")
+            label.setText(f"RViz config fehlt:\n{self._cfg}")
+            # rot markieren, wenn fehlt
+            label.setStyleSheet("color: #b00020;")

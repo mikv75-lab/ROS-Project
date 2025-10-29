@@ -2,16 +2,26 @@
 <ui version="4.0">
  <class>PlanningPanel</class>
  <widget class="QWidget" name="planningPanel">
-  <layout class="QVBoxLayout" name="vroot" stretch="0,1,0">
-   <!-- Ergebnis -->
+  <property name="windowTitle">
+   <string>Planning</string>
+  </property>
+
+  <layout class="QVBoxLayout" name="vroot">
+
+   <!-- Ergebnisse -->
    <item>
     <widget class="QGroupBox" name="groupResults">
      <property name="title"><string>Results</string></property>
      <layout class="QVBoxLayout" name="vResults">
-      <item><widget class="QPlainTextEdit" name="txtResults">
+      <item>
+       <widget class="QPlainTextEdit" name="txtResults">
         <property name="readOnly"><bool>true</bool></property>
-        <property name="placeholderText"><string>No results yet. Press &quot;Validate&quot; in the center panel…</string></property>
-      </widget></item>
+        <property name="placeholderText">
+         <string>No results yet. Use Optimize/Save…</string>
+        </property>
+        <property name="minimumSize"><size><width>0</width><height>80</height></size></property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>
@@ -27,10 +37,24 @@
     </widget>
    </item>
 
-   <!-- Spacer to push buttons up if needed -->
-   <item><spacer name="spBottom"><property name="orientation"><enum>Qt::Vertical</enum></property></spacer></item>
+   <!-- RViz-Placeholder -->
+   <item>
+    <widget class="QWidget" name="rvizContainer">
+     <layout class="QVBoxLayout" name="rvizLayout">
+      <item>
+       <widget class="QLabel" name="lblRvizPlaceholder">
+        <property name="text"><string>RViz (später)</string></property>
+        <property name="alignment"><set>Qt::AlignCenter</set></property>
+        <property name="minimumSize"><size><width>200</width><height>200</height></size></property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+
   </layout>
  </widget>
+
  <resources/>
  <connections/>
 </ui>

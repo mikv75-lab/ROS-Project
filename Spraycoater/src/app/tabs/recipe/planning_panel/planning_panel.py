@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import os
+import json
 from typing import Any, Callable, Dict, Optional
 
 from PyQt5 import uic
-from PyQt5.QtWidgets import QWidget, QMessageBox
+from PyQt5.QtWidgets import QWidget, QMessageBox, QLabel
 
 # Pfad-Helfer
 def _project_root() -> str:
@@ -14,13 +15,19 @@ def _project_root() -> str:
 def _ui_path(filename: str) -> str:
     return os.path.join(_project_root(), "resource", "ui", "tabs", "recipe", filename)
 
+def _rviz_cfg_path() -> str:
+    return os.path.join(_project_root(), "resource", "rviz", "live.rviz")
+
 
 class PlanningPanel(QWidget):
     """
-    RECHTES PANEL – Planner-Auswahl, Validate/Optimize/Save.
-    Erwartet Provider-Callables:
-      - model_provider() -> RecipeModel
-      - traj_provider()  -> Optional[Dict]  (aus Preview)
+    Rechtes Panel, minimal:
+      - Buttons: Optimize, Save
+      - Ausgabe in txtResults
+      - Zeigt RViz-Config-Pfad im lblRvizPlaceholder
+    Erwartete Provider (optional):
+      - model_provider() -> RecipeModel (mit .to_dict())
+      - traj_provider()  -> Optional[Dict]  (Traj-Daten aus Preview)
     """
     def __init__(self, *, ctx, bridge, parent=None):
         super().__init__(parent)
@@ -31,21 +38,17 @@ class PlanningPanel(QWidget):
         self._model_provider: Optional[Callable[[], Any]] = None
         self._traj_provider: Optional[Callable[[], Optional[Dict[str, Any]]]] = None
 
-        # Buttons
-        if hasattr(self, "btnValidate"):
-            self.btnValidate.clicked.connect(self._handle_validate)
+        # Buttons verdrahten (nur die, die im UI existieren)
         if hasattr(self, "btnOptimize"):
             self.btnOptimize.clicked.connect(self._handle_optimize)
         if hasattr(self, "btnSave"):
             self.btnSave.clicked.connect(self._handle_save)
 
-        # Planner-Wahl optional
-        if hasattr(self, "comboPlanner"):
-            # falls du Plannerliste dynamisch füllen willst, tu das hier
-            pass
+        # RViz-Hinweis im Placeholder anzeigen
+        self._show_rviz_config_hint()
 
-        # Status
-        self.set_preview_ready(False, "no preview yet")
+        # Initialer Hinweis
+        self._write_results({"status": "ready", "hint": "No results yet."})
 
     # --- Injection/Provider ---
     def set_bridge(self, bridge):
@@ -57,65 +60,41 @@ class PlanningPanel(QWidget):
     def set_traj_provider(self, fn: Callable[[], Optional[Dict[str, Any]]]):
         self._traj_provider = fn
 
-    # --- Status/Ergebnisse ---
-    def set_preview_ready(self, ok: bool, msg: str):
-        if hasattr(self, "lblStatus"):
-            self.lblStatus.setText("Preview OK" if ok else f"Preview Fehler: {msg}")
-            self.lblStatus.setStyleSheet("color:#0a0;" if ok else "color:#a00;")
-        if hasattr(self, "btnValidate"):
-            self.btnValidate.setEnabled(ok)
+    # --- UI helpers ---
+    def _write_results(self, obj: Dict[str, Any]):
+        if hasattr(self, "txtResults") and self.txtResults:
+            self.txtResults.setPlainText(json.dumps(obj, indent=2, ensure_ascii=False))
 
-    def show_results(self, obj: Dict[str, Any], ok: bool):
-        if hasattr(self, "lblResult"):
-            self.lblResult.setText("OK" if ok else "Fehler")
-            self.lblResult.setStyleSheet("color:#0a0;" if ok else "color:#a00;")
-        if hasattr(self, "txtDetails"):
-            import json
-            self.txtDetails.setPlainText(json.dumps(obj, indent=2, ensure_ascii=False))
+    def _show_rviz_config_hint(self):
+        label: QLabel = getattr(self, "lblRvizPlaceholder", None)
+        cfg = _rviz_cfg_path()
+        if not isinstance(label, QLabel):
+            return
+        if os.path.exists(cfg):
+            label.setText(f"RViz config:\n{cfg}")
+            label.setStyleSheet("color: #0a0;")
+        else:
+            label.setText(f"RViz config fehlt:\n{cfg}")
+            label.setStyleSheet("color: #b00020;")
 
     # --- Button-Handler ---
-    def _handle_validate(self):
-        planner = None
-        if hasattr(self, "comboPlanner"):
-            planner = self.comboPlanner.currentText() or None
-        self._on_validate_clicked(planner or "default")
-
     def _handle_optimize(self):
-        self._on_optimize_clicked()
-
-    def _handle_save(self):
-        self._on_save_clicked()
-
-    # --- Aktionen (wie von dir gewünscht) ---
-    def _on_validate_clicked(self, planner: str):
         try:
             if not self._model_provider:
                 raise RuntimeError("Kein model_provider gesetzt.")
             model = self._model_provider()
-            req = model.to_dict()
-            req["planner"] = planner
+            payload = model.to_dict()
             if self._traj_provider:
                 traj = self._traj_provider()
                 if traj:
-                    req["trajectory"] = traj
-            resp = self.bridge.validate(req, syntactic_only=False, timeout=10.0)
+                    payload["trajectory"] = traj
+            resp = self.bridge.optimize(payload, timeout=10.0)
             ok = bool(getattr(resp, "ok", True))
-            self.show_results({"validate": getattr(resp, "__dict__", {}) or str(resp)}, ok=ok)
+            self._write_results({"action": "optimize", "ok": ok, "response": getattr(resp, "__dict__", {}) or str(resp)})
         except Exception as e:
-            self.show_results({"exception": str(e)}, ok=False)
+            self._write_results({"action": "optimize", "ok": False, "exception": str(e)})
 
-    def _on_optimize_clicked(self):
-        try:
-            if not self._model_provider:
-                raise RuntimeError("Kein model_provider gesetzt.")
-            model = self._model_provider()
-            resp = self.bridge.optimize(model.to_dict(), timeout=10.0)
-            ok = bool(getattr(resp, "ok", True))
-            self.show_results({"optimize": getattr(resp, "__dict__", {}) or str(resp)}, ok=ok)
-        except Exception as e:
-            self.show_results({"exception": str(e)}, ok=False)
-
-    def _on_save_clicked(self):
+    def _handle_save(self):
         try:
             if not self._model_provider:
                 raise RuntimeError("Kein model_provider gesetzt.")
@@ -130,6 +109,8 @@ class PlanningPanel(QWidget):
             import yaml
             with open(fname, "w", encoding="utf-8") as f:
                 yaml.safe_dump(rec, f, allow_unicode=True, sort_keys=False)
+            self._write_results({"action": "save", "ok": True, "file": fname})
             QMessageBox.information(self, "Gespeichert", f"Rezept gespeichert:\n{fname}")
         except Exception as e:
+            self._write_results({"action": "save", "ok": False, "exception": str(e)})
             QMessageBox.critical(self, "Speicherfehler", str(e))

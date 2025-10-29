@@ -2,52 +2,47 @@
 <ui version="4.0">
  <class>ProcessTab</class>
  <widget class="QWidget" name="ProcessTab">
-  <layout class="QHBoxLayout" name="rootLayout" stretch="0,1">
+  <property name="windowTitle">
+   <string>Process</string>
+  </property>
+
+  <layout class="QHBoxLayout" name="rootLayout">
+   <!-- Linke Spalte: Buttons -->
    <item>
-    <widget class="QGroupBox" name="grpLive">
-     <property name="title"><string>RViz (Live)</string></property>
+    <widget class="QGroupBox" name="grpProcess">
+     <property name="title"><string>Process Control</string></property>
      <property name="minimumSize">
       <size><width>260</width><height>0</height></size>
      </property>
      <property name="maximumSize">
       <size><width>320</width><height>16777215</height></size>
      </property>
-     <layout class="QVBoxLayout" name="grpLiveLayout">
+     <layout class="QVBoxLayout" name="processButtonsLayout">
       <item>
-       <widget class="QLabel" name="lblLiveCfgCaption">
-        <property name="text"><string>Config:</string></property>
+       <widget class="QPushButton" name="btnInit">
+        <property name="text"><string>Init</string></property>
+        <property name="minimumWidth"><number>100</number></property>
        </widget>
       </item>
       <item>
-       <widget class="QLabel" name="lblLiveCfg">
-        <property name="text"><string>…</string></property>
-       </widget>
-      </item>
-
-      <item>
-       <widget class="QLabel" name="lblLiveStatusCaption">
-        <property name="text"><string>Status:</string></property>
+       <widget class="QPushButton" name="btnLoadRecipe">
+        <property name="text"><string>Load Recipe</string></property>
+        <property name="minimumWidth"><number>120</number></property>
        </widget>
       </item>
       <item>
-       <widget class="QLabel" name="lblLiveStatus">
-        <property name="text"><string>stopped</string></property>
-       </widget>
-      </item>
-
-      <item>
-       <widget class="QPushButton" name="btnLiveStart">
+       <widget class="QPushButton" name="btnStart">
         <property name="text"><string>Start</string></property>
+        <property name="minimumWidth"><number>100</number></property>
        </widget>
       </item>
       <item>
-       <widget class="QPushButton" name="btnLiveStop">
+       <widget class="QPushButton" name="btnStop">
         <property name="text"><string>Stop</string></property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btnLiveRestart">
-        <property name="text"><string>Restart</string></property>
+        <property name="minimumWidth"><number>100</number></property>
+        <property name="styleSheet">
+         <string notr="true">font-weight:600;</string>
+        </property>
        </widget>
       </item>
 
@@ -63,8 +58,9 @@
     </widget>
    </item>
 
+   <!-- Rechte Seite: leerer RViz-Placeholder (später eingebettet) -->
    <item>
-    <!-- WICHTIG: objectName = rvizContainer (vom Code erwartet) -->
+    <!-- WICHTIG: objectName = rvizContainer (vom Code verwendet) -->
     <widget class="QFrame" name="rvizContainer">
      <property name="frameShape"><enum>QFrame::StyledPanel</enum></property>
      <property name="frameShadow"><enum>QFrame::Raised</enum></property>
@@ -72,7 +68,13 @@
       <item>
        <widget class="QLabel" name="lblRvizHint">
         <property name="text">
-         <string>RViz (Live) wird als externer Prozess gestartet. Einbettung folgt.</string>
+         <string>RViz (Live) — später eingebettet.</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignHCenter|Qt::AlignVCenter</set>
+        </property>
+        <property name="minimumSize">
+         <size><width>200</width><height>200</height></size>
         </property>
        </widget>
       </item>
@@ -81,6 +83,13 @@
    </item>
   </layout>
  </widget>
+
+ <tabstops>
+  <tabstop>btnInit</tabstop>
+  <tabstop>btnLoadRecipe</tabstop>
+  <tabstop>btnStart</tabstop>
+  <tabstop>btnStop</tabstop>
+ </tabstops>
  <resources/>
  <connections/>
 </ui>

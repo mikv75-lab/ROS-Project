@@ -5,213 +5,49 @@
   <property name="windowTitle">
    <string>Coating Preview</string>
   </property>
+
   <layout class="QVBoxLayout" name="vroot">
 
-   <!-- ========== Preview GroupBox (alles drin) ========== -->
+   <!-- Oben: Preview Controls -->
    <item>
     <widget class="QGroupBox" name="grpPreview">
-     <property name="title">
-      <string>Preview</string>
-     </property>
+     <property name="title"><string>Preview</string></property>
      <layout class="QVBoxLayout" name="vPreview">
 
-      <!-- Row: Planner + Validate -->
-      <item>
-       <widget class="QWidget" name="rowPlanner">
-        <layout class="QHBoxLayout" name="hPlanner">
-         <item>
-          <widget class="QLabel" name="lblPlanner">
-           <property name="text">
-            <string>Planner:</string>
-           </property>
-          </widget>
-         </item>
-
-         <item>
-          <widget class="QComboBox" name="comboPlanner">
-           <item><property name="text"><string>ompl:RRTConnect</string></property></item>
-           <item><property name="text"><string>ompl:BiTRRT</string></property></item>
-           <item><property name="text"><string>ompl:RRTstar</string></property></item>
-           <item><property name="text"><string>ompl:PRM</string></property></item>
-           <item><property name="text"><string>chomp:CHOMP</string></property></item>
-           <item><property name="text"><string>stomp:STOMP</string></property></item>
-          </widget>
-         </item>
-
-         <item>
-          <spacer name="spPlanner">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-
-         <item>
-          <widget class="QPushButton" name="btnValidate">
-           <property name="text">
-            <string>Validate</string>
-           </property>
-           <property name="toolTip">
-            <string>Validiert den aktuell erzeugten Pfad und plant/oder exportiert ihn</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </item>
-
-      <!-- Row: Anzeige-Optionen (Checkboxen) -->
+      <!-- Anzeige-Optionen -->
       <item>
        <widget class="QWidget" name="rowToggles">
         <layout class="QHBoxLayout" name="hToggles">
-         <item>
-          <widget class="QCheckBox" name="chkShowMask">
-           <property name="text">
-            <string>Maske anzeigen</string>
-           </property>
-           <property name="toolTip">
-            <string>Blauen Maskenpfad (Start-Ebene) anzeigen/verbergen</string>
-           </property>
-           <property name="checked">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QCheckBox" name="chkShowRays">
-           <property name="text">
-            <string>Rays anzeigen</string>
-           </property>
-           <property name="toolTip">
-            <string>Hellblaue Messstrahlen anzeigen/verbergen</string>
-           </property>
-           <property name="checked">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QCheckBox" name="chkShowLocalFrames">
-           <property name="text">
-            <string>Lokale KS anzeigen</string>
-           </property>
-           <property name="toolTip">
-            <string>Kleine lokale Koordinatensysteme an den Punkten anzeigen/verbergen</string>
-           </property>
-           <property name="checked">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="spToggles">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
+         <item><widget class="QCheckBox" name="chkShowMask"><property name="text"><string>Maske anzeigen</string></property></widget></item>
+         <item><widget class="QCheckBox" name="chkShowRays"><property name="text"><string>Rays anzeigen</string></property></widget></item>
+         <item><widget class="QCheckBox" name="chkShowLocalFrames"><property name="text"><string>Lokale KS anzeigen</string></property></widget></item>
+         <item><spacer name="spToggles"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
         </layout>
        </widget>
       </item>
 
-      <!-- Row: Kamera-Buttons -->
+      <!-- Kamera-Buttons -->
       <item>
        <widget class="QWidget" name="rowCamera">
         <layout class="QHBoxLayout" name="hCamera">
-         <item>
-          <widget class="QLabel" name="lblCamera">
-           <property name="text">
-            <string>Kamera:</string>
-           </property>
-          </widget>
-         </item>
+         <item><widget class="QLabel" name="lblCamera"><property name="text"><string>Kamera:</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnCamIso"><property name="text"><string>Iso</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnCamTop"><property name="text"><string>Top</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnCamFront"><property name="text"><string>Front</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnCamBack"><property name="text"><string>Back</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnCamLeft"><property name="text"><string>Left</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnCamRight"><property name="text"><string>Right</string></property></widget></item>
+         <item><spacer name="spCamera"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+        </layout>
+       </widget>
+      </item>
 
-         <item>
-          <widget class="QPushButton" name="btnCamIso">
-           <property name="text">
-            <string>Iso</string>
-           </property>
-           <property name="toolTip">
-            <string>Isometrische Ansicht</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="btnCamTop">
-           <property name="text">
-            <string>Top</string>
-           </property>
-           <property name="toolTip">
-            <string>Ansicht von oben (Z+)</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="btnCamFront">
-           <property name="text">
-            <string>Front</string>
-           </property>
-           <property name="toolTip">
-            <string>Ansicht von vorne (Y+)</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="btnCamBack">
-           <property name="text">
-            <string>Back</string>
-           </property>
-           <property name="toolTip">
-            <string>Ansicht von hinten (Y-)</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="btnCamLeft">
-           <property name="text">
-            <string>Left</string>
-           </property>
-           <property name="toolTip">
-            <string>Ansicht von links (X-)</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="btnCamRight">
-           <property name="text">
-            <string>Right</string>
-           </property>
-           <property name="toolTip">
-            <string>Ansicht von rechts (X+)</string>
-           </property>
-          </widget>
-         </item>
-
-         <item>
-          <spacer name="spCamera">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
+      <!-- Aktionen (Validate rechts) -->
+      <item>
+       <widget class="QWidget" name="rowActions">
+        <layout class="QHBoxLayout" name="hActions">
+         <item><spacer name="spActions"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+         <item><widget class="QPushButton" name="btnValidate"><property name="text"><string>Validate</string></property></widget></item>
         </layout>
        </widget>
       </item>
@@ -220,25 +56,30 @@
     </widget>
    </item>
 
-   <!-- ========== Preview/Viewer Container ========== -->
+   <!-- Mitte: PyVista-Placeholder -->
    <item>
     <widget class="QWidget" name="pvContainer">
      <layout class="QVBoxLayout" name="pvLayout">
-      <!-- Eingebetteter PyVista Interactor -->
       <item>
-       <widget class="QtInteractor" name="pv">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-          <horstretch>0</horstretch>
-          <verstretch>1</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="minimumSize">
-         <size>
-          <width>200</width>
-          <height>200</height>
-         </size>
-        </property>
+       <widget class="QLabel" name="lblPreviewPlaceholder">
+        <property name="text"><string>Preview (später)</string></property>
+        <property name="alignment"><set>Qt::AlignCenter</set></property>
+        <property name="minimumSize"><size><width>200</width><height>200</height></size></property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+
+   <!-- Unten: RViz-Placeholder -->
+   <item>
+    <widget class="QWidget" name="rvizContainer">
+     <layout class="QVBoxLayout" name="rvizLayout">
+      <item>
+       <widget class="QLabel" name="lblRvizPlaceholder">
+        <property name="text"><string>RViz (später)</string></property>
+        <property name="alignment"><set>Qt::AlignCenter</set></property>
+        <property name="minimumSize"><size><width>200</width><height>200</height></size></property>
        </widget>
       </item>
      </layout>
@@ -247,15 +88,6 @@
 
   </layout>
  </widget>
-
- <!-- Registriert das Custom/PyQt-Widget -->
- <customwidgets>
-  <customwidget>
-   <class>QtInteractor</class>
-   <extends>QWidget</extends>
-   <header>pyvistaqt</header>
-  </customwidget>
- </customwidgets>
 
  <resources/>
  <connections/>
