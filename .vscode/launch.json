@@ -1,0 +1,21 @@
+// Use IntelliSense to learn about possible attributes.
+// Hover to view descriptions of existing attributes.
+// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Spraycoater (venv, offscreen)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/Spraycoater/src/app/main_gui.py",
+      "console": "integratedTerminal",
+      "python": "${workspaceFolder}/Spraycoater/.venv/bin/python",
+      "env": {
+        "QT_QPA_PLATFORM": "offscreen",
+        "PYVISTA_OFF_SCREEN": "true",
+        "PYVISTA_USE_IPYVTK": "false"
+      }
+    }
+  ]
+}
