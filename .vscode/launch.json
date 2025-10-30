@@ -5,16 +5,18 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Spraycoater (venv, offscreen)",
+      "name": "Spraycoater (PyQt6, XLaunch)",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/Spraycoater/src/app/main_gui.py",
+      "program": "/root/Spraycoater/src/app/main_gui.py",
       "console": "integratedTerminal",
-      "python": "${workspaceFolder}/Spraycoater/.venv/bin/python",
+      "python": "/root/Spraycoater/.venv/bin/python",
+      "cwd": "/root/Spraycoater",
       "env": {
-        "QT_QPA_PLATFORM": "offscreen",
-        "PYVISTA_OFF_SCREEN": "true",
-        "PYVISTA_USE_IPYVTK": "false"
+        "PYTHONPATH": "/root/Spraycoater/src",
+        "SAFE_NO_PREVIEW": "0",
+        "QT_OPENGL": "software",
+        "QT_X11_NO_MITSHM": "1"
       }
     }
   ]

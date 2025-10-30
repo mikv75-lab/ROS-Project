@@ -13,12 +13,38 @@
      <item><widget class="QPushButton" name="btnLoad"><property name="text"><string>Load</string></property></widget></item>
      <item><widget class="QPushButton" name="btnDelete"><property name="text"><string>Delete</string></property></widget></item>
 
-     <item><spacer name="spacerTopBarLeft"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+     <item>
+      <!-- spacer ersetzt durch QWidget mit HS-Expanding -->
+      <widget class="QWidget" name="spacerTopBarLeft">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
+         <horstretch>1</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="minimumSize">
+        <size><width>0</width><height>0</height></size>
+       </property>
+      </widget>
+     </item>
 
      <item><widget class="QLabel" name="lblRecipe"><property name="text"><string>Recipe:</string></property></widget></item>
      <item><widget class="QComboBox" name="comboRecipeSelect"/></item>
 
-     <item><spacer name="spacerTopBarRight"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+     <item>
+      <!-- spacer ersetzt durch QWidget mit HS-Expanding -->
+      <widget class="QWidget" name="spacerTopBarRight">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
+         <horstretch>1</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="minimumSize">
+        <size><width>0</width><height>0</height></size>
+       </property>
+      </widget>
+     </item>
 
      <item><widget class="QPushButton" name="btnUpdatePreview"><property name="text"><string>Update Preview</string></property></widget></item>
     </layout>
@@ -31,7 +57,20 @@
     </widget>
    </item>
 
-   <item><spacer name="spacerBottom"><property name="orientation"><enum>Qt::Vertical</enum></property></spacer></item>
+   <item>
+    <!-- spacer ersetzt durch QWidget mit VS-Expanding -->
+    <widget class="QWidget" name="spacerBottom">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Minimum" vsizetype="Expanding">
+       <horstretch>0</horstretch>
+       <verstretch>1</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="minimumSize">
+      <size><width>0</width><height>0</height></size>
+     </property>
+    </widget>
+   </item>
   </layout>
  </widget>
  <resources/>

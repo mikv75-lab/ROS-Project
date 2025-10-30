@@ -32,7 +32,20 @@
      <layout class="QHBoxLayout" name="hActions">
       <item><widget class="QPushButton" name="btnOptimize"><property name="text"><string>Optimize</string></property></widget></item>
       <item><widget class="QPushButton" name="btnSave"><property name="text"><string>Save</string></property></widget></item>
-      <item><spacer name="spActions"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+      <item>
+       <!-- spacer ersetzt durch QWidget mit HS-Expanding -->
+       <widget class="QWidget" name="spActions">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
+          <horstretch>1</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="minimumSize">
+         <size><width>0</width><height>0</height></size>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

@@ -3,9 +3,9 @@ from __future__ import annotations
 import os
 from typing import Optional, Dict, Any
 
-from PyQt5 import uic
-from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import QWidget, QFileDialog, QMessageBox, QVBoxLayout, QGroupBox
+from PyQt6 import uic
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import QWidget, QFileDialog, QMessageBox, QVBoxLayout, QGroupBox
 
 from app.model.recipe.recipe import Recipe
 from app.model.recipe.recipe_store import RecipeStore
@@ -22,7 +22,6 @@ def _ui_path(filename: str) -> str:
 
 class RecipeEditorPanel(QWidget):
     """Topbar + RecipeEditorContent. Arbeitet mit genau EINEM aktiven Recipe-Objekt."""
-    recipeChanged = pyqtSignal(object)          # Legacy (wird hier nicht automatisch verwendet)
     updatePreviewRequested = pyqtSignal(object) # NEU: emits Recipe
 
     def __init__(self, *, ctx, parent: Optional[QWidget] = None):

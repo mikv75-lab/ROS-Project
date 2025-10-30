@@ -3,8 +3,8 @@
 from __future__ import annotations
 import os
 import logging
-from PyQt5 import uic
-from PyQt5.QtWidgets import QWidget
+from PyQt6 import uic
+from PyQt6.QtWidgets import QWidget
 
 _LOG = logging.getLogger("app.tabs.system")
 

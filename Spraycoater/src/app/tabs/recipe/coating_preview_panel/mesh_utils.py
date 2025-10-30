@@ -5,14 +5,15 @@ import os
 import math
 import logging
 from typing import Tuple, Optional, Dict
-
+import meshio
 import numpy as np
 import pyvista as pv
-import meshio  # NEU: statt trimesh
-import meshio
-import vtk
-from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
+import os
+import numpy as np
+import pyvista as pv
+
 _LOG = logging.getLogger("app.tabs.recipe.mesh_utils")
+
 
 
 # ---------- Kontextbasierte Pfad-Helfer ----------
@@ -110,11 +111,6 @@ def apply_transform(
 
 
 def __load_mesh_meshio(path: str) -> pv.PolyData:
-    import meshio
-    import numpy as np
-    import pyvista as pv
-    import os
-
     if not os.path.exists(path):
         raise FileNotFoundError(f"Mesh-Pfad existiert nicht: {path}")
 

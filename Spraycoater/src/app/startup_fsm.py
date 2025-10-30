@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Callable
 
-from PyQt5 import QtCore
+from PyQt6 import QtCore, QtStateMachine  # << PyQt6: StateMachine-Typen hier
 
 # Projekt-Helfer
 from config.startup import load_startup
@@ -24,7 +24,7 @@ class StartupResult:
     bridge: Optional[UIBridge]
 
 
-class _StepState(QtCore.QState):
+class _StepState(QtStateMachine.QState):
     """
     Ruft 'fn' asynchron (singleShot 0 ms) auf,
     fängt Exceptions und triggert done/failed.
@@ -53,11 +53,11 @@ class _StepState(QtCore.QState):
 
 class StartupMachine(QtCore.QObject):
     """
-    Orchestriert den App-Start via QStateMachine.
+    Orchestriert den App-Start via QStateMachine (PyQt6).
     """
-    progress = QtCore.pyqtSignal(str)     # z.B. "LoadStartup"
-    warning  = QtCore.pyqtSignal(str)     # gelbe Meldung auf Splash
-    error    = QtCore.pyqtSignal(str)     # optional
+    progress = QtCore.pyqtSignal(str)           # z.B. "LoadStartup"
+    warning  = QtCore.pyqtSignal(str)           # gelbe Meldung auf Splash
+    error    = QtCore.pyqtSignal(str)           # optional
     ready    = QtCore.pyqtSignal(object, object)  # (ctx, bridge)
 
     # interne Trigger
@@ -80,16 +80,16 @@ class StartupMachine(QtCore.QObject):
 
         self._log = logging.getLogger("app.startup")
 
-        # QStateMachine + States
-        self.m = QtCore.QStateMachine(self)
+        # QStateMachine + States (aus QtStateMachine)
+        self.m = QtStateMachine.QStateMachine(self)
 
-        s_init   = QtCore.QState()
+        s_init   = QtStateMachine.QState()
         s_load   = _StepState("LoadStartup",   self, self._step_load)
         s_log    = _StepState("SetupLogging",  self, self._step_logging)
         s_warn   = _StepState("SetupWarnings", self, self._step_warnings)
         s_bring  = _StepState("StartBringup",  self, self._step_bringup)
         s_bridge = _StepState("ConnectBridge", self, self._step_bridge)
-        s_ready  = QtCore.QFinalState()
+        s_ready  = QtStateMachine.QFinalState()
 
         # transitions
         s_init.addTransition(self._done_sig,   s_load)

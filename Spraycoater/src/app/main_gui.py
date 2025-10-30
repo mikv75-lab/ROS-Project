@@ -63,9 +63,9 @@ atexit.register(_on_exit_flush)
 # --- ENDE EARLY CRASH/DUMP SETUP ---
 
 # Qt-/Umgebungs-Prep
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import QApplication, QMainWindow, QTabWidget, QSplashScreen, QMessageBox
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget, QSplashScreen, QMessageBox
 
 # Qt-Runtime dir fix
 if "XDG_RUNTIME_DIR" not in os.environ:
@@ -114,7 +114,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("SprayCoater UI")
         self.resize(1280, 800)
 
-        tabs = QTabWidget()
+        tabs = QTabWidget(self)
         tabs.addTab(ProcessTab(ctx=self.ctx, bridge=self.bridge), "Process")
         tabs.addTab(RecipeTab(ctx=self.ctx,  bridge=self.bridge), "Recipe")
         tabs.addTab(ServiceTab(ctx=self.ctx, bridge=self.bridge), "Service")

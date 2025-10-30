@@ -5,9 +5,9 @@ import signal
 import subprocess
 from typing import Optional, Sequence
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QWindow
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QWindow
+from PyQt6.QtWidgets import QWidget, QVBoxLayout
 
 import logging
 

@@ -4,8 +4,8 @@ import os
 import json
 from typing import Any, Callable, Dict, Optional
 
-from PyQt5 import uic
-from PyQt5.QtWidgets import QWidget, QMessageBox, QLabel
+from PyQt6 import uic
+from PyQt6.QtWidgets import QWidget, QMessageBox, QLabel
 
 # Pfad-Helfer
 def _project_root() -> str:
@@ -102,7 +102,7 @@ class PlanningPanel(QWidget):
             rec = model.to_dict()
             rid = rec.get("id") or "recipe"
             default_name = os.path.join(self.ctx.paths.recipe_dir, f"{rid}.yaml")
-            from PyQt5.QtWidgets import QFileDialog
+            from PyQt6.QtWidgets import QFileDialog
             fname, _ = QFileDialog.getSaveFileName(self, "Rezept speichern", default_name, "YAML (*.yaml *.yml)")
             if not fname:
                 return

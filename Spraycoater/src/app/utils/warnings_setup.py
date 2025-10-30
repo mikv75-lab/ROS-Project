@@ -1,43 +1,49 @@
 # -*- coding: utf-8 -*-
-import warnings
 import logging
+import warnings
 
-def _install_qt_message_handler():
+def _install_qt_message_handler() -> None:
     """
-    Leitet Qt-Logs (PyQt5) in den Logger 'qt'.
-    Wird nur installiert, wenn PyQt5 verfügbar ist.
+    Leitet Qt-Logs (PyQt6) in den Logger 'qt'.
+    Tut nichts, wenn PyQt6 nicht verfügbar ist.
     """
     try:
-        from PyQt5 import QtCore
+        from PyQt6 import QtCore
     except Exception:
-        return  # Qt nicht verfügbar / noch nicht geladen
+        return  # Qt6 nicht verfügbar
 
     qtlog = logging.getLogger("qt")
 
-    # Mapping Qt -> logging
-    level_map = {
-        QtCore.QtDebugMsg:    logging.DEBUG,
-        getattr(QtCore, "QtInfoMsg", None): logging.INFO,
-        QtCore.QtWarningMsg:  logging.WARNING,
-        QtCore.QtCriticalMsg: logging.ERROR,
-        QtCore.QtFatalMsg:    logging.CRITICAL,
+    # Qt6-Enums liegen unter QtCore.QtMsgType
+    levels = {
+        QtCore.QtMsgType.QtDebugMsg:    logging.DEBUG,
+        QtCore.QtMsgType.QtInfoMsg:     logging.INFO,
+        QtCore.QtMsgType.QtWarningMsg:  logging.WARNING,
+        QtCore.QtMsgType.QtCriticalMsg: logging.ERROR,
+        QtCore.QtMsgType.QtFatalMsg:    logging.CRITICAL,
     }
 
-    def handler(mode, context, message):
-        lvl = level_map.get(mode, logging.INFO)
-        # Kontext optional anhängen
+    # Qt6-Signatur: handler(msg_type, context, message)
+    def handler(msg_type, context, message):
+        lvl = levels.get(msg_type, logging.INFO)
         where = ""
         try:
-            if context and context.file and context.line:
-                where = f"{context.file}:{context.line} "
+            file = getattr(context, "file", None)
+            line = getattr(context, "line", None)
+            if file and line:
+                where = f"{file}:{line} "
         except Exception:
             pass
-        qtlog.log(lvl, "%s%s", where, message)
+        try:
+            qtlog.log(lvl, "%s%s", where, str(message))
+        except Exception:
+            # Fallback ohne Formatierung
+            qtlog.log(lvl, str(message))
 
-    # Installieren (überschreibt evtl. existierende Handler)
+    # Installiert den globalen Qt-Message-Handler (überschreibt evtl. vorhandene)
     QtCore.qInstallMessageHandler(handler)
 
-def enable_all_warnings(*, qt: bool = True, pywarnings: str = "default") -> None:
+def enable_all_warnings(*, qt: bool = True, pywarnings: str = "always") -> None:
     """
     - Aktiviert logging.captureWarnings -> 'py.warnings' Logger.
     - Setzt den Python-Warnfilter (z.B. 'always', 'default', 'ignore' ...).

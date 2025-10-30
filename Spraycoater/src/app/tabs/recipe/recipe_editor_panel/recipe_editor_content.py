@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout, QLabel, QLineEdit,
     QDoubleSpinBox, QSpinBox, QCheckBox, QComboBox, QStackedWidget, QFrame,
     QScrollArea, QSpacerItem, QSizePolicy
