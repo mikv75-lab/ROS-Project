@@ -1,103 +1,61 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>CoatingPreviewPanel</class>
- <widget class="QWidget" name="coatingPreviewPanel">
+ <widget class="QWidget" name="CoatingPreviewPanel">
   <property name="windowTitle">
    <string>Coating Preview</string>
   </property>
-
-  <!-- EIN Root-Layout -->
   <layout class="QVBoxLayout" name="vRoot">
-
-   <!-- Oben: Preview Controls -->
    <item>
     <widget class="QGroupBox" name="grpPreview">
      <property name="title">
       <string>Preview</string>
      </property>
-     <layout class="QVBoxLayout" name="vPreview">
-
-      <!-- Anzeige-Optionen -->
+     <layout class="QVBoxLayout" name="vControls">
       <item>
-       <widget class="QWidget" name="rowToggles">
-        <layout class="QHBoxLayout" name="hToggles">
-         <item>
-          <widget class="QCheckBox" name="chkShowMask">
-           <property name="text"><string>Maske anzeigen</string></property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QCheckBox" name="chkShowRays">
-           <property name="text"><string>Rays anzeigen</string></property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QCheckBox" name="chkShowLocalFrames">
-           <property name="text"><string>Lokale KS anzeigen</string></property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="spToggles">
-           <property name="orientation"><enum>Qt::Horizontal</enum></property>
-           <property name="sizeHint"><size><width>40</width><height>20</height></size></property>
-          </spacer>
-         </item>
-        </layout>
-       </widget>
+       <layout class="QHBoxLayout" name="rowToggles">
+        <item><widget class="QCheckBox" name="chkShowMask"><property name="text"><string>Maske anzeigen</string></property></widget></item>
+        <item><widget class="QCheckBox" name="chkShowRays"><property name="text"><string>Rays anzeigen</string></property></widget></item>
+        <item><widget class="QCheckBox" name="chkShowLocalFrames"><property name="text"><string>Lokale KS anzeigen</string></property></widget></item>
+        <item>
+         <spacer name="spacerToggles">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+         </spacer>
+        </item>
+       </layout>
       </item>
-
-      <!-- Kamera-Buttons -->
       <item>
-       <widget class="QWidget" name="rowCamera">
-        <layout class="QHBoxLayout" name="hCamera">
-         <item>
-          <widget class="QLabel" name="lblCamera">
-           <property name="text"><string>Kamera:</string></property>
-          </widget>
-         </item>
-         <item><widget class="QPushButton" name="btnCamIso"><property name="text"><string>Iso</string></property></widget></item>
-         <item><widget class="QPushButton" name="btnCamTop"><property name="text"><string>Top</string></property></widget></item>
-         <item><widget class="QPushButton" name="btnCamFront"><property name="text"><string>Front</string></property></widget></item>
-         <item><widget class="QPushButton" name="btnCamBack"><property name="text"><string>Back</string></property></widget></item>
-         <item><widget class="QPushButton" name="btnCamLeft"><property name="text"><string>Left</string></property></widget></item>
-         <item><widget class="QPushButton" name="btnCamRight"><property name="text"><string>Right</string></property></widget></item>
-         <item>
-          <spacer name="spCamera">
-           <property name="orientation"><enum>Qt::Horizontal</enum></property>
-           <property name="sizeHint"><size><width>40</width><height>20</height></size></property>
-          </spacer>
-         </item>
-        </layout>
-       </widget>
+       <layout class="QHBoxLayout" name="rowCamera">
+        <item><widget class="QLabel" name="lblCamera"><property name="text"><string>Kamera:</string></property></widget></item>
+        <item><widget class="QPushButton" name="btnCamIso"><property name="text"><string>Iso</string></property></widget></item>
+        <item><widget class="QPushButton" name="btnCamTop"><property name="text"><string>Top</string></property></widget></item>
+        <item><widget class="QPushButton" name="btnCamFront"><property name="text"><string>Front</string></property></widget></item>
+        <item><widget class="QPushButton" name="btnCamBack"><property name="text"><string>Back</string></property></widget></item>
+        <item><widget class="QPushButton" name="btnCamLeft"><property name="text"><string>Left</string></property></widget></item>
+        <item><widget class="QPushButton" name="btnCamRight"><property name="text"><string>Right</string></property></widget></item>
+        <item>
+         <spacer name="spacerCamera">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+         </spacer>
+        </item>
+       </layout>
       </item>
-
-      <!-- Aktionen -->
       <item>
-       <widget class="QWidget" name="rowActions">
-        <layout class="QHBoxLayout" name="hActions">
-         <item>
-          <spacer name="spActions">
-           <property name="orientation"><enum>Qt::Horizontal</enum></property>
-           <property name="sizeHint"><size><width>40</width><height>20</height></size></property>
-          </spacer>
-         </item>
-         <item>
-          <widget class="QPushButton" name="btnValidate">
-           <property name="text"><string>Validate</string></property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
+       <layout class="QHBoxLayout" name="rowActions">
+        <item>
+         <spacer name="spacerActions">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+         </spacer>
+        </item>
+        <item><widget class="QPushButton" name="btnValidate"><property name="text"><string>Validate</string></property></widget></item>
+       </layout>
       </item>
-
      </layout>
     </widget>
    </item>
-
-   <!-- WICHTIG: Hier KEIN weiteres Layout/Widget.
-        Dein Code fügt den QtInteractor unten so ein:
-        plotter = QtInteractor(self); vRoot.addWidget(plotter, 1) -->
-
   </layout>
  </widget>
  <resources/>

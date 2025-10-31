@@ -7,9 +7,9 @@ import logging
 import time
 from typing import Optional, List, Dict, Tuple
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QWidget as QtWidget
-from PyQt5.QtGui import QWindow
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QWidget as QtWidget
+from PyQt6.QtGui import QWindow
+from PyQt6.QtCore import Qt
 
 _LOG = logging.getLogger("ros.rviz")
 

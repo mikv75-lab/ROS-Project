@@ -62,12 +62,60 @@ recipe_params:
     start:             { type: enum, values: ["auto","minx_miny","minx_maxy","maxx_miny","maxx_maxy"], default: "auto" }
     lead_in_mm:        { type: number, min: 0.0, max: 200,  step: 0.1, unit: "mm", default: 5.0 }
 
+  # ===== NEU: Polyhelix-Parameter =====
+  path.polyhelix.pyramid:
+    base_polygon_sides:     { type: enum, values: [3,4,5,6], default: 4 }
+    base_edge_len_mm:       { type: number, min: 5,   max: 5000, step: 0.1, unit: "mm", default: 100.0 }
+    height_mm:              { type: number, min: 5,   max: 5000, step: 0.1, unit: "mm", default: 60.0 }
+    pitch_mm:               { type: number, min: 0.1, max: 200,  step: 0.1, unit: "mm", default: 6.0 }
+    dz_mm:                  { type: number, min: 0.05,max: 50,   step: 0.05,unit: "mm", default: 1.0 }
+    start_phase_deg:        { type: number, min: 0,   max: 360,  step: 1,   unit: "deg", default: 0 }
+    stand_off_mm:           { type: number, min: 0.1, max: 200,  step: 0.1, unit: "mm", default: 25.0 }
+    corner_roll_radius_mm:  { type: number, min: 0,   max: 50,   step: 0.1, unit: "mm", default: 8.0 }
+    cap_top_mm:             { type: number, min: 0,   max: 200,  step: 0.1, unit: "mm", default: 8.0 }
+    azimuth_sector_deg:     { type: vec2,   min: [-180,-180], max: [180,180], step: [1,1], unit: "deg", default: [-180,180] }
+    flow_scale_min:         { type: number, min: 0.0, max: 1.0, step: 0.05, default: 0.3 }
+    flow_scale_max:         { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
+    cos_alpha_comp:         { type: boolean, default: true }
+
+  path.polyhelix.cube:
+    edge_len_mm:            { type: number, min: 5,   max: 5000, step: 0.1, unit: "mm", default: 100.0 }
+    height_mm:              { type: number, min: 5,   max: 5000, step: 0.1, unit: "mm", default: 100.0 }
+    pitch_mm:               { type: number, min: 0.1, max: 200,  step: 0.1, unit: "mm", default: 6.0 }
+    dz_mm:                  { type: number, min: 0.05,max: 50,   step: 0.05,unit: "mm", default: 1.0 }
+    start_phase_deg:        { type: number, min: 0,   max: 360,  step: 1,   unit: "deg", default: 0 }
+    stand_off_mm:           { type: number, min: 0.1, max: 200,  step: 0.1, unit: "mm", default: 25.0 }
+    corner_roll_radius_mm:  { type: number, min: 0,   max: 50,   step: 0.1, unit: "mm", default: 8.0 }
+    azimuth_sector_deg:     { type: vec2,   min: [-180,-180], max: [180,180], step: [1,1], unit: "deg", default: [-180,180] }
+    flow_scale_min:         { type: number, min: 0.0, max: 1.0, step: 0.05, default: 0.3 }
+    flow_scale_max:         { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
+    cos_alpha_comp:         { type: boolean, default: true }
+
+  # ===== NEU: Perimeter Follow (Rand) =====
+  path.perimeter_follow.plane:
+    area.shape:        { type: enum, values: ["circle","rect"], default: "circle" }
+    area.center_xy_mm: { type: vec2, min: [-1000,-1000], max: [1000,1000], step: [0.1,0.1], unit: "mm", default: [0,0] }
+    area.radius_mm:    { type: number, min: 1.0, max: 2000, step: 0.1, unit: "mm", default: 50.0,
+                         visible_if: {"area.shape":"circle"} }
+    area.size_mm:      { type: vec2,   min: [1.0,1.0], max: [5000,5000], step: [0.1,0.1], unit: "mm", default: [100.0,100.0],
+                         visible_if: {"area.shape":"rect"} }
+    loops:             { type: number, min: 1, max: 10, step: 1, default: 2 }
+    offset_start_mm:   { type: number, min: -20, max: 20, step: 0.1, unit: "mm", default: 1.0 }
+    offset_step_mm:    { type: number, min: 0, max: 10, step: 0.1, unit: "mm", default: 1.0 }
+    corner_blend_mm:   { type: number, min: 0, max: 20, step: 0.1, unit: "mm", default: 5.0 }
+    lead_in_mm:        { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 5.0 }
+    spray_angle_deg:   { type: number, min: 0, max: 20, step: 1, unit: "deg", default: 8 }
+    flow_scale_min:    { type: number, min: 0.0, max: 1.0, step: 0.05, default: 0.6 }
+    flow_scale_max:    { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
+
 # =====================================================================
 # Anker (DRY) für 100-mm-Defaults
 _common:
   allowed:
     plane: &ALLOWED_PLANE ["meander_plane", "spiral_plane"]
     helix: &ALLOWED_HELIX ["spiral_cylinder"]
+    polyhelix: &ALLOWED_POLYHELIX ["polyhelix_pyramid", "polyhelix_cube"]
+    perimeter: &ALLOWED_PERIMETER ["perimeter_follow_plane"]
 
   defaults:
     meander_plane_circle_50: &DEF_MEANDER_CIRCLE_50
@@ -111,19 +159,96 @@ _common:
       lead_in_mm: 5.0
       lead_out_mm: 0.0
 
+    # Polyhelix-Defaults
+    polyhelix_pyramid_default: &DEF_POLYHELIX_PYRAMID
+      type: "polyhelix_pyramid"
+      base_polygon_sides: 4
+      base_edge_len_mm: 100.0
+      height_mm: 60.0
+      pitch_mm: 6.0
+      dz_mm: 1.0
+      start_phase_deg: 0
+      stand_off_mm: 25.0
+      corner_roll_radius_mm: 8.0
+      cap_top_mm: 8.0
+      azimuth_sector_deg: [-180, 180]
+      flow_scale_min: 0.3
+      flow_scale_max: 1.0
+      cos_alpha_comp: true
+
+    polyhelix_cube_default: &DEF_POLYHELIX_CUBE
+      type: "polyhelix_cube"
+      edge_len_mm: 100.0
+      height_mm: 100.0
+      pitch_mm: 6.0
+      dz_mm: 1.0
+      start_phase_deg: 0
+      stand_off_mm: 25.0
+      corner_roll_radius_mm: 8.0
+      azimuth_sector_deg: [-180, 180]
+      flow_scale_min: 0.3
+      flow_scale_max: 1.0
+      cos_alpha_comp: true
+
+    # Perimeter-Defaults (Wafer-Durchmesser)
+    perimeter_follow_wafer_d100: &DEF_PERIM_WAFER_D100
+      type: "perimeter_follow_plane"
+      area: { shape: circle, center_xy_mm: [0.0, 0.0], radius_mm: 50.0 }
+      loops: 2
+      offset_start_mm: 1.0
+      offset_step_mm: 1.0
+      corner_blend_mm: 5.0
+      lead_in_mm: 5.0
+      spray_angle_deg: 8
+      flow_scale_min: 0.6
+      flow_scale_max: 1.0
+
+    perimeter_follow_wafer_d150: &DEF_PERIM_WAFER_D150
+      type: "perimeter_follow_plane"
+      area: { shape: circle, center_xy_mm: [0.0, 0.0], radius_mm: 75.0 }
+      loops: 2
+      offset_start_mm: 1.0
+      offset_step_mm: 1.0
+      corner_blend_mm: 5.0
+      lead_in_mm: 5.0
+      spray_angle_deg: 8
+      flow_scale_min: 0.6
+      flow_scale_max: 1.0
+
+    perimeter_follow_wafer_d200: &DEF_PERIM_WAFER_D200
+      type: "perimeter_follow_plane"
+      area: { shape: circle, center_xy_mm: [0.0, 0.0], radius_mm: 100.0 }
+      loops: 2
+      offset_start_mm: 1.0
+      offset_step_mm: 1.0
+      corner_blend_mm: 5.0
+      lead_in_mm: 5.0
+      spray_angle_deg: 8
+      flow_scale_min: 0.6
+      flow_scale_max: 1.0
+
   helix_enums: &HELIX_ENUMS
     start_froms: ["top","bottom"]
     directions: ["cw","ccw"]
 
 # =====================================================================
-# Substrat-Typen → Sides & Defaults (100-mm)
+# Substrat-Typen → Sides & Defaults
 substrate_types:
 
   wafer:
     sides:
       top:
-        allowed_path_types: *ALLOWED_PLANE
+        # Jetzt: Meander + Spiral + Perimeter (Rand)
+        allowed_path_types: ["meander_plane", "spiral_plane", "perimeter_follow_plane"]
         default_path: *DEF_MEANDER_CIRCLE_50
+
+  mask:
+    sides:
+      top:
+        # Maske: Meander + Perimeter
+        allowed_path_types: ["meander_plane", "perimeter_follow_plane"]
+        # Default kann je nach Use-Case gesetzt werden; hier Meander als neutraler Default
+        default_path: *DEF_MEANDER_RECT_100
 
   tube:
     sides:
@@ -144,11 +269,12 @@ substrate_types:
 
   cube:
     sides:
-      top:   { allowed_path_types: *ALLOWED_PLANE, default_path: *DEF_MEANDER_RECT_100 }
-      front: { allowed_path_types: *ALLOWED_PLANE, default_path: *DEF_MEANDER_RECT_100 }
-      back:  { allowed_path_types: *ALLOWED_PLANE, default_path: *DEF_MEANDER_RECT_100 }
-      left:  { allowed_path_types: *ALLOWED_PLANE, default_path: *DEF_MEANDER_RECT_100 }
-      right: { allowed_path_types: *ALLOWED_PLANE, default_path: *DEF_MEANDER_RECT_100 }
+      top:      { allowed_path_types: *ALLOWED_PLANE,     default_path: *DEF_MEANDER_RECT_100 }
+      front:    { allowed_path_types: *ALLOWED_PLANE,     default_path: *DEF_MEANDER_RECT_100 }
+      back:     { allowed_path_types: *ALLOWED_PLANE,     default_path: *DEF_MEANDER_RECT_100 }
+      left:     { allowed_path_types: *ALLOWED_PLANE,     default_path: *DEF_MEANDER_RECT_100 }
+      right:    { allowed_path_types: *ALLOWED_PLANE,     default_path: *DEF_MEANDER_RECT_100 }
+      polyhelix: { allowed_path_types: *ALLOWED_POLYHELIX, default_path: *DEF_POLYHELIX_CUBE }
 
   hemisphere:
     sides:
@@ -158,13 +284,14 @@ substrate_types:
 
   pyramid:
     sides:
-      front: { allowed_path_types: *ALLOWED_PLANE, default_path: *DEF_MEANDER_RECT_100 }
-      back:  { allowed_path_types: *ALLOWED_PLANE, default_path: *DEF_MEANDER_RECT_100 }
-      left:  { allowed_path_types: *ALLOWED_PLANE, default_path: *DEF_MEANDER_RECT_100 }
-      right: { allowed_path_types: *ALLOWED_PLANE, default_path: *DEF_MEANDER_RECT_100 }
+      front:    { allowed_path_types: *ALLOWED_PLANE,     default_path: *DEF_MEANDER_RECT_100 }
+      back:     { allowed_path_types: *ALLOWED_PLANE,     default_path: *DEF_MEANDER_RECT_100 }
+      left:     { allowed_path_types: *ALLOWED_PLANE,     default_path: *DEF_MEANDER_RECT_100 }
+      right:    { allowed_path_types: *ALLOWED_PLANE,     default_path: *DEF_MEANDER_RECT_100 }
+      polyhelix: { allowed_path_types: *ALLOWED_POLYHELIX, default_path: *DEF_POLYHELIX_PYRAMID }
 
 # =====================================================================
-# Rezepte (IDs kurz: wafer, tube, cylinder, cube, hemisphere, pyramid)
+# Rezepte
 recipes:
 
   - id: "wafer"
@@ -172,7 +299,14 @@ recipes:
     tools: ["spray_nozzle_01", "spray_nozzle_02"]
     substrates: ["wafer_d100_h2", "wafer_d150_h2", "wafer_d200_h2"]
     substrate_mounts: ["circle_d240_h50", "flat_240x240x50"]
-    parameters: {}
+    parameters: {}   # Top kann in der UI Meander oder Rand wählen
+
+  - id: "mask"
+    substrate_type: "mask"
+    tools: ["spray_nozzle_01", "spray_nozzle_02"]
+    substrates: ["mask_100", "mask_150", "mask_200"]
+    substrate_mounts: ["flat_240x240x50"]
+    parameters: {}   # Top kann in der UI Meander oder Rand wählen
 
   - id: "tube"
     substrate_type: "tube"
