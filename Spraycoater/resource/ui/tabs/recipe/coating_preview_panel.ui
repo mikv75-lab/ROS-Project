@@ -6,28 +6,95 @@
    <string>Coating Preview</string>
   </property>
   <layout class="QVBoxLayout" name="vRoot">
+   <property name="spacing">
+    <number>6</number>
+   </property>
+   <property name="leftMargin">
+    <number>6</number>
+   </property>
+   <property name="topMargin">
+    <number>6</number>
+   </property>
+   <property name="rightMargin">
+    <number>6</number>
+   </property>
+   <property name="bottomMargin">
+    <number>6</number>
+   </property>
+
+   <!-- ===== Controls Group ===== -->
    <item>
     <widget class="QGroupBox" name="grpPreview">
      <property name="title">
       <string>Preview</string>
      </property>
      <layout class="QVBoxLayout" name="vControls">
+      <property name="spacing">
+       <number>6</number>
+      </property>
+      <property name="leftMargin">
+       <number>6</number>
+      </property>
+      <property name="topMargin">
+       <number>6</number>
+      </property>
+      <property name="rightMargin">
+       <number>6</number>
+      </property>
+      <property name="bottomMargin">
+       <number>6</number>
+      </property>
+
+      <!-- Row: Toggles -->
       <item>
        <layout class="QHBoxLayout" name="rowToggles">
-        <item><widget class="QCheckBox" name="chkShowMask"><property name="text"><string>Maske anzeigen</string></property></widget></item>
-        <item><widget class="QCheckBox" name="chkShowRays"><property name="text"><string>Rays anzeigen</string></property></widget></item>
-        <item><widget class="QCheckBox" name="chkShowLocalFrames"><property name="text"><string>Lokale KS anzeigen</string></property></widget></item>
+        <item>
+         <widget class="QCheckBox" name="chkShowMask">
+          <property name="text">
+           <string>Maske anzeigen</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QCheckBox" name="chkShowRays">
+          <property name="text">
+           <string>Rays anzeigen</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QCheckBox" name="chkShowLocalFrames">
+          <property name="text">
+           <string>Lokale KS anzeigen</string>
+          </property>
+         </widget>
+        </item>
         <item>
          <spacer name="spacerToggles">
-          <property name="orientation"><enum>Qt::Horizontal</enum></property>
-          <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
          </spacer>
         </item>
        </layout>
       </item>
+
+      <!-- Row: Camera Buttons -->
       <item>
        <layout class="QHBoxLayout" name="rowCamera">
-        <item><widget class="QLabel" name="lblCamera"><property name="text"><string>Kamera:</string></property></widget></item>
+        <item>
+         <widget class="QLabel" name="lblCamera">
+          <property name="text">
+           <string>Kamera:</string>
+          </property>
+         </widget>
+        </item>
         <item><widget class="QPushButton" name="btnCamIso"><property name="text"><string>Iso</string></property></widget></item>
         <item><widget class="QPushButton" name="btnCamTop"><property name="text"><string>Top</string></property></widget></item>
         <item><widget class="QPushButton" name="btnCamFront"><property name="text"><string>Front</string></property></widget></item>
@@ -36,28 +103,84 @@
         <item><widget class="QPushButton" name="btnCamRight"><property name="text"><string>Right</string></property></widget></item>
         <item>
          <spacer name="spacerCamera">
-          <property name="orientation"><enum>Qt::Horizontal</enum></property>
-          <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
          </spacer>
         </item>
        </layout>
       </item>
+
+      <!-- Row: Actions (right-aligned Validate) -->
       <item>
        <layout class="QHBoxLayout" name="rowActions">
         <item>
          <spacer name="spacerActions">
-          <property name="orientation"><enum>Qt::Horizontal</enum></property>
-          <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
          </spacer>
         </item>
-        <item><widget class="QPushButton" name="btnValidate"><property name="text"><string>Validate</string></property></widget></item>
+        <item>
+         <widget class="QPushButton" name="btnValidate">
+          <property name="text">
+           <string>Validate</string>
+          </property>
+         </widget>
+        </item>
        </layout>
       </item>
      </layout>
     </widget>
    </item>
+
+   <!-- ===== Host for QtInteractor (injected by MainWindow) ===== -->
+   <item>
+    <widget class="QFrame" name="previewHost">
+     <property name="frameShape">
+      <enum>QFrame::NoFrame</enum>
+     </property>
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+       <horstretch>0</horstretch>
+       <verstretch>1</verstretch>
+      </sizepolicy>
+     </property>
+     <layout class="QVBoxLayout" name="vHost">
+      <property name="spacing">
+       <number>0</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+     </layout>
+    </widget>
+   </item>
+
   </layout>
  </widget>
+
  <resources/>
  <connections/>
 </ui>
