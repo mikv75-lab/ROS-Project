@@ -1,35 +1,32 @@
+# src/app/main_gui.py
 # -*- coding: utf-8 -*-
-# --- EARLY CRASH/DUMP SETUP (MUSS *GANZ OBEN* STEHEN) ---
+from __future__ import annotations
 import os, sys, signal, traceback, atexit, logging
 import faulthandler
 
-# Qt/PyVista: stabile Defaults VOR Imports
+# ==== Früh: stabile Qt/PyVista-Defaults ====
 os.environ["QT_API"] = "PyQT6"
 os.environ.setdefault("PYVISTA_QT_API", "pyqt6")
 os.environ.setdefault("QT_X11_NO_MITSHM", "1")
-# Optional: reine Software-GL
-# os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
-# os.environ.setdefault("QT_OPENGL", "software")
+os.environ["MPLBACKEND"] = "Agg"
 
 HERE         = os.path.abspath(os.path.dirname(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 SRC_ROOT     = os.path.join(PROJECT_ROOT, "src")
 RES_ROOT     = os.path.join(PROJECT_ROOT, "resource")
-
 for p in (SRC_ROOT, RES_ROOT):
     if p not in sys.path:
         sys.path.insert(0, p)
 
+# ==== Crashdump ====
 LOG_DIR = os.path.join(PROJECT_ROOT, "data", "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 CRASH_PATH = os.path.join(LOG_DIR, "crash.dump")
-
 try:
     if os.path.exists(CRASH_PATH):
         os.remove(CRASH_PATH)
 except Exception:
     pass
-
 try:
     _CRASH_FH = open(CRASH_PATH, "w", buffering=1, encoding="utf-8")
     faulthandler.enable(file=_CRASH_FH, all_threads=True)
@@ -61,10 +58,8 @@ def _on_exit_flush():
     except Exception:
         pass
 atexit.register(_on_exit_flush)
-# --- ENDE EARLY CRASH/DUMP SETUP ---
 
-# Matplotlib nie interaktiv
-os.environ["MPLBACKEND"] = "Agg"
+# ==== Imports, nachdem Backend fixiert ist ====
 import matplotlib
 matplotlib.use("Agg", force=True)
 try:
@@ -79,10 +74,8 @@ vtk.vtkObject.GlobalWarningDisplayOn()
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QTabWidget, QSplashScreen, QMessageBox,
-    QDockWidget, QWidget, QVBoxLayout
+    QApplication, QMainWindow, QTabWidget, QSplashScreen, QMessageBox, QVBoxLayout
 )
-QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
 
 # Qt runtime dir
 if "XDG_RUNTIME_DIR" not in os.environ:
@@ -94,7 +87,6 @@ if "XDG_RUNTIME_DIR" not in os.environ:
 os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
 
 from vtkmodules.vtkCommonCore import vtkFileOutputWindow, vtkOutputWindow
-vtk.vtkObject.GlobalWarningDisplayOn()
 vtk_log_dir = os.path.join(PROJECT_ROOT, "data", "logs")
 os.makedirs(vtk_log_dir, exist_ok=True)
 vtk_log = os.path.join(vtk_log_dir, "vtk.log")
@@ -102,31 +94,35 @@ fow = vtkFileOutputWindow(); fow.SetFileName(vtk_log)
 vtkOutputWindow.SetInstance(fow)
 logging.getLogger(__name__).info("VTK log -> %s", vtk_log)
 
-# PyVistaQt Interactor (global, persistent)
-from pyvistaqt import QtInteractor
-import pyvista as pv
-pv.OFF_SCREEN = False
-pv.global_theme.smooth_shading = False
-pv.global_theme.multi_samples = 0
-pv.global_theme.depth_peeling.enabled = False
-
+# ==== App-Imports ====
 from app.tabs.process.process_tab import ProcessTab
 from app.tabs.recipe.recipe_tab import RecipeTab
 from app.tabs.service.service_tab import ServiceTab
 from app.tabs.system.system_tab import SystemTab
 from app.startup_fsm import StartupMachine
 
+# PyVista / QtInteractor
+import pyvista as pv
+from pyvistaqt import QtInteractor
+pv.OFF_SCREEN = False
+pv.global_theme.smooth_shading = False
+pv.global_theme.multi_samples = 0
+pv.global_theme.depth_peeling.enabled = False
+
+# Qt shared GL
+from PyQt6.QtCore import Qt as QtCoreQt
+from PyQt6.QtWidgets import QApplication as QtWidgetsQApplication
+QtWidgetsQApplication.setAttribute(QtCoreQt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
+
 
 def resource_path(*parts: str) -> str:
     return os.path.join(RES_ROOT, *parts)
-
 
 def _startup_path_strict() -> str:
     cfg = resource_path("config", "startup.yaml")
     if not os.path.exists(cfg):
         raise FileNotFoundError(f"startup.yaml nicht gefunden: {cfg}")
     return cfg
-
 
 def _make_splash():
     pm_path = resource_path("images", "splash.png")
@@ -152,25 +148,12 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("SprayCoater UI")
         self.resize(1280, 800)
 
-        # === Persistenter Preview-Interactor (ohne Parent erzeugen!) ===
+        # === Persistenter Preview-Interactor (lebt im MainWindow) ===
         self.previewPlot = QtInteractor(self)
-        # Fokus nur bei Klick → frisst keine UI-Events
         self.previewPlot.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 
-        # === Dock mit Host, optional nutzbar (z. B. wenn Tab nicht sichtbar) ===
-        self.previewDock = QDockWidget("Preview", self)
-        self.previewDock.setObjectName("PreviewDock")
-        self.previewDock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.previewDock)
-
-        self.previewHostDock = QWidget(self.previewDock)
-        dockLayout = QVBoxLayout(self.previewHostDock)
-        dockLayout.setContentsMargins(0, 0, 0, 0)
-        dockLayout.setSpacing(0)
-        self.previewDock.setWidget(self.previewHostDock)
-
-        # Standardmäßig im Dock hosten (bis der Tab seinen Host anbietet)
-        self.attach_preview_widget(self.previewHostDock)
+        # Init-Szene (Grid/Bounds: X,Y:-120..120, Z:0..240)
+        self._build_init_scene(grid_step=10.0)
 
         # === Tabs ===
         tabs = QTabWidget(self)
@@ -178,16 +161,46 @@ class MainWindow(QMainWindow):
         tabs.addTab(RecipeTab(
             ctx=self.ctx,
             bridge=self.bridge,
-            attach_preview_widget=self.attach_preview_widget,
-            preview_api=self  # dieses Objekt stellt die Preview-API
+            attach_preview_widget=self.attach_preview_widget,  # Host aus PreviewPanel
+            preview_api=self                                 # API direkt aus MainWindow
         ), "Recipe")
         tabs.addTab(ServiceTab(ctx=self.ctx, bridge=self.bridge), "Service")
         tabs.addTab(SystemTab(ctx=self.ctx,  bridge=self.bridge), "System")
         self.setCentralWidget(tabs)
 
-    # ---------- Preview-Host einhängen ----------
+    # ---------- Szene/Grid ----------
+    def _build_init_scene(self, grid_step: float = 10.0):
+        p = self.previewPlot
+        p.clear()
+
+        bounds = (-120, 120, -120, 120, 0, 240)
+        axes = p.show_grid(
+            bounds=bounds,
+            xtitle="X (mm)", ytitle="Y (mm)", ztitle="Z (mm)",
+            show_xaxis=True, show_yaxis=True, show_zaxis=True,
+            show_xlabels=True, show_ylabels=True, show_zlabels=True,
+            n_xlabels=6, n_ylabels=6, n_zlabels=7,
+            ticks='both', grid='back', render=False
+        )
+        try:
+            axes.SetShowEdges(False)
+            axes.SetDrawXGridlines(True); axes.SetDrawYGridlines(True); axes.SetDrawZGridlines(True)
+            axes.SetDrawXInnerGridlines(True); axes.SetDrawYInnerGridlines(True); axes.SetDrawZInnerGridlines(True)
+            axes.SetUseTextActor3D(1)
+        except Exception:
+            pass
+
+        try:
+            p.view_isometric()
+            p.reset_camera(bounds=bounds)
+        except Exception:
+            pass
+
+        p.render()
+
+    # ---------- Preview-Host einhängen (vom RecipeTab aufgerufen) ----------
     def attach_preview_widget(self, host_widget):
-        """QtInteractor in gegebenen Host einsetzen (ohne Initialize/Start!)."""
+        """Hängt den persistenten QtInteractor in den Host (PreviewPanel.previewHost)."""
         try:
             ly = host_widget.layout()
             if ly is None:
@@ -196,10 +209,11 @@ class MainWindow(QMainWindow):
                 ly.setSpacing(0)
 
             self.previewPlot.setParent(host_widget)
-            if self.previewPlot not in getattr(ly, 'children', lambda: [])():
-                ly.addWidget(self.previewPlot)
+            try:
+                ly.addWidget(self.previewPlot)  # robust: mehrfaches add ist ok
+            except Exception:
+                pass
 
-            # Keine interactor.Initialize()/Start() → sonst blockiert VTK Qt-Events!
             self.previewPlot.setEnabled(True)
             self.previewPlot.show()
             self.previewPlot.update()
@@ -208,11 +222,11 @@ class MainWindow(QMainWindow):
         except Exception:
             logging.exception("Attach preview widget failed")
 
-    # ---------- Preview-API, wird an RecipeTab gereicht ----------
+    # ---------- Preview-API (vom RecipeTab verwendet) ----------
     def preview_clear(self):
         try:
             self.previewPlot.clear()
-            self.previewPlot.render()
+            self._build_init_scene()
         except Exception:
             logging.exception("preview_clear failed")
 
@@ -224,7 +238,6 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         try:
-            # Ein Render erst am Ende vom Update-Zyklus
             self.previewPlot.add_mesh(mesh, reset_camera=False, render=False, **kwargs)
         except Exception:
             logging.exception("preview_add_mesh failed")
@@ -273,7 +286,7 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-    def preview_render(self, reset_camera=True):
+    def preview_render(self, reset_camera: bool = True):
         try:
             if reset_camera:
                 self.previewPlot.reset_camera()
