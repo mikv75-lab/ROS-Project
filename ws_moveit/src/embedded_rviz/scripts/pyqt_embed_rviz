@@ -1,34 +1,52 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import sys, os, argparse
+from PyQt5 import QtWidgets
+import sip
 
-import os
-import sys
-# Das .so liegt nach Installation neben diesem Skript:
-sys.path.insert(0, os.path.dirname(__file__))
+def _ensure_embedded_rviz_py_on_path():
+    try:
+        import embedded_rviz_py  # noqa
+        return
+    except Exception:
+        pass
+    try:
+        from ament_index_python.packages import get_package_prefix
+        prefix = get_package_prefix('embedded_rviz')
+        libdir = os.path.join(prefix, 'lib', 'embedded_rviz')
+        if libdir not in sys.path:
+            sys.path.insert(0, libdir)
+    except Exception as e:
+        print(f"[embedded_rviz] WARN: ament_index lookup failed: {e}", file=sys.stderr)
 
-from PyQt5 import QtWidgets, QtGui
-from embedded_rviz_py import create, destroy
+_ensure_embedded_rviz_py_on_path()
+from embedded_rviz_py import create, destroy, qwidget_ptr
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rviz-config", default="", help="Pfad zu .rviz (optional)")
+    ap.add_argument("--node-name",  default="embedded_rviz_panel", help="ROS Node name")
+    args = ap.parse_args()
+
     app = QtWidgets.QApplication(sys.argv)
 
-    node_name = "embedded_rviz_pyqt"
-    cfg = os.environ.get("RVIZ_CONFIG", "")
+    rid, _ = create(args.node_name, args.rviz_config)
 
-    rid, wid = create(node_name, cfg)
+    ptr = qwidget_ptr(rid)
+    if not ptr:
+        raise RuntimeError("embedded_rviz: qwidget_ptr() lieferte 0")
+    rviz_widget = sip.wrapinstance(int(ptr), QtWidgets.QWidget)
 
-    qwindow = QtGui.QWindow.fromWinId(wid)
-    container = QtWidgets.QWidget.createWindowContainer(qwindow)
-
-    win = QtWidgets.QMainWindow()
-    win.setWindowTitle("embedded_rviz – PyQt")
-    win.setCentralWidget(container)
-    win.resize(1000, 700)
+    win = QtWidgets.QWidget()
+    win.setWindowTitle("Embedded RViz (PyQt)")
+    lay = QtWidgets.QVBoxLayout(win)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.addWidget(rviz_widget)
+    win.resize(1100, 700)
     win.show()
 
-    rc = app.exec_()
-    destroy(rid)
-    sys.exit(rc)
+    app.aboutToQuit.connect(lambda: destroy(rid))
+    sys.exit(app.exec_())
 
 if __name__ == "__main__":
     main()

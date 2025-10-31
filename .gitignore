@@ -47,3 +47,16 @@ Spraycoater/data/**
 *.dump
 *.tmp
 .env
+
+# Python venvs komplett ignorieren
+venv/
+.venv/
+*/venv/
+*/.venv/
+
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.dist/
+build/

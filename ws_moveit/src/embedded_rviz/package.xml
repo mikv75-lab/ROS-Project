@@ -7,22 +7,33 @@
   <maintainer email="you@example.com">Vinc</maintainer>
   <license>BSD-3-Clause</license>
 
+  <!-- Build tool -->
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <!-- ROS deps -->
   <depend>rclcpp</depend>
   <depend>rviz_common</depend>
   <depend>rviz_rendering</depend>
-  <depend>rviz_default_plugins</depend>
-  <depend>pluginlib</depend>
 
-  <!-- Qt5 Widgets direkt genutzt -->
+  <!-- (optional) wenn du Default-Displays brauchst -->
+  <exec_depend>rviz_default_plugins</exec_depend>
+
+  <!-- Qt -->
   <build_depend>Qt5Widgets</build_depend>
   <exec_depend>Qt5Widgets</exec_depend>
-
-  <!-- Für das Python-Frontend -->
+  <!-- PyQt runtime -->
   <exec_depend>python3</exec_depend>
   <exec_depend>python3-pyqt5</exec_depend>
   <exec_depend>python3-sip</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <!-- PyBind11: entweder ROS vendor oder Systempaket -->
+  <build_depend>pybind11_vendor</build_depend>
+  <build_depend>pybind11-dev</build_depend>
+  <build_export_depend>pybind11-dev</build_export_depend>
+  <exec_depend>pybind11_vendor</exec_depend>
+
+  <!-- Für das Binden gegen Python-API (C-Header) -->
+  <build_depend>python3-dev</build_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

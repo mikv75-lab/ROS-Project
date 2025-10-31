@@ -62,6 +62,9 @@ def _on_exit_flush():
 atexit.register(_on_exit_flush)
 # --- ENDE EARLY CRASH/DUMP SETUP ---
 
+
+import vtk
+vtk.vtkObject.GlobalWarningDisplayOn()
 # Qt-/Umgebungs-Prep
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap

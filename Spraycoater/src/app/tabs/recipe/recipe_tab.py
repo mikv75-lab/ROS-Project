@@ -4,13 +4,17 @@ from __future__ import annotations
 import os
 import logging
 from typing import Optional
+from functools import partial
 
 from PyQt6.QtWidgets import QWidget, QHBoxLayout
 from PyQt6 import sip  # noqa: F401
+from PyQt6.QtCore import Qt
 
 from .recipe_editor_panel.recipe_editor_panel import RecipeEditorPanel
 from .planning_panel.planning_panel import PlanningPanel
 from .coating_preview_panel.coating_preview_panel import CoatingPreviewPanel
+
+
 
 _LOG = logging.getLogger("app.tabs.recipe.tab")
 
@@ -45,8 +49,11 @@ class RecipeTab(QWidget):
         hroot.addWidget(self.planningPanel, 0)
 
         # Editor → Preview render trigger
-        self.recipePanel.updatePreviewRequested.connect(self.previewPanel.render_from_model)
-        
+        self.recipePanel.updatePreviewRequested.connect(
+            lambda model: self.previewPanel.render_from_model(model),
+            Qt.ConnectionType.QueuedConnection
+        )          
+                        
         # Provide providers to PlanningPanel (if present)
         if hasattr(self.planningPanel, "set_model_provider"):
             self.planningPanel.set_model_provider(self.recipePanel.current_model)
@@ -56,3 +63,4 @@ class RecipeTab(QWidget):
             )
         if hasattr(self.planningPanel, "set_bridge"):
             self.planningPanel.set_bridge(self.bridge)
+            
