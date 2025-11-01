@@ -99,9 +99,6 @@ class CoatingPreviewPanel(QWidget):
         }
         self._wire_buttons()
 
-        # einmaliges Auto-Init der Szene beim ersten Anzeigen
-        self._did_init_scene_once = False
-
     # -------------------------------------------------------------------------
     # Interactor-Auflösung
     # -------------------------------------------------------------------------
@@ -138,46 +135,10 @@ class CoatingPreviewPanel(QWidget):
             return True
         return False
 
-    def _try_adopt_interactor_from_window(self) -> bool:
-        """Sucht im Top-Level-Window nach 'previewPlot' (oder alternativen Namen) und dockt ihn an."""
-        try:
-            win = self.window()
-            if not win:
-                return False
-            # bevorzugt 'previewPlot'
-            for name in ("previewPlot", "plotter", "interactor", "plot"):
-                if hasattr(win, name):
-                    interactor = getattr(win, name)
-                    if interactor is None:
-                        continue
-                    # nur wenn noch keiner gesetzt ist:
-                    if self._ia is None:
-                        self.attach_interactor(interactor)
-                    return True
-            return False
-        except Exception:
-            _LOG.exception("adopt_interactor_from_window failed")
-            return False
-
-    def showEvent(self, ev):
-        """Beim ersten Anzeigen: Interactor adoptieren und Init-Szene bauen (Main-Style)."""
-        super().showEvent(ev)
-        if self._did_init_scene_once:
-            return
-        # Versuche Interactor aus dem Window zu adoptieren (falls attach schon passierte, ist _ia gesetzt)
-        if self._ia is None:
-            self._try_adopt_interactor_from_window()
-        if self._ia is not None:
-            try:
-                self.build_init_scene_mainstyle(grid_step=10.0)
-            except Exception:
-                _LOG.exception("build_init_scene_mainstyle() in showEvent failed")
-            self._did_init_scene_once = True
-
     # -------------------------------------------------------------------------
     # Public API – Hosting
     # -------------------------------------------------------------------------
-    # --- 1:1-Übernahme der Main-Init-Szene -----------------------------------
+        # --- 1:1-Übernahme der Main-Init-Szene -------------------------------
     def build_init_scene_mainstyle(self, grid_step: float = 10.0):
         """Repliziert die bisherige _build_init_scene() aus MainWindow 1:1."""
         if self._ia is None:

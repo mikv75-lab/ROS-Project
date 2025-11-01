@@ -4,7 +4,7 @@ import logging
 from typing import Optional, Callable
 
 from PyQt6.QtWidgets import QWidget, QHBoxLayout
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer   # <- QTimer hinzugefügt
 
 from .recipe_editor_panel.recipe_editor_panel import RecipeEditorPanel
 from .planning_panel.planning_panel import PlanningPanel
@@ -56,6 +56,14 @@ class RecipeTab(QWidget):
         # Interactor in den Host hängen (wie bisher über MainWindow)
         self._attach_preview_widget(self.previewPanel.preview_host())
 
+        # >>> NEU: Interactor sofort ins Panel adoptieren (damit _ia gesetzt ist)
+        try:
+            win = self.window() or self.parent()
+            if win is not None and hasattr(win, "previewPlot") and win.previewPlot is not None:
+                self.previewPanel.attach_interactor(win.previewPlot)
+        except Exception:
+            _LOG.exception("RecipeTab: adopt previewPlot into previewPanel failed")
+
         # Init-Szene im Panel (entspricht dem früheren Main-Grid/Bounds)
         if hasattr(self.previewPanel, "build_init_scene_mainstyle"):
             self.previewPanel.build_init_scene_mainstyle(grid_step=10.0)
@@ -77,6 +85,31 @@ class RecipeTab(QWidget):
             self.planningPanel.set_traj_provider(lambda: None)
         if hasattr(self.planningPanel, "set_bridge"):
             self.planningPanel.set_bridge(self.bridge)
+
+        # >>> NEU: initiales Preview NACH Layout/Adoption asynchron triggern
+        QTimer.singleShot(0, self.trigger_initial_preview)
+
+    # -------- Public: Initiales Preview nach App-Start ------------------------
+    def trigger_initial_preview(self):
+        """
+        Wird nach dem ersten show() via QTimer(0) aufgerufen.
+        Zeichnet das Grid und rendert – falls vorhanden – das aktuelle Modell einmalig.
+        """
+        _LOG.debug("RecipeTab.trigger_initial_preview()")
+        try:
+            if hasattr(self.previewPanel, "build_init_scene_mainstyle"):
+                self.previewPanel.build_init_scene_mainstyle(grid_step=10.0)
+        except Exception:
+            _LOG.exception("RecipeTab.build_init_scene_mainstyle() failed")
+
+        # Falls der Editor bereits ein Modell hat, direkt rendern
+        try:
+            provider = getattr(self.recipePanel, "current_model", None)
+            model = provider() if callable(provider) else provider
+            if model:
+                self._render_preview(model)
+        except Exception:
+            _LOG.exception("RecipeTab.trigger_initial_preview() -> _render_preview failed")
 
     # -------- Render orchestration: Panel macht clear/add_mesh/render --------
     def _render_preview(self, model: object):
