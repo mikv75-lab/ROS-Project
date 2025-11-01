@@ -89,8 +89,9 @@ class RecipeTab(QWidget):
     # -------- Render orchestration: Panel macht clear/add_mesh/render --------
     def _render_preview(self, model: object):
         """
-        Reihenfolge: clear -> Mount -> Substrat -> Grid(center on Substrat, contact plane)
-                    -> Maske -> Rays -> TCP-Pfad/Marker -> Normale/Frames -> Kamera/Render
+        Reihenfolge:
+        clear -> Mount -> Substrat -> Grid (240x240x240 auf Kontakt-Ebene)
+                -> Maske -> Rays -> TCP-Pfad/Marker -> Normale/Frames -> Kamera/Render
         """
         try:
             # Pflichtfelder
@@ -115,7 +116,7 @@ class RecipeTab(QWidget):
             smesh = None
             try:
                 smesh = load_substrate_mesh_from_key(self.ctx, substrate_key)
-                smesh = place_substrate_on_mount(self.ctx, smesh, mount_key=mount_key)
+                smesh = place_substrate_on_mount(self.ctx, smesh, mount_key=mount_key)  # Mount liegt bei (0,0,0)
                 try:
                     smesh = smesh.triangulate()
                 except Exception:
@@ -124,12 +125,18 @@ class RecipeTab(QWidget):
             except Exception as e:
                 _LOG.error("Substrat-Mesh Fehler: %s", e, exc_info=True)
 
-            # 3) Grid nach dem Substrat (Kontakt-Ebene)
+            # 3) Grid nach dem Substrat: festes 240x240x240 auf Kontakt-Ebene (zmin)
             try:
-                if smesh is not None and hasattr(self.previewPanel, "center_grid_on_mesh"):
-                    self.previewPanel.center_grid_on_mesh(smesh, on_contact_plane=True)
+                if smesh is not None:
+                    self.previewPanel.grid.spawn_fixed_grid_from_mesh(
+                        smesh,
+                        span_xy=240.0,
+                        span_z=240.0,
+                        use_contact_plane=True,  # z0 = zmin (Kontakt zum Mount)
+                        step=10.0,
+                    )
             except Exception:
-                _LOG.exception("center_grid_on_mesh() failed")
+                _LOG.exception("Grid-Spawn (240³) failed")
 
             # 4) Spray-Visualisierung (Maske → Rays → TCP → Normale/Frames)
             try:
@@ -164,7 +171,6 @@ class RecipeTab(QWidget):
 
                     # Blaue Maskenlinie (über Substrat, 100 mm Clearance je Side)
                     try:
-                        # einfache Top-Maske: +100 mm in Z (für andere Sides analog anpassen)
                         mask_height = (zmax + 100.0)
                         P_mask = P0_world.copy()
                         P_mask[:, 2] = mask_height
@@ -208,18 +214,26 @@ class RecipeTab(QWidget):
                         # Finaler Spraypfad = TCP-Polyline + Marker
                         self.previewPanel.clear_layer("path")
                         self.previewPanel.clear_layer("path_markers")
-                        self.previewPanel.add_path_polyline(tcp, color="#e74c3c", line_width=2.0, as_tube=False, layer="path")
-                        self.previewPanel.add_path_markers(tcp, step=max(1, len(tcp)//50), color="#c0392b", layer="path_markers")
+                        self.previewPanel.add_path_polyline(
+                            tcp, color="#e74c3c", line_width=2.0, as_tube=False, layer="path"
+                        )
+                        self.previewPanel.add_path_markers(
+                            tcp, step=max(1, len(tcp)//50), color="#c0392b", layer="path_markers"
+                        )
 
                         # Normale und lokale Frames (optional)
                         try:
-                            self.previewPanel.show_normals_from_hits(hits, norms, layer="normals", length_mm=8.0, color="#27ae60", line_width=1.0)
+                            self.previewPanel.show_normals_from_hits(
+                                hits, norms, layer="normals", length_mm=8.0, color="#27ae60", line_width=1.0
+                            )
                         except Exception:
                             _LOG.exception("show_normals_from_hits() failed")
 
                         try:
-                            self.previewPanel.show_frames_at(origins=tcp, z_dirs=rc.refl_dir[valid],
-                                                             scale_mm=10.0, layer="frames", line_width=2.0)
+                            self.previewPanel.show_frames_at(
+                                origins=tcp, z_dirs=rc.refl_dir[valid],
+                                scale_mm=10.0, layer="frames", line_width=2.0
+                            )
                         except Exception:
                             _LOG.exception("show_frames_at() failed")
                     else:
@@ -233,6 +247,7 @@ class RecipeTab(QWidget):
 
         except Exception:
             _LOG.exception("Render orchestration failed")
+
 
     def _finalize_view_and_render(self):
         try:
