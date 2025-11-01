@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import logging
-from typing import Optional, Callable, Any
+from typing import Optional, Callable
 
 from PyQt6.QtWidgets import QWidget, QHBoxLayout
 from PyQt6.QtCore import Qt
@@ -25,8 +25,7 @@ class RecipeTab(QWidget):
 
     - Der QtInteractor lebt im MainWindow.
     - attach_preview_widget(host) hängt ihn in den Host aus dem PreviewPanel.
-    - preview_api liefert weiter: preview_clear / preview_add_mesh / preview_render
-    - Kamera (view_*) läuft jetzt über das Panel selbst.
+    - Rendering (clear/add_mesh/camera/render) läuft vollständig über das Panel.
     """
 
     def __init__(
@@ -35,14 +34,12 @@ class RecipeTab(QWidget):
         ctx,
         bridge,
         attach_preview_widget: Callable[[QWidget], None],
-        preview_api: Any,
         parent: Optional[QWidget] = None
     ):
         super().__init__(parent)
         self.ctx = ctx
         self.bridge = bridge
         self._attach_preview_widget = attach_preview_widget
-        self._preview = preview_api  # clear/add_mesh/render bleiben über MainWindow
 
         hroot = QHBoxLayout(self)
         hroot.setContentsMargins(6, 6, 6, 6)
@@ -52,14 +49,14 @@ class RecipeTab(QWidget):
         self.recipePanel = RecipeEditorPanel(ctx=self.ctx, parent=self)
         hroot.addWidget(self.recipePanel, 0)
 
-        # Center: Preview (host + Buttons; kein Interactor)
+        # Center: Preview (Host + Buttons; kein Interactor im Panel selbst)
         self.previewPanel = CoatingPreviewPanel(ctx=self.ctx, parent=self)
         hroot.addWidget(self.previewPanel, 1)
 
         # Interactor in den Host hängen (wie bisher über MainWindow)
         self._attach_preview_widget(self.previewPanel.preview_host())
 
-        # Init-Szene im Panel (entspricht Main-Grid/Bounds)
+        # Init-Szene im Panel (entspricht dem früheren Main-Grid/Bounds)
         if hasattr(self.previewPanel, "build_init_scene_mainstyle"):
             self.previewPanel.build_init_scene_mainstyle(grid_step=10.0)
 
@@ -81,24 +78,25 @@ class RecipeTab(QWidget):
         if hasattr(self.planningPanel, "set_bridge"):
             self.planningPanel.set_bridge(self.bridge)
 
-    # -------- Render orchestration (MainWindow rendert, Panel cleart + Grid) --------
+    # -------- Render orchestration: Panel macht clear/add_mesh/render --------
     def _render_preview(self, model: object):
         try:
             # Pflichtfelder lesen
             mount_key = self._get_required_str(model, "substrate_mount", "Recipe benötigt 'substrate_mount'.")
             substrate_key = self._get_required_str(model, "substrate", "Recipe benötigt 'substrate'.")
 
-            # Szene neu aufbauen: JETZT im Panel (cleart + Grid neu)
+            # Szene neu aufbauen (Panel cleart + Grid)
             try:
-                self.previewPanel.clear()  # Panel kümmert sich auch ums Grid
+                self.previewPanel.clear()
             except Exception:
                 _LOG.exception("previewPanel.clear() failed")
 
             # Mount
             try:
                 mmesh = load_mount_mesh_from_key(self.ctx, mount_key)
-                # Mesh weiterhin über MainWindow adden (Plotter bleibt derselbe)
-                self._preview.preview_add_mesh(mmesh, color="lightgray", opacity=0.3, lighting=False)
+                self.previewPanel.add_mesh(
+                    mmesh, color="lightgray", opacity=0.3, lighting=False
+                )
             except Exception as e:
                 _LOG.error("Mount-Mesh Fehler: %s", e, exc_info=True)
 
@@ -106,16 +104,18 @@ class RecipeTab(QWidget):
             try:
                 smesh = load_substrate_mesh_from_key(self.ctx, substrate_key)
                 smesh = place_substrate_on_mount(self.ctx, smesh, mount_key=mount_key)
-                self._preview.preview_add_mesh(smesh, color="#3498db", opacity=0.95, lighting=False)
+                self.previewPanel.add_mesh(
+                    smesh, color="#3498db", opacity=0.95, lighting=False
+                )
             except Exception as e:
                 _LOG.error("Substrat-Mesh Fehler: %s", e, exc_info=True)
 
-            # Kamera via Panel, Render via MainWindow
+            # Kamera + Render über Panel
             try:
                 self.previewPanel.view_isometric()
             except Exception:
                 pass
-            self._preview.preview_render(reset_camera=True)
+            self.previewPanel.render(reset_camera=True)
 
         except Exception:
             _LOG.exception("Render orchestration failed")

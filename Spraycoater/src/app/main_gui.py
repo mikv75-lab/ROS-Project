@@ -73,9 +73,7 @@ vtk.vtkObject.GlobalWarningDisplayOn()
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QTabWidget, QSplashScreen, QMessageBox, QVBoxLayout
-)
+from PyQt6.QtWidgets import QApplication, QSplashScreen, QMessageBox
 
 # Qt runtime dir
 if "XDG_RUNTIME_DIR" not in os.environ:
@@ -95,25 +93,10 @@ vtkOutputWindow.SetInstance(fow)
 logging.getLogger(__name__).info("VTK log -> %s", vtk_log)
 
 # ==== App-Imports ====
-from app.tabs.process.process_tab import ProcessTab
-from app.tabs.recipe.recipe_tab import RecipeTab
-from app.tabs.service.service_tab import ServiceTab
-from app.tabs.system.system_tab import SystemTab
 from app.startup_fsm import StartupMachine
+from app.main_window import MainWindow   # <-- NEW
 
-# PyVista / QtInteractor
-import pyvista as pv
-from pyvistaqt import QtInteractor
-pv.OFF_SCREEN = False
-pv.global_theme.smooth_shading = False
-pv.global_theme.multi_samples = 0
-pv.global_theme.depth_peeling.enabled = False
-
-# Qt shared GL
-from PyQt6.QtCore import Qt as QtCoreQt
-from PyQt6.QtWidgets import QApplication as QtWidgetsQApplication
-QtWidgetsQApplication.setAttribute(QtCoreQt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
-
+# (No need to import tabs here anymore; MainWindow does that)
 
 def resource_path(*parts: str) -> str:
     return os.path.join(RES_ROOT, *parts)
@@ -136,80 +119,6 @@ def _make_splash():
     splash.showMessage("Lade…", Qt.AlignHCenter | Qt.AlignBottom, Qt.white)
     splash.show()
     return splash
-
-
-class MainWindow(QMainWindow):
-    def __init__(self, *, ctx, bridge, parent=None):
-        super().__init__(parent)
-        if ctx is None:
-            raise RuntimeError("AppContext ist None – Startup fehlgeschlagen?")
-        self.ctx = ctx
-        self.bridge = bridge
-        self.setWindowTitle("SprayCoater UI")
-        self.resize(1280, 800)
-
-        # === Persistenter Preview-Interactor (lebt im MainWindow) ===
-        self.previewPlot = QtInteractor(self)
-        self.previewPlot.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
-
-        # Init-Szene (Grid/Bounds: X,Y:-120..120, Z:0..240)
-        #self._build_init_scene(grid_step=10.0)
-
-        # === Tabs ===
-        tabs = QTabWidget(self)
-        tabs.addTab(ProcessTab(ctx=self.ctx, bridge=self.bridge), "Process")
-
-        # RecipeTab erzeugen (attach_preview_widget nicht mehr verwenden)
-        recipe_tab = RecipeTab(
-            ctx=self.ctx,
-            bridge=self.bridge,
-            attach_preview_widget=lambda _host: None,  # no-op: wir docken gleich direkt an
-            preview_api=self
-        )
-        # Plotter direkt im Panel andocken
-        recipe_tab.previewPanel.attach_interactor(self.previewPlot)
-        recipe_tab.previewPanel.build_init_scene_mainstyle(grid_step=10.0)
-        
-        tabs.addTab(recipe_tab, "Recipe")
-        tabs.addTab(ServiceTab(ctx=self.ctx, bridge=self.bridge), "Service")
-        tabs.addTab(SystemTab(ctx=self.ctx,  bridge=self.bridge), "System")
-        self.setCentralWidget(tabs)
-
-    # ---------- Preview-API (vom RecipeTab verwendet) ----------
-    def preview_add_mesh(self, mesh, **kwargs):
-        try:
-            fn = getattr(mesh, "is_all_triangles", None)
-            if callable(fn) and not fn():
-                mesh = mesh.triangulate()
-        except Exception:
-            pass
-        try:
-            self.previewPlot.add_mesh(mesh, reset_camera=False, render=False, **kwargs)
-        except Exception:
-            logging.exception("preview_add_mesh failed")
-
-    def preview_render(self, reset_camera: bool = True):
-        try:
-            if reset_camera:
-                self.previewPlot.reset_camera()
-            self.previewPlot.render()
-        except Exception:
-            logging.exception("preview_render failed")
-
-    # ---------- Close ----------
-    def closeEvent(self, event):
-        try:
-            if self.bridge and getattr(self.bridge, "is_connected", False):
-                self.bridge.shutdown()
-        except Exception:
-            pass
-        try:
-            from ros.ros_launcher import BRINGUP_RUNNING, shutdown_bringup
-            if BRINGUP_RUNNING():
-                shutdown_bringup()
-        except Exception:
-            pass
-        super().closeEvent(event)
 
 
 def _nonblocking_logging_shutdown():
