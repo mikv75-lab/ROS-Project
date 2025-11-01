@@ -28,8 +28,7 @@ _LOG = logging.getLogger("app.tabs.recipe")
 class RecipeTab(QWidget):
     """
     Layout: [RecipeEditorPanel] | [CoatingPreviewPanel(host)] | [PlanningPanel]
-    - KEIN initialer Scene-Build mehr. Rendering passiert nur, wenn _render_preview() aufgerufen wird
-      (z. B. über deinen Init-Button oder updatePreviewRequested).
+    Rendering passiert, wenn _render_preview() aufgerufen wird (per Editor-Signal).
     """
 
     def __init__(
@@ -86,19 +85,19 @@ class RecipeTab(QWidget):
         if hasattr(self.planningPanel, "set_bridge"):
             self.planningPanel.set_bridge(self.bridge)
 
-    # -------- Render orchestration: Panel macht clear/add_mesh/render --------
+    # -------- Render orchestration --------
     def _render_preview(self, model: object):
         """
         Reihenfolge:
-        clear -> Mount -> Substrat -> Grid (240x240x240 auf Kontakt-Ebene)
-                -> Maske -> Rays -> TCP-Pfad/Marker -> Normale/Frames -> Kamera/Render
+        clear -> Mount -> Substrat -> Bounds an Substrat (Kontakt-Ebene) ->
+        Maske -> Rays -> TCP-Pfad/Marker -> Normale/Frames -> Kamera/Render
         """
         try:
             # Pflichtfelder
             mount_key = self._get_required_str(model, "substrate_mount", "Recipe benötigt 'substrate_mount'.")
             substrate_key = self._get_required_str(model, "substrate", "Recipe benötigt 'substrate'.")
 
-            # Szene komplett leeren (ohne Grid-Rebuild)
+            # Szene komplett leeren
             try:
                 self.previewPanel.clear()
             except Exception:
@@ -112,7 +111,7 @@ class RecipeTab(QWidget):
             except Exception as e:
                 _LOG.error("Mount-Mesh Fehler: %s", e, exc_info=True)
 
-            # 2) Substrat platzieren (auf Mount) + triangulieren für robustes ray_trace
+            # 2) Substrat platzieren (auf Mount) + triangulieren (robuster für ray_trace)
             smesh = None
             try:
                 smesh = load_substrate_mesh_from_key(self.ctx, substrate_key)
@@ -125,18 +124,14 @@ class RecipeTab(QWidget):
             except Exception as e:
                 _LOG.error("Substrat-Mesh Fehler: %s", e, exc_info=True)
 
-            # 3) Grid nach dem Substrat: festes 240x240x240 auf Kontakt-Ebene (zmin)
+            # 3) Bounds/„Grid“ an Substrat zentrieren (Kontakt-Ebene = zmin), 240×240×240
             try:
                 if smesh is not None:
-                    self.previewPanel.grid.spawn_fixed_grid_from_mesh(
-                        smesh,
-                        span_xy=240.0,
-                        span_z=240.0,
-                        use_contact_plane=True,  # z0 = zmin (Kontakt zum Mount)
-                        step=10.0,
+                    self.previewPanel.set_bounds_from_mesh(
+                        smesh, use_contact_plane=True, span_xy=240.0, span_z=240.0
                     )
             except Exception:
-                _LOG.exception("Grid-Spawn (240³) failed")
+                _LOG.exception("Bounds-Setzen (am Substrat) failed")
 
             # 4) Spray-Visualisierung (Maske → Rays → TCP → Normale/Frames)
             try:

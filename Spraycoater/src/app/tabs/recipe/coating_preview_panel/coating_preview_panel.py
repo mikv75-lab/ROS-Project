@@ -9,7 +9,6 @@ from PyQt6 import uic
 from PyQt6.QtWidgets import QWidget, QPushButton, QCheckBox, QFrame
 
 from .interactor_host import InteractorHost
-from .grid_manager import GridManager
 from .scene_manager import SceneManager
 from .views import ViewController
 
@@ -64,11 +63,16 @@ class CoatingPreviewPanel(QWidget):
         if self._host is None:
             raise RuntimeError("coating_preview_panel.ui braucht QFrame 'previewHost'.")
 
-        # Composition (kein Auto-Grid, keine Auto-Clears)
+        # Composition
         self._hoster = InteractorHost(self, self._host)
-        self.grid = GridManager(lambda: self._hoster.ia)
         self.scene = SceneManager(lambda: self._hoster.ia, None)  # kein Auto-Aufbau
         self.views = ViewController(lambda: self._hoster.ia, self.render)
+
+        # Bounds-/Floor-/Grid-State
+        self._bounds = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)  # xmin,xmax,ymin,ymax,zmin,zmax (mm)
+        self._floor_actor  = None
+        self._axis_actor   = None   # Achsen+Ticks (eigener PolyData-Actor)
+        self._grid_step    = 10.0   # mm-Raster
 
         # Kamera-Buttons
         self.views.wire_buttons(
@@ -102,7 +106,152 @@ class CoatingPreviewPanel(QWidget):
     def attach_interactor(self, interactor: Any) -> None:
         self._hoster.attach(interactor)
 
-    # --- Scene passthrough / Public API ---
+    # ---------- Bounds / “Grid” ----------
+    def set_grid_step(self, step_mm: float) -> None:
+        self._grid_step = max(1.0, float(step_mm))
+        self._apply_bounds()  # neu zeichnen
+
+    def _apply_bounds(self) -> None:
+        ia = self._hoster.ia or (self._hoster.ensure() and self._hoster.ia)
+        if ia is None:
+            return
+
+        # alte Floor/Axis-Actors entfernen
+        for actor in (self._floor_actor, self._axis_actor):
+            if actor is not None:
+                try: ia.remove_actor(actor, render=False)
+                except Exception: pass
+        self._floor_actor = None
+        self._axis_actor  = None
+
+        # 1) Boden-Gitter (Wireframe-Plane) an zmin, im 10-mm Raster
+        self._floor_actor = self._make_floor_wire(ia, step=self._grid_step)
+
+        # 2) Boden-Achsen inkl. 10-mm-Ticks/Labels direkt am Gitter
+        self._axis_actor = self._draw_floor_axes(ia, step=self._grid_step)
+
+        # 3) Kamera auf die Bounds
+        try:
+            ia.reset_camera(bounds=self._bounds)
+        except Exception:
+            pass
+        ia.render()
+
+    def _make_floor_wire(self, ia, step: float):
+        xmin, xmax, ymin, ymax, zmin, _ = self._bounds
+        width  = xmax - xmin
+        height = ymax - ymin
+        i_res = max(1, int(round(width  / max(1e-6, step))))
+        j_res = max(1, int(round(height / max(1e-6, step))))
+
+        center = ((xmin + xmax) * 0.5, (ymin + ymax) * 0.5, zmin)
+        plane = pv.Plane(center=center,
+                         direction=(0, 0, 1),
+                         i_size=width,
+                         j_size=height,
+                         i_resolution=i_res,
+                         j_resolution=j_res)
+
+        actor = ia.add_mesh(
+            plane,
+            style="wireframe",
+            color="#cfcfcf",
+            line_width=1.0,
+            lighting=False,
+            render=False,
+        )
+        return actor
+
+    def _draw_floor_axes(self, ia, step: float = 10.0):
+        """
+        Zeichnet X/Y-Achsen, Ticks und mm-Labels direkt auf dem Boden (z=zmin).
+        Gibt den Linien-Actor zurück (Labels sind separate Text-Props, die PyVista verwaltet).
+        """
+        xmin, xmax, ymin, ymax, zmin, _ = self._bounds
+        step = max(1.0, float(step))
+
+        def ticks(vmin, vmax):
+            start = np.ceil(vmin / step) * step
+            vals = np.arange(start, vmax + 0.5*step, step, dtype=float)
+            return vals[(vals >= vmin + 1e-6) & (vals <= vmax - 1e-6)]
+
+        xt = ticks(xmin, xmax)
+        yt = ticks(ymin, ymax)
+
+        cx = 0.5 * (xmin + xmax)
+        cy = 0.5 * (ymin + ymax)
+
+        lines_pts: list[tuple[float,float,float]] = []
+        lines_idx: list[int] = []
+
+        def add_segment(p0, p1, idx_base):
+            lines_pts.extend([p0, p1])
+            lines_idx.extend([2, idx_base, idx_base + 1])
+
+        # Hauptachsen
+        add_segment((xmin, cy, zmin), (xmax, cy, zmin), 0)
+        base = 2
+        add_segment((cx, ymin, zmin), (cx, ymax, zmin), base); base += 2
+
+        # Tick-Striche (1–3 mm)
+        tick_len = step * 0.15
+        tick_len = max(1.0, min(3.0, tick_len))
+
+        for xv in xt:  # auf X-Achse (±Y)
+            add_segment((xv, cy - tick_len, zmin), (xv, cy + tick_len, zmin), base); base += 2
+        for yv in yt:  # auf Y-Achse (±X)
+            add_segment((cx - tick_len, yv, zmin), (cx + tick_len, yv, zmin), base); base += 2
+
+        actor = None
+        if lines_pts:
+            poly = pv.PolyData(np.asarray(lines_pts, dtype=float))
+            poly.lines = np.asarray(lines_idx, dtype=np.int64)
+            actor = ia.add_mesh(
+                poly, style="wireframe", color="#5a5a5a",
+                line_width=1.0, lighting=False, render=False
+            )
+
+        # Labels leicht über Boden
+        label_z = zmin + max(0.5, tick_len * 0.5)
+
+        if len(xt):
+            pts = np.c_[xt, np.full_like(xt, cy), np.full_like(xt, label_z)]
+            labs = [f"{int(v)}" if abs(v - int(v)) < 1e-6 else f"{v:.1f}" for v in xt]
+            ia.add_point_labels(pts, labs, point_size=0, font_size=10,
+                                text_color="black", shape_opacity=0.0, render=False)
+
+        if len(yt):
+            pts = np.c_[np.full_like(yt, cx), yt, np.full_like(yt, label_z)]
+            labs = [f"{int(v)}" if abs(v - int(v)) < 1e-6 else f"{v:.1f}" for v in yt]
+            ia.add_point_labels(pts, labs, point_size=0, font_size=10,
+                                text_color="black", shape_opacity=0.0, render=False)
+
+        # Achsentitel
+        ia.add_point_labels(
+            [(xmax, cy, label_z), (cx, ymax, label_z)],
+            ["X (mm)", "Y (mm)"],
+            point_size=0, font_size=12, text_color="black",
+            shape_opacity=0.0, render=False
+        )
+        return actor
+
+    def set_world_bounds_at(self, *, center_xy=(0.0, 0.0), z0=0.0, span_xy=240.0, span_z=240.0) -> None:
+        cx, cy = float(center_xy[0]), float(center_xy[1])
+        half = float(span_xy) * 0.5
+        z0, span_z = float(z0), float(span_z)
+        self._bounds = (cx - half, cx + half, cy - half, cy + half, z0, z0 + span_z)
+        self._apply_bounds()
+
+    def set_bounds_from_mesh(self, mesh, *, use_contact_plane=True, span_xy=240.0, span_z=240.0) -> None:
+        if not hasattr(mesh, "bounds"):
+            return
+        xmin, xmax, ymin, ymax, zmin, zmax = mesh.bounds
+        cx = 0.5 * (xmin + xmax)
+        cy = 0.5 * (ymin + ymax)
+        z0 = float(zmin if use_contact_plane else 0.5 * (zmin + zmax))
+        self.set_world_bounds_at(center_xy=(cx, cy), z0=z0, span_xy=span_xy, span_z=span_z)
+
+    # ---------- Scene passthrough / Public API ----------
     def clear(self) -> None:
         if self._hoster.ia is None and not self._hoster.ensure():
             return
@@ -188,20 +337,14 @@ class CoatingPreviewPanel(QWidget):
         z_dirs: np.ndarray,
         x_dirs: np.ndarray | None = None,
         scale: float = 10.0,
-        scale_mm: float | None = None,     # Alias für Kompatibilität
+        scale_mm: float | None = None,
         tube_radius: float = 0.7,
-        line_width: float | None = None,   # Linien oder Tubes
-        layer: str | None = None,          # optional: eigener Layer-Präfix
+        line_width: float | None = None,
+        layer: str | None = None,
         labels: list[str] | None = None,
         clear_old: bool = True,
         add_labels: bool = False,
     ) -> None:
-        """
-        Zeichnet kleine lokale Koordinatensysteme an N Positionen.
-        - Mit `line_width`: als Linien (performant).
-        - Ohne `line_width`: als Tubes (rund), gesteuert via `tube_radius`.
-        Farben: X=rot, Y=grün, Z=blau.
-        """
         if self._hoster.ia is None and not self._hoster.ensure():
             _LOG.warning("show_frames_at(): kein Interactor")
             return
@@ -236,7 +379,6 @@ class CoatingPreviewPanel(QWidget):
         if N == 0:
             return
 
-        # Sammel-PolyDatas pro Achse
         def _acc():
             return [], []
 
@@ -259,11 +401,8 @@ class CoatingPreviewPanel(QWidget):
             py = o + y * float(scale)
             pz = o + z * float(scale)
 
-            # X
             pts_x.extend([o, px]); lns_x.extend([2, idx_x, idx_x + 1]); idx_x += 2
-            # Y
             pts_y.extend([o, py]); lns_y.extend([2, idx_y, idx_y + 1]); idx_y += 2
-            # Z
             pts_z.extend([o, pz]); lns_z.extend([2, idx_z, idx_z + 1]); idx_z += 2
 
         def _poly_from(pts, lns):
@@ -275,12 +414,10 @@ class CoatingPreviewPanel(QWidget):
         poly_y = _poly_from(pts_y, lns_y)
         poly_z = _poly_from(pts_z, lns_z)
 
-        # Auf Layer legen: Linien oder Tubes
         for lyr in (lx, ly, lz):
             self.scene.clear_layer(lyr)
 
         if line_width is not None and float(line_width) > 0.0:
-            # Linienmodus
             self.scene.add_mesh(poly_x, color="red",   layer=lx,
                                 line_width=float(line_width),
                                 reset_camera=False, render=False, lighting=False)
@@ -291,7 +428,6 @@ class CoatingPreviewPanel(QWidget):
                                 line_width=float(line_width),
                                 reset_camera=False, render=False, lighting=False)
         else:
-            # Tube-Modus
             tx = poly_x.tube(radius=float(tube_radius))
             ty = poly_y.tube(radius=float(tube_radius))
             tz = poly_z.tube(radius=float(tube_radius))
@@ -302,7 +438,6 @@ class CoatingPreviewPanel(QWidget):
             self.scene.add_mesh(tz, color="blue",  layer=lz,
                                 reset_camera=False, render=False, lighting=False)
 
-        # Optional Labels
         if add_labels and labels:
             try:
                 L = min(len(labels), N)
@@ -330,11 +465,7 @@ class CoatingPreviewPanel(QWidget):
             return
         try:
             if reset_camera:
-                b = getattr(self.grid, "bounds", None)
-                if b is not None and np.all(np.isfinite(b)):
-                    ia.reset_camera(bounds=b)
-                else:
-                    ia.reset_camera()
+                ia.reset_camera(bounds=self._bounds)
             ia.render()
         except Exception:
             _LOG.exception("render() failed")
