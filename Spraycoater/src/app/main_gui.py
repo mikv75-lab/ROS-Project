@@ -242,50 +242,6 @@ class MainWindow(QMainWindow):
         except Exception:
             logging.exception("preview_add_mesh failed")
 
-    def preview_view_iso(self):
-        try:
-            self.previewPlot.view_isometric()
-        except Exception:
-            pass
-
-    def preview_view_top(self):
-        try:
-            self.previewPlot.view_xy()
-        except Exception:
-            pass
-
-    def preview_view_front(self):
-        try:
-            self.previewPlot.view_yz()
-        except Exception:
-            pass
-
-    def preview_view_left(self):
-        try:
-            self.previewPlot.view_xz()
-        except Exception:
-            pass
-
-    def preview_view_right(self):
-        try:
-            self.previewPlot.view_xz()
-            try:
-                self.previewPlot.camera.azimuth(180)
-            except Exception:
-                pass
-        except Exception:
-            pass
-
-    def preview_view_back(self):
-        try:
-            self.previewPlot.view_yz()
-            try:
-                self.previewPlot.camera.azimuth(180)
-            except Exception:
-                pass
-        except Exception:
-            pass
-
     def preview_render(self, reset_camera: bool = True):
         try:
             if reset_camera:

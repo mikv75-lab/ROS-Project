@@ -58,17 +58,6 @@ class RecipeTab(QWidget):
         # Interactor in den Host hängen
         self._attach_preview_widget(self.previewPanel.preview_host())
 
-        # Kamera-Button-Hooks an MainWindow-API binden
-        self.previewPanel.set_camera_hooks(
-            on_iso=self._preview.preview_view_iso,
-            on_top=self._preview.preview_view_top,
-            on_front=self._preview.preview_view_front,
-            on_left=self._preview.preview_view_left,
-            on_right=self._preview.preview_view_right,
-            on_back=self._preview.preview_view_back,
-            on_after=lambda: self._preview.preview_render(reset_camera=True),
-        )
-
         # Right: Planner
         self.planningPanel = PlanningPanel(ctx=self.ctx, bridge=self.bridge, parent=self)
         hroot.addWidget(self.planningPanel, 0)
