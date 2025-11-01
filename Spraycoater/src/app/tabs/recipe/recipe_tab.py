@@ -25,7 +25,8 @@ class RecipeTab(QWidget):
 
     - Der QtInteractor lebt im MainWindow.
     - attach_preview_widget(host) hängt ihn in den Host aus dem PreviewPanel.
-    - preview_api liefert die Methoden: clear/add_mesh/view_*/render
+    - preview_api liefert weiter: preview_clear / preview_add_mesh / preview_render
+    - Kamera (view_*) läuft jetzt über das Panel selbst.
     """
 
     def __init__(
@@ -41,7 +42,7 @@ class RecipeTab(QWidget):
         self.ctx = ctx
         self.bridge = bridge
         self._attach_preview_widget = attach_preview_widget
-        self._preview = preview_api
+        self._preview = preview_api  # clear/add_mesh/render bleiben über MainWindow
 
         hroot = QHBoxLayout(self)
         hroot.setContentsMargins(6, 6, 6, 6)
@@ -51,12 +52,16 @@ class RecipeTab(QWidget):
         self.recipePanel = RecipeEditorPanel(ctx=self.ctx, parent=self)
         hroot.addWidget(self.recipePanel, 0)
 
-        # Center: Preview (stellt Host + Buttons, kein Interactor!)
+        # Center: Preview (host + Buttons; kein Interactor)
         self.previewPanel = CoatingPreviewPanel(ctx=self.ctx, parent=self)
         hroot.addWidget(self.previewPanel, 1)
 
-        # Interactor in den Host hängen
+        # Interactor in den Host hängen (wie bisher über MainWindow)
         self._attach_preview_widget(self.previewPanel.preview_host())
+
+        # Init-Szene im Panel (entspricht Main-Grid/Bounds)
+        if hasattr(self.previewPanel, "build_init_scene_mainstyle"):
+            self.previewPanel.build_init_scene_mainstyle(grid_step=10.0)
 
         # Right: Planner
         self.planningPanel = PlanningPanel(ctx=self.ctx, bridge=self.bridge, parent=self)
@@ -76,14 +81,14 @@ class RecipeTab(QWidget):
         if hasattr(self.planningPanel, "set_bridge"):
             self.planningPanel.set_bridge(self.bridge)
 
-    # -------- Render orchestration (MainWindow macht die Plot-Calls) --------
+    # -------- Render orchestration --------
     def _render_preview(self, model: object):
         try:
             # Pflichtfelder lesen
             mount_key = self._get_required_str(model, "substrate_mount", "Recipe benötigt 'substrate_mount'.")
             substrate_key = self._get_required_str(model, "substrate", "Recipe benötigt 'substrate'.")
 
-            # Szene neu aufbauen
+            # Szene neu aufbauen (über MainWindow-API)
             self._preview.preview_clear()
 
             # Mount
@@ -101,8 +106,11 @@ class RecipeTab(QWidget):
             except Exception as e:
                 _LOG.error("Substrat-Mesh Fehler: %s", e, exc_info=True)
 
-            # Kamera und Render
-            self._preview.preview_view_iso()
+            # Kamera jetzt über das Panel (nicht mehr über MainWindow)
+            if hasattr(self.previewPanel, "view_isometric"):
+                self.previewPanel.view_isometric()
+
+            # Render (weiterhin über MainWindow)
             self._preview.preview_render(reset_camera=True)
 
         except Exception:

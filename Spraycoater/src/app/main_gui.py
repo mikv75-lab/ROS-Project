@@ -153,17 +153,24 @@ class MainWindow(QMainWindow):
         self.previewPlot.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 
         # Init-Szene (Grid/Bounds: X,Y:-120..120, Z:0..240)
-        self._build_init_scene(grid_step=10.0)
+        #self._build_init_scene(grid_step=10.0)
 
         # === Tabs ===
         tabs = QTabWidget(self)
         tabs.addTab(ProcessTab(ctx=self.ctx, bridge=self.bridge), "Process")
-        tabs.addTab(RecipeTab(
+
+        # RecipeTab erzeugen (attach_preview_widget nicht mehr verwenden)
+        recipe_tab = RecipeTab(
             ctx=self.ctx,
             bridge=self.bridge,
-            attach_preview_widget=self.attach_preview_widget,  # Host aus PreviewPanel
-            preview_api=self                                 # API direkt aus MainWindow
-        ), "Recipe")
+            attach_preview_widget=lambda _host: None,  # no-op: wir docken gleich direkt an
+            preview_api=self
+        )
+        # Plotter direkt im Panel andocken
+        recipe_tab.previewPanel.attach_interactor(self.previewPlot)
+        recipe_tab.previewPanel.build_init_scene_mainstyle(grid_step=10.0)
+        
+        tabs.addTab(recipe_tab, "Recipe")
         tabs.addTab(ServiceTab(ctx=self.ctx, bridge=self.bridge), "Service")
         tabs.addTab(SystemTab(ctx=self.ctx,  bridge=self.bridge), "System")
         self.setCentralWidget(tabs)
@@ -197,30 +204,6 @@ class MainWindow(QMainWindow):
             pass
 
         p.render()
-
-    # ---------- Preview-Host einhängen (vom RecipeTab aufgerufen) ----------
-    def attach_preview_widget(self, host_widget):
-        """Hängt den persistenten QtInteractor in den Host (PreviewPanel.previewHost)."""
-        try:
-            ly = host_widget.layout()
-            if ly is None:
-                ly = QVBoxLayout(host_widget)
-                ly.setContentsMargins(0, 0, 0, 0)
-                ly.setSpacing(0)
-
-            self.previewPlot.setParent(host_widget)
-            try:
-                ly.addWidget(self.previewPlot)  # robust: mehrfaches add ist ok
-            except Exception:
-                pass
-
-            self.previewPlot.setEnabled(True)
-            self.previewPlot.show()
-            self.previewPlot.update()
-            if hasattr(self.previewPlot, "render"):
-                self.previewPlot.render()
-        except Exception:
-            logging.exception("Attach preview widget failed")
 
     # ---------- Preview-API (vom RecipeTab verwendet) ----------
     def preview_clear(self):

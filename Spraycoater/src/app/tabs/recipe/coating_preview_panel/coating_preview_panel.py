@@ -138,6 +138,41 @@ class CoatingPreviewPanel(QWidget):
     # -------------------------------------------------------------------------
     # Public API – Hosting
     # -------------------------------------------------------------------------
+        # --- 1:1-Übernahme der Main-Init-Szene -------------------------------
+    def build_init_scene_mainstyle(self, grid_step: float = 10.0):
+        """Repliziert die bisherige _build_init_scene() aus MainWindow 1:1."""
+        if self._ia is None:
+            _LOG.warning("build_init_scene_mainstyle(): kein Interactor angehängt")
+            return
+
+        p = self._ia
+        p.clear()
+
+        bounds = (-120, 120, -120, 120, 0, 240)
+        axes = p.show_grid(
+            bounds=bounds,
+            xtitle="X (mm)", ytitle="Y (mm)", ztitle="Z (mm)",
+            show_xaxis=True, show_yaxis=True, show_zaxis=True,
+            show_xlabels=True, show_ylabels=True, show_zlabels=True,
+            n_xlabels=6, n_ylabels=6, n_zlabels=7,
+            ticks='both', grid='back', render=False
+        )
+        try:
+            axes.SetShowEdges(False)
+            axes.SetDrawXGridlines(True); axes.SetDrawYGridlines(True); axes.SetDrawZGridlines(True)
+            axes.SetDrawXInnerGridlines(True); axes.SetDrawYInnerGridlines(True); axes.SetDrawZInnerGridlines(True)
+            axes.SetUseTextActor3D(1)
+        except Exception:
+            pass
+
+        try:
+            p.view_isometric()
+            p.reset_camera(bounds=bounds)
+        except Exception:
+            pass
+
+        p.render()
+
     def preview_host(self) -> QFrame:
         """Host-Widget, in das MainWindow den QtInteractor einhängt (per setParent/addWidget)."""
         return self._host
