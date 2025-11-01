@@ -175,44 +175,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(SystemTab(ctx=self.ctx,  bridge=self.bridge), "System")
         self.setCentralWidget(tabs)
 
-    # ---------- Szene/Grid ----------
-    def _build_init_scene(self, grid_step: float = 10.0):
-        p = self.previewPlot
-        p.clear()
-
-        bounds = (-120, 120, -120, 120, 0, 240)
-        axes = p.show_grid(
-            bounds=bounds,
-            xtitle="X (mm)", ytitle="Y (mm)", ztitle="Z (mm)",
-            show_xaxis=True, show_yaxis=True, show_zaxis=True,
-            show_xlabels=True, show_ylabels=True, show_zlabels=True,
-            n_xlabels=6, n_ylabels=6, n_zlabels=7,
-            ticks='both', grid='back', render=False
-        )
-        try:
-            axes.SetShowEdges(False)
-            axes.SetDrawXGridlines(True); axes.SetDrawYGridlines(True); axes.SetDrawZGridlines(True)
-            axes.SetDrawXInnerGridlines(True); axes.SetDrawYInnerGridlines(True); axes.SetDrawZInnerGridlines(True)
-            axes.SetUseTextActor3D(1)
-        except Exception:
-            pass
-
-        try:
-            p.view_isometric()
-            p.reset_camera(bounds=bounds)
-        except Exception:
-            pass
-
-        p.render()
-
     # ---------- Preview-API (vom RecipeTab verwendet) ----------
-    def preview_clear(self):
-        try:
-            self.previewPlot.clear()
-            self._build_init_scene()
-        except Exception:
-            logging.exception("preview_clear failed")
-
     def preview_add_mesh(self, mesh, **kwargs):
         try:
             fn = getattr(mesh, "is_all_triangles", None)

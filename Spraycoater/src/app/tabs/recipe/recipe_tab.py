@@ -81,19 +81,23 @@ class RecipeTab(QWidget):
         if hasattr(self.planningPanel, "set_bridge"):
             self.planningPanel.set_bridge(self.bridge)
 
-    # -------- Render orchestration --------
+    # -------- Render orchestration (MainWindow rendert, Panel cleart + Grid) --------
     def _render_preview(self, model: object):
         try:
             # Pflichtfelder lesen
             mount_key = self._get_required_str(model, "substrate_mount", "Recipe benötigt 'substrate_mount'.")
             substrate_key = self._get_required_str(model, "substrate", "Recipe benötigt 'substrate'.")
 
-            # Szene neu aufbauen (über MainWindow-API)
-            self._preview.preview_clear()
+            # Szene neu aufbauen: JETZT im Panel (cleart + Grid neu)
+            try:
+                self.previewPanel.clear()  # Panel kümmert sich auch ums Grid
+            except Exception:
+                _LOG.exception("previewPanel.clear() failed")
 
             # Mount
             try:
                 mmesh = load_mount_mesh_from_key(self.ctx, mount_key)
+                # Mesh weiterhin über MainWindow adden (Plotter bleibt derselbe)
                 self._preview.preview_add_mesh(mmesh, color="lightgray", opacity=0.3, lighting=False)
             except Exception as e:
                 _LOG.error("Mount-Mesh Fehler: %s", e, exc_info=True)
@@ -106,11 +110,11 @@ class RecipeTab(QWidget):
             except Exception as e:
                 _LOG.error("Substrat-Mesh Fehler: %s", e, exc_info=True)
 
-            # Kamera jetzt über das Panel (nicht mehr über MainWindow)
-            if hasattr(self.previewPanel, "view_isometric"):
+            # Kamera via Panel, Render via MainWindow
+            try:
                 self.previewPanel.view_isometric()
-
-            # Render (weiterhin über MainWindow)
+            except Exception:
+                pass
             self._preview.preview_render(reset_camera=True)
 
         except Exception:
