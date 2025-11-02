@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 
 import numpy as np
 import matplotlib
@@ -19,6 +19,7 @@ except Exception:
 _LOG = logging.getLogger("app.tabs.recipe.preview.matplot2d")
 
 
+# ---------- helpers ----------
 def _project_points_xyz_to_plane(P: np.ndarray, plane: str) -> np.ndarray:
     if plane == "top":
         U = P[:, [0, 1]]
@@ -53,12 +54,11 @@ def _polyline_from_polydata(poly: "pv.PolyData") -> Optional[np.ndarray]:
         return None
 
 
+# ---------- main widget ----------
 class Matplot2DView(FigureCanvas):
     def __init__(self, parent=None):
         self._fig: Figure = Figure(figsize=(6, 6), dpi=100)
         super().__init__(self._fig)
-        # WICHTIG: kein setParent(parent)! Reparenting erfolgt durch addWidget(...)
-        # self.setParent(parent)
 
         self._ax = self._fig.add_subplot(111)
         self._ax.set_aspect("equal", adjustable="box")
@@ -69,10 +69,74 @@ class Matplot2DView(FigureCanvas):
         self._mesh: Optional["pv.PolyData"] = None
         self._path_xyz: Optional[np.ndarray] = None
         self._mask_poly: Optional["pv.PolyData"] = None
+        self._markers_xy: Optional[np.ndarray] = None  # 2D Marker (N,2), z.B. Start/End
+
+        # simple style dict (kann per set_style() überschrieben werden)
+        self._style: Dict[str, str] = {
+            "mesh_fill": "#d0d6dd",
+            "mask_line": "#4169E1",
+            "path_line": "#2ecc71",
+            "grid_line": ":",
+            "grid_alpha": "0.5",
+            "tick_color": "black",
+        }
 
         self._fig.tight_layout()
 
-    # --- Public API ---
+    # ---------- Public API (neue, klare Setter) ----------
+    def set_plane(self, plane: str):
+        if plane not in ("top", "front", "back", "left", "right"):
+            _LOG.warning("Unknown plane '%s'", plane)
+            return
+        self._plane = plane
+        self._redraw()
+
+    def set_bounds(self, bounds: Tuple[float, float, float, float, float, float]):
+        self._bounds = tuple(map(float, bounds))  # type: ignore
+        self._redraw()
+
+    def set_mesh(self, mesh: "pv.PolyData | None"):
+        self._mesh = mesh
+        self._redraw()
+
+    def set_path_xyz(self, path_xyz: np.ndarray | None):
+        self._path_xyz = np.asarray(path_xyz, dtype=float) if path_xyz is not None else None
+        self._redraw()
+
+    def set_mask_poly(self, mask_poly: "pv.PolyData | None"):
+        self._mask_poly = mask_poly
+        self._redraw()
+
+    def clear_overlays(self):
+        """Nur Pfad/Mask/Marker löschen (Mesh+Bounds bleiben)."""
+        self._path_xyz = None
+        self._mask_poly = None
+        self._markers_xy = None
+        self._redraw()
+
+    def set_markers2d(self, points_xy: np.ndarray | None):
+        """
+        Setzt optionale Marker in 2D (z.B. Start/Ende).
+        Erwartet bereits projizierte 2D-Punkte (N,2). Wenn du 3D-Punkte hast,
+        projiziere sie vorab mit _project_points_xyz_to_plane(...).
+        """
+        if points_xy is None:
+            self._markers_xy = None
+        else:
+            P = np.asarray(points_xy, dtype=float).reshape(-1, 2)
+            self._markers_xy = P if len(P) else None
+        self._redraw()
+
+    def set_style(self, **colors: str):
+        """
+        set_style(mesh_fill="#...", mask_line="#...", path_line="#...", grid_line=":", tick_color="black", grid_alpha="0.5")
+        """
+        for k, v in colors.items():
+            if k in self._style and isinstance(v, str):
+                self._style[k] = v
+        self._redraw()
+
+    # ---------- Abwärtskompatibel: Convenience ----------
     def set_scene(
         self,
         *,
@@ -88,22 +152,16 @@ class Matplot2DView(FigureCanvas):
             self._bounds = bounds
         self._redraw()
 
-    def show_top(self):   self._set_plane("top")
-    def show_front(self): self._set_plane("front")
-    def show_back(self):  self._set_plane("back")
-    def show_left(self):  self._set_plane("left")
-    def show_right(self): self._set_plane("right")
+    def show_top(self):   self.set_plane("top")
+    def show_front(self): self.set_plane("front")
+    def show_back(self):  self.set_plane("back")
+    def show_left(self):  self.set_plane("left")
+    def show_right(self): self.set_plane("right")
 
     def force_redraw(self):
         self._redraw()
 
-    # --- intern ---
-    def _set_plane(self, plane: str):
-        if plane not in ("top", "front", "back", "left", "right"):
-            _LOG.warning("Unknown plane '%s'", plane); return
-        self._plane = plane
-        self._redraw()
-
+    # ---------- intern ----------
     def _set_labels(self):
         if self._plane == "top":
             self._ax.set_title("Top (Z in Bildtiefe)")
@@ -139,7 +197,7 @@ class Matplot2DView(FigureCanvas):
             self._ax.set_ylim(zmin, zmax)
 
     def _configure_grid(self):
-        self._ax.grid(True, linestyle=":", linewidth=0.5, alpha=0.5)
+        self._ax.grid(True, linestyle=self._style["grid_line"], linewidth=0.5, alpha=float(self._style["grid_alpha"]))
 
     def _projected_triangles(self, plane: str):
         if pv is None or self._mesh is None or self._mesh.n_points == 0:
@@ -205,7 +263,7 @@ class Matplot2DView(FigureCanvas):
         try:
             coll = PolyCollection(
                 tris,
-                facecolor="#d0d6dd",  # hellgrau
+                facecolor=self._style["mesh_fill"],
                 edgecolor="none",
                 alpha=0.45,
                 zorder=1,
@@ -225,7 +283,7 @@ class Matplot2DView(FigureCanvas):
             self._ax.plot(
                 U[:, 0], U[:, 1],
                 linestyle="-", linewidth=1.0,
-                color="#4169E1", alpha=0.9, zorder=3
+                color=self._style["mask_line"], alpha=0.9, zorder=3
             )
         except Exception:
             _LOG.exception("draw mask poly failed")
@@ -237,11 +295,24 @@ class Matplot2DView(FigureCanvas):
             U = _project_points_xyz_to_plane(self._path_xyz, self._plane)
             self._ax.plot(
                 U[:, 0], U[:, 1], "-",
-                linewidth=2.0, color="#2ecc71",
+                linewidth=2.0, color=self._style["path_line"],
                 alpha=0.95, zorder=4
             )
         except Exception:
             _LOG.exception("draw path failed")
+
+    def _draw_markers(self):
+        if self._markers_xy is None or len(self._markers_xy) == 0:
+            return
+        try:
+            M = np.asarray(self._markers_xy, dtype=float).reshape(-1, 2)
+            # Punktmarken
+            self._ax.scatter(M[:, 0], M[:, 1], s=18, c="#111111", zorder=5)
+            # Optional: Start/End-Linie dezent verbinden
+            if len(M) >= 2:
+                self._ax.plot(M[[0, -1], 0], M[[0, -1], 1], linestyle="--", linewidth=0.8, color="#666666", zorder=4)
+        except Exception:
+            _LOG.exception("draw markers failed")
 
     def _redraw(self):
         try:
@@ -251,10 +322,11 @@ class Matplot2DView(FigureCanvas):
             self._set_limits_from_bounds()
             self._configure_grid()
 
-            # Reihenfolge: Fläche -> Maske -> Pfad
+            # Reihenfolge: Fläche -> Maske -> Pfad -> Marker
             self._draw_mesh_fill()
             self._draw_mask_poly()
             self._draw_path()
+            self._draw_markers()
 
             self._fig.tight_layout()
             self.draw_idle()

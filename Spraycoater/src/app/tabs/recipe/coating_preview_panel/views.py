@@ -1,17 +1,46 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import logging
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 _LOG = logging.getLogger("app.tabs.recipe.preview.views")
 
 
 class ViewController:
-    """Kamera-Views + Button-Wiring (3D & 2D)."""
+    """Kamera-Views + Button-Wiring (3D & 2D) mit robustem Camera-Snap."""
 
-    def __init__(self, interactor_getter: Callable[[], object], render_callable: Callable[..., None]):
+    def __init__(
+        self,
+        interactor_getter: Callable[[], object],
+        render_callable: Callable[..., None],
+        bounds_getter: Optional[Callable[[], Tuple[float, float, float, float, float, float]]] = None,
+        cam_pad: float = 1.6,
+    ):
         self._get_ia = interactor_getter
         self._render_after = render_callable
+        self._get_bounds = bounds_getter
+        self._cam_pad = float(cam_pad)
+
+    # ---------- intern ----------
+    def _camera_snap(self, *, reset_cam: bool = False):
+        ia = self._get_ia()
+        if ia is None:
+            return
+        try:
+            # Clipping-Range korrekt zurücksetzen (richtige API):
+            if hasattr(ia, "reset_camera_clipping_range"):
+                ia.reset_camera_clipping_range()
+            # Optional die Kamera auf Bounds zurücksetzen:
+            if reset_cam and self._get_bounds is not None:
+                b = self._get_bounds()
+                if b is not None:
+                    try:
+                        ia.reset_camera(bounds=b)
+                    except Exception:
+                        ia.reset_camera()
+            ia.render()
+        except Exception:
+            _LOG.exception("_camera_snap failed")
 
     # ---------- Low-level 3D view ops ----------
     def view_isometric(self):
@@ -22,33 +51,37 @@ class ViewController:
             ia.view_isometric()
         except Exception:
             _LOG.exception("view_isometric failed")
+        self._camera_snap(reset_cam=False)
 
     def view_top(self):
         ia = self._get_ia()
         if ia is None:
             return
         try:
-            ia.view_xy()
+            ia.view_xy()   # Z nach oben/unten
         except Exception:
             _LOG.exception("view_top failed")
+        self._camera_snap(reset_cam=False)
 
     def view_front(self):
         ia = self._get_ia()
         if ia is None:
             return
         try:
-            ia.view_yz()
+            ia.view_yz()   # X in Bildtiefe
         except Exception:
             _LOG.exception("view_front failed")
+        self._camera_snap(reset_cam=False)
 
     def view_left(self):
         ia = self._get_ia()
         if ia is None:
             return
         try:
-            ia.view_xz()
+            ia.view_xz()   # Y in Bildtiefe
         except Exception:
             _LOG.exception("view_left failed")
+        self._camera_snap(reset_cam=False)
 
     def view_right(self):
         ia = self._get_ia()
@@ -57,11 +90,13 @@ class ViewController:
         try:
             ia.view_xz()
             try:
+                # 180° um Z drehen für „rechte“ Ansicht
                 ia.camera.azimuth(180)
             except Exception:
                 pass
         except Exception:
             _LOG.exception("view_right failed")
+        self._camera_snap(reset_cam=False)
 
     def view_back(self):
         ia = self._get_ia()
@@ -70,11 +105,13 @@ class ViewController:
         try:
             ia.view_yz()
             try:
+                # 180° um Z drehen für „hintere“ Ansicht
                 ia.camera.azimuth(180)
             except Exception:
                 pass
         except Exception:
             _LOG.exception("view_back failed")
+        self._camera_snap(reset_cam=False)
 
     # ---------- Wiring helpers ----------
     def _call3d(self, fn: Callable[[], None], on_3d: Optional[Callable[[], None]] = None):
@@ -88,6 +125,7 @@ class ViewController:
         except Exception:
             _LOG.exception("3D view call failed")
         try:
+            # Nach der View-Umstellung nicht die Kamera hart resetten (bleibt smooth)
             self._render_after(reset_camera=False)
         except Exception:
             _LOG.exception("Render after 3D view failed")

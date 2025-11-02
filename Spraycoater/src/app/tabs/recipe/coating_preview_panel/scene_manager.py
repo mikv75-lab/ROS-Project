@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import logging
-from typing import Callable, Dict, List, Optional, Any
+from typing import Callable, Dict, List, Optional, Any, Tuple
 
 import numpy as np
 import pyvista as pv
@@ -64,10 +64,129 @@ class SceneManager:
                     _LOG.exception("reset_camera failed in add_mesh")
 
             if render:
-                ia.render()
+                try:
+                    ia.render()
+                except Exception:
+                    pass
             return actor
         except Exception:
             _LOG.exception("add_mesh failed")
+            return None
+
+    def add_points(self, points_mm: np.ndarray | None = None, *,
+                   # tolerant für ältere Aufrufe: points=...
+                   points: np.ndarray | None = None,
+                   layer: str = "points",
+                   color: str = "#111111",
+                   point_size: float = 6.0,
+                   render: bool = False,
+                   reset_camera: bool = False,
+                   lighting: bool = False,
+                   labels: list[str] | None = None) -> Optional[Any]:
+        """
+        Punkte (Glyphs) als eigener Layer. Optional mit Labels.
+        """
+        try:
+            src = points_mm if points_mm is not None else points
+            if src is None:
+                return None
+
+            P = np.asarray(src, float).reshape(-1, 3)
+            if len(P) == 0:
+                return None
+
+            poly = pv.PolyData(P)
+            actor = self.add_mesh(poly, layer=layer, color=color,
+                                  point_size=float(point_size),
+                                  render=False, reset_camera=reset_camera,
+                                  lighting=lighting)
+
+            if labels:
+                try:
+                    ia = self._ia()
+                    if ia is not None:
+                        L = min(len(labels), len(P))
+                        if L > 0:
+                            lab_actor = ia.add_point_labels(
+                                P[:L],
+                                list(labels)[:L],
+                                point_size=0,
+                                font_size=12,
+                                text_color="black",
+                                shape_opacity=0.25,
+                                render=False,
+                            )
+                            self._ensure_layer(layer).append(lab_actor)
+                except Exception:
+                    _LOG.exception("add_points: labels failed")
+
+            if render:
+                try:
+                    ia = self._ia()
+                    if ia is not None:
+                        ia.render()
+                except Exception:
+                    pass
+
+            return actor
+        except Exception:
+            _LOG.exception("add_points failed")
+            return None
+
+    def add_lines(self, points: np.ndarray, lines: np.ndarray, *,
+                  layer: str = "lines",
+                  color: str = "#5a5a5a",
+                  line_width: float = 1.0,
+                  render: bool = False,
+                  reset_camera: bool = False,
+                  lighting: bool = False) -> Optional[Any]:
+        """
+        Generische Linien: `points` (N,3) und `lines` im VTK-Schema:
+        [2, i0, i1, 2, i2, i3, ...] oder als (M,3)-Array mit erster Spalte=2.
+        """
+        ia = self._ia()
+        if ia is None:
+            return None
+        try:
+            P = np.asarray(points, float).reshape(-1, 3)
+            L = np.asarray(lines)
+            if L.ndim == 2 and L.shape[1] == 3:
+                L = L.reshape(-1)
+            poly = pv.PolyData(P)
+            poly.lines = L
+            return self.add_mesh(poly, layer=layer, color=color, line_width=float(line_width),
+                                 render=render, reset_camera=reset_camera, lighting=lighting)
+        except Exception:
+            _LOG.exception("add_lines failed")
+            return None
+
+    def add_segments(self, segments: np.ndarray, *,
+                     layer: str = "segments",
+                     color: str = "#5a5a5a",
+                     line_width: float = 1.0,
+                     render: bool = False,
+                     reset_camera: bool = False,
+                     lighting: bool = False) -> Optional[Any]:
+        """
+        Bequemlichkeit: Segmente als Array (N,2,3) entgegennehmen.
+        """
+        try:
+            S = np.asarray(segments, float).reshape(-1, 2, 3)
+            if len(S) == 0:
+                return None
+            # Punkte stapeln
+            P = S.reshape(-1, 3)
+            # Linien-Indexliste erzeugen
+            nseg = S.shape[0]
+            lines = np.empty((nseg, 3), dtype=np.int64)
+            lines[:, 0] = 2
+            base = np.arange(nseg, dtype=np.int64) * 2
+            lines[:, 1] = base
+            lines[:, 2] = base + 1
+            return self.add_lines(P, lines, layer=layer, color=color, line_width=line_width,
+                                  render=render, reset_camera=reset_camera, lighting=lighting)
+        except Exception:
+            _LOG.exception("add_segments failed")
             return None
 
     def add_path_polyline(self, points_mm: np.ndarray, *,
@@ -92,7 +211,7 @@ class SceneManager:
             if len(P) < 2:
                 return None
 
-            # Polyline-Konstruktion (ein Segment-Liste mit einer Kette)
+            # Polyline-Konstruktion (eine zusammenhängende Kette)
             lines = np.hstack([[len(P)], np.arange(len(P), dtype=np.int64)])
             poly = pv.PolyData(P)
             poly.lines = lines
@@ -131,8 +250,6 @@ class SceneManager:
         """
         Fügt Punktmarker (und optional Labels) entlang eines Pfads hinzu.
         step: Nur jeden 'step'-ten Punkt anzeigen (>=1).
-
-        Akzeptiert sowohl `points_mm=` als auch (legacy) `points=`.
         """
         try:
             src = points_mm if points_mm is not None else points
@@ -153,14 +270,12 @@ class SceneManager:
             if ia is None:
                 return None
 
-            # Punkte rendern (Glyph-Style)
             poly = pv.PolyData(P)
             actor = self.add_mesh(poly, layer=layer, color=color,
                                   point_size=float(point_size),
                                   render=False, reset_camera=reset_camera,
                                   lighting=lighting)
 
-            # Labels optional
             if labels:
                 try:
                     L = min(len(labels), len(P))
@@ -271,3 +386,32 @@ class SceneManager:
                 ia.render()
             except Exception:
                 pass
+
+    def get_layer_bounds(self, layer: str) -> Optional[Tuple[float, float, float, float, float, float]]:
+        """
+        Kombinierte Bounds aller Actors eines Layers (via a.GetBounds()).
+        """
+        actors = self._layers.get(layer, [])
+        if not actors:
+            return None
+        mins = np.array([ np.inf,  np.inf,  np.inf], float)
+        maxs = np.array([-np.inf, -np.inf, -np.inf], float)
+        any_ok = False
+        for a in actors:
+            try:
+                b = a.GetBounds()  # (xmin, xmax, ymin, ymax, zmin, zmax)
+                if b is None:
+                    continue
+                b = np.asarray(b, float).reshape(6)
+                if not np.all(np.isfinite(b)):
+                    continue
+                mins = np.minimum(mins, [b[0], b[2], b[4]])
+                maxs = np.maximum(maxs, [b[1], b[3], b[5]])
+                any_ok = True
+            except Exception:
+                pass
+        if not any_ok:
+            return None
+        return (float(mins[0]), float(maxs[0]),
+                float(mins[1]), float(maxs[1]),
+                float(mins[2]), float(maxs[2]))
