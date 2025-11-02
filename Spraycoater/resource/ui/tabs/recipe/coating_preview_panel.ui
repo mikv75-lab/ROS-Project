@@ -58,6 +58,8 @@
           </property>
          </widget>
         </item>
+
+        <!-- Master Rays -->
         <item>
          <widget class="QCheckBox" name="chkShowRays">
           <property name="text">
@@ -68,6 +70,39 @@
           </property>
          </widget>
         </item>
+
+        <!-- New: Hits / Misses / Normals -->
+        <item>
+         <widget class="QCheckBox" name="chkShowHits">
+          <property name="text">
+           <string>Show Hits</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QCheckBox" name="chkShowMisses">
+          <property name="text">
+           <string>Show Misses</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QCheckBox" name="chkShowNormals">
+          <property name="text">
+           <string>Show Normals</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+
         <item>
          <widget class="QCheckBox" name="chkShowLocalFrames">
           <property name="text">
@@ -78,6 +113,7 @@
           </property>
          </widget>
         </item>
+
         <item>
          <spacer name="spacerToggles">
           <property name="orientation">
@@ -164,7 +200,6 @@
 
   </layout>
  </widget>
-
  <resources/>
  <connections/>
 </ui>
