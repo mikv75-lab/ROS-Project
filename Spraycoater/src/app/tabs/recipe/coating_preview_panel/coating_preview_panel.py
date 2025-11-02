@@ -7,6 +7,7 @@ import numpy as np
 import pyvista as pv
 from PyQt6 import uic
 from PyQt6.QtWidgets import QWidget, QPushButton, QCheckBox, QFrame, QStackedWidget, QVBoxLayout
+from PyQt6.QtCore import pyqtSignal
 
 from .interactor_host import InteractorHost
 from .scene_manager import SceneManager
@@ -50,6 +51,10 @@ class CoatingPreviewPanel(QWidget):
     DEFAULT_GROUND_COLOR    = "#3a3a3a"  # dunkelgrau
     DEFAULT_MOUNT_COLOR     = "#5d5d5d"  # etwas heller
     DEFAULT_SUBSTRATE_COLOR = "#d0d6dd"  # hell
+
+    # Signals
+    pathReady = pyqtSignal(object)       # np.ndarray | None (nur Punkte)
+    previewYamlReady = pyqtSignal(str)   # YAML mit xyz,rx,ry,rz
 
     def __init__(self, *, ctx, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -141,7 +146,7 @@ class CoatingPreviewPanel(QWidget):
         if self.chkShowNormals:      self.chkShowNormals.setChecked(False)
         if self.chkShowLocalFrames:  self.chkShowLocalFrames.setChecked(False)
 
-        # ----- Overlays-Renderer (schlanke API, delegiert alles, inkl. 2D-Updates) -----
+        # ----- Overlays-Renderer mit YAML-Hook -----
         self._layers_dict: Dict[str, str] = {
             "ground":    self._layer_ground,
             "mount":     self._layer_mount,
@@ -161,6 +166,10 @@ class CoatingPreviewPanel(QWidget):
         def _update2d(mesh, path_xyz, mask_poly):
             self.update_2d_scene(substrate_mesh=mesh, path_xyz=path_xyz, mask_poly=mask_poly)
 
+        def _yaml_out(text: str):
+            # direkt an UI weitergeben
+            self.previewYamlReady.emit(text)
+
         self.overlays = OverlayRenderer(
             add_mesh_fn=self.add_mesh,
             clear_layer_fn=self.clear_layer,
@@ -171,6 +180,7 @@ class CoatingPreviewPanel(QWidget):
             update_2d_scene_fn=_update2d,
             layers=self._layers_dict,
             get_bounds=lambda: self._bounds,
+            yaml_out_fn=_yaml_out,  # <— YAML an Panel zurück
         )
 
         # Checkbox-Wiring → Overlays
@@ -186,7 +196,6 @@ class CoatingPreviewPanel(QWidget):
             self.chkShowNormals.toggled.connect(lambda v: self.overlays.set_normals_visible(bool(v)))
         if self.chkShowLocalFrames:
             self.chkShowLocalFrames.toggled.connect(lambda v: self.overlays.set_frames_visible(bool(v)))
-
 
         # 3D/2D Button-Wiring über ViewController
         self.views.wire_buttons_3d(
@@ -204,7 +213,7 @@ class CoatingPreviewPanel(QWidget):
             btn_left=self.btn2DLeft,
             btn_right=self.btn2DRight,
             btn_back=self.btn2DBack,
-            switcher=self._switch_2d_plane,  # robuster Wrapper
+            switcher=self._switch_2d_plane,
         )
 
         # Startmodus (3D iso)
@@ -220,22 +229,19 @@ class CoatingPreviewPanel(QWidget):
                 _LOG.exception("Interactor ensure() failed")
             ia = self._hoster.ia
         return ia
-    def _switch_to_2d(self) -> None:
-        """Auf den 2D-Stack umschalten."""
-        if self._stack.currentIndex() != 1:
-            self._stack.setCurrentIndex(1)
-        
-    # Kompakter Wrapper, robust ggü. Matplot2DView-Versionen
+
+    # 2D plane switch
     def _switch_2d_plane(self, plane: str) -> None:
-        """2D aktivieren und gewünschte Projektion einstellen (robust für alte/new APIs)."""
         try:
-            self._switch_to_2d()
             if hasattr(self._mat2d, "set_plane"):
-                self._mat2d.set_plane(plane)     # bevorzugte public API
+                self._mat2d.set_plane(plane)
             elif hasattr(self._mat2d, "_set_plane"):
-                self._mat2d._set_plane(plane)    # legacy/private Fallback
+                self._mat2d._set_plane(plane)
             else:
                 raise AttributeError("Matplot2DView hat weder set_plane noch _set_plane")
+            # Beim Wechsel direkt in 2D-Stack schalten
+            if self._stack.currentIndex() != 1:
+                self._stack.setCurrentIndex(1)
         except Exception:
             _LOG.exception("2D plane switch failed: %s", plane)
 
@@ -254,16 +260,17 @@ class CoatingPreviewPanel(QWidget):
         path_xyz: np.ndarray | None,
         mask_poly: pv.PolyData | None = None,
     ):
-        # Bounds immer mitgeben, damit die 2D-Achsen korrekt bleiben
+        self._mat2d.set_scene(
+            substrate_mesh=substrate_mesh,
+            path_xyz=path_xyz,
+            bounds=self._bounds,
+            mask_poly=mask_poly,
+        )
+        # Rohpfad für evtl. weitere Listener (falls gewünscht)
         try:
-            self._mat2d.set_scene(
-                substrate_mesh=substrate_mesh,
-                path_xyz=path_xyz,
-                bounds=self._bounds,
-                mask_poly=mask_poly,
-            )
+            self.pathReady.emit(path_xyz if path_xyz is not None else None)
         except Exception:
-            _LOG.exception("update_2d_scene failed")
+            _LOG.exception("pathReady emit failed")
 
     # -------- View switching --------
     def _switch_to_3d(self):
