@@ -21,7 +21,6 @@ _LOG = logging.getLogger("app.tabs.recipe")
 # --- Pfade/Utils --------------------------------------------------------------
 def _project_root() -> str:
     here = os.path.abspath(os.path.dirname(__file__))
-    # .../src/app/tabs/recipe/coating_preview_panel -> bis Projekt-Root
     return os.path.abspath(os.path.join(here, "..", "..", "..", "..", ".."))
 
 
@@ -120,6 +119,8 @@ class CoatingPreviewPanel(QWidget):
         self._floor_actor = None
         self._axis_actor  = None
         self._grid_step   = 10.0
+        # NEU: Label-Actors separat verwalten (um Duplikate zu vermeiden)
+        self._axis_label_actors: list = []
 
         # Layer-Namen
         self._layer_ground     = "ground"
@@ -167,7 +168,6 @@ class CoatingPreviewPanel(QWidget):
             self.update_2d_scene(substrate_mesh=mesh, path_xyz=path_xyz, mask_poly=mask_poly)
 
         def _yaml_out(text: str):
-            # direkt an UI weitergeben
             self.previewYamlReady.emit(text)
 
         self.overlays = OverlayRenderer(
@@ -180,7 +180,7 @@ class CoatingPreviewPanel(QWidget):
             update_2d_scene_fn=_update2d,
             layers=self._layers_dict,
             get_bounds=lambda: self._bounds,
-            yaml_out_fn=_yaml_out,  # <— YAML an Panel zurück
+            yaml_out_fn=_yaml_out,
         )
 
         # Checkbox-Wiring → Overlays
@@ -239,7 +239,6 @@ class CoatingPreviewPanel(QWidget):
                 self._mat2d._set_plane(plane)
             else:
                 raise AttributeError("Matplot2DView hat weder set_plane noch _set_plane")
-            # Beim Wechsel direkt in 2D-Stack schalten
             if self._stack.currentIndex() != 1:
                 self._stack.setCurrentIndex(1)
         except Exception:
@@ -266,7 +265,6 @@ class CoatingPreviewPanel(QWidget):
             bounds=self._bounds,
             mask_poly=mask_poly,
         )
-        # Rohpfad für evtl. weitere Listener (falls gewünscht)
         try:
             self.pathReady.emit(path_xyz if path_xyz is not None else None)
         except Exception:
@@ -287,6 +285,7 @@ class CoatingPreviewPanel(QWidget):
         ia = self._get_ia()
         if ia is None:
             return
+        # Actors entfernen (Floor, Axes)
         for actor in (self._floor_actor, self._axis_actor):
             if actor is not None:
                 try:
@@ -295,6 +294,15 @@ class CoatingPreviewPanel(QWidget):
                     pass
         self._floor_actor = None
         self._axis_actor  = None
+        # NEU: alle bestehenden Label-Actors entfernen
+        if self._axis_label_actors:
+            for lab in self._axis_label_actors:
+                try:
+                    ia.remove_actor(lab, render=False)
+                except Exception:
+                    pass
+            self._axis_label_actors = []
+
         self._floor_actor = self._make_floor_wire(ia, step=self._grid_step)
         self._axis_actor  = self._draw_floor_axes(ia, step=self._grid_step)
 
@@ -370,35 +378,41 @@ class CoatingPreviewPanel(QWidget):
             actor = ia.add_mesh(poly, style="wireframe", color="#5a5a5a",
                                 line_width=1.0, lighting=False, render=False)
 
-        # Achsen-Beschriftung
+        # ---- Labels (NEU: sauber verwalten, nur einmal vorhanden) ----
+        new_label_actors: list = []
         label_z = zmin + max(0.5, tick_len * 0.5)
         if len(xt):
-            ia.add_point_labels(
+            labx = ia.add_point_labels(
                 np.c_[xt, np.full_like(xt, cy), np.full_like(xt, label_z)],
                 [f"{int(v)}" if abs(v - int(v)) < 1e-6 else f"{v:.1f}" for v in xt],
                 point_size=0, font_size=10, text_color="black",
                 shape_opacity=0.0, render=False
             )
+            new_label_actors.append(labx)
         if len(yt):
-            ia.add_point_labels(
+            laby = ia.add_point_labels(
                 np.c_[np.full_like(yt, cx), yt, np.full_like(yt, label_z)],
                 [f"{int(v)}" if abs(v - int(v)) < 1e-6 else f"{v:.1f}" for v in yt],
                 point_size=0, font_size=10, text_color="black",
                 shape_opacity=0.0, render=False
             )
-        ia.add_point_labels(
+            new_label_actors.append(laby)
+        labxy = ia.add_point_labels(
             [(xmax, cy, label_z), (cx, ymax, label_z)],
             ["X (mm)", "Y (mm)"],
             point_size=0, font_size=12, text_color="black",
             shape_opacity=0.0, render=False
         )
+        new_label_actors.append(labxy)
+
+        # Alte Label-Actors (falls noch vorhanden) wurden bereits in _apply_bounds() entfernt.
+        self._axis_label_actors = new_label_actors
         return actor
 
     # ---------- Scene passthrough ----------
     def clear(self) -> None:
         ia = self._get_ia()
         self.scene.clear()
-        # Label-Actors wegräumen
         if ia is not None:
             for act in list(self._label_actors.values()):
                 try:
@@ -406,6 +420,14 @@ class CoatingPreviewPanel(QWidget):
                 except Exception:
                     pass
         self._label_actors.clear()
+        # Auch Achsen-Labels entfernen
+        if ia is not None and self._axis_label_actors:
+            for lab in self._axis_label_actors:
+                try:
+                    ia.remove_actor(lab, render=False)
+                except Exception:
+                    pass
+            self._axis_label_actors = []
 
     def add_mesh(self, mesh, **kwargs) -> None:
         _ = self._get_ia()
@@ -455,8 +477,8 @@ class CoatingPreviewPanel(QWidget):
         x_dirs: np.ndarray | None = None,
         scale: float = 10.0,
         scale_mm: float | None = None,
-        tube_radius: float = 0.15,          # deutlich schlanker
-        line_width: float | None = 1.0,     # Standard: Linien statt Tubes
+        tube_radius: float = 0.15,
+        line_width: float | None = 1.0,
         layer: str | None = None,
         labels: list[str] | None = None,
         clear_old: bool = True,
@@ -467,7 +489,6 @@ class CoatingPreviewPanel(QWidget):
             _LOG.warning("show_frames_at(): kein Interactor")
             return
 
-        # Auto-Skalierung relativ zu World-Bounds (ca. 2% des XY-Spans, min 5 mm)
         if scale_mm is None:
             xmin, xmax, ymin, ymax, *_ = self._bounds
             span_xy = max(1e-6, max(xmax - xmin, ymax - ymin))
@@ -533,7 +554,6 @@ class CoatingPreviewPanel(QWidget):
         poly_y = _poly_from(pts_y, lns_y)
         poly_z = _poly_from(pts_z, lns_z)
 
-        # Immer dünn: Linienbreite (keine fetten Tubes)
         for lyr in (lx, ly, lz):
             self.scene.clear_layer(lyr)
         self.scene.add_mesh(poly_x, color="red",   layer=lx, line_width=float(line_width or 1.0),
@@ -565,7 +585,6 @@ class CoatingPreviewPanel(QWidget):
         if ia is None:
             return
         try:
-            # Blick auf Floor-Fokus halten
             self._look_at_floor_center()
             if reset_camera:
                 ia.reset_camera(bounds=self._bounds)
@@ -612,7 +631,6 @@ class CoatingPreviewPanel(QWidget):
                 return
 
             start = P[0]; end = P[-1]
-            # kleine Kugeln
             try:
                 s0 = pv.Sphere(radius=float(size)*0.5, center=start)
                 s1 = pv.Sphere(radius=float(size)*0.5, center=end)
@@ -621,7 +639,6 @@ class CoatingPreviewPanel(QWidget):
             except Exception:
                 _LOG.exception("Start/Ende-Kugeln fehlgeschlagen")
 
-            # neue Labels
             try:
                 lab = ia.add_point_labels(
                     [start, end],

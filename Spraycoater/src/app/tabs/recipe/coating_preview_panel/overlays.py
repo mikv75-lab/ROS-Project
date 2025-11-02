@@ -297,7 +297,7 @@ class OverlayRenderer:
         # 2) Welt-Offset
         xmin, xmax, ymin, ymax, zmin, zmax = substrate_mesh.bounds
         cx, cy = 0.5 * (xmin + xmax), 0.5 * (ymin + ymax)
-        z_plane = float(zmin)  # <— gebraucht für Miss-Rays
+        z_plane = float(zmin) 
         P0_world = P0 + np.array([cx, cy, z_plane], dtype=float)
 
         # 3) Maske
