@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import logging
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
 import pyvista as pv
@@ -17,6 +17,7 @@ class OverlayRenderer:
     Rechnet immer alle Overlays (Maske, Rays, Misses, Normals, TCP/Path, Frames),
     zeigt aber nur die Overlays an, deren Checkbox aktiv ist.
     Ergebnisse werden im Puffer gehalten und sind via get_outputs() abrufbar.
+    Beim Einschalten per Checkbox wird – falls noch kein Actor existiert – aus dem Cache nachgezeichnet.
     """
 
     def __init__(
@@ -37,7 +38,6 @@ class OverlayRenderer:
         self._add_path_polyline = add_path_polyline_fn
         self._show_poly = show_poly_fn
         self._show_frames_at = show_frames_at_fn
-        # akzeptiert evtl. (layer, vis) oder (layer, vis, render)
         self._set_layer_visible = set_layer_visible_fn
         self._update_2d = update_2d_scene_fn
         self._layers = dict(layers or {})
@@ -50,15 +50,15 @@ class OverlayRenderer:
             "rays_hit_poly": None,
             "rays_miss_poly": None,
             "tcp_poly": None,
-            "tcp_points": None,     # (N,3) numpy
-            "valid_mask": None,     # bool mask für tcp_points (falls gefiltert)
-            "rc": None,             # RaycastResult o.ä. (wenn vorhanden)
+            "tcp_points": None,     # (N,3)
+            "valid_mask": None,     # bool mask
+            "rc": None,             # RaycastResult
             "side": None,
             "stand_off_mm": None,
         }
 
         # Sichtbarkeit (letzter Zustand)
-        self._vis: Dict[str, bool] = {
+        self._vis = {
             "mask": False,
             "path": True,
             "hits": False,
@@ -81,66 +81,37 @@ class OverlayRenderer:
         return self._layers.get(name, name)
 
     def _set_vis_layer(self, layer: str, vis: bool, *, render: bool):
-        """Verträgt beide Signaturen (2 oder 3 Parameter) der set_layer_visible-Funktion."""
         try:
-            # (layer, vis, render) bevorzugen
             self._set_layer_visible(layer, vis, render)  # type: ignore[misc]
         except TypeError:
-            # Fallback: (layer, vis)
             self._set_layer_visible(layer, vis)          # type: ignore[misc]
 
     # -------- public outputs --------
     def get_outputs(self) -> Dict[str, Any]:
         return self._out
 
-    # -------- visibility toggles (für Checkbox-Wiring) --------
-    # Beim Einschalten wird aus dem Cache (_out) neu gezeichnet,
-    # beim Ausschalten nur Sichtbarkeit/Layer geleert.
+    # ===== visibility toggles (zeichnen beim Einschalten nach) =====
     def set_mask_visible(self, vis: bool, *, render: bool = True):
         self._vis["mask"] = bool(vis)
         layer = self._L("mask")
         if vis:
             poly = self._out.get("mask_poly")
-            self._clear_layer(layer)
             if poly is not None:
+                # neu zeichnen (idempotent: clear_layer vor add)
+                self._clear_layer(layer)
                 self._add_mesh(poly, color="royalblue", layer=layer,
                                line_width=2.0, lighting=False, render=False, reset_camera=False)
         else:
-            # Optional: nur unsichtbar schalten, aber wir räumen sauber
             self._clear_layer(layer)
         self._set_vis_layer(layer, vis, render=render)
-
-    def set_path_visible(self, vis: bool, *, render: bool = True):
-        self._vis["path"] = bool(vis)
-        layer = self._L("path")
-        layer_m = self._L("path_mrk")
-        if vis:
-            P = self._out.get("tcp_points")
-            self._clear_layer(layer); self._clear_layer(layer_m)
-            if P is not None and len(P):
-                self._add_path_polyline(P, layer=layer, color="#2ecc71",
-                                        line_width=2.0, lighting=False, render=False, reset_camera=False)
-                # optionale Marker dezent
-                try:
-                    pts = np.asarray(P, float)
-                    step = max(1, int(round(max(1, pts.shape[0] // 200))))
-                    pts_s = pts[::step]
-                    self._add_mesh(pv.PolyData(pts_s), color="#2ecc71", layer=layer_m,
-                                   point_size=8.0, lighting=False, render=False, reset_camera=False)
-                except Exception:
-                    _LOG.exception("path markers (toggle) failed")
-        else:
-            self._clear_layer(layer); self._clear_layer(layer_m)
-        self._set_vis_layer(layer, vis, render=False)
-        self._set_vis_layer(layer_m, vis, render=render)
 
     def set_hits_visible(self, vis: bool, *, render: bool = True):
         self._vis["hits"] = bool(vis)
         layer = self._L("rays_hit")
         if vis:
             poly = self._out.get("rays_hit_poly")
-            self._clear_layer(layer)
             if getattr(poly, "n_lines", 0):
+                self._clear_layer(layer)
                 self._add_mesh(poly, color="#85C1E9", layer=layer,
                                line_width=1.5, lighting=False, render=False, reset_camera=False)
         else:
@@ -152,8 +123,8 @@ class OverlayRenderer:
         layer = self._L("rays_miss")
         if vis:
             poly = self._out.get("rays_miss_poly")
-            self._clear_layer(layer)
             if poly is not None:
+                self._clear_layer(layer)
                 self._add_mesh(poly, color="#e74c3c", layer=layer,
                                line_width=1.2, lighting=False, render=False, reset_camera=False)
         else:
@@ -165,12 +136,27 @@ class OverlayRenderer:
         layer = self._L("normals")
         if vis:
             poly = self._out.get("tcp_poly")
-            self._clear_layer(layer)
             if getattr(poly, "n_lines", 0):
+                self._clear_layer(layer)
                 self._add_mesh(poly, color="#f1c40f", layer=layer,
                                line_width=1.3, lighting=False, render=False, reset_camera=False)
         else:
             self._clear_layer(layer)
+        self._set_vis_layer(layer, vis, render=render)
+
+    def set_path_visible(self, vis: bool, *, render: bool = True):
+        self._vis["path"] = bool(vis)
+        layer = self._L("path")
+        if vis:
+            pts = self._out.get("tcp_points")
+            if pts is not None and len(pts):
+                self._clear_layer(layer)
+                # Nur Linie – keine Marker mehr
+                self._add_path_polyline(pts, layer=layer, color="#2ecc71",
+                                        line_width=2.0, lighting=False, render=False, reset_camera=False)
+        else:
+            self._clear_layer(layer)
+            self._clear_layer(self._L("path_mrk"))  # sicherheitshalber, auch wenn wir keine Marker mehr setzen
         self._set_vis_layer(layer, vis, render=render)
 
     def set_frames_visible(self, vis: bool, *, render: bool = True):
@@ -178,26 +164,28 @@ class OverlayRenderer:
         if vis:
             P = self._out.get("tcp_points")
             rc = self._out.get("rc")
-            z_dirs = getattr(rc, "refl_dir", None) if rc is not None else None
-            if P is not None and z_dirs is not None and len(P) and len(z_dirs):
-                self._show_frames_at(
-                    origins=P, z_dirs=z_dirs, scale_mm=None,
-                    line_width=1.0, clear_old=True, add_labels=False
-                )
-            # Sichtbarkeit der vier Frame-Layer einschalten
+            Z = self._extract_z_dirs(rc)
+            P_aligned, Z_aligned = self._align_tcp_and_dirs(rc, P, Z)
+            if P_aligned is not None and Z_aligned is not None and len(P_aligned) and len(Z_aligned):
+                try:
+                    self._show_frames_at(
+                        origins=P_aligned,
+                        z_dirs=Z_aligned,
+                        scale_mm=None,      # Auto-Scale im Panel
+                        line_width=1.0,
+                        clear_old=True,
+                        add_labels=False,
+                    )
+                except Exception:
+                    _LOG.exception("show_frames_at (toggle) failed")
+            # Sichtbar schalten (falls eben gezeichnet)
             for lyr in ("frames_x", "frames_y", "frames_z", "frames_labels"):
                 self._set_vis_layer(self._L(lyr), True, render=False)
         else:
             for lyr in ("frames_x", "frames_y", "frames_z", "frames_labels"):
                 self._clear_layer(self._L(lyr))
-        # Ein einziges optionales Render am Ende
         if render:
-            try:
-                # Wir kennen hier keinen direkten Render-Handle; SceneManager übernimmt es
-                # via set_layer_visible(..., render=True) bei obigen Aufrufen.
-                pass
-            except Exception:
-                pass
+            pass
 
     def apply_visibility(self, vis: Dict[str, bool] | None):
         if vis:
@@ -209,14 +197,63 @@ class OverlayRenderer:
                 "normals": bool(vis.get("normals", self._vis["normals"])),
                 "frames":  bool(vis.get("frames",  self._vis["frames"])),
             })
-        # Reihenfolge: zusammengehörige Layer ohne Zwischenrender setzen, letztes mit Render
+        # Reihenfolge: zusammengehörige Layer ohne Zwischenrender setzen und am Ende rendern
         self.set_mask_visible(self._vis["mask"], render=False)
         self.set_path_visible(self._vis["path"], render=False)
         self.set_hits_visible(self._vis["hits"], render=False)
         self.set_misses_visible(self._vis["misses"], render=False)
-        self.set_normals_visible(self._vis["normals"], render=True)
-        # Frames separat (kann viel Geometrie sein)
-        self.set_frames_visible(self._vis["frames"], render=False)
+        self.set_normals_visible(self._vis["normals"], render=False)
+        self.set_frames_visible(self._vis["frames"], render=True)
+
+    # -------- helper: z_dirs robust extrahieren & alignen --------
+    def _extract_z_dirs(self, rc) -> Optional[np.ndarray]:
+        if rc is None:
+            return None
+        for name in ("refl_dir", "hit_normals", "normals_world", "n_hat", "normals"):
+            z = getattr(rc, name, None)
+            if z is not None:
+                z = np.asarray(z, dtype=float)
+                if z.ndim == 2 and z.shape[1] == 3 and len(z):
+                    return z
+        return None
+
+    def _align_tcp_and_dirs(
+        self, rc, tcp_points: Optional[np.ndarray], z_dirs: Optional[np.ndarray]
+    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        if tcp_points is None or z_dirs is None:
+            return None, None
+        P = np.asarray(tcp_points, dtype=float).reshape(-1, 3)
+        Z = np.asarray(z_dirs, dtype=float).reshape(-1, 3)
+
+        if rc is not None:
+            valid = getattr(rc, "valid", None)
+            tcp_all = getattr(rc, "tcp_mm", None)
+            if valid is not None and tcp_all is not None:
+                valid = np.asarray(valid, dtype=bool).reshape(-1)
+                tcp_all = np.asarray(tcp_all, dtype=float).reshape(-1, 3)
+                if len(Z) == len(tcp_all):
+                    Z = Z[valid] if len(valid) == len(tcp_all) else Z
+                if len(P) != len(Z):
+                    if len(valid) == len(tcp_all):
+                        Z = Z[: np.count_nonzero(valid)]
+                    else:
+                        n = min(len(P), len(Z))
+                        if n == 0:
+                            return None, None
+                        P, Z = P[:n], Z[:n]
+            else:
+                n = min(len(P), len(Z))
+                if n == 0:
+                    return None, None
+                P, Z = P[:n], Z[:n]
+        else:
+            n = min(len(P), len(Z))
+            if n == 0:
+                return None, None
+            P, Z = P[:n], Z[:n]
+
+        Z = Z / (np.linalg.norm(Z, axis=1, keepdims=True) + 1e-12)
+        return P, Z
 
     # -------- render orchestration (immer berechnen, selektiv anzeigen) --------
     def render_from_model(
@@ -364,74 +401,37 @@ class OverlayRenderer:
             _LOG.exception("miss rays build failed")
         self._out["rays_miss_poly"] = rays_miss
 
-        # 6) Selektiv anzeigen (add/clear pro Overlay)
-        # Hinweis: Wir ADDEN nur, wenn sichtbar. Beim späteren Toggle übernehmen die set_* Methoden.
+        # 6) Sichtbarkeiten anwenden (zeichnet bei Bedarf nach)
+        # (Die eigentliche add_mesh-Logik steckt in den set_*_visible-Methoden)
+        if visibility:
+            self._vis.update({k: bool(visibility.get(k, self._vis[k])) for k in self._vis.keys()})
 
-        # Mask
-        self._clear_layer(self._L("mask"))
-        if self._on(visibility, "mask", self._vis["mask"]) and mask_poly is not None:
-            self._add_mesh(mask_poly, color="royalblue", layer=self._L("mask"),
-                           line_width=2.0, lighting=False, render=False, reset_camera=False)
+        self.set_mask_visible(self._vis["mask"], render=False)
+        self.set_hits_visible(self._vis["hits"], render=False)
+        self.set_misses_visible(self._vis["misses"], render=False)
+        self.set_normals_visible(self._vis["normals"], render=False)
+        self.set_path_visible(self._vis["path"], render=False)
 
-        # Rays (Hits)
-        self._clear_layer(self._L("rays_hit"))
-        if self._on(visibility, "hits", self._vis["hits"]) and getattr(rays_hit_poly, "n_lines", 0):
-            self._add_mesh(rays_hit_poly, color="#85C1E9", layer=self._L("rays_hit"),
-                           line_width=1.5, lighting=False, render=False, reset_camera=False)
-
-        # Misses
-        self._clear_layer(self._L("rays_miss"))
-        if self._on(visibility, "misses", self._vis["misses"]) and rays_miss is not None:
-            self._add_mesh(rays_miss, color="#e74c3c", layer=self._L("rays_miss"),
-                           line_width=1.2, lighting=False, render=False, reset_camera=False)
-
-        # Normals (gelbe TCP-Poly)
-        self._clear_layer(self._L("normals"))
-        if self._on(visibility, "normals", self._vis["normals"]) and getattr(tcp_poly, "n_lines", 0):
-            self._add_mesh(tcp_poly, color="#f1c40f", layer=self._L("normals"),
-                           line_width=1.3, lighting=False, render=False, reset_camera=False)
-
-        # TCP-Polyline (grün)
-        self._clear_layer(self._L("path"))
-        self._clear_layer(self._L("path_mrk"))
-        if self._on(visibility, "path", self._vis["path"]) and tcp_points is not None and len(tcp_points):
-            self._add_path_polyline(tcp_points, layer=self._L("path"), color="#2ecc71",
-                                    line_width=2.0, lighting=False, render=False, reset_camera=False)
-            # optionale Marker
-            try:
-                pts = np.asarray(tcp_points, float)
-                step = max(1, int(round(max(1, pts.shape[0] // 200))))
-                pts_s = pts[::step]
-                self._add_mesh(pv.PolyData(pts_s), color="#2ecc71", layer=self._L("path_mrk"),
-                               point_size=8.0, lighting=False, render=False, reset_camera=False)
-            except Exception:
-                _LOG.exception("path markers failed")
-
-        # 2D-Szene (nur sichtbare Elemente einspeisen)
+        # 2D-Szene (gerichtet nach aktueller Sichtbarkeit)
         try:
             self._update_2d(
                 substrate_mesh,
-                tcp_points if self._on(visibility, "path", self._vis["path"]) else None,
-                mask_poly  if self._on(visibility, "mask", self._vis["mask"]) else None
+                self._out["tcp_points"] if self._vis["path"] else None,
+                self._out["mask_poly"]  if self._vis["mask"] else None
             )
         except Exception:
             _LOG.exception("update_2d_scene failed")
 
-        # Frames (lokale KS) – nur zeichnen, wenn explizit sichtbar
+        # Frames (lokale KS) – jetzt mit Alignment
         try:
-            # Übernahme/Update der Sichtbarkeit
-            if visibility:
-                for k in self._vis.keys():
-                    if k in visibility:
-                        self._vis[k] = bool(visibility[k])
-
-            if self._vis["frames"] and tcp_points is not None and rc is not None:
-                z_dirs = getattr(rc, "refl_dir", None)
-                if z_dirs is not None and len(z_dirs):
+            if self._vis["frames"] and self._out.get("tcp_points") is not None and self._out.get("rc") is not None:
+                Z = self._extract_z_dirs(self._out["rc"])
+                P_aligned, Z_aligned = self._align_tcp_and_dirs(self._out["rc"], self._out["tcp_points"], Z)
+                if P_aligned is not None and Z_aligned is not None and len(P_aligned) and len(Z_aligned):
                     self._show_frames_at(
-                        origins=tcp_points,
-                        z_dirs=z_dirs,
-                        scale_mm=None,      # Auto-Scale im Panel
+                        origins=P_aligned,
+                        z_dirs=Z_aligned,
+                        scale_mm=None,
                         line_width=1.0,
                         clear_old=True,
                         add_labels=False,
@@ -441,6 +441,3 @@ class OverlayRenderer:
                     self._clear_layer(self._L(lyr))
         except Exception:
             _LOG.exception("render frames failed")
-
-        # Sichtbarkeit konsistent anwenden (ruft die Toggle-Methoden, die im Zweifel neu aufbauen)
-        self.apply_visibility(self._vis)

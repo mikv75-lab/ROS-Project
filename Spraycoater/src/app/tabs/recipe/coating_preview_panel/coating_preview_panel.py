@@ -185,8 +185,8 @@ class CoatingPreviewPanel(QWidget):
         if self.chkShowNormals:
             self.chkShowNormals.toggled.connect(lambda v: self.overlays.set_normals_visible(bool(v)))
         if self.chkShowLocalFrames:
-            # Frames-Checkbox wirkt nur auf Layer-Sichtbarkeit; Berechnung steckt in overlays.render_from_model
-            self.chkShowLocalFrames.toggled.connect(self._on_toggle_frames)
+            self.chkShowLocalFrames.toggled.connect(lambda v: self.overlays.set_frames_visible(bool(v)))
+
 
         # 3D/2D Button-Wiring über ViewController
         self.views.wire_buttons_3d(
