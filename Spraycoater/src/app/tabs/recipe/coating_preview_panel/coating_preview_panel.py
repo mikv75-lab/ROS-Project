@@ -220,14 +220,20 @@ class CoatingPreviewPanel(QWidget):
                 _LOG.exception("Interactor ensure() failed")
             ia = self._hoster.ia
         return ia
-
+    def _switch_to_2d(self) -> None:
+        """Auf den 2D-Stack umschalten."""
+        if self._stack.currentIndex() != 1:
+            self._stack.setCurrentIndex(1)
+        
     # Kompakter Wrapper, robust ggü. Matplot2DView-Versionen
     def _switch_2d_plane(self, plane: str) -> None:
+        """2D aktivieren und gewünschte Projektion einstellen (robust für alte/new APIs)."""
         try:
+            self._switch_to_2d()
             if hasattr(self._mat2d, "set_plane"):
-                self._mat2d.set_plane(plane)     # public API
+                self._mat2d.set_plane(plane)     # bevorzugte public API
             elif hasattr(self._mat2d, "_set_plane"):
-                self._mat2d._set_plane(plane)    # legacy/private
+                self._mat2d._set_plane(plane)    # legacy/private Fallback
             else:
                 raise AttributeError("Matplot2DView hat weder set_plane noch _set_plane")
         except Exception:
@@ -248,12 +254,16 @@ class CoatingPreviewPanel(QWidget):
         path_xyz: np.ndarray | None,
         mask_poly: pv.PolyData | None = None,
     ):
-        self._mat2d.set_scene(
-            substrate_mesh=substrate_mesh,
-            path_xyz=path_xyz,
-            bounds=self._bounds,
-            mask_poly=mask_poly,
-        )
+        # Bounds immer mitgeben, damit die 2D-Achsen korrekt bleiben
+        try:
+            self._mat2d.set_scene(
+                substrate_mesh=substrate_mesh,
+                path_xyz=path_xyz,
+                bounds=self._bounds,
+                mask_poly=mask_poly,
+            )
+        except Exception:
+            _LOG.exception("update_2d_scene failed")
 
     # -------- View switching --------
     def _switch_to_3d(self):

@@ -5,7 +5,8 @@ from typing import Optional, Tuple, Dict
 
 import numpy as np
 import matplotlib
-matplotlib.use("Qt5Agg")
+# PyQt6-kompatibles Backend:
+matplotlib.use("QtAgg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -91,6 +92,10 @@ class Matplot2DView(FigureCanvas):
         self._plane = plane
         self._redraw()
 
+    # Legacy/kompatibel:
+    def _set_plane(self, plane: str):
+        self.set_plane(plane)
+
     def set_bounds(self, bounds: Tuple[float, float, float, float, float, float]):
         self._bounds = tuple(map(float, bounds))  # type: ignore
         self._redraw()
@@ -149,7 +154,7 @@ class Matplot2DView(FigureCanvas):
         self._path_xyz = np.asarray(path_xyz, dtype=float) if path_xyz is not None else None
         self._mask_poly = mask_poly
         if bounds is not None:
-            self._bounds = bounds
+            self._bounds = tuple(map(float, bounds))
         self._redraw()
 
     def show_top(self):   self.set_plane("top")
