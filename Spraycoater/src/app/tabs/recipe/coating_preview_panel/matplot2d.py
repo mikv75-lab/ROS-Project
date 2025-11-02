@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 import matplotlib
-matplotlib.use("Qt5Agg")  # Qt6 geht mit QtAgg auch; lass es so, da du backend_qtagg nutzt
+matplotlib.use("Qt5Agg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -19,18 +19,7 @@ except Exception:
 _LOG = logging.getLogger("app.tabs.recipe.preview.matplot2d")
 
 
-# ---------- Geometrie-Helfer ----------
-
 def _project_points_xyz_to_plane(P: np.ndarray, plane: str) -> np.ndarray:
-    """
-    Projiziere 3D-Punkte P(N,3) in die 2D-Ebene der 'plane'.
-      - top:   (x, y)      (Z in Bildtiefe)
-      - front: (x, z)      (Y in Bildtiefe)
-      - back:  (x, z)
-      - left:  (y, z)      (X in Bildtiefe)
-      - right: (y, z)
-    Rückgabe: U(N,2)
-    """
     if plane == "top":
         U = P[:, [0, 1]]
     elif plane in ("front", "back"):
@@ -43,18 +32,15 @@ def _project_points_xyz_to_plane(P: np.ndarray, plane: str) -> np.ndarray:
 
 
 def _polyline_from_polydata(poly: "pv.PolyData") -> Optional[np.ndarray]:
-    """Extrahiere Polyline aus pv.PolyData (LINES). Rückgabe: Punkte (M,3) oder None."""
     if pv is None or poly is None:
         return None
     try:
         if poly.n_lines <= 0:
             return None
-        # VTK-Lines Layout: [2, i0, i1, 2, i0, i1, ...] (nur Segmente erwartet)
         lines = poly.lines.reshape(-1, 3)
         idxs = []
         for rec in lines:
-            n = int(rec[0])
-            if n != 2:
+            if int(rec[0]) != 2:
                 continue
             idxs.extend([int(rec[1]), int(rec[2])])
         if not idxs:
@@ -67,25 +53,16 @@ def _polyline_from_polydata(poly: "pv.PolyData") -> Optional[np.ndarray]:
         return None
 
 
-# ---------- Matplot2DView ----------
-
 class Matplot2DView(FigureCanvas):
-    """
-    2D-Ansicht:
-      - zeichnet Substrat als gefüllte Fläche (projizierte Dreiecke)
-      - zeichnet Masken-Polyline (optional)
-      - zeichnet Pfadpunkte/Linie (TCP)
-    """
-
     def __init__(self, parent=None):
         self._fig: Figure = Figure(figsize=(6, 6), dpi=100)
         super().__init__(self._fig)
-        self.setParent(parent)
+        # WICHTIG: kein setParent(parent)! Reparenting erfolgt durch addWidget(...)
+        # self.setParent(parent)
 
         self._ax = self._fig.add_subplot(111)
         self._ax.set_aspect("equal", adjustable="box")
 
-        # Daten
         self._bounds: Tuple[float, float, float, float, float, float] = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
         self._plane: str = "top"
 
@@ -95,7 +72,7 @@ class Matplot2DView(FigureCanvas):
 
         self._fig.tight_layout()
 
-    # ---- Public API ----
+    # --- Public API ---
     def set_scene(
         self,
         *,
@@ -120,7 +97,7 @@ class Matplot2DView(FigureCanvas):
     def force_redraw(self):
         self._redraw()
 
-    # ---- intern ----
+    # --- intern ---
     def _set_plane(self, plane: str):
         if plane not in ("top", "front", "back", "left", "right"):
             _LOG.warning("Unknown plane '%s'", plane); return
@@ -165,14 +142,9 @@ class Matplot2DView(FigureCanvas):
         self._ax.grid(True, linestyle=":", linewidth=0.5, alpha=0.5)
 
     def _projected_triangles(self, plane: str):
-        """
-        Projiziere Mesh-Faces (trianguliert) in 2D und liefere Liste von Nx2-Arrays.
-        Robust gegen PyVista-API-Änderungen (n_faces entfernt).
-        """
         if pv is None or self._mesh is None or self._mesh.n_points == 0:
             return None
         try:
-            # sichere Oberfläche erzeugen und triangulieren
             mesh = self._mesh
             try:
                 mesh = mesh.extract_surface()
@@ -183,18 +155,15 @@ class Matplot2DView(FigureCanvas):
             except Exception:
                 pass
 
-            # faces-Array prüfen
             faces = getattr(mesh, "faces", None)
             if faces is None:
                 return None
             faces = np.asarray(faces)
             if faces.size == 0:
-                # kein einziges Polygon – evtl. nur Linienpunkte?
                 return None
 
-            # Punkte + Projektion
             P = np.asarray(mesh.points, dtype=float).reshape(-1, 3)
-            U = _project_points_xyz_to_plane(P, plane)  # (N,2)
+            U = _project_points_xyz_to_plane(P, plane)
 
             # VTK faces: [3, i, j, k, 3, i, j, k, ...]
             try:
@@ -204,7 +173,6 @@ class Matplot2DView(FigureCanvas):
                     return None
                 tris_idx = faces_r[tri_rows, 1:4]
             except Exception:
-                # Fallback: generisch parsen
                 cursor = 0
                 idx_list = []
                 f = faces
@@ -218,7 +186,6 @@ class Matplot2DView(FigureCanvas):
                     return None
                 tris_idx = np.asarray(idx_list, dtype=int)
 
-            # 2D-Dreiecke bauen
             tris_2d = []
             for tri in tris_idx:
                 if np.any(tri < 0) or np.any(tri >= U.shape[0]):
@@ -238,7 +205,7 @@ class Matplot2DView(FigureCanvas):
         try:
             coll = PolyCollection(
                 tris,
-                facecolor="#d0d6dd",
+                facecolor="#d0d6dd",  # hellgrau
                 edgecolor="none",
                 alpha=0.45,
                 zorder=1,
@@ -268,18 +235,10 @@ class Matplot2DView(FigureCanvas):
             return
         try:
             U = _project_points_xyz_to_plane(self._path_xyz, self._plane)
-            # Linie
             self._ax.plot(
                 U[:, 0], U[:, 1], "-",
-                linewidth=2.0, color="#e74c3c",
-                alpha=0.9, zorder=4
-            )
-            # Marker in moderater Dichte
-            step = max(1, len(U) // 50)
-            self._ax.plot(
-                U[::step, 0], U[::step, 1], "o",
-                markersize=3.5, markeredgewidth=0.0,
-                color="#c0392b", alpha=0.9, zorder=5
+                linewidth=2.0, color="#2ecc71",
+                alpha=0.95, zorder=4
             )
         except Exception:
             _LOG.exception("draw path failed")

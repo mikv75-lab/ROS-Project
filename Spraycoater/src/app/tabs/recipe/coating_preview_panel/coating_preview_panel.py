@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import os, logging
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 
 import numpy as np
 import pyvista as pv
@@ -42,8 +42,10 @@ def _orthonormal_basis_from_z(z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np
 
 
 class CoatingPreviewPanel(QWidget):
-    DEFAULT_MOUNT_COLOR = "lightgray"
-    DEFAULT_SUBSTRATE_COLOR = "#3498db"
+    # Farben: Ground < Mount < Substrat
+    DEFAULT_GROUND_COLOR    = "#3a3a3a"  # dunkelgrau
+    DEFAULT_MOUNT_COLOR     = "#5d5d5d"  # etwas heller
+    DEFAULT_SUBSTRATE_COLOR = "#d0d6dd"  # hell
 
     def __init__(self, *, ctx, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -52,6 +54,7 @@ class CoatingPreviewPanel(QWidget):
 
         # --- UI refs
         self.chkShowMask: QCheckBox        = self.findChild(QCheckBox, "chkShowMask")
+        self.chkShowPath: QCheckBox        = self.findChild(QCheckBox, "chkShowPath")
         self.chkShowHits: QCheckBox        = self.findChild(QCheckBox, "chkShowHits")
         self.chkShowMisses: QCheckBox      = self.findChild(QCheckBox, "chkShowMisses")
         self.chkShowNormals: QCheckBox     = self.findChild(QCheckBox, "chkShowNormals")
@@ -75,23 +78,26 @@ class CoatingPreviewPanel(QWidget):
         # stacked
         self._stack: QStackedWidget = self.findChild(QStackedWidget, "stackPreview")
         self._host3d: QFrame        = self.findChild(QFrame, "previewHost3D")
-        self._host2d = self.findChild(QWidget, "matplotHost")
+        self._host2d                 = self.findChild(QWidget, "matplotHost")
         if not self._stack or not self._host3d or not self._host2d:
             raise RuntimeError("coating_preview_panel.ui muss 'stackPreview', 'previewHost3D', 'matplotHost' enthalten.")
 
         # --- Composition
-        # 3D
         self._hoster = InteractorHost(self, self._host3d)
         self.scene   = SceneManager(lambda: self._hoster.ia, None)
         self.views   = ViewController(self._get_ia, self.render)
 
-        # 2D
-        self._mat2d = Matplot2DView(parent=self._host2d)
+        # 2D – robust ohne Parent beim Erzeugen (Reparenting via addWidget)
+        self._mat2d = Matplot2DView(parent=None)
         lay2d = self._host2d.layout()
         if lay2d is None:
-            lay2d = QVBoxLayout(self._host2d)
-        lay2d.setContentsMargins(0, 0, 0, 0)
-        lay2d.addWidget(self._mat2d)
+            lay2d = QVBoxLayout()
+            lay2d.setContentsMargins(0, 0, 0, 0)
+            self._host2d.setLayout(lay2d)
+        else:
+            lay2d.setContentsMargins(0, 0, 0, 0)
+        if lay2d.indexOf(self._mat2d) == -1:
+            lay2d.addWidget(self._mat2d)
 
         # --- Bounds / grid / camera
         self._bounds = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
@@ -100,20 +106,44 @@ class CoatingPreviewPanel(QWidget):
         self._grid_step    = 10.0
 
         # Layer-Namen
-        self._layer_mask      = "mask"
-        self._layer_rays_hit  = "rays_hit"
-        self._layer_rays_miss = "rays_miss"
-        self._layer_normals   = "normals"
-        self._frames_layers   = ("frames_x", "frames_y", "frames_z", "frames_labels")
+        self._layer_ground     = "ground"
+        self._layer_mount      = "mount"
+        self._layer_substrate  = "substrate"
+        self._layer_mask       = "mask"
+        self._layer_mask_mrk   = "mask_markers"
+        self._layer_path       = "path"
+        self._layer_path_mrk   = "path_markers"
+        self._layer_rays_hit   = "rays_hit"
+        self._layer_rays_miss  = "rays_miss"
+        self._layer_normals    = "normals"
+        self._frames_layers    = ("frames_x", "frames_y", "frames_z", "frames_labels")
         self._frames_layers_active = self._frames_layers
 
+        # Label-Actors
+        self._label_actors: Dict[str, object] = {}
+
         # Defaults + wiring
-        for cb in (self.chkShowMask, self.chkShowHits, self.chkShowMisses, self.chkShowNormals, self.chkShowLocalFrames):
-            if cb:
-                cb.setChecked(True)
+        if self.chkShowMask:         self.chkShowMask.setChecked(True)
+        if self.chkShowPath:         self.chkShowPath.setChecked(True)
+        if self.chkShowHits:         self.chkShowHits.setChecked(False)
+        if self.chkShowMisses:       self.chkShowMisses.setChecked(False)
+        if self.chkShowNormals:      self.chkShowNormals.setChecked(False)
+        if self.chkShowLocalFrames:  self.chkShowLocalFrames.setChecked(True)
 
         if self.chkShowMask:
-            self.chkShowMask.toggled.connect(lambda vis: self.scene.set_layer_visible(self._layer_mask, vis, render=True))
+            self.chkShowMask.toggled.connect(
+                lambda vis: (
+                    self.scene.set_layer_visible(self._layer_mask, vis, render=False),
+                    self.scene.set_layer_visible(self._layer_mask_mrk, vis, render=True)
+                )
+            )
+        if self.chkShowPath:
+            self.chkShowPath.toggled.connect(
+                lambda vis: (
+                    self.scene.set_layer_visible(self._layer_path, vis, render=False),
+                    self.scene.set_layer_visible(self._layer_path_mrk, vis, render=True)
+                )
+            )
         if self.chkShowHits:
             self.chkShowHits.toggled.connect(lambda vis: self.scene.set_layer_visible(self._layer_rays_hit, vis, render=True))
         if self.chkShowMisses:
@@ -123,24 +153,7 @@ class CoatingPreviewPanel(QWidget):
         if self.chkShowLocalFrames:
             self.chkShowLocalFrames.toggled.connect(self._on_toggle_frames)
 
-        # 3D-Kamera-Buttons → beim Klick direkt auf 3D umschalten
-        self.views.wire_buttons_3d(
-            btn_iso=self.btnCamIso, btn_top=self.btnCamTop, btn_front=self.btnCamFront,
-            btn_back=self.btnCamBack, btn_left=self.btnCamLeft, btn_right=self.btnCamRight,
-            on_3d=self._switch_to_3d
-        )
-
-        # 2D-Buttons → direkt auf 2D/Plane umschalten
-        self.views.wire_buttons_2d(
-            btn_top=self.btn2DTop,
-            btn_front=self.btn2DFront,
-            btn_left=self.btn2DLeft,
-            btn_right=self.btn2DRight,
-            btn_back=self.btn2DBack,
-            on_change=self.show_mode_2d
-        )
-
-        # Startmodus (3D)
+        # Startmodus (3D iso)
         self._switch_to_3d()
 
     # -------- helpers --------
@@ -180,24 +193,7 @@ class CoatingPreviewPanel(QWidget):
     def _switch_to_3d(self):
         if self._stack.currentIndex() != 0:
             self._stack.setCurrentIndex(0)
-        self._look_at_floor_center()
-
-    def show_mode_2d(self, plane: str):
-        if self._stack.currentIndex() != 1:
-            self._stack.setCurrentIndex(1)
-        try:
-            if   plane == "top":   self._mat2d.show_top()
-            elif plane == "front": self._mat2d.show_front()
-            elif plane == "left":  self._mat2d.show_left()
-            elif plane == "right": self._mat2d.show_right()
-            elif plane == "back":  self._mat2d.show_back()
-            else:
-                _LOG.warning("Unbekannter 2D-Plane '%s'", plane)
-            # sicheres Redraw (falls Matplot2DView das anbietet)
-            if hasattr(self._mat2d, "force_redraw"):
-                self._mat2d.force_redraw()
-        except Exception:
-            _LOG.exception("show_mode_2d failed for plane=%s", plane)
+        self.view_isometric()
 
     # -------- Grid/Bounds --------
     def set_grid_step(self, step_mm: float) -> None:
@@ -315,15 +311,18 @@ class CoatingPreviewPanel(QWidget):
     # ---------- Scene passthrough ----------
     def clear(self) -> None:
         ia = self._get_ia()
-        if ia is None:
-            return
         self.scene.clear()
+        # Label-Actors wegräumen
+        if ia is not None:
+            for act in list(self._label_actors.values()):
+                try:
+                    ia.remove_actor(act, render=False)
+                except Exception:
+                    pass
+        self._label_actors.clear()
 
     def add_mesh(self, mesh, **kwargs) -> None:
-        ia = self._get_ia()
-        if ia is None:
-            _LOG.warning("add_mesh(): kein Interactor")
-            return
+        _ = self._get_ia()
         self.scene.add_mesh(mesh, **kwargs)
 
     def clear_layer(self, layer: str) -> None:
@@ -332,12 +331,9 @@ class CoatingPreviewPanel(QWidget):
     def add_path_polyline(self, *a, **kw):
         self.scene.add_path_polyline(*a, **kw)
 
-    def add_path_markers(self, *a, **kw):
-        self.scene.add_path_markers(*a, **kw)
-
-    # --- show_poly (für tcp_poly etc.) ---
+    # --- einfacher Poly-Helfer
     def show_poly(self, poly: pv.PolyData, *, layer: str,
-                  color: str = "#f39c12", line_width: float = 1.0, lighting: bool = False):
+                  color: str = "#2ecc71", line_width: float = 1.0, lighting: bool = False):
         try:
             self.clear_layer(layer)
             self.add_mesh(
@@ -351,34 +347,6 @@ class CoatingPreviewPanel(QWidget):
             )
         except Exception:
             _LOG.exception("show_poly() failed")
-
-    # --- Normals (als Linien) ---
-    def show_normals_from_hits(self, points_mm: np.ndarray, normals: np.ndarray,
-                               *, layer: str = "normals", length_mm: float = 8.0,
-                               color: str = "#27ae60", line_width: float = 1.0):
-        try:
-            P = np.asarray(points_mm, dtype=float).reshape(-1, 3)
-            N = np.asarray(normals,   dtype=float).reshape(-1, 3)
-            M = min(len(P), len(N))
-            if M == 0:
-                self.clear_layer(layer)
-                return
-            A = P[:M]
-            B = P[:M] + N[:M] * float(length_mm)
-            pts = np.vstack([A, B])
-            lines = np.empty((M, 3), dtype=np.int64)
-            lines[:, 0] = 2
-            lines[:, 1] = np.arange(M, dtype=np.int64)
-            lines[:, 2] = np.arange(M, dtype=np.int64) + M
-            poly = pv.PolyData(pts)
-            poly.lines = lines.reshape(-1)
-            self.clear_layer(layer)
-            self.add_mesh(
-                poly, color=color, render=False, reset_camera=False,
-                line_width=float(line_width), lighting=False, layer=layer
-            )
-        except Exception:
-            _LOG.exception("show_normals_from_hits() failed")
 
     # --- Frames (lokale KS) ---
     def clear_frames(self) -> None:
@@ -546,3 +514,48 @@ class CoatingPreviewPanel(QWidget):
         cy = 0.5 * (ymin + ymax)
         z0 = float(zmin if use_contact_plane else 0.5 * (zmin + zmax))
         self.set_world_bounds_at(center_xy=(cx, cy), z0=z0, span_xy=span_xy, span_z=span_z)
+
+    # --- Start/Ende-Marker (eigene Kugeln + Labels) ---
+    def show_start_end_markers(self, points: np.ndarray, *, layer_prefix: str, color: str, size: float = 3.0):
+        ia = self._get_ia()
+        if ia is None:
+            return
+        try:
+            P = np.asarray(points, dtype=float).reshape(-1, 3)
+            layer = f"{layer_prefix}_markers"
+            self.scene.clear_layer(layer)
+
+            # alte Labels entfernen
+            old = self._label_actors.pop(layer, None)
+            if old is not None:
+                try:
+                    ia.remove_actor(old, render=False)
+                except Exception:
+                    pass
+
+            if len(P) == 0:
+                return
+
+            start = P[0]; end = P[-1]
+            # kleine Kugeln
+            try:
+                s0 = pv.Sphere(radius=float(size)*0.5, center=start)
+                s1 = pv.Sphere(radius=float(size)*0.5, center=end)
+                self.scene.add_mesh(s0, color=color, layer=layer, render=False, lighting=False)
+                self.scene.add_mesh(s1, color=color, layer=layer, render=False, lighting=False)
+            except Exception:
+                _LOG.exception("Start/Ende-Kugeln fehlgeschlagen")
+
+            # neue Labels
+            try:
+                lab = ia.add_point_labels(
+                    [start, end],
+                    ["Start", "Ende"],
+                    point_size=0, font_size=12, text_color="black",
+                    shape_opacity=0.25, render=False
+                )
+                self._label_actors[layer] = lab
+            except Exception:
+                _LOG.exception("Start/Ende Labels fehlgeschlagen")
+        except Exception:
+            _LOG.exception("show_start_end_markers() failed")

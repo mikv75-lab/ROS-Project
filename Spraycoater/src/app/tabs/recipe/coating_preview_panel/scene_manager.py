@@ -92,7 +92,7 @@ class SceneManager:
             if len(P) < 2:
                 return None
 
-            # Polyline-Konstruktion
+            # Polyline-Konstruktion (ein Segment-Liste mit einer Kette)
             lines = np.hstack([[len(P)], np.arange(len(P), dtype=np.int64)])
             poly = pv.PolyData(P)
             poly.lines = lines
@@ -117,20 +117,29 @@ class SceneManager:
             _LOG.exception("add_path_polyline failed")
             return None
 
-    def add_path_markers(self, points_mm: np.ndarray, *,
+    def add_path_markers(self, points_mm: np.ndarray | None = None, *,
+                         # tolerant für ältere Aufrufe: points=...
+                         points: np.ndarray | None = None,
                          layer: str = "path_markers",
                          color: str = "#e74c3c",
                          point_size: float = 8.0,
                          render: bool = False,
                          reset_camera: bool = False,
                          lighting: bool = False,
-                         step: int = 1) -> Optional[Any]:
+                         step: int = 1,
+                         labels: list[str] | None = None) -> Optional[Any]:
         """
-        Fügt Punktmarker entlang eines Pfads hinzu.
+        Fügt Punktmarker (und optional Labels) entlang eines Pfads hinzu.
         step: Nur jeden 'step'-ten Punkt anzeigen (>=1).
+
+        Akzeptiert sowohl `points_mm=` als auch (legacy) `points=`.
         """
         try:
-            P = np.asarray(points_mm, float).reshape(-1, 3)
+            src = points_mm if points_mm is not None else points
+            if src is None:
+                return None
+
+            P = np.asarray(src, float).reshape(-1, 3)
             if len(P) == 0:
                 return None
 
@@ -140,14 +149,66 @@ class SceneManager:
             if len(P) == 0:
                 return None
 
+            ia = self._ia()
+            if ia is None:
+                return None
+
+            # Punkte rendern (Glyph-Style)
             poly = pv.PolyData(P)
-            return self.add_mesh(poly, layer=layer, color=color,
-                                 point_size=float(point_size),
-                                 render=render, reset_camera=reset_camera,
-                                 lighting=lighting)
+            actor = self.add_mesh(poly, layer=layer, color=color,
+                                  point_size=float(point_size),
+                                  render=False, reset_camera=reset_camera,
+                                  lighting=lighting)
+
+            # Labels optional
+            if labels:
+                try:
+                    L = min(len(labels), len(P))
+                    if L > 0:
+                        lab_actor = ia.add_point_labels(
+                            P[:L],
+                            list(labels)[:L],
+                            point_size=0,
+                            font_size=12,
+                            text_color="black",
+                            shape_opacity=0.25,
+                            render=False,
+                        )
+                        self._ensure_layer(layer).append(lab_actor)
+                except Exception:
+                    _LOG.exception("add_path_markers: labels failed")
+
+            if render:
+                try:
+                    ia.render()
+                except Exception:
+                    pass
+
+            return actor
         except Exception:
             _LOG.exception("add_path_markers failed")
             return None
+
+    def show_poly(self, poly: pv.PolyData, *, layer: str,
+                  color: str = "#2ecc71", line_width: float = 1.0,
+                  lighting: bool = False, reset_camera: bool = False,
+                  render: bool = False) -> Optional[Any]:
+        """
+        Einfache Poly-Helferfunktion (räumt Layer vorher auf).
+        """
+        try:
+            self.clear_layer(layer)
+        except Exception:
+            pass
+        return self.add_mesh(
+            poly,
+            color=color,
+            line_width=float(line_width),
+            lighting=lighting,
+            layer=layer,
+            reset_camera=reset_camera,
+            render=render,
+        )
 
     def clear_layer(self, layer: str, *, render: bool = False) -> None:
         ia = self._ia()
