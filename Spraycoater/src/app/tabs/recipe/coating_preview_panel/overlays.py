@@ -82,19 +82,31 @@ def _make_yaml_hits_with_defaults(
     *,
     default_rpy: tuple[float, float, float] = (0.0, 0.0, -90.0)
 ) -> Optional[str]:
+    """
+    Erzeugt ein kompaktes YAML:
+    
+    points:
+    - {x: ..., y: ..., z: ..., rx: ..., ry: ..., rz: ...}
+    - {x: ..., y: ..., z: ..., rx: ..., ry: ..., rz: ...}
+    ...
+
+    - Nur 'points:' (keine Header/Units/Count).
+    - Jeder Punkt in EINER Zeile, Reihenfolge: x,y,z,rx,ry,rz.
+    """
     if points_hits is None or z_dirs_hits is None:
         return None
     O = np.asarray(points_hits, float).reshape(-1, 3)
     Z = np.asarray(z_dirs_hits, float).reshape(-1, 3)
     if O.shape != Z.shape or O.shape[0] == 0:
         return None
+
     X = None
     if x_dirs_hits is not None:
         X = np.asarray(x_dirs_hits, float).reshape(-1, 3)
         if X.shape != O.shape:
             X = None
 
-    poses: List[Dict[str, float]] = []
+    lines = ["points:"]
     for i in range(O.shape[0]):
         z = Z[i]
         if not np.all(np.isfinite(z)) or np.linalg.norm(z) < 1e-9:
@@ -104,25 +116,17 @@ def _make_yaml_hits_with_defaults(
             x, y, z = _orthonormal_basis_from_zx(z, x_hint)
             R = np.column_stack([x, y, z])
             rx, ry, rz = _rotmat_to_rpy_xyz(R)
-        poses.append({"x": float(O[i, 0]), "y": float(O[i, 1]), "z": float(O[i, 2]),
-                      "rx": rx, "ry": ry, "rz": rz})
 
-    header = {"units": {"position": "mm", "angles": "deg"}, "count": len(poses), "frames": poses}
-    try:
-        import yaml
-        return yaml.safe_dump(header, sort_keys=False, allow_unicode=True)
-    except Exception:
-        lines = ["units: { position: mm, angles: deg }", f"count: {len(poses)}", "frames:"]
-        for p in poses:
-            lines += [
-                f"  - x: {p['x']:.6f}",
-                f"    y: {p['y']:.6f}",
-                f"    z: {p['z']:.6f}",
-                f"    rx: {p['rx']:.6f}",
-                f"    ry: {p['ry']:.6f}",
-                f"    rz: {p['rz']:.6f}",
-            ]
-        return "\n".join(lines)
+        # eine Zeile pro Punkt, feste Feldreihenfolge
+        lines.append(
+            "  - {x: %.6f, y: %.6f, z: %.6f, rx: %.6f, ry: %.6f, rz: %.6f}" % (
+                float(O[i, 0]), float(O[i, 1]), float(O[i, 2]),
+                float(rx), float(ry), float(rz)
+            )
+        )
+
+    return "\n".join(lines) + "\n"
+
 
 
 class OverlayRenderer:
