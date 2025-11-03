@@ -8,19 +8,20 @@ from typing import Any, Dict, List, Optional, Iterable, Tuple
 
 @dataclass
 class Recipe:
-    """Kompaktes Rezeptmodell für den Spraycoater.
+    """
+    Kompaktes Rezeptmodell für den Spraycoater.
 
-    - id:            Rezeptname
-    - description:   freie Details/Beschreibung
-    - tool:          gewählte Düse/Tool-ID
-    - substrate(s):  ausgewähltes Substrat (und optional Liste)
+    - id:              Rezeptname
+    - description:     freie Details/Beschreibung
+    - tool:            gewählte Düse/Tool-ID
+    - substrate(s):    ausgewähltes Substrat (und optional Liste)
     - substrate_mount: gewählter Mount
-    - parameters:    globale Parameter (flow, speed, ...)
-    - paths_by_side: pro Side GENAU EIN Path-Dict (z.B. {"type":"meander_plane", ...})
+    - parameters:      globale Parameter (flow, speed, ...)
+    - paths_by_side:   pro Side GENAU EIN Path-Dict (z.B. {"type":"meander_plane", ...})
     """
     # Meta
-    id: str                              # = Rezeptname
-    description: str = ""                # = optionale Details
+    id: str
+    description: str = ""
 
     # Auswahl
     tool: Optional[str] = None
@@ -42,11 +43,21 @@ class Recipe:
 
         tool = d.get("tool")
         substrate = d.get("substrate")
+        # Wenn nur ein einzelnes Substrat gesetzt wurde, trotzdem eine Liste anbieten
         substrates = list(d.get("substrates") or ([] if not substrate else [substrate]))
-        substrate_mount = d.get("substrate_mount")
+
+        # Nur skalaren Mount-Wert übernehmen (nicht die Liste der verfügbaren Mounts)
+        substrate_mount = d.get("substrate_mount") or d.get("mount")
+        if isinstance(substrate_mount, list):
+            substrate_mount = None
+
+        # NOTE: wir erlauben sowohl "paths_by_side" als auch "paths" (robust)
+        pbs = d.get("paths_by_side")
+        if pbs is None:
+            pbs = d.get("paths")
+        paths_by_side = dict(pbs or {})
 
         parameters = dict(d.get("parameters") or {})
-        paths_by_side = dict(d.get("paths_by_side") or {})
 
         return Recipe(
             id=rid,
@@ -60,7 +71,9 @@ class Recipe:
         )
 
     @staticmethod
-    def with_default_params(*, name: str = "recipe", description: str = "", params: Optional[Dict[str, Any]] = None) -> "Recipe":
+    def with_default_params(
+        *, name: str = "recipe", description: str = "", params: Optional[Dict[str, Any]] = None
+    ) -> "Recipe":
         """Erzeugt ein leeres Rezept mit übergebenen Default-Parametern (nur Globals)."""
         return Recipe(
             id=name,

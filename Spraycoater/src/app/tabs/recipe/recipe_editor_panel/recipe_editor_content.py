@@ -1,36 +1,89 @@
+# recipe_editor_content.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from typing import Any, Dict, Optional, Tuple
+from typing import Optional, Dict, Any, Tuple, List
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout, QLabel, QLineEdit,
+    QWidget, QVBoxLayout, QGroupBox, QFormLayout, QLineEdit,
     QDoubleSpinBox, QSpinBox, QCheckBox, QComboBox, QStackedWidget, QFrame,
     QScrollArea, QSpacerItem, QSizePolicy
 )
 
+from app.model.recipe.recipe import Recipe
+from app.model.recipe.recipe_store import RecipeStore
 from .side_path_editor import SidePathEditor
 
 
 def _hline() -> QFrame:
-    f = QFrame(); f.setFrameShape(QFrame.HLine); f.setFrameShadow(QFrame.Sunken); return f
+    f = QFrame()
+    f.setFrameShape(QFrame.HLine)
+    f.setFrameShadow(QFrame.Sunken)
+    return f
+
+
+# ------------------- Helper -------------------
+
+def _unique_str_list(items) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for x in (items or []):
+        s = str(x)
+        if s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
+
+
+def _coalesce_options(
+    model: Recipe,
+    *,
+    single: str,                 # z.B. "tool" oder "substrate_mount"
+    plurals: List[str],          # z.B. ["tools"] oder ["substrate_mounts", "mounts"]
+    rec_def: Optional[Dict[str, Any]] = None,  # liest ggf. direkt aus Definition
+) -> List[str]:
+    opts: List[str] = []
+
+    # 1) Plural-Felder direkt am Model
+    for attr in plurals:
+        vals = getattr(model, attr, None)
+        if vals:
+            opts.extend(vals)
+
+    # 2) Recipe-Definition (Vorzugsquelle)
+    if isinstance(rec_def, dict):
+        for attr in plurals:
+            vals = rec_def.get(attr)
+            if vals:
+                opts.extend(vals)
+
+    # 3) Single-Feld als Fallback, wenn sonst nichts gefunden
+    single_val = getattr(model, single, None)
+    if single_val and not opts:
+        opts = [single_val]
+
+    return _unique_str_list(opts)
+
+
+def _coalesce_sides_from_rec_def(rec_def: Dict[str, Any]) -> Dict[str, Any]:
+    sides = rec_def.get("sides") or {}
+    return dict(sides) if isinstance(sides, dict) else {}
 
 
 class RecipeEditorContent(QWidget):
     """
-    Layout (mit globaler ScrollArea):
+    Model-driven Editor:
       [ScrollArea]
         └─ [VBox]
-           ├─ [Globals]  <-- enthält jetzt AUCH 'description' (Rezeptname)
-           ├─ [recipe_stack]  <-- pro ausgewähltem Rezept eine Seite:
-           │     - Selectors (tool/substrate/mount)
-           │     - pro Side eine GroupBox mit SidePathEditor
-           └─ (Expanding Spacer)
+           ├─ [Globals]  (inkl. 'description')
+           ├─ [recipe_stack]  (Selectors + Side-Path-Editor je Side)
+           └─ Spacer
     """
-    def __init__(self, *, ctx=None, parent: Optional[QWidget] = None):
+    def __init__(self, *, ctx=None, store: RecipeStore, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
+        self.store = store
 
-        # Widgets, die pro Seite wechseln:
+        # Per Rezeptseite:
         self._side_editors: Dict[str, SidePathEditor] = {}
         self.sel_tool: Optional[QComboBox] = None
         self.sel_substrate: Optional[QComboBox] = None
@@ -50,14 +103,22 @@ class RecipeEditorContent(QWidget):
         self.g_maxpts: Optional[QSpinBox] = None
         self.g_maxang: Optional[QDoubleSpinBox] = None
 
+        # aktives Recipe-Model + Definition
+        self._model: Optional[Recipe] = None
+        self._rec_def: Optional[Dict[str, Any]] = None
+
+        # Context-Key für Re-Priming bei Mount/Substrate/Tool-Wechsel
+        self._last_ctx_key: Optional[str] = None
+
         self._build_ui()
         self.apply_defaults()
 
     # ------------------- UI Build -------------------
     def _build_ui(self) -> None:
-        outer = QVBoxLayout(self); outer.setContentsMargins(0,0,0,0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
 
-        # Eine ScrollArea für den GESAMTEN Content (Globals + Seite)
+        # ScrollArea für (Globals + Seite)
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         outer.addWidget(scroll)
@@ -68,11 +129,10 @@ class RecipeEditorContent(QWidget):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(10)
 
-        # === Globals (inkl. description oben) ===
+        # === Globals (inkl. description) ===
         self.gb_globals = QGroupBox("Globals")
         g = QFormLayout(self.gb_globals)
 
-        # description / name
         self.e_desc = QLineEdit()
         g.addRow("description", self.e_desc)
 
@@ -103,16 +163,17 @@ class RecipeEditorContent(QWidget):
 
         root.addWidget(self.gb_globals)
 
-        # === Stacked: pro Rezept eine Seite (Selectors + Sides) ===
+        # === Stack: pro Recipe-Model eine Seite (Selectors + Sides) ===
         self.recipe_stack = QStackedWidget()
+        self.recipe_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         root.addWidget(self.recipe_stack)
 
-        # Spacer am Ende (drückt alles nach oben, kompakte Boxen)
+        # Spacer am Ende
         root.addItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
     # ------------------- Seiten/Defaults -------------------
     def apply_defaults(self) -> None:
-        # Globals
+        # Global Defaults (harte Fallbacks – echte Defaults kommen über Store!)
         self.e_desc.setText("")
         self.g_speed.setValue(200.0)
         self.g_standoff.setValue(10.0)
@@ -126,7 +187,6 @@ class RecipeEditorContent(QWidget):
         self.g_maxpts.setValue(200000)
         self.g_maxang.setValue(0.0)
 
-        # Seite entfernen (Selectors/Sides werden neu aufgebaut)
         self._clear_recipe_page()
 
     def _clear_recipe_page(self) -> None:
@@ -136,22 +196,58 @@ class RecipeEditorContent(QWidget):
             w.deleteLater()
 
         self._side_editors.clear()
+        self._disconnect_selectors()
         self.sel_tool = None
         self.sel_substrate = None
         self.sel_mount = None
+        self._last_ctx_key = None
+        self._rec_def = None
 
-    # ------------------- Seite aufbauen -------------------
-    def apply_recipe_to_forms(self, rec: Dict[str, Any]) -> None:
-        """Erzeugt eine neue Stack-Seite für das konkrete Rezept (ohne description – das ist global)."""
+    def _disconnect_selectors(self) -> None:
+        for combo in (self.sel_tool, self.sel_substrate, self.sel_mount):
+            if not combo:
+                continue
+            try:
+                combo.currentIndexChanged.disconnect(self._on_selectors_changed)
+            except Exception:
+                pass
+
+    # ------------------- Model-Driven Aufbau -------------------
+    def apply_recipe_model(self, model: Recipe, rec_def: Dict[str, Any]) -> None:
+        """
+        Baut die Formularseite vollständig aus dem Recipe-Model + Definition auf.
+        """
+        self._model = model
+        self._rec_def = rec_def
         self._clear_recipe_page()
 
-        # description aus YAML in das globale Feld schreiben (kann der User ändern)
-        self.e_desc.setText(str(rec.get("description", "")))
+        # description/parameters aus Model → Globals
+        self.e_desc.setText(str(getattr(model, "description", "") or ""))
 
+        params = dict(getattr(model, "parameters", {}) or {})
+        def _opt_set(name, setter):
+            if name in params:
+                setter(params[name])
+
+        _opt_set("speed_mm_s", self.g_speed.setValue)
+        _opt_set("stand_off_mm", self.g_standoff.setValue)
+        _opt_set("spray_angle_deg", self.g_angle.setValue)
+        _opt_set("pre_dispense_s", self.g_pre.setValue)
+        _opt_set("post_dispense_s", self.g_post.setValue)
+        _opt_set("flow_ml_min", self.g_flow.setValue)
+        _opt_set("overlap_pct", lambda v: self.g_overlap.setValue(int(v)))
+        _opt_set("enable_purge", lambda v: self.g_purge.setChecked(bool(v)))
+        _opt_set("sample_step_mm", self.g_sample.setValue)
+        _opt_set("max_points", lambda v: self.g_maxpts.setValue(int(v)))
+        _opt_set("max_angle_deg", self.g_maxang.setValue)
+
+        # Seite
         page = QWidget()
-        v = QVBoxLayout(page); v.setContentsMargins(0,0,0,0); v.setSpacing(10)
+        v = QVBoxLayout(page)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(10)
 
-        # --- Selectors (rezept-spezifisch) ---
+        # --- Selectors (aus rec_def) ---
         sel_gb = QGroupBox("Selectors")
         sf = QFormLayout(sel_gb)
         self.sel_tool = QComboBox()
@@ -162,77 +258,58 @@ class RecipeEditorContent(QWidget):
         sf.addRow("mount", self.sel_mount)
         v.addWidget(sel_gb)
 
-        # substrates
-        self.sel_substrate.clear()
-        subs = [str(s) for s in (rec.get("substrates") or [])]
-        self.sel_substrate.addItems(subs)
-        if subs:
-            self.sel_substrate.setCurrentIndex(0)
+        tools = _coalesce_options(model, single="tool", plurals=["tools", "tool_options"], rec_def=rec_def)
+        substrates = _coalesce_options(model, single="substrate", plurals=["substrates", "substrate_options"], rec_def=rec_def)
+        mounts = _coalesce_options(model, single="substrate_mount", plurals=["substrate_mounts", "mounts", "mount_options"], rec_def=rec_def)
 
-        # mounts
-        self.sel_mount.clear()
-        mounts = [str(m) for m in (rec.get("substrate_mounts") or [])]
-        self.sel_mount.addItems(mounts)
-        if mounts:
-            self.sel_mount.setCurrentIndex(0)
+        self.sel_tool.clear();        self.sel_tool.addItems(tools)
+        self.sel_substrate.clear();   self.sel_substrate.addItems(substrates)
+        self.sel_mount.clear();       self.sel_mount.addItems(mounts)
 
-        # tools (aus recipes.yaml -> rec["tools"])
-        self.sel_tool.clear()
-        tools_from_recipe = [str(t) for t in (rec.get("tools") or [])]
-        if tools_from_recipe:
-            tool_items = tools_from_recipe
-        else:
-            # optionaler Fallback: ctx.tools_yaml
-            tool_items = []
-            tools_cfg = getattr(self.ctx, "tools_yaml", None)
-            if isinstance(tools_cfg, dict):
-                d = tools_cfg.get("tools") if isinstance(tools_cfg.get("tools"), dict) else tools_cfg
-                tool_items = list(d.keys())
-            if not tool_items:
-                tool_items = ["spray_nozzle_01", "spray_nozzle_02"]
-        self.sel_tool.addItems(tool_items)
-        if tool_items:
-            self.sel_tool.setCurrentIndex(0)
+        def _set_if_present(combo: QComboBox, value: Optional[str]) -> None:
+            if not combo:
+                return
+            if value is None:
+                if combo.count() > 0:
+                    combo.setCurrentIndex(0)
+                return
+            idx = combo.findText(str(value))
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+            elif combo.count() > 0:
+                combo.setCurrentIndex(0)
 
-        # --- Sides/Editors ---
+        _set_if_present(self.sel_tool, getattr(model, "tool", None))
+        _set_if_present(self.sel_substrate, getattr(model, "substrate", None))
+        _set_if_present(self.sel_mount, getattr(model, "substrate_mount", None))
+
+        # --- Sides & Editors direkt aus rec_def ---
         self._side_editors = {}
+        sides: Dict[str, Any] = _coalesce_sides_from_rec_def(rec_def)
 
-        # substrate_types aus Store oder direkt aus YAML
-        stype = str(rec.get("substrate_type") or "").strip()
-        cfg = getattr(getattr(self.ctx, "store", None), "substrate_types", None)
-        if cfg is None:
-            cfg = (getattr(self.ctx, "recipes_yaml", {}) or {}).get("substrate_types", {})
-        sides = dict((cfg.get(stype) or {}).get("sides") or {})
-
-        # plane_enums (für spiral_plane.direction) aus recipe_params holen
-        plane_enums: Optional[Dict[str, Any]] = None
-        schema = (getattr(self.ctx, "recipes_yaml", {}) or {}).get("recipe_params", {}) or {}
-        plane_schema = schema.get("path.spiral.plane") or {}
-        dir_values = []
-        if isinstance(plane_schema.get("direction"), dict):
-            vals = plane_schema["direction"].get("values")
-            if isinstance(vals, list) and vals:
-                dir_values = [str(x) for x in vals]
-        if dir_values:
-            plane_enums = {"direction": dir_values}
-
-        for side_name, scfg in sides.items():
+        for side_name in sides.keys():
             gb = QGroupBox(f"Side: {side_name}")
             vg = QVBoxLayout(gb); vg.setContentsMargins(8, 8, 8, 8); vg.setSpacing(6)
-            editor = SidePathEditor(side_name)
+
+            editor = SidePathEditor(side_name=side_name, store=self.store)
             vg.addWidget(editor)
 
-            allowed = list(scfg.get("allowed_path_types") or [])
-            if not allowed:
-                allowed = ["meander_plane"]
+            # Allowed + Default für Side aus Store
+            side_cfg = self.store.allowed_and_default_for(rec_def, side_name)
+            allowed = list(side_cfg.get("allowed_path_types") or ["meander_plane"])
             editor.set_allowed_types(allowed)
 
-            # Defaults & Enums anwenden
-            editor.apply_default_path(
-                dict(scfg.get("default_path") or {}),
-                helix_enums={k: scfg[k] for k in ("start_froms","directions") if k in scfg},
-                plane_enums=plane_enums
-            )
+            # Defaults: entweder Model-Path, sonst default_path der Definition
+            model_path = (model.paths_by_side or {}).get(side_name) if isinstance(model.paths_by_side, dict) else None
+            default_path = dict(model_path or side_cfg.get("default_path") or {"type": allowed[0]})
+            # Enums
+            plane_enums = self.store.spiral_plane_enums()
+            helix_enums = self.store.spiral_cylinder_enums()
+
+            editor.apply_default_path(default_path, helix_enums=helix_enums, plane_enums=plane_enums)
+
+            # Auto-Reset aktivieren (Type/Shape -> Defaults je Side)
+            editor.enable_auto_reset(rec_def, side_name)
 
             v.addWidget(gb)
             self._side_editors[side_name] = editor
@@ -244,21 +321,13 @@ class RecipeEditorContent(QWidget):
         self.recipe_stack.addWidget(page)
         self.recipe_stack.setCurrentWidget(page)
 
-        # Globale Parameter aus `rec.parameters` (override der Defaults)
-        params = dict(rec.get("parameters") or {})
-        def _opt_set(name, setter):
-            if name in params: setter(params[name])
-        _opt_set("speed_mm_s", lambda v: self.g_speed.setValue(float(v)))
-        _opt_set("stand_off_mm", lambda v: self.g_standoff.setValue(float(v)))
-        _opt_set("spray_angle_deg", lambda v: self.g_angle.setValue(float(v)))
-        _opt_set("pre_dispense_s", lambda v: self.g_pre.setValue(float(v)))
-        _opt_set("post_dispense_s", lambda v: self.g_post.setValue(float(v)))
-        _opt_set("flow_ml_min", lambda v: self.g_flow.setValue(float(v)))
-        _opt_set("overlap_pct", lambda v: self.g_overlap.setValue(int(v)))
-        _opt_set("enable_purge", lambda v: self.g_purge.setChecked(bool(v)))
-        _opt_set("sample_step_mm", lambda v: self.g_sample.setValue(float(v)))
-        _opt_set("max_points", lambda v: self.g_maxpts.setValue(int(v)))
-        _opt_set("max_angle_deg", lambda v: self.g_maxang.setValue(float(v)))
+        # Selector-Signale (Context-Wechsel)
+        if self.sel_substrate:
+            self.sel_substrate.currentIndexChanged.connect(self._on_selectors_changed)
+        if self.sel_mount:
+            self.sel_mount.currentIndexChanged.connect(self._on_selectors_changed)
+        if self.sel_tool:
+            self.sel_tool.currentIndexChanged.connect(self._on_selectors_changed)
 
     # ------------------- Collectors -------------------
     def collect_globals(self) -> Dict[str, Any]:
@@ -276,7 +345,7 @@ class RecipeEditorContent(QWidget):
             "max_angle_deg": float(self.g_maxang.value()),
         }
 
-    def collect_paths_by_side(self) -> Dict[str, Dict[str, Any]]:
+    def collect_paths_by_side(self) -> Dict[str, Any]:
         out: Dict[str, Dict[str, Any]] = {}
         for side, ed in (self._side_editors or {}).items():
             out[side] = ed.collect_path()
@@ -290,3 +359,42 @@ class RecipeEditorContent(QWidget):
 
     def get_description(self) -> str:
         return (self.e_desc.text().strip() if self.e_desc else "")
+
+    def set_path_for_side(self, side: str, path: Dict[str, Any]) -> None:
+        ed = self._side_editors.get(side)
+        if not ed:
+            return
+        plane_enums = self.store.spiral_plane_enums()
+        helix_enums = self.store.spiral_cylinder_enums()
+        ed.apply_default_path(path, helix_enums=helix_enums, plane_enums=plane_enums)
+
+    # ------------------- Priming-Logik bei Contextwechsel -------------------
+    def _current_ctx_key(self) -> str:
+        tool = self.sel_tool.currentText().strip() if self.sel_tool and self.sel_tool.currentIndex() >= 0 else ""
+        sub = self.sel_substrate.currentText().strip() if self.sel_substrate and self.sel_substrate.currentIndex() >= 0 else ""
+        mnt = self.sel_mount.currentText().strip() if self.sel_mount and self.sel_mount.currentIndex() >= 0 else ""
+        return f"{mnt}|{sub}|{tool}"
+
+    def _on_selectors_changed(self, _idx: int = 0) -> None:
+        key = self._current_ctx_key()
+        if key == self._last_ctx_key:
+            return
+        self._last_ctx_key = key
+
+        # Optionaler Callback am Model
+        if self._model and hasattr(self._model, "on_context_changed"):
+            try:
+                tool, sub, mnt = self.active_selectors_values()
+                self._model.on_context_changed(tool, sub, mnt)  # optional
+            except Exception:
+                pass
+
+    def _prime_all_sides_from_defaults(self) -> None:
+        if not (self._rec_def and self.store):
+            return
+        plane_enums = self.store.spiral_plane_enums()
+        helix_enums = self.store.spiral_cylinder_enums()
+        for side, editor in (self._side_editors or {}).items():
+            side_cfg = self.store.allowed_and_default_for(self._rec_def, side)
+            default_path = dict(side_cfg.get("default_path") or {})
+            editor.apply_default_path(default_path, helix_enums=helix_enums, plane_enums=plane_enums)
