@@ -5,24 +5,13 @@ from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
-    use_tool1_arg = DeclareLaunchArgument(
-    name="use_tool1",
-    default_value="false",
-    description="Tool 1 aktivieren"
-    )
-    use_tool2_arg = DeclareLaunchArgument(
-        name="use_tool2",
-        default_value="false",
-        description="Tool 2 aktivieren"
-    )
-
     world_frame = "world"
     base_frame  = "meca_mount"
 
     urdf_xacro = PathJoinSubstitution([
         FindPackageShare("mecademic_description"),
         "urdf",
-        "meca_500_r3_with_tool.xacro"
+        "meca_500_r3.urdf.xacro"
     ])
 
     rviz_config = PathJoinSubstitution([
@@ -31,16 +20,11 @@ def generate_launch_description():
         "meca_display.rviz"
     ])
 
-    def launch_setup(context):
-        use_tool1 = LaunchConfiguration("use_tool1").perform(context)
-        use_tool2 = LaunchConfiguration("use_tool2").perform(context)
-
+    def launch_setup():
         robot_description = {
             "robot_description": Command([
                 "xacro", " ",
-                urdf_xacro, " ",
-                "use_tool1:=" + use_tool1, " ",
-                "use_tool2:=" + use_tool2
+                urdf_xacro,
             ])
         }
 
@@ -79,8 +63,5 @@ def generate_launch_description():
         return [static_tf, rsp, jsp, rviz]
 
     return LaunchDescription([
-        SetEnvironmentVariable("XDG_RUNTIME_DIR", "/tmp/runtime-root"),
-        use_tool1_arg,
-        use_tool2_arg,
         OpaqueFunction(function=launch_setup),
     ])

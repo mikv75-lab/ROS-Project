@@ -32,13 +32,14 @@ def generate_launch_description():
             output="screen",
         )
 
-        jsp = Node(
-            package="joint_state_publisher",
-            executable="joint_state_publisher",
+        # >>> nur die GUI <<<
+        jsp_gui = Node(
+            package="joint_state_publisher_gui",
+            executable="joint_state_publisher_gui",
+            parameters=[robot_description],
             output="screen",
         )
 
-        # RViz nur starten, wenn X11 wirklich geht – sonst auskommentieren
         rviz = Node(
             package="rviz2",
             executable="rviz2",
@@ -57,6 +58,6 @@ def generate_launch_description():
                 "--child-frame-id","world_mount",
             ],
         )
-        return [static_tf, rsp, jsp, rviz]
+        return [static_tf, rsp, jsp_gui, rviz]
 
     return LaunchDescription([OpaqueFunction(function=launch_setup)])
