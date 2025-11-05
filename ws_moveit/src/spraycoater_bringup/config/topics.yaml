@@ -52,6 +52,7 @@ topics:
 
   motion:
     subscribe:
+      # (DEINE bereits vorhandenen bleiben)
       - id: plan_waypoints
         name: /spraycoater/motion/plan/waypoints
         type: geometry_msgs/msg/PoseArray
@@ -68,11 +69,35 @@ topics:
         name: /spraycoater/motion/stop
         type: std_msgs/msg/Empty
         qos: default
+
+      # 🔵 NEU (optional, flexibel):
+      - id: cmd
+        name: /spraycoater/motion/cmd
+        type: std_msgs/msg/String
+        qos: default
+      - id: target_pose
+        name: /spraycoater/motion/target_pose
+        type: geometry_msgs/msg/PoseStamped
+        qos: default
+
     publish:
+      # (DEIN bestehender JointTrajectory-Output bleibt)
       - id: trajectory
         name: /spraycoater/motion/trajectory
         type: trajectory_msgs/msg/JointTrajectory
         qos: default
+
+      # 🔵 NEU: volle MoveIt-Trajektorien
+      - id: planned_trajectory_rt
+        name: /spraycoater/motion/trajectory_planned
+        type: moveit_msgs/msg/RobotTrajectory
+        qos: latched
+      - id: executed_trajectory_rt
+        name: /spraycoater/motion/trajectory_executed
+        type: moveit_msgs/msg/RobotTrajectory
+        qos: latched
+
+      # (DEINE bestehenden)
       - id: preview_markers
         name: /spraycoater/motion/preview/markers
         type: visualization_msgs/msg/MarkerArray

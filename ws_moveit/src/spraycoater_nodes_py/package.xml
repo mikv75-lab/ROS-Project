@@ -5,14 +5,29 @@
   <maintainer email="miklv75@googlemail.com">Vincent Mikl</maintainer>
   <license>Apache-2.0</license>
 
+  <!-- Basis -->
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
 
-  <!-- Neu: Laufzeitabhängigkeiten -->
+  <!-- Laufzeit: TF, YAML -->
   <exec_depend>tf2_ros</exec_depend>
-  <exec_depend>tf_transformations</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
+
+  <!-- Laufzeit: MoveItPy + Messages -->
+  <exec_depend>moveit_msgs</exec_depend>
+
+  <!-- Laufzeit: weitere Msgs, die du publishst/subscribest -->
+  <exec_depend>shape_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
+  <exec_depend>diagnostic_msgs</exec_depend>
+
+  <!-- Laufzeit: Mesh-Laden in scene.py -->
+  <exec_depend>python3-trimesh</exec_depend>
+
+  <!-- Optional: falls wirklich genutzt -->
+  <exec_depend>tf_transformations</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

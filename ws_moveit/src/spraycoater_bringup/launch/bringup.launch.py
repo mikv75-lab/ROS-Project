@@ -162,6 +162,21 @@ def generate_launch_description():
         )
         spray_after_robot = TimerAction(period=5.0, actions=[spray_path_manager])
         
-        return [include_robot, scene_after_robot, poses_after_robot, spray_after_robot]
+        motion_node = Node(
+            package="spraycoater_nodes_py",
+            executable="motion",
+            name="motion",
+            output="screen",
+            parameters=[{
+                "frames_yaml": frames_yaml,
+                "topics_yaml": topics_yaml,
+                "qos_yaml":    qos_yaml,
+            }],
+        )
+        
+        motion_after_robot = TimerAction(period=5.0, actions=[motion_node])
+
+        
+        return [include_robot, scene_after_robot, poses_after_robot, spray_after_robot, motion_after_robot]
 
     return LaunchDescription([sim_arg, OpaqueFunction(function=_setup)])
