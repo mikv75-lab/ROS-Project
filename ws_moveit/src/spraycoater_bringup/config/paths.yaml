@@ -1,0 +1,17 @@
+# spraycoater_bringup/config/paths.yaml
+# Zentrale Pfaddefinitionen
+
+# Basispfade (optional, nur Doku)
+# bringup_share: package://spraycoater_bringup/config
+
+# Bridge-Node (ServoBridge / "servo")
+frames_file:       package://spraycoater_bringup/config/frames.yaml
+topics_file:       package://spraycoater_bringup/config/topics.yaml
+qos_file:          package://spraycoater_bringup/config/qos.yaml
+
+# Embedded MoveIt Servo (separater Node)
+moveit_servo_yaml: package://spraycoater_bringup/config/servo.yaml
+
+# Optional: häufige Assets (falls du sie brauchst)
+robot_description: package://mecademic_moveit_config/config/robot.urdf.xacro
+srdf:              package://mecademic_moveit_config/config/robot.srdf
