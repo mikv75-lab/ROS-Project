@@ -31,7 +31,7 @@ setup(
     maintainer_email="miklv75@googlemail.com",
     description="Mecademic Bringup: Launch + zentrale Configs/Ressourcen.",
     license="Apache-2.0",
-    # Keine console_scripts mehr hier – die liegen jetzt in mecademic_nodes_py / _cpp
+    # Keine console_scripts mehr hier – die liegen jetzt in spraycoater_nodes_py / _cpp
     entry_points={
         "console_scripts": [],
     },

@@ -15,8 +15,8 @@
   <exec_depend>launch_ros</exec_depend>
 
   <!-- Optional: sicherstellen, dass die Nodes-Pakete vorhanden sind
-  <exec_depend>mecademic_nodes_py</exec_depend>
-  <exec_depend>mecademic_nodes_cpp</exec_depend>
+  <exec_depend>spraycoater_nodes_py</exec_depend>
+  <exec_depend>spraycoater_nodes_cpp</exec_depend>
    -->
   
   <export>

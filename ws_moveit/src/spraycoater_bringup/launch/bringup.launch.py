@@ -14,7 +14,7 @@ def generate_launch_description():
     ]
 
     moveit_pkg = FindPackageShare('mecademic_moveit_config')
-    nodes_pkg   = FindPackageShare('mecademic_nodes_cpp')
+    nodes_pkg   = FindPackageShare('spraycoater_nodes_cpp')
 
     # 1) Robot (URDF + controllers + move_group etc.)
     robot = IncludeLaunchDescription(
