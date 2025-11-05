@@ -1,0 +1,57 @@
+# CPU- und GPU-Profile. Externes Volume 'thesis_root' mountet /root (App + ws_moveit + venv).
+services:
+  thesis:
+    container_name: thesis-cpu
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: /ros_entrypoint.sh
+    command: zsh
+    profiles: ["cpu"]
+    environment:
+      DISPLAY: host.docker.internal:0.0
+      QT_X11_NO_MITSHM: "1"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+      ROS_DOMAIN_ID: "0"
+      GZ_SIM_RESOURCE_PATH: /root/ws_moveit:/root/ws_moveit/src
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    stdin_open: true
+    tty: true
+    volumes:
+      - thesis_root:/root
+    network_mode: bridge
+
+  thesis-gpu:
+    container_name: thesis-gpu
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: /ros_entrypoint.sh
+    command: zsh
+    profiles: ["gpu"]
+    environment:
+      DISPLAY: host.docker.internal:0.0
+      QT_X11_NO_MITSHM: "1"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+      ROS_DOMAIN_ID: "0"
+      GZ_SIM_RESOURCE_PATH: /root/ws_moveit:/root/ws_moveit/src
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    stdin_open: true
+    tty: true
+    volumes:
+      - thesis_root:/root
+    network_mode: bridge
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: ["gpu"]
+    # Falls 'deploy' bei Docker Desktop ignoriert wird:
+    # gpus: all
+
+volumes:
+  thesis_root:
+    external: true
+    name: thesis_root
