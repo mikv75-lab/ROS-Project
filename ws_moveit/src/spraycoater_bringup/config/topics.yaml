@@ -140,6 +140,26 @@ topics:
         type: std_msgs/msg/String
         qos: latched
 
+  spraypath:
+    subscribe:
+      - id: set
+        name: /spraycoater/spraypath/set
+        type: visualization_msgs/msg/MarkerArray
+        qos: default
+    publish:
+      - id: current
+        name: /spraycoater/spraypath/current
+        type: std_msgs/msg/String
+        qos: latched
+      - id: poses
+        name: /spraycoater/spraypath/poses
+        type: geometry_msgs/msg/PoseArray
+        qos: default
+      - id: markers
+        name: /spraycoater/spraypath/markers
+        type: visualization_msgs/msg/Marker
+        qos: default
+
   status:
     publish:
       - id: heartbeat

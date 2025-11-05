@@ -1,203 +1,173 @@
 #!/usr/bin/env python3
+# spraycoater_nodes_py/spraypath.py
 from __future__ import annotations
-import os, yaml, rclpy
+import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
+
+from std_msgs.msg import String
 from geometry_msgs.msg import Pose, PoseArray, Point
-from visualization_msgs.msg import Marker
-from std_msgs.msg import Empty, String
-from mecademic_bringup.common.params import PARAM_SPRAY_PATH_CONFIG
-from mecademic_bringup.common.qos import qos_default, qos_latched
-from mecademic_bringup.common.topics import Topics
-from mecademic_bringup.common.frames import FRAMES
+from visualization_msgs.msg import Marker, MarkerArray
 
 
-class SprayPathManager(Node):
+def qos_default() -> QoSProfile:
+    q = QoSProfile(depth=10)
+    q.reliability = ReliabilityPolicy.RELIABLE
+    q.history = HistoryPolicy.KEEP_LAST
+    q.durability = DurabilityPolicy.VOLATILE
+    return q
+
+
+def qos_latched() -> QoSProfile:
+    q = QoSProfile(depth=1)
+    q.reliability = ReliabilityPolicy.RELIABLE
+    q.history = HistoryPolicy.KEEP_LAST
+    q.durability = DurabilityPolicy.TRANSIENT_LOCAL  # latched
+    return q
+
+
+class SprayPath(Node):
     """
-    SprayPathManager
-    ----------------
-    Lädt, publiziert und verwaltet Spray-Pfade (PoseArray + Marker).
-    Unterstützt:
-      • load/reload (/meca/spray_path/set)
-      • clear       (/meca/spray_path/clear)
-      • poses       (/meca/spray_path/poses)
-      • current_name (String, latched)
-      • markers     (/meca/spray_path/markers)
+    Minimaler SprayPath-Manager.
+
+    SUB:
+      /spraycoater/spraypath/set (visualization_msgs/MarkerArray)
+        Erwartet mind. einen Marker mit Punkten (bevorzugt LINE_STRIP).
+        Name: 1) TEXT_VIEW_FACING.text, 2) ns, 3) 'unnamed'
+        Frame: header.frame_id des ersten Markers (fallback letzter bekannter Frame)
+
+    PUB:
+      /spraycoater/spraypath/current  (std_msgs/String, latched)
+      /spraycoater/spraypath/poses    (geometry_msgs/PoseArray)
+      /spraycoater/spraypath/markers  (visualization_msgs/Marker, LINE_STRIP)
     """
 
     def __init__(self):
-        super().__init__("spray_path_manager")
+        super().__init__("spraypath_manager")
 
-        # --- Common ---
-        self.topics = Topics()
-        self.frames = FRAMES
-        self._frame = self.frames["scene"]
+        # Publisher
+        self.pub_current = self.create_publisher(String, "/spraycoater/spraypath/current", qos_latched())
+        self.pub_poses   = self.create_publisher(PoseArray, "/spraycoater/spraypath/poses", qos_default())
+        self.pub_marker  = self.create_publisher(Marker, "/spraycoater/spraypath/markers", qos_default())
 
-        # --- Parameter ---
-        self.declare_parameter(PARAM_SPRAY_PATH_CONFIG, "")
-        self.spray_paths_yaml = self.get_parameter(PARAM_SPRAY_PATH_CONFIG).get_parameter_value().string_value
-        if not self.spray_paths_yaml or not os.path.exists(self.spray_paths_yaml):
-            raise FileNotFoundError(f"❌ {PARAM_SPRAY_PATH_CONFIG} Datei fehlt: {self.spray_paths_yaml}")
+        # Subscriber
+        self.sub_set = self.create_subscription(
+            MarkerArray,
+            "/spraycoater/spraypath/set",
+            self._on_set_spraypath,
+            qos_default(),
+        )
 
-        # --- Publisher ---
-        self._pub_poses = self.create_publisher(PoseArray, self.topics.spray_path_poses, qos_default())
-        self._pub_name = self.create_publisher(String, f"{self.topics.spray_path_current}_name", qos_latched())
-        self._pub_marker = self.create_publisher(Marker, self.topics.spray_path_markers, qos_default())
+        # interner Zustand
+        self._last_frame = "scene"
+        self._last_name  = ""
+        self._last_pa: PoseArray | None = None
+        self._last_mk: Marker | None = None
 
-        # --- Subscriber ---
-        self._sub_reload = self.create_subscription(Empty, self.topics.spray_path_set, self._on_reload, qos_default())
-        self._sub_clear = self.create_subscription(Empty, self.topics.spray_path_clear, self._on_clear, qos_default())
+        # Republisher, damit Marker stabil bleiben (RViz verliert volatile Marker sonst gerne)
+        self.create_timer(1.0, self._republish_if_any)
 
-        # --- Internals ---
-        self._spray_paths_dir = ""
-        self._spray_path_file = ""
-        self._last_data = None
-        self._posearray_msg = None
-        self._marker_msg = None
+        self.get_logger().info("✅ SprayPathManager bereit (Topics: set/current/poses/markers)")
 
-        # --- Initial Load ---
-        self.load_config()
+    # ----------------------------- helpers -----------------------------
+    def _extract_name(self, ma: MarkerArray) -> str:
+        # 1) TEXT_VIEW_FACING mit Text
+        for m in ma.markers:
+            if m.type == Marker.TEXT_VIEW_FACING and (m.text or "").strip():
+                return m.text.strip()
+        # 2) erstes non-empty ns
+        for m in ma.markers:
+            if (m.ns or "").strip():
+                return m.ns.strip()
+        return "unnamed"
 
-        # Verzögerter Start (damit TFs und RViz bereit sind)
-        self.create_timer(3.0, self._initial_publish_once)
+    def _prefer_linestrip(self, ma: MarkerArray) -> Marker | None:
+        # Bevorzugt LINE_STRIP; sonst erstes Element mit Punkten
+        best = None
+        for m in ma.markers:
+            if len(m.points) >= 2:
+                if m.type == Marker.LINE_STRIP:
+                    return m
+                if best is None:
+                    best = m
+        return best
 
-        # Re-Publisher alle 1 s, damit Marker stabil bleiben
-        self._timer_repub = self.create_timer(1.0, self._republish_marker)
-
-        self.get_logger().info(f"✅ SprayPathManager gestartet (Config: {self.spray_paths_yaml})")
-
-    # ---------------------------------------------------------------
-    def _initial_publish_once(self):
-        """Erst-Publish verzögert starten, um TF/RViz zu warten."""
-        if not self._posearray_msg and not self._marker_msg:
-            self.publish_current_path()
-
-    # ---------------------------------------------------------------
-    def load_config(self):
-        """Lädt aktuelle Konfiguration (spray_paths.yaml)."""
-        with open(self.spray_paths_yaml, "r") as f:
-            data = yaml.safe_load(f) or {}
-
-        spray_cfg = data.get("spray_paths", {})
-        base_dir = os.path.dirname(self.spray_paths_yaml)
-        self._spray_paths_dir = os.path.join(base_dir, spray_cfg.get("dir", "spray_paths"))
-        self._spray_path_file = spray_cfg.get("current", "")
-
-        self.get_logger().info(f"📂 SprayPath-Ordner: {self._spray_paths_dir}")
-        self.get_logger().info(f"🎯 Aktiver Path: {self._spray_path_file}")
-        self.publish_current_name()
-
-    # ---------------------------------------------------------------
-    def publish_current_path(self):
-        """Publiziert den aktuellen SprayPath als PoseArray + Marker."""
-        if not self._spray_path_file:
-            self.get_logger().warning("⚠️ Kein aktiver Spray-Path definiert")
-            self.publish_current_name()
-            return
-
-        path_file = os.path.join(self._spray_paths_dir, self._spray_path_file)
-        if not os.path.exists(path_file):
-            self.get_logger().error(f"❌ Spray-Path-Datei fehlt: {path_file}")
-            self.publish_current_name()
-            return
-
-        with open(path_file, "r") as f:
-            data = yaml.safe_load(f) or {}
-
-        spray_data = data.get("spray_path", {})
-        frame = spray_data.get("frame", self._frame)
-        self._frame = frame
-
-        poses = []
-        for p in spray_data.get("points", []):
-            pose = Pose()
-            pose.position.x, pose.position.y, pose.position.z = p["x"], p["y"], p["z"]
-            pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = (
-                p["qx"], p["qy"], p["qz"], p["qw"]
-            )
-            poses.append(pose)
-
-        if not poses:
-            self.get_logger().warning("⚠️ Keine Punkte im SprayPath gefunden")
-            self.publish_current_name()
-            return
-
-        # PoseArray
-        pa = PoseArray()
-        pa.header.frame_id = frame
-        pa.header.stamp = self.get_clock().now().to_msg()
-        pa.poses = poses
-        self._pub_poses.publish(pa)
-        self._posearray_msg = pa
-
-        # Marker (grüne Linie)
-        marker = Marker()
-        marker.header.frame_id = frame
-        marker.header.stamp = self.get_clock().now().to_msg()
-        marker.ns = "spray_path"
-        marker.id = 0
-        marker.type = Marker.LINE_STRIP
-        marker.action = Marker.ADD
-        marker.scale.x = 0.002
-        marker.color.r, marker.color.g, marker.color.b, marker.color.a = 0.0, 1.0, 0.0, 1.0
-        marker.pose.orientation.w = 1.0
-        marker.points = [Point(x=p.position.x, y=p.position.y, z=p.position.z) for p in poses]
-        if len(marker.points) > 2:
-            marker.points.append(marker.points[0])
-        self._pub_marker.publish(marker)
-        self._marker_msg = marker
-
-        self.publish_current_name()
-        self._last_data = data
-        self.get_logger().info(f"✅ Publiziert SprayPath '{self._spray_path_file}' mit {len(poses)} Punkten (Frame: {frame})")
-
-    # ---------------------------------------------------------------
-    def _republish_marker(self):
-        """Erneutes Publizieren, damit RViz Marker dauerhaft sieht."""
-        if self._marker_msg:
-            self._pub_marker.publish(self._marker_msg)
-        if self._posearray_msg:
-            self._pub_poses.publish(self._posearray_msg)
-
-    # ---------------------------------------------------------------
-    def publish_current_name(self):
+    def _publish_current_name(self, name: str):
         msg = String()
-        msg.data = self._spray_path_file or ""
-        self._pub_name.publish(msg)
+        msg.data = name
+        self.pub_current.publish(msg)
 
-    # ---------------------------------------------------------------
-    def clear(self, _msg: Empty = None):
+    def _republish_if_any(self):
+        if self._last_mk is not None:
+            self.pub_marker.publish(self._last_mk)
+        if self._last_pa is not None:
+            self.pub_poses.publish(self._last_pa)
+
+    # ----------------------------- handler -----------------------------
+    def _on_set_spraypath(self, msg: MarkerArray):
+        if msg is None or len(msg.markers) == 0:
+            self.get_logger().warning("⚠️ set_spraypath: leeres MarkerArray – ignoriere")
+            return
+
+        # Frame bestimmen
+        frame = msg.markers[0].header.frame_id.strip() if msg.markers[0].header.frame_id else ""
+        if frame:
+            self._last_frame = frame
+
+        # Name bestimmen
+        name = self._extract_name(msg)
+
+        # Pfad-Marker auswählen
+        m = self._prefer_linestrip(msg)
+        if m is None:
+            self.get_logger().warning("⚠️ set_spraypath: kein Marker mit ≥2 Punkten – ignoriere")
+            return
+
+        # PoseArray erzeugen (nur Positionen, Orientierung neutral)
         pa = PoseArray()
-        pa.header.frame_id = self._frame
+        pa.header.frame_id = self._last_frame
         pa.header.stamp = self.get_clock().now().to_msg()
         pa.poses = []
-        self._pub_poses.publish(pa)
+        for pt in m.points:
+            p = Pose()
+            p.position.x, p.position.y, p.position.z = pt.x, pt.y, pt.z
+            p.orientation.w = 1.0
+            pa.poses.append(p)
 
-        marker = Marker()
-        marker.header.frame_id = self._frame
-        marker.header.stamp = self.get_clock().now().to_msg()
-        marker.action = Marker.DELETEALL
-        self._pub_marker.publish(marker)
+        # Marker als LINE_STRIP (für RViz)
+        mk = Marker()
+        mk.header.frame_id = self._last_frame
+        mk.header.stamp = self.get_clock().now().to_msg()
+        mk.ns = "spray_path"
+        mk.id = 0
+        mk.type = Marker.LINE_STRIP
+        mk.action = Marker.ADD
+        mk.scale.x = 0.002
+        mk.color.r, mk.color.g, mk.color.b, mk.color.a = 0.0, 1.0, 0.0, 1.0
+        mk.pose.orientation.w = 1.0
+        mk.points = [Point(x=p.position.x, y=p.position.y, z=p.position.z) for p in pa.poses]
+        if len(mk.points) > 2:
+            mk.points.append(mk.points[0])  # optional schließen
 
-        self._spray_path_file = ""
-        self._posearray_msg = None
-        self._marker_msg = None
-        self.publish_current_name()
-        self.get_logger().info("🧹 SprayPath gelöscht")
+        # Publish + Merken (für Re-Publish)
+        self.pub_poses.publish(pa)
+        self.pub_marker.publish(mk)
+        self._last_pa = pa
+        self._last_mk = mk
 
-    # ---------------------------------------------------------------
-    def _on_reload(self, _msg: Empty):
-        self.get_logger().info("🔄 Reload angefordert")
-        self.load_config()
-        self.publish_current_path()
+        # Current-Name (latched)
+        self._last_name = name
+        self._publish_current_name(name)
 
-    def _on_clear(self, _msg: Empty):
-        self.clear()
+        self.get_logger().info(
+            f"🎯 SprayPath gesetzt: name='{name}', frame='{self._last_frame}', points={len(pa.poses)}"
+        )
 
 
-# ------------------------------------------------------------------
+# ----------------------------------------------------------------------
 def main(args=None):
     rclpy.init(args=args)
-    node = SprayPathManager()
+    node = SprayPath()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
