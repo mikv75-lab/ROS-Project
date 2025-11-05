@@ -53,7 +53,7 @@ def tail_log(lines: int = 80) -> None:
 def make_bringup_cmd(
     sim: bool,
     *,
-    package: str = "mecademic_bringup",
+    package: str = "spraycoater_bringup",
     launch_file: str = "bringup.launch.py",
     extra: Optional[List[str]] = None,
 ) -> Tuple[List[str], List[str]]:
@@ -81,7 +81,7 @@ def _compose_launch_cmd(
 ) -> List[str]:
     """
     Startet 'ros2 launch …' in gesourcter Bash-Session.
-    Beispiel cmd: ["ros2","launch","mecademic_bringup","bringup.launch.py"]
+    Beispiel cmd: ["ros2","launch","spraycoater_bringup","bringup.launch.py"]
     """
     full_cmd = cmd + (extra_launch_args or [])
     launch = shlex.join(full_cmd)

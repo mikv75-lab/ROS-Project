@@ -92,7 +92,7 @@ class AppContext:
     recipes: List[Dict[str, Any]]
     recipe_params: Dict[str, Any]
     units: str
-    tf_world_to_meca_mount: TFWorldToMecaMount
+    tf_world_to__mount: TFWorldToMecaMount
     # optional, als dict belassen für in-place Updates:
     mounts_yaml: Optional[Dict[str, Any]] = None
 
@@ -145,9 +145,9 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         _err("startup.yaml: 'ros.launch_ros' und 'ros.sim_robot' müssen vorhanden sein.")
     ros_cfg = ROSConfig(bool(r["launch_ros"]), bool(r["sim_robot"]))
 
-    # Optional: tf.world_to_meca_mount
+    # Optional: tf.world_to_robot_mount
     tf_cfg = TFWorldToMecaMount()
-    tf_node = (su.get("tf") or {}).get("world_to_meca_mount") if isinstance(su.get("tf"), dict) else None
+    tf_node = (su.get("tf") or {}).get("world_to_robot_mount") if isinstance(su.get("tf"), dict) else None
     if isinstance(tf_node, dict):
         xyz = tf_node.get("xyz") or [0.0, 0.0, 0.0]
         rpy = tf_node.get("rpy_deg") or [0.0, 0.0, 0.0]
@@ -157,7 +157,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
                 rpy_deg=(float(rpy[0]), float(rpy[1]), float(rpy[2])),
             )
         except Exception:
-            warnings.warn("tf.world_to_meca_mount fehlerhaft – verwende Defaults (0,0,0).")
+            warnings.warn("tf.world_to_robot_mount fehlerhaft – verwende Defaults (0,0,0).")
 
     # recipes.yaml laden (strict)
     ry = _load_yaml(recipe_file_abs, strict=True)
@@ -194,6 +194,6 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         recipes=recipes_list,
         recipe_params=recipe_params,
         units=units,
-        tf_world_to_meca_mount=tf_cfg,
+        tf_world_to_robot_mount=tf_cfg,
         mounts_yaml=mounts_yaml,
     )

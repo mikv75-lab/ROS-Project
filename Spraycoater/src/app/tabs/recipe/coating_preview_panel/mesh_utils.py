@@ -271,7 +271,7 @@ def load_substrate_mesh_from_key(ctx, substrate_key: str) -> pv.PolyData:
         return load_mesh(cand, ctx)
 
     from ament_index_python.packages import get_package_share_directory
-    share = get_package_share_directory("mecademic_bringup")
+    share = get_package_share_directory("spraycoater_bringup")
     cand_pkg = os.path.join(share, "resource", "substrates", f"{key}.stl")
     if os.path.exists(cand_pkg):
         return load_mesh(cand_pkg, ctx)
