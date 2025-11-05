@@ -7,7 +7,7 @@ moveit_simple_controller_manager:
 
   ormon_arm_group_controller:
     type: FollowJointTrajectory
-    action_ns: follow_joint_trajectory   # <— WICHTIG
+    action_ns: follow_joint_trajectory
     joints:
       - joint_1
       - joint_2
