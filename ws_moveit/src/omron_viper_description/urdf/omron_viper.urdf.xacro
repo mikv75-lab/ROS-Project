@@ -1,7 +1,11 @@
 <?xml version="1.0"?>
 <robot name="omron_viper_s650">
 
-  <!-- Welt -->
+  <!-- ===== Materialien ===== -->
+  <material name="Black"><color rgba="0 0 0 1"/></material>
+  <material name="White"><color rgba="1 1 1 1"/></material>
+
+  <!-- ===== Welt ===== -->
   <link name="world_mount"/>
   <joint name="world_to_base" type="fixed">
     <parent link="world_mount"/>
@@ -9,35 +13,44 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
-  <!-- Materialien -->
-  <material name="White"><color rgba="1 1 1 1"/></material>
-  <material name="Blue"><color rgba="0 0 1 1"/></material>
-  <material name="Red"><color rgba="1 0 0 1"/></material>
-  <material name="Green"><color rgba="0 1 0 1"/></material>
-  <material name="Gray"><color rgba="0.4 0.4 0.4 1"/></material>
-
-  <!-- LINKS (alle rpy=0) -->
+  <!-- ===== LINKS ===== -->
+  <!-- Link1 (Base) -> schwarz -->
   <link name="Adept_Viper_s650_Link1">
-    <visual><origin xyz="0 0 0" rpy="0 0 0"/><geometry>
-      <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link1.stl"/>
-    </geometry><material name="White"/></visual>
-    <collision><origin xyz="0 0 0" rpy="0 0 0"/><geometry>
-      <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link1.stl"/>
-    </geometry><material name="Blue"/></collision>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link1.stl"/>
+      </geometry>
+      <material name="Black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link1.stl"/>
+      </geometry>
+    </collision>
   </link>
 
+  <!-- Link2 -> weiß -->
   <link name="Adept_Viper_s650_Link2">
-    <visual><origin xyz="0 0 0" rpy="0 0 0"/><geometry>
-      <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link2.stl"/>
-    </geometry><material name="Red"/></visual>
-    <collision><origin xyz="0 0 0" rpy="0 0 0"/><geometry>
-      <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link2.stl"/>
-    </geometry><material name="Green"/></collision>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link2.stl"/>
+      </geometry>
+      <material name="White"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link2.stl"/>
+      </geometry>
+    </collision>
   </link>
 
+  <!-- Link3 -> weiß (Mesh um Y 90°) -->
   <link name="Adept_Viper_s650_Link3">
     <visual>
-      <!-- Mesh 90° um Y drehen -->
       <origin xyz="0 0 0" rpy="0 1.5708 0"/>
       <geometry>
         <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link3.stl"/>
@@ -49,67 +62,78 @@
       <geometry>
         <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link3.stl"/>
       </geometry>
-      <material name="Blue"/>
     </collision>
   </link>
 
-<!-- Link4 -->
-<link name="Adept_Viper_s650_Link4">
-  <visual>
-    <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
-    <geometry><mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link4.stl"/></geometry>
-    <material name="Red"/>
-  </visual>
-  <collision>
-    <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
-    <geometry><mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link4.stl"/></geometry>
-    <material name="Blue"/>
-  </collision>
-</link>
+  <!-- Link4 -> weiß (Mesh um Y -90°) -->
+  <link name="Adept_Viper_s650_Link4">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link4.stl"/>
+      </geometry>
+      <material name="White"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link4.stl"/>
+      </geometry>
+    </collision>
+  </link>
 
-<!-- Link5 -->
-<link name="Adept_Viper_s650_Link5">
-  <visual>
-    <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
-    <geometry><mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link5.stl"/></geometry>
-    <material name="Blue"/>
-  </visual>
-  <collision>
-    <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
-    <geometry><mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link5.stl"/></geometry>
-    <material name="Blue"/>
-  </collision>
-</link>
+  <!-- Link5 -> weiß -->
+  <link name="Adept_Viper_s650_Link5">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link5.stl"/>
+      </geometry>
+      <material name="White"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link5.stl"/>
+      </geometry>
+    </collision>
+  </link>
 
-<!-- Link6 -->
-<link name="Adept_Viper_s650_Link6">
-  <visual>
-    <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
-    <geometry><mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link6.stl"/></geometry>
-    <material name="Blue"/>
-  </visual>
-  <collision>
-    <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
-    <geometry><mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link6.stl"/></geometry>
-    <material name="Blue"/>
-  </collision>
-</link>
+  <!-- Link6 -> weiß -->
+  <link name="Adept_Viper_s650_Link6">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link6.stl"/>
+      </geometry>
+      <material name="White"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link6.stl"/>
+      </geometry>
+    </collision>
+  </link>
 
-<!-- Interface Plate -->
-<link name="Adept_Viper_650_Interface_Plate">
-  <visual>
-    <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
-    <geometry><mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Interface_Plate.stl"/></geometry>
-    <material name="Gray"/>
-  </visual>
-  <collision>
-    <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
-    <geometry><mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Interface_Plate.stl"/></geometry>
-    <material name="Gray"/>
-  </collision>
-</link>
+  <!-- Interface Plate -> weiß -->
+  <link name="Adept_Viper_650_Interface_Plate">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Interface_Plate.stl"/>
+      </geometry>
+      <material name="White"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Interface_Plate.stl"/>
+      </geometry>
+    </collision>
+  </link>
 
-  <!-- JOINTS (rein nach Datenblatt) -->
+  <!-- ===== JOINTS (Datenblatt) ===== -->
   <joint name="joint_1" type="revolute">
     <parent link="Adept_Viper_s650_Link1"/>
     <child  link="Adept_Viper_s650_Link2"/>
@@ -158,7 +182,7 @@
     <limit effort="100" velocity="10.47198" lower="-3.14159" upper="3.14159"/>
   </joint>
 
-  <!-- TCP -->
+  <!-- ===== TCP ===== -->
   <link name="tool_mount"/>
   <joint name="tool_mount_joint" type="fixed">
     <parent link="Adept_Viper_650_Interface_Plate"/>
