@@ -22,7 +22,7 @@
         <joint name="joint_6" value="0"/>
     </group_state>
     <!--VIRTUAL JOINT: Purpose: this element defines a virtual joint between a robot link and an external frame of reference (considered fixed with respect to the robot)-->
-    <virtual_joint name="world_joint" type="fixed" parent_frame="world" child_link="world_mount"/>
+    <virtual_joint name="world_joint" type="fixed" parent_frame="world" child_link="robot_mount"/>
     <!--DISABLE COLLISIONS: By default it is assumed that any link of the robot could potentially come into collision with any other link in the robot. This tag disables collision checking between a specified pair of links. -->
     <disable_collisions link1="Adept_Viper_650_Interface_Plate" link2="Adept_Viper_s650_Link3" reason="Never"/>
     <disable_collisions link1="Adept_Viper_650_Interface_Plate" link2="Adept_Viper_s650_Link4" reason="Never"/>

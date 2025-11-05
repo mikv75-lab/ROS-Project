@@ -14,5 +14,4 @@ tf:
     parent: world
     child: robot_mount
     xyz: [0.0, 0.0, 0.0]
-    # meca seitenwand rpy_deg: [0.0, 0.0, 90.0]
-    rpy_deg: [0.0, 0.0, 0.0]
+    rpy_deg: [0.0, 0.0, 90.0]

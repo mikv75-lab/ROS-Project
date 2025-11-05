@@ -15,8 +15,8 @@ setup(
     zip_safe=True,
     maintainer='Vincent Mikl',
     maintainer_email='miklv75@googlemail.com',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='Spraycoater Python nodes (scene, tools, motion, …)',
+    license='Apache-2.0',
     extras_require={
         'test': [
             'pytest',
@@ -24,6 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            # Startet den Scene-Node (spraycoater_nodes_py/scene.py -> main())
+            'scene = spraycoater_nodes_py.scene:main',
         ],
     },
 )

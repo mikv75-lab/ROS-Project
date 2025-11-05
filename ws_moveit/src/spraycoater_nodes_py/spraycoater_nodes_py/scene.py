@@ -9,24 +9,23 @@ from tf2_ros import StaticTransformBroadcaster
 from shape_msgs.msg import Mesh, MeshTriangle
 from moveit_msgs.msg import CollisionObject, PlanningSceneComponents
 from moveit_msgs.srv import GetPlanningScene
-from std_msgs.msg import Header
-from mecademic_bringup.common.params import PARAM_SCENE_CONFIG
-from mecademic_bringup.utils import rpy_deg_to_quat
+from spraycoater_nodes_py.utils.utils import rpy_deg_to_quat  # <- Paket-Import
 import trimesh
 
 SCENE_TOPIC = "/collision_object"
 MAX_SCENE_WAIT = 30.0  # Warten auf MoveIt
+PARAM_SCENE_CONFIG = "scene_config"  # <- als Konstante
 
-class SceneManager(Node):
+class Scene(Node):
     def __init__(self):
-        super().__init__("scene_manager")
+        super().__init__("scene")
 
         self.declare_parameter(PARAM_SCENE_CONFIG, "")
         yaml_path = self.get_parameter(PARAM_SCENE_CONFIG).value
         if not yaml_path or not os.path.exists(yaml_path):
             raise FileNotFoundError(f"Scene YAML fehlt: {yaml_path}")
 
-        with open(yaml_path, "r") as f:
+        with open(yaml_path, "r", encoding="utf-8") as f:
             self.scene_data = yaml.safe_load(f) or {}
 
         self.scene_objects = self.scene_data.get("scene_objects", [])
@@ -35,38 +34,37 @@ class SceneManager(Node):
         self.static_tf = StaticTransformBroadcaster(self)
         self.scene_pub = self.create_publisher(CollisionObject, SCENE_TOPIC, 10)
         self.mesh_cache = {}
-
         self.final_scene_sent = False
 
         self.get_logger().info("⏳ Warte auf MoveIt – Szene später senden...")
         self._start_scene_wait()
 
-    def _load_mesh(self, mesh_path):
+    def _load_mesh(self, mesh_path: str) -> Mesh:
         if mesh_path in self.mesh_cache:
             return self.mesh_cache[mesh_path]
-        tri = trimesh.load(mesh_path)
-        tri.apply_scale(0.001)
+        tri = trimesh.load(mesh_path, force="mesh")
+        tri.apply_scale(0.001)  # mm → m
         mesh = Mesh()
         for v in tri.vertices:
             mesh.vertices.append(Point(x=float(v[0]), y=float(v[1]), z=float(v[2])))
         for f in tri.faces:
-            mesh.triangles.append(MeshTriangle(vertex_indices=list(f)))
+            mesh.triangles.append(MeshTriangle(vertex_indices=[int(f[0]), int(f[1]), int(f[2])]))
         self.mesh_cache[mesh_path] = mesh
         return mesh
 
-    def _pose_from_offset(self, xyz, rpy_deg):
+    def _pose_from_offset(self, xyz, rpy_deg) -> Pose:
         pose = Pose()
-        pose.position.x, pose.position.y, pose.position.z = xyz
-        qx, qy, qz, qw = rpy_deg_to_quat(*rpy_deg)
+        pose.position.x, pose.position.y, pose.position.z = map(float, xyz)
+        qx, qy, qz, qw = rpy_deg_to_quat(*map(float, rpy_deg))
         pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = qx, qy, qz, qw
         return pose
 
-    def _make_tf(self, parent, child, xyz, rpy_deg):
-        qx, qy, qz, qw = rpy_deg_to_quat(*rpy_deg)
+    def _make_tf(self, parent, child, xyz, rpy_deg) -> TransformStamped:
+        qx, qy, qz, qw = rpy_deg_to_quat(*map(float, rpy_deg))
         tf = TransformStamped()
         tf.header.frame_id = parent
         tf.child_frame_id = child
-        tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z = xyz
+        tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z = map(float, xyz)
         tf.transform.rotation.x, tf.transform.rotation.y, tf.transform.rotation.z, tf.transform.rotation.w = qx, qy, qz, qw
         return tf
 
@@ -75,16 +73,19 @@ class SceneManager(Node):
             return
         self.final_scene_sent = True
 
+        # 1) Static TFs
         tfs = []
         for obj in self.scene_objects:
             tfs.append(self._make_tf(obj.get("frame", "world"), obj["id"], obj["position"], obj["rpy_deg"]))
         self.static_tf.sendTransform(tfs)
         self.get_logger().info(f"✅ Static TFs veröffentlicht ({len(tfs)})")
 
+        # 2) CollisionObjects
         for obj in self.scene_objects:
-            if not obj.get("mesh"):
-                continue
-            mesh_path = os.path.join(self.base_dir, obj["mesh"])
+            mesh_rel = obj.get("mesh") or ""
+            if not mesh_rel:
+                continue  # kein Mesh, nur TF
+            mesh_path = os.path.join(self.base_dir, mesh_rel)
             if not os.path.exists(mesh_path):
                 self.get_logger().error(f"❌ Mesh fehlt: {mesh_path}")
                 continue
@@ -92,9 +93,10 @@ class SceneManager(Node):
             mesh = self._load_mesh(mesh_path)
             co = CollisionObject()
             co.id = obj["id"]
-            co.header.frame_id = obj["id"]
+            co.header.frame_id = obj["id"]  # Mesh relativ zu eigenem TF
             co.meshes = [mesh]
-            co.mesh_poses = [self._pose_from_offset(obj["mesh_offset"], obj["mesh_rpy"])]
+            co.mesh_poses = [self._pose_from_offset(obj.get("mesh_offset", [0, 0, 0]),
+                                                    obj.get("mesh_rpy", [0, 0, 0]))]
             co.operation = CollisionObject.ADD
             self.scene_pub.publish(co)
 
@@ -132,12 +134,10 @@ class SceneManager(Node):
         self.wait_timer.cancel()
         self.create_timer(3.0, self._publish_scene)
 
-
 def main():
-        rclpy.init()
-        rclpy.spin(SceneManager())
-        rclpy.shutdown()
-
+    rclpy.init()
+    rclpy.spin(Scene())  # <- richtige Klasse
+    rclpy.shutdown()
 
 if __name__ == "__main__":
     main()

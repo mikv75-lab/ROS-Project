@@ -6,9 +6,9 @@
   <material name="White"><color rgba="1 1 1 1"/></material>
 
   <!-- ===== Welt ===== -->
-  <link name="world_mount"/>
+  <link name="robot_mount"/>
   <joint name="world_to_base" type="fixed">
-    <parent link="world_mount"/>
+    <parent link="robot_mount"/>
     <child  link="Adept_Viper_s650_Link1"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>

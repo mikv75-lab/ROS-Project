@@ -55,7 +55,7 @@ def generate_launch_description():
                 "--x","0","--y","0","--z","0",
                 "--qx","0","--qy","0","--qz","0","--qw","1",
                 "--frame-id","world",
-                "--child-frame-id","world_mount",
+                "--child-frame-id","robot_mount",
             ],
         )
         return [static_tf, rsp, jsp_gui, rviz]
