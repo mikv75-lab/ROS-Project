@@ -29,7 +29,7 @@ setup(
     zip_safe=True,
     maintainer="miklv",
     maintainer_email="miklv75@googlemail.com",
-    description="Mecademic Bringup: Launch + zentrale Configs/Ressourcen.",
+    description="Spraycoater Bringup: Launch + zentrale Configs/Ressourcen.",
     license="Apache-2.0",
     # Keine console_scripts mehr hier – die liegen jetzt in spraycoater_nodes_py / _cpp
     entry_points={
