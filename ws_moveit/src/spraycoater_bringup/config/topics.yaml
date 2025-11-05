@@ -100,23 +100,45 @@ topics:
 
   scene:
     subscribe:
-      - id: scene_load
-        name: /spraycoater/scene/load
+      - id: cage_set
+        name: /spraycoater/scene/cage/set
         type: std_msgs/msg/String
         qos: default
-      - id: substrate_set_pose
-        name: /spraycoater/scene/substrate/set_pose
-        type: geometry_msgs/msg/PoseStamped
+      - id: mount_set
+        name: /spraycoater/scene/mount/set
+        type: std_msgs/msg/String
         qos: default
+      - id: substrate_set
+        name: /spraycoater/scene/substrate/set
+        type: std_msgs/msg/String
+        qos: default
+
     publish:
-      - id: scene_markers
-        name: /spraycoater/scene/markers
-        type: visualization_msgs/msg/MarkerArray
-        qos: latched
-      - id: scene_loaded
-        name: /spraycoater/scene/loaded
+      - id: cage_current
+        name: /spraycoater/scene/cage/current
         type: std_msgs/msg/String
-        qos: default
+        qos: latched
+      - id: mount_current
+        name: /spraycoater/scene/mount/current
+        type: std_msgs/msg/String
+        qos: latched
+      - id: substrate_current
+        name: /spraycoater/scene/substrate/current
+        type: std_msgs/msg/String
+        qos: latched
+
+      - id: cage_list
+        name: /spraycoater/scene/cage/list
+        type: std_msgs/msg/String
+        qos: latched
+      - id: mount_list
+        name: /spraycoater/scene/mount/list
+        type: std_msgs/msg/String
+        qos: latched
+      - id: substrate_list
+        name: /spraycoater/scene/substrate/list
+        type: std_msgs/msg/String
+        qos: latched
 
   status:
     publish:

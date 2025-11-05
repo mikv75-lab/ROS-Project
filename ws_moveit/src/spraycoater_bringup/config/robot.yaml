@@ -9,9 +9,8 @@ robots:
     moveit_pkg: omron_moveit_config
 
 # world → robot_mount
-tf:
-  world_to_robot_mount:
-    parent: world
-    child: robot_mount
-    xyz: [0.0, 0.0, 0.0]
-    rpy_deg: [0.0, 0.0, 90.0]
+world_to_robot_mount:
+  parent: world
+  child: robot_mount
+  xyz: [0.0, 0.0, 0.0]
+  rpy_deg: [0.0, 0.0, 90.0]

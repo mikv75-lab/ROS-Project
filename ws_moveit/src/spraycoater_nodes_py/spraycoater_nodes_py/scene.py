@@ -1,27 +1,47 @@
 # -*- coding: utf-8 -*-
 # spraycoater_nodes_py/scene.py
 #!/usr/bin/env python3
+from __future__ import annotations
 import os
 import time
 import yaml
 import rclpy
 from rclpy.node import Node
+
+from std_msgs.msg import String
 from geometry_msgs.msg import Pose, TransformStamped, Point
 from tf2_ros import StaticTransformBroadcaster
 from shape_msgs.msg import Mesh, MeshTriangle
 from moveit_msgs.msg import CollisionObject, PlanningSceneComponents
 from moveit_msgs.srv import GetPlanningScene
+
 from spraycoater_nodes_py.utils.utils import rpy_deg_to_quat
 from spraycoater_nodes_py.utils.frames import load_frames
+from spraycoater_nodes_py.utils.topics_loader import TopicsLoader 
+
 import trimesh
 
+# -----------------------
+# Konstanten / Parameter
+# -----------------------
 SCENE_TOPIC = "/collision_object"
 MAX_SCENE_WAIT = 30.0
-PARAM_SCENE_CONFIG = "scene_config"
-PARAM_FRAMES_YAML  = "frames_yaml"
-PARAM_FRAMES_GROUP = "frames_group"
+
+PARAM_SCENE_CONFIG  = "scene_config"
+PARAM_FRAMES_YAML   = "frames_yaml"
+
+PARAM_TOPICS_YAML   = "topics_yaml"
+PARAM_QOS_YAML      = "qos_yaml"
+
+# Verzeichnisse zum Scannen der verfügbaren STL-Assets
+PARAM_CAGE_DIRS      = "cage_dirs"
+PARAM_MOUNT_DIRS     = "mount_dirs"
+PARAM_SUBSTRATE_DIRS = "substrate_dirs"
 
 
+# -------------
+# YAML-Helpers
+# -------------
 def _require_vec3(node: dict, key: str):
     if key not in node:
         raise KeyError(f"YAML: fehlendes Feld '{key}'")
@@ -29,7 +49,6 @@ def _require_vec3(node: dict, key: str):
     if (not isinstance(val, (list, tuple))) or len(val) != 3:
         raise ValueError(f"YAML: '{key}' muss eine Liste mit 3 Zahlen sein, bekommen: {val!r}")
     return [float(val[0]), float(val[1]), float(val[2])]
-
 
 def _require_str(node: dict, key: str):
     if key not in node:
@@ -40,6 +59,9 @@ def _require_str(node: dict, key: str):
     return val
 
 
+# -------------
+# Mathe-Helpers
+# -------------
 def _quat_mul(a, b):
     """Hamilton-Produkt q = a ⊗ b (x,y,z,w)."""
     ax, ay, az, aw = a
@@ -51,10 +73,8 @@ def _quat_mul(a, b):
         aw*bw - ax*bx - ay*by - az*bz,
     )
 
-
 def _quat_from_rpy_deg(r, p, y):
     return rpy_deg_to_quat(float(r), float(p), float(y))
-
 
 def _rotmat_from_quat(q):
     x, y, z, w = q
@@ -67,7 +87,6 @@ def _rotmat_from_quat(q):
         [    2*(xz - wy),     2*(yz + wx), 1 - 2*(xx+yy)],
     ]
 
-
 def _rot_apply(R, v):
     return [
         R[0][0]*v[0] + R[0][1]*v[1] + R[0][2]*v[2],
@@ -77,14 +96,58 @@ def _rot_apply(R, v):
 
 
 class Scene(Node):
+    """
+    Scene-Node:
+      Topics werden komplett aus topics.yaml via TopicsLoader geladen (node_key='scene'):
+
+      Subscribe:
+        - cage_set        (std_msgs/String)
+        - mount_set       (std_msgs/String)
+        - substrate_set   (std_msgs/String)
+
+      Publish (QoS lt. qos.yaml):
+        - cage_current        (std_msgs/String)
+        - mount_current       (std_msgs/String)
+        - substrate_current   (std_msgs/String)
+        - cage_list           (std_msgs/String)
+        - mount_list          (std_msgs/String)
+        - substrate_list      (std_msgs/String)
+
+      MoveIt-Kollisionsszene wird an /collision_object publiziert.
+    """
+
     def __init__(self):
         super().__init__("scene")
 
+        # ------------------------
         # Parameter
+        # ------------------------
         self.declare_parameter(PARAM_SCENE_CONFIG, "")
         self.declare_parameter(PARAM_FRAMES_YAML, "")
-        self.declare_parameter(PARAM_FRAMES_GROUP, "meca")
+        self.declare_parameter(PARAM_TOPICS_YAML, "")
+        self.declare_parameter(PARAM_QOS_YAML, "")
 
+        # Asset-Verzeichnisse (per Launch/YAML überschreibbar)
+        self.declare_parameter(PARAM_CAGE_DIRS,      ['/opt/spraycoater/resource/cage'])
+        self.declare_parameter(PARAM_MOUNT_DIRS,     ['/opt/spraycoater/resource/substrate_mounts'])
+        self.declare_parameter(PARAM_SUBSTRATE_DIRS, ['/opt/spraycoater/resource/substrates'])
+
+        # ------------------------
+        # Loader (Topics+QoS)
+        # ------------------------
+        topics_yaml = self.get_parameter(PARAM_TOPICS_YAML).value
+        qos_yaml    = self.get_parameter(PARAM_QOS_YAML).value
+        if not topics_yaml or not os.path.exists(topics_yaml):
+            raise FileNotFoundError(f"topics_yaml fehlt/ungültig: {topics_yaml}")
+        if not qos_yaml or not os.path.exists(qos_yaml):
+            raise FileNotFoundError(f"qos_yaml fehlt/ungültig: {qos_yaml}")
+
+        self.loader = TopicsLoader(topics_yaml, qos_yaml)
+        node_key = "scene"
+
+        # ------------------------
+        # Szene-YAML laden
+        # ------------------------
         yaml_path = self.get_parameter(PARAM_SCENE_CONFIG).value
         if not yaml_path or not os.path.exists(yaml_path):
             raise FileNotFoundError(f"Scene YAML fehlt: {yaml_path}")
@@ -99,20 +162,152 @@ class Scene(Node):
 
         # Frames laden
         frames_yaml  = self.get_parameter(PARAM_FRAMES_YAML).value
-        frames_group = self.get_parameter(PARAM_FRAMES_GROUP).value
-        self.frames  = load_frames(frames_yaml, frames_group)
+        self.frames  = load_frames(frames_yaml)
         self._F      = self.frames.resolve  # Kurzform
 
-        # ROS I/O
-        self.static_tf = StaticTransformBroadcaster(self)
-        self.scene_pub = self.create_publisher(CollisionObject, SCENE_TOPIC, 10)
+        # ------------------------
+        # ROS I/O – via TopicsLoader
+        # ------------------------
+        # Publisher (String)
+        self.pub_cage_current = self.create_publisher(
+            String,
+            self.loader.publish_topic(node_key, "cage_current"),
+            self.loader.qos_by_id("publish", node_key, "cage_current"),
+        )
+        self.pub_mount_current = self.create_publisher(
+            String,
+            self.loader.publish_topic(node_key, "mount_current"),
+            self.loader.qos_by_id("publish", node_key, "mount_current"),
+        )
+        self.pub_substrate_current = self.create_publisher(
+            String,
+            self.loader.publish_topic(node_key, "substrate_current"),
+            self.loader.qos_by_id("publish", node_key, "substrate_current"),
+        )
+
+        # Publisher (StringMultiArray)
+        self.pub_cage_list = self.create_publisher(
+            String,
+            self.loader.publish_topic(node_key, "cage_list"),
+            self.loader.qos_by_id("publish", node_key, "cage_list"),
+        )
+        self.pub_mount_list = self.create_publisher(
+            String,
+            self.loader.publish_topic(node_key, "mount_list"),
+            self.loader.qos_by_id("publish", node_key, "mount_list"),
+        )
+        self.pub_substrate_list = self.create_publisher(
+            String,
+            self.loader.publish_topic(node_key, "substrate_list"),
+            self.loader.qos_by_id("publish", node_key, "substrate_list"),
+        )
+
+        # Subscriber (String)
+        self.sub_cage_set = self.create_subscription(
+            String,
+            self.loader.subscribe_topic(node_key, "cage_set"),
+            self._on_set_cage,
+            self.loader.qos_by_id("subscribe", node_key, "cage_set"),
+        )
+        self.sub_mount_set = self.create_subscription(
+            String,
+            self.loader.subscribe_topic(node_key, "mount_set"),
+            self._on_set_mount,
+            self.loader.qos_by_id("subscribe", node_key, "mount_set"),
+        )
+        self.sub_substrate_set = self.create_subscription(
+            String,
+            self.loader.subscribe_topic(node_key, "substrate_set"),
+            self._on_set_substrate,
+            self.loader.qos_by_id("subscribe", node_key, "substrate_set"),
+        )
+
+        # MoveIt / TF
+        self.static_tf  = StaticTransformBroadcaster(self)
+        self.scene_pub  = self.create_publisher(CollisionObject, SCENE_TOPIC, 10)
         self.mesh_cache = {}
         self.final_scene_sent = False
 
+        # Aktueller State (nur Namen) – initial aus YAML (Dateiname aus 'mesh', sonst "")
+        self.current_cage: str = self._initial_current_from_yaml("cage")
+        self.current_mount: str = self._initial_current_from_yaml("mount")
+        self.current_substrate: str = self._initial_current_from_yaml("substrate")
+
+        # Initial: Listen + Current publizieren
+        self._publish_lists()
+        self._publish_current()
+
+        # MoveIt-Readiness
         self.get_logger().info("⏳ Warte auf MoveIt – Szene später senden...")
         self._start_scene_wait()
 
-    # ---------- Helpers ----------
+    # ------------------------
+    # Parameter-/Asset-Helpers
+    # ------------------------
+    def _param_string_array(self, name: str):
+        return list(self.get_parameter(name).get_parameter_value().string_array_value)
+
+
+    def _scan_assets(self, roots):
+        out = []
+        for root in roots:
+            root = os.path.expanduser(root)
+            if not os.path.isdir(root):
+                continue
+            for _, _, files in os.walk(root):
+                for f in files:
+                    if f.lower().endswith(".stl"):
+                        out.append(f)  # Nur Dateiname
+        out = sorted(set(out))
+        return out
+    
+    @staticmethod
+    def _list_to_string(names):
+        """
+        Liste -> kommagetrennter String.
+        Beispiel: ["a.stl", "b.stl"] -> "a.stl,b.stl"
+        """
+        return ",".join(names)
+
+    def _publish_lists(self):
+        cages  = self._scan_assets(self._param_string_array(PARAM_CAGE_DIRS))
+        mounts = self._scan_assets(self._param_string_array(PARAM_MOUNT_DIRS))
+        subs   = self._scan_assets(self._param_string_array(PARAM_SUBSTRATE_DIRS))
+
+        self.pub_cage_list.publish(String(data=self._list_to_string(cages)))
+        self.pub_mount_list.publish(String(data=self._list_to_string(mounts)))
+        self.pub_substrate_list.publish(String(data=self._list_to_string(subs)))
+
+    def _publish_current(self):
+        self.pub_cage_current.publish(String(data=self.current_cage))
+        self.pub_mount_current.publish(String(data=self.current_mount))
+        self.pub_substrate_current.publish(String(data=self.current_substrate))
+
+    # ------------------------
+    # Initial "current" aus YAML bestimmen
+    # ------------------------
+    def _find_scene_object(self, oid: str) -> dict | None:
+        for obj in self.scene_objects:
+            if str(obj.get("id", "")) == oid:
+                return obj
+        return None
+
+    def _initial_current_from_yaml(self, oid: str) -> str:
+        obj = self._find_scene_object(oid)
+        if obj is None:
+            return ""
+        try:
+            mesh_rel = _require_str(obj, "mesh")
+        except Exception:
+            return ""
+        mesh_rel = (mesh_rel or "").strip()
+        if mesh_rel == "":
+            return ""
+        return os.path.basename(mesh_rel)
+
+    # ------------------------
+    # Dynamic mesh replacement
+    # ------------------------
     def _resolve_mesh_path(self, mesh_rel: str) -> str:
         p = (mesh_rel or "").strip()
         if not p:
@@ -125,6 +320,21 @@ class Scene(Node):
         if os.path.exists(p):
             return os.path.abspath(p)
         raise FileNotFoundError(f"Mesh nicht gefunden: {p} (base={self.base_dir})")
+
+    def _resolve_asset_candidate(self, name: str, roots: list[str]) -> str | None:
+        """Ermittle absoluten Pfad für reinen Dateinamen aus roots; absolute Pfade oder package:// bleiben wie sie sind."""
+        if not name:
+            return None
+        name = name.strip()
+        if not name:
+            return None
+        if name.startswith("package://") or os.path.isabs(name):
+            return name
+        for root in roots:
+            cand = os.path.abspath(os.path.join(os.path.expanduser(root), name))
+            if os.path.exists(cand):
+                return cand
+        return None
 
     def _load_mesh_mm(self, mesh_path: str) -> Mesh:
         cache_key = f"{mesh_path}::mm"
@@ -158,7 +368,103 @@ class Scene(Node):
         tf.transform.rotation.x, tf.transform.rotation.y, tf.transform.rotation.z, tf.transform.rotation.w = qx, qy, qz, qw
         return tf
 
-    # ---------- Scene publication ----------
+    def _make_co_from_obj_and_mesh(self, obj: dict, mesh_path: str) -> CollisionObject:
+        oid   = str(obj["id"])
+        frame = self._F(obj.get("frame", "world"))
+        pos   = _require_vec3(obj, "position")
+        rpy   = _require_vec3(obj, "rpy_deg")
+        mpos  = _require_vec3(obj, "mesh_offset")
+        mrpy  = _require_vec3(obj, "mesh_rpy")
+
+        mesh_msg = self._load_mesh_mm(mesh_path)
+
+        q_frame = _quat_from_rpy_deg(*rpy)
+        R_frame = _rotmat_from_quat(q_frame)
+        mpos_in_parent = _rot_apply(R_frame, mpos)
+        p_total = [pos[0] + mpos_in_parent[0],
+                   pos[1] + mpos_in_parent[1],
+                   pos[2] + mpos_in_parent[2]]
+        q_mesh = _quat_from_rpy_deg(*mrpy)
+        q_total = _quat_mul(q_frame, q_mesh)
+
+        co = CollisionObject()
+        co.id = oid
+        co.header.frame_id = frame
+        co.meshes = [mesh_msg]
+        co.mesh_poses = [self._pose_from_xyz_quat(p_total, q_total)]
+        co.operation = CollisionObject.ADD
+        return co
+
+    def _remove_object(self, oid: str):
+        co = CollisionObject()
+        co.id = oid
+        co.operation = CollisionObject.REMOVE
+        self.scene_pub.publish(co)
+        self.get_logger().info(f"🧹 REMOVE CollisionObject id={oid}")
+
+    # ------------------------
+    # Set-Handler (ersetzen/löschen)
+    # ------------------------
+    def _exists_in(self, name: str, roots):
+        if not name:
+            return False
+        if name.startswith("package://") or os.path.isabs(name):
+            return True
+        avail = set(self._scan_assets(roots))
+        return (name in avail)
+
+    def _handle_set(self, *, kind: str, name: str, roots: list[str], pub, state_attr: str):
+        """Set/Replace/Delete Mesh für {cage|mount|substrate} bei gleichbleibender Pose aus YAML."""
+        oid = kind  # YAML-Objekt-ID muss 'cage' | 'mount' | 'substrate' sein
+        obj = self._find_scene_object(oid)
+        if obj is None:
+            self.get_logger().error(f"YAML-Objekt mit id='{oid}' nicht gefunden – Abbruch.")
+            return
+
+        if name == "":
+            # Löschen
+            self._remove_object(oid)
+            setattr(self, state_attr, "")
+            pub.publish(String(data=""))
+            self.get_logger().info(f"✅ {kind}: mesh entfernt (current='').")
+            return
+
+        # Mesh finden (Dateiname in roots | absolute Pfade | package://...)
+        if not self._exists_in(name, roots):
+            self.get_logger().error(f"{kind}: Mesh '{name}' nicht gefunden in {roots} (oder ungültig).")
+            return
+
+        mesh_path = self._resolve_asset_candidate(name, roots)
+        if mesh_path is None:
+            self.get_logger().error(f"{kind}: Mesh '{name}' konnte nicht aufgelöst werden.")
+            return
+
+        # Ersetzen: zuerst REMOVE, dann ADD mit neuem Mesh
+        self._remove_object(oid)
+        co = self._make_co_from_obj_and_mesh(obj, mesh_path)
+        self.scene_pub.publish(co)
+        setattr(self, state_attr, name)
+        pub.publish(String(data=name))
+        self.get_logger().info(f"🎯 {kind}: mesh gesetzt -> {name}")
+
+    def _on_set_cage(self, msg: String):
+        self._handle_set(kind="cage", name=(msg.data or "").strip(),
+                         roots=self._param_string_array(PARAM_CAGE_DIRS),
+                         pub=self.pub_cage_current, state_attr="current_cage")
+
+    def _on_set_mount(self, msg: String):
+        self._handle_set(kind="mount", name=(msg.data or "").strip(),
+                         roots=self._param_string_array(PARAM_MOUNT_DIRS),
+                         pub=self.pub_mount_current, state_attr="current_mount")
+
+    def _on_set_substrate(self, msg: String):
+        self._handle_set(kind="substrate", name=(msg.data or "").strip(),
+                         roots=self._param_string_array(PARAM_SUBSTRATE_DIRS),
+                         pub=self.pub_substrate_current, state_attr="current_substrate")
+
+    # ------------------------
+    # Scene publication (Initial aus YAML – unverändert)
+    # ------------------------
     def _publish_scene(self):
         if self.final_scene_sent:
             return
@@ -179,7 +485,7 @@ class Scene(Node):
             self.static_tf.sendTransform(tfs)
         self.get_logger().info(f"✅ Static TFs veröffentlicht ({len(tfs)})")
 
-        # 2) CollisionObjects (Pose = (position,rpy_deg) ⊕ (mesh_offset,mesh_rpy) im Parent-Frame)
+        # 2) CollisionObjects
         for obj in self.scene_objects:
             oid = str(obj["id"])
             frame = F(obj.get("frame", "world"))
@@ -196,20 +502,19 @@ class Scene(Node):
             mpos = _require_vec3(obj, "mesh_offset")
             mrpy = _require_vec3(obj, "mesh_rpy")
 
-            # Rotation/Translation zusammensetzen:
-            q_frame = _quat_from_rpy_deg(*rpy)       # Rotation des Objekts (frame→id)
+            q_frame = _quat_from_rpy_deg(*rpy)
             R_frame = _rotmat_from_quat(q_frame)
             mpos_in_parent = _rot_apply(R_frame, mpos)
             p_total = [pos[0] + mpos_in_parent[0],
                        pos[1] + mpos_in_parent[1],
                        pos[2] + mpos_in_parent[2]]
 
-            q_mesh = _quat_from_rpy_deg(*mrpy)       # lokale Mesh-Rotation
-            q_total = _quat_mul(q_frame, q_mesh)     # erst Frame, dann Mesh
+            q_mesh = _quat_from_rpy_deg(*mrpy)
+            q_total = _quat_mul(q_frame, q_mesh)
 
             co = CollisionObject()
             co.id = oid
-            co.header.frame_id = frame               # Parent-Frame (bereits aufgelöst)
+            co.header.frame_id = frame
             co.meshes = [mesh_msg]
             co.mesh_poses = [self._pose_from_xyz_quat(p_total, q_total)]
             co.operation = CollisionObject.ADD
@@ -217,7 +522,9 @@ class Scene(Node):
 
         self.get_logger().info("🎯 Szene FINAL & EINMALIG an MoveIt gesendet.")
 
-    # ---------- MoveIt readiness wait ----------
+    # ------------------------
+    # MoveIt readiness wait
+    # ------------------------
     def _start_scene_wait(self):
         self.deadline = time.time() + MAX_SCENE_WAIT
         self.wait_timer = self.create_timer(1.0, self._check_moveit_ready)
@@ -247,7 +554,7 @@ class Scene(Node):
 
     def _moveit_ready_callback(self, _):
         self.get_logger().info("✅ MoveIt bereit – sende Szene in 3 Sekunden...")
-        self.wait_timer.cancel
+        self.wait_timer.cancel()
         self.create_timer(3.0, self._publish_scene)
 
 

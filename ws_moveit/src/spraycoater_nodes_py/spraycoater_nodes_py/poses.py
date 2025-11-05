@@ -16,7 +16,6 @@ PARAM_POSES_CONFIG = "poses_config"
 PARAM_TOPICS_YAML  = "topics_yaml"
 PARAM_QOS_YAML     = "qos_yaml"
 PARAM_FRAMES_YAML  = "frames_yaml"
-PARAM_FRAMES_GROUP = "frames_group"
 NODE_KEY           = "poses"  # <- Blockname in deinen Topics
 
 def rpy_deg_to_quat(roll_deg: float, pitch_deg: float, yaw_deg: float):
@@ -53,13 +52,11 @@ class Poses(Node):
         self.declare_parameter(PARAM_TOPICS_YAML, "")
         self.declare_parameter(PARAM_QOS_YAML, "")
         self.declare_parameter(PARAM_FRAMES_YAML, "")
-        self.declare_parameter(PARAM_FRAMES_GROUP, "meca")
 
         poses_yaml  = self.get_parameter(PARAM_POSES_CONFIG).value
         topics_yaml = self.get_parameter(PARAM_TOPICS_YAML).value
         qos_yaml    = self.get_parameter(PARAM_QOS_YAML).value
         frames_yaml = self.get_parameter(PARAM_FRAMES_YAML).value
-        frames_group = self.get_parameter(PARAM_FRAMES_GROUP).value
 
         if not poses_yaml or not os.path.exists(poses_yaml):
             raise FileNotFoundError(f"{PARAM_POSES_CONFIG} fehlt/ungültig: {poses_yaml}")
@@ -89,7 +86,7 @@ class Poses(Node):
         self.qos_pose_changed: QoSProfile = tl.qos_by_id("publish",  NODE_KEY, "pose_changed")
 
         # Frames laden
-        self.frames  = load_frames(frames_yaml, frames_group)
+        self.frames  = load_frames(frames_yaml)
         self._F      = self.frames.resolve  # Kurzform
 
         # --- TF & Publisher/Subscriber Setup ---
