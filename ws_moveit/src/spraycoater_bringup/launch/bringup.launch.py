@@ -9,7 +9,7 @@ from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
-
+from moveit_configs_utils import MoveItConfigsBuilder  # ← NEU
 
 def _rpy_rad_to_quat(roll, pitch, yaw):
     cr = cos(roll * 0.5); sr = sin(roll * 0.5)
@@ -80,7 +80,14 @@ def generate_launch_description():
         moveit_share = FindPackageShare(moveit_pkg).perform(context)
         robot_launch = os.path.join(moveit_share, "launch", "robot.launch.py")
         if not os.path.exists(robot_launch):
-            raise FileNotFoundError(f"[bringup] {moveit_pkg}/launch/robot.launch.py fehlt: {robot_launch}")
+            raise FileNotFoundError(...)
+
+        # ← NEU: MoveIt-Konfiguration (aus deinem existierenden Paket)
+        moveit_config = (
+            MoveItConfigsBuilder("omron_viper_s650", package_name=moveit_pkg)
+            # .robot_description(file_path="config/omron.urdf.xacro")  # nur setzen, wenn nötig
+            .to_moveit_configs()
+        )
 
         include_robot = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(robot_launch),
@@ -171,22 +178,30 @@ def generate_launch_description():
             {"frames_yaml": frames_yaml},
             {"topics_yaml": topics_yaml},
             {"qos_yaml": qos_yaml},
+
+            # ↓↓↓ WICHTIG: MoveIt-Parameter an deinen Node
+            moveit_config.to_dict(),
+            moveit_config.planning_pipelines,
+            moveit_config.robot_description_kinematics,
+            moveit_config.joint_limits,
+            moveit_config.trajectory_execution,
         ]
 
         motion_node = Node(
             package="spraycoater_nodes_py",
             executable="motion",
-            name="motion",
+            # Der Name muss zum MoveItPy(node_name=...) passen.
+            # Falls dein Code "moveit_py.omron_tutorial_yaml_free" setzt, nimm den hier:
+            name="motion",   # ← statt "motion"
             output="screen",
-            emulate_tty=True,  # schöneres Log-Verhalten (optional)
-            parameters=motion_params,  # nur Dicts, KEINE Dateipfade
+            emulate_tty=True,
+            parameters=motion_params,
             remappings=[
                 ("/joint_states", "/omron/joint_states"),
             ],
         )
-        motion_node = None
         motion_after_robot = TimerAction(period=5.0, actions=[motion_node])
 
-        return [include_robot, scene_after_robot, poses_after_robot, spray_after_robot]
+        return [include_robot, scene_after_robot, poses_after_robot, spray_after_robot, motion_after_robot]
 
     return LaunchDescription([sim_arg, OpaqueFunction(function=_setup)])
