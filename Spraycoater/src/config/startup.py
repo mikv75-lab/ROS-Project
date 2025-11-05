@@ -92,8 +92,6 @@ class AppContext:
     recipes: List[Dict[str, Any]]
     recipe_params: Dict[str, Any]
     units: str
-    tf_world_to__mount: TFWorldToMecaMount
-    # optional, als dict belassen für in-place Updates:
     mounts_yaml: Optional[Dict[str, Any]] = None
 
 

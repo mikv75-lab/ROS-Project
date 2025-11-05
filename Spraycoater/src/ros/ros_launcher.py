@@ -55,19 +55,16 @@ def make_bringup_cmd(
     *,
     package: str = "spraycoater_bringup",
     launch_file: str = "bringup.launch.py",
-    extra: Optional[List[str]] = None,
 ) -> Tuple[List[str], List[str]]:
     """
-    Baue den 'ros2 launch' Aufruf + Launch-Argumente.
+    Baue den 'ros2 launch' Aufruf + einziges Launch-Argument 'sim'.
     Rückgabe:
       (cmd, extra_args)
       cmd = ["ros2","launch", package, launch_file]
-      extra_args z.B. ["sim:=true", ...]
+      extra_args = ["sim:=true" | "sim:=false"]
     """
     cmd = ["ros2", "launch", package, launch_file]
     extra_args: List[str] = [f"sim:={'true' if sim else 'false'}"]
-    if extra:
-        extra_args.extend(extra)
     return cmd, extra_args
 
 # -----------------------------------------------------------------------------
@@ -81,24 +78,18 @@ def _compose_launch_cmd(
 ) -> List[str]:
     """
     Startet 'ros2 launch …' in gesourcter Bash-Session.
-    Beispiel cmd: ["ros2","launch","spraycoater_bringup","bringup.launch.py"]
+    Es werden ausschließlich die explizit übergebenen setup-Pfade gesourct (keine Fallbacks).
     """
     full_cmd = cmd + (extra_launch_args or [])
     launch = shlex.join(full_cmd)
 
     parts = []
-    # Nur sourcen, wenn Pfad übergeben/gesetzt wurde – keine stillen Fallbacks
     if ros_setup:
         parts.append(f'[ -f "{ros_setup}" ] && source "{ros_setup}"')
-    elif os.environ.get("ROS_SETUP"):
-        parts.append(f'[ -f "{os.environ["ROS_SETUP"]}" ] && source "{os.environ["ROS_SETUP"]}"')
-
     if ws_setup:
         parts.append(f'[ -f "{ws_setup}" ] && source "{ws_setup}"')
-    elif os.environ.get("WS_SETUP"):
-        parts.append(f'[ -f "{os.environ["WS_SETUP"]}" ] && source "{os.environ["WS_SETUP"]}"')
-
     parts.append(f"exec {launch}")
+
     shell_line = " && ".join(parts)
     return ["/bin/bash", "-lc", shell_line]
 
@@ -152,7 +143,7 @@ def ensure_clean_graph_then_launch(
     if log_path:
         _LOG = log_path
 
-    # ENV mergen + robustere Locale + unbuffered Python
+    # ENV mergen + robuste Locale + unbuffered Python
     env_merged = dict(os.environ)
     if env:
         env_merged.update(env)
