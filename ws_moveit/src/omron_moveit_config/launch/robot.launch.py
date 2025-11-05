@@ -14,7 +14,7 @@ def generate_launch_description():
         DeclareLaunchArgument("mount_child",   default_value="robot_mount"),
         DeclareLaunchArgument("mount_x",       default_value="0.0"),
         DeclareLaunchArgument("mount_y",       default_value="0.0"),
-        DeclareLaunchArgument("mount_z",       default_value="0.09"),  # 90 mm => 0.09 m
+        DeclareLaunchArgument("mount_z",       default_value="90.00"),  # 90 mm => 0.09 m
         DeclareLaunchArgument("mount_qx",      default_value="0.0"),
         DeclareLaunchArgument("mount_qy",      default_value="0.0"),
         DeclareLaunchArgument("mount_qz",      default_value="0.0"),

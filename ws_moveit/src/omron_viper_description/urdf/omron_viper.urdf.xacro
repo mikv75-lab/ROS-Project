@@ -183,11 +183,11 @@
   </joint>
 
   <!-- ===== TCP ===== -->
-  <link name="tool_mount"/>
-  <joint name="tool_mount_joint" type="fixed">
-    <parent link="Adept_Viper_650_Interface_Plate"/>
-    <child  link="tool_mount"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
-  </joint>
+<link name="tool_mount"/>
+<joint name="tool_mount_joint" type="fixed">
+  <parent link="Adept_Viper_650_Interface_Plate"/>
+  <child  link="tool_mount"/>
+  <origin xyz="0 0 0" rpy="1.57079633 0 -1.57079633"/>
+</joint>
 
 </robot>
