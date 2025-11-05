@@ -1,20 +1,16 @@
 # omron_moveit_config/config/ros2_controllers.yaml
 controller_manager:
   ros__parameters:
-    update_rate: 100  # Hz
-    # use_sim_time: true  # optional, falls gewünscht
+    update_rate: 100
+    use_sim_time: false
 
-    # Deklaration der Controller (Name -> Typ)
+    # Nur Registrierung Name -> Typ (keine weiteren Schlüssel hier!)
+    omron_arm_group_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
 
-    omron_arm_group_controller:
-      type: joint_trajectory_controller/JointTrajectoryController
-
-# Parameter-Sektion je Controller:
-joint_state_broadcaster:
-  ros__parameters: {}  # keine speziellen Parameter nötig
-
+# Ab hier eigene Top-Level-Blöcke (für die Spawner), NICHT unter controller_manager:
 omron_arm_group_controller:
   ros__parameters:
     joints:
@@ -25,5 +21,10 @@ omron_arm_group_controller:
       - joint_5
       - joint_6
     command_interfaces: [position]
-    state_interfaces: [position, velocity]
-    allow_nonzero_velocity_at_trajectory_end: true
+    state_interfaces:   [position, velocity]
+    allow_partial_joints_goal: false
+    state_publish_rate: 50.0
+    action_monitor_rate: 10.0
+
+joint_state_broadcaster:
+  ros__parameters: {}

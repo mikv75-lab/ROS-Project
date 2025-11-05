@@ -23,7 +23,11 @@ def _rpy_rad_to_quat(roll, pitch, yaw):
 
 
 def generate_launch_description():
-    sim_arg = DeclareLaunchArgument("sim", default_value="true", description="Simulationsmodus (true|false)")
+    sim_arg = DeclareLaunchArgument(
+        "sim",
+        default_value="true",
+        description="Simulationsmodus (true|false)"
+    )
 
     def _setup(context):
         bringup_share = FindPackageShare("spraycoater_bringup").perform(context)
@@ -35,7 +39,7 @@ def generate_launch_description():
         if not isinstance(cfg, dict):
             raise ValueError("[bringup] robot.yaml: Mapping erwartet")
 
-        sel    = cfg.get("selected")
+        sel = cfg.get("selected")
         robots = cfg.get("robots") or {}
         if not isinstance(sel, str) or not sel:
             raise ValueError("[bringup] 'selected' muss String sein (z. B. meca|omron)")
@@ -49,15 +53,15 @@ def generate_launch_description():
 
         # --- world_to_robot_mount (top-level oder unter 'tf')
         tf_root = cfg.get("tf", {})
-        tf_cfg  = tf_root.get("world_to_robot_mount") if isinstance(tf_root, dict) else None
+        tf_cfg = tf_root.get("world_to_robot_mount") if isinstance(tf_root, dict) else None
         if tf_cfg is None:
             tf_cfg = cfg.get("world_to_robot_mount")
         if not isinstance(tf_cfg, dict):
             raise ValueError("[bringup] world_to_robot_mount fehlt (top-level oder unter 'tf')")
 
         parent = tf_cfg.get("parent")
-        child  = tf_cfg.get("child")
-        xyz    = tf_cfg.get("xyz")
+        child = tf_cfg.get("child")
+        xyz = tf_cfg.get("xyz")
         rpydeg = tf_cfg.get("rpy_deg")
         if not (isinstance(parent, str) and parent):
             raise ValueError("[bringup] tf.parent muss String sein")
@@ -81,38 +85,37 @@ def generate_launch_description():
         include_robot = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(robot_launch),
             launch_arguments={
-                "mount_parent":  parent,
-                "mount_child":   child,
-                "mount_x":       str(x),
-                "mount_y":       str(y),
-                "mount_z":       str(z),
-                "mount_qx":      str(qx),
-                "mount_qy":      str(qy),
-                "mount_qz":      str(qz),
-                "mount_qw":      str(qw),
-                "sim":           LaunchConfiguration("sim"),
+                "mount_parent": parent,
+                "mount_child": child,
+                "mount_x": str(x),
+                "mount_y": str(y),
+                "mount_z": str(z),
+                "mount_qx": str(qx),
+                "mount_qy": str(qy),
+                "mount_qz": str(qz),
+                "mount_qw": str(qw),
+                "sim": LaunchConfiguration("sim"),
             }.items()
         )
 
-        # --- frames.yaml (flach, ohne Gruppen)
+        # --- frames.yaml (flach)
         frames_yaml = os.path.join(bringup_share, "config", "frames.yaml")
         if not os.path.exists(frames_yaml):
             raise FileNotFoundError(f"[bringup] frames.yaml fehlt: {frames_yaml}")
 
-        # --- SceneManager
-        scene_yaml  = os.path.join(bringup_share, "config", "scene.yaml")
+        # --- Scene/Topics/QoS
+        scene_yaml = os.path.join(bringup_share, "config", "scene.yaml")
         topics_yaml = os.path.join(bringup_share, "config", "topics.yaml")
-        qos_yaml    = os.path.join(bringup_share, "config", "qos.yaml")
-        if not os.path.exists(scene_yaml):
-            raise FileNotFoundError(f"[bringup] scene.yaml fehlt: {scene_yaml}")
-        for p in (topics_yaml, qos_yaml):
+        qos_yaml = os.path.join(bringup_share, "config", "qos.yaml")
+        for p in (scene_yaml, topics_yaml, qos_yaml):
             if not os.path.exists(p):
                 raise FileNotFoundError(f"[bringup] fehlt: {p}")
 
-        cage_dirs      = sel_entry.get("cage_dirs",      [os.path.join(bringup_share, "resource", "cage")])
-        mount_dirs     = sel_entry.get("mount_dirs",     [os.path.join(bringup_share, "resource", "substrate_mounts")])
+        cage_dirs = sel_entry.get("cage_dirs", [os.path.join(bringup_share, "resource", "cage")])
+        mount_dirs = sel_entry.get("mount_dirs", [os.path.join(bringup_share, "resource", "substrate_mounts")])
         substrate_dirs = sel_entry.get("substrate_dirs", [os.path.join(bringup_share, "resource", "substrates")])
 
+        # --- Scene-Node
         scene_manager = Node(
             package="spraycoater_nodes_py",
             executable="scene",
@@ -120,17 +123,17 @@ def generate_launch_description():
             output="screen",
             parameters=[
                 {"scene_config": scene_yaml},
-                {"frames_yaml":  frames_yaml},
-                {"topics_yaml":  topics_yaml},
-                {"qos_yaml":     qos_yaml},
-                {"cage_dirs":      cage_dirs},
-                {"mount_dirs":     mount_dirs},
+                {"frames_yaml": frames_yaml},
+                {"topics_yaml": topics_yaml},
+                {"qos_yaml": qos_yaml},
+                {"cage_dirs": cage_dirs},
+                {"mount_dirs": mount_dirs},
                 {"substrate_dirs": substrate_dirs},
             ],
         )
         scene_after_robot = TimerAction(period=5.0, actions=[scene_manager])
 
-        # --- PosesManager (ebenfalls ohne frames_group)
+        # --- Poses-Node
         poses_yaml = os.path.join(bringup_share, "config", "poses.yaml")
         if not os.path.exists(poses_yaml):
             raise FileNotFoundError(f"[bringup] fehlt: {poses_yaml}")
@@ -142,41 +145,48 @@ def generate_launch_description():
             output="screen",
             parameters=[
                 {"poses_config": poses_yaml},
-                {"topics_yaml":  topics_yaml},
-                {"qos_yaml":     qos_yaml},
-                {"frames_yaml":  frames_yaml},
+                {"topics_yaml": topics_yaml},
+                {"qos_yaml": qos_yaml},
+                {"frames_yaml": frames_yaml},
             ],
         )
         poses_after_robot = TimerAction(period=5.0, actions=[poses_manager])
-        
+
+        # --- Spray-Path-Node
         spray_path_manager = Node(
             package="spraycoater_nodes_py",
-            executable="spray_path",   # Entry-Point so benennen
+            executable="spray_path",
             name="spray_path",
             output="screen",
             parameters=[
-                {"topics_yaml": topics_yaml},   # falls du intern Topics-Lookup brauchst
-                {"qos_yaml":    qos_yaml},      # optional
-                {"frames_yaml": frames_yaml},   # optional
+                {"topics_yaml": topics_yaml},
+                {"qos_yaml": qos_yaml},
+                {"frames_yaml": frames_yaml},
             ],
         )
         spray_after_robot = TimerAction(period=5.0, actions=[spray_path_manager])
-        
+
+        # --- Motion-Node (WICHTIG: KEINE MoveIt YAMLs als params-file übergeben!)
+        motion_params = [
+            {"frames_yaml": frames_yaml},
+            {"topics_yaml": topics_yaml},
+            {"qos_yaml": qos_yaml},
+        ]
+
         motion_node = Node(
             package="spraycoater_nodes_py",
             executable="motion",
             name="motion",
             output="screen",
-            parameters=[{
-                "frames_yaml": frames_yaml,
-                "topics_yaml": topics_yaml,
-                "qos_yaml":    qos_yaml,
-            }],
+            emulate_tty=True,  # schöneres Log-Verhalten (optional)
+            parameters=motion_params,  # nur Dicts, KEINE Dateipfade
+            remappings=[
+                ("/joint_states", "/omron/joint_states"),
+            ],
         )
-        
+        motion_node = None
         motion_after_robot = TimerAction(period=5.0, actions=[motion_node])
 
-        
-        return [include_robot, scene_after_robot, poses_after_robot, spray_after_robot, motion_after_robot]
+        return [include_robot, scene_after_robot, poses_after_robot, spray_after_robot]
 
     return LaunchDescription([sim_arg, OpaqueFunction(function=_setup)])
