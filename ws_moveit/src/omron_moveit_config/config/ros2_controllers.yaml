@@ -2,19 +2,20 @@
 controller_manager:
   ros__parameters:
     update_rate: 100  # Hz
+    # use_sim_time: true  # optional, falls gewünscht
 
     # Deklaration der Controller (Name -> Typ)
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
 
-    ormon_arm_group_controller:
+    omron_arm_group_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
 # Parameter-Sektion je Controller:
 joint_state_broadcaster:
   ros__parameters: {}  # keine speziellen Parameter nötig
 
-ormon_arm_group_controller:
+omron_arm_group_controller:
   ros__parameters:
     joints:
       - joint_1

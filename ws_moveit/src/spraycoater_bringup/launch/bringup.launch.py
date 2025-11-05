@@ -29,8 +29,9 @@ def generate_launch_description():
     )
 
     def _setup(context):
-        # bringup/config laden
         bringup_share = FindPackageShare("spraycoater_bringup").perform(context)
+
+        # --- robot.yaml strikt laden
         robot_yaml = os.path.join(bringup_share, "config", "robot.yaml")
         if not os.path.exists(robot_yaml):
             raise FileNotFoundError(f"[bringup] Konfigurationsdatei fehlt: {robot_yaml}")
@@ -57,7 +58,7 @@ def generate_launch_description():
         if not moveit_pkg:
             raise ValueError(f"[bringup] robots.{sel}.moveit_pkg ist leer")
 
-        # TF-Parameter lesen (Meter + Grad)
+        # --- TF-Parameter (Meter + Grad)
         tf_cfg = tf_root["world_to_robot_mount"]
         parent = tf_cfg.get("parent")
         child  = tf_cfg.get("child")
@@ -73,12 +74,11 @@ def generate_launch_description():
         if not (isinstance(rpydeg, list) and len(rpydeg) == 3):
             raise ValueError("[bringup] tf.rpy_deg muss Liste[3] sein")
 
-        # Einheiten konvertieren
         x, y, z = map(float, xyz)
         roll, pitch, yaw = map(lambda d: radians(float(d)), rpydeg)
         qx, qy, qz, qw = _rpy_rad_to_quat(roll, pitch, yaw)
 
-        # Robot-Launch einbinden
+        # --- MoveIt robot.launch.py einbinden
         moveit_share = FindPackageShare(moveit_pkg).perform(context)
         robot_launch = os.path.join(moveit_share, "launch", "robot.launch.py")
         if not os.path.exists(robot_launch):
@@ -100,7 +100,13 @@ def generate_launch_description():
             }.items()
         )
 
-        # === SceneManager (wie gehabt) ===
+        # --- Gemeinsame Frames-Definition (NEU: strikt)
+        frames_yaml  = os.path.join(bringup_share, "config", "frames.yaml")
+        frames_group = "meca"  # oder aus robot.yaml ableiten, falls du mehrere Gruppen pflegst
+        if not os.path.exists(frames_yaml):
+            raise FileNotFoundError(f"[bringup] frames.yaml fehlt: {frames_yaml}")
+
+        # --- SceneManager
         scene_yaml = os.path.join(bringup_share, "config", "scene.yaml")
         if not os.path.exists(scene_yaml):
             raise FileNotFoundError(f"[bringup] scene.yaml fehlt: {scene_yaml}")
@@ -110,22 +116,22 @@ def generate_launch_description():
             executable="scene",
             name="scene",
             output="screen",
-            parameters=[{"scene_config": scene_yaml}],
+            parameters=[
+                {"scene_config": scene_yaml},
+                {"frames_yaml":  frames_yaml},
+                {"frames_group": frames_group},
+            ],
         )
         scene_after_robot = TimerAction(period=5.0, actions=[scene_manager])
 
-        # === PosesManager (genau so hinzugefügt) ===
+        # --- PosesManager
         poses_yaml  = os.path.join(bringup_share, "config", "poses.yaml")
         topics_yaml = os.path.join(bringup_share, "config", "topics.yaml")
         qos_yaml    = os.path.join(bringup_share, "config", "qos.yaml")
 
-        # strict checks (kein Fallback)
-        if not os.path.exists(poses_yaml):
-            raise FileNotFoundError(f"[bringup] poses.yaml fehlt: {poses_yaml}")
-        if not os.path.exists(topics_yaml):
-            raise FileNotFoundError(f"[bringup] topics.yaml fehlt: {topics_yaml}")
-        if not os.path.exists(qos_yaml):
-            raise FileNotFoundError(f"[bringup] qos.yaml fehlt: {qos_yaml}")
+        for p in (poses_yaml, topics_yaml, qos_yaml):
+            if not os.path.exists(p):
+                raise FileNotFoundError(f"[bringup] fehlt: {p}")
 
         poses_manager = Node(
             package="spraycoater_nodes_py",
@@ -134,13 +140,14 @@ def generate_launch_description():
             output="screen",
             parameters=[
                 {"poses_config": poses_yaml},
-                {"topics_yaml": topics_yaml},
-                {"qos_yaml": qos_yaml},
+                {"topics_yaml":  topics_yaml},
+                {"qos_yaml":     qos_yaml},
+                {"frames_yaml":  frames_yaml},
+                {"frames_group": frames_group},
             ],
         )
         poses_after_robot = TimerAction(period=5.0, actions=[poses_manager])
 
-        # Wichtig: kein eigener static TF hier; Roboter-Launch setzt den Mount
         return [include_robot, scene_after_robot, poses_after_robot]
 
     return LaunchDescription([sim_arg, OpaqueFunction(function=_setup)])

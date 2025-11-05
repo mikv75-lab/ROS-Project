@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# spraycoater_nodes_py/poses.py
 #!/usr/bin/env python3
 from __future__ import annotations
 import os, yaml, math
@@ -10,18 +12,12 @@ from tf2_ros import StaticTransformBroadcaster, Buffer, TransformListener
 from rclpy.qos import QoSProfile
 from tf_transformations import euler_from_quaternion
 
-# --------- Strikte Parameter & Konstante ----------
 PARAM_POSES_CONFIG = "poses_config"
 PARAM_TOPICS_YAML  = "topics_yaml"
 PARAM_QOS_YAML     = "qos_yaml"
-NODE_KEY           = "poses"  # <- genau dein Blockname
-
-FRAMES = {
-    "world": "world",
-    "meca_mount": "meca_mount",
-    "tool_mount": "tool_mount",
-    "scene": "scene",
-}
+PARAM_FRAMES_YAML  = "frames_yaml"
+PARAM_FRAMES_GROUP = "frames_group"
+NODE_KEY           = "poses"  # <- Blockname in deinen Topics
 
 def rpy_deg_to_quat(roll_deg: float, pitch_deg: float, yaw_deg: float):
     r = math.radians(float(roll_deg))
@@ -38,15 +34,16 @@ def rpy_deg_to_quat(roll_deg: float, pitch_deg: float, yaw_deg: float):
 
 # Pflicht: TopicsLoader vorhanden
 from .utils.topics_loader import TopicsLoader
+from spraycoater_nodes_py.utils.frames import load_frames
 
 
 class Poses(Node):
     """
-    Strikt (kein Fallback):
-      - benutzt TopicsLoader mit node_key='poses'
-      - IDs vorhanden: subscribe 'pose_set', publish 'poses_list', 'pose_changed'
-      - publiziert statische TFs für alle Posen
-      - publiziert PoseArray auf poses_list (latched) und Änderungen als String auf pose_changed
+    - Lädt Posen aus YAML
+    - veröffentlicht statische TFs für alle Posen
+    - veröffentlicht PoseArray (latched) + String "pose_changed"
+    - akzeptiert PoseSet via PoseStamped auf Topic aus TopicsLoader
+      Schema: msg.header.frame_id = "<parent>#<name>"
     """
     def __init__(self):
         super().__init__("poses_manager")
@@ -55,10 +52,14 @@ class Poses(Node):
         self.declare_parameter(PARAM_POSES_CONFIG, "")
         self.declare_parameter(PARAM_TOPICS_YAML, "")
         self.declare_parameter(PARAM_QOS_YAML, "")
+        self.declare_parameter(PARAM_FRAMES_YAML, "")
+        self.declare_parameter(PARAM_FRAMES_GROUP, "meca")
 
         poses_yaml  = self.get_parameter(PARAM_POSES_CONFIG).value
         topics_yaml = self.get_parameter(PARAM_TOPICS_YAML).value
         qos_yaml    = self.get_parameter(PARAM_QOS_YAML).value
+        frames_yaml = self.get_parameter(PARAM_FRAMES_YAML).value
+        frames_group = self.get_parameter(PARAM_FRAMES_GROUP).value
 
         if not poses_yaml or not os.path.exists(poses_yaml):
             raise FileNotFoundError(f"{PARAM_POSES_CONFIG} fehlt/ungültig: {poses_yaml}")
@@ -66,6 +67,8 @@ class Poses(Node):
             raise FileNotFoundError(f"{PARAM_TOPICS_YAML} fehlt/ungültig: {topics_yaml}")
         if not qos_yaml or not os.path.exists(qos_yaml):
             raise FileNotFoundError(f"{PARAM_QOS_YAML} fehlt/ungültig: {qos_yaml}")
+        if not frames_yaml or not os.path.exists(frames_yaml):
+            raise FileNotFoundError(f"{PARAM_FRAMES_YAML} fehlt/ungültig: {frames_yaml}")
 
         # Posen laden (Mapping {name: {frame, xyz, rpy_deg}})
         with open(poses_yaml, "r", encoding="utf-8") as f:
@@ -85,15 +88,17 @@ class Poses(Node):
         self.topic_pose_changed  = tl.publish_topic (NODE_KEY, "pose_changed")
         self.qos_pose_changed: QoSProfile = tl.qos_by_id("publish",  NODE_KEY, "pose_changed")
 
+        # Frames laden
+        self.frames  = load_frames(frames_yaml, frames_group)
+        self._F      = self.frames.resolve  # Kurzform
+
         # --- TF & Publisher/Subscriber Setup ---
-        self.frames = FRAMES
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.static_tf = StaticTransformBroadcaster(self)
 
-        # Publisher für Index-Themen
         self.pub_poses_list   = self.create_publisher(PoseArray, self.topic_poses_list, self.qos_poses_list)
-        self.pub_pose_changed = self.create_publisher(String,     self.topic_pose_changed, self.qos_pose_changed)
+        self.pub_pose_changed = self.create_publisher(String,     self.topic_pose_changed, self.qos_poses_changed_or_default())
 
         # Subscriber für Pose-Set (PoseStamped)
         self.create_subscription(PoseStamped, self.topic_pose_set, self._on_pose_set, self.qos_pose_set)
@@ -101,6 +106,14 @@ class Poses(Node):
         # initial veröffentlichen
         self.publish_all()
         self.get_logger().info(f"✅ PosesManager aktiv (node_key='{NODE_KEY}') – {len(self.poses)} Posen")
+
+    def qos_poses_changed_or_default(self) -> QoSProfile:
+        # Falls die QoS-ID fehlt, fallback auf self.qos_poses_list (robust)
+        try:
+            # In TopicsLoader muss eine id "pose_changed" existieren, wir versuchen sie sauber zu laden:
+            return self.qos_poses_changed  # type: ignore[attr-defined]
+        except Exception:
+            return self.qos_poses_list
 
     # -------------------- Publishing --------------------
     def publish_all(self):
@@ -117,7 +130,7 @@ class Poses(Node):
 
     def _publish_pose_array(self):
         pa = PoseArray()
-        pa.header.frame_id = FRAMES["world"]  # einheitlicher Frame für Liste
+        pa.header.frame_id = self.frames.get("world", "world")  # einheitlicher Frame für Liste
         for name, pose in self.poses.items():
             x, y, z = pose.get("xyz", [0,0,0])
             r, p, y_ = pose.get("rpy_deg", [0,0,0])
@@ -135,12 +148,12 @@ class Poses(Node):
 
     # -------------------- Helpers --------------------
     def _make_pose(self, name: str, pose: dict):
-        parent_frame = pose.get("frame", self.frames["tool_mount"])
+        parent_frame = self._F(pose.get("frame", self.frames.get("tool_mount", "tool_mount")))
         x, y, z = pose.get("xyz", [0, 0, 0])
         r_deg, p_deg, y_deg = pose.get("rpy_deg", [0, 0, 0])
         qx, qy, qz, qw = rpy_deg_to_quat(r_deg, p_deg, y_deg)
 
-        # PoseStamped (wird hier nicht einzeln veröffentlicht, nur intern benutzt)
+        # PoseStamped (nur intern)
         msg = PoseStamped()
         msg.header.frame_id = parent_frame
         msg.pose.position.x = float(x)
@@ -154,7 +167,7 @@ class Poses(Node):
         # Static TF
         tf = TransformStamped()
         tf.header.frame_id = parent_frame
-        tf.child_frame_id = name
+        tf.child_frame_id  = name
         tf.transform.translation.x = float(x)
         tf.transform.translation.y = float(y)
         tf.transform.translation.z = float(z)
@@ -175,7 +188,7 @@ class Poses(Node):
         if "#" not in frame_id:
             raise ValueError("pose_set: frame_id muss Schema '<parent>#<name>' haben, z.B. 'world#home'")
         parent, name = frame_id.split("#", 1)
-        parent = parent.strip()
+        parent = self._F(parent.strip())
         name = name.strip()
         if not parent or not name:
             raise ValueError("pose_set: ungültiges frame_id Schema '<parent>#<name>'")
@@ -205,6 +218,7 @@ class Poses(Node):
         self.publish_all()
         self._emit_changed(name)
         self.get_logger().info(f"💾 pose_set: '{name}' in Parent '{parent}' gespeichert.")
+
 
 # ------------------------------------------------------------
 def main(args=None):

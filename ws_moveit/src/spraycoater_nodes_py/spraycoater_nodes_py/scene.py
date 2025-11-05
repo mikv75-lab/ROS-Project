@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# spraycoater_nodes_py/scene.py
 #!/usr/bin/env python3
 import os
 import time
@@ -10,12 +12,14 @@ from shape_msgs.msg import Mesh, MeshTriangle
 from moveit_msgs.msg import CollisionObject, PlanningSceneComponents
 from moveit_msgs.srv import GetPlanningScene
 from spraycoater_nodes_py.utils.utils import rpy_deg_to_quat
+from spraycoater_nodes_py.utils.frames import load_frames
 import trimesh
-import math
 
 SCENE_TOPIC = "/collision_object"
 MAX_SCENE_WAIT = 30.0
 PARAM_SCENE_CONFIG = "scene_config"
+PARAM_FRAMES_YAML  = "frames_yaml"
+PARAM_FRAMES_GROUP = "frames_group"
 
 
 def _require_vec3(node: dict, key: str):
@@ -76,7 +80,11 @@ class Scene(Node):
     def __init__(self):
         super().__init__("scene")
 
+        # Parameter
         self.declare_parameter(PARAM_SCENE_CONFIG, "")
+        self.declare_parameter(PARAM_FRAMES_YAML, "")
+        self.declare_parameter(PARAM_FRAMES_GROUP, "meca")
+
         yaml_path = self.get_parameter(PARAM_SCENE_CONFIG).value
         if not yaml_path or not os.path.exists(yaml_path):
             raise FileNotFoundError(f"Scene YAML fehlt: {yaml_path}")
@@ -89,6 +97,13 @@ class Scene(Node):
         self.scene_objects = data["scene_objects"]
         self.base_dir = os.path.dirname(os.path.abspath(yaml_path))
 
+        # Frames laden
+        frames_yaml  = self.get_parameter(PARAM_FRAMES_YAML).value
+        frames_group = self.get_parameter(PARAM_FRAMES_GROUP).value
+        self.frames  = load_frames(frames_yaml, frames_group)
+        self._F      = self.frames.resolve  # Kurzform
+
+        # ROS I/O
         self.static_tf = StaticTransformBroadcaster(self)
         self.scene_pub = self.create_publisher(CollisionObject, SCENE_TOPIC, 10)
         self.mesh_cache = {}
@@ -99,7 +114,7 @@ class Scene(Node):
 
     # ---------- Helpers ----------
     def _resolve_mesh_path(self, mesh_rel: str) -> str:
-        p = mesh_rel.strip()
+        p = (mesh_rel or "").strip()
         if not p:
             return ""  # leer → kein Mesh
         cand = os.path.join(self.base_dir, p)
@@ -137,8 +152,8 @@ class Scene(Node):
     def _make_tf(self, parent: str, child: str, xyz, rpy_deg) -> TransformStamped:
         qx, qy, qz, qw = _quat_from_rpy_deg(*rpy_deg)
         tf = TransformStamped()
-        tf.header.frame_id = parent
-        tf.child_frame_id = child
+        tf.header.frame_id = self._F(parent)
+        tf.child_frame_id  = self._F(child)
         tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z = xyz
         tf.transform.rotation.x, tf.transform.rotation.y, tf.transform.rotation.z, tf.transform.rotation.w = qx, qy, qz, qw
         return tf
@@ -148,6 +163,7 @@ class Scene(Node):
         if self.final_scene_sent:
             return
         self.final_scene_sent = True
+        F = self._F
 
         # 1) Static TFs
         tfs = []
@@ -155,17 +171,18 @@ class Scene(Node):
             if "id" not in obj:
                 raise KeyError("YAML: jedes Objekt braucht ein 'id'")
             oid = str(obj["id"])
-            frame = obj.get("frame", "world")
+            frame = F(obj.get("frame", "world"))
             xyz = _require_vec3(obj, "position")
             rpy = _require_vec3(obj, "rpy_deg")
             tfs.append(self._make_tf(frame, oid, xyz, rpy))
-        self.static_tf.sendTransform(tfs)
+        if tfs:
+            self.static_tf.sendTransform(tfs)
         self.get_logger().info(f"✅ Static TFs veröffentlicht ({len(tfs)})")
 
-        # 2) CollisionObjects: Pose = (position,rpy_deg) ⊕ (mesh_offset,mesh_rpy) im Parent-Frame
+        # 2) CollisionObjects (Pose = (position,rpy_deg) ⊕ (mesh_offset,mesh_rpy) im Parent-Frame)
         for obj in self.scene_objects:
             oid = str(obj["id"])
-            frame = obj.get("frame", "world")
+            frame = F(obj.get("frame", "world"))
             pos = _require_vec3(obj, "position")
             rpy = _require_vec3(obj, "rpy_deg")
 
@@ -192,7 +209,7 @@ class Scene(Node):
 
             co = CollisionObject()
             co.id = oid
-            co.header.frame_id = frame               # << wichtig: im Parent-Frame publizieren
+            co.header.frame_id = frame               # Parent-Frame (bereits aufgelöst)
             co.meshes = [mesh_msg]
             co.mesh_poses = [self._pose_from_xyz_quat(p_total, q_total)]
             co.operation = CollisionObject.ADD

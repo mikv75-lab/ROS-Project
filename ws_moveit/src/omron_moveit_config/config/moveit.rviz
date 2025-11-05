@@ -140,7 +140,7 @@ Visualization Manager:
         Goal State Color: 250; 128; 0
         Interactive Marker Size: 0
         Joint Violation Color: 255; 0; 255
-        Planning Group: ormon_arm_group
+        Planning Group: omron_arm_group
         Query Goal State: true
         Query Start State: false
         Show Workspace: false

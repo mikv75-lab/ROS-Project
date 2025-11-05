@@ -4,7 +4,6 @@ frames:
     world: "world"
     robot_mount: "robot_mount"
     home: "home"
-    predispense: "predispense"
     service: "service"
     scene: "scene"
     substrate: "substrate"
