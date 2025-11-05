@@ -7,12 +7,6 @@ paths:
   recipe_dir:   "../../data/recipes"
   log_dir:      "../../data/logs"
   bringup_log:  "../../data/logs/bringup.log"
-
-tf:
-  world_to_robot_mount:
-    xyz: [0.0, 0.0, 0.0]
-    # meca seitenwand rpy_deg: [0.0, 0.0, 90.0]
-    rpy_deg: [0.0, 0.0, 0.0]
     
 ros:
   launch_ros: false

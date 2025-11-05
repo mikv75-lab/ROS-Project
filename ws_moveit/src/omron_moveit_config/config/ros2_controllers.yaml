@@ -1,14 +1,18 @@
-# This config file is used by ros2_control
+# omron_moveit_config/config/ros2_controllers.yaml
 controller_manager:
   ros__parameters:
     update_rate: 100  # Hz
 
+    # Deklaration der Controller (Name -> Typ)
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
     ormon_arm_group_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
-
-    joint_state_broadcaster:
-      type: joint_state_broadcaster/JointStateBroadcaster
+# Parameter-Sektion je Controller:
+joint_state_broadcaster:
+  ros__parameters: {}  # keine speziellen Parameter nötig
 
 ormon_arm_group_controller:
   ros__parameters:
@@ -19,9 +23,6 @@ ormon_arm_group_controller:
       - joint_4
       - joint_5
       - joint_6
-    command_interfaces:
-      - position
-    state_interfaces:
-      - position
-      - velocity
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
     allow_nonzero_velocity_at_trajectory_end: true
