@@ -29,7 +29,7 @@ def generate_launch_description():
     )
 
     def _setup(context):
-        # robot.yaml laden
+        # bringup/config laden
         bringup_share = FindPackageShare("spraycoater_bringup").perform(context)
         robot_yaml = os.path.join(bringup_share, "config", "robot.yaml")
         if not os.path.exists(robot_yaml):
@@ -78,7 +78,7 @@ def generate_launch_description():
         roll, pitch, yaw = map(lambda d: radians(float(d)), rpydeg)
         qx, qy, qz, qw = _rpy_rad_to_quat(roll, pitch, yaw)
 
-        # Robot-Launch einbinden (Static TF spawnt dort per Quaternion)
+        # Robot-Launch einbinden
         moveit_share = FindPackageShare(moveit_pkg).perform(context)
         robot_launch = os.path.join(moveit_share, "launch", "robot.launch.py")
         if not os.path.exists(robot_launch):
@@ -100,7 +100,7 @@ def generate_launch_description():
             }.items()
         )
 
-        # SceneManager nach Roboterstart
+        # === SceneManager (wie gehabt) ===
         scene_yaml = os.path.join(bringup_share, "config", "scene.yaml")
         if not os.path.exists(scene_yaml):
             raise FileNotFoundError(f"[bringup] scene.yaml fehlt: {scene_yaml}")
@@ -114,7 +114,33 @@ def generate_launch_description():
         )
         scene_after_robot = TimerAction(period=5.0, actions=[scene_manager])
 
-        # WICHTIG: Kein static TF hier!
-        return [include_robot, scene_after_robot]
+        # === PosesManager (genau so hinzugefügt) ===
+        poses_yaml  = os.path.join(bringup_share, "config", "poses.yaml")
+        topics_yaml = os.path.join(bringup_share, "config", "topics.yaml")
+        qos_yaml    = os.path.join(bringup_share, "config", "qos.yaml")
+
+        # strict checks (kein Fallback)
+        if not os.path.exists(poses_yaml):
+            raise FileNotFoundError(f"[bringup] poses.yaml fehlt: {poses_yaml}")
+        if not os.path.exists(topics_yaml):
+            raise FileNotFoundError(f"[bringup] topics.yaml fehlt: {topics_yaml}")
+        if not os.path.exists(qos_yaml):
+            raise FileNotFoundError(f"[bringup] qos.yaml fehlt: {qos_yaml}")
+
+        poses_manager = Node(
+            package="spraycoater_nodes_py",
+            executable="poses",
+            name="poses",
+            output="screen",
+            parameters=[
+                {"poses_config": poses_yaml},
+                {"topics_yaml": topics_yaml},
+                {"qos_yaml": qos_yaml},
+            ],
+        )
+        poses_after_robot = TimerAction(period=5.0, actions=[poses_manager])
+
+        # Wichtig: kein eigener static TF hier; Roboter-Launch setzt den Mount
+        return [include_robot, scene_after_robot, poses_after_robot]
 
     return LaunchDescription([sim_arg, OpaqueFunction(function=_setup)])

@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             # Startet den Scene-Node (spraycoater_nodes_py/scene.py -> main())
             'scene = spraycoater_nodes_py.scene:main',
+            'poses = spraycoater_nodes_py.poses:main',
         ],
     },
 )

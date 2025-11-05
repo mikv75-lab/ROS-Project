@@ -33,114 +33,98 @@ topics:
   tool:
     subscribe:
       - id: tool_select
-        name: /meca/tool/select
+        name: /spraycoater/tool/select
         type: std_msgs/msg/String
         qos: default
       - id: tool_tcp_set
-        name: /meca/tool/tcp/set
+        name: /spraycoater/tool/tcp/set
         type: geometry_msgs/msg/PoseStamped
         qos: default
     publish:
       - id: tool_state
-        name: /meca/tool/state
+        name: /spraycoater/tool/state
         type: std_msgs/msg/String
         qos: latched
       - id: tool_tcp
-        name: /meca/tool/tcp
+        name: /spraycoater/tool/tcp
         type: geometry_msgs/msg/PoseStamped
         qos: latched
 
   motion:
     subscribe:
       - id: plan_waypoints
-        name: /meca/motion/plan/waypoints
+        name: /spraycoater/motion/plan/waypoints
         type: geometry_msgs/msg/PoseArray
         qos: default
       - id: plan_named
-        name: /meca/motion/plan/named
+        name: /spraycoater/motion/plan/named
         type: std_msgs/msg/String
         qos: default
       - id: execute
-        name: /meca/motion/execute
+        name: /spraycoater/motion/execute
         type: std_msgs/msg/Bool
         qos: default
       - id: stop
-        name: /meca/motion/stop
+        name: /spraycoater/motion/stop
         type: std_msgs/msg/Empty
         qos: default
     publish:
       - id: trajectory
-        name: /meca/motion/trajectory
+        name: /spraycoater/motion/trajectory
         type: trajectory_msgs/msg/JointTrajectory
         qos: default
       - id: preview_markers
-        name: /meca/motion/preview/markers
+        name: /spraycoater/motion/preview/markers
         type: visualization_msgs/msg/MarkerArray
         qos: latched
       - id: motion_result
-        name: /meca/motion/result
+        name: /spraycoater/motion/result
         type: std_msgs/msg/String
         qos: default
 
   poses:
     subscribe:
       - id: pose_set
-        name: /meca/poses/set
+        name: /spraycoater/poses/set
         type: geometry_msgs/msg/PoseStamped
-        qos: default
-      - id: pose_delete
-        name: /meca/poses/delete
-        type: std_msgs/msg/String
-        qos: default
-      - id: pose_rename
-        name: /meca/poses/rename
-        type: diagnostic_msgs/msg/KeyValue
-        qos: default
-      - id: poses_save
-        name: /meca/poses/save
-        type: std_msgs/msg/Empty
         qos: default
     publish:
       - id: poses_list
-        name: /meca/poses/list
+        name: /spraycoater/poses/list
         type: geometry_msgs/msg/PoseArray
         qos: latched
-      - id: poses_named
-        name: /meca/poses/named
-        type: diagnostic_msgs/msg/KeyValue
-        qos: latched
-      - id: poses_changed
-        name: /meca/poses/changed
+      - id: pose_changed
+        name: /spraycoater/poses/changed
         type: std_msgs/msg/String
         qos: default
 
   scene:
     subscribe:
       - id: scene_load
-        name: /meca/scene/load
+        name: /spraycoater/scene/load
         type: std_msgs/msg/String
         qos: default
       - id: substrate_set_pose
-        name: /meca/scene/substrate/set_pose
+        name: /spraycoater/scene/substrate/set_pose
         type: geometry_msgs/msg/PoseStamped
         qos: default
     publish:
       - id: scene_markers
-        name: /meca/scene/markers
+        name: /spraycoater/scene/markers
         type: visualization_msgs/msg/MarkerArray
         qos: latched
       - id: scene_loaded
-        name: /meca/scene/loaded
+        name: /spraycoater/scene/loaded
         type: std_msgs/msg/String
         qos: default
 
   status:
     publish:
       - id: heartbeat
-        name: /meca/status/heartbeat
+        name: /spraycoater/status/heartbeat
         type: std_msgs/msg/UInt32
         qos: default
       - id: diagnostics
-        name: /meca/status/diagnostics
+        name: /spraycoater/status/diagnostics
         type: diagnostic_msgs/msg/DiagnosticArray
         qos: default
