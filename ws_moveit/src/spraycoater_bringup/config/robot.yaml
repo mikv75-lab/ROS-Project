@@ -1,0 +1,18 @@
+# spraycoater_bringup/config/robot.yaml
+version: 1
+selected: omron   # meca | omron
+
+robots:
+  meca:
+    moveit_pkg: mecademic_moveit_config
+  omron:
+    moveit_pkg: omron_moveit_config
+
+# world → robot_mount
+tf:
+  world_to_robot_mount:
+    parent: world
+    child: robot_mount
+    xyz: [0.0, 0.0, 0.0]
+    # meca seitenwand rpy_deg: [0.0, 0.0, 90.0]
+    rpy_deg: [0.0, 0.0, 0.0]
