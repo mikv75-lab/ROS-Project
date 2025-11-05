@@ -48,8 +48,9 @@ def generate_launch_description():
     )
     demo_ld = generate_demo_launch(moveit_config)  # LaunchDescription
 
-    # Static TF zusätzlich in die LaunchDescription einhängen
-    demo_ld.add_action(*args)      # Argument-Deklarationen zur LD hinzufügen
-    demo_ld.add_action(static_tf)  # TF-Node hinzufügen
+    # RICHTIG: jedes Action-Objekt einzeln hinzufügen
+    for a in args:
+        demo_ld.add_action(a)
+    demo_ld.add_action(static_tf)
 
     return demo_ld
