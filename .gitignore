@@ -1,62 +1,46 @@
-# Alles im Repo-Root ausblenden
+# --- Alles im Repo-Root ausblenden ---
 /*
+!.gitignore
+!README.md
 
-# Spraycoater komplett erlauben
+# --- Ordner, die wir grundsätzlich tracken ---
 !Spraycoater/
-!Spraycoater/**
-
-# ws_moveit-Ordner selbst erlauben
 !ws_moveit/
-!ws_moveit/src/
 
-# Zuerst ALLES unter ws_moveit/src ignorieren …
-ws_moveit/src/**
-
-# … und NUR diese Pakete wieder erlauben (jeweils rekursiv)
-!ws_moveit/src/mecademic_bringup/
-!ws_moveit/src/mecademic_bringup/**
-
-!ws_moveit/src/mecademic_description/
-!ws_moveit/src/mecademic_description/**
-
-!ws_moveit/src/mecademic_moveit_config/
-!ws_moveit/src/mecademic_moveit_config/**
-
-!ws_moveit/src/mecademic_nodes_cpp/
-!ws_moveit/src/mecademic_nodes_cpp/**
-
-!ws_moveit/src/mecademic_nodes_py/
-!ws_moveit/src/mecademic_nodes_py/**
-
-# ROS Build/Install/Log trotzdem ignorieren
-ws_moveit/build/
-ws_moveit/install/
-ws_moveit/log/
-
-# Spraycoater Runtime-Daten ignorieren, Platzhalter behalten
+# --- Spraycoater: Runtime-Daten ignorieren, Platzhalter behalten ---
 Spraycoater/data/**
 !Spraycoater/data/.gitkeep
 !Spraycoater/data/README.md
 
-# Python Cache
+# --- ROS Build/Install/Log ignorieren ---
+ws_moveit/build/
+ws_moveit/install/
+ws_moveit/log/
+
+# --- ws_moveit: alles außer src ausblenden ---
+ws_moveit/*
+!ws_moveit/src/
+
+# --- In src zunächst alles ausblenden ---
+ws_moveit/src/*
+
+# --- Nur diese Paket-Präfixe erlauben (rekursiv) ---
+!ws_moveit/src/mecademic_*/**
+!ws_moveit/src/omron_*/**
+!ws_moveit/src/spraycoater_*/**
+
+# --- Übliche Ignorierregeln ---
 **/__pycache__/
 **/*.py[cod]
-
-# Logs & Temp
-*.log
-*.dump
-*.tmp
-.env
-
-# Python venvs komplett ignorieren
-venv/
-.venv/
-*/venv/
-*/.venv/
-
-__pycache__/
-*.py[cod]
 *.pyo
 *.egg-info/
 .dist/
 build/
+*.log
+*.dump
+*.tmp
+.env
+venv/
+.venv/
+*/venv/
+*/.venv/

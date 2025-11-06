@@ -45,9 +45,7 @@
         </property>
        </widget>
       </item>
-
       <item>
-       <!-- spacer ersetzt durch QWidget mit VS-Expanding -->
        <widget class="QWidget" name="leftSpacer">
         <property name="sizePolicy">
          <sizepolicy hsizetype="Minimum" vsizetype="Expanding">
@@ -57,30 +55,6 @@
         </property>
         <property name="minimumSize">
          <size><width>0</width><height>0</height></size>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-   </item>
-
-   <!-- Rechte Seite: leerer RViz-Placeholder (später eingebettet) -->
-   <item>
-    <!-- WICHTIG: objectName = rvizContainer (vom Code verwendet) -->
-    <widget class="QFrame" name="rvizContainer">
-     <property name="frameShape"><enum>QFrame::StyledPanel</enum></property>
-     <property name="frameShadow"><enum>QFrame::Raised</enum></property>
-     <layout class="QVBoxLayout" name="rvizLayout">
-      <item>
-       <widget class="QLabel" name="lblRvizHint">
-        <property name="text">
-         <string>RViz (Live) — später eingebettet.</string>
-        </property>
-        <property name="alignment">
-         <set>Qt::AlignHCenter|Qt::AlignVCenter</set>
-        </property>
-        <property name="minimumSize">
-         <size><width>200</width><height>200</height></size>
         </property>
        </widget>
       </item>

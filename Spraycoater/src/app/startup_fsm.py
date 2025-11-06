@@ -53,6 +53,7 @@ class _StepState(QtStateMachine.QState):
 class StartupMachine(QtCore.QObject):
     """
     Orchestriert den App-Start via QStateMachine (PyQt6).
+    Unverändert bzgl. RViz/PyVista – MainWindow kümmert sich um Splitter & Preview.
     """
     progress = QtCore.pyqtSignal(str)             # z.B. "LoadStartup"
     warning  = QtCore.pyqtSignal(str)             # gelbe Meldung auf Splash

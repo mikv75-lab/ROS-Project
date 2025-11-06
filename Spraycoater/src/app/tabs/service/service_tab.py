@@ -18,10 +18,6 @@ def _ui_path(filename: str) -> str:
     return os.path.join(_project_root(), "resource", "ui", "tabs", "service", filename)
 
 
-def _rviz_cfg_path() -> str:
-    return os.path.join(_project_root(), "resource", "rviz", "live.rviz")
-
-
 class ServiceTab(QWidget):
     """
     Service-Tab mit 'Scene'-Gruppe (signal-basiert):
@@ -40,9 +36,7 @@ class ServiceTab(QWidget):
             _LOG.error("ServiceTab UI nicht gefunden: %s", ui_file)
         uic.loadUi(ui_file, self)
 
-        # Widgets holen
-        self.lblRvizHint: QLabel = self.findChild(QLabel, "lblRvizHint")
-
+        # Widgets holen (ohne RViz-Elemente)
         self.cmbCage: QComboBox = self.findChild(QComboBox, "cmbCage")
         self.cmbMount: QComboBox = self.findChild(QComboBox, "cmbMount")
         self.cmbSubstrate: QComboBox = self.findChild(QComboBox, "cmbSubstrate")
@@ -55,36 +49,15 @@ class ServiceTab(QWidget):
         self.btnSetMount: QPushButton = self.findChild(QPushButton, "btnSetMount")
         self.btnSetSubstrate: QPushButton = self.findChild(QPushButton, "btnSetSubstrate")
 
-        # RViz-Hinweis
-        self._cfg = _rviz_cfg_path()
-        self._show_config_in_container()
-
         # Scene-Bindings (reines Signal-Wiring)
         self._wire_scene_signals()
 
-    # ---------- RViz-Hinweis ----------
-
-    def _show_config_in_container(self) -> None:
-        label: QLabel = self.lblRvizHint
-        if label is None:
-            _LOG.warning("lblRvizHint nicht gefunden – nichts anzuzeigen.")
-            return
-
-        if os.path.exists(self._cfg):
-            label.setText(f"RViz config:\n{self._cfg}")
-            label.setStyleSheet("")
-        else:
-            label.setText(f"RViz config fehlt:\n{self._cfg}")
-            label.setStyleSheet("color: #b00020;")
-
     # ---------- Scene: Signal-Wiring ----------
-
     def _wire_scene_signals(self) -> None:
-        if not self.bridge or not hasattr(self.bridge, "scene"):
-            _LOG.error("Bridge hat kein 'scene' Signal-Objekt – bitte ui_bridge prüfen.")
+        if not self.bridge or not hasattr(self.bridge, "scene") or self.bridge.scene is None:
+            _LOG.error("Bridge hat kein 'scene' Signal-Objekt – bitte ui_bridge.connect() prüfen.")
             return
-
-        sig = self.bridge.scene  # = BridgeSignals (Alias)
+        sig = self.bridge.scene
 
         # ROS -> UI: Listen füllen
         sig.cageListChanged.connect(lambda items: self._fill_combo(self.cmbCage, items))
@@ -111,7 +84,6 @@ class ServiceTab(QWidget):
             )
 
     # ---------- UI-Helfer ----------
-
     @staticmethod
     def _fill_combo(combo: QComboBox, items: list[str]) -> None:
         try:

@@ -3,3 +3,65 @@
 2025-11-06 13:54:24 INFO [75926] app.startup:148 - warnings enabled
 2025-11-06 13:54:27 INFO [75926] app.startup:196 - StartupMachine finished (ctx=True, bridge=False)
 2025-11-06 13:54:28 INFO [75926] app.main_window:47 - MainWindow initialized (ctx=True, bridge=False)
+2025-11-06 14:41:33 INFO [7321] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 14:41:33 INFO [7321] app.startup:142 - logging configured
+2025-11-06 14:41:33 INFO [7321] app.startup:147 - warnings enabled
+2025-11-06 14:41:36 INFO [7321] app.startup:198 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 14:41:37 INFO [7321] app.main_window:47 - MainWindow initialized (ctx=True, bridge=False)
+2025-11-06 15:06:23 INFO [23383] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 15:06:23 INFO [23383] app.startup:142 - logging configured
+2025-11-06 15:06:23 INFO [23383] app.startup:147 - warnings enabled
+2025-11-06 15:06:25 INFO [23383] app.startup:198 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 15:06:26 INFO [23383] app.main_window:47 - MainWindow initialized (ctx=True, bridge=False)
+2025-11-06 15:09:20 INFO [26728] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 15:09:20 INFO [26728] app.startup:142 - logging configured
+2025-11-06 15:09:20 INFO [26728] app.startup:147 - warnings enabled
+2025-11-06 15:09:23 INFO [26728] app.startup:198 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 15:09:24 INFO [26728] app.main_window:47 - MainWindow initialized (ctx=True, bridge=False)
+2025-11-06 15:23:43 INFO [36058] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 15:23:43 INFO [36058] app.startup:142 - logging configured
+2025-11-06 15:23:43 INFO [36058] app.startup:147 - warnings enabled
+2025-11-06 15:23:46 INFO [36058] app.startup:198 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 15:23:46 ERROR [36058] app.main_window:113 - attach_preview_widget: failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/main_window.py", line 92, in attach_preview_widget
+    if self.previewPlot.parent() is not self.viewerHost:
+       ^^^^^^^^^^^^^^^^
+AttributeError: 'MainWindow' object has no attribute 'previewPlot'
+2025-11-06 15:23:47 INFO [36058] app.main_window:83 - MainWindow initialized (ctx=True, bridge=False)
+2025-11-06 15:37:17 INFO [45201] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 15:37:17 INFO [45201] app.startup:143 - logging configured
+2025-11-06 15:37:17 INFO [45201] app.startup:148 - warnings enabled
+2025-11-06 15:37:20 INFO [45201] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 15:37:20 ERROR [45201] app.main_window:141 - attach_preview_widget: failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/main_window.py", line 104, in attach_preview_widget
+    if self.previewPlot is None:
+       ^^^^^^^^^^^^^^^^
+AttributeError: 'MainWindow' object has no attribute 'previewPlot'
+2025-11-06 15:37:20 INFO [45201] app.main_window:91 - MainWindow initialized (ctx=True, bridge=False)
+2025-11-06 15:42:51 INFO [50179] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 15:42:51 INFO [50179] app.startup:143 - logging configured
+2025-11-06 15:42:51 INFO [50179] app.startup:148 - warnings enabled
+2025-11-06 15:42:54 INFO [50179] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 15:42:55 DEBUG [50179] app.main_window:141 - PyVista interactor attached into host 'previewHost3D'
+2025-11-06 15:42:55 INFO [50179] app.main_window:91 - MainWindow initialized (ctx=True, bridge=False)
+2025-11-06 15:44:37 INFO [52087] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 15:44:37 INFO [52087] app.startup:143 - logging configured
+2025-11-06 15:44:37 INFO [52087] app.startup:148 - warnings enabled
+2025-11-06 15:44:40 INFO [52087] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 15:44:41 DEBUG [52087] app.main_window:141 - PyVista interactor attached into host 'previewHost3D'
+2025-11-06 15:44:41 INFO [52087] app.main_window:91 - MainWindow initialized (ctx=True, bridge=False)
+2025-11-06 15:53:54 INFO [59417] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 15:53:54 INFO [59417] app.startup:143 - logging configured
+2025-11-06 15:53:54 INFO [59417] app.startup:148 - warnings enabled
+2025-11-06 15:53:57 INFO [59417] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 15:53:57 INFO [59417] app.main_window:78 - MainWindow initialized (ctx=True, bridge=False)
+2025-11-06 16:00:47 INFO [63923] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 16:00:47 INFO [63923] app.startup:143 - logging configured
+2025-11-06 16:00:47 INFO [63923] app.startup:148 - warnings enabled
+2025-11-06 16:00:50 INFO [63923] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 16:03:27 INFO [66491] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 16:03:27 INFO [66491] app.startup:143 - logging configured
+2025-11-06 16:03:27 INFO [66491] app.startup:148 - warnings enabled
+2025-11-06 16:03:30 INFO [66491] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)

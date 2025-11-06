@@ -1,1 +1,11 @@
 2025-11-06 13:54:28 ERROR [75926] app.tabs.service:84 - Bridge hat kein 'scene' Signal-Objekt – bitte ui_bridge prüfen.
+2025-11-06 14:41:37 ERROR [7321] app.tabs.service:83 - Bridge hat kein 'scene' Signal-Objekt – bitte ui_bridge.connect() prüfen.
+2025-11-06 15:06:26 ERROR [23383] app.tabs.service:83 - Bridge hat kein 'scene' Signal-Objekt – bitte ui_bridge.connect() prüfen.
+2025-11-06 15:09:24 ERROR [26728] app.tabs.service:83 - Bridge hat kein 'scene' Signal-Objekt – bitte ui_bridge.connect() prüfen.
+2025-11-06 15:23:46 ERROR [36058] app.tabs.service:58 - Bridge hat kein 'scene' Signal-Objekt – bitte ui_bridge.connect() prüfen.
+2025-11-06 15:37:20 ERROR [45201] app.tabs.service:58 - Bridge hat kein 'scene' Signal-Objekt – bitte ui_bridge.connect() prüfen.
+2025-11-06 15:42:55 ERROR [50179] app.tabs.service:58 - Bridge hat kein 'scene' Signal-Objekt – bitte ui_bridge.connect() prüfen.
+2025-11-06 15:44:41 ERROR [52087] app.tabs.service:58 - Bridge hat kein 'scene' Signal-Objekt – bitte ui_bridge.connect() prüfen.
+2025-11-06 15:53:57 ERROR [59417] app.tabs.service:58 - Bridge hat kein 'scene' Signal-Objekt – bitte ui_bridge.connect() prüfen.
+2025-11-06 16:00:51 ERROR [63923] app.tabs.service:58 - Bridge hat kein 'scene' Signal-Objekt – bitte ui_bridge.connect() prüfen.
+2025-11-06 16:03:31 ERROR [66491] app.tabs.service:58 - Bridge hat kein 'scene' Signal-Objekt – bitte ui_bridge.connect() prüfen.

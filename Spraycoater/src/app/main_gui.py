@@ -1,4 +1,3 @@
-# src/app/main_gui.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import os, sys, signal, traceback, atexit, logging
@@ -94,7 +93,7 @@ logging.getLogger(__name__).info("VTK log -> %s", vtk_log)
 
 # ==== App-Imports ====
 from app.startup_fsm import StartupMachine
-from app.main_window import MainWindow   # MainWindow erwartet (ctx, bridge)
+from app.main_window import MainWindow   # MainWindow nutzt Splitter (RViz-Placeholder rechts) & PyVista nur im RecipeTab
 
 def resource_path(*parts: str) -> str:
     return os.path.join(RES_ROOT, *parts)
@@ -147,7 +146,7 @@ def main():
         if ctx is None:
             QMessageBox.critical(None, "Startup fehlgeschlagen", "Kein gültiger AppContext. Siehe Log.")
             return
-        win = MainWindow(ctx=ctx, bridge=bridge)
+        win = MainWindow(ctx=ctx, bridge=bridge)  # zeigt Splitter (RViz Placeholder rechts) + PyVista nur im RecipeTab
         splash.finish(win)
         win.show()
 
@@ -156,7 +155,6 @@ def main():
 
     rc = 0
     try:
-        # PyQt6 verwendet exec() statt exec_()
         rc = app.exec()
     finally:
         try:
