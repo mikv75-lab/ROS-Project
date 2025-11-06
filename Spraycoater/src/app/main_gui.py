@@ -94,9 +94,7 @@ logging.getLogger(__name__).info("VTK log -> %s", vtk_log)
 
 # ==== App-Imports ====
 from app.startup_fsm import StartupMachine
-from app.main_window import MainWindow   # <-- NEW
-
-# (No need to import tabs here anymore; MainWindow does that)
+from app.main_window import MainWindow   # MainWindow erwartet (ctx, bridge)
 
 def resource_path(*parts: str) -> str:
     return os.path.join(RES_ROOT, *parts)
@@ -120,13 +118,11 @@ def _make_splash():
     splash.show()
     return splash
 
-
 def _nonblocking_logging_shutdown():
     try:
         logging.shutdown()
     except Exception:
         pass
-
 
 def main():
     app = QApplication(sys.argv)
@@ -146,6 +142,7 @@ def main():
     fsm.warning.connect(lambda w: splash_msg(f"⚠ {w}"))
     fsm.error.connect(lambda e: splash_msg(f"✖ {e}"))
 
+    # bleibt bei (ctx, bridge)
     def _on_ready(ctx, bridge):
         if ctx is None:
             QMessageBox.critical(None, "Startup fehlgeschlagen", "Kein gültiger AppContext. Siehe Log.")
@@ -159,7 +156,8 @@ def main():
 
     rc = 0
     try:
-        rc = app.exec_()
+        # PyQt6 verwendet exec() statt exec_()
+        rc = app.exec()
     finally:
         try:
             if _CRASH_FH:
@@ -168,7 +166,6 @@ def main():
         except Exception:
             pass
     sys.exit(rc)
-
 
 if __name__ == "__main__":
     main()

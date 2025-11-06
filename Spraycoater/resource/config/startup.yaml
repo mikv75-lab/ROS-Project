@@ -7,8 +7,19 @@ paths:
   recipe_dir:   "../../data/recipes"
   log_dir:      "../../data/logs"
   bringup_log:  "../../data/logs/bringup.log"
-    
+
 ros:
   launch_ros: true
   sim_robot:  true
-
+  
+configs:
+  # Zentrale YAMLs im bringup/config
+  topics_file: "package://spraycoater_bringup/config/topics.yaml"
+  qos_file:    "package://spraycoater_bringup/config/qos.yaml"
+  frames_file: "package://spraycoater_bringup/config/frames.yaml"
+  scene_file:  "package://spraycoater_bringup/config/scene.yaml"
+  robot_file:  "package://spraycoater_bringup/config/robot.yaml"
+  servo_file:  "package://spraycoater_bringup/config/servo.yaml"
+  poses_file:  "package://spraycoater_bringup/config/poses.yaml"
+  tools_file:  "package://spraycoater_bringup/config/tools.yaml"
+  paths_file:  "package://spraycoater_bringup/config/paths.yaml"

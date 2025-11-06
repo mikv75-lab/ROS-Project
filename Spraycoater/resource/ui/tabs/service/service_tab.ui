@@ -5,80 +5,75 @@
   <property name="windowTitle">
    <string>Service</string>
   </property>
-
   <layout class="QHBoxLayout" name="rootLayout">
-   <!-- Linke Spalte: Buttons (identisch zu ProcessTab) -->
+   <!-- Linke Spalte -->
    <item>
-    <widget class="QGroupBox" name="grpProcess">
-     <property name="title"><string>Process Control</string></property>
-     <property name="minimumSize">
-      <size><width>260</width><height>0</height></size>
-     </property>
-     <property name="maximumSize">
-      <size><width>320</width><height>16777215</height></size>
-     </property>
-     <layout class="QVBoxLayout" name="processButtonsLayout">
+    <widget class="QWidget" name="leftColumn">
+     <layout class="QVBoxLayout" name="leftLayout">
+
+      <!-- ===== Process Control (wie gehabt) ===== -->
       <item>
-       <widget class="QPushButton" name="btnInit">
-        <property name="text"><string>Init</string></property>
-        <property name="minimumWidth"><number>100</number></property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btnLoadRecipe">
-        <property name="text"><string>Load Recipe</string></property>
-        <property name="minimumWidth"><number>120</number></property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btnStart">
-        <property name="text"><string>Start</string></property>
-        <property name="minimumWidth"><number>100</number></property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btnStop">
-        <property name="text"><string>Stop</string></property>
-        <property name="minimumWidth"><number>100</number></property>
-        <property name="styleSheet">
-         <string notr="true">font-weight:600;</string>
-        </property>
+       <widget class="QGroupBox" name="grpProcess">
+        <property name="title"><string>Process Control</string></property>
+        <layout class="QVBoxLayout" name="processButtonsLayout">
+         <item><widget class="QPushButton" name="btnInit"><property name="text"><string>Init</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnLoadRecipe"><property name="text"><string>Load Recipe</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnStart"><property name="text"><string>Start</string></property></widget></item>
+         <item><widget class="QPushButton" name="btnStop"><property name="text"><string>Stop</string></property></widget></item>
+        </layout>
        </widget>
       </item>
 
+      <!-- ===== Scene (NEU) ===== -->
       <item>
-       <!-- spacer ersetzt durch QWidget mit VS-Expanding -->
-       <widget class="QWidget" name="leftSpacer">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Minimum" vsizetype="Expanding">
-          <horstretch>0</horstretch>
-          <verstretch>1</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="minimumSize">
-         <size><width>0</width><height>0</height></size>
-        </property>
+       <widget class="QGroupBox" name="grpScene">
+        <property name="title"><string>Scene</string></property>
+        <layout class="QGridLayout" name="sceneLayout">
+
+         <!-- Cage -->
+         <item row="0" column="0"><widget class="QLabel" name="lblCage"><property name="text"><string>Cage</string></property></widget></item>
+         <item row="0" column="1"><widget class="QComboBox" name="cmbCage"/></item>
+         <item row="0" column="2"><widget class="QPushButton" name="btnSetCage"><property name="text"><string>Set</string></property></widget></item>
+         <item row="0" column="3"><widget class="QLabel" name="lblCageCurrent"><property name="text"><string>-</string></property></widget></item>
+
+         <!-- Mount -->
+         <item row="1" column="0"><widget class="QLabel" name="lblMount"><property name="text"><string>Mount</string></property></widget></item>
+         <item row="1" column="1"><widget class="QComboBox" name="cmbMount"/></item>
+         <item row="1" column="2"><widget class="QPushButton" name="btnSetMount"><property name="text"><string>Set</string></property></widget></item>
+         <item row="1" column="3"><widget class="QLabel" name="lblMountCurrent"><property name="text"><string>-</string></property></widget></item>
+
+         <!-- Substrate -->
+         <item row="2" column="0"><widget class="QLabel" name="lblSubstrate"><property name="text"><string>Substrate</string></property></widget></item>
+         <item row="2" column="1"><widget class="QComboBox" name="cmbSubstrate"/></item>
+         <item row="2" column="2"><widget class="QPushButton" name="btnSetSubstrate"><property name="text"><string>Set</string></property></widget></item>
+         <item row="2" column="3"><widget class="QLabel" name="lblSubstrateCurrent"><property name="text"><string>-</string></property></widget></item>
+
+        </layout>
        </widget>
       </item>
+
+      <!-- Spacer -->
+      <item>
+       <spacer name="leftSpacer">
+        <property name="orientation"><enum>Qt::Vertical</enum></property>
+        <property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property>
+       </spacer>
+      </item>
+
      </layout>
     </widget>
    </item>
 
-   <!-- Rechte Seite: RViz-Placeholder (gleich wie im ProcessTab) -->
+   <!-- Rechte Seite: RViz-Placeholder -->
    <item>
-    <!-- WICHTIG: objectName = rvizContainer (vom Code verwendet) -->
     <widget class="QFrame" name="rvizContainer">
      <property name="frameShape"><enum>QFrame::StyledPanel</enum></property>
      <property name="frameShadow"><enum>QFrame::Raised</enum></property>
      <layout class="QVBoxLayout" name="rvizLayout">
       <item>
        <widget class="QLabel" name="lblRvizHint">
-        <property name="text">
-         <string>RViz (Live) — später eingebettet.</string>
-        </property>
-        <property name="alignment">
-         <set>Qt::AlignHCenter|Qt::AlignVCenter</set>
-        </property>
+        <property name="text"><string>RViz (Live) — später eingebettet.</string></property>
+        <property name="alignment"><set>Qt::AlignHCenter|Qt::AlignVCenter</set></property>
        </widget>
       </item>
      </layout>
@@ -86,13 +81,6 @@
    </item>
   </layout>
  </widget>
-
- <tabstops>
-  <tabstop>btnInit</tabstop>
-  <tabstop>btnLoadRecipe</tabstop>
-  <tabstop>btnStart</tabstop>
-  <tabstop>btnStop</tabstop>
- </tabstops>
  <resources/>
  <connections/>
 </ui>

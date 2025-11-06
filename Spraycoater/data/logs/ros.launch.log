@@ -1,0 +1,335 @@
+2025-11-06 13:54:26 INFO [75926] ros.launch:155 - starting bringup: ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-06 13:54:26 INFO [75926] ros.launch:98 - === roslaunch stream START === pid=76062
+2025-11-06 13:54:27 INFO [75926] ros.launch:105 - [INFO] [launch]: All log files can be found below /root/.ros/log/2025-11-06-13-54-27-105228-a7c312aa7d2f-76062
+2025-11-06 13:54:27 INFO [75926] ros.launch:105 - [INFO] [launch]: Default logging verbosity is set to INFO
+2025-11-06 13:54:27 INFO [75926] ros.launch:105 - [INFO] [static_transform_publisher-1]: process started with pid [76075]
+2025-11-06 13:54:27 INFO [75926] ros.launch:105 - [INFO] [robot_state_publisher-2]: process started with pid [76076]
+2025-11-06 13:54:27 INFO [75926] ros.launch:105 - [INFO] [move_group-3]: process started with pid [76077]
+2025-11-06 13:54:27 INFO [75926] ros.launch:105 - [INFO] [rviz2-4]: process started with pid [76078]
+2025-11-06 13:54:27 INFO [75926] ros.launch:105 - [INFO] [ros2_control_node-5]: process started with pid [76079]
+2025-11-06 13:54:28 INFO [75926] ros.launch:105 - [static_transform_publisher-1] [INFO] [1762437267.944532952] [tf_world_to_robot_mount]: Spinning until stopped - publishing transform
+2025-11-06 13:54:28 INFO [75926] ros.launch:105 - [static_transform_publisher-1] translation: ('0.000000', '0.000000', '0.000000')
+2025-11-06 13:54:28 INFO [75926] ros.launch:105 - [static_transform_publisher-1] rotation: ('0.000000', '0.000000', '0.707107', '0.707107')
+2025-11-06 13:54:28 INFO [75926] ros.launch:105 - [static_transform_publisher-1] from 'world' to 'robot_mount'
+2025-11-06 13:54:28 INFO [75926] ros.launch:105 - [robot_state_publisher-2] [INFO] [1762437267.957326392] [robot_state_publisher]: Robot initialized
+2025-11-06 13:54:28 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437268.329117832] [controller_manager]: Using Steady (Monotonic) clock for triggering controller manager cycles.
+2025-11-06 13:54:28 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437268.655339786] [controller_manager]: Subscribing to '/robot_description' topic for robot description.
+2025-11-06 13:54:28 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437268.661075748] [controller_manager]: Enforcing command limits is enabled...
+2025-11-06 13:54:28 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437268.671254264] [controller_manager]: update rate is 100 Hz
+2025-11-06 13:54:28 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437268.671327650] [controller_manager]: Spawning controller_manager RT thread with scheduler priority: 50
+2025-11-06 13:54:28 INFO [75926] ros.launch:105 - [ros2_control_node-5] [WARN] [1762437268.671549193] [controller_manager]: Could not enable FIFO RT scheduling policy: with error number <1>(Operation not permitted). See [https://control.ros.org/master/doc/ros2_control/controller_manager/doc/userdoc.html] for details on how to enable realtime scheduling.
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.012276427] [controller_manager]: Received robot description from topic.
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.018249130] [controller_manager]: Using JointLimiter for joint 'joint_5' in hardware 'FakeSystem' : '  has position limits: true [-2.0944, 2.0944]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has velocity limits: true [6.54498]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has acceleration limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has deceleration limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has jerk limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has effort limits: true [100]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   angle wraparound: false'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.018291807] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_5' in hardware 'FakeSystem'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.018312799] [controller_manager]: Using JointLimiter for joint 'joint_4' in hardware 'FakeSystem' : '  has position limits: true [-3.31613, 3.31613]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has velocity limits: true [6.54498]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has acceleration limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has deceleration limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has jerk limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has effort limits: true [100]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   angle wraparound: false'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.018322800] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_4' in hardware 'FakeSystem'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.018335178] [controller_manager]: Using JointLimiter for joint 'joint_6' in hardware 'FakeSystem' : '  has position limits: true [-3.14159, 3.14159]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has velocity limits: true [10.472]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has acceleration limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has deceleration limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has jerk limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has effort limits: true [100]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   angle wraparound: false'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.018343594] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_6' in hardware 'FakeSystem'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.018354585] [controller_manager]: Using JointLimiter for joint 'joint_3' in hardware 'FakeSystem' : '  has position limits: true [-0.50615, 4.46805]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has velocity limits: true [6.54498]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has acceleration limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has deceleration limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has jerk limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has effort limits: true [100]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   angle wraparound: false'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.018361913] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_3' in hardware 'FakeSystem'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.018372013] [controller_manager]: Using JointLimiter for joint 'joint_2' in hardware 'FakeSystem' : '  has position limits: true [-3.31613, 0.7854]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has velocity limits: true [5.23599]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has acceleration limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has deceleration limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has jerk limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has effort limits: true [100]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   angle wraparound: false'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.018379439] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_2' in hardware 'FakeSystem'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.018389935] [controller_manager]: Using JointLimiter for joint 'joint_1' in hardware 'FakeSystem' : '  has position limits: true [-2.96706, 2.96706]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has velocity limits: true [5.72468]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has acceleration limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has deceleration limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has jerk limits: false [nan]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   has effort limits: true [100]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5]   angle wraparound: false'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.018397460] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_1' in hardware 'FakeSystem'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.020834705] [controller_manager]: Loading hardware 'FakeSystem'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.022173931] [controller_manager]: Loaded hardware 'FakeSystem' from plugin 'mock_components/GenericSystem'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.022570402] [controller_manager]: Initialize hardware 'FakeSystem'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437269.144889186] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437269.146471008] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.166911124] [controller_manager]: Successful initialization of hardware 'FakeSystem'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.167256798] [resource_manager]: 'configure' hardware 'FakeSystem'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.167311456] [resource_manager]: Successful 'configure' of hardware 'FakeSystem'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.167320566] [resource_manager]: 'activate' hardware 'FakeSystem'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.167328487] [resource_manager]: Successful 'activate' of hardware 'FakeSystem'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.167781300] [controller_manager]: Resource Manager has been successfully initialized. Starting Controller Manager services...
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.283005499] [controller_manager]: Received robot description from topic.
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [WARN] [1762437269.283583669] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437269.299905402] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.334042763] [controller_manager]: Received robot description from topic.
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [WARN] [1762437269.334086925] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437269.362261979] [controller_manager]: Received robot description from topic.
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [ros2_control_node-5] [WARN] [1762437269.362309013] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.445645059] [move_group.moveit.moveit.ros.rdf_loader]: Loaded robot model in 0.0134198 seconds
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.445821015] [move_group.moveit.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.467301816] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.467328155] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.467333205] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.467337265] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.467341226] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.467345187] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.467348256] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [rviz2-4] Warning: class_loader.impl: SEVERE WARNING!!! A namespace collision has occurred with plugin factory for class rviz_default_plugins::displays::InteractiveMarkerDisplay. New factory will OVERWRITE existing one. This situation occurs when libraries containing plugins are directly linked against an executable (the one running right now generating this message). Please separate plugins out into their own library or just don't link against the library and use either class_loader::ClassLoader/MultiLibraryClassLoader to open.
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [rviz2-4]          at line 321 in /opt/ros/rolling/include/class_loader/class_loader/class_loader_core.hpp
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.623337726] [move_group.moveit.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.625170066] [move_group.moveit.moveit.ros.moveit_cpp]: Listening to 'joint_states' for joint states
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.635018358] [move_group.moveit.moveit.ros.current_state_monitor]: Listening to joint states on topic 'joint_states'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.640330608] [move_group.moveit.moveit.ros.planning_scene_monitor]: Listening to '/attached_collision_object' for attached collision objects
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.640376750] [move_group.moveit.moveit.ros.planning_scene_monitor]: Stopping existing planning scene publisher.
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.642529415] [move_group.moveit.moveit.ros.planning_scene_monitor]: Stopped publishing maintained planning scene.
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.647144871] [move_group.moveit.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.647326471] [move_group.moveit.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.652750216] [move_group.moveit.moveit.ros.planning_scene_monitor]: Listening to '/planning_scene'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.652816558] [move_group.moveit.moveit.ros.planning_scene_monitor]: Starting world geometry update monitor for collision objects, attached objects, octomap updates.
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.661351270] [move_group.moveit.moveit.ros.planning_scene_monitor]: Listening to 'collision_object'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.666401120] [move_group.moveit.moveit.ros.planning_scene_monitor]: Listening to 'planning_scene_world' for planning scene world geometry
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [WARN] [1762437269.666947802] [move_group.moveit.moveit.ros.occupancy_map_monitor]: Resolution not specified for Octomap. Assuming resolution = 0.1 instead
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [ERROR] [1762437269.666976715] [move_group.moveit.moveit.ros.occupancy_map_monitor]: No 3D sensor plugin(s) defined for octomap updates
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.698992305] [move_group.moveit.moveit.planners.pilz.joint_limits_aggregator]: Reading limits from namespace robot_description_planning
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.705660515] [move_group.moveit.moveit.planners.pilz.command_planner]: Available plugins: pilz_industrial_motion_planner/PlanningContextLoaderCIRC pilz_industrial_motion_planner/PlanningContextLoaderLIN pilz_industrial_motion_planner/PlanningContextLoaderPTP
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.705748048] [move_group.moveit.moveit.planners.pilz.command_planner]: About to load: pilz_industrial_motion_planner/PlanningContextLoaderCIRC
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.720285664] [move_group.moveit.moveit.planners.pilz.command_planner]: Registered Algorithm [CIRC]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.720362007] [move_group.moveit.moveit.planners.pilz.command_planner]: About to load: pilz_industrial_motion_planner/PlanningContextLoaderLIN
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.722287523] [move_group.moveit.moveit.planners.pilz.command_planner]: Registered Algorithm [LIN]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.722356935] [move_group.moveit.moveit.planners.pilz.command_planner]: About to load: pilz_industrial_motion_planner/PlanningContextLoaderPTP
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.724025795] [move_group.moveit.moveit.planners.pilz.command_planner]: Registered Algorithm [PTP]
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.724078770] [move_group.moveit.moveit.ros.planning_pipeline]: Successfully loaded planner 'Pilz Industrial Motion Planner'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.726758808] [move_group]: Try loading adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.730635287] [move_group]: Loaded adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.730680341] [move_group]: Try loading adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.730898479] [move_group]: Loaded adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.730921748] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.730959771] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.730969871] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.730991457] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.735922584] [move_group]: Try loading adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.745025762] [move_group]: Loaded adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.745070518] [move_group]: Try loading adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.749229003] [move_group]: Loaded adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.761307591] [move_group.moveit.moveit.ros.planning_pipeline]: Successfully loaded planner 'STOMP'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.763673343] [move_group]: Try loading adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.763953665] [move_group]: Loaded adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.763970102] [move_group]: Try loading adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.764073973] [move_group]: Loaded adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.764084271] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.764107837] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.764114570] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.764128631] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.767145431] [move_group]: Try loading adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.767777566] [move_group]: Loaded adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.767829452] [move_group]: Try loading adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.774852842] [move_group]: Loaded adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.774891756] [move_group]: Try loading adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.777916379] [move_group]: Loaded adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.811022263] [move_group.moveit.moveit.ros.planning_pipeline]: Successfully loaded planner 'OMPL'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.813114823] [move_group]: Try loading adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.813390491] [move_group]: Loaded adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.813416335] [move_group]: Try loading adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.813534761] [move_group]: Loaded adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.813545950] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.813571497] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.813580112] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.813595459] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.816282825] [move_group]: Try loading adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.818581839] [move_group]: Loaded adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.818633329] [move_group]: Try loading adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.829783320] [move_group]: Loaded adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.829825799] [move_group]: Try loading adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.838004340] [move_group]: Loaded adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.857926985] [move_group.moveit.moveit.ros.planning_pipeline]: Successfully loaded planner 'CHOMP'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.862290537] [move_group]: Try loading adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.862573433] [move_group]: Loaded adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.862594722] [move_group]: Try loading adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.862714733] [move_group]: Loaded adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.862727011] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.862753350] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.862761469] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.862778204] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.866341091] [move_group]: Try loading adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.866691815] [move_group]: Loaded adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.866707460] [move_group]: Try loading adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.868577031] [move_group]: Loaded adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.868615450] [move_group]: Try loading adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.870680087] [move_group]: Loaded adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.960186875] [move_group.moveit.moveit.plugins.simple_controller_manager]: Added FollowJointTrajectory controller for omron_arm_group_controller
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.960467493] [move_group.moveit.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.960522152] [move_group.moveit.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.962792352] [move_group.moveit.moveit.ros.trajectory_execution_manager]: Trajectory execution is managing controllers
+2025-11-06 13:54:29 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437269.962863447] [move_group]: MoveGroup debug mode is ON
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437270.145571836] [move_group.moveit.moveit.planners.pilz.move_group_sequence_action]: initialize move group sequence action
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437270.166356151] [move_group.moveit.moveit.planners.pilz.joint_limits_aggregator]: Reading limits from namespace robot_description_planning
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437270.166678484] [move_group.moveit.moveit.planners.pilz.joint_limits_aggregator]: Reading limits from namespace robot_description_planning
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437270.171109518] [move_group.moveit.moveit.ros.move_group.executable]:
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3]
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] ********************************************************
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] * MoveGroup using:
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - apply_planning_scene_service
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - clear_octomap_service
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - get_group_urdf
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - load_geometry_from_file
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - CartesianPathService
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - execute_trajectory_action
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - get_planning_scene_service
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - kinematics_service
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - move_action
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - motion_plan_service
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - query_planners_service
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - state_validation_service
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - save_geometry_to_file
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - SequenceAction
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] *     - SequenceService
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] ********************************************************
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3]
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437270.171226703] [move_group.moveit.moveit.ros.move_group.context]: MoveGroup context using pipeline ompl
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437270.171245623] [move_group.moveit.moveit.ros.move_group.context]: MoveGroup context initialization complete
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'move_group/ApplyPlanningSceneService'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'move_group/ClearOctomapService'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'move_group/GetUrdfService'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'move_group/LoadGeometryFromFileService'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'move_group/MoveGroupCartesianPathService'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'move_group/MoveGroupExecuteTrajectoryAction'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'move_group/MoveGroupGetPlanningSceneService'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'move_group/MoveGroupKinematicsService'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'move_group/MoveGroupMoveAction'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'move_group/MoveGroupPlanService'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'move_group/MoveGroupQueryPlannersService'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'move_group/MoveGroupStateValidationService'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'move_group/SaveGeometryToFileService'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'pilz_industrial_motion_planner/MoveGroupSequenceAction'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [96mLoading 'pilz_industrial_motion_planner/MoveGroupSequenceService'...[0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3]
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3] [92mYou can start planning now![0m
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [move_group-3]
+2025-11-06 13:54:30 INFO [75926] ros.launch:105 - [INFO] [spawner-6]: process started with pid [76365]
+2025-11-06 13:54:31 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437271.068124938] [controller_manager]: Received robot description from topic.
+2025-11-06 13:54:31 INFO [75926] ros.launch:105 - [ros2_control_node-5] [WARN] [1762437271.068183176] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-06 13:54:31 INFO [75926] ros.launch:105 - [spawner-6] [INFO] [1762437271.463168228] [spawner_joint_state_broadcaster]: waiting for service /controller_manager/list_controllers to become available...
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437272.042332344] [controller_manager]: Loading controller : 'joint_state_broadcaster' of type 'joint_state_broadcaster/JointStateBroadcaster'
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437272.042418106] [controller_manager]: Loading controller 'joint_state_broadcaster'
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437272.047103631] [controller_manager]: Controller 'joint_state_broadcaster' node arguments: --ros-args --params-file /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/ros2_controllers.yaml
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [spawner-6] [INFO] [1762437272.133103074] [spawner_joint_state_broadcaster]: [94mLoaded [1mjoint_state_broadcaster[0m
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437272.137195989] [controller_manager]: Configuring controller: 'joint_state_broadcaster'
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437272.137358006] [joint_state_broadcaster]: 'joints' or 'interfaces' parameter is empty. All available state interfaces will be published
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437272.167719495] [controller_manager]: Activating controllers: [ joint_state_broadcaster ]
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437272.172294797] [controller_manager]: Successfully switched controllers!
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [spawner-6] [INFO] [1762437272.183891010] [spawner_joint_state_broadcaster]: [92mConfigured and activated [1mjoint_state_broadcaster[0m
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [INFO] [spawner-6]: process has finished cleanly [pid 76365]
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [INFO] [spawner-7]: process started with pid [76421]
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [INFO] [scene-8]: process started with pid [76422]
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [INFO] [poses-9]: process started with pid [76423]
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [INFO] [motion-11]: process started with pid [76425]
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [INFO] [spray_path-10]: process started with pid [76424]
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [rviz2-4] [ERROR] [1762437272.854940999] [moveit_271926790.moveit.ros.motion_planning_frame]: Action server: /recognize_objects not available
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [spray_path-10] [37;1m2025-11-06 13:54:32.868 [31;1m[[37;1mRTPS_TRANSPORT_SHM[31;1m Error] [37mFailed init_port fastdds_port7040: open_and_lock_file failed[34;1m -> Function [36mopen_port_internal[m
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437272.950174333] [moveit_271926790.moveit.ros.motion_planning_frame]: MoveGroup namespace changed: / -> . Reloading params.
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [motion-11] [37;1m2025-11-06 13:54:32.966 [31;1m[[37;1mRTPS_TRANSPORT_SHM[31;1m Error] [37mFailed init_port fastdds_port7040: open_and_lock_file failed[34;1m -> Function [36mopen_port_internal[m
+2025-11-06 13:54:32 INFO [75926] ros.launch:105 - [poses-9] [37;1m2025-11-06 13:54:32.986 [31;1m[[37;1mRTPS_TRANSPORT_SHM[31;1m Error] [37mFailed init_port fastdds_port7040: open_and_lock_file failed[34;1m -> Function [36mopen_port_internal[m
+2025-11-06 13:54:33 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437273.278196259] [moveit_3353441863.moveit.py.cpp_initializer]: Initialize rclcpp[0m
+2025-11-06 13:54:33 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437273.278273596] [moveit_3353441863.moveit.py.cpp_initializer]: Initialize node parameters[0m
+2025-11-06 13:54:33 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437273.278292608] [moveit_3353441863.moveit.py.cpp_initializer]: Initialize node and executor[0m
+2025-11-06 13:54:33 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437273.483266542] [moveit_3353441863.moveit.py.cpp_initializer]: Spin separate thread[0m
+2025-11-06 13:54:33 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437273.494544993] [moveit_3353441863.moveit.ros.rdf_loader]: Loaded robot model in 0.00971915 seconds[0m
+2025-11-06 13:54:33 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437273.507685361] [moveit_3353441863.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...[0m
+2025-11-06 13:54:33 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437273.703270291] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706[0m
+2025-11-06 13:54:33 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437273.705803283] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854[0m
+2025-11-06 13:54:33 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437273.707292679] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805[0m
+2025-11-06 13:54:33 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437273.707313374] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613[0m
+2025-11-06 13:54:33 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437273.707320900] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944[0m
+2025-11-06 13:54:33 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437273.707330406] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159[0m
+2025-11-06 13:54:33 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437273.707337041] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [spawner-7] [INFO] [1762437273.998941193] [spawner_omron_arm_group_controller]: waiting for service /controller_manager/list_controllers to become available...
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [scene-8] [37;1m2025-11-06 13:54:34.100 [31;1m[[37;1mRTPS_TRANSPORT_SHM[31;1m Error] [37mFailed init_port fastdds_port7040: open_and_lock_file failed[34;1m -> Function [36mopen_port_internal[m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.166183333] [moveit_3353441863.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [spray_path-10] [INFO] [1762437274.167607246] [spray_path]: ✅ SprayPathManager bereit (Topics: set/current/poses/markers)
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.169197799] [moveit_3353441863.moveit.ros.moveit_cpp]: Listening to 'joint_states' for joint states[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.171568281] [moveit_3353441863.moveit.ros.current_state_monitor]: Listening to joint states on topic 'joint_states'[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.205041872] [moveit_3353441863.moveit.ros.planning_scene_monitor]: Listening to '/attached_collision_object' for attached collision objects[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.205096627] [moveit_3353441863.moveit.ros.planning_scene_monitor]: Stopping existing planning scene publisher.[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.209524510] [moveit_3353441863.moveit.ros.planning_scene_monitor]: Stopped publishing maintained planning scene.[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.210852578] [moveit_3353441863.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.211009217] [moveit_3353441863.moveit.ros.planning_scene_monitor]: Starting planning scene monitor[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.212244807] [moveit_3353441863.moveit.ros.planning_scene_monitor]: Listening to '/planning_scene'[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.212312037] [moveit_3353441863.moveit.ros.planning_scene_monitor]: Starting world geometry update monitor for collision objects, attached objects, octomap updates.[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.213718029] [moveit_3353441863.moveit.ros.planning_scene_monitor]: Listening to 'collision_object'[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.216006329] [moveit_3353441863.moveit.ros.planning_scene_monitor]: Listening to 'planning_scene_world' for planning scene world geometry[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [33m[WARN] [1762437274.217017455] [moveit_3353441863.moveit.ros.occupancy_map_monitor]: Resolution not specified for Octomap. Assuming resolution = 0.1 instead[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [31m[ERROR] [1762437274.217100231] [moveit_3353441863.moveit.ros.occupancy_map_monitor]: No 3D sensor plugin(s) defined for octomap updates[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [31m[ERROR] [1762437274.291494713] [moveit_3353441863.moveit.ros.moveit_cpp]: Failed to load any planning pipelines.[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [31m[FATAL] [1762437274.291620856] [moveit_3353441863.moveit.ros.moveit_cpp]: Failed to load planning pipelines from parameter server[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.461850303] [moveit_3353441863.moveit.ros.planning_scene_monitor]: Stopped publishing maintained planning scene.[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.461914464] [moveit_3353441863.moveit.ros.planning_scene_monitor]: Stopping world geometry monitor[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [motion-11] [0m[INFO] [1762437274.462060508] [moveit_3353441863.moveit.ros.planning_scene_monitor]: Stopping planning scene monitor[0m
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [spawner-7] [INFO] [1762437274.516003160] [spawner_omron_arm_group_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437274.856320859] [moveit_271926790.moveit.ros.rdf_loader]: Loaded robot model in 1.72404 seconds
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437274.856451953] [moveit_271926790.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437274.931913009] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437274.931957268] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437274.931964496] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437274.931969249] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437274.931973902] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437274.931978259] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-06 13:54:34 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437274.931981724] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-06 13:54:35 INFO [75926] ros.launch:105 - [motion-11] [31m[ERROR] [1762437275.046442570] [moveit_py.omron_tutorial_yaml_free]: Failed to init MoveItPy: Failed to load planning pipelines from parameter server[0m
+2025-11-06 13:54:35 INFO [75926] ros.launch:105 - [scene-8] [INFO] [1762437275.211250969] [scene]: ⏳ Warte auf MoveIt – Szene später senden...
+2025-11-06 13:54:35 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437275.494830041] [moveit_271926790.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-06 13:54:35 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437275.511379853] [moveit_271926790.moveit.ros.planning_scene_monitor]: Listening to '/monitored_planning_scene'
+2025-11-06 13:54:35 INFO [75926] ros.launch:105 - [poses-9] [INFO] [1762437275.671403188] [poses]: 📡 2 Posen als TF + PoseArray veröffentlicht
+2025-11-06 13:54:35 INFO [75926] ros.launch:105 - [poses-9] [INFO] [1762437275.677164829] [poses]: ✅ PosesManager aktiv (node_key='poses') – 2 Posen
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437276.116786248] [interactive_marker_display_94783534350832]: Connected on namespace: /rviz_moveit_motion_planning_display/robot_interaction_interactive_marker_topic
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437276.129424477] [controller_manager]: Loading controller : 'omron_arm_group_controller' of type 'joint_trajectory_controller/JointTrajectoryController'
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437276.129483408] [controller_manager]: Loading controller 'omron_arm_group_controller'
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437276.135138331] [controller_manager]: Controller 'omron_arm_group_controller' node arguments: --ros-args --params-file /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/ros2_controllers.yaml
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437276.347895264] [moveit_271926790.moveit.ros.motion_planning_frame]: group omron_arm_group
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437276.347940682] [moveit_271926790.moveit.ros.motion_planning_frame]: Constructing new MoveGroup connection for group 'omron_arm_group' in namespace ''
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [spawner-7] [INFO] [1762437276.383669847] [spawner_omron_arm_group_controller]: [94mLoaded [1momron_arm_group_controller[0m
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437276.388232314] [controller_manager]: Configuring controller: 'omron_arm_group_controller'
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437276.388516300] [omron_arm_group_controller]: No specific joint names are used for command interfaces. Using 'joints' parameter.
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437276.388573300] [omron_arm_group_controller]: Command interfaces are [position] and state interfaces are [position velocity].
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437276.388608252] [omron_arm_group_controller]: Using 'splines' interpolation method.
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437276.428805087] [omron_arm_group_controller]: Action status changes will be monitored at 10.00 Hz.
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437276.453752345] [interactive_marker_display_94783534350832]: Sending request for interactive markers
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437276.558076818] [interactive_marker_display_94783534350832]: Service response received for initialization
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437276.619765836] [omron_arm_group_controller]: Setting initial scaling factor to 1.000000
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437276.619813488] [omron_arm_group_controller]: No scaling interface set. This controller will not read speed scaling from the hardware.
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437276.710810444] [controller_manager]: Activating controllers: [ omron_arm_group_controller ]
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [ros2_control_node-5] [INFO] [1762437276.712148479] [controller_manager]: Successfully switched controllers!
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [spawner-7] [INFO] [1762437276.724291080] [spawner_omron_arm_group_controller]: [92mConfigured and activated [1momron_arm_group_controller[0m
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [rviz2-4] [INFO] [1762437276.742212967] [moveit_271926790.moveit.ros.move_group_interface]: Ready to take commands for planning group omron_arm_group.
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [move_group-3] [WARN] [1762437276.844666690] [move_group.rclcpp]: failed to send response to /query_planner_interface (timeout): client will not receive response, at ./src/rmw_response.cpp:164, at ./src/rcl/service.c:401
+2025-11-06 13:54:36 INFO [75926] ros.launch:105 - [scene-8] [INFO] [1762437276.864048437] [scene]: ⏳ Warte auf MoveIt PlanningScene Service...
+2025-11-06 13:54:37 INFO [75926] ros.launch:105 - [scene-8] [INFO] [1762437277.218368598] [scene]: ✅ MoveIt bereit – sende Szene in 3 Sekunden...
+2025-11-06 13:54:37 INFO [75926] ros.launch:105 - [INFO] [spawner-7]: process has finished cleanly [pid 76421]
+2025-11-06 13:54:40 INFO [75926] ros.launch:105 - [scene-8] [INFO] [1762437280.220199044] [scene]: ✅ Static TFs veröffentlicht (4)
+2025-11-06 13:54:40 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437280.226529865] [move_group.moveit.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-06 13:54:40 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437280.229137613] [move_group.moveit.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-06 13:54:40 INFO [75926] ros.launch:105 - [scene-8] [INFO] [1762437280.235165406] [scene]: 🎯 Szene FINAL & EINMALIG an MoveIt gesendet.
+2025-11-06 13:54:40 INFO [75926] ros.launch:105 - [move_group-3] [INFO] [1762437280.237094231] [move_group.moveit.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-06 13:54:50 INFO [75926] ros.launch:105 - [ERROR] [motion-11]: process has died [pid 76425, exit code -11, cmd '/root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/motion --ros-args -r __node:=motion --params-file /tmp/launch_params_h9nj363x --params-file /tmp/launch_params_rikdn3ky --params-file /tmp/launch_params_1ateddjo --params-file /tmp/launch_params_0_91aemt --params-file /tmp/launch_params_w1vo9x8o --params-file /tmp/launch_params_5fs11kfu --params-file /tmp/launch_params_aicsef_c --params-file /tmp/launch_params_5cspgupg -r /joint_states:=/omron/joint_states'].
+2025-11-06 14:00:45 INFO [75926] ros.launch:224 - stopping bringup…
+2025-11-06 14:00:45 INFO [75926] ros.launch:114 - === roslaunch stream END ===
+2025-11-06 14:00:45 INFO [75926] ros.launch:260 - bringup stopped.

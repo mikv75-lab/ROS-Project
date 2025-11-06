@@ -1,9 +1,0 @@
-home:
-  frame: "world"
-  xyz: [0.5, 0.0, 0.0]
-  rpy_deg: [0.0, 0.0, 0.0]
-
-service:
-  frame: "world"
-  xyz: [-0.5, 0.0, 0.0]
-  rpy_deg: [0.0, 0.0, 0.0]

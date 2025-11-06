@@ -2,9 +2,9 @@
 import os
 import logging
 from dataclasses import dataclass
-from typing import Optional, Callable
+from typing import Optional, Callable, Any
 
-from PyQt6 import QtCore, QtStateMachine  # << PyQt6: StateMachine-Typen hier
+from PyQt6 import QtCore, QtStateMachine  # StateMachine unter PyQt6
 
 # Projekt-Helfer
 from config.startup import load_startup
@@ -15,19 +15,18 @@ from ros.ros_launcher import (
     BRINGUP_RUNNING,
     make_bringup_cmd,
 )
-from ros.ui_bridge import get_ui_bridge, UIBridge
+from ros.bridge.ui_bridge import get_ui_bridge, UIBridge
 
 
 @dataclass
 class StartupResult:
-    ctx: any
+    ctx: Any
     bridge: Optional[UIBridge]
 
 
 class _StepState(QtStateMachine.QState):
     """
-    Ruft 'fn' asynchron (singleShot 0 ms) auf,
-    fängt Exceptions und triggert done/failed.
+    Ruft 'fn' asynchron (singleShot 0 ms) auf, fängt Exceptions und triggert done/failed.
     """
     def __init__(self, name: str, machine: 'StartupMachine', fn: Callable[[], None], parent=None):
         super().__init__(parent)
@@ -55,9 +54,9 @@ class StartupMachine(QtCore.QObject):
     """
     Orchestriert den App-Start via QStateMachine (PyQt6).
     """
-    progress = QtCore.pyqtSignal(str)           # z.B. "LoadStartup"
-    warning  = QtCore.pyqtSignal(str)           # gelbe Meldung auf Splash
-    error    = QtCore.pyqtSignal(str)           # optional
+    progress = QtCore.pyqtSignal(str)             # z.B. "LoadStartup"
+    warning  = QtCore.pyqtSignal(str)             # gelbe Meldung auf Splash
+    error    = QtCore.pyqtSignal(str)             # optional
     ready    = QtCore.pyqtSignal(object, object)  # (ctx, bridge)
 
     # interne Trigger
@@ -80,7 +79,7 @@ class StartupMachine(QtCore.QObject):
 
         self._log = logging.getLogger("app.startup")
 
-        # QStateMachine + States (aus QtStateMachine)
+        # QStateMachine + States
         self.m = QtStateMachine.QStateMachine(self)
 
         s_init   = QtStateMachine.QState()
@@ -127,6 +126,10 @@ class StartupMachine(QtCore.QObject):
         if self.ctx is None:
             raise RuntimeError("load_startup() returned None")
         self._log.info("startup loaded: %s", self.startup_yaml_path)
+
+        # SC_STARTUP_YAML für Bridge/ROS (Single Source of Truth)
+        os.environ["SC_STARTUP_YAML"] = self.startup_yaml_path
+        self._log.info("SC_STARTUP_YAML = %s", os.environ.get("SC_STARTUP_YAML"))
 
         # In Containern SHM-Transport deaktivieren (FastDDS)
         os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
@@ -179,7 +182,10 @@ class StartupMachine(QtCore.QObject):
         self.bridge = get_ui_bridge(self.ctx)
         try:
             self.bridge.connect()
-            logging.getLogger("ros").info("UIBridge verbunden (node=%s).", self.bridge.node_name)
+            logging.getLogger("ros").info(
+                "UIBridge verbunden (node=%s).",
+                getattr(self.bridge, "node_name", "ui_bridge"),
+            )
         except Exception as e:
             self.warning.emit(f"UIBridge nicht verbunden: {e}")
             self.bridge = None  # ohne Bridge weiter

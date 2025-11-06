@@ -1,0 +1,5 @@
+2025-11-06 13:54:24 INFO [75926] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 13:54:24 INFO [75926] app.startup:143 - logging configured
+2025-11-06 13:54:24 INFO [75926] app.startup:148 - warnings enabled
+2025-11-06 13:54:27 INFO [75926] app.startup:196 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 13:54:28 INFO [75926] app.main_window:47 - MainWindow initialized (ctx=True, bridge=False)
