@@ -11,15 +11,21 @@ from .scene_bridge import SceneBridge
 
 T = TypeVar("T")
 
+
 class RosBridge:
     """
     Betreibt Bridge-Nodes (aktuell: nur SceneBridge) in einem eigenen Executor-Thread.
+
+    WICHTIG:
+    - Executor wird LAZY NACH rclpy.init() erzeugt (Crash-Vermeidung auf manchen RMWs).
+    - Alle Zugriffe auf _exec sind gegen None abgesichert.
+    - stop() räumt deterministisch auf; danach ist start() erneut möglich.
     """
     def __init__(self, startup_yaml_path: str):
         self._startup_yaml_path = startup_yaml_path
         self._content = AppContent(startup_yaml_path)
 
-        self._exec = SingleThreadedExecutor()
+        self._exec: Optional[SingleThreadedExecutor] = None  # erst in start() erzeugen
         self._nodes: List[Any] = []
         self._thread: Optional[threading.Thread] = None
         self._running = False
@@ -51,8 +57,12 @@ class RosBridge:
         with self._lock:
             if self._running:
                 return
+
             if not rclpy.ok():
                 rclpy.init(args=None)
+
+            # Executor ERST JETZT (nach init) erzeugen
+            self._exec = SingleThreadedExecutor(context=rclpy.get_default_context())
 
             scene = SceneBridge(self._content)
             self._nodes.append(scene)
@@ -65,7 +75,8 @@ class RosBridge:
 
     def _spin(self) -> None:
         try:
-            self._exec.spin()
+            if self._exec is not None:
+                self._exec.spin()
         except Exception:
             pass
         finally:
@@ -74,24 +85,31 @@ class RosBridge:
 
     def stop(self) -> None:
         with self._lock:
+            # Falls bereits gestoppt, aber Thread existiert noch: sauber beenden
             if not self._running:
                 if self._thread and self._thread.is_alive():
                     try:
-                        self._exec.shutdown()
+                        if self._exec is not None:
+                            self._exec.shutdown()
                     except Exception:
                         pass
                     self._thread.join(timeout=1.0)
                     self._thread = None
+                # Zustand bereinigen
+                self._exec = None
                 return
 
+            # Normaler Shutdown-Pfad
             try:
-                self._exec.shutdown()
+                if self._exec is not None:
+                    self._exec.shutdown()
             except Exception:
                 pass
 
             for n in list(self._nodes):
                 try:
-                    self._exec.remove_node(n)
+                    if self._exec is not None:
+                        self._exec.remove_node(n)
                 except Exception:
                     pass
                 try:
@@ -111,11 +129,12 @@ class RosBridge:
             if self._thread and self._thread.is_alive():
                 self._thread.join(timeout=1.0)
             self._thread = None
+            self._exec = None  # wichtig: Referenz kappen
 
     def add_node(self, node: Any) -> None:
         with self._lock:
             self._nodes.append(node)
-            if self._running:
+            if self._running and self._exec is not None:
                 try:
                     self._exec.add_node(node)
                 except Exception:

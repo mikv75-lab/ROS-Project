@@ -9,3 +9,72 @@
 2025-11-06 15:53:54 INFO [59417] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
 2025-11-06 16:00:47 INFO [63923] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
 2025-11-06 16:03:27 INFO [66491] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 16:18:10 INFO [77348] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 16:32:13 INFO [87260] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 16:32:58 INFO [88432] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 16:33:59 INFO [89638] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 16:35:14 INFO [90693] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 16:50:22 INFO [99108] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 16:53:41 INFO [2484] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 17:00:07 INFO [6331] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 17:30:27 INFO [1874] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 17:30:49 INFO [2723] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 17:31:07 INFO [3488] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 17:31:47 INFO [4638] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 17:32:13 INFO [5533] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 17:44:56 INFO [19364] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 17:46:15 INFO [21060] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 17:46:45 INFO [22008] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 17:52:06 INFO [25686] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 17:52:13 INFO [25686] ros.ui_bridge:73 - UIBridge connected (node=scene_bridge) – scene signals ready
+2025-11-06 17:52:18 INFO [25686] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 17:53:08 INFO [27199] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 17:53:15 INFO [27199] ros.ui_bridge:73 - UIBridge connected (node=scene_bridge) – scene signals ready
+2025-11-06 17:53:17 INFO [27199] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 18:09:38 INFO [40328] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 18:09:44 INFO [40328] ros.ui_bridge:73 - UIBridge connected (node=scene_bridge) – scene signals ready
+2025-11-06 18:09:44 INFO [40328] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 18:17:52 INFO [40328] ros.ui_bridge:76 - UIBridge disconnect()
+2025-11-06 18:32:27 INFO [54822] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 18:32:34 INFO [54822] ros.ui_bridge:73 - UIBridge connected (node=scene_bridge) – scene signals ready
+2025-11-06 18:32:34 INFO [54822] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 18:48:32 INFO [65388] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 18:48:39 INFO [65388] ros.ui_bridge:147 - UIBridge connected (node=scene_bridge) – scene state ready
+2025-11-06 18:48:39 INFO [65388] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 18:52:15 INFO [69671] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 18:52:18 INFO [69671] ros.ui_bridge:147 - UIBridge connected (node=scene_bridge) – scene state ready
+2025-11-06 18:52:18 INFO [69671] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 18:54:16 INFO [72094] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 18:54:22 INFO [72094] ros.ui_bridge:147 - UIBridge connected (node=scene_bridge) – scene state ready
+2025-11-06 18:54:22 INFO [72094] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 18:56:27 INFO [74695] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 18:56:32 INFO [74695] ros.ui_bridge:147 - UIBridge connected (node=scene_bridge) – scene state ready
+2025-11-06 18:56:32 INFO [74695] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 19:02:26 INFO [74695] ros.ui_bridge:150 - UIBridge disconnect()
+2025-11-06 19:02:34 INFO [79575] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 19:02:40 INFO [79575] ros.ui_bridge:147 - UIBridge connected (node=scene_bridge) – scene state ready
+2025-11-06 19:02:40 INFO [79575] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 19:17:31 INFO [89534] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 19:17:37 INFO [89534] ros.ui_bridge:147 - UIBridge connected (node=scene_bridge) – scene state ready
+2025-11-06 19:17:37 INFO [89534] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 19:49:51 INFO [19193] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 19:49:54 INFO [19193] ros.ui_bridge:147 - UIBridge connected (node=scene_bridge) – scene state ready
+2025-11-06 19:49:54 INFO [19193] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 19:59:14 INFO [25987] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 19:59:17 INFO [25987] ros.ui_bridge:147 - UIBridge connected (node=scene_bridge) – scene state ready
+2025-11-06 19:59:17 INFO [25987] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 20:00:20 INFO [27323] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 20:00:24 INFO [27323] ros.ui_bridge:147 - UIBridge connected (node=scene_bridge) – scene state ready
+2025-11-06 20:00:24 INFO [27323] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 20:02:40 INFO [29809] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 20:02:43 INFO [29809] ros.ui_bridge:147 - UIBridge connected (node=scene_bridge) – scene state ready
+2025-11-06 20:02:46 INFO [29809] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 20:06:44 INFO [33022] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 20:06:47 INFO [33022] ros.ui_bridge:147 - UIBridge connected (node=scene_bridge) – scene state ready
+2025-11-06 20:06:50 INFO [33022] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 20:07:53 INFO [34387] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 20:07:57 INFO [34387] ros.ui_bridge:147 - UIBridge connected (node=scene_bridge) – scene state ready
+2025-11-06 20:08:00 INFO [34387] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-06 20:10:21 INFO [36918] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-06 20:10:26 INFO [36918] ros.ui_bridge:147 - UIBridge connected (node=scene_bridge) – scene state ready
+2025-11-06 20:10:35 INFO [36918] ros:186 - UIBridge verbunden (node=scene_bridge).

@@ -65,3 +65,332 @@ AttributeError: 'MainWindow' object has no attribute 'previewPlot'
 2025-11-06 16:03:27 INFO [66491] app.startup:143 - logging configured
 2025-11-06 16:03:27 INFO [66491] app.startup:148 - warnings enabled
 2025-11-06 16:03:30 INFO [66491] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 16:18:10 INFO [77348] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 16:18:10 INFO [77348] app.startup:143 - logging configured
+2025-11-06 16:18:10 INFO [77348] app.startup:148 - warnings enabled
+2025-11-06 16:18:13 INFO [77348] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 16:32:13 INFO [87260] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 16:32:13 INFO [87260] app.startup:143 - logging configured
+2025-11-06 16:32:13 INFO [87260] app.startup:148 - warnings enabled
+2025-11-06 16:32:16 INFO [87260] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 16:32:58 INFO [88432] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 16:32:58 INFO [88432] app.startup:143 - logging configured
+2025-11-06 16:32:58 INFO [88432] app.startup:148 - warnings enabled
+2025-11-06 16:33:01 INFO [88432] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 16:33:59 INFO [89638] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 16:33:59 INFO [89638] app.startup:143 - logging configured
+2025-11-06 16:33:59 INFO [89638] app.startup:148 - warnings enabled
+2025-11-06 16:34:02 INFO [89638] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 16:35:14 INFO [90693] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 16:35:14 INFO [90693] app.startup:143 - logging configured
+2025-11-06 16:35:14 INFO [90693] app.startup:148 - warnings enabled
+2025-11-06 16:50:22 INFO [99108] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 16:50:22 INFO [99108] app.startup:143 - logging configured
+2025-11-06 16:50:22 INFO [99108] app.startup:148 - warnings enabled
+2025-11-06 16:50:34 INFO [99108] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 16:53:41 INFO [2484] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 16:53:41 INFO [2484] app.startup:143 - logging configured
+2025-11-06 16:53:41 INFO [2484] app.startup:148 - warnings enabled
+2025-11-06 17:00:07 INFO [6331] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 17:00:07 INFO [6331] app.startup:143 - logging configured
+2025-11-06 17:00:07 INFO [6331] app.startup:148 - warnings enabled
+2025-11-06 17:00:34 ERROR [6331] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 97, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 49, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 64, in connect
+    self._bridge = RosBridge(self._startup_yaml)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/runner.py", line 22, in __init__
+    self._exec = SingleThreadedExecutor()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 909, in __init__
+    super().__init__(context=context)
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 210, in __init__
+    self._guard: Optional[GuardCondition] = GuardCondition(
+                                            ^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/guard_condition.py", line 43, in __init__
+    raise RuntimeError('Context must be initialized a GuardCondition can be created')
+RuntimeError: Context must be initialized a GuardCondition can be created
+2025-11-06 17:00:35 INFO [6331] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 17:30:27 INFO [1874] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 17:30:27 INFO [1874] app.startup:143 - logging configured
+2025-11-06 17:30:27 INFO [1874] app.startup:148 - warnings enabled
+2025-11-06 17:30:33 ERROR [1874] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 97, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 49, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 64, in connect
+    self._bridge = RosBridge(self._startup_yaml)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/runner.py", line 22, in __init__
+    self._exec = SingleThreadedExecutor()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 909, in __init__
+    super().__init__(context=context)
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 210, in __init__
+    self._guard: Optional[GuardCondition] = GuardCondition(
+                                            ^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/guard_condition.py", line 43, in __init__
+    raise RuntimeError('Context must be initialized a GuardCondition can be created')
+RuntimeError: Context must be initialized a GuardCondition can be created
+2025-11-06 17:30:33 INFO [1874] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 17:30:49 INFO [2723] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 17:30:49 INFO [2723] app.startup:143 - logging configured
+2025-11-06 17:30:49 INFO [2723] app.startup:148 - warnings enabled
+2025-11-06 17:30:52 ERROR [2723] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 97, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 49, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 64, in connect
+    self._bridge = RosBridge(self._startup_yaml)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/runner.py", line 22, in __init__
+    self._exec = SingleThreadedExecutor()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 909, in __init__
+    super().__init__(context=context)
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 210, in __init__
+    self._guard: Optional[GuardCondition] = GuardCondition(
+                                            ^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/guard_condition.py", line 43, in __init__
+    raise RuntimeError('Context must be initialized a GuardCondition can be created')
+RuntimeError: Context must be initialized a GuardCondition can be created
+2025-11-06 17:30:52 INFO [2723] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 17:31:07 INFO [3488] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 17:31:07 INFO [3488] app.startup:143 - logging configured
+2025-11-06 17:31:07 INFO [3488] app.startup:148 - warnings enabled
+2025-11-06 17:31:09 ERROR [3488] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 97, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 49, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 64, in connect
+    self._bridge = RosBridge(self._startup_yaml)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/runner.py", line 22, in __init__
+    self._exec = SingleThreadedExecutor()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 909, in __init__
+    super().__init__(context=context)
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 210, in __init__
+    self._guard: Optional[GuardCondition] = GuardCondition(
+                                            ^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/guard_condition.py", line 43, in __init__
+    raise RuntimeError('Context must be initialized a GuardCondition can be created')
+RuntimeError: Context must be initialized a GuardCondition can be created
+2025-11-06 17:31:09 INFO [3488] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 17:31:47 INFO [4638] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 17:31:47 INFO [4638] app.startup:143 - logging configured
+2025-11-06 17:31:47 INFO [4638] app.startup:148 - warnings enabled
+2025-11-06 17:31:50 ERROR [4638] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 97, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 49, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 64, in connect
+    self._bridge = RosBridge(self._startup_yaml)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/runner.py", line 22, in __init__
+    self._exec = SingleThreadedExecutor()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 909, in __init__
+    super().__init__(context=context)
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 210, in __init__
+    self._guard: Optional[GuardCondition] = GuardCondition(
+                                            ^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/guard_condition.py", line 43, in __init__
+    raise RuntimeError('Context must be initialized a GuardCondition can be created')
+RuntimeError: Context must be initialized a GuardCondition can be created
+2025-11-06 17:31:50 INFO [4638] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 17:32:13 INFO [5533] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 17:32:13 INFO [5533] app.startup:143 - logging configured
+2025-11-06 17:32:13 INFO [5533] app.startup:148 - warnings enabled
+2025-11-06 17:32:43 ERROR [5533] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 97, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 49, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 64, in connect
+    self._bridge = RosBridge(self._startup_yaml)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/runner.py", line 22, in __init__
+    self._exec = SingleThreadedExecutor()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 909, in __init__
+    super().__init__(context=context)
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 210, in __init__
+    self._guard: Optional[GuardCondition] = GuardCondition(
+                                            ^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/guard_condition.py", line 43, in __init__
+    raise RuntimeError('Context must be initialized a GuardCondition can be created')
+RuntimeError: Context must be initialized a GuardCondition can be created
+2025-11-06 17:32:43 INFO [5533] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 17:44:56 INFO [19364] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 17:44:56 INFO [19364] app.startup:143 - logging configured
+2025-11-06 17:44:56 INFO [19364] app.startup:148 - warnings enabled
+2025-11-06 17:46:03 ERROR [19364] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 97, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 49, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 64, in connect
+    self._bridge = RosBridge(self._startup_yaml)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/runner.py", line 22, in __init__
+    self._exec = SingleThreadedExecutor()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 909, in __init__
+    super().__init__(context=context)
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 210, in __init__
+    self._guard: Optional[GuardCondition] = GuardCondition(
+                                            ^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/guard_condition.py", line 43, in __init__
+    raise RuntimeError('Context must be initialized a GuardCondition can be created')
+RuntimeError: Context must be initialized a GuardCondition can be created
+2025-11-06 17:46:03 INFO [19364] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 17:46:15 INFO [21060] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 17:46:15 INFO [21060] app.startup:143 - logging configured
+2025-11-06 17:46:15 INFO [21060] app.startup:148 - warnings enabled
+2025-11-06 17:46:27 ERROR [21060] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 97, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 49, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 64, in connect
+    self._bridge = RosBridge(self._startup_yaml)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/runner.py", line 22, in __init__
+    self._exec = SingleThreadedExecutor()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 909, in __init__
+    super().__init__(context=context)
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 210, in __init__
+    self._guard: Optional[GuardCondition] = GuardCondition(
+                                            ^^^^^^^^^^^^^^^
+  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/guard_condition.py", line 43, in __init__
+    raise RuntimeError('Context must be initialized a GuardCondition can be created')
+RuntimeError: Context must be initialized a GuardCondition can be created
+2025-11-06 17:46:37 INFO [21060] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 17:46:45 INFO [22008] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 17:46:45 INFO [22008] app.startup:143 - logging configured
+2025-11-06 17:46:45 INFO [22008] app.startup:148 - warnings enabled
+2025-11-06 17:52:06 INFO [25686] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 17:52:06 INFO [25686] app.startup:143 - logging configured
+2025-11-06 17:52:06 INFO [25686] app.startup:148 - warnings enabled
+2025-11-06 17:52:20 INFO [25686] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 17:53:08 INFO [27199] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 17:53:08 INFO [27199] app.startup:143 - logging configured
+2025-11-06 17:53:08 INFO [27199] app.startup:148 - warnings enabled
+2025-11-06 17:53:17 INFO [27199] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 18:09:38 INFO [40328] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 18:09:38 INFO [40328] app.startup:143 - logging configured
+2025-11-06 18:09:38 INFO [40328] app.startup:148 - warnings enabled
+2025-11-06 18:09:44 INFO [40328] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 18:32:27 INFO [54822] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 18:32:27 INFO [54822] app.startup:143 - logging configured
+2025-11-06 18:32:27 INFO [54822] app.startup:148 - warnings enabled
+2025-11-06 18:32:34 INFO [54822] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 18:48:32 INFO [65388] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 18:48:32 INFO [65388] app.startup:143 - logging configured
+2025-11-06 18:48:32 INFO [65388] app.startup:148 - warnings enabled
+2025-11-06 18:48:39 INFO [65388] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 18:52:15 INFO [69671] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 18:52:15 INFO [69671] app.startup:143 - logging configured
+2025-11-06 18:52:15 INFO [69671] app.startup:148 - warnings enabled
+2025-11-06 18:52:18 INFO [69671] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 18:54:16 INFO [72094] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 18:54:16 INFO [72094] app.startup:143 - logging configured
+2025-11-06 18:54:16 INFO [72094] app.startup:148 - warnings enabled
+2025-11-06 18:54:22 INFO [72094] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 18:56:27 INFO [74695] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 18:56:27 INFO [74695] app.startup:143 - logging configured
+2025-11-06 18:56:27 INFO [74695] app.startup:148 - warnings enabled
+2025-11-06 18:56:32 INFO [74695] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 19:02:34 INFO [79575] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 19:02:34 INFO [79575] app.startup:143 - logging configured
+2025-11-06 19:02:34 INFO [79575] app.startup:148 - warnings enabled
+2025-11-06 19:02:40 INFO [79575] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 19:17:31 INFO [89534] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 19:17:31 INFO [89534] app.startup:143 - logging configured
+2025-11-06 19:17:31 INFO [89534] app.startup:148 - warnings enabled
+2025-11-06 19:17:37 INFO [89534] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 19:49:51 INFO [19193] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 19:49:51 INFO [19193] app.startup:143 - logging configured
+2025-11-06 19:49:51 INFO [19193] app.startup:148 - warnings enabled
+2025-11-06 19:49:54 INFO [19193] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 19:59:14 INFO [25987] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 19:59:14 INFO [25987] app.startup:143 - logging configured
+2025-11-06 19:59:14 INFO [25987] app.startup:148 - warnings enabled
+2025-11-06 19:59:17 INFO [25987] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 20:00:20 INFO [27323] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 20:00:20 INFO [27323] app.startup:143 - logging configured
+2025-11-06 20:00:20 INFO [27323] app.startup:148 - warnings enabled
+2025-11-06 20:00:24 INFO [27323] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 20:02:40 INFO [29809] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 20:02:40 INFO [29809] app.startup:143 - logging configured
+2025-11-06 20:02:40 INFO [29809] app.startup:148 - warnings enabled
+2025-11-06 20:02:46 INFO [29809] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 20:06:44 INFO [33022] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 20:06:44 INFO [33022] app.startup:143 - logging configured
+2025-11-06 20:06:44 INFO [33022] app.startup:148 - warnings enabled
+2025-11-06 20:06:50 INFO [33022] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 20:07:53 INFO [34387] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 20:07:53 INFO [34387] app.startup:143 - logging configured
+2025-11-06 20:07:53 INFO [34387] app.startup:148 - warnings enabled
+2025-11-06 20:08:00 INFO [34387] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 20:10:21 INFO [36918] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 20:10:21 INFO [36918] app.startup:143 - logging configured
+2025-11-06 20:10:21 INFO [36918] app.startup:148 - warnings enabled
+2025-11-06 20:10:36 INFO [36918] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
