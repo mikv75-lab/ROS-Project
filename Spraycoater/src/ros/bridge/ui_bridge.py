@@ -6,10 +6,17 @@ import threading
 from typing import Optional, List
 
 from .runner import RosBridge
-from .scene_bridge import SceneBridge  # nur für Typzugriff
+from .scene_bridge import SceneBridge
+from .poses_bridge import PosesBridge
+from .spray_path_bridge import SprayPathBridge
+
+from geometry_msgs.msg import PoseStamped, PoseArray
+from visualization_msgs.msg import MarkerArray
 
 _LOG = logging.getLogger("ros.ui_bridge")
 
+
+# ------------------------------ State: Scene ------------------------------
 
 class SceneState:
     """
@@ -77,26 +84,104 @@ class SceneState:
             return self._substrate_current
 
 
+# ------------------------------ State: Poses ------------------------------
+
+class PosesState:
+    """
+    Signal-freier State-Container für Poses:
+      - hält Home/Service (PoseStamped) exakt wie empfangen (oder None)
+      - thread-sicher per RLock
+    """
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._home: Optional[PoseStamped] = None
+        self._service: Optional[PoseStamped] = None
+
+    # Setter
+    def _set_home(self, msg: PoseStamped) -> None:
+        with self._lock:
+            self._home = msg
+
+    def _set_service(self, msg: PoseStamped) -> None:
+        with self._lock:
+            self._service = msg
+
+    # Getter
+    def home(self) -> Optional[PoseStamped]:
+        with self._lock:
+            return self._home
+
+    def service(self) -> Optional[PoseStamped]:
+        with self._lock:
+            return self._service
+
+
+# ------------------------------ State: SprayPath ------------------------------
+
+class SprayPathState:
+    """
+    Signal-freier State-Container für SprayPath:
+      - current_name (str), poses (PoseArray|None), marker wird im Bridge-Node gehalten
+      - thread-sicher per RLock
+    """
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._current_name: str = ""
+        self._poses: Optional[PoseArray] = None
+
+    # Setter
+    def _set_current_name(self, name: str) -> None:
+        with self._lock:
+            self._current_name = name or ""
+
+    def _set_poses(self, pa: PoseArray) -> None:
+        with self._lock:
+            self._poses = pa
+
+    # Getter
+    def current_name(self) -> str:
+        with self._lock:
+            return self._current_name
+
+    def poses(self) -> Optional[PoseArray]:
+        with self._lock:
+            return self._poses
+
+
+# ============================== UIBridge ==============================
+
 class UIBridge:
     """
     Dünne UI-Bridge:
       - Start/Stop RosBridge
-      - Cacht den Scene-Zustand in `self.scene` (SceneState, signal-frei)
-      - Veröffentlicht Set-Methoden (set_cage/mount/substrate),
-        die die ROS-Bridge (SceneBridge) nutzen
+      - Cacht Zustände in `scene`, `poses`, `spraypath` (signal-frei)
+      - Stellt Set-APIs bereit (UI -> ROS) via Bridge-Knoten
     """
 
     def __init__(self, startup_yaml_path: Optional[str] = None):
         self._startup_yaml = startup_yaml_path or os.environ.get("SC_STARTUP_YAML") or ""
         self._bridge: Optional[RosBridge] = None
-        self.scene = SceneState()  # nur Werte; keine Qt-Signale
-        self._sb: Optional[SceneBridge] = None  # gehaltene SceneBridge-Referenz
+
+        # States (signal-frei)
+        self.scene = SceneState()
+        self.poses = PosesState()
+        self.spraypath = SprayPathState()
+
+        # gehaltene Bridge-Referenzen
+        self._sb: Optional[SceneBridge] = None
+        self._pb: Optional[PosesBridge] = None
+        self._spb: Optional[SprayPathBridge] = None
 
     # ---------- Lifecycle ----------
 
     @property
     def is_connected(self) -> bool:
-        return self._bridge is not None and self._sb is not None
+        return (
+            self._bridge is not None
+            and self._sb is not None
+            and self._pb is not None
+            and self._spb is not None
+        )
 
     @property
     def node_name(self) -> str:
@@ -115,11 +200,8 @@ class UIBridge:
 
     def connect(self) -> None:
         if self._bridge is not None:
-            # bereits verbunden (oder im Aufbau) -> sicherstellen, dass _sb gesetzt ist
-            if self._sb is None:
-                self._sb = self._bridge.get_node(SceneBridge)
-                if self._sb is not None:
-                    self._wire_scene_into_state(self._sb)
+            # bereits verbunden (oder im Aufbau) -> sicherstellen, dass Bridges gesetzt sind
+            self._ensure_subnodes_and_wiring()
             return
 
         if not self._startup_yaml:
@@ -128,27 +210,56 @@ class UIBridge:
         self._bridge = RosBridge(self._startup_yaml)
         self._bridge.start()
 
-        sb: Optional[SceneBridge] = self._bridge.get_node(SceneBridge)
-        if sb is None:
-            raise RuntimeError("SceneBridge nicht gefunden – wurde sie gestartet?")
-        self._sb = sb
+        # Subnodes holen + Signale verbinden
+        self._ensure_subnodes_and_wiring()
 
-        # Qt-Signale der SceneBridge -> in unseren State spiegeln
-        self._wire_scene_into_state(sb)
+        # Optional: gecachte Werte re-emittieren (falls vorhanden)
+        self._try_reemit_cached()
 
-        # Optional: initiale Werte sofort holen, wenn SceneBridge so etwas anbieten kann
-        try:
-            # Falls du in SceneBridge eine reemit_cached() o.ä. hast, nutze sie:
-            if hasattr(sb, "signals") and hasattr(sb.signals, "reemit_cached"):
-                sb.signals.reemit_cached()  # damit Combos sofort Werte haben
-        except Exception:
-            pass
+        _LOG.info("UIBridge connected (node=%s) – scene/poses/spraypath states ready", self.node_name)
 
-        _LOG.info("UIBridge connected (node=%s) – scene state ready", self.node_name)
+    def _ensure_subnodes_and_wiring(self) -> None:
+        if self._bridge is None:
+            raise RuntimeError("RosBridge nicht aktiv.")
+
+        # Scene
+        if self._sb is None:
+            sb = self._bridge.get_node(SceneBridge)
+            if sb is None:
+                raise RuntimeError("SceneBridge nicht gefunden – wurde sie gestartet?")
+            self._sb = sb
+            self._wire_scene_into_state(sb)
+
+        # Poses
+        if self._pb is None:
+            pb = self._bridge.get_node(PosesBridge)
+            if pb is None:
+                raise RuntimeError("PosesBridge nicht gefunden – wurde sie gestartet?")
+            self._pb = pb
+            self._wire_poses_into_state(pb)
+
+        # SprayPath
+        if self._spb is None:
+            spb = self._bridge.get_node(SprayPathBridge)
+            if spb is None:
+                raise RuntimeError("SprayPathBridge nicht gefunden – wurde sie gestartet?")
+            self._spb = spb
+            self._wire_spraypath_into_state(spb)
+
+    def _try_reemit_cached(self) -> None:
+        # Falls die Bridges eine reemit_cached()-Hilfsfunktion besitzen, nutzen wir sie.
+        for b in (self._sb, self._pb, self._spb):
+            try:
+                if b is not None and hasattr(b, "signals") and hasattr(b.signals, "reemit_cached"):
+                    b.signals.reemit_cached()
+            except Exception:
+                pass
 
     def disconnect(self) -> None:
         _LOG.info("UIBridge disconnect()")
         self._sb = None
+        self._pb = None
+        self._spb = None
         if self._bridge is None:
             return
         try:
@@ -189,20 +300,58 @@ class UIBridge:
         except Exception as e:
             _LOG.error("set_substrate failed: %s", e)
 
-    # ---------- Intern: Wiring von Qt-Signalen -> SceneState ----------
+    # ---------- Poses: Set-API (UI -> ROS) ----------
+    def set_pose_by_name(self, name: str) -> None:
+        """Publisht exakt 'home' oder 'service' über PosesBridge."""
+        if not self._pb:
+            _LOG.error("set_pose_by_name: PosesBridge nicht verfügbar.")
+            return
+        try:
+            self._pb.set_pose_by_name(name)
+        except Exception as e:
+            _LOG.error("set_pose_by_name failed: %s", e)
+
+    def set_home(self) -> None:
+        self.set_pose_by_name("home")
+
+    def set_service(self) -> None:
+        self.set_pose_by_name("service")
+
+    # ---------- SprayPath: Set-API (UI -> ROS) ----------
+    def set_spraypath(self, marker_array: MarkerArray) -> None:
+        """Publisht ein MarkerArray unverändert auf spraypath.set."""
+        if not self._spb:
+            _LOG.error("set_spraypath: SprayPathBridge nicht verfügbar.")
+            return
+        try:
+            self._spb.publish_set(marker_array)
+        except Exception as e:
+            _LOG.error("set_spraypath failed: %s", e)
+
+    # ---------- Intern: Wiring von Qt-Signalen -> States ----------
     def _wire_scene_into_state(self, sb: SceneBridge) -> None:
         """Verbindet die Qt-Signale der SceneBridge mit unserem SceneState-Cache."""
         sig = sb.signals
-
         # Listen
         sig.cageListChanged.connect(lambda items: self.scene._set_cage_list(items))
         sig.mountListChanged.connect(lambda items: self.scene._set_mount_list(items))
         sig.substrateListChanged.connect(lambda items: self.scene._set_substrate_list(items))
-
         # Currents
         sig.cageCurrentChanged.connect(lambda v: self.scene._set_cage_current(v))
         sig.mountCurrentChanged.connect(lambda v: self.scene._set_mount_current(v))
         sig.substrateCurrentChanged.connect(lambda v: self.scene._set_substrate_current(v))
+
+    def _wire_poses_into_state(self, pb: PosesBridge) -> None:
+        """Verbindet die Qt-Signale der PosesBridge mit unserem PosesState-Cache."""
+        sig = pb.signals
+        sig.homePoseChanged.connect(lambda msg: self.poses._set_home(msg))
+        sig.servicePoseChanged.connect(lambda msg: self.poses._set_service(msg))
+
+    def _wire_spraypath_into_state(self, spb: SprayPathBridge) -> None:
+        """Verbindet die Qt-Signale der SprayPathBridge mit unserem SprayPathState-Cache."""
+        sig = spb.signals
+        sig.currentNameChanged.connect(lambda name: self.spraypath._set_current_name(name))
+        sig.posesChanged.connect(lambda pa: self.spraypath._set_poses(pa))
 
 
 def get_ui_bridge(_ctx) -> UIBridge:

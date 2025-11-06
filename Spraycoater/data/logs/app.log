@@ -394,3 +394,15 @@ RuntimeError: Context must be initialized a GuardCondition can be created
 2025-11-06 20:10:21 INFO [36918] app.startup:143 - logging configured
 2025-11-06 20:10:21 INFO [36918] app.startup:148 - warnings enabled
 2025-11-06 20:10:36 INFO [36918] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 20:13:26 INFO [40241] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 20:13:26 INFO [40241] app.startup:143 - logging configured
+2025-11-06 20:13:26 INFO [40241] app.startup:148 - warnings enabled
+2025-11-06 20:13:34 INFO [40241] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 20:23:07 INFO [47522] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 20:23:07 INFO [47522] app.startup:143 - logging configured
+2025-11-06 20:23:07 INFO [47522] app.startup:148 - warnings enabled
+2025-11-06 20:23:11 INFO [47522] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 20:48:28 INFO [62827] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 20:48:28 INFO [62827] app.startup:143 - logging configured
+2025-11-06 20:48:28 INFO [62827] app.startup:148 - warnings enabled
+2025-11-06 20:48:32 INFO [62827] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)

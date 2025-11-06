@@ -132,6 +132,70 @@
        </widget>
       </item>
 
+      <!-- ===== Poses ===== -->
+      <item>
+       <widget class="QGroupBox" name="grpPoses">
+        <property name="title"><string>Poses</string></property>
+        <layout class="QGridLayout" name="posesLayout">
+
+         <!-- Header -->
+         <item row="0" column="0">
+          <widget class="QLabel" name="lblHdrComp">
+           <property name="text"><string>Component</string></property>
+           <property name="styleSheet"><string notr="true">font-weight: 600;</string></property>
+          </widget>
+         </item>
+         <item row="0" column="1" colspan="2">
+          <widget class="QLabel" name="lblHdrPose">
+           <property name="text"><string>Pose (X Y Z RX RY RZ)</string></property>
+           <property name="styleSheet"><string notr="true">font-weight: 600;</string></property>
+          </widget>
+         </item>
+         <item row="0" column="3">
+          <widget class="QLabel" name="lblHdrAction">
+           <property name="text"><string>Set</string></property>
+           <property name="styleSheet"><string notr="true">font-weight: 600;</string></property>
+          </widget>
+         </item>
+
+         <!-- Home -->
+         <item row="1" column="0">
+          <widget class="QLabel" name="lblHome">
+           <property name="text"><string>Home</string></property>
+          </widget>
+         </item>
+         <item row="1" column="1" colspan="2">
+          <widget class="QLabel" name="lblHomePose">
+           <property name="text"><string>-</string></property>
+          </widget>
+         </item>
+         <item row="1" column="3">
+          <widget class="QPushButton" name="btnSetHome">
+           <property name="text"><string>Set</string></property>
+          </widget>
+         </item>
+
+         <!-- Service -->
+         <item row="2" column="0">
+          <widget class="QLabel" name="lblService">
+           <property name="text"><string>Service</string></property>
+          </widget>
+         </item>
+         <item row="2" column="1" colspan="2">
+          <widget class="QLabel" name="lblServicePose">
+           <property name="text"><string>-</string></property>
+          </widget>
+         </item>
+         <item row="2" column="3">
+          <widget class="QPushButton" name="btnSetService">
+           <property name="text"><string>Set</string></property>
+          </widget>
+         </item>
+
+        </layout>
+       </widget>
+      </item>
+
       <!-- Spacer -->
       <item>
        <spacer name="leftSpacer">

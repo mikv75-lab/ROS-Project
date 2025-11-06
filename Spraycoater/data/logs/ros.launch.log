@@ -1937,3 +1937,242 @@
 2025-11-06 20:11:32 INFO [36918] ros.launch:105 - [rviz2-4] [WARN] [1762459892.465247310] [moveit_3536343967.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
 2025-11-06 20:11:32 INFO [36918] ros.launch:105 - [rviz2-4] [WARN] [1762459892.465994464] [moveit_3536343967.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
 2025-11-06 20:11:32 INFO [36918] ros.launch:105 - [rviz2-4] [WARN] [1762459892.466716828] [moveit_3536343967.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:12:23 INFO [36918] ros.launch:105 - [spawner-6] [ERROR] [1762459943.774835038] [ros2_control_controller_spawner_joint_state_broadcaster]: [91mFailed to acquire lock after multiple attempts.[0m
+2025-11-06 20:12:23 INFO [36918] ros.launch:105 - [ERROR] [spawner-6]: process has died [pid 37373, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner joint_state_broadcaster --ros-args --log-level error --ros-args -r __node:=spawner_joint_state_broadcaster'].
+2025-11-06 20:12:26 INFO [36918] ros.launch:105 - [spawner-7] [ERROR] [1762459946.241070029] [ros2_control_controller_spawner_omron_arm_group_controller]: [91mFailed to acquire lock after multiple attempts.[0m
+2025-11-06 20:12:26 INFO [36918] ros.launch:105 - [ERROR] [spawner-7]: process has died [pid 37440, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner omron_arm_group_controller --ros-args --log-level error --ros-args -r __node:=spawner_omron_arm_group_controller'].
+2025-11-06 20:13:28 INFO [40241] ros.launch:155 - starting bringup: ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-06 20:13:29 INFO [40241] ros.launch:98 - === roslaunch stream START === pid=40398
+2025-11-06 20:13:29 INFO [40241] ros.launch:105 - [INFO] [launch]: All log files can be found below /root/.ros/log/2025-11-06-20-13-29-403728-a7c312aa7d2f-40398
+2025-11-06 20:13:29 INFO [40241] ros.launch:105 - [INFO] [launch]: Default logging verbosity is set to INFO
+2025-11-06 20:13:29 INFO [40241] ros.launch:105 - [INFO] [static_transform_publisher-1]: process started with pid [40411]
+2025-11-06 20:13:29 INFO [40241] ros.launch:105 - [INFO] [robot_state_publisher-2]: process started with pid [40412]
+2025-11-06 20:13:29 INFO [40241] ros.launch:105 - [INFO] [move_group-3]: process started with pid [40413]
+2025-11-06 20:13:29 INFO [40241] ros.launch:105 - [INFO] [rviz2-4]: process started with pid [40414]
+2025-11-06 20:13:29 INFO [40241] ros.launch:105 - [INFO] [ros2_control_node-5]: process started with pid [40415]
+2025-11-06 20:13:34 INFO [40241] ros.launch:105 - [move_group-3] [ERROR] [1762460011.461636496] [move_group.moveit.moveit.ros.occupancy_map_monitor]: No 3D sensor plugin(s) defined for octomap updates
+2025-11-06 20:13:34 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460011.970466704] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 20:13:34 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460011.977192607] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+2025-11-06 20:13:34 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460012.193503352] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 20:13:34 INFO [40241] ros.launch:105 - [INFO] [spawner-6]: process started with pid [40639]
+2025-11-06 20:13:34 INFO [40241] ros.launch:105 - [rviz2-4] Warning: class_loader.impl: SEVERE WARNING!!! A namespace collision has occurred with plugin factory for class rviz_default_plugins::displays::InteractiveMarkerDisplay. New factory will OVERWRITE existing one. This situation occurs when libraries containing plugins are directly linked against an executable (the one running right now generating this message). Please separate plugins out into their own library or just don't link against the library and use either class_loader::ClassLoader/MultiLibraryClassLoader to open.
+2025-11-06 20:13:34 INFO [40241] ros.launch:105 - [rviz2-4]          at line 321 in /opt/ros/rolling/include/class_loader/class_loader/class_loader_core.hpp
+2025-11-06 20:13:35 INFO [40241] ros.launch:105 - [INFO] [spawner-7]: process started with pid [40702]
+2025-11-06 20:13:35 INFO [40241] ros.launch:105 - [INFO] [scene-8]: process started with pid [40704]
+2025-11-06 20:13:35 INFO [40241] ros.launch:105 - [INFO] [poses-9]: process started with pid [40705]
+2025-11-06 20:13:35 INFO [40241] ros.launch:105 - [INFO] [spray_path-10]: process started with pid [40707]
+2025-11-06 20:13:36 INFO [40241] ros.launch:105 - [spray_path-10] [37;1m2025-11-06 20:13:36.449 [31;1m[[37;1mRTPS_TRANSPORT_SHM[31;1m Error] [37mFailed init_port fastdds_port7052: open_and_lock_file failed[34;1m -> Function [36mopen_port_internal[m
+2025-11-06 20:13:36 INFO [40241] ros.launch:105 - [poses-9] [37;1m2025-11-06 20:13:36.574 [31;1m[[37;1mRTPS_TRANSPORT_SHM[31;1m Error] [37mFailed init_port fastdds_port7052: open_and_lock_file failed[34;1m -> Function [36mopen_port_internal[m
+2025-11-06 20:13:37 INFO [40241] ros.launch:105 - [scene-8] [37;1m2025-11-06 20:13:37.408 [31;1m[[37;1mRTPS_TRANSPORT_SHM[31;1m Error] [37mFailed init_port fastdds_port7052: open_and_lock_file failed[34;1m -> Function [36mopen_port_internal[m
+2025-11-06 20:13:37 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460017.879328198] [moveit_1689783623.moveit.ros.motion_planning_frame]: Action server: /recognize_objects not available
+2025-11-06 20:13:38 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460018.622504686] [moveit_1689783623.moveit.ros.motion_planning_frame]: MoveGroup namespace changed: / -> . Reloading params.
+2025-11-06 20:13:42 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460022.449772457] [moveit_1689783623.moveit.ros.rdf_loader]: Loaded robot model in 3.43231 seconds
+2025-11-06 20:13:42 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460022.449891073] [moveit_1689783623.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-06 20:13:43 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460023.324082651] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-06 20:13:43 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460023.324117964] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-06 20:13:43 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460023.324124485] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-06 20:13:43 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460023.324128999] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-06 20:13:43 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460023.324133313] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-06 20:13:43 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460023.324137627] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-06 20:13:43 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460023.324140636] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-06 20:13:45 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460025.599232734] [moveit_1689783623.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-06 20:13:45 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460025.619327915] [moveit_1689783623.moveit.ros.planning_scene_monitor]: Listening to '/monitored_planning_scene'
+2025-11-06 20:13:46 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460026.148684187] [interactive_marker_display_94544706526912]: Connected on namespace: /rviz_moveit_motion_planning_display/robot_interaction_interactive_marker_topic
+2025-11-06 20:13:46 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460026.418912238] [moveit_1689783623.moveit.ros.motion_planning_frame]: group omron_arm_group
+2025-11-06 20:13:46 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460026.418974163] [moveit_1689783623.moveit.ros.motion_planning_frame]: Constructing new MoveGroup connection for group 'omron_arm_group' in namespace ''
+2025-11-06 20:13:46 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460026.434910118] [interactive_marker_display_94544706526912]: Sending request for interactive markers
+2025-11-06 20:13:46 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460026.489225559] [interactive_marker_display_94544706526912]: Service response received for initialization
+2025-11-06 20:13:46 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460026.645885396] [moveit_1689783623.moveit.ros.move_group_interface]: Ready to take commands for planning group omron_arm_group.
+2025-11-06 20:13:58 INFO [40241] ros.launch:105 - [rviz2-4] [WARN] [1762460038.393449661] [moveit_1689783623.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:13:58 INFO [40241] ros.launch:105 - [rviz2-4] [WARN] [1762460038.393681530] [moveit_1689783623.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:13:58 INFO [40241] ros.launch:105 - [rviz2-4] [WARN] [1762460038.399309433] [moveit_1689783623.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:13:58 INFO [40241] ros.launch:105 - [rviz2-4] [WARN] [1762460038.399794486] [moveit_1689783623.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:13:58 INFO [40241] ros.launch:105 - [rviz2-4] [WARN] [1762460038.400041395] [moveit_1689783623.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:13:58 INFO [40241] ros.launch:105 - [rviz2-4] [WARN] [1762460038.400639294] [moveit_1689783623.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:15:30 INFO [40241] ros.launch:105 - [spawner-6] [ERROR] [1762460130.382611387] [ros2_control_controller_spawner_joint_state_broadcaster]: [91mFailed to acquire lock after multiple attempts.[0m
+2025-11-06 20:15:30 INFO [40241] ros.launch:105 - [ERROR] [spawner-6]: process has died [pid 40639, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner joint_state_broadcaster --ros-args --log-level error --ros-args -r __node:=spawner_joint_state_broadcaster'].
+2025-11-06 20:15:31 INFO [40241] ros.launch:105 - [spawner-7] [ERROR] [1762460131.447360763] [ros2_control_controller_spawner_omron_arm_group_controller]: [91mFailed to acquire lock after multiple attempts.[0m
+2025-11-06 20:15:31 INFO [40241] ros.launch:105 - [ERROR] [spawner-7]: process has died [pid 40702, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner omron_arm_group_controller --ros-args --log-level error --ros-args -r __node:=spawner_omron_arm_group_controller'].
+2025-11-06 20:21:45 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460505.781419078] [moveit_1689783623.moveit.ros.move_group_interface]: Plan and Execute request accepted
+2025-11-06 20:21:45 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460505.781851599] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:45 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460505.782809597] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:45 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460505.782892334] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:45 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460505.782923086] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:45 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460505.782958545] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:45 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460505.783006725] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:45 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460505.783022151] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:47 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460507.862284365] [moveit_1689783623.moveit.ros.move_group_interface]: Plan and Execute request aborted
+2025-11-06 20:21:47 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460507.862567989] [moveit_1689783623.moveit.ros.move_group_interface]: MoveGroupInterface::move() failed or timeout reached
+2025-11-06 20:21:47 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460507.863620375] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:21:47 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460507.863727384] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:21:47 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460507.866827738] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:21:47 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460507.869476455] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:21:47 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460507.874835095] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:21:47 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460507.881091508] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:21:47 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460507.882479222] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:21:52 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460512.663846737] [moveit_1689783623.moveit.ros.move_group_interface]: Plan and Execute request accepted
+2025-11-06 20:21:52 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460512.664203582] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:52 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460512.664362901] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:52 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460512.664431137] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:52 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460512.664461664] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:52 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460512.664485008] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:52 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460512.664506158] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:52 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460512.664564518] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:54 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460514.893800012] [moveit_1689783623.moveit.ros.move_group_interface]: Plan and Execute request aborted
+2025-11-06 20:21:54 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460514.894350057] [moveit_1689783623.moveit.ros.move_group_interface]: MoveGroupInterface::move() failed or timeout reached
+2025-11-06 20:21:54 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460514.899400563] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:21:54 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460514.900996861] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:21:54 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460514.902579001] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:21:54 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460514.902887971] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:21:54 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460514.904770707] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:21:54 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460514.909258207] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:21:54 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460514.910452015] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:21:58 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460518.086227515] [moveit_1689783623.moveit.ros.move_group_interface]: Plan and Execute request accepted
+2025-11-06 20:21:58 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460518.086646601] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:58 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460518.086733666] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:58 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460518.086767834] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:58 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460518.086788853] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:58 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460518.086811865] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:58 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460518.086832984] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:21:58 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460518.086853903] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 20:22:00 INFO [40241] ros.launch:105 - [rviz2-4] [INFO] [1762460520.293273733] [moveit_1689783623.moveit.ros.move_group_interface]: Plan and Execute request aborted
+2025-11-06 20:22:00 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460520.293883517] [moveit_1689783623.moveit.ros.move_group_interface]: MoveGroupInterface::move() failed or timeout reached
+2025-11-06 20:22:00 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460520.293901543] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:22:00 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460520.302820437] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:22:00 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460520.307973771] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:22:00 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460520.310985344] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:22:00 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460520.313308756] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:22:00 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460520.318176966] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:22:00 INFO [40241] ros.launch:105 - [rviz2-4] [ERROR] [1762460520.319684047] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 20:23:09 INFO [47522] ros.launch:155 - starting bringup: ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-06 20:23:09 INFO [47522] ros.launch:98 - === roslaunch stream START === pid=47674
+2025-11-06 20:23:09 INFO [47522] ros.launch:105 - [INFO] [launch]: All log files can be found below /root/.ros/log/2025-11-06-20-23-09-767952-a7c312aa7d2f-47674
+2025-11-06 20:23:09 INFO [47522] ros.launch:105 - [INFO] [launch]: Default logging verbosity is set to INFO
+2025-11-06 20:23:10 INFO [47522] ros.launch:105 - [INFO] [static_transform_publisher-1]: process started with pid [47711]
+2025-11-06 20:23:10 INFO [47522] ros.launch:105 - [INFO] [robot_state_publisher-2]: process started with pid [47712]
+2025-11-06 20:23:10 INFO [47522] ros.launch:105 - [INFO] [move_group-3]: process started with pid [47713]
+2025-11-06 20:23:10 INFO [47522] ros.launch:105 - [INFO] [rviz2-4]: process started with pid [47714]
+2025-11-06 20:23:10 INFO [47522] ros.launch:105 - [INFO] [ros2_control_node-5]: process started with pid [47715]
+2025-11-06 20:23:11 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460591.422090433] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 20:23:11 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460591.422201562] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+2025-11-06 20:23:11 INFO [47522] ros.launch:105 - [move_group-3] [ERROR] [1762460591.499307214] [move_group.moveit.moveit.ros.occupancy_map_monitor]: No 3D sensor plugin(s) defined for octomap updates
+2025-11-06 20:23:11 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460591.535491904] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 20:23:13 INFO [47522] ros.launch:105 - [rviz2-4] Warning: class_loader.impl: SEVERE WARNING!!! A namespace collision has occurred with plugin factory for class rviz_default_plugins::displays::InteractiveMarkerDisplay. New factory will OVERWRITE existing one. This situation occurs when libraries containing plugins are directly linked against an executable (the one running right now generating this message). Please separate plugins out into their own library or just don't link against the library and use either class_loader::ClassLoader/MultiLibraryClassLoader to open.
+2025-11-06 20:23:13 INFO [47522] ros.launch:105 - [rviz2-4]          at line 321 in /opt/ros/rolling/include/class_loader/class_loader/class_loader_core.hpp
+2025-11-06 20:23:13 INFO [47522] ros.launch:105 - [INFO] [spawner-6]: process started with pid [47970]
+2025-11-06 20:23:15 INFO [47522] ros.launch:105 - [INFO] [spawner-7]: process started with pid [48035]
+2025-11-06 20:23:15 INFO [47522] ros.launch:105 - [INFO] [scene-8]: process started with pid [48036]
+2025-11-06 20:23:15 INFO [47522] ros.launch:105 - [INFO] [poses-9]: process started with pid [48037]
+2025-11-06 20:23:15 INFO [47522] ros.launch:105 - [INFO] [spray_path-10]: process started with pid [48038]
+2025-11-06 20:23:17 INFO [47522] ros.launch:105 - [rviz2-4] [ERROR] [1762460597.764545103] [moveit_3836925828.moveit.ros.motion_planning_frame]: Action server: /recognize_objects not available
+2025-11-06 20:23:17 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460597.949328676] [moveit_3836925828.moveit.ros.motion_planning_frame]: MoveGroup namespace changed: / -> . Reloading params.
+2025-11-06 20:23:24 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460604.684554443] [moveit_3836925828.moveit.ros.rdf_loader]: Loaded robot model in 5.92638 seconds
+2025-11-06 20:23:24 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460604.684671700] [moveit_3836925828.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-06 20:23:24 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460604.828045373] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-06 20:23:24 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460604.828096822] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-06 20:23:24 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460604.828104001] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-06 20:23:24 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460604.828108488] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-06 20:23:24 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460604.828112875] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-06 20:23:24 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460604.828117063] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-06 20:23:24 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460604.828120752] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-06 20:23:25 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460605.029767551] [moveit_3836925828.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-06 20:23:25 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460605.049088812] [moveit_3836925828.moveit.ros.planning_scene_monitor]: Listening to '/monitored_planning_scene'
+2025-11-06 20:23:25 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460605.624776027] [interactive_marker_display_94003780623376]: Connected on namespace: /rviz_moveit_motion_planning_display/robot_interaction_interactive_marker_topic
+2025-11-06 20:23:25 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460605.827649467] [moveit_3836925828.moveit.ros.motion_planning_frame]: group omron_arm_group
+2025-11-06 20:23:25 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460605.827693527] [moveit_3836925828.moveit.ros.motion_planning_frame]: Constructing new MoveGroup connection for group 'omron_arm_group' in namespace ''
+2025-11-06 20:23:25 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460605.859669482] [interactive_marker_display_94003780623376]: Sending request for interactive markers
+2025-11-06 20:23:25 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460605.939455560] [interactive_marker_display_94003780623376]: Service response received for initialization
+2025-11-06 20:23:26 INFO [47522] ros.launch:105 - [rviz2-4] [INFO] [1762460606.099408587] [moveit_3836925828.moveit.ros.move_group_interface]: Ready to take commands for planning group omron_arm_group.
+2025-11-06 20:25:09 INFO [47522] ros.launch:105 - [spawner-6] [ERROR] [1762460709.187447274] [ros2_control_controller_spawner_joint_state_broadcaster]: [91mFailed to acquire lock after multiple attempts.[0m
+2025-11-06 20:25:09 INFO [47522] ros.launch:105 - [ERROR] [spawner-6]: process has died [pid 47970, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner joint_state_broadcaster --ros-args --log-level error --ros-args -r __node:=spawner_joint_state_broadcaster'].
+2025-11-06 20:25:11 INFO [47522] ros.launch:105 - [spawner-7] [ERROR] [1762460711.517703810] [ros2_control_controller_spawner_omron_arm_group_controller]: [91mFailed to acquire lock after multiple attempts.[0m
+2025-11-06 20:25:11 INFO [47522] ros.launch:105 - [ERROR] [spawner-7]: process has died [pid 48035, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner omron_arm_group_controller --ros-args --log-level error --ros-args -r __node:=spawner_omron_arm_group_controller'].
+2025-11-06 20:36:45 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461405.130951949] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:45 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461405.131162968] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:45 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461405.131302643] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:49 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461409.839692725] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:49 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461409.839910447] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:49 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461409.840056661] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:49 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461409.840399495] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:49 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461409.840556110] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:49 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461409.840698524] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:49 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461409.843919842] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:53 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461413.143737613] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:53 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461413.144023475] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:53 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461413.144170598] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:53 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461413.144664767] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:53 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461413.144811590] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'cage', but it does not exist in this scene.
+2025-11-06 20:36:57 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461417.251373177] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'substrate_mount', but it does not exist in this scene.
+2025-11-06 20:36:57 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461417.251808907] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'substrate_mount', but it does not exist in this scene.
+2025-11-06 20:36:57 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461417.252522663] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'substrate_mount', but it does not exist in this scene.
+2025-11-06 20:36:57 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461417.252936362] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'substrate_mount', but it does not exist in this scene.
+2025-11-06 20:36:57 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461417.258618995] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'substrate_mount', but it does not exist in this scene.
+2025-11-06 20:36:57 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461417.270499342] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'substrate_mount', but it does not exist in this scene.
+2025-11-06 20:37:00 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461420.402638250] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:37:00 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461420.407980535] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:37:00 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461420.408471623] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:37:00 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461420.408657238] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:37:04 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461424.781479728] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:37:04 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461424.781720119] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:37:04 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461424.782184172] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:37:04 INFO [47522] ros.launch:105 - [rviz2-4] [WARN] [1762461424.782346093] [moveit_3836925828.moveit.core.planning_scene]: Tried to remove world object 'substrate', but it does not exist in this scene.
+2025-11-06 20:48:30 INFO [62827] ros.launch:155 - starting bringup: ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-06 20:48:30 INFO [62827] ros.launch:98 - === roslaunch stream START === pid=62987
+2025-11-06 20:48:30 INFO [62827] ros.launch:105 - [INFO] [launch]: All log files can be found below /root/.ros/log/2025-11-06-20-48-30-824035-a7c312aa7d2f-62987
+2025-11-06 20:48:30 INFO [62827] ros.launch:105 - [INFO] [launch]: Default logging verbosity is set to INFO
+2025-11-06 20:48:31 INFO [62827] ros.launch:105 - [INFO] [static_transform_publisher-1]: process started with pid [63000]
+2025-11-06 20:48:31 INFO [62827] ros.launch:105 - [INFO] [robot_state_publisher-2]: process started with pid [63001]
+2025-11-06 20:48:31 INFO [62827] ros.launch:105 - [INFO] [move_group-3]: process started with pid [63002]
+2025-11-06 20:48:31 INFO [62827] ros.launch:105 - [INFO] [rviz2-4]: process started with pid [63003]
+2025-11-06 20:48:31 INFO [62827] ros.launch:105 - [INFO] [ros2_control_node-5]: process started with pid [63004]
+2025-11-06 20:48:32 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462112.479297781] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 20:48:32 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462112.480505604] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+2025-11-06 20:48:32 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462112.638235536] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 20:48:34 INFO [62827] ros.launch:105 - [INFO] [spawner-6]: process started with pid [63270]
+2025-11-06 20:48:34 INFO [62827] ros.launch:105 - [rviz2-4] Warning: class_loader.impl: SEVERE WARNING!!! A namespace collision has occurred with plugin factory for class rviz_default_plugins::displays::InteractiveMarkerDisplay. New factory will OVERWRITE existing one. This situation occurs when libraries containing plugins are directly linked against an executable (the one running right now generating this message). Please separate plugins out into their own library or just don't link against the library and use either class_loader::ClassLoader/MultiLibraryClassLoader to open.
+2025-11-06 20:48:34 INFO [62827] ros.launch:105 - [rviz2-4]          at line 321 in /opt/ros/rolling/include/class_loader/class_loader/class_loader_core.hpp
+2025-11-06 20:48:36 INFO [62827] ros.launch:105 - [INFO] [spawner-7]: process started with pid [63311]
+2025-11-06 20:48:36 INFO [62827] ros.launch:105 - [INFO] [scene-8]: process started with pid [63313]
+2025-11-06 20:48:36 INFO [62827] ros.launch:105 - [INFO] [poses-9]: process started with pid [63314]
+2025-11-06 20:48:36 INFO [62827] ros.launch:105 - [INFO] [spray_path-10]: process started with pid [63315]
+2025-11-06 20:48:36 INFO [62827] ros.launch:105 - [move_group-3] [ERROR] [1762462116.789873419] [move_group.moveit.moveit.ros.occupancy_map_monitor]: No 3D sensor plugin(s) defined for octomap updates
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [rviz2-4] [ERROR] [1762462118.659030311] [moveit_1864266202.moveit.ros.motion_planning_frame]: Action server: /recognize_objects not available
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9] Traceback (most recent call last):
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9]   File "/root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/poses", line 33, in <module>
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9]     sys.exit(load_entry_point('spraycoater-nodes-py', 'console_scripts', 'poses')())
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/poses.py", line 207, in main
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9]     node = Poses()
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9]            ^^^^^^^
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/poses.py", line 59, in __init__
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9]     topic_pose_set      = self.loader.subscribe_topic(NODE_KEY, "pose_set")
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9]                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/utils/config_hub.py", line 167, in subscribe_topic
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9]     spec = self._must_find(self._subs_by_id, node_key, id_, "subscribe")
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/utils/config_hub.py", line 214, in _must_find
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9]     raise RuntimeError(f"node_key '{node_key}' not found in topics ({dir_label})")
+2025-11-06 20:48:38 INFO [62827] ros.launch:105 - [poses-9] RuntimeError: node_key 'poses' not found in topics (subscribe)
+2025-11-06 20:48:39 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462119.532945859] [moveit_1864266202.moveit.ros.motion_planning_frame]: MoveGroup namespace changed: / -> . Reloading params.
+2025-11-06 20:48:39 INFO [62827] ros.launch:105 - [ERROR] [poses-9]: process has died [pid 63314, exit code 1, cmd '/root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/poses --ros-args --log-level error --ros-args -r __node:=poses'].
+2025-11-06 20:48:49 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462129.159704525] [moveit_1864266202.moveit.ros.rdf_loader]: Loaded robot model in 7.66915 seconds
+2025-11-06 20:48:49 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462129.159968025] [moveit_1864266202.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-06 20:48:49 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462129.440656047] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-06 20:48:49 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462129.445808559] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-06 20:48:49 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462129.449759859] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-06 20:48:49 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462129.453389715] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-06 20:48:49 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462129.454917975] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-06 20:48:49 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462129.456443234] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-06 20:48:49 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462129.456926000] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-06 20:48:50 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462130.247096309] [moveit_1864266202.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-06 20:48:50 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462130.305318111] [moveit_1864266202.moveit.ros.planning_scene_monitor]: Listening to '/monitored_planning_scene'
+2025-11-06 20:48:51 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462131.974838205] [interactive_marker_display_94526697734912]: Connected on namespace: /rviz_moveit_motion_planning_display/robot_interaction_interactive_marker_topic
+2025-11-06 20:48:52 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462132.577245487] [moveit_1864266202.moveit.ros.motion_planning_frame]: group omron_arm_group
+2025-11-06 20:48:52 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462132.577310122] [moveit_1864266202.moveit.ros.motion_planning_frame]: Constructing new MoveGroup connection for group 'omron_arm_group' in namespace ''
+2025-11-06 20:48:52 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462132.660599738] [interactive_marker_display_94526697734912]: Sending request for interactive markers
+2025-11-06 20:48:52 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462132.818134580] [interactive_marker_display_94526697734912]: Service response received for initialization
+2025-11-06 20:48:53 INFO [62827] ros.launch:105 - [rviz2-4] [INFO] [1762462133.384777329] [moveit_1864266202.moveit.ros.move_group_interface]: Ready to take commands for planning group omron_arm_group.
+2025-11-06 20:50:30 INFO [62827] ros.launch:105 - [spawner-6] [ERROR] [1762462230.285802672] [ros2_control_controller_spawner_joint_state_broadcaster]: [91mFailed to acquire lock after multiple attempts.[0m
+2025-11-06 20:50:30 INFO [62827] ros.launch:105 - [ERROR] [spawner-6]: process has died [pid 63270, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner joint_state_broadcaster --ros-args --log-level error --ros-args -r __node:=spawner_joint_state_broadcaster'].
+2025-11-06 20:50:32 INFO [62827] ros.launch:105 - [spawner-7] [ERROR] [1762462232.591932812] [ros2_control_controller_spawner_omron_arm_group_controller]: [91mFailed to acquire lock after multiple attempts.[0m
+2025-11-06 20:50:32 INFO [62827] ros.launch:105 - [ERROR] [spawner-7]: process has died [pid 63311, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner omron_arm_group_controller --ros-args --log-level error --ros-args -r __node:=spawner_omron_arm_group_controller'].
