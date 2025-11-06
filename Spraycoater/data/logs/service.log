@@ -1593,3 +1593,11 @@
 2025-11-06 17:46:38 WARNING [21060] app.tabs.service:72 - ServiceTab: bridge.scene noch nicht verfügbar – retry in 500 ms
 2025-11-06 20:06:50 ERROR [33022] app.tabs.service:77 - Scene-Signale fehlen: cageListChanged, mountListChanged, substrateListChanged, cageCurrentChanged, mountCurrentChanged, substrateCurrentChanged, setCageRequested, setMountRequested, setSubstrateRequested
 2025-11-06 20:08:01 ERROR [34387] app.tabs.service:77 - Scene-Signale fehlen: cageListChanged, mountListChanged, substrateListChanged, cageCurrentChanged, mountCurrentChanged, substrateCurrentChanged, setCageRequested, setMountRequested, setSubstrateRequested
+2025-11-06 21:03:40 ERROR [73505] app.tabs.service:85 - SceneBridge-Signale nicht verfügbar (bridge._sb.signals fehlt).
+2025-11-06 21:03:40 ERROR [73505] app.tabs.service:117 - PosesBridge-Signale nicht verfügbar (bridge._pb.signals fehlt).
+2025-11-06 21:10:02 ERROR [78354] app.tabs.service:85 - SceneBridge-Signale nicht verfügbar (bridge._sb.signals fehlt).
+2025-11-06 21:10:02 ERROR [78354] app.tabs.service:117 - PosesBridge-Signale nicht verfügbar (bridge._pb.signals fehlt).
+2025-11-06 21:23:52 ERROR [91669] app.tabs.service:85 - SceneBridge-Signale nicht verfügbar (bridge._sb.signals fehlt).
+2025-11-06 21:23:52 ERROR [91669] app.tabs.service:117 - PosesBridge-Signale nicht verfügbar (bridge._pb.signals fehlt).
+2025-11-06 21:29:25 ERROR [96576] app.tabs.service:85 - SceneBridge-Signale nicht verfügbar (bridge._sb.signals fehlt).
+2025-11-06 21:29:25 ERROR [96576] app.tabs.service:117 - PosesBridge-Signale nicht verfügbar (bridge._pb.signals fehlt).

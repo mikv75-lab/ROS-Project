@@ -1,3 +1,4 @@
+# src/ros/bridge/poses_bridge.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 from typing import Optional
@@ -8,6 +9,7 @@ from std_msgs.msg import String
 
 from config.startup import AppContent
 from .base_bridge import BaseBridge, sub_handler
+from spraycoater_nodes_py.utils.config_hub import frames  # Frame-Resolver
 
 
 class PosesSignals(QtCore.QObject):
@@ -42,7 +44,8 @@ class PosesBridge(BaseBridge):
       - poses.service_pose (PoseStamped, latched)
 
     Publiziert:
-      - poses.pose_set_name (String)  # "home" | "service"
+      - poses.pose_set (PoseStamped) via header.frame_id = "<parent>#<name>"
+        (Parent wird aus frames.yaml aufgelöst; Default: world)
     """
     GROUP = "poses"
 
@@ -56,6 +59,9 @@ class PosesBridge(BaseBridge):
         # Spiegeln auf das Signals-Objekt für initialen UI-Pull
         self.signals.home_pose = None
         self.signals.service_pose = None
+
+        # Frames-Resolver (für parent in '<parent>#<name>')
+        self._frames = frames()
 
         super().__init__("poses_bridge", content)
 
@@ -82,21 +88,27 @@ class PosesBridge(BaseBridge):
 
     def set_pose_by_name(self, name: str) -> None:
         """
-        Publisht exakt den übergebenen Namen (z.B. "home" oder "service")
-        auf poses.pose_set_name (String).
+        Publisht eine PoseStamped auf poses.pose_set.
+        Wir nutzen das Namensschema im Header: header.frame_id = '<parent>#<name>'.
+        Parent wählen wir default 'world' (oder was in frames.yaml als world definiert ist).
+        Orientierung neutral (w=1), Position (0,0,0).
         """
         try:
-            topic_id = "pose_set_name"
-            Msg = self.spec("subscribe", topic_id).resolve_type()
+            topic_id = "pose_set"
+            Msg = self.spec("subscribe", topic_id).resolve_type()  # -> PoseStamped
             pub = self.pub(topic_id)
+
+            parent = self._frames.get("world", "world")  # sauber aufgelöst
             msg = Msg()
-            msg.data = str(name)
-            self.get_logger().info(f"[poses] -> {topic_id}: {msg.data}")
+            msg.header.frame_id = f"{parent}#{name.strip().lower()}"
+            msg.pose.orientation.w = 1.0  # neutral
+
+            self.get_logger().info(f"[poses] -> {topic_id}: {msg.header.frame_id}")
             pub.publish(msg)
         except Exception as e:
-            self.get_logger().error(f"[poses] publish pose_set_name failed: {e}")
+            self.get_logger().error(f"[poses] publish pose_set failed: {e}")
 
-    # Bequeme Shortcuts (optional, nutzen exakt dieselbe Pipe)
+    # Bequeme Shortcuts
     def set_home(self) -> None:
         self.set_pose_by_name("home")
 

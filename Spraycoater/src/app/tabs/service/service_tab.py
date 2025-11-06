@@ -3,6 +3,7 @@
 from __future__ import annotations
 import os
 import logging
+from typing import Iterable, Tuple
 from PyQt6 import uic
 from PyQt6.QtWidgets import QWidget, QLabel, QComboBox, QPushButton
 
@@ -18,13 +19,26 @@ def _ui_path(filename: str) -> str:
     return os.path.join(_project_root(), "resource", "ui", "tabs", "service", filename)
 
 
+def _fmt_pose6(pose: Iterable[float] | Tuple[float, float, float, float, float, float]) -> str:
+    """
+    Formatiert eine 6D-Pose (x,y,z,rx,ry,rz) knapp für die Anzeige.
+    Erwartet SI-Einheiten (m, rad) oder bereits mm/deg – wir formatieren nur numerisch.
+    """
+    try:
+        x, y, z, rx, ry, rz = pose  # type: ignore[misc]
+        return f"{x:.3f}  {y:.3f}  {z:.3f}   {rx:.3f}  {ry:.3f}  {rz:.3f}"
+    except Exception:
+        return "-"  # wenn leer/ungültig, strikt leer anzeigen
+
+
 class ServiceTab(QWidget):
     """
-    Service-Tab mit 'Scene'-Gruppe:
+    Service-Tab mit 'Scene' + 'Poses'-Gruppe:
       - bindet ausschließlich an bridge._sb.signals (SceneBridge.signals)
+        und bridge._pb.signals (PosesBridge.signals)
       - keine Fallbacks, keine Initial-Befüllung aus Cache
-      - Combos/Labels reagieren nur auf eingehende Signals
-      - Set/Clear-Buttons emittieren set*Requested
+      - UI reagiert nur auf eingehende Signals
+      - Set-Buttons emittieren die Outbound-Signale der Bridges
     """
 
     def __init__(self, *, ctx, bridge, parent=None):
@@ -37,7 +51,7 @@ class ServiceTab(QWidget):
             _LOG.error("ServiceTab UI nicht gefunden: %s", ui_file)
         uic.loadUi(ui_file, self)
 
-        # Widgets
+        # ---------- Scene-Widgets ----------
         self.cmbCage: QComboBox = self.findChild(QComboBox, "cmbCage")
         self.cmbMount: QComboBox = self.findChild(QComboBox, "cmbMount")
         self.cmbSubstrate: QComboBox = self.findChild(QComboBox, "cmbSubstrate")
@@ -54,18 +68,24 @@ class ServiceTab(QWidget):
         self.btnClearMount: QPushButton = self.findChild(QPushButton, "btnClearMount")
         self.btnClearSubstrate: QPushButton = self.findChild(QPushButton, "btnClearSubstrate")
 
+        # ---------- Poses-Widgets ----------
+        self.lblHomePose: QLabel = self.findChild(QLabel, "lblHomePose")
+        self.lblServicePose: QLabel = self.findChild(QLabel, "lblServicePose")
+        self.btnSetHome: QPushButton = self.findChild(QPushButton, "btnSetHome")
+        self.btnSetService: QPushButton = self.findChild(QPushButton, "btnSetService")
+
+        # Wiring
         self._wire_scene_signals()
+        self._wire_poses_signals()
 
     # ---------- Scene: Signal-Wiring (nur echte Signals) ----------
     def _wire_scene_signals(self) -> None:
-        # NUR echte SceneBridge.signals benutzen
         sb = getattr(self.bridge, "_sb", None)
         if sb is None or not hasattr(sb, "signals") or sb.signals is None:
             _LOG.error("SceneBridge-Signale nicht verfügbar (bridge._sb.signals fehlt).")
             return
-        sig = sb.signals  # SceneSignals aus SceneBridge
+        sig = sb.signals  # SceneSignals
 
-        # Erwartete Signal-Namen (hart)
         # Inbound (ROS -> UI)
         sig.cageListChanged.connect(lambda items: self._fill_combo(self.cmbCage, items))
         sig.mountListChanged.connect(lambda items: self._fill_combo(self.cmbMount, items))
@@ -90,6 +110,24 @@ class ServiceTab(QWidget):
         if self.btnClearSubstrate:
             self.btnClearSubstrate.clicked.connect(lambda: sig.setSubstrateRequested.emit(""))
 
+    # ---------- Poses: Signal-Wiring (nur echte Signals) ----------
+    def _wire_poses_signals(self) -> None:
+        pb = getattr(self.bridge, "_pb", None)
+        if pb is None or not hasattr(pb, "signals") or pb.signals is None:
+            _LOG.error("PosesBridge-Signale nicht verfügbar (bridge._pb.signals fehlt).")
+            return
+        psig = pb.signals  # PosesSignals
+
+        # Inbound (ROS -> UI): Anzeigen als kompakte 6D-Pose
+        psig.homePoseChanged.connect(lambda pose: self._set_pose_label(self.lblHomePose, pose))
+        psig.servicePoseChanged.connect(lambda pose: self._set_pose_label(self.lblServicePose, pose))
+
+        # Outbound (UI -> ROS): nur der Name wird übertragen; Node nimmt aktuelle Roboterpose
+        if self.btnSetHome:
+            self.btnSetHome.clicked.connect(lambda: psig.poseSetRequested.emit("home"))
+        if self.btnSetService:
+            self.btnSetService.clicked.connect(lambda: psig.poseSetRequested.emit("service"))
+
     # ---------- UI-Helfer ----------
     @staticmethod
     def _fill_combo(combo: QComboBox, items: list[str]) -> None:
@@ -108,3 +146,7 @@ class ServiceTab(QWidget):
             idx = combo.findText(v)
             if idx >= 0:
                 combo.setCurrentIndex(idx)
+
+    @staticmethod
+    def _set_pose_label(label: QLabel, pose: Iterable[float] | Tuple[float, float, float, float, float, float]) -> None:
+        label.setText(_fmt_pose6(pose))

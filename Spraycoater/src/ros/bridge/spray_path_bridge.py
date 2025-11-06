@@ -1,3 +1,4 @@
+# src/ros/bridge/spray_path_bridge.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 from typing import Optional
@@ -34,17 +35,17 @@ class SprayPathSignals(QtCore.QObject):
 
 class SprayPathBridge(BaseBridge):
     """
-    UI-Bridge für 'spraypath' mit eingebauten Qt-Signalen.
+    UI-Bridge für 'spray_path' mit eingebauten Qt-Signalen.
 
     Abonniert:
-      - spraypath.current (String, latched)
-      - spraypath.poses   (PoseArray)
-      - spraypath.markers (Marker)
+      - spray_path.current (String, latched)
+      - spray_path.poses   (PoseArray)
+      - spray_path.markers (Marker)
 
     Publiziert:
-      - spraypath.set (MarkerArray)
+      - spray_path.set (MarkerArray)
     """
-    GROUP = "spraypath"
+    GROUP = "spray_path"
 
     def __init__(self, content: AppContent):
         self.signals = SprayPathSignals()
@@ -66,32 +67,32 @@ class SprayPathBridge(BaseBridge):
 
     # -------- eingehend (ROS -> UI) --------
 
-    @sub_handler("spraypath", "current")
+    @sub_handler("spray_path", "current")
     def _on_current(self, msg: String):
         self.current_name = (msg.data or "")
         self.signals.current_name = self.current_name
         self.signals.currentNameChanged.emit(self.current_name)
-        self.get_logger().info(f"[spraypath] current: {self.current_name or '-'}")
+        self.get_logger().info(f"[spray_path] current: {self.current_name or '-'}")
 
-    @sub_handler("spraypath", "poses")
+    @sub_handler("spray_path", "poses")
     def _on_poses(self, msg: PoseArray):
         self.poses = msg
         self.signals.poses = msg
         self.signals.posesChanged.emit(msg)
-        self.get_logger().info(f"[spraypath] poses received: {len(msg.poses)} poses")
+        self.get_logger().info(f"[spray_path] poses received: {len(msg.poses)} poses")
 
-    @sub_handler("spraypath", "markers")
+    @sub_handler("spray_path", "markers")
     def _on_markers(self, msg: Marker):
         self.marker = msg
         self.signals.marker = msg
         self.signals.markerChanged.emit(msg)
-        self.get_logger().info("[spraypath] marker received")
+        self.get_logger().info("[spray_path] marker received")
 
     # -------- ausgehend (UI -> ROS) --------
 
     def publish_set(self, marker_array: MarkerArray) -> None:
         """
-        Publisht das übergebene MarkerArray unverändert auf spraypath.set.
+        Publisht das übergebene MarkerArray unverändert auf spray_path.set.
         UI kann dieses Signal mit einem MarkerArray speisen (z.B. aus einem Editor).
         """
         try:
@@ -99,9 +100,9 @@ class SprayPathBridge(BaseBridge):
             Msg = self.spec("subscribe", topic_id).resolve_type()
             if not isinstance(marker_array, Msg):
                 # bewusst *keine* Konvertierung/Fallbacks – Typ muss stimmen
-                raise TypeError(f"spraypath.set erwartet {Msg.__name__}, bekommen: {type(marker_array).__name__}")
+                raise TypeError(f"spray_path.set erwartet {Msg.__name__}, bekommen: {type(marker_array).__name__}")
             pub = self.pub(topic_id)
-            self.get_logger().info(f"[spraypath] -> {topic_id}: publishing MarkerArray with {len(marker_array.markers)} markers")
+            self.get_logger().info(f"[spray_path] -> {topic_id}: publishing MarkerArray with {len(marker_array.markers)} markers")
             pub.publish(marker_array)
         except Exception as e:
-            self.get_logger().error(f"[spraypath] publish set failed: {e}")
+            self.get_logger().error(f"[spray_path] publish set failed: {e}")

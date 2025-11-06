@@ -2176,3 +2176,252 @@
 2025-11-06 20:50:30 INFO [62827] ros.launch:105 - [ERROR] [spawner-6]: process has died [pid 63270, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner joint_state_broadcaster --ros-args --log-level error --ros-args -r __node:=spawner_joint_state_broadcaster'].
 2025-11-06 20:50:32 INFO [62827] ros.launch:105 - [spawner-7] [ERROR] [1762462232.591932812] [ros2_control_controller_spawner_omron_arm_group_controller]: [91mFailed to acquire lock after multiple attempts.[0m
 2025-11-06 20:50:32 INFO [62827] ros.launch:105 - [ERROR] [spawner-7]: process has died [pid 63311, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner omron_arm_group_controller --ros-args --log-level error --ros-args -r __node:=spawner_omron_arm_group_controller'].
+2025-11-06 21:03:35 INFO [73505] ros.launch:155 - starting bringup: ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-06 21:03:35 INFO [73505] ros.launch:98 - === roslaunch stream START === pid=73629
+2025-11-06 21:03:35 INFO [73505] ros.launch:105 - [INFO] [launch]: All log files can be found below /root/.ros/log/2025-11-06-21-03-35-475333-a7c312aa7d2f-73629
+2025-11-06 21:03:35 INFO [73505] ros.launch:105 - [INFO] [launch]: Default logging verbosity is set to INFO
+2025-11-06 21:03:35 INFO [73505] ros.launch:105 - [INFO] [static_transform_publisher-1]: process started with pid [73648]
+2025-11-06 21:03:35 INFO [73505] ros.launch:105 - [INFO] [robot_state_publisher-2]: process started with pid [73649]
+2025-11-06 21:03:35 INFO [73505] ros.launch:105 - [INFO] [move_group-3]: process started with pid [73650]
+2025-11-06 21:03:35 INFO [73505] ros.launch:105 - [INFO] [rviz2-4]: process started with pid [73651]
+2025-11-06 21:03:35 INFO [73505] ros.launch:105 - [INFO] [ros2_control_node-5]: process started with pid [73652]
+2025-11-06 21:03:37 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463017.342279385] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 21:03:37 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463017.342425423] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+2025-11-06 21:03:37 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463017.451188593] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 21:03:38 INFO [73505] ros.launch:105 - [rviz2-4] Warning: class_loader.impl: SEVERE WARNING!!! A namespace collision has occurred with plugin factory for class rviz_default_plugins::displays::InteractiveMarkerDisplay. New factory will OVERWRITE existing one. This situation occurs when libraries containing plugins are directly linked against an executable (the one running right now generating this message). Please separate plugins out into their own library or just don't link against the library and use either class_loader::ClassLoader/MultiLibraryClassLoader to open.
+2025-11-06 21:03:38 INFO [73505] ros.launch:105 - [rviz2-4]          at line 321 in /opt/ros/rolling/include/class_loader/class_loader/class_loader_core.hpp
+2025-11-06 21:03:38 INFO [73505] ros.launch:105 - [INFO] [spawner-6]: process started with pid [73900]
+2025-11-06 21:03:41 INFO [73505] ros.launch:105 - [INFO] [spawner-7]: process started with pid [73940]
+2025-11-06 21:03:41 INFO [73505] ros.launch:105 - [INFO] [scene-8]: process started with pid [73941]
+2025-11-06 21:03:41 INFO [73505] ros.launch:105 - [INFO] [poses-9]: process started with pid [73942]
+2025-11-06 21:03:41 INFO [73505] ros.launch:105 - [INFO] [spray_path-10]: process started with pid [73943]
+2025-11-06 21:03:42 INFO [73505] ros.launch:105 - [move_group-3] [ERROR] [1762463022.687622673] [move_group.moveit.moveit.ros.occupancy_map_monitor]: No 3D sensor plugin(s) defined for octomap updates
+2025-11-06 21:03:43 INFO [73505] ros.launch:105 - [rviz2-4] [ERROR] [1762463023.480713876] [moveit_1810176041.moveit.ros.motion_planning_frame]: Action server: /recognize_objects not available
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9] Traceback (most recent call last):
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9]   File "/root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/poses", line 33, in <module>
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9]     sys.exit(load_entry_point('spraycoater-nodes-py', 'console_scripts', 'poses')())
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/poses.py", line 207, in main
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9]     node = Poses()
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9]            ^^^^^^^
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/poses.py", line 59, in __init__
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9]     topic_pose_set      = self.loader.subscribe_topic(NODE_KEY, "pose_set")
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9]                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/utils/config_hub.py", line 167, in subscribe_topic
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9]     spec = self._must_find(self._subs_by_id, node_key, id_, "subscribe")
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/utils/config_hub.py", line 214, in _must_find
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9]     raise RuntimeError(f"node_key '{node_key}' not found in topics ({dir_label})")
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [poses-9] RuntimeError: node_key 'poses' not found in topics (subscribe)
+2025-11-06 21:03:44 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463024.777908481] [moveit_1810176041.moveit.ros.motion_planning_frame]: MoveGroup namespace changed: / -> . Reloading params.
+2025-11-06 21:03:45 INFO [73505] ros.launch:105 - [ERROR] [poses-9]: process has died [pid 73942, exit code 1, cmd '/root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/poses --ros-args --log-level error --ros-args -r __node:=poses'].
+2025-11-06 21:03:57 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463037.758584987] [moveit_1810176041.moveit.ros.rdf_loader]: Loaded robot model in 9.78111 seconds
+2025-11-06 21:03:57 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463037.759122560] [moveit_1810176041.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-06 21:03:57 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463037.834806918] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-06 21:03:57 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463037.837220558] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-06 21:03:57 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463037.844613462] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-06 21:03:57 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463037.849935008] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-06 21:03:57 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463037.851114535] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-06 21:03:57 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463037.852533162] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-06 21:03:57 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463037.865980774] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-06 21:03:58 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463038.221515114] [moveit_1810176041.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-06 21:03:58 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463038.236063561] [moveit_1810176041.moveit.ros.planning_scene_monitor]: Listening to '/monitored_planning_scene'
+2025-11-06 21:03:59 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463039.184958197] [interactive_marker_display_93937410380912]: Connected on namespace: /rviz_moveit_motion_planning_display/robot_interaction_interactive_marker_topic
+2025-11-06 21:03:59 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463039.469554671] [interactive_marker_display_93937410380912]: Sending request for interactive markers
+2025-11-06 21:03:59 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463039.553271150] [interactive_marker_display_93937410380912]: Service response received for initialization
+2025-11-06 21:04:00 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463040.533873189] [moveit_1810176041.moveit.ros.motion_planning_frame]: group omron_arm_group
+2025-11-06 21:04:00 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463040.533952860] [moveit_1810176041.moveit.ros.motion_planning_frame]: Constructing new MoveGroup connection for group 'omron_arm_group' in namespace ''
+2025-11-06 21:04:00 INFO [73505] ros.launch:105 - [rviz2-4] [INFO] [1762463040.693961471] [moveit_1810176041.moveit.ros.move_group_interface]: Ready to take commands for planning group omron_arm_group.
+2025-11-06 21:05:35 INFO [73505] ros.launch:105 - [spawner-6] [ERROR] [1762463135.799609040] [ros2_control_controller_spawner_joint_state_broadcaster]: [91mFailed to acquire lock after multiple attempts.[0m
+2025-11-06 21:05:35 INFO [73505] ros.launch:105 - [ERROR] [spawner-6]: process has died [pid 73900, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner joint_state_broadcaster --ros-args --log-level error --ros-args -r __node:=spawner_joint_state_broadcaster'].
+2025-11-06 21:05:39 INFO [73505] ros.launch:105 - [spawner-7] [ERROR] [1762463139.252974847] [ros2_control_controller_spawner_omron_arm_group_controller]: [91mFailed to acquire lock after multiple attempts.[0m
+2025-11-06 21:05:39 INFO [73505] ros.launch:105 - [ERROR] [spawner-7]: process has died [pid 73940, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner omron_arm_group_controller --ros-args --log-level error --ros-args -r __node:=spawner_omron_arm_group_controller'].
+2025-11-06 21:09:54 INFO [78354] ros.launch:155 - starting bringup: ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-06 21:09:54 INFO [78354] ros.launch:98 - === roslaunch stream START === pid=78486
+2025-11-06 21:09:55 INFO [78354] ros.launch:105 - [INFO] [launch]: All log files can be found below /root/.ros/log/2025-11-06-21-09-55-123873-a7c312aa7d2f-78486
+2025-11-06 21:09:55 INFO [78354] ros.launch:105 - [INFO] [launch]: Default logging verbosity is set to INFO
+2025-11-06 21:09:56 INFO [78354] ros.launch:105 - [INFO] [static_transform_publisher-1]: process started with pid [78505]
+2025-11-06 21:09:56 INFO [78354] ros.launch:105 - [INFO] [robot_state_publisher-2]: process started with pid [78508]
+2025-11-06 21:09:56 INFO [78354] ros.launch:105 - [INFO] [move_group-3]: process started with pid [78509]
+2025-11-06 21:09:56 INFO [78354] ros.launch:105 - [INFO] [rviz2-4]: process started with pid [78511]
+2025-11-06 21:09:56 INFO [78354] ros.launch:105 - [INFO] [ros2_control_node-5]: process started with pid [78513]
+2025-11-06 21:09:58 INFO [78354] ros.launch:105 - [INFO] [spawner-6]: process started with pid [78649]
+2025-11-06 21:09:59 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463398.679986537] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 21:09:59 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463398.680105989] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+2025-11-06 21:09:59 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463398.736414488] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 21:09:59 INFO [78354] ros.launch:105 - [rviz2-4] Warning: class_loader.impl: SEVERE WARNING!!! A namespace collision has occurred with plugin factory for class rviz_default_plugins::displays::InteractiveMarkerDisplay. New factory will OVERWRITE existing one. This situation occurs when libraries containing plugins are directly linked against an executable (the one running right now generating this message). Please separate plugins out into their own library or just don't link against the library and use either class_loader::ClassLoader/MultiLibraryClassLoader to open.
+2025-11-06 21:09:59 INFO [78354] ros.launch:105 - [rviz2-4]          at line 321 in /opt/ros/rolling/include/class_loader/class_loader/class_loader_core.hpp
+2025-11-06 21:10:00 INFO [78354] ros.launch:105 - [INFO] [spawner-7]: process started with pid [78805]
+2025-11-06 21:10:00 INFO [78354] ros.launch:105 - [INFO] [scene-8]: process started with pid [78807]
+2025-11-06 21:10:00 INFO [78354] ros.launch:105 - [INFO] [poses-9]: process started with pid [78808]
+2025-11-06 21:10:00 INFO [78354] ros.launch:105 - [INFO] [spray_path-10]: process started with pid [78809]
+2025-11-06 21:10:03 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463403.528022459] [moveit_2990695108.moveit.ros.motion_planning_frame]: Action server: /recognize_objects not available
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463406.098775045] [moveit_2990695108.moveit.ros.motion_planning_frame]: MoveGroup namespace changed: / -> . Reloading params.
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10] Traceback (most recent call last):
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10]   File "/root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/spray_path", line 33, in <module>
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10]     sys.exit(load_entry_point('spraycoater-nodes-py', 'console_scripts', 'spray_path')())
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/spray_path.py", line 179, in main
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10]     node = SprayPath()
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10]            ^^^^^^^^^^^
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/spray_path.py", line 45, in __init__
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10]     topic_set      = self.loader.subscribe_topic(self.GROUP, "set")
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10]                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/utils/config_hub.py", line 167, in subscribe_topic
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10]     spec = self._must_find(self._subs_by_id, node_key, id_, "subscribe")
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/utils/config_hub.py", line 214, in _must_find
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10]     raise RuntimeError(f"node_key '{node_key}' not found in topics ({dir_label})")
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [spray_path-10] RuntimeError: node_key 'spraypath' not found in topics (subscribe)
+2025-11-06 21:10:06 INFO [78354] ros.launch:105 - [move_group-3] [ERROR] [1762463406.947040755] [move_group.moveit.moveit.ros.occupancy_map_monitor]: No 3D sensor plugin(s) defined for octomap updates
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9] Traceback (most recent call last):
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9]   File "/root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/poses", line 33, in <module>
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9]     sys.exit(load_entry_point('spraycoater-nodes-py', 'console_scripts', 'poses')())
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/poses.py", line 207, in main
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9]     node = Poses()
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9]            ^^^^^^^
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/poses.py", line 61, in __init__
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9]     topic_pose_set_name = self.loader.subscribe_topic(NODE_KEY, "pose_set_name")
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9]                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/utils/config_hub.py", line 167, in subscribe_topic
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9]     spec = self._must_find(self._subs_by_id, node_key, id_, "subscribe")
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/utils/config_hub.py", line 217, in _must_find
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9]     raise RuntimeError(f"topic id '{id_}' not found for node '{node_key}' ({dir_label})")
+2025-11-06 21:10:07 INFO [78354] ros.launch:105 - [poses-9] RuntimeError: topic id 'pose_set_name' not found for node 'poses' (subscribe)
+2025-11-06 21:10:08 INFO [78354] ros.launch:105 - [ERROR] [poses-9]: process has died [pid 78808, exit code 1, cmd '/root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/poses --ros-args --log-level error --ros-args -r __node:=poses'].
+2025-11-06 21:10:08 INFO [78354] ros.launch:105 - [ERROR] [spray_path-10]: process has died [pid 78809, exit code 1, cmd '/root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/spray_path --ros-args --log-level error --ros-args -r __node:=spray_path'].
+2025-11-06 21:10:16 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463416.616504785] [moveit_2990695108.moveit.ros.rdf_loader]: Loaded robot model in 9.90731 seconds
+2025-11-06 21:10:16 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463416.616622578] [moveit_2990695108.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-06 21:10:16 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463416.885139819] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-06 21:10:16 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463416.885188410] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-06 21:10:16 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463416.885194783] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-06 21:10:16 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463416.885199264] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-06 21:10:16 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463416.885204043] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-06 21:10:16 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463416.885208225] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-06 21:10:16 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463416.885211710] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-06 21:10:18 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463418.398778265] [moveit_2990695108.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-06 21:10:18 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463418.438107933] [moveit_2990695108.moveit.ros.planning_scene_monitor]: Listening to '/monitored_planning_scene'
+2025-11-06 21:10:21 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463421.118526778] [interactive_marker_display_93877340762816]: Connected on namespace: /rviz_moveit_motion_planning_display/robot_interaction_interactive_marker_topic
+2025-11-06 21:10:22 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463422.558368673] [interactive_marker_display_93877340762816]: Sending request for interactive markers
+2025-11-06 21:10:22 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463422.624481647] [interactive_marker_display_93877340762816]: Service response received for initialization
+2025-11-06 21:10:22 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463422.787723147] [moveit_2990695108.moveit.ros.motion_planning_frame]: group omron_arm_group
+2025-11-06 21:10:22 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463422.787808326] [moveit_2990695108.moveit.ros.motion_planning_frame]: Constructing new MoveGroup connection for group 'omron_arm_group' in namespace ''
+2025-11-06 21:10:24 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463424.543603471] [moveit_2990695108.moveit.ros.move_group_interface]: Ready to take commands for planning group omron_arm_group.
+2025-11-06 21:10:56 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463456.564166729] [moveit_2990695108.moveit.ros.move_group_interface]: Plan and Execute request accepted
+2025-11-06 21:10:56 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463456.564663330] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 21:10:56 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463456.564833025] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 21:10:56 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463456.564867284] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 21:10:56 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463456.564902841] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 21:10:56 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463456.564929409] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 21:10:56 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463456.564949685] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 21:10:56 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463456.564970460] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 21:10:56 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463456.564990236] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 21:10:56 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463456.565009013] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 21:10:56 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463456.566037673] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 21:10:56 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463456.566107988] [rviz.rclcpp_action]: unknown goal response, ignoring...
+2025-11-06 21:10:58 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463458.663035614] [moveit_2990695108.moveit.ros.move_group_interface]: Plan and Execute request aborted
+2025-11-06 21:10:58 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463458.663212773] [moveit_2990695108.moveit.ros.move_group_interface]: MoveGroupInterface::move() failed or timeout reached
+2025-11-06 21:10:58 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463458.676045471] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 21:10:58 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463458.684529440] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 21:10:58 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463458.688186500] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 21:10:58 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463458.694898879] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 21:10:58 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463458.695496928] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 21:10:58 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463458.696515567] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 21:10:58 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463458.697435496] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 21:10:58 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463458.698282865] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 21:10:58 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463458.703470978] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 21:10:58 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463458.712151968] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 21:10:58 INFO [78354] ros.launch:105 - [rviz2-4] [ERROR] [1762463458.720844635] [rviz.rclcpp_action]: unknown result response, ignoring...
+2025-11-06 21:11:10 INFO [78354] ros.launch:105 - [rviz2-4] [INFO] [1762463470.064460823] [moveit_2990695108.moveit.ros.planning_scene_monitor]: Stopping planning scene monitor
+2025-11-06 21:11:10 INFO [78354] ros.launch:105 - [INFO] [rviz2-4]: process has finished cleanly [pid 78511]
+2025-11-06 21:11:11 INFO [78354] ros.launch:224 - stopping bringup…
+2025-11-06 21:11:11 INFO [78354] ros.launch:114 - === roslaunch stream END ===
+2025-11-06 21:11:11 INFO [78354] ros.launch:260 - bringup stopped.
+2025-11-06 21:23:49 INFO [91669] ros.launch:155 - starting bringup: ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-06 21:23:49 INFO [91669] ros.launch:98 - === roslaunch stream START === pid=91898
+2025-11-06 21:23:50 INFO [91669] ros.launch:105 - [INFO] [launch]: All log files can be found below /root/.ros/log/2025-11-06-21-23-50-278547-a7c312aa7d2f-91898
+2025-11-06 21:23:50 INFO [91669] ros.launch:105 - [INFO] [launch]: Default logging verbosity is set to INFO
+2025-11-06 21:23:50 INFO [91669] ros.launch:105 - [INFO] [static_transform_publisher-1]: process started with pid [91908]
+2025-11-06 21:23:50 INFO [91669] ros.launch:105 - [INFO] [robot_state_publisher-2]: process started with pid [91909]
+2025-11-06 21:23:50 INFO [91669] ros.launch:105 - [INFO] [move_group-3]: process started with pid [91910]
+2025-11-06 21:23:50 INFO [91669] ros.launch:105 - [INFO] [rviz2-4]: process started with pid [91911]
+2025-11-06 21:23:50 INFO [91669] ros.launch:105 - [INFO] [ros2_control_node-5]: process started with pid [91912]
+2025-11-06 21:23:51 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464231.802274544] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 21:23:51 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464231.802419414] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+2025-11-06 21:23:51 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464231.847034370] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 21:23:51 INFO [91669] ros.launch:105 - [move_group-3] [ERROR] [1762464231.919712330] [move_group.moveit.moveit.ros.occupancy_map_monitor]: No 3D sensor plugin(s) defined for octomap updates
+2025-11-06 21:23:52 INFO [91669] ros.launch:105 - [rviz2-4] Warning: class_loader.impl: SEVERE WARNING!!! A namespace collision has occurred with plugin factory for class rviz_default_plugins::displays::InteractiveMarkerDisplay. New factory will OVERWRITE existing one. This situation occurs when libraries containing plugins are directly linked against an executable (the one running right now generating this message). Please separate plugins out into their own library or just don't link against the library and use either class_loader::ClassLoader/MultiLibraryClassLoader to open.
+2025-11-06 21:23:52 INFO [91669] ros.launch:105 - [rviz2-4]          at line 321 in /opt/ros/rolling/include/class_loader/class_loader/class_loader_core.hpp
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [rviz2-4] [ERROR] [1762464235.206616056] [moveit_2250398043.moveit.ros.motion_planning_frame]: Action server: /recognize_objects not available
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464235.271970947] [moveit_2250398043.moveit.ros.motion_planning_frame]: MoveGroup namespace changed: / -> . Reloading params.
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [INFO] [scene-6]: process started with pid [92269]
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [INFO] [poses-7]: process started with pid [92270]
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [INFO] [spray_path-8]: process started with pid [92271]
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464235.600131282] [moveit_2250398043.moveit.ros.rdf_loader]: Loaded robot model in 0.233174 seconds
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464235.600472629] [moveit_2250398043.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464235.629261587] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464235.629314679] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464235.629322278] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464235.629327277] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464235.629331976] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464235.629335976] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464235.629339275] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464235.749366742] [moveit_2250398043.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-06 21:23:55 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464235.752794001] [moveit_2250398043.moveit.ros.planning_scene_monitor]: Listening to '/monitored_planning_scene'
+2025-11-06 21:23:56 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464236.113181598] [interactive_marker_display_94437002857440]: Connected on namespace: /rviz_moveit_motion_planning_display/robot_interaction_interactive_marker_topic
+2025-11-06 21:23:56 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464236.241183143] [moveit_2250398043.moveit.ros.motion_planning_frame]: group omron_arm_group
+2025-11-06 21:23:56 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464236.241248401] [moveit_2250398043.moveit.ros.motion_planning_frame]: Constructing new MoveGroup connection for group 'omron_arm_group' in namespace ''
+2025-11-06 21:23:56 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464236.377067541] [moveit_2250398043.moveit.ros.move_group_interface]: Ready to take commands for planning group omron_arm_group.
+2025-11-06 21:23:56 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464236.390462964] [interactive_marker_display_94437002857440]: Sending request for interactive markers
+2025-11-06 21:23:56 INFO [91669] ros.launch:105 - [rviz2-4] [INFO] [1762464236.538211465] [interactive_marker_display_94437002857440]: Service response received for initialization
+2025-11-06 21:23:58 INFO [91669] ros.launch:105 - [INFO] [spawner-9]: process started with pid [92394]
+2025-11-06 21:24:02 INFO [91669] ros.launch:105 - [INFO] [spawner-10]: process started with pid [92494]
+2025-11-06 21:24:59 INFO [91669] ros.launch:105 - [spawner-9] [FATAL] [1762464299.265525178] [spawner_joint_state_broadcaster]: Could not contact service /controller_manager/list_controllers
+2025-11-06 21:24:59 INFO [91669] ros.launch:105 - [ERROR] [spawner-9]: process has died [pid 92394, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner joint_state_broadcaster --controller-manager /controller_manager --controller-manager-timeout 60 --ros-args --log-level error --ros-args -r __node:=spawner_joint_state_broadcaster'].
+2025-11-06 21:25:59 INFO [91669] ros.launch:105 - [spawner-10] [FATAL] [1762464359.662498497] [spawner_omron_arm_group_controller]: Could not contact service /controller_manager/list_controllers
+2025-11-06 21:25:59 INFO [91669] ros.launch:105 - [ERROR] [spawner-10]: process has died [pid 92494, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner omron_arm_group_controller --controller-manager /controller_manager --controller-manager-timeout 60 --ros-args --log-level error --ros-args -r __node:=spawner_omron_arm_group_controller'].
+2025-11-06 21:29:23 INFO [96576] ros.launch:155 - starting bringup: ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-06 21:29:23 INFO [96576] ros.launch:98 - === roslaunch stream START === pid=96752
+2025-11-06 21:29:23 INFO [96576] ros.launch:105 - [INFO] [launch]: All log files can be found below /root/.ros/log/2025-11-06-21-29-23-661493-a7c312aa7d2f-96752
+2025-11-06 21:29:23 INFO [96576] ros.launch:105 - [INFO] [launch]: Default logging verbosity is set to INFO
+2025-11-06 21:29:23 INFO [96576] ros.launch:105 - [INFO] [static_transform_publisher-1]: process started with pid [96768]
+2025-11-06 21:29:23 INFO [96576] ros.launch:105 - [INFO] [robot_state_publisher-2]: process started with pid [96769]
+2025-11-06 21:29:23 INFO [96576] ros.launch:105 - [INFO] [move_group-3]: process started with pid [96770]
+2025-11-06 21:29:23 INFO [96576] ros.launch:105 - [INFO] [rviz2-4]: process started with pid [96771]
+2025-11-06 21:29:23 INFO [96576] ros.launch:105 - [INFO] [ros2_control_node-5]: process started with pid [96772]
+2025-11-06 21:29:24 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464564.400981193] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 21:29:24 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464564.401079793] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+2025-11-06 21:29:24 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464564.450809399] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-06 21:29:24 INFO [96576] ros.launch:105 - [move_group-3] [ERROR] [1762464564.948015564] [move_group.moveit.moveit.ros.occupancy_map_monitor]: No 3D sensor plugin(s) defined for octomap updates
+2025-11-06 21:29:25 INFO [96576] ros.launch:105 - [rviz2-4] Warning: class_loader.impl: SEVERE WARNING!!! A namespace collision has occurred with plugin factory for class rviz_default_plugins::displays::InteractiveMarkerDisplay. New factory will OVERWRITE existing one. This situation occurs when libraries containing plugins are directly linked against an executable (the one running right now generating this message). Please separate plugins out into their own library or just don't link against the library and use either class_loader::ClassLoader/MultiLibraryClassLoader to open.
+2025-11-06 21:29:25 INFO [96576] ros.launch:105 - [rviz2-4]          at line 321 in /opt/ros/rolling/include/class_loader/class_loader/class_loader_core.hpp
+2025-11-06 21:29:28 INFO [96576] ros.launch:105 - [rviz2-4] [ERROR] [1762464568.610610943] [moveit_844871432.moveit.ros.motion_planning_frame]: Action server: /recognize_objects not available
+2025-11-06 21:29:28 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464568.707140894] [moveit_844871432.moveit.ros.motion_planning_frame]: MoveGroup namespace changed: / -> . Reloading params.
+2025-11-06 21:29:28 INFO [96576] ros.launch:105 - [INFO] [scene-6]: process started with pid [97129]
+2025-11-06 21:29:28 INFO [96576] ros.launch:105 - [INFO] [poses-7]: process started with pid [97130]
+2025-11-06 21:29:28 INFO [96576] ros.launch:105 - [INFO] [spray_path-8]: process started with pid [97131]
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.152746575] [moveit_844871432.moveit.ros.rdf_loader]: Loaded robot model in 0.334547 seconds
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.152887939] [moveit_844871432.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.181781728] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.181832343] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.181839631] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.181844523] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.181849515] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.181854307] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.181858000] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.297652089] [moveit_844871432.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.301626657] [moveit_844871432.moveit.ros.planning_scene_monitor]: Listening to '/monitored_planning_scene'
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.628186168] [interactive_marker_display_94295488878384]: Connected on namespace: /rviz_moveit_motion_planning_display/robot_interaction_interactive_marker_topic
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.756057804] [moveit_844871432.moveit.ros.motion_planning_frame]: group omron_arm_group
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.756130083] [moveit_844871432.moveit.ros.motion_planning_frame]: Constructing new MoveGroup connection for group 'omron_arm_group' in namespace ''
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.828375836] [interactive_marker_display_94295488878384]: Sending request for interactive markers
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.866612435] [moveit_844871432.moveit.ros.move_group_interface]: Ready to take commands for planning group omron_arm_group.
+2025-11-06 21:29:29 INFO [96576] ros.launch:105 - [rviz2-4] [INFO] [1762464569.900602121] [interactive_marker_display_94295488878384]: Service response received for initialization
+2025-11-06 21:29:31 INFO [96576] ros.launch:105 - [INFO] [spawner-9]: process started with pid [97212]
+2025-11-06 21:29:35 INFO [96576] ros.launch:105 - [INFO] [spawner-10]: process started with pid [97335]
+2025-11-06 21:30:33 INFO [96576] ros.launch:105 - [spawner-9] [FATAL] [1762464633.125743813] [spawner_joint_state_broadcaster]: Could not contact service /controller_manager/list_controllers
+2025-11-06 21:30:33 INFO [96576] ros.launch:105 - [ERROR] [spawner-9]: process has died [pid 97212, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner joint_state_broadcaster --controller-manager /controller_manager --controller-manager-timeout 60 --ros-args --log-level error --ros-args -r __node:=spawner_joint_state_broadcaster'].
+2025-11-06 21:31:33 INFO [96576] ros.launch:105 - [spawner-10] [FATAL] [1762464693.509233808] [spawner_omron_arm_group_controller]: Could not contact service /controller_manager/list_controllers
+2025-11-06 21:31:33 INFO [96576] ros.launch:105 - [ERROR] [spawner-10]: process has died [pid 97335, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner omron_arm_group_controller --controller-manager /controller_manager --controller-manager-timeout 60 --ros-args --log-level error --ros-args -r __node:=spawner_omron_arm_group_controller'].

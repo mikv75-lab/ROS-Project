@@ -1,0 +1,17 @@
+Traceback (most recent call last):
+  File "/root/Spraycoater/.venv/lib/python3.12/site-packages/pyvistaqt/plotting.py", line 320, in _render
+    return BasePlotter.render(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/.venv/lib/python3.12/site-packages/pyvista/plotting/plotter.py", line 2157, in render
+    self.render_window.Render()
+KeyboardInterrupt
+Traceback (most recent call last):
+  File "/root/Spraycoater/.venv/lib/python3.12/site-packages/pyvistaqt/plotting.py", line 322, in render
+    @conditional_decorator(threaded, platform.system() == "Darwin")
+    
+KeyboardInterrupt
+Traceback (most recent call last):
+  File "/root/Spraycoater/.venv/lib/python3.12/site-packages/pyvistaqt/plotting.py", line 322, in render
+    @conditional_decorator(threaded, platform.system() == "Darwin")
+    
+KeyboardInterrupt

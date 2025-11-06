@@ -406,3 +406,83 @@ RuntimeError: Context must be initialized a GuardCondition can be created
 2025-11-06 20:48:28 INFO [62827] app.startup:143 - logging configured
 2025-11-06 20:48:28 INFO [62827] app.startup:148 - warnings enabled
 2025-11-06 20:48:32 INFO [62827] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 21:03:32 INFO [73505] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 21:03:32 INFO [73505] app.startup:143 - logging configured
+2025-11-06 21:03:32 INFO [73505] app.startup:148 - warnings enabled
+2025-11-06 21:03:37 ERROR [73505] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 364, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 199, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 214, in connect
+    self._ensure_subnodes_and_wiring()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 237, in _ensure_subnodes_and_wiring
+    raise RuntimeError("PosesBridge nicht gefunden – wurde sie gestartet?")
+RuntimeError: PosesBridge nicht gefunden – wurde sie gestartet?
+2025-11-06 21:03:37 INFO [73505] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 21:09:52 INFO [78354] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 21:09:52 INFO [78354] app.startup:143 - logging configured
+2025-11-06 21:09:52 INFO [78354] app.startup:148 - warnings enabled
+2025-11-06 21:09:59 ERROR [78354] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 364, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 199, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 214, in connect
+    self._ensure_subnodes_and_wiring()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 237, in _ensure_subnodes_and_wiring
+    raise RuntimeError("PosesBridge nicht gefunden – wurde sie gestartet?")
+RuntimeError: PosesBridge nicht gefunden – wurde sie gestartet?
+2025-11-06 21:09:59 INFO [78354] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 21:23:47 INFO [91669] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 21:23:47 INFO [91669] app.startup:143 - logging configured
+2025-11-06 21:23:47 INFO [91669] app.startup:148 - warnings enabled
+2025-11-06 21:23:51 ERROR [91669] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 364, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 199, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 214, in connect
+    self._ensure_subnodes_and_wiring()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 237, in _ensure_subnodes_and_wiring
+    raise RuntimeError("PosesBridge nicht gefunden – wurde sie gestartet?")
+RuntimeError: PosesBridge nicht gefunden – wurde sie gestartet?
+2025-11-06 21:23:51 INFO [91669] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 21:29:21 INFO [96576] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 21:29:21 INFO [96576] app.startup:143 - logging configured
+2025-11-06 21:29:21 INFO [96576] app.startup:148 - warnings enabled
+2025-11-06 21:29:25 ERROR [96576] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 364, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 199, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 214, in connect
+    self._ensure_subnodes_and_wiring()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 237, in _ensure_subnodes_and_wiring
+    raise RuntimeError("PosesBridge nicht gefunden – wurde sie gestartet?")
+RuntimeError: PosesBridge nicht gefunden – wurde sie gestartet?
+2025-11-06 21:29:25 INFO [96576] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
