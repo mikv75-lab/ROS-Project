@@ -486,3 +486,244 @@ Traceback (most recent call last):
     raise RuntimeError("PosesBridge nicht gefunden – wurde sie gestartet?")
 RuntimeError: PosesBridge nicht gefunden – wurde sie gestartet?
 2025-11-06 21:29:25 INFO [96576] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 21:38:46 INFO [6540] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 21:38:46 INFO [6540] app.startup:143 - logging configured
+2025-11-06 21:38:46 INFO [6540] app.startup:148 - warnings enabled
+2025-11-06 21:38:49 ERROR [6540] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 364, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 199, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 214, in connect
+    self._ensure_subnodes_and_wiring()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 237, in _ensure_subnodes_and_wiring
+    raise RuntimeError("PosesBridge nicht gefunden – wurde sie gestartet?")
+RuntimeError: PosesBridge nicht gefunden – wurde sie gestartet?
+2025-11-06 21:38:49 INFO [6540] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 21:46:09 INFO [11882] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 21:46:09 INFO [11882] app.startup:143 - logging configured
+2025-11-06 21:46:09 INFO [11882] app.startup:148 - warnings enabled
+2025-11-06 21:46:13 ERROR [11882] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 364, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 199, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 211, in connect
+    self._bridge.start()
+  File "/root/Spraycoater/src/ros/bridge/runner.py", line 71, in start
+    poses = PosesBridge(self._content)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/poses_bridge.py", line 60, in __init__
+    super().__init__("poses_bridge", content, parent=parent)
+TypeError: BaseBridge.__init__() got an unexpected keyword argument 'parent'
+2025-11-06 21:46:13 INFO [11882] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 21:47:03 INFO [12971] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 21:47:03 INFO [12971] app.startup:143 - logging configured
+2025-11-06 21:47:03 INFO [12971] app.startup:148 - warnings enabled
+2025-11-06 21:47:51 ERROR [12971] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 364, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 199, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 211, in connect
+    self._bridge.start()
+  File "/root/Spraycoater/src/ros/bridge/runner.py", line 71, in start
+    poses = PosesBridge(self._content)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/poses_bridge.py", line 60, in __init__
+    super().__init__("poses_bridge", content, parent=parent)
+TypeError: BaseBridge.__init__() got an unexpected keyword argument 'parent'
+2025-11-06 21:47:51 INFO [12971] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 21:48:11 INFO [14467] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 21:48:11 INFO [14467] app.startup:143 - logging configured
+2025-11-06 21:48:11 INFO [14467] app.startup:148 - warnings enabled
+2025-11-06 21:48:50 INFO [15449] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 21:48:50 INFO [15449] app.startup:143 - logging configured
+2025-11-06 21:48:50 INFO [15449] app.startup:148 - warnings enabled
+2025-11-06 21:49:49 ERROR [15449] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 364, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 199, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 211, in connect
+    self._bridge.start()
+  File "/root/Spraycoater/src/ros/bridge/runner.py", line 71, in start
+    poses = PosesBridge(self._content)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/poses_bridge.py", line 60, in __init__
+    super().__init__("poses_bridge", content, parent=parent)
+TypeError: BaseBridge.__init__() got an unexpected keyword argument 'parent'
+2025-11-06 21:49:49 INFO [15449] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 21:50:00 INFO [17106] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 21:50:00 INFO [17106] app.startup:143 - logging configured
+2025-11-06 21:50:00 INFO [17106] app.startup:148 - warnings enabled
+2025-11-06 21:50:43 ERROR [17106] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 364, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 199, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 211, in connect
+    self._bridge.start()
+  File "/root/Spraycoater/src/ros/bridge/runner.py", line 71, in start
+    poses = PosesBridge(self._content)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/poses_bridge.py", line 60, in __init__
+    super().__init__("poses_bridge", content, parent=parent)
+TypeError: BaseBridge.__init__() got an unexpected keyword argument 'parent'
+2025-11-06 21:50:43 INFO [17106] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 21:51:11 INFO [18931] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 21:51:11 INFO [18931] app.startup:143 - logging configured
+2025-11-06 21:51:11 INFO [18931] app.startup:148 - warnings enabled
+2025-11-06 21:51:31 ERROR [18931] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 364, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 199, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 211, in connect
+    self._bridge.start()
+  File "/root/Spraycoater/src/ros/bridge/runner.py", line 71, in start
+    poses = PosesBridge(self._content)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/poses_bridge.py", line 60, in __init__
+    super().__init__("poses_bridge", content, parent=parent)
+TypeError: BaseBridge.__init__() got an unexpected keyword argument 'parent'
+2025-11-06 21:51:31 INFO [18931] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 21:52:09 INFO [20384] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 21:52:09 INFO [20384] app.startup:143 - logging configured
+2025-11-06 21:52:09 INFO [20384] app.startup:148 - warnings enabled
+2025-11-06 21:53:21 ERROR [20384] app.startup:45 - ConnectBridge failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 43, in _run
+    self._fn()
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 183, in _step_bridge
+    self.bridge = get_ui_bridge(self.ctx)
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 364, in get_ui_bridge
+    b.ensure_connected()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 199, in ensure_connected
+    self.connect()
+  File "/root/Spraycoater/src/ros/bridge/ui_bridge.py", line 211, in connect
+    self._bridge.start()
+  File "/root/Spraycoater/src/ros/bridge/runner.py", line 71, in start
+    poses = PosesBridge(self._content)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/ros/bridge/poses_bridge.py", line 60, in __init__
+    super().__init__("poses_bridge", content, parent=parent)
+TypeError: BaseBridge.__init__() got an unexpected keyword argument 'parent'
+2025-11-06 21:53:21 INFO [20384] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-06 21:56:43 INFO [24738] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 21:56:43 INFO [24738] app.startup:143 - logging configured
+2025-11-06 21:56:43 INFO [24738] app.startup:148 - warnings enabled
+2025-11-06 21:57:18 INFO [24738] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 22:09:24 INFO [5678] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 22:09:24 INFO [5678] app.startup:143 - logging configured
+2025-11-06 22:09:24 INFO [5678] app.startup:148 - warnings enabled
+2025-11-06 22:09:27 INFO [5678] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 22:32:53 INFO [21635] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 22:32:53 INFO [21635] app.startup:143 - logging configured
+2025-11-06 22:32:53 INFO [21635] app.startup:148 - warnings enabled
+2025-11-06 22:32:57 INFO [21635] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 22:34:35 INFO [23536] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 22:34:35 INFO [23536] app.startup:143 - logging configured
+2025-11-06 22:34:35 INFO [23536] app.startup:148 - warnings enabled
+2025-11-06 22:34:38 INFO [23536] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 22:38:32 INFO [27128] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 22:38:32 INFO [27128] app.startup:143 - logging configured
+2025-11-06 22:38:32 INFO [27128] app.startup:148 - warnings enabled
+2025-11-06 22:38:36 INFO [27128] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 22:45:57 INFO [33022] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 22:45:57 INFO [33022] app.startup:143 - logging configured
+2025-11-06 22:45:57 INFO [33022] app.startup:148 - warnings enabled
+2025-11-06 22:46:01 INFO [33022] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 22:48:36 INFO [35571] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 22:48:36 INFO [35571] app.startup:143 - logging configured
+2025-11-06 22:48:36 INFO [35571] app.startup:148 - warnings enabled
+2025-11-06 22:48:41 INFO [35571] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 22:49:49 INFO [37013] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 22:49:49 INFO [37013] app.startup:143 - logging configured
+2025-11-06 22:49:49 INFO [37013] app.startup:148 - warnings enabled
+2025-11-06 22:49:54 INFO [37013] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 22:57:45 INFO [42706] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 22:57:45 INFO [42706] app.startup:143 - logging configured
+2025-11-06 22:57:45 INFO [42706] app.startup:148 - warnings enabled
+2025-11-06 22:57:49 INFO [42706] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 23:00:19 INFO [45298] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 23:00:19 INFO [45298] app.startup:143 - logging configured
+2025-11-06 23:00:19 INFO [45298] app.startup:148 - warnings enabled
+2025-11-06 23:00:26 INFO [45298] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 23:03:23 INFO [48142] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 23:03:23 INFO [48142] app.startup:143 - logging configured
+2025-11-06 23:03:23 INFO [48142] app.startup:148 - warnings enabled
+2025-11-06 23:03:30 INFO [48142] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 23:04:33 INFO [49739] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 23:04:33 INFO [49739] app.startup:143 - logging configured
+2025-11-06 23:04:33 INFO [49739] app.startup:148 - warnings enabled
+2025-11-06 23:04:42 INFO [49739] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 23:05:38 INFO [51073] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 23:05:38 INFO [51073] app.startup:143 - logging configured
+2025-11-06 23:05:38 INFO [51073] app.startup:148 - warnings enabled
+2025-11-06 23:05:45 INFO [51073] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 23:13:34 INFO [57340] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 23:13:34 INFO [57340] app.startup:143 - logging configured
+2025-11-06 23:13:34 INFO [57340] app.startup:148 - warnings enabled
+2025-11-06 23:13:41 INFO [57340] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 23:14:44 INFO [59119] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 23:14:44 INFO [59119] app.startup:143 - logging configured
+2025-11-06 23:14:44 INFO [59119] app.startup:148 - warnings enabled
+2025-11-06 23:14:59 INFO [59119] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 23:19:24 INFO [63343] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 23:19:24 INFO [63343] app.startup:143 - logging configured
+2025-11-06 23:19:24 INFO [63343] app.startup:148 - warnings enabled
+2025-11-06 23:19:35 INFO [63343] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 23:24:58 INFO [67421] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 23:24:58 INFO [67421] app.startup:143 - logging configured
+2025-11-06 23:24:58 INFO [67421] app.startup:148 - warnings enabled
+2025-11-06 23:25:08 INFO [67421] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 23:26:33 INFO [69604] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 23:26:33 INFO [69604] app.startup:143 - logging configured
+2025-11-06 23:26:33 INFO [69604] app.startup:148 - warnings enabled
+2025-11-06 23:26:36 INFO [69604] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-06 23:35:26 INFO [75627] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-06 23:35:26 INFO [75627] app.startup:143 - logging configured
+2025-11-06 23:35:26 INFO [75627] app.startup:148 - warnings enabled
+2025-11-06 23:35:30 INFO [75627] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-07 00:28:15 INFO [18065] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-07 00:28:15 INFO [18065] app.startup:143 - logging configured
+2025-11-07 00:28:15 INFO [18065] app.startup:148 - warnings enabled
+2025-11-07 00:28:18 INFO [18065] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)

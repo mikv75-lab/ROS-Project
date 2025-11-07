@@ -1,4 +1,4 @@
-# Spraycoater/src/ros/bridge/runner.py
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 import threading
 from typing import Optional, List, Any, Tuple, Type, TypeVar
@@ -8,24 +8,26 @@ from rclpy.executors import SingleThreadedExecutor
 
 from config.startup import AppContent
 from .scene_bridge import SceneBridge
+from .poses_bridge import PosesBridge
+from .spray_path_bridge import SprayPathBridge
 
 T = TypeVar("T")
 
 
 class RosBridge:
     """
-    Betreibt Bridge-Nodes (aktuell: nur SceneBridge) in einem eigenen Executor-Thread.
+    Betreibt alle Bridge-Nodes (SceneBridge, PosesBridge, SprayPathBridge)
+    in einem eigenen Executor-Thread.
 
-    WICHTIG:
-    - Executor wird LAZY NACH rclpy.init() erzeugt (Crash-Vermeidung auf manchen RMWs).
-    - Alle Zugriffe auf _exec sind gegen None abgesichert.
+    - Executor wird NACH rclpy.init() erzeugt (Crash-Vermeidung).
     - stop() räumt deterministisch auf; danach ist start() erneut möglich.
     """
+
     def __init__(self, startup_yaml_path: str):
         self._startup_yaml_path = startup_yaml_path
         self._content = AppContent(startup_yaml_path)
 
-        self._exec: Optional[SingleThreadedExecutor] = None  # erst in start() erzeugen
+        self._exec: Optional[SingleThreadedExecutor] = None
         self._nodes: List[Any] = []
         self._thread: Optional[threading.Thread] = None
         self._running = False
@@ -61,11 +63,17 @@ class RosBridge:
             if not rclpy.ok():
                 rclpy.init(args=None)
 
-            # Executor ERST JETZT (nach init) erzeugen
+            # Executor erst nach init() erzeugen
             self._exec = SingleThreadedExecutor(context=rclpy.get_default_context())
 
+            # --- Bridges erzeugen ---
             scene = SceneBridge(self._content)
-            self._nodes.append(scene)
+            poses = PosesBridge(self._content)
+            spray = SprayPathBridge(self._content)
+
+            self._nodes.extend([scene, poses, spray])
+
+            # dem Executor hinzufügen
             for n in self._nodes:
                 self._exec.add_node(n)
 
