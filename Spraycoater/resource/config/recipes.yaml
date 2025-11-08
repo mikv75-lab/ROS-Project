@@ -10,15 +10,13 @@ recipe_params:
   globals:
     speed_mm_s:       { type: number, min: 10,   max: 2000, step: 10,  unit: "mm/s",  default: 200 }
     stand_off_mm:     { type: number, min: 0.1,  max: 200,  step: 0.1, unit: "mm",    default: 10 }
-    spray_angle_deg:  { type: number, min: 0,    max: 90,   step: 1,   unit: "deg",   default: 0 }
-    pre_dispense_s:   { type: number, min: 0.0,  max: 10.0, step: 0.1, unit: "s",     default: 0.2 }
-    post_dispense_s:  { type: number, min: 0.0,  max: 10.0, step: 0.1, unit: "s",     default: 0.1 }
-    flow_ml_min:      { type: number, min: 0.0,  max: 100.0,step: 0.1, unit: "ml/min",default: 5.0 }
-    overlap_pct:      { type: number, min: 0,    max: 100,  step: 1,   unit: "%",     default: 50 }
-    enable_purge:     { type: boolean, default: false }
     sample_step_mm:   { type: number, min: 0.05, max: 50, step: 0.05, unit: "mm", default: 1.0 }
     max_points:       { type: number, min: 100,  max: 2000000, step: 100, default: 200000 }
     max_angle_deg:    { type: number, min: 0,    max: 45, step: 0.5, default: 0 } # 0 = aus
+
+    flow_ml_min:      { type: number, min: 0.0,  max: 100.0,step: 0.1, unit: "ml/min",default: 5.0 }
+    pre_dispense_s:   { type: number, min: 0.0,  max: 10.0, step: 0.1, unit: "s",     default: 0.2 }
+    post_dispense_s:  { type: number, min: 0.0,  max: 10.0, step: 0.1, unit: "s",     default: 0.1 }
 
   # --- Meander (Ebene) ---
   path.meander.plane:

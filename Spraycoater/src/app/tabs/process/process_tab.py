@@ -1,37 +1,46 @@
-# Spraycoater/src/app/tabs/process/process_tab.py
 # -*- coding: utf-8 -*-
+# File: tabs/process/process_tab.py
 from __future__ import annotations
-import os
-import logging
-from PyQt6 import uic
-from PyQt6.QtWidgets import QWidget
+from typing import Optional
 
-_LOG = logging.getLogger("app.tabs.process")
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy, QSpacerItem
 
-
-def _project_root() -> str:
-    here = os.path.abspath(os.path.dirname(__file__))  # .../src/app/tabs/process
-    return os.path.abspath(os.path.join(here, "..", "..", "..", ".."))
-
-
-def _ui_path(filename: str) -> str:
-    # Struktur: resource/ui/tabs/process/process_tab.ui
-    return os.path.join(_project_root(), "resource", "ui", "tabs", "process", filename)
+from widgets.robot_command_status_box import RobotCommandStatusWidget
+from .process_control_widget import ProcessControlWidget
 
 
 class ProcessTab(QWidget):
     """
-    Minimaler Process-Tab:
-      - Keine RViz-Referenzen/Anzeigen.
-      - Lädt das UI und stellt nur die Buttons/Grundstruktur bereit.
+    Process-Tab (nur Code, keine .ui):
+      [0] RobotCommandStatusWidget (links Commands, rechts Status)
+      [1] ProcessControlWidget (lädt eigenes UI)
+      [2] Expanding Spacer
     """
 
-    def __init__(self, *, ctx, bridge, parent=None):
+    def __init__(self, *, ctx, bridge, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
         self.bridge = bridge
 
-        ui_file = _ui_path("process_tab.ui")
-        if not os.path.exists(ui_file):
-            _LOG.error("ProcessTab UI nicht gefunden: %s", ui_file)
-        uic.loadUi(ui_file, self)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
+
+        # [0] Command+Status oben
+        self.cmdStatus = RobotCommandStatusWidget(bridge=self.bridge, parent=self)
+        sp = self.cmdStatus.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+        self.cmdStatus.setSizePolicy(sp)
+        root.addWidget(self.cmdStatus)
+
+        # [1] Process Control (lädt eigenes UI)
+        self.procCtrl = ProcessControlWidget(ctx=self.ctx, bridge=self.bridge, parent=self)
+        sp = self.procCtrl.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+        self.procCtrl.setSizePolicy(sp)
+        root.addWidget(self.procCtrl)
+
+        # [2] Spacer
+        root.addItem(QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))

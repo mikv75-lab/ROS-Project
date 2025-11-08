@@ -5,157 +5,83 @@ from typing import Optional, Tuple, Dict
 
 import numpy as np
 import matplotlib
-# PyQt6-kompatibles Backend:
 matplotlib.use("QtAgg")
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from matplotlib.collections import PolyCollection
-
-try:
-    import pyvista as pv
-except Exception:
-    pv = None  # type: ignore
 
 _LOG = logging.getLogger("app.tabs.recipe.preview.matplot2d")
 
+PLANES = ("top", "front", "back", "left", "right")
 
-# ---------- helpers ----------
+
 def _project_points_xyz_to_plane(P: np.ndarray, plane: str) -> np.ndarray:
     if plane == "top":
-        U = P[:, [0, 1]]
-    elif plane in ("front", "back"):
-        U = P[:, [0, 2]]
-    elif plane in ("left", "right"):
-        U = P[:, [1, 2]]
-    else:
-        raise ValueError(f"Unknown plane '{plane}'")
-    return U.astype(float, copy=False)
+        return P[:, [0, 1]]
+    if plane in ("front", "back"):
+        return P[:, [0, 2]]
+    if plane in ("left", "right"):
+        return P[:, [1, 2]]
+    raise ValueError(f"Unknown plane '{plane}'")
 
 
-def _polyline_from_polydata(poly: "pv.PolyData") -> Optional[np.ndarray]:
-    if pv is None or poly is None:
-        return None
-    try:
-        if poly.n_lines <= 0:
-            return None
-        lines = poly.lines.reshape(-1, 3)
-        idxs = []
-        for rec in lines:
-            if int(rec[0]) != 2:
-                continue
-            idxs.extend([int(rec[1]), int(rec[2])])
-        if not idxs:
-            return None
-        idxs = np.asarray(idxs, dtype=int)
-        P = np.asarray(poly.points, dtype=float)
-        return P[idxs]
-    except Exception:
-        _LOG.exception("Polyline extraction from PolyData failed")
-        return None
-
-
-# ---------- main widget ----------
 class Matplot2DView(FigureCanvas):
+    """Minimaler 2D-Renderer: zeigt ausschließlich den Pfad in Grün."""
     def __init__(self, parent=None):
         self._fig: Figure = Figure(figsize=(6, 6), dpi=100)
         super().__init__(self._fig)
-
         self._ax = self._fig.add_subplot(111)
         self._ax.set_aspect("equal", adjustable="box")
 
-        self._bounds: Tuple[float, float, float, float, float, float] = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
+        self._bounds: Tuple[float, float, float, float, float, float] = (-120, 120, -120, 120, 0, 240)
         self._plane: str = "top"
-
-        self._mesh: Optional["pv.PolyData"] = None
         self._path_xyz: Optional[np.ndarray] = None
-        self._mask_poly: Optional["pv.PolyData"] = None
-        self._markers_xy: Optional[np.ndarray] = None  # 2D Marker (N,2), z.B. Start/End
 
-        # simple style dict (kann per set_style() überschrieben werden)
-        self._style: Dict[str, str] = {
-            "mesh_fill": "#d0d6dd",
-            "mask_line": "#4169E1",
-            "path_line": "#2ecc71",
-            "grid_line": ":",
-            "grid_alpha": "0.5",
-            "tick_color": "black",
+        # Cache der projizierten Pfade je Ebene
+        self._path2d: Dict[str, Optional[np.ndarray]] = {p: None for p in PLANES}
+
+        # UI-Zustand
+        self._user_limits: Optional[Tuple[float, float, float, float]] = None
+
+        self._style = {
+            "grid_alpha": 0.4,
+            "grid_ls": ":",
+            "path_color": "#2ecc71",
+            "path_lw": 1.8,
+            "marker_size": 20.0,
+            "marker_edge": "#1e824c",
+            "marker_face": "#2ecc71",
         }
 
         self._fig.tight_layout()
 
-    # ---------- Public API (neue, klare Setter) ----------
+    # ---------- Public API ----------
     def set_plane(self, plane: str):
-        if plane not in ("top", "front", "back", "left", "right"):
+        if plane not in PLANES:
             _LOG.warning("Unknown plane '%s'", plane)
             return
         self._plane = plane
+        self._user_limits = None
         self._redraw()
-
-    # Legacy/kompatibel:
-    def _set_plane(self, plane: str):
-        self.set_plane(plane)
 
     def set_bounds(self, bounds: Tuple[float, float, float, float, float, float]):
-        self._bounds = tuple(map(float, bounds))  # type: ignore
-        self._redraw()
-
-    def set_mesh(self, mesh: "pv.PolyData | None"):
-        self._mesh = mesh
-        self._redraw()
+        self._bounds = tuple(map(float, bounds))
+        if self._user_limits is None:
+            self._redraw()
+        else:
+            self._redraw(keep_limits=True)
 
     def set_path_xyz(self, path_xyz: np.ndarray | None):
-        self._path_xyz = np.asarray(path_xyz, dtype=float) if path_xyz is not None else None
-        self._redraw()
+        self._path_xyz = None if path_xyz is None else np.asarray(path_xyz, dtype=float).reshape(-1, 3)
+        # Cache neu aufbauen
+        for p in PLANES:
+            self._path2d[p] = None if self._path_xyz is None else _project_points_xyz_to_plane(self._path_xyz, p)
+        self._redraw(keep_limits=True)
 
-    def set_mask_poly(self, mask_poly: "pv.PolyData | None"):
-        self._mask_poly = mask_poly
-        self._redraw()
-
-    def clear_overlays(self):
-        """Nur Pfad/Mask/Marker löschen (Mesh+Bounds bleiben)."""
-        self._path_xyz = None
-        self._mask_poly = None
-        self._markers_xy = None
-        self._redraw()
-
-    def set_markers2d(self, points_xy: np.ndarray | None):
-        """
-        Setzt optionale Marker in 2D (z.B. Start/Ende).
-        Erwartet bereits projizierte 2D-Punkte (N,2). Wenn du 3D-Punkte hast,
-        projiziere sie vorab mit _project_points_xyz_to_plane(...).
-        """
-        if points_xy is None:
-            self._markers_xy = None
-        else:
-            P = np.asarray(points_xy, dtype=float).reshape(-1, 2)
-            self._markers_xy = P if len(P) else None
-        self._redraw()
-
-    def set_style(self, **colors: str):
-        """
-        set_style(mesh_fill="#...", mask_line="#...", path_line="#...", grid_line=":", tick_color="black", grid_alpha="0.5")
-        """
-        for k, v in colors.items():
-            if k in self._style and isinstance(v, str):
-                self._style[k] = v
-        self._redraw()
-
-    # ---------- Abwärtskompatibel: Convenience ----------
-    def set_scene(
-        self,
-        *,
-        substrate_mesh: "pv.PolyData | None",
-        path_xyz: np.ndarray | None,
-        bounds: Tuple[float, float, float, float, float, float] | None = None,
-        mask_poly: "pv.PolyData | None" = None,
-    ):
-        self._mesh = substrate_mesh
-        self._path_xyz = np.asarray(path_xyz, dtype=float) if path_xyz is not None else None
-        self._mask_poly = mask_poly
+    def set_scene(self, *, substrate_mesh, path_xyz, bounds=None, mask_poly=None, **_kwargs):
+        # ignoriert Mesh/Mask – zeigt NUR den Pfad
         if bounds is not None:
             self._bounds = tuple(map(float, bounds))
-        self._redraw()
+        self.set_path_xyz(path_xyz)
 
     def show_top(self):   self.set_plane("top")
     def show_front(self): self.set_plane("front")
@@ -163,175 +89,61 @@ class Matplot2DView(FigureCanvas):
     def show_left(self):  self.set_plane("left")
     def show_right(self): self.set_plane("right")
 
-    def force_redraw(self):
-        self._redraw()
-
     # ---------- intern ----------
     def _set_labels(self):
         if self._plane == "top":
             self._ax.set_title("Top (Z in Bildtiefe)")
-            self._ax.set_xlabel("X (mm)")
-            self._ax.set_ylabel("Y (mm)")
-        elif self._plane == "front":
-            self._ax.set_title("Front (Y in Bildtiefe)")
-            self._ax.set_xlabel("X (mm)")
-            self._ax.set_ylabel("Z (mm)")
-        elif self._plane == "back":
-            self._ax.set_title("Back (Y in Bildtiefe)")
-            self._ax.set_xlabel("X (mm)")
-            self._ax.set_ylabel("Z (mm)")
-        elif self._plane == "left":
-            self._ax.set_title("Left (X in Bildtiefe)")
-            self._ax.set_xlabel("Y (mm)")
-            self._ax.set_ylabel("Z (mm)")
-        elif self._plane == "right":
-            self._ax.set_title("Right (X in Bildtiefe)")
-            self._ax.set_xlabel("Y (mm)")
-            self._ax.set_ylabel("Z (mm)")
+            self._ax.set_xlabel("X (mm)"); self._ax.set_ylabel("Y (mm)")
+        elif self._plane in ("front", "back"):
+            self._ax.set_title(f"{self._plane.capitalize()} (Y in Bildtiefe)")
+            self._ax.set_xlabel("X (mm)"); self._ax.set_ylabel("Z (mm)")
+        else:
+            self._ax.set_title(f"{self._plane.capitalize()} (X in Bildtiefe)")
+            self._ax.set_xlabel("Y (mm)"); self._ax.set_ylabel("Z (mm)")
 
-    def _set_limits_from_bounds(self):
+    def _default_limits_from_bounds(self) -> Tuple[float, float, float, float]:
         xmin, xmax, ymin, ymax, zmin, zmax = self._bounds
         if self._plane == "top":
-            self._ax.set_xlim(xmin, xmax)
-            self._ax.set_ylim(ymin, ymax)
-        elif self._plane in ("front", "back"):
-            self._ax.set_xlim(xmin, xmax)
-            self._ax.set_ylim(zmin, zmax)
-        else:  # left/right
-            self._ax.set_xlim(ymin, ymax)
-            self._ax.set_ylim(zmin, zmax)
+            return xmin, xmax, ymin, ymax
+        if self._plane in ("front", "back"):
+            return xmin, xmax, zmin, zmax
+        return ymin, ymax, zmin, zmax
 
     def _configure_grid(self):
-        self._ax.grid(True, linestyle=self._style["grid_line"], linewidth=0.5, alpha=float(self._style["grid_alpha"]))
-
-    def _projected_triangles(self, plane: str):
-        if pv is None or self._mesh is None or self._mesh.n_points == 0:
-            return None
-        try:
-            mesh = self._mesh
-            try:
-                mesh = mesh.extract_surface()
-            except Exception:
-                pass
-            try:
-                mesh = mesh.triangulate(copy=True)
-            except Exception:
-                pass
-
-            faces = getattr(mesh, "faces", None)
-            if faces is None:
-                return None
-            faces = np.asarray(faces)
-            if faces.size == 0:
-                return None
-
-            P = np.asarray(mesh.points, dtype=float).reshape(-1, 3)
-            U = _project_points_xyz_to_plane(P, plane)
-
-            # VTK faces: [3, i, j, k, 3, i, j, k, ...]
-            try:
-                faces_r = faces.reshape(-1, 4)
-                tri_rows = faces_r[:, 0] == 3
-                if not np.any(tri_rows):
-                    return None
-                tris_idx = faces_r[tri_rows, 1:4]
-            except Exception:
-                cursor = 0
-                idx_list = []
-                f = faces
-                n = f.size
-                while cursor < n:
-                    m = int(f[cursor]); cursor += 1
-                    if m == 3 and cursor + 3 <= n:
-                        idx_list.append([int(f[cursor]), int(f[cursor+1]), int(f[cursor+2])])
-                    cursor += m
-                if not idx_list:
-                    return None
-                tris_idx = np.asarray(idx_list, dtype=int)
-
-            tris_2d = []
-            for tri in tris_idx:
-                if np.any(tri < 0) or np.any(tri >= U.shape[0]):
-                    continue
-                tri2d = U[tri]
-                if np.all(np.isfinite(tri2d)):
-                    tris_2d.append(tri2d)
-            return tris_2d
-        except Exception:
-            _LOG.exception("projected triangles failed for plane=%s", plane)
-            return None
-
-    def _draw_mesh_fill(self):
-        tris = self._projected_triangles(self._plane)
-        if not tris:
-            return
-        try:
-            coll = PolyCollection(
-                tris,
-                facecolor=self._style["mesh_fill"],
-                edgecolor="none",
-                alpha=0.45,
-                zorder=1,
-            )
-            self._ax.add_collection(coll)
-        except Exception:
-            _LOG.exception("draw mesh fill via triangles failed")
-
-    def _draw_mask_poly(self):
-        if pv is None or self._mask_poly is None:
-            return
-        try:
-            P3 = _polyline_from_polydata(self._mask_poly)
-            if P3 is None or len(P3) == 0:
-                return
-            U = _project_points_xyz_to_plane(P3, self._plane)
-            self._ax.plot(
-                U[:, 0], U[:, 1],
-                linestyle="-", linewidth=1.0,
-                color=self._style["mask_line"], alpha=0.9, zorder=3
-            )
-        except Exception:
-            _LOG.exception("draw mask poly failed")
+        self._ax.grid(True, linestyle=self._style["grid_ls"], alpha=self._style["grid_alpha"], linewidth=0.5)
 
     def _draw_path(self):
-        if self._path_xyz is None or len(self._path_xyz) == 0:
+        U = self._path2d.get(self._plane)
+        if U is None or len(U) == 0:
             return
-        try:
-            U = _project_points_xyz_to_plane(self._path_xyz, self._plane)
-            self._ax.plot(
-                U[:, 0], U[:, 1], "-",
-                linewidth=2.0, color=self._style["path_line"],
-                alpha=0.95, zorder=4
-            )
-        except Exception:
-            _LOG.exception("draw path failed")
+        self._ax.plot(U[:, 0], U[:, 1], color=self._style["path_color"], linewidth=self._style["path_lw"])
+        # Start/Ende
+        self._ax.scatter([U[0, 0], U[-1, 0]], [U[0, 1], U[-1, 1]],
+                         s=self._style["marker_size"],
+                         edgecolors=self._style["marker_edge"],
+                         facecolors=self._style["marker_face"],
+                         zorder=3)
 
-    def _draw_markers(self):
-        if self._markers_xy is None or len(self._markers_xy) == 0:
-            return
+    def _redraw(self, *, keep_limits: bool = False):
         try:
-            M = np.asarray(self._markers_xy, dtype=float).reshape(-1, 2)
-            # Punktmarken
-            self._ax.scatter(M[:, 0], M[:, 1], s=18, c="#111111", zorder=5)
-            # Optional: Start/End-Linie dezent verbinden
-            if len(M) >= 2:
-                self._ax.plot(M[[0, -1], 0], M[[0, -1], 1], linestyle="--", linewidth=0.8, color="#666666", zorder=4)
-        except Exception:
-            _LOG.exception("draw markers failed")
+            saved = self._user_limits if keep_limits and (self._user_limits is not None) else None
 
-    def _redraw(self):
-        try:
             self._ax.clear()
             self._ax.set_aspect("equal", adjustable="box")
             self._set_labels()
-            self._set_limits_from_bounds()
-            self._configure_grid()
 
-            # Reihenfolge: Fläche -> Maske -> Pfad -> Marker
-            self._draw_mesh_fill()
-            self._draw_mask_poly()
+            if saved is None:
+                x0, x1, y0, y1 = self._default_limits_from_bounds()
+                self._ax.set_xlim(x0, x1); self._ax.set_ylim(y0, y1)
+            else:
+                self._ax.set_xlim(saved[0], saved[1]); self._ax.set_ylim(saved[2], saved[3])
+
+            self._configure_grid()
             self._draw_path()
-            self._draw_markers()
+
+            if saved is None:
+                x0, x1 = self._ax.get_xlim(); y0, y1 = self._ax.get_ylim()
+                self._user_limits = (x0, x1, y0, y1)
 
             self._fig.tight_layout()
             self.draw_idle()

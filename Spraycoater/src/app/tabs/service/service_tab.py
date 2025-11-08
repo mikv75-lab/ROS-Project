@@ -10,11 +10,12 @@ from PyQt6.QtWidgets import (
 )
 
 # Eigenständige Widgets (verdrahten sich selbst mit der Bridge)
-from .robot_status_box import RobotStatusGroupBox
+from ...widgets.robot_command_status_box import RobotCommandStatusWidget  # ⬅️ kombiniert: Commands (links) + Status (rechts)
 from .scene_box import SceneGroupBox
 from .poses_box import PosesGroupBox
-from .motion_widget import MotionWidget      # enthält PlannerGroupBox
-from .servo_widgets import JointJogWidget, CartesianJogWidget  # <— neu: getrennte Jog-Widgets
+from .tool_box import ToolGroupBox
+from .motion_widget import MotionWidget          # enthält PlannerGroupBox + Motion-Speed
+from .servo_widgets import JointJogWidget, CartesianJogWidget  # getrennte Jog-Widgets
 
 _LOG = logging.getLogger("app.tabs.service")
 
@@ -23,12 +24,12 @@ class ServiceTab(QWidget):
     """
     Service-Tab Layout (nur Code, keine .ui):
 
-      [0] RobotStatusGroupBox
-      [1] Row(HBox): SceneGroupBox | PosesGroupBox  (nebeneinander)
-      [2] Tabs:
-            ├── Motion (MotionGroupBox inkl. Planner)
-            ├── Joint Jog (jointJogWidget)
-            └── Cartesian Jog (CartesianJogBox)
+      [0] Command+Status   (RobotCommandStatusWidget: links Commands, rechts Status)
+      [1] Tabs:
+            ├── Motion (Planner + Motion-Speed)
+            ├── Joint Jog
+            └── Cartesian Jog
+      [2] Row(HBox): PosesGroupBox | ToolGroupBox | SceneGroupBox
       [3] Spacer (Expanding)
     """
 
@@ -37,39 +38,24 @@ class ServiceTab(QWidget):
         self.ctx = ctx
         self.bridge = bridge
 
-        # Root-Layout: einzige VBox
+        # Root-Layout
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
 
-        # --- [0] Status ------------------------------------------------------
-        self.statusBox = RobotStatusGroupBox(self.bridge, self)
-        root.addWidget(self.statusBox)
+        # --- [0] Command + Status (oben) ------------------------------------
+        self.commandStatus = RobotCommandStatusWidget(self.bridge, self)
+        sp = self.commandStatus.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+        self.commandStatus.setSizePolicy(sp)
+        root.addWidget(self.commandStatus)
 
-        # --- [1] Scene | Poses nebeneinander --------------------------------
-        self.sceneBox = SceneGroupBox(self.bridge, self)
-        self.posesBox = PosesGroupBox(self.bridge, self)
-
-        rowScenePoses = QHBoxLayout()
-        rowScenePoses.setSpacing(8)
-        rowScenePoses.addWidget(self.sceneBox)
-        rowScenePoses.addWidget(self.posesBox)
-        rowScenePoses.setStretch(0, 1)
-        rowScenePoses.setStretch(1, 1)
-        root.addLayout(rowScenePoses)
-
-        # Resize-Policies
-        for w in (self.sceneBox, self.posesBox):
-            sp = w.sizePolicy()
-            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-            sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
-            w.setSizePolicy(sp)
-
-        # --- [2] Subtabs: Motion | Joint Jog | Cartesian Jog -----------------
+        # --- [1] Subtabs: Motion | Joint Jog | Cartesian Jog ----------------
         self.tabs = QTabWidget(self)
         root.addWidget(self.tabs)
 
-        # (a) Motion (mit Planner + Motion-Speed mm/s)
+        # (a) Motion
         self.motionWidget = MotionWidget(self.bridge, self.tabs)
         self.tabs.addTab(self.motionWidget, "Motion")
 
@@ -87,11 +73,34 @@ class ServiceTab(QWidget):
             sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
             w.setSizePolicy(sp)
 
-        # --- [3] EIN Expanding Spacer am Ende --------------------------------
+        # --- [2] Unten: Poses | Tool | Scene nebeneinander ------------------
+        self.posesBox = PosesGroupBox(self.bridge, self)
+        self.toolBox  = ToolGroupBox(self.bridge, self)
+        self.sceneBox = SceneGroupBox(self.bridge, self)
+
+        rowBottom = QHBoxLayout()
+        rowBottom.setSpacing(8)
+        rowBottom.addWidget(self.posesBox)
+        rowBottom.addWidget(self.toolBox)
+        rowBottom.addWidget(self.sceneBox)
+        # gleichmäßig stretchen
+        rowBottom.setStretch(0, 1)
+        rowBottom.setStretch(1, 1)
+        rowBottom.setStretch(2, 1)
+        root.addLayout(rowBottom)
+
+        # Resize-Policies für die drei Boxen
+        for w in (self.posesBox, self.toolBox, self.sceneBox):
+            sp = w.sizePolicy()
+            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+            sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+            w.setSizePolicy(sp)
+
+        # --- [3] EIN Expanding Spacer am Ende -------------------------------
         root.addItem(QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
     # ------------ Forwarder (optional) ---------------------------------------
-    # Planner (aus MotionGroupBox)
+    # Planner (aus Motion-Subtab)
     def get_planner(self) -> str:
         return self.motionWidget.get_planner()
 

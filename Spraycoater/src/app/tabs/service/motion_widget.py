@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any
 from PyQt6 import QtCore
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QPushButton, QDoubleSpinBox, QWidget
+    QPushButton, QDoubleSpinBox
 )
 
 # Planner-Widget (keine Signals, nur Getter/Setter)
@@ -17,11 +17,10 @@ class MotionWidget(QWidget):
     """
     Motion-Commands + Planner + eigene Motion-Geschwindigkeit (mm/s).
 
-    UI:
-      - Speed (mm/s): eigener Regler NUR für Motion
-      - Buttons: Move to Home / Move to Service
-      - PlannerGroupBox (unten)
-      - (kein UI-File)
+    REIHENFOLGE (wie gewünscht):
+      1) PlannerGroupBox (Common, Pipeline, Planner ID, params)
+      2) Speed (mm/s)
+      3) Buttons: Move to Home / Move to Service
 
     Signals (Widget -> außen/Bridge):
       - motionSpeedChanged(float mm_s)
@@ -48,8 +47,15 @@ class MotionWidget(QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
 
-        # --- Motion Speed (mm/s) ---
+        # --- 1) Planner oben ---
+        self.planner = PlannerGroupBox(self)
+        self.planner.set_params(PLANNER_CONFIG)
+        root.addWidget(self.planner)
+
+        # --- 2) Motion Speed (mm/s) ---
         frm = QFormLayout()
         self.spinSpeed = QDoubleSpinBox(self)
         self.spinSpeed.setRange(1.0, 2000.0)     # anpassbar
@@ -62,7 +68,7 @@ class MotionWidget(QWidget):
 
         self.spinSpeed.valueChanged.connect(lambda v: self.motionSpeedChanged.emit(float(v)))
 
-        # --- Buttons ---
+        # --- 3) Buttons ---
         row = QHBoxLayout()
         self.btnHome = QPushButton("Move to Home", self)
         self.btnService = QPushButton("Move to Service", self)
@@ -78,11 +84,6 @@ class MotionWidget(QWidget):
         self.btnService.clicked.connect(self.moveServiceRequested.emit)
         self.btnHome.clicked.connect(lambda: self.moveHomeRequestedWithSpeed.emit(self.get_motion_speed_mm_s()))
         self.btnService.clicked.connect(lambda: self.moveServiceRequestedWithSpeed.emit(self.get_motion_speed_mm_s()))
-
-        # --- Planner unten ---
-        self.planner = PlannerGroupBox(self)
-        self.planner.set_params(PLANNER_CONFIG)
-        root.addWidget(self.planner)
 
     def _wire_outbound_to_bridge_if_present(self):
         # bevorzugt dedizierte Motion-Bridge, sonst Poses-Bridge
@@ -111,7 +112,7 @@ class MotionWidget(QWidget):
 
     # ---------- Utilities ----------
     def set_busy(self, busy: bool):
-        self.btnHome.setEnabled(not busy)  # Python hat kein ! -> wir korrigieren unten
+        self.btnHome.setEnabled(not busy)
         self.btnService.setEnabled(not busy)
         self.spinSpeed.setEnabled(not busy)
 

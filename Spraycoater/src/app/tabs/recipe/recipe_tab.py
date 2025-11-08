@@ -9,7 +9,6 @@ from PyQt6.QtWidgets import QWidget, QHBoxLayout
 from PyQt6.QtCore import Qt
 
 from .recipe_editor_panel.recipe_editor_panel import RecipeEditorPanel
-from .planning_panel.planning_panel import PlanningPanel
 from .coating_preview_panel.coating_preview_panel import CoatingPreviewPanel
 
 from .coating_preview_panel.mesh_utils import (
@@ -29,17 +28,20 @@ class RecipeTab(QWidget):
         self.bridge = bridge
         self._attach_preview_widget = attach_preview_widget
 
-        # interner Traj-Puffer für PlanningPanel
+        # Interner Traj-/Meta-Puffer (ohne PlanningPanel)
         self._last_traj: Optional[Dict[str, Any]] = None
+        self._last_yaml: str = ""
 
         # Layout
         hroot = QHBoxLayout(self)
         hroot.setContentsMargins(6, 6, 6, 6)
         hroot.setSpacing(8)
 
+        # Links: Recipe-Editor
         self.recipePanel = RecipeEditorPanel(ctx=self.ctx, parent=self)
         hroot.addWidget(self.recipePanel, 0)
 
+        # Mitte/Rechts: Preview
         self.previewPanel = CoatingPreviewPanel(ctx=self.ctx, parent=self)
         hroot.addWidget(self.previewPanel, 1)
 
@@ -52,35 +54,23 @@ class RecipeTab(QWidget):
         except Exception:
             _LOG.exception("RecipeTab: adopt previewPlot into previewPanel failed")
 
-        self.planningPanel = PlanningPanel(ctx=self.ctx, bridge=self.bridge, parent=self)
-        hroot.addWidget(self.planningPanel, 0)
-
-        # Wiring: Recipe → Preview (Render anstoßen)
+        # --- Wiring: Recipe → Preview (Render anstoßen)
         self.recipePanel.updatePreviewRequested.connect(
             lambda model: self._render_preview(model),
             Qt.ConnectionType.QueuedConnection
         )
 
-        # PlanningPanel-Provider setzen
-        if hasattr(self.planningPanel, "set_model_provider"):
-            self.planningPanel.set_model_provider(self.recipePanel.current_model)
-        if hasattr(self.planningPanel, "set_traj_provider"):
-            # liefert immer den aktuellsten Traj-Snapshot
-            self.planningPanel.set_traj_provider(lambda: self._last_traj)
-        if hasattr(self.planningPanel, "set_bridge"):
-            self.planningPanel.set_bridge(self.bridge)
-
-        # --- Preview → Planning: YAML und (optional) Rohpfad ---
-        # YAML → Textbox im PlanningPanel
+        # --- Preview → interne Puffer (ohne PlanningPanel) -------------------
         try:
+            # YAML-Text (z.B. für Debug/Export)
             self.previewPanel.previewYamlReady.connect(self._on_preview_yaml_ready)
-            # Kamera-Update an dasselbe Signal hängen
+            # Kamera sanft updaten
             self.previewPanel.previewYamlReady.connect(lambda *_: self._on_preview_event())
         except Exception:
             _LOG.exception("connect previewYamlReady failed")
 
-        # optional: Pfadpunkte als Traj puffern + Kamera-Update
         try:
+            # Pfadpunkte (mm) als einfacher Snapshot
             self.previewPanel.pathReady.connect(self._on_path_ready)
             self.previewPanel.pathReady.connect(lambda *_: self._on_preview_event())
         except Exception:
@@ -88,12 +78,11 @@ class RecipeTab(QWidget):
 
     # --- Slots für Preview-Signale ---
     def _on_preview_yaml_ready(self, text: str) -> None:
-        """Schreibt das YAML in die Planning-Textbox."""
+        """Puffert den YAML-Text lokal (PlanningPanel existiert nicht mehr)."""
         try:
-            if hasattr(self.planningPanel, "set_preview_yaml"):
-                self.planningPanel.set_preview_yaml(text or "")
+            self._last_yaml = text or ""
         except Exception:
-            _LOG.exception("set_preview_yaml failed")
+            _LOG.exception("_on_preview_yaml_ready failed")
 
     def _on_path_ready(self, path_xyz: Optional[np.ndarray]) -> None:
         """
@@ -108,22 +97,19 @@ class RecipeTab(QWidget):
                     "points_mm": P.tolist(),
                     "count": int(P.shape[0]),
                 }
-            # Provider zeigt immer auf self._last_traj, daher kein erneutes Setzen nötig.
         except Exception:
             _LOG.exception("_on_path_ready failed")
 
     def _on_preview_event(self) -> None:
         """
-        Gemeinsames Kamera-Update für dieselben Events wie das Planning (YAML/Pfad ready).
+        Gemeinsames Kamera-Update für dieselben Events (YAML/Pfad ready).
         Absichtlich ohne harten Reset für smoothes Verhalten.
         """
         try:
-            # leichte Orientierungssnap (optional)
             self.previewPanel.view_isometric()
         except Exception:
             pass
         try:
-            # sanftes Render ohne Kamera-Hard-Reset (Jitter vermeiden)
             self.previewPanel.render(reset_camera=False)
         except Exception:
             _LOG.exception("preview camera update failed")
@@ -258,7 +244,6 @@ class RecipeTab(QWidget):
                     ray_len_mm=1000.0,
                     visibility=vis,
                 )
-                # Falls Overlays eine explizite Sichtbarkeitsanwendung anbieten:
                 if hasattr(self.previewPanel.overlays, "apply_visibility"):
                     self.previewPanel.overlays.apply_visibility(vis)
             except Exception:

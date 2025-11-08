@@ -110,7 +110,6 @@ def project_path_via_rays_reflected(
     stand_off_mm: float,
     ray_dir_fn: Callable[[np.ndarray], np.ndarray],
     ray_len_mm: float = 10000.0,
-    use_point_normals: bool = True,         # glattere Normale (empfohlen)
     grazing_cos_min: float = 1e-3,          # ~3.3° Grenzwinkel
 ) -> RayProjectResult:
     """
@@ -124,7 +123,6 @@ def project_path_via_rays_reflected(
 
     mesh = substrate_mesh.triangulate()
     face_normals = np.asarray(mesh.face_normals)   # alias zu cell_normals
-    point_normals = np.asarray(mesh.point_normals)
 
     P = np.asarray(P_mm, dtype=float).reshape(-1, 3)
     D = _normalize(np.asarray(ray_dir_fn(P), dtype=float).reshape(-1, 3))

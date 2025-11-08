@@ -5,7 +5,6 @@ from typing import Dict, Any, Optional
 from copy import deepcopy
 from PyQt6 import QtWidgets, QtCore
 
-# ===== Default-Konfiguration (später von dir an MoveIt anpassen) =====
 PLANNER_CONFIG: Dict[str, Any] = {
     "pipeline": "ompl",
     "planner_id": "RRTConnectkConfigDefault",
@@ -18,12 +17,7 @@ PLANNER_CONFIG: Dict[str, Any] = {
         "allow_replanning": False,
     },
     "ompl": {"range": 0.0, "goal_bias": 0.05},
-    "chomp": {
-        "planning_time_limit": 3.0,
-        "learning_rate": 0.05,
-        "smoothness_weight": 0.1,
-        "obstacle_cost_weight": 1.0,
-    },
+    "chomp": {"planning_time_limit": 3.0, "learning_rate": 0.05, "smoothness_weight": 0.1, "obstacle_cost_weight": 1.0},
     "stomp": {"num_iterations": 60, "num_rollouts": 30, "noise_stddev": 0.01},
     "pilz": {"max_velocity_scaling": 0.5, "max_acceleration_scaling": 0.5},
     "servo": {"publish_period": 0.010, "low_pass_filter_coeff": 2.0},
@@ -31,23 +25,12 @@ PLANNER_CONFIG: Dict[str, Any] = {
 
 
 class PlannerGroupBox(QtWidgets.QGroupBox):
-    """
-    Minimaler Planner-Selector ohne Signals.
-    Kern-API:
-        get_planner() -> str
-        set_planner(pipeline: str) -> None
-        get_params() -> Dict[str, Any]
-        set_params(cfg: Dict[str, Any]) -> None
-        reset_defaults() -> None
-
-    Rezept-Helper:
-        set_from_recipe(recipe: Dict, key: str = "planner") -> None
-        to_recipe_block(key: str = "planner") -> Dict[str, Any]
-    """
-
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None, title: str = "Planner"):
         super().__init__(parent)
         self.setTitle(title)
+        # kompakte Rahmenoptik erlaubt noch etwas weniger vertical chrome
+        self.setFlat(False)
+
         self._stack_map = {"ompl": 0, "chomp": 1, "stomp": 2, "pilz": 3, "servo": 4}
         self._build_ui()
         self._apply_config(PLANNER_CONFIG)
@@ -55,18 +38,43 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
     # ---------- UI ----------
     def _build_ui(self):
         root = QtWidgets.QVBoxLayout(self)
+        root.setContentsMargins(6, 6, 6, 6)
+        root.setSpacing(8)
 
-        # Header (Pipeline + PlannerID)
+        # --- COMMON (always on top) ---
+        commonForm = QtWidgets.QFormLayout()
+        commonForm.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+        self.spinPlanningTime = QtWidgets.QDoubleSpinBox(self)
+        self.spinPlanningTime.setRange(0.10, 120.0); self.spinPlanningTime.setSingleStep(0.10)
+        self.spinAttempts = QtWidgets.QSpinBox(self); self.spinAttempts.setRange(1, 100)
+        self.spinVel = QtWidgets.QDoubleSpinBox(self); self.spinVel.setRange(0.0, 1.0); self.spinVel.setSingleStep(0.01)
+        self.spinAcc = QtWidgets.QDoubleSpinBox(self); self.spinAcc.setRange(0.0, 1.0); self.spinAcc.setSingleStep(0.01)
+        self.checkCartesian = QtWidgets.QCheckBox(self)
+        self.checkReplan = QtWidgets.QCheckBox(self)
+
+        commonForm.addRow("Planning time (s)", self.spinPlanningTime)
+        commonForm.addRow("Attempts", self.spinAttempts)
+        commonForm.addRow("Velocity scaling", self.spinVel)
+        commonForm.addRow("Acceleration scaling", self.spinAcc)
+        commonForm.addRow("Use Cartesian waypoints", self.checkCartesian)
+        commonForm.addRow("Allow replanning", self.checkReplan)
+
+        commonWrap = QtWidgets.QWidget(self)
+        commonWrap.setLayout(commonForm)
+        root.addWidget(commonWrap)
+
+        # --- Pipeline + Planner ID ---
         header = QtWidgets.QFormLayout()
         header.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
 
-        self.pipelineCombo = QtWidgets.QComboBox()
+        self.pipelineCombo = QtWidgets.QComboBox(self)
         self.pipelineCombo.addItems(["ompl", "chomp", "stomp", "pilz", "servo"])
         self.pipelineCombo.currentTextChanged.connect(self._on_pipeline_changed)
         header.addRow("Pipeline", self.pipelineCombo)
 
-        self._lblPlannerId = QtWidgets.QLabel("Planner ID")
-        self.plannerIdCombo = QtWidgets.QComboBox()
+        self._lblPlannerId = QtWidgets.QLabel("Planner ID", self)
+        self.plannerIdCombo = QtWidgets.QComboBox(self)
         self.plannerIdCombo.addItems([
             "RRTConnectkConfigDefault",
             "RRTstarkConfigDefault",
@@ -76,116 +84,84 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
         ])
         header.addRow(self._lblPlannerId, self.plannerIdCombo)
 
-        headerBox = QtWidgets.QWidget()
-        headerBox.setLayout(header)
-        root.addWidget(headerBox)
+        headerWrap = QtWidgets.QWidget(self)
+        headerWrap.setLayout(header)
+        root.addWidget(headerWrap)
 
-        # Common
-        self.groupCommon = QtWidgets.QGroupBox("Common")
-        commonForm = QtWidgets.QFormLayout(self.groupCommon)
-
-        self.spinPlanningTime = QtWidgets.QDoubleSpinBox()
-        self.spinPlanningTime.setRange(0.10, 120.0); self.spinPlanningTime.setSingleStep(0.10)
-
-        self.spinAttempts = QtWidgets.QSpinBox()
-        self.spinAttempts.setRange(1, 100)
-
-        self.spinVel = QtWidgets.QDoubleSpinBox()
-        self.spinVel.setRange(0.0, 1.0); self.spinVel.setSingleStep(0.01)
-
-        self.spinAcc = QtWidgets.QDoubleSpinBox()
-        self.spinAcc.setRange(0.0, 1.0); self.spinAcc.setSingleStep(0.01)
-
-        self.checkCartesian = QtWidgets.QCheckBox()
-        self.checkReplan = QtWidgets.QCheckBox()
-
-        commonForm.addRow("Planning time (s)", self.spinPlanningTime)
-        commonForm.addRow("Attempts", self.spinAttempts)
-        commonForm.addRow("Velocity scaling", self.spinVel)
-        commonForm.addRow("Acceleration scaling", self.spinAcc)
-        commonForm.addRow("Use Cartesian waypoints", self.checkCartesian)
-        commonForm.addRow("Allow replanning", self.checkReplan)
-        root.addWidget(self.groupCommon)
-
-        # Pipeline-spezifisch (Stack)
-        self.paramsStack = QtWidgets.QStackedWidget()
-
-        # OMPL
-        pageOmpl = QtWidgets.QWidget()
-        formOmpl = QtWidgets.QFormLayout(pageOmpl)
-        self.spinOmplRange = QtWidgets.QDoubleSpinBox()
-        self.spinOmplRange.setRange(0.0, 1.0); self.spinOmplRange.setSingleStep(0.01)
-        self.spinOmplGoalBias = QtWidgets.QDoubleSpinBox()
-        self.spinOmplGoalBias.setRange(0.0, 1.0); self.spinOmplGoalBias.setSingleStep(0.01)
-        formOmpl.addRow("Range (m)", self.spinOmplRange)
-        formOmpl.addRow("Goal bias", self.spinOmplGoalBias)
-
-        # CHOMP
-        pageChomp = QtWidgets.QWidget()
-        formChomp = QtWidgets.QFormLayout(pageChomp)
-        self.spinChompTime = QtWidgets.QDoubleSpinBox()
-        self.spinChompTime.setRange(0.10, 120.0); self.spinChompTime.setSingleStep(0.10)
-        self.spinChompLR = QtWidgets.QDoubleSpinBox()
-        self.spinChompLR.setDecimals(4); self.spinChompLR.setRange(0.0001, 1.0); self.spinChompLR.setSingleStep(0.0010)
-        self.spinChompSmooth = QtWidgets.QDoubleSpinBox()
-        self.spinChompSmooth.setRange(0.0, 100.0)
-        self.spinChompObs = QtWidgets.QDoubleSpinBox()
-        self.spinChompObs.setRange(0.0, 100.0)
-        formChomp.addRow("Time limit (s)", self.spinChompTime)
-        formChomp.addRow("Learning rate", self.spinChompLR)
-        formChomp.addRow("Smoothness weight", self.spinChompSmooth)
-        formChomp.addRow("Obstacle weight", self.spinChompObs)
-
-        # STOMP
-        pageStomp = QtWidgets.QWidget()
-        formStomp = QtWidgets.QFormLayout(pageStomp)
-        self.spinStompIter = QtWidgets.QSpinBox()
-        self.spinStompIter.setRange(1, 10000)
-        self.spinStompRoll = QtWidgets.QSpinBox()
-        self.spinStompRoll.setRange(1, 1000)
-        self.spinStompStd = QtWidgets.QDoubleSpinBox()
-        self.spinStompStd.setRange(0.000, 1.000); self.spinStompStd.setSingleStep(0.001)
-        formStomp.addRow("Iterations", self.spinStompIter)
-        formStomp.addRow("Rollouts", self.spinStompRoll)
-        formStomp.addRow("Noise stddev", self.spinStompStd)
-
-        # Pilz
-        pagePilz = QtWidgets.QWidget()
-        formPilz = QtWidgets.QFormLayout(pagePilz)
-        self.spinPilzVel = QtWidgets.QDoubleSpinBox()
-        self.spinPilzVel.setRange(0.0, 1.0)
-        self.spinPilzAcc = QtWidgets.QDoubleSpinBox()
-        self.spinPilzAcc.setRange(0.0, 1.0)
-        formPilz.addRow("Max vel. scaling", self.spinPilzVel)
-        formPilz.addRow("Max acc. scaling", self.spinPilzAcc)
-
-        # Servo
-        pageServo = QtWidgets.QWidget()
-        formServo = QtWidgets.QFormLayout(pageServo)
-        self.spinServoPeriod = QtWidgets.QDoubleSpinBox()
-        self.spinServoPeriod.setDecimals(4); self.spinServoPeriod.setRange(0.0010, 0.1000); self.spinServoPeriod.setSingleStep(0.0010)
-        self.spinServoLP = QtWidgets.QDoubleSpinBox()
-        self.spinServoLP.setRange(0.1, 10.0)
-        formServo.addRow("Publish period (s)", self.spinServoPeriod)
-        formServo.addRow("Low-pass coeff", self.spinServoLP)
-
-        # Stack befüllen
-        self.paramsStack.addWidget(pageOmpl)   # 0
-        self.paramsStack.addWidget(pageChomp)  # 1
-        self.paramsStack.addWidget(pageStomp)  # 2
-        self.paramsStack.addWidget(pagePilz)   # 3
-        self.paramsStack.addWidget(pageServo)  # 4
+        # --- Per-pipeline params (Stack) ---
+        self.paramsStack = QtWidgets.QStackedWidget(self)
         root.addWidget(self.paramsStack)
 
-        # Reset (nur intern)
+        # Keep strong refs to pages AND their forms to avoid GC
+        # OMPL
+        self.pageOmpl = QtWidgets.QWidget(self)
+        self.formOmpl = QtWidgets.QFormLayout(self.pageOmpl)
+        self.spinOmplRange = QtWidgets.QDoubleSpinBox(self.pageOmpl)
+        self.spinOmplRange.setRange(0.0, 1.0); self.spinOmplRange.setSingleStep(0.01)
+        self.spinOmplGoalBias = QtWidgets.QDoubleSpinBox(self.pageOmpl)
+        self.spinOmplGoalBias.setRange(0.0, 1.0); self.spinOmplGoalBias.setSingleStep(0.01)
+        self.formOmpl.addRow("Range (m)", self.spinOmplRange)
+        self.formOmpl.addRow("Goal bias", self.spinOmplGoalBias)
+        self.paramsStack.addWidget(self.pageOmpl)   # index 0
+
+        # CHOMP
+        self.pageChomp = QtWidgets.QWidget(self)
+        self.formChomp = QtWidgets.QFormLayout(self.pageChomp)
+        self.spinChompTime = QtWidgets.QDoubleSpinBox(self.pageChomp)
+        self.spinChompTime.setRange(0.10, 120.0); self.spinChompTime.setSingleStep(0.10)
+        self.spinChompLR = QtWidgets.QDoubleSpinBox(self.pageChomp)
+        self.spinChompLR.setDecimals(4); self.spinChompLR.setRange(0.0001, 1.0); self.spinChompLR.setSingleStep(0.0010)
+        self.spinChompSmooth = QtWidgets.QDoubleSpinBox(self.pageChomp); self.spinChompSmooth.setRange(0.0, 100.0)
+        self.spinChompObs = QtWidgets.QDoubleSpinBox(self.pageChomp); self.spinChompObs.setRange(0.0, 100.0)
+        self.formChomp.addRow("Time limit (s)", self.spinChompTime)
+        self.formChomp.addRow("Learning rate", self.spinChompLR)
+        self.formChomp.addRow("Smoothness weight", self.spinChompSmooth)
+        self.formChomp.addRow("Obstacle weight", self.spinChompObs)
+        self.paramsStack.addWidget(self.pageChomp)  # index 1
+
+        # STOMP
+        self.pageStomp = QtWidgets.QWidget(self)
+        self.formStomp = QtWidgets.QFormLayout(self.pageStomp)
+        self.spinStompIter = QtWidgets.QSpinBox(self.pageStomp); self.spinStompIter.setRange(1, 10000)
+        self.spinStompRoll = QtWidgets.QSpinBox(self.pageStomp); self.spinStompRoll.setRange(1, 1000)
+        self.spinStompStd  = QtWidgets.QDoubleSpinBox(self.pageStomp); self.spinStompStd.setRange(0.000, 1.000); self.spinStompStd.setSingleStep(0.001)
+        self.formStomp.addRow("Iterations", self.spinStompIter)
+        self.formStomp.addRow("Rollouts", self.spinStompRoll)
+        self.formStomp.addRow("Noise stddev", self.spinStompStd)
+        self.paramsStack.addWidget(self.pageStomp)  # index 2
+
+        # Pilz
+        self.pagePilz = QtWidgets.QWidget(self)
+        self.formPilz = QtWidgets.QFormLayout(self.pagePilz)
+        self.spinPilzVel = QtWidgets.QDoubleSpinBox(self.pagePilz); self.spinPilzVel.setRange(0.0, 1.0)
+        self.spinPilzAcc = QtWidgets.QDoubleSpinBox(self.pagePilz); self.spinPilzAcc.setRange(0.0, 1.0)
+        self.formPilz.addRow("Max vel. scaling", self.spinPilzVel)
+        self.formPilz.addRow("Max acc. scaling", self.spinPilzAcc)
+        self.paramsStack.addWidget(self.pagePilz)   # index 3
+
+        # Servo
+        self.pageServo = QtWidgets.QWidget(self)
+        self.formServo = QtWidgets.QFormLayout(self.pageServo)
+        self.spinServoPeriod = QtWidgets.QDoubleSpinBox(self.pageServo)
+        self.spinServoPeriod.setDecimals(4); self.spinServoPeriod.setRange(0.0010, 0.1000); self.spinServoPeriod.setSingleStep(0.0010)
+        self.spinServoLP = QtWidgets.QDoubleSpinBox(self.pageServo); self.spinServoLP.setRange(0.1, 10.0)
+        self.formServo.addRow("Publish period (s)", self.spinServoPeriod)
+        self.formServo.addRow("Low-pass coeff", self.spinServoLP)
+        self.paramsStack.addWidget(self.pageServo)  # index 4
+
+        # Bottom row (Reset) – do NOT let it hog vertical space
         btnRow = QtWidgets.QHBoxLayout()
         btnRow.addStretch(1)
-        self.btnDefaults = QtWidgets.QPushButton("Reset defaults")
-        self.btnDefaults.clicked.connect(self.reset_defaults)
-        btnWrap = QtWidgets.QWidget()
-        btnWrap.setLayout(btnRow)
+        self.btnDefaults = QtWidgets.QPushButton("Reset defaults", self)
         btnRow.addWidget(self.btnDefaults)
-        root.addWidget(btnWrap)
+        self.btnDefaults.clicked.connect(self.reset_defaults)
+        btnWrap = QtWidgets.QWidget(self)
+        btnWrap.setLayout(btnRow)
+        btnWrap.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Minimum)
+        root.addWidget(btnWrap, 0)  # stretch 0 so it stays compact
+
+        # start on OMPL page
+        self._on_pipeline_changed(self.pipelineCombo.currentText())
 
     # ---------- Intern ----------
     def _on_pipeline_changed(self, name: str):
@@ -220,10 +196,7 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
                 "use_cartesian": bool(self.checkCartesian.isChecked()),
                 "allow_replanning": bool(self.checkReplan.isChecked()),
             },
-            "ompl": {
-                "range": float(self.spinOmplRange.value()),
-                "goal_bias": float(self.spinOmplGoalBias.value()),
-            },
+            "ompl": {"range": float(self.spinOmplRange.value()), "goal_bias": float(self.spinOmplGoalBias.value())},
             "chomp": {
                 "planning_time_limit": float(self.spinChompTime.value()),
                 "learning_rate": float(self.spinChompLR.value()),
@@ -239,17 +212,12 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
                 "max_velocity_scaling": float(self.spinPilzVel.value()),
                 "max_acceleration_scaling": float(self.spinPilzAcc.value()),
             },
-            "servo": {
-                "publish_period": float(self.spinServoPeriod.value()),
-                "low_pass_filter_coeff": float(self.spinServoLP.value()),
-            },
+            "servo": {"publish_period": float(self.spinServoPeriod.value()), "low_pass_filter_coeff": float(self.spinServoLP.value())},
         }
 
     def set_params(self, cfg: Dict[str, Any]):
-        # Pipeline zuerst (schaltet den Stack)
         if (p := cfg.get("pipeline")) is not None:
             self.set_planner(p)
-
         if (pid := cfg.get("planner_id")) is not None:
             ix = self.plannerIdCombo.findText(pid)
             if ix >= 0:
@@ -287,23 +255,4 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
         if "low_pass_filter_coeff" in servo: self.spinServoLP.setValue(float(servo["low_pass_filter_coeff"]))
 
     def reset_defaults(self):
-        """Setzt alles auf PLANNER_CONFIG zurück."""
         self.set_params(deepcopy(PLANNER_CONFIG))
-
-    # ---------- Rezept-Helper ----------
-    def set_from_recipe(self, recipe: Dict[str, Any], key: str = "planner"):
-        """
-        Lädt Planner-Block aus dem Rezept:
-            recipe[key] -> set_params(...)
-        Tut nichts, wenn key fehlt oder kein Dict ist.
-        """
-        block = recipe.get(key)
-        if isinstance(block, dict):
-            self.set_params(block)
-
-    def to_recipe_block(self, key: str = "planner") -> Dict[str, Any]:
-        """
-        Erzeugt einen Dict-Block für das Rezept:
-            { key: <params-dict> }
-        """
-        return {key: self.get_params()}

@@ -1,101 +1,112 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-import os, logging
+import logging
 from typing import Optional, Any, Dict
 
 import numpy as np
 import pyvista as pv
-from PyQt6 import uic
-from PyQt6.QtWidgets import QWidget, QPushButton, QCheckBox, QFrame, QStackedWidget, QVBoxLayout
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtWidgets import (
+    QWidget, QFrame, QStackedWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSizePolicy
+)
 
 from .interactor_host import InteractorHost
 from .scene_manager import SceneManager
 from .views import ViewController
 from .matplot2d import Matplot2DView
-from .overlays import OverlayRenderer  # ausgelagerte Overlay-Logik
+from .overlays import OverlayRenderer
+
+from .overlays_groupbox import OverlaysGroupBox
+from .views_groupbox import ViewsGroupBox
+from app.widgets.planner_groupbox import PlannerGroupBox
 
 _LOG = logging.getLogger("app.tabs.recipe")
 
 
-# --- Pfade/Utils --------------------------------------------------------------
-def _project_root() -> str:
-    here = os.path.abspath(os.path.dirname(__file__))
-    return os.path.abspath(os.path.join(here, "..", "..", "..", "..", ".."))
-
-
-def _ui_path(filename: str) -> str:
-    return os.path.join(_project_root(), "resource", "ui", "tabs", "recipe", filename)
-
-
-def _safe_norm(v: np.ndarray, eps: float = 1e-9) -> np.ndarray:
-    v = np.asarray(v, dtype=float).reshape(3)
-    n = float(np.linalg.norm(v))
-    if n < eps:
-        return np.array([0.0, 0.0, 1.0])
-    return v / n
-
-
-def _orthonormal_basis_from_z(z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    z = _safe_norm(z)
-    h = np.array([1.0, 0.0, 0.0]) if abs(z[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
-    x = _safe_norm(np.cross(h, z))
-    y = _safe_norm(np.cross(z, x))
-    return x, y, z
-
-
-# --- Panel --------------------------------------------------------------------
 class CoatingPreviewPanel(QWidget):
-    # Farben: Ground < Mount < Substrat
-    DEFAULT_GROUND_COLOR    = "#3a3a3a"  # dunkelgrau
-    DEFAULT_MOUNT_COLOR     = "#5d5d5d"  # etwas heller
-    DEFAULT_SUBSTRATE_COLOR = "#d0d6dd"  # hell
+    """
+    Layout (reine Programmierung):
+      [ OverlaysGroupBox (eine Zeile, horizontal) ]
+      [ ViewsGroupBox  ("Kamera", 3D & 2D)       ]
+      [ QStackedWidget (3D-PyVista / 2D-Matplot) ]  <- bekommt am meisten Platz
+      [ PlannerGroupBox (kompakt, vertikal gequetscht) ]
+      [  Validate | Optimize  ]  (HBox, Buttons gestreckt)
+    """
 
-    # Signals
-    pathReady = pyqtSignal(object)       # np.ndarray | None (nur Punkte)
-    previewYamlReady = pyqtSignal(str)   # YAML mit xyz,rx,ry,rz
+    # Ausgänge
+    pathReady = pyqtSignal(object)       # np.ndarray | None
+    previewYamlReady = pyqtSignal(str)   # YAML Text
+
+    # Aktionen
+    validateRequested = pyqtSignal()
+    optimizeRequested = pyqtSignal()
+
+    # Farben für Boden/Mount/Substrat (bei Bedarf)
+    DEFAULT_GROUND_COLOR    = "#3a3a3a"
+    DEFAULT_MOUNT_COLOR     = "#5d5d5d"
+    DEFAULT_SUBSTRATE_COLOR = "#d0d6dd"
 
     def __init__(self, *, ctx, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
-        uic.loadUi(_ui_path("coating_preview_panel.ui"), self)
 
-        # --- UI refs
-        self.chkShowMask: QCheckBox        = self.findChild(QCheckBox, "chkShowMask")
-        self.chkShowPath: QCheckBox        = self.findChild(QCheckBox, "chkShowPath")
-        self.chkShowHits: QCheckBox        = self.findChild(QCheckBox, "chkShowHits")
-        self.chkShowMisses: QCheckBox      = self.findChild(QCheckBox, "chkShowMisses")
-        self.chkShowNormals: QCheckBox     = self.findChild(QCheckBox, "chkShowNormals")
-        self.chkShowLocalFrames: QCheckBox = self.findChild(QCheckBox, "chkShowLocalFrames")
+        # ---------- Root Layout ----------
+        root = QVBoxLayout(self)
+        root.setContentsMargins(6, 6, 6, 6)
+        root.setSpacing(6)
 
-        # 3D camera buttons
-        self.btnCamIso:   QPushButton = self.findChild(QPushButton, "btnCamIso")
-        self.btnCamTop:   QPushButton = self.findChild(QPushButton, "btnCamTop")
-        self.btnCamFront: QPushButton = self.findChild(QPushButton, "btnCamFront")
-        self.btnCamBack:  QPushButton = self.findChild(QPushButton, "btnCamBack")
-        self.btnCamLeft:  QPushButton = self.findChild(QPushButton, "btnCamLeft")
-        self.btnCamRight: QPushButton = self.findChild(QPushButton, "btnCamRight")
+        # ---------- Overlays (eine Zeile, horizontal) ----------
+        self.grpOverlays = OverlaysGroupBox(self)
+        self.grpOverlays.set_defaults(
+            mask=False, path=True, hits=False, misses=False, normals=False, local_frames=False
+        )
+        root.addWidget(self.grpOverlays, 0)  # kein Stretch
 
-        # 2D view buttons
-        self.btn2DTop:    QPushButton = self.findChild(QPushButton, "btn2DTop")
-        self.btn2DFront:  QPushButton = self.findChild(QPushButton, "btn2DFront")
-        self.btn2DLeft:   QPushButton = self.findChild(QPushButton, "btn2DLeft")
-        self.btn2DRight:  QPushButton = self.findChild(QPushButton, "btn2DRight")
-        self.btn2DBack:   QPushButton = self.findChild(QPushButton, "btn2DBack")
+        # ---------- Views ("Kamera") ----------
+        self.grpViews = ViewsGroupBox(self)  # Titel & Ausrichtung intern
+        root.addWidget(self.grpViews, 0)     # kein Stretch
 
-        # stacked
-        self._stack: QStackedWidget = self.findChild(QStackedWidget, "stackPreview")
-        self._host3d: QFrame        = self.findChild(QFrame, "previewHost3D")
-        self._host2d                 = self.findChild(QWidget, "matplotHost")
-        if not self._stack or not self._host3d or not self._host2d:
-            raise RuntimeError("coating_preview_panel.ui muss 'stackPreview', 'previewHost3D', 'matplotHost' enthalten.")
+        # ---------- Stacked (3D/2D) ----------
+        self._stack = QStackedWidget(self)
+        root.addWidget(self._stack, 1)  # <- größter Stretch (1)
 
-        # --- Composition
+        # ---- 3D-Seite
+        self._page3d = QWidget(self)
+        v3d = QVBoxLayout(self._page3d)
+        v3d.setContentsMargins(0, 0, 0, 0)
+        v3d.setSpacing(0)
+
+        self._host3d = QFrame(self._page3d)            # Container für Interactor
+        vhost = QVBoxLayout(self._host3d)
+        vhost.setContentsMargins(0, 0, 0, 0)
+        vhost.setSpacing(0)
+        v3d.addWidget(self._host3d)
+
+        self._stack.addWidget(self._page3d)
+
+        # ---- 2D-Seite
+        self._page2d = QWidget(self)
+        v2d = QVBoxLayout(self._page2d)
+        v2d.setContentsMargins(0, 0, 0, 0)
+        v2d.setSpacing(0)
+
+        self._host2d = QWidget(self._page2d)
+        vmat = QVBoxLayout(self._host2d)
+        vmat.setContentsMargins(0, 0, 0, 0)
+        vmat.setSpacing(0)
+        v2d.addWidget(self._host2d)
+
+        self._stack.addWidget(self._page2d)
+
+        # ---------- PyVista-Interactor + Scene ----------
         self._hoster = InteractorHost(self, self._host3d)
-        self.scene   = SceneManager(lambda: self._hoster.ia, None)
+        # SceneManager benötigt callable für interactor und ggf. Poly-/Mesh-Handling
+        self.scene = SceneManager(lambda: self._hoster.ia, None)
+
+        # Welt-/View-Bounds (mm): xmin, xmax, ymin, ymax, zmin, zmax
         self._bounds = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
 
-        # ViewController robust mit bounds_getter
+        # View-Controller (steuert Kamera-Buttons)
         self.views = ViewController(
             interactor_getter=self._get_ia,
             render_callable=self.render,
@@ -103,123 +114,106 @@ class CoatingPreviewPanel(QWidget):
             cam_pad=1.8,
         )
 
-        # 2D – robust ohne Parent beim Erzeugen (Reparenting via addWidget)
+        # ---------- 2D-View (Matplotlib) ----------
         self._mat2d = Matplot2DView(parent=None)
-        lay2d = self._host2d.layout()
-        if lay2d is None:
-            lay2d = QVBoxLayout()
-            lay2d.setContentsMargins(0, 0, 0, 0)
-            self._host2d.setLayout(lay2d)
-        else:
-            lay2d.setContentsMargins(0, 0, 0, 0)
-        if lay2d.indexOf(self._mat2d) == -1:
-            lay2d.addWidget(self._mat2d)
+        self._host2d.layout().addWidget(self._mat2d)
 
-        # Grid/Floor
+        # ---------- Grid/Floor & Labels ----------
         self._floor_actor = None
-        self._axis_actor  = None
-        self._grid_step   = 10.0
-        # NEU: Label-Actors separat verwalten (um Duplikate zu vermeiden)
+        self._axis_actor = None
+        self._grid_step = 10.0
         self._axis_label_actors: list = []
-
-        # Layer-Namen
-        self._layer_ground     = "ground"
-        self._layer_mount      = "mount"
-        self._layer_substrate  = "substrate"
-        self._layer_mask       = "mask"
-        self._layer_mask_mrk   = "mask_markers"
-        self._layer_path       = "path"
-        self._layer_path_mrk   = "path_markers"
-        self._layer_rays_hit   = "rays_hit"
-        self._layer_rays_miss  = "rays_miss"
-        self._layer_normals    = "normals"
-        self._frames_layers    = ("frames_x", "frames_y", "frames_z", "frames_labels")
-        self._frames_layers_active = self._frames_layers
-
-        # Label-Actors (Start/Ende etc.)
         self._label_actors: Dict[str, object] = {}
 
-        # Defaults (Checkboxen)
-        if self.chkShowMask:         self.chkShowMask.setChecked(False)
-        if self.chkShowPath:         self.chkShowPath.setChecked(True)
-        if self.chkShowHits:         self.chkShowHits.setChecked(False)
-        if self.chkShowMisses:       self.chkShowMisses.setChecked(False)
-        if self.chkShowNormals:      self.chkShowNormals.setChecked(False)
-        if self.chkShowLocalFrames:  self.chkShowLocalFrames.setChecked(False)
-
-        # ----- Overlays-Renderer mit YAML-Hook -----
-        self._layers_dict: Dict[str, str] = {
-            "ground":    self._layer_ground,
-            "mount":     self._layer_mount,
-            "substrate": self._layer_substrate,
-            "mask":      self._layer_mask,
-            "mask_mrk":  self._layer_mask_mrk,
-            "path":      self._layer_path,
-            "path_mrk":  self._layer_path_mrk,
-            "rays_hit":  self._layer_rays_hit,
-            "rays_miss": self._layer_rays_miss,
-            "normals":   self._layer_normals,
+        # ---------- OverlayRenderer ----------
+        layers = {
+            "ground": "ground",
+            "mount": "mount",
+            "substrate": "substrate",
+            "mask": "mask",
+            "mask_mrk": "mask_markers",
+            "path": "path",
+            "path_mrk": "path_markers",
+            "rays_hit": "rays_hit",
+            "rays_miss": "rays_miss",
+            "normals": "normals",
         }
-
-        def _set_vis(layer: str, vis: bool, render: bool = True):
-            self.scene.set_layer_visible(layer, vis, render=render)
-
-        def _update2d(mesh, path_xyz, mask_poly):
-            self.update_2d_scene(substrate_mesh=mesh, path_xyz=path_xyz, mask_poly=mask_poly)
-
-        def _yaml_out(text: str):
-            self.previewYamlReady.emit(text)
-
         self.overlays = OverlayRenderer(
             add_mesh_fn=self.add_mesh,
             clear_layer_fn=self.clear_layer,
             add_path_polyline_fn=self.add_path_polyline,
             show_poly_fn=self.show_poly,
             show_frames_at_fn=self.show_frames_at,
-            set_layer_visible_fn=_set_vis,
-            update_2d_scene_fn=_update2d,
-            layers=self._layers_dict,
+            set_layer_visible_fn=lambda layer, vis, render=True: self.scene.set_layer_visible(layer, vis, render=render),
+            update_2d_scene_fn=lambda mesh, path_xyz, mask_poly: self.update_2d_scene(
+                substrate_mesh=mesh, path_xyz=path_xyz, mask_poly=mask_poly
+            ),
+            layers=layers,
             get_bounds=lambda: self._bounds,
-            yaml_out_fn=_yaml_out,
+            yaml_out_fn=lambda text: self.previewYamlReady.emit(text),
         )
 
-        # Checkbox-Wiring → Overlays
-        if self.chkShowMask:
-            self.chkShowMask.toggled.connect(lambda v: self.overlays.set_mask_visible(bool(v)))
-        if self.chkShowPath:
-            self.chkShowPath.toggled.connect(lambda v: self.overlays.set_path_visible(bool(v)))
-        if self.chkShowHits:
-            self.chkShowHits.toggled.connect(lambda v: self.overlays.set_hits_visible(bool(v)))
-        if self.chkShowMisses:
-            self.chkShowMisses.toggled.connect(lambda v: self.overlays.set_misses_visible(bool(v)))
-        if self.chkShowNormals:
-            self.chkShowNormals.toggled.connect(lambda v: self.overlays.set_normals_visible(bool(v)))
-        if self.chkShowLocalFrames:
-            self.chkShowLocalFrames.toggled.connect(lambda v: self.overlays.set_frames_visible(bool(v)))
+        # ---------- Wire: Overlay-Toggles ----------
+        self.grpOverlays.maskToggled.connect(lambda v: self.overlays.set_mask_visible(bool(v)))
+        self.grpOverlays.pathToggled.connect(lambda v: self.overlays.set_path_visible(bool(v)))
+        self.grpOverlays.hitsToggled.connect(lambda v: self.overlays.set_hits_visible(bool(v)))
+        self.grpOverlays.missesToggled.connect(lambda v: self.overlays.set_misses_visible(bool(v)))
+        self.grpOverlays.normalsToggled.connect(lambda v: self.overlays.set_normals_visible(bool(v)))
+        self.grpOverlays.localFramesToggled.connect(lambda v: self.overlays.set_frames_visible(bool(v)))
 
-        # 3D/2D Button-Wiring über ViewController
+        # ---------- Wire: View-Buttons ----------
+        # 3D
         self.views.wire_buttons_3d(
-            btn_iso=self.btnCamIso,
-            btn_top=self.btnCamTop,
-            btn_front=self.btnCamFront,
-            btn_back=self.btnCamBack,
-            btn_left=self.btnCamLeft,
-            btn_right=self.btnCamRight,
+            btn_iso=self.grpViews.btnCamIso,
+            btn_top=self.grpViews.btnCamTop,
+            btn_front=self.grpViews.btnCamFront,
+            btn_back=self.grpViews.btnCamBack,
+            btn_left=self.grpViews.btnCamLeft,
+            btn_right=self.grpViews.btnCamRight,
             on_3d=self._switch_to_3d,
         )
+        # 2D
         self.views.wire_buttons_2d(
-            btn_top=self.btn2DTop,
-            btn_front=self.btn2DFront,
-            btn_left=self.btn2DLeft,
-            btn_right=self.btn2DRight,
-            btn_back=self.btn2DBack,
+            btn_top=self.grpViews.btn2DTop,
+            btn_front=self.grpViews.btn2DFront,
+            btn_left=self.grpViews.btn2DLeft,
+            btn_right=self.grpViews.btn2DRight,
+            btn_back=self.grpViews.btn2DBack,
             switcher=self._switch_2d_plane,
         )
 
-        # Startmodus (3D iso)
+        # ---------- Planner (kompakt) ----------
+        self.plannerBox = PlannerGroupBox(parent=self)
+        self.plannerBox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        self.plannerBox.setMaximumHeight(220)  # vertikal gequetscht
+        # Margins des inneren Layouts verkleinern, falls vorhanden
+        if self.plannerBox.layout() is not None:
+            self.plannerBox.layout().setContentsMargins(6, 6, 6, 6)
+        root.addWidget(self.plannerBox, 0)
+
+        # ---------- Validate/Optimize (HBox, gestreckt) ----------
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+
+        self.btnValidate = QPushButton("Validate", self)
+        self.btnOptimize = QPushButton("Optimize", self)
+        for b in (self.btnValidate, self.btnOptimize):
+            b.setAutoDefault(False)
+            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            row.addWidget(b, 1)  # gleichmäßig strecken
+
+        root.addLayout(row)
+
+        # Buttons → externe Signals
+        self.btnValidate.clicked.connect(self.validateRequested.emit)
+        self.btnOptimize.clicked.connect(self.optimizeRequested.emit)
+
+        # ---------- Initial: 3D Iso ----------
         self._switch_to_3d()
 
-    # -------- helpers --------
+    # =================== Internals / helpers ===================
+
     def _get_ia(self):
         ia = self._hoster.ia
         if ia is None:
@@ -230,13 +224,19 @@ class CoatingPreviewPanel(QWidget):
             ia = self._hoster.ia
         return ia
 
-    # 2D plane switch
+    def _switch_to_3d(self):
+        if self._stack.currentIndex() != 0:
+            self._stack.setCurrentIndex(0)
+        self.view_isometric()
+
     def _switch_2d_plane(self, plane: str) -> None:
+        """Wechselt auf die 2D-Seite und setzt die gewünschte Projektion."""
         try:
             if hasattr(self._mat2d, "set_plane"):
                 self._mat2d.set_plane(plane)
             elif hasattr(self._mat2d, "_set_plane"):
-                self._mat2d._set_plane(plane)
+                # Fallback für Legacy
+                self._mat2d._set_plane(plane)  # noqa: SLF001
             else:
                 raise AttributeError("Matplot2DView hat weder set_plane noch _set_plane")
             if self._stack.currentIndex() != 1:
@@ -244,7 +244,8 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("2D plane switch failed: %s", plane)
 
-    # -------- Public API for hosts --------
+    # =================== Public API (Hosts) ===================
+
     def preview_host(self) -> QFrame:
         return self._host3d
 
@@ -257,8 +258,9 @@ class CoatingPreviewPanel(QWidget):
         *,
         substrate_mesh: pv.PolyData | None,
         path_xyz: np.ndarray | None,
-        mask_poly: pv.PolyData | None = None,
+        mask_poly: pv.PolyData | None = None
     ):
+        """Füttert Matplot2D mit Mesh/Path/Mask und übernimmt Bounds."""
         self._mat2d.set_scene(
             substrate_mesh=substrate_mesh,
             path_xyz=path_xyz,
@@ -270,22 +272,57 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("pathReady emit failed")
 
-    # -------- View switching --------
-    def _switch_to_3d(self):
-        if self._stack.currentIndex() != 0:
-            self._stack.setCurrentIndex(0)
-        self.view_isometric()
+    # -------- Views (Delegates) --------
+    def view_isometric(self): self.views.view_isometric()
+    def view_top(self):       self.views.view_top()
+    def view_front(self):     self.views.view_front()
+    def view_back(self):      self.views.view_back()
+    def view_left(self):      self.views.view_left()
+    def view_right(self):     self.views.view_right()
+
+    def render(self, *, reset_camera: bool = True) -> None:
+        ia = self._get_ia()
+        if ia is None:
+            return
+        try:
+            self._look_at_floor_center()
+            if reset_camera:
+                ia.reset_camera(bounds=self._bounds)
+            ia.render()
+        except Exception:
+            _LOG.exception("render() failed")
 
     # -------- Grid/Bounds --------
     def set_grid_step(self, step_mm: float) -> None:
         self._grid_step = max(1.0, float(step_mm))
         self._apply_bounds()
 
+    def set_world_bounds_at(
+        self, *, center_xy=(0.0, 0.0), z0=0.0, span_xy=240.0, span_z=240.0
+    ) -> None:
+        cx, cy = float(center_xy[0]), float(center_xy[1])
+        half = float(span_xy) * 0.5
+        z0, span_z = float(z0), float(span_z)
+        self._bounds = (cx - half, cx + half, cy - half, cy + half, z0, z0 + span_z)
+        self._apply_bounds()
+
+    def set_bounds_from_mesh(
+        self, mesh, *, use_contact_plane=True, span_xy=240.0, span_z=240.0
+    ) -> None:
+        if not hasattr(mesh, "bounds"):
+            return
+        xmin, xmax, ymin, ymax, zmin, zmax = mesh.bounds
+        cx = 0.5 * (xmin + xmax)
+        cy = 0.5 * (ymin + ymax)
+        z0 = float(zmin if use_contact_plane else 0.5 * (zmin + zmax))
+        self.set_world_bounds_at(center_xy=(cx, cy), z0=z0, span_xy=span_xy, span_z=span_z)
+
     def _apply_bounds(self) -> None:
         ia = self._get_ia()
         if ia is None:
             return
-        # Actors entfernen (Floor, Axes)
+
+        # alte Boden-/Achsen-Actors entfernen
         for actor in (self._floor_actor, self._axis_actor):
             if actor is not None:
                 try:
@@ -293,8 +330,9 @@ class CoatingPreviewPanel(QWidget):
                 except Exception:
                     pass
         self._floor_actor = None
-        self._axis_actor  = None
-        # NEU: alle bestehenden Label-Actors entfernen
+        self._axis_actor = None
+
+        # alte Label-Actors entfernen
         if self._axis_label_actors:
             for lab in self._axis_label_actors:
                 try:
@@ -303,8 +341,9 @@ class CoatingPreviewPanel(QWidget):
                     pass
             self._axis_label_actors = []
 
+        # neu aufbauen
         self._floor_actor = self._make_floor_wire(ia, step=self._grid_step)
-        self._axis_actor  = self._draw_floor_axes(ia, step=self._grid_step)
+        self._axis_actor = self._draw_floor_axes(ia, step=self._grid_step)
 
         self._look_at_floor_center()
         try:
@@ -329,35 +368,40 @@ class CoatingPreviewPanel(QWidget):
 
     def _make_floor_wire(self, ia, step: float):
         xmin, xmax, ymin, ymax, zmin, _ = self._bounds
-        width  = xmax - xmin
-        height = ymax - ymin
-        i_res = max(1, int(round(width  / max(1e-6, step))))
+        width, height = xmax - xmin, ymax - ymin
+        i_res = max(1, int(round(width / max(1e-6, step))))
         j_res = max(1, int(round(height / max(1e-6, step))))
         center = ((xmin + xmax) * 0.5, (ymin + ymax) * 0.5, zmin)
-        plane = pv.Plane(center=center, direction=(0, 0, 1),
-                         i_size=width, j_size=height,
-                         i_resolution=i_res, j_resolution=j_res)
-        return ia.add_mesh(plane, style="wireframe", color="#cfcfcf",
-                           line_width=1.0, lighting=False, render=False)
+        plane = pv.Plane(
+            center=center, direction=(0, 0, 1),
+            i_size=width, j_size=height,
+            i_resolution=i_res, j_resolution=j_res
+        )
+        return ia.add_mesh(
+            plane, style="wireframe", color="#cfcfcf",
+            line_width=1.0, lighting=False, render=False
+        )
 
     def _draw_floor_axes(self, ia, step: float = 10.0):
         xmin, xmax, ymin, ymax, zmin, _ = self._bounds
         step = max(1.0, float(step))
 
         def ticks(vmin, vmax):
-            start = np.ceil(vmin / step) * step
-            vals = np.arange(start, vmax + 0.5 * step, step, dtype=float)
+            import numpy as _np
+            start = _np.ceil(vmin / step) * step
+            vals = _np.arange(start, vmax + 0.5 * step, step, dtype=float)
             return vals[(vals >= vmin + 1e-6) & (vals <= vmax - 1e-6)]
 
         xt, yt = ticks(xmin, xmax), ticks(ymin, ymax)
         cx, cy = 0.5 * (xmin + xmax), 0.5 * (ymin + ymax)
 
-        lines_pts, lines_idx, base = [], [], 0
+        pts, lines = [], []
+        base = 0
 
         def add_seg(p0, p1):
             nonlocal base
-            lines_pts.extend([p0, p1])
-            lines_idx.extend([2, base, base + 1])
+            pts.extend([p0, p1])
+            lines.extend([2, base, base + 1])
             base += 2
 
         # Achsen
@@ -372,14 +416,16 @@ class CoatingPreviewPanel(QWidget):
             add_seg((cx - tick_len, yv, zmin), (cx + tick_len, yv, zmin))
 
         actor = None
-        if lines_pts:
-            poly = pv.PolyData(np.asarray(lines_pts, dtype=float))
-            poly.lines = np.asarray(lines_idx, dtype=np.int64)
-            actor = ia.add_mesh(poly, style="wireframe", color="#5a5a5a",
-                                line_width=1.0, lighting=False, render=False)
+        if pts:
+            poly = pv.PolyData(np.asarray(pts, dtype=float))
+            poly.lines = np.asarray(lines, dtype=np.int64)
+            actor = ia.add_mesh(
+                poly, style="wireframe", color="#5a5a5a",
+                line_width=1.0, lighting=False, render=False
+            )
 
-        # ---- Labels (NEU: sauber verwalten, nur einmal vorhanden) ----
-        new_label_actors: list = []
+        # Labels
+        new_labels: list = []
         label_z = zmin + max(0.5, tick_len * 0.5)
         if len(xt):
             labx = ia.add_point_labels(
@@ -388,7 +434,7 @@ class CoatingPreviewPanel(QWidget):
                 point_size=0, font_size=10, text_color="black",
                 shape_opacity=0.0, render=False
             )
-            new_label_actors.append(labx)
+            new_labels.append(labx)
         if len(yt):
             laby = ia.add_point_labels(
                 np.c_[np.full_like(yt, cx), yt, np.full_like(yt, label_z)],
@@ -396,20 +442,19 @@ class CoatingPreviewPanel(QWidget):
                 point_size=0, font_size=10, text_color="black",
                 shape_opacity=0.0, render=False
             )
-            new_label_actors.append(laby)
+            new_labels.append(laby)
         labxy = ia.add_point_labels(
             [(xmax, cy, label_z), (cx, ymax, label_z)],
             ["X (mm)", "Y (mm)"],
             point_size=0, font_size=12, text_color="black",
             shape_opacity=0.0, render=False
         )
-        new_label_actors.append(labxy)
+        new_labels.append(labxy)
 
-        # Alte Label-Actors (falls noch vorhanden) wurden bereits in _apply_bounds() entfernt.
-        self._axis_label_actors = new_label_actors
+        self._axis_label_actors = new_labels
         return actor
 
-    # ---------- Scene passthrough ----------
+    # -------- Scene passthrough --------
     def clear(self) -> None:
         ia = self._get_ia()
         self.scene.clear()
@@ -420,7 +465,6 @@ class CoatingPreviewPanel(QWidget):
                 except Exception:
                     pass
         self._label_actors.clear()
-        # Auch Achsen-Labels entfernen
         if ia is not None and self._axis_label_actors:
             for lab in self._axis_label_actors:
                 try:
@@ -439,9 +483,16 @@ class CoatingPreviewPanel(QWidget):
     def add_path_polyline(self, *a, **kw):
         self.scene.add_path_polyline(*a, **kw)
 
-    # --- Poly-Helfer (für Overlays) ---
-    def show_poly(self, poly: pv.PolyData, *, layer: str,
-                  color: str = "royalblue", line_width: float = 2.0, lighting: bool = False):
+    # --- Poly helper for Overlays ---
+    def show_poly(
+        self,
+        poly: pv.PolyData,
+        *,
+        layer: str,
+        color: str = "royalblue",
+        line_width: float = 2.0,
+        lighting: bool = False
+    ):
         try:
             self.clear_layer(layer)
             self.add_mesh(
@@ -456,18 +507,13 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("show_poly() failed")
 
-    # --- Frames (lokale KS) ---
+    # --- Frames ---
     def clear_frames(self) -> None:
-        for lyr in self._frames_layers_active:
+        for lyr in ("frames_x", "frames_y", "frames_z", "frames_labels"):
             try:
                 self.scene.clear_layer(lyr)
             except Exception:
                 pass
-
-    def _on_toggle_frames(self, vis: bool):
-        for lyr in self._frames_layers_active[:3]:
-            self.scene.set_layer_visible(lyr, vis, render=False)
-        self.scene.set_layer_visible(self._frames_layers_active[3], vis, render=True)
 
     def show_frames_at(
         self,
@@ -489,128 +535,104 @@ class CoatingPreviewPanel(QWidget):
             _LOG.warning("show_frames_at(): kein Interactor")
             return
 
-        if scale_mm is None:
-            xmin, xmax, ymin, ymax, *_ = self._bounds
-            span_xy = max(1e-6, max(xmax - xmin, ymax - ymin))
-            scale = max(5.0, 0.02 * span_xy)
+        # dynamische Layernamen
+        if layer and layer.strip():
+            base = layer.strip()
+            lx, ly, lz, llab = (f"{base}_x", f"{base}_y", f"{base}_z", f"{base}_labels")
         else:
-            scale = float(scale_mm)
+            lx, ly, lz, llab = ("frames_x", "frames_y", "frames_z", "frames_labels")
+
+        if clear_old:
+            for lyr in (lx, ly, lz, llab):
+                try:
+                    self.scene.clear_layer(lyr)
+                except Exception:
+                    pass
 
         O = np.asarray(origins, dtype=float).reshape(-1, 3)
         Z = np.asarray(z_dirs, dtype=float).reshape(-1, 3)
         if O.shape != Z.shape:
             raise ValueError("origins und z_dirs müssen gleiche Form (N,3) haben")
 
-        X = None
-        if x_dirs is not None:
-            X = np.asarray(x_dirs, dtype=float).reshape(-1, 3)
-            if X.shape != O.shape:
-                raise ValueError("x_dirs muss Form (N,3) haben und zu origins passen")
+        def _safe_norm(v, eps=1e-9):
+            v = np.asarray(v, dtype=float).reshape(3)
+            n = float(np.linalg.norm(v))
+            return v / n if n >= eps else np.array([0.0, 0.0, 1.0])
 
-        if layer and layer.strip():
-            base = layer.strip()
-            frames_layers = (f"{base}_x", f"{base}_y", f"{base}_z", f"{base}_labels")
+        def _basis_from_z(z):
+            z = _safe_norm(z)
+            h = np.array([1.0, 0.0, 0.0]) if abs(z[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+            x = _safe_norm(np.cross(h, z))
+            y = _safe_norm(np.cross(z, x))
+            return x, y, z
+
+        if scale_mm is not None:
+            scale = float(scale_mm)
         else:
-            frames_layers = self._frames_layers
-        self._frames_layers_active = frames_layers
-        lx, ly, lz, llab = frames_layers
+            xmin, xmax, ymin, ymax, *_ = self._bounds
+            span_xy = max(1e-6, max(xmax - xmin, ymax - ymin))
+            scale = max(5.0, 0.02 * span_xy)
 
-        if clear_old:
-            self.clear_frames()
+        pts_x, lns_x, ix = [], [], 0
+        pts_y, lns_y, iy = [], [], 0
+        pts_z, lns_z, iz = [], [], 0
 
-        if O.shape[0] == 0:
-            return
-
-        def _acc():
-            return [], []
-
-        pts_x, lns_x = _acc()
-        pts_y, lns_y = _acc()
-        pts_z, lns_z = _acc()
-        idx_x = idx_y = idx_z = 0
+        X = None if x_dirs is None else np.asarray(x_dirs, dtype=float).reshape(-1, 3)
+        if X is not None and X.shape != O.shape:
+            raise ValueError("x_dirs muss Form (N,3) haben und zu origins passen")
 
         for i in range(O.shape[0]):
             o = O[i]
             if X is not None:
                 z = _safe_norm(Z[i])
                 x = _safe_norm(X[i])
-                x = _safe_norm(np.cross(np.cross(x, z), z))
+                x = _safe_norm(np.cross(np.cross(x, z), z))  # orthogonalisieren
                 y = _safe_norm(np.cross(z, x))
             else:
-                x, y, z = _orthonormal_basis_from_z(Z[i])
-            px = o + x * float(scale)
-            py = o + y * float(scale)
-            pz = o + z * float(scale)
-            pts_x.extend([o, px]); lns_x.extend([2, idx_x, idx_x + 1]); idx_x += 2
-            pts_y.extend([o, py]); lns_y.extend([2, idx_y, idx_y + 1]); idx_y += 2
-            pts_z.extend([o, pz]); lns_z.extend([2, idx_z, idx_z + 1]); idx_z += 2
+                x, y, z = _basis_from_z(Z[i])
 
-        def _poly_from(pts, lns):
+            px, py, pz = o + x * scale, o + y * scale, o + z * scale
+            pts_x.extend([o, px]); lns_x.extend([2, ix, ix + 1]); ix += 2
+            pts_y.extend([o, py]); lns_y.extend([2, iy, iy + 1]); iy += 2
+            pts_z.extend([o, pz]); lns_z.extend([2, iz, iz + 1]); iz += 2
+
+        def _poly(pts, lns):
             poly = pv.PolyData(np.asarray(pts))
             poly.lines = np.asarray(lns, dtype=np.int64).reshape(-1)
             return poly
 
-        poly_x = _poly_from(pts_x, lns_x)
-        poly_y = _poly_from(pts_y, lns_y)
-        poly_z = _poly_from(pts_z, lns_z)
-
-        for lyr in (lx, ly, lz):
-            self.scene.clear_layer(lyr)
-        self.scene.add_mesh(poly_x, color="red",   layer=lx, line_width=float(line_width or 1.0),
-                            reset_camera=False, render=False, lighting=False)
-        self.scene.add_mesh(poly_y, color="green", layer=ly, line_width=float(line_width or 1.0),
-                            reset_camera=False, render=False, lighting=False)
-        self.scene.add_mesh(poly_z, color="blue",  layer=lz, line_width=float(line_width or 1.0),
-                            reset_camera=False, render=False, lighting=False)
+        self.scene.add_mesh(
+            _poly(pts_x, lns_x),
+            color="red", layer=lx, line_width=float(line_width or 1.0),
+            reset_camera=False, render=False, lighting=False
+        )
+        self.scene.add_mesh(
+            _poly(pts_y, lns_y),
+            color="green", layer=ly, line_width=float(line_width or 1.0),
+            reset_camera=False, render=False, lighting=False
+        )
+        self.scene.add_mesh(
+            _poly(pts_z, lns_z),
+            color="blue", layer=lz, line_width=float(line_width or 1.0),
+            reset_camera=False, render=False, lighting=False
+        )
 
         if add_labels and labels:
             try:
                 L = min(len(labels), O.shape[0])
                 if L > 0:
                     self.scene.clear_layer(llab)
-                    ia.add_point_labels(O[:L], labels[:L], point_size=0, font_size=12, shape_opacity=0.3, render=False)
+                    ia.add_point_labels(
+                        O[:L], labels[:L],
+                        point_size=0, font_size=12, shape_opacity=0.3, render=False
+                    )
             except Exception:
                 _LOG.exception("Labels hinzufügen fehlgeschlagen (optional)")
 
-    # -------- Views & render (Delegates zu ViewController) --------
-    def view_isometric(self): self.views.view_isometric()
-    def view_top(self):       self.views.view_top()
-    def view_front(self):     self.views.view_front()
-    def view_back(self):      self.views.view_back()
-    def view_left(self):      self.views.view_left()
-    def view_right(self):     self.views.view_right()
-
-    def render(self, *, reset_camera: bool = True) -> None:
-        ia = self._get_ia()
-        if ia is None:
-            return
-        try:
-            self._look_at_floor_center()
-            if reset_camera:
-                ia.reset_camera(bounds=self._bounds)
-            ia.render()
-        except Exception:
-            _LOG.exception("render() failed")
-
-    # --- Bounds setter ---
-    def set_world_bounds_at(self, *, center_xy=(0.0, 0.0), z0=0.0, span_xy=240.0, span_z=240.0) -> None:
-        cx, cy = float(center_xy[0]), float(center_xy[1])
-        half = float(span_xy) * 0.5
-        z0, span_z = float(z0), float(span_z)
-        self._bounds = (cx - half, cx + half, cy - half, cy + half, z0, z0 + span_z)
-        self._apply_bounds()
-
-    def set_bounds_from_mesh(self, mesh, *, use_contact_plane=True, span_xy=240.0, span_z=240.0) -> None:
-        if not hasattr(mesh, "bounds"):
-            return
-        xmin, xmax, ymin, ymax, zmin, zmax = mesh.bounds
-        cx = 0.5 * (xmin + xmax)
-        cy = 0.5 * (ymin + ymax)
-        z0 = float(zmin if use_contact_plane else 0.5 * (zmin + zmax))
-        self.set_world_bounds_at(center_xy=(cx, cy), z0=z0, span_xy=span_xy, span_z=span_z)
-
-    # --- Start/Ende-Marker (kleine Kugeln + Labels) ---
-    def show_start_end_markers(self, points: np.ndarray, *, layer_prefix: str, color: str, size: float = 3.0):
+    # --- Start/Ende-Marker ---
+    def show_start_end_markers(
+        self, points: np.ndarray, *, layer_prefix: str, color: str, size: float = 3.0
+    ):
         ia = self._get_ia()
         if ia is None:
             return
@@ -630,10 +652,11 @@ class CoatingPreviewPanel(QWidget):
             if len(P) == 0:
                 return
 
-            start = P[0]; end = P[-1]
+            start = P[0]
+            end = P[-1]
             try:
-                s0 = pv.Sphere(radius=float(size)*0.5, center=start)
-                s1 = pv.Sphere(radius=float(size)*0.5, center=end)
+                s0 = pv.Sphere(radius=float(size) * 0.5, center=start)
+                s1 = pv.Sphere(radius=float(size) * 0.5, center=end)
                 self.scene.add_mesh(s0, color=color, layer=layer, render=False, lighting=False)
                 self.scene.add_mesh(s1, color=color, layer=layer, render=False, lighting=False)
             except Exception:
@@ -641,8 +664,7 @@ class CoatingPreviewPanel(QWidget):
 
             try:
                 lab = ia.add_point_labels(
-                    [start, end],
-                    ["Start", "Ende"],
+                    [start, end], ["Start", "Ende"],
                     point_size=0, font_size=12, text_color="black",
                     shape_opacity=0.25, render=False
                 )

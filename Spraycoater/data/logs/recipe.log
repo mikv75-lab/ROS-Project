@@ -438,3 +438,105 @@ RuntimeError: wrapped C/C++ object of type CoatingPreviewPanel has been deleted
 2025-11-08 15:04:58 INFO [12704] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
 2025-11-08 15:04:58 DEBUG [12704] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
 2025-11-08 15:04:58 DEBUG [12704] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-08 17:45:40 INFO [16123] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 17:45:40 DEBUG [16123] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 17:45:40 DEBUG [16123] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-08 17:46:31 INFO [16123] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-08 17:46:31 DEBUG [16123] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-08 17:46:31 DEBUG [16123] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/mask_100_10.stl
+2025-11-08 17:46:56 INFO [16123] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-08 17:46:56 DEBUG [16123] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-08 17:46:56 DEBUG [16123] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/mask_100_10.stl
+2025-11-08 17:51:58 INFO [16123] app.tabs.recipe.mesh_utils:230 - Mount 'post_d30mm_h100mm' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/post_d30mm_h100mm.stl
+2025-11-08 17:51:58 DEBUG [16123] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/post_d30mm_h100mm.stl
+2025-11-08 17:51:58 DEBUG [16123] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/tube_ID5mm_t1p5mm_h100mm.stl
+2025-11-08 18:24:35 WARNING [28329] app.tabs.recipe.scene:30 - SceneManager: Interactor not available
+2025-11-08 18:24:35 WARNING [28329] app.tabs.recipe.scene:30 - SceneManager: Interactor not available
+2025-11-08 18:24:36 WARNING [28329] app.tabs.recipe.scene:30 - SceneManager: Interactor not available
+2025-11-08 18:24:36 WARNING [28329] app.tabs.recipe.scene:30 - SceneManager: Interactor not available
+2025-11-08 18:24:37 WARNING [28329] app.tabs.recipe.scene:30 - SceneManager: Interactor not available
+2025-11-08 18:24:37 WARNING [28329] app.tabs.recipe.scene:30 - SceneManager: Interactor not available
+2025-11-08 20:12:21 INFO [2941] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 20:12:21 DEBUG [2941] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 20:12:21 DEBUG [2941] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-08 20:25:51 INFO [14061] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 20:25:51 DEBUG [14061] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 20:25:51 DEBUG [14061] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-08 20:25:53 ERROR [14061] app.tabs.recipe.preview.matplot2d:314 - Matplot2DView redraw failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/matplot2d.py", line 300, in _redraw
+    self._draw_mesh_fill()
+    ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Matplot2DView' object has no attribute '_draw_mesh_fill'
+2025-11-08 20:54:10 INFO [33953] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 20:54:10 DEBUG [33953] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 20:54:10 DEBUG [33953] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-08 20:54:11 ERROR [33953] app.tabs.recipe.preview.matplot2d:314 - Matplot2DView redraw failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/matplot2d.py", line 300, in _redraw
+    self._draw_mesh_fill()
+    ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Matplot2DView' object has no attribute '_draw_mesh_fill'
+2025-11-08 20:54:29 ERROR [33953] app.tabs.recipe.preview.matplot2d:314 - Matplot2DView redraw failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/matplot2d.py", line 300, in _redraw
+    self._draw_mesh_fill()
+    ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Matplot2DView' object has no attribute '_draw_mesh_fill'
+2025-11-08 20:54:32 ERROR [33953] app.tabs.recipe.preview.matplot2d:314 - Matplot2DView redraw failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/matplot2d.py", line 300, in _redraw
+    self._draw_mesh_fill()
+    ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Matplot2DView' object has no attribute '_draw_mesh_fill'
+2025-11-08 20:54:34 ERROR [33953] app.tabs.recipe.preview.matplot2d:314 - Matplot2DView redraw failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/matplot2d.py", line 300, in _redraw
+    self._draw_mesh_fill()
+    ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Matplot2DView' object has no attribute '_draw_mesh_fill'
+2025-11-08 20:54:34 ERROR [33953] app.tabs.recipe.preview.matplot2d:314 - Matplot2DView redraw failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/matplot2d.py", line 300, in _redraw
+    self._draw_mesh_fill()
+    ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Matplot2DView' object has no attribute '_draw_mesh_fill'
+2025-11-08 20:54:39 ERROR [33953] app.tabs.recipe.preview.matplot2d:314 - Matplot2DView redraw failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/matplot2d.py", line 300, in _redraw
+    self._draw_mesh_fill()
+    ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Matplot2DView' object has no attribute '_draw_mesh_fill'
+2025-11-08 20:54:39 ERROR [33953] app.tabs.recipe.preview.matplot2d:314 - Matplot2DView redraw failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/matplot2d.py", line 300, in _redraw
+    self._draw_mesh_fill()
+    ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Matplot2DView' object has no attribute '_draw_mesh_fill'
+2025-11-08 20:55:55 ERROR [33953] app.tabs.recipe.preview.matplot2d:314 - Matplot2DView redraw failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/matplot2d.py", line 300, in _redraw
+    self._draw_mesh_fill()
+    ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Matplot2DView' object has no attribute '_draw_mesh_fill'
+2025-11-08 20:57:59 INFO [36375] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 20:57:59 DEBUG [36375] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 20:57:59 DEBUG [36375] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-08 20:58:55 INFO [36375] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 20:58:55 DEBUG [36375] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 20:58:55 DEBUG [36375] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-08 21:01:00 INFO [36375] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-08 21:01:00 DEBUG [36375] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-08 21:01:00 DEBUG [36375] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/pyramid_d150_h150.stl
+2025-11-08 21:04:54 INFO [40502] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 21:04:54 DEBUG [40502] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 21:04:54 DEBUG [40502] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-08 21:05:57 INFO [40502] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 21:05:57 DEBUG [40502] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 21:05:57 DEBUG [40502] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-08 21:06:00 INFO [40502] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 21:06:00 DEBUG [40502] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 21:06:00 DEBUG [40502] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-08 21:06:04 INFO [40502] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 21:06:04 DEBUG [40502] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-08 21:06:04 DEBUG [40502] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl

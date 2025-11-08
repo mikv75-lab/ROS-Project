@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# File: widgets/servo_boxes.py
+# File: tabs/service/servo_widgets.py
 from __future__ import annotations
 from typing import Optional, List, Tuple, Dict, Any, Sequence
 
@@ -8,7 +8,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
     QLabel, QPushButton, QSlider, QDoubleSpinBox, QRadioButton,
-    QSizePolicy
+    QSizePolicy, QSpacerItem
 )
 
 # =============================================================================
@@ -19,6 +19,7 @@ class JointJogWidget(QWidget):
     Joint-Jogging:
       - Form oben: Step(°), Speed(%)
       - Grid je Joint: [Label] [−] [Slider] [+] [Value(°)]
+      - Vertical Spacer am Ende
 
     Signals:
       - paramsChanged(dict)                     -> {"joint_step_deg","joint_speed_pct"}
@@ -78,12 +79,15 @@ class JointJogWidget(QWidget):
         self.grid.setVerticalSpacing(6)
         self.grid.setContentsMargins(4, 0, 4, 0)
         # Header
-        self.grid.addWidget(self._bold("Joint"),     0, 0)
-        self.grid.addWidget(self._bold("−"),         0, 1)
-        self.grid.addWidget(self._bold("Position"),  0, 2)
-        self.grid.addWidget(self._bold("+"),         0, 3)
-        self.grid.addWidget(self._bold("Value (°)"), 0, 4)
+        self.grid.addWidget(self._bold("Joint"),       0, 0)
+        self.grid.addWidget(self._bold("Decrease"),    0, 1)
+        self.grid.addWidget(self._bold("Position"),    0, 2)
+        self.grid.addWidget(self._bold("Increase"),    0, 3)
+        self.grid.addWidget(self._bold("Value (°)"),   0, 4)
         root.addLayout(self.grid)
+
+        # Spacer am Ende
+        root.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
     def _bold(self, txt: str) -> QLabel:
         l = QLabel(txt, self)
@@ -136,11 +140,11 @@ class JointJogWidget(QWidget):
             w = item.widget()
             if w:
                 w.deleteLater()
-        self.grid.addWidget(self._bold("Joint"),     0, 0)
-        self.grid.addWidget(self._bold("−"),         0, 1)
-        self.grid.addWidget(self._bold("Position"),  0, 2)
-        self.grid.addWidget(self._bold("+"),         0, 3)
-        self.grid.addWidget(self._bold("Value (°)"), 0, 4)
+        self.grid.addWidget(self._bold("Joint"),       0, 0)
+        self.grid.addWidget(self._bold("Decrease"),    0, 1)
+        self.grid.addWidget(self._bold("Position"),    0, 2)
+        self.grid.addWidget(self._bold("Increase"),    0, 3)
+        self.grid.addWidget(self._bold("Value (°)"),   0, 4)
 
         self._joint_names = list(joint_names)
         self._joint_lims_deg = list(limits_deg)
@@ -222,7 +226,7 @@ class JointJogWidget(QWidget):
         for w in widgets:
             sp = w.sizePolicy()
             sp.setVerticalPolicy(QSizePolicy.Policy.Maximum)
-            if sp.horizontalPolicy() < QSizePolicy.Policy.Expanding:
+            if sp.horizontalPolicy() != QSizePolicy.Policy.Expanding:
                 sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
             w.setSizePolicy(sp)
 
@@ -257,7 +261,7 @@ class CartesianJogWidget(QWidget):
     paramsChanged = QtCore.pyqtSignal(dict)
     cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)
 
-    def __init__(self, bridge=None, parent: Optional[WIDGET] = None):  # type: ignore[name-defined]
+    def __init__(self, bridge=None, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.bridge = bridge
         self._build_ui()
@@ -350,6 +354,9 @@ class CartesianJogWidget(QWidget):
         grid_rot.addWidget(self.btnRzp, 3, 1)
         root.addLayout(grid_rot)
 
+        # Spacer
+        root.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
+
     def _bold(self, txt: str) -> QLabel:
         l = QLabel(txt, self)
         l.setStyleSheet("font-weight:600;")
@@ -371,7 +378,7 @@ class CartesianJogWidget(QWidget):
         self.btnZm.clicked.connect(lambda: self._emit_cart("z", -self.spinLinStep.value()))
         self.btnZp.clicked.connect(lambda: self._emit_cart("z",  self.spinLinStep.value()))
 
-        # Rotational (delta in Grad; speed_mm_s wird mitgegeben)
+        # Rotational (delta in Grad; speed_mm_s wird mitgegeben/Backend kann entscheiden)
         self.btnRxm.clicked.connect(lambda: self._emit_rot("rx", -self.spinAngStep.value()))
         self.btnRxp.clicked.connect(lambda: self._emit_rot("rx",  self.spinAngStep.value()))
         self.btnRym.clicked.connect(lambda: self._emit_rot("ry", -self.spinAngStep.value()))
@@ -451,6 +458,6 @@ class CartesianJogWidget(QWidget):
         for w in widgets:
             sp = w.sizePolicy()
             sp.setVerticalPolicy(QSizePolicy.Policy.Maximum)
-            if sp.horizontalPolicy() < QSizePolicy.Policy.Expanding:
+            if sp.horizontalPolicy() != QSizePolicy.Policy.Expanding:
                 sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
             w.setSizePolicy(sp)
