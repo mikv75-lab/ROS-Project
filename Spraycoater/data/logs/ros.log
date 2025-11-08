@@ -160,3 +160,115 @@
 2025-11-07 00:28:15 INFO [18065] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
 2025-11-07 00:28:18 INFO [18065] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
 2025-11-07 00:28:18 INFO [18065] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-07 00:45:44 INFO [32386] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-07 00:45:47 INFO [32386] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-07 00:45:47 INFO [32386] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-07 00:46:18 INFO [32386] ros.ui_bridge:259 - UIBridge disconnect()
+2025-11-07 00:46:32 INFO [33669] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-07 00:46:36 INFO [33669] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-07 00:46:36 INFO [33669] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-07 01:14:59 INFO [52154] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-07 13:21:51 INFO [32428] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-07 13:21:54 INFO [32428] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-07 13:21:54 INFO [32428] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-07 15:06:55 INFO [98551] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-07 15:06:59 INFO [98551] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-07 15:06:59 INFO [98551] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-07 15:07:55 INFO [99655] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-07 15:07:58 INFO [99655] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-07 15:07:58 INFO [99655] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-07 15:11:29 INFO [2363] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-07 15:11:32 INFO [2363] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-07 15:11:32 INFO [2363] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-07 15:15:12 INFO [5846] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-07 15:15:15 INFO [5846] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-07 15:15:15 INFO [5846] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-07 15:15:34 INFO [6538] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-07 15:15:37 INFO [6538] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-07 15:15:37 INFO [6538] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-07 15:19:38 INFO [10210] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-07 15:19:45 INFO [10210] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-07 15:19:45 INFO [10210] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-07 15:20:18 INFO [11188] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-07 15:20:25 INFO [11188] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-07 15:20:25 INFO [11188] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-07 15:28:50 INFO [16824] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-07 15:28:52 INFO [16824] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-07 15:28:52 INFO [16824] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-07 15:29:43 INFO [18048] ros.kill_all_ros:122 - [kill] psutil nicht verfügbar – fallback pkill wird verwendet.
+2025-11-07 15:29:46 INFO [18048] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-07 15:29:46 INFO [18048] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-07 15:30:08 INFO [18835] ros.kill_all_ros:89 - [kill] stopping 4 ROS-related processes…
+2025-11-07 15:30:08 DEBUG [18835] ros.kill_all_ros:91 -  -> TERM pid=10457 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 topic echo /spraycoater/poses/home
+2025-11-07 15:30:08 DEBUG [18835] ros.kill_all_ros:91 -  -> TERM pid=10518 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 topic echo /spraycoater/poses/service
+2025-11-07 15:30:08 DEBUG [18835] ros.kill_all_ros:91 -  -> TERM pid=10599 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 topic echo /spraycoater/poses/set_home
+2025-11-07 15:30:08 DEBUG [18835] ros.kill_all_ros:91 -  -> TERM pid=10633 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 topic echo /spraycoater/scene/cage/current
+2025-11-07 15:30:10 DEBUG [18835] ros.kill_all_ros:112 -  -> KILL pid=10457
+2025-11-07 15:30:10 DEBUG [18835] ros.kill_all_ros:112 -  -> KILL pid=10518
+2025-11-07 15:30:10 DEBUG [18835] ros.kill_all_ros:112 -  -> KILL pid=10599
+2025-11-07 15:30:10 DEBUG [18835] ros.kill_all_ros:112 -  -> KILL pid=10633
+2025-11-07 15:30:12 INFO [18835] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-07 15:30:12 INFO [18835] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-07 15:37:50 INFO [24431] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-07 15:37:51 INFO [24431] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-07 15:37:51 INFO [24431] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-08 14:18:20 INFO [76139] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-08 14:18:21 INFO [76139] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-08 14:18:21 INFO [76139] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-08 14:20:47 INFO [78585] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-08 14:20:47 DEBUG [78585] ros.kill_all_ros:91 -  -> TERM pid=76250 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-08 14:20:47 DEBUG [78585] ros.kill_all_ros:91 -  -> TERM pid=76268 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args --params-file /tmp/launch_params_n_qpher8 --params-file /tmp/launch_params_vzp1k0wt --params-file /tmp/launch_params_ur_f3fzc
+2025-11-08 14:20:49 INFO [78585] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-08 14:20:49 INFO [78585] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-08 14:21:26 INFO [79547] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-08 14:21:26 DEBUG [79547] ros.kill_all_ros:91 -  -> TERM pid=78713 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-08 14:21:26 DEBUG [79547] ros.kill_all_ros:91 -  -> TERM pid=78734 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args --params-file /tmp/launch_params_1pzgf3q7 --params-file /tmp/launch_params_50mg5yzq --params-file /tmp/launch_params_s9i1fmtg
+2025-11-08 14:21:27 INFO [79547] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-08 14:21:27 INFO [79547] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-08 14:33:48 INFO [90053] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-08 14:33:48 DEBUG [90053] ros.kill_all_ros:91 -  -> TERM pid=79675 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-08 14:33:48 DEBUG [90053] ros.kill_all_ros:91 -  -> TERM pid=79690 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args --params-file /tmp/launch_params_eqi91pxl --params-file /tmp/launch_params_m07qbljl --params-file /tmp/launch_params_98dsv6g2
+2025-11-08 14:33:51 INFO [90053] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-08 14:33:51 INFO [90053] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-08 14:42:46 INFO [96825] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-08 14:42:46 DEBUG [96825] ros.kill_all_ros:91 -  -> TERM pid=90134 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-08 14:42:46 DEBUG [96825] ros.kill_all_ros:91 -  -> TERM pid=90164 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args --params-file /tmp/launch_params_qxt16dyw --params-file /tmp/launch_params_tvynv6qr --params-file /tmp/launch_params_xwm1deq1
+2025-11-08 14:42:51 INFO [96825] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-08 14:42:51 INFO [96825] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-08 14:53:15 INFO [96825] ros.ui_bridge:259 - UIBridge disconnect()
+2025-11-08 14:53:39 INFO [5221] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-08 14:53:41 INFO [5221] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-08 14:53:41 INFO [5221] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-08 14:54:12 INFO [5221] ros.ui_bridge:259 - UIBridge disconnect()
+2025-11-08 14:54:23 INFO [6075] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-08 14:54:24 INFO [6075] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-08 14:54:24 INFO [6075] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-08 15:04:03 INFO [6075] ros.ui_bridge:259 - UIBridge disconnect()
+2025-11-08 15:04:47 INFO [12704] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-08 15:04:48 INFO [12704] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-08 15:04:48 INFO [12704] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-08 15:05:13 INFO [12704] ros.ui_bridge:259 - UIBridge disconnect()
+2025-11-08 15:06:31 INFO [14409] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-08 15:06:32 INFO [14409] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-08 15:06:32 INFO [14409] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-08 15:11:15 INFO [14409] ros.ui_bridge:259 - UIBridge disconnect()
+2025-11-08 15:19:40 INFO [22428] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-08 15:19:42 INFO [22428] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-08 15:19:42 INFO [22428] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-08 15:20:45 INFO [23675] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-08 15:20:45 DEBUG [23675] ros.kill_all_ros:91 -  -> TERM pid=22503 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-08 15:20:45 DEBUG [23675] ros.kill_all_ros:91 -  -> TERM pid=22517 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args --params-file /tmp/launch_params_q0pv2k99 --params-file /tmp/launch_params_4xy7tp1o --params-file /tmp/launch_params_4g8xm5a4
+2025-11-08 15:20:47 DEBUG [23675] ros.kill_all_ros:112 -  -> KILL pid=22503
+2025-11-08 15:20:49 INFO [23675] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-08 15:20:49 INFO [23675] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-08 15:21:12 INFO [24525] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-08 15:21:12 DEBUG [24525] ros.kill_all_ros:91 -  -> TERM pid=23832 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-08 15:21:12 DEBUG [24525] ros.kill_all_ros:91 -  -> TERM pid=23850 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args --params-file /tmp/launch_params_eazzg7fv --params-file /tmp/launch_params_w6w41b1y --params-file /tmp/launch_params_xwdyayyp
+2025-11-08 15:21:14 DEBUG [24525] ros.kill_all_ros:112 -  -> KILL pid=23832
+2025-11-08 15:21:17 INFO [24525] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-08 15:21:17 INFO [24525] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-08 15:23:04 INFO [26674] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-08 15:23:04 DEBUG [26674] ros.kill_all_ros:91 -  -> TERM pid=24689 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-08 15:23:04 DEBUG [26674] ros.kill_all_ros:91 -  -> TERM pid=24703 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args --params-file /tmp/launch_params_8u95mo56 --params-file /tmp/launch_params_yegeli8d --params-file /tmp/launch_params_fvipq159
+2025-11-08 15:23:07 INFO [26674] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
+2025-11-08 15:23:07 INFO [26674] ros:186 - UIBridge verbunden (node=scene_bridge).
