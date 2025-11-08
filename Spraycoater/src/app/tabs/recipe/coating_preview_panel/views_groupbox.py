@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Callable
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -14,12 +14,20 @@ class ViewsGroupBox(QGroupBox):
 
       Kamera: [Iso] [Top] [Front] [Back] [Left] [Right]
       2D:           [Top] [Front] [Back] [Left] [Right]   (eine Spalte nach rechts eingerückt)
+
+    Verwendung:
+        grp = ViewsGroupBox(parent)
+        grp.set_handlers(
+            on3d=lambda name: ...,   # name in {"iso","top","front","back","left","right"}
+            on2d=lambda plane: ...   # plane in {"top","front","back","left","right"}
+        )
     """
 
     def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__("Kamera", parent)  # Gruppen-Titel: "Kamera"
+        super().__init__("Kamera", parent)
         self._build_ui()
 
+    # ---------- UI ----------
     def _build_ui(self) -> None:
         lay = QGridLayout(self)
         lay.setContentsMargins(8, 8, 8, 8)
@@ -57,6 +65,28 @@ class ViewsGroupBox(QGroupBox):
         sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
         self.setSizePolicy(sp)
 
+    # ---------- Public API ----------
+    def set_handlers(self, *, on3d: Callable[[str], None], on2d: Callable[[str], None]) -> None:
+        """
+        Verdrahtet die Buttons intern mit bereitgestellten Handlern.
+        - on3d(name): name ∈ {"iso","top","front","back","left","right"}
+        - on2d(plane): plane ∈ {"top","front","back","left","right"}
+        """
+        # 3D
+        self.btnCamIso.clicked.connect(lambda: on3d("iso"))
+        self.btnCamTop.clicked.connect(lambda: on3d("top"))
+        self.btnCamFront.clicked.connect(lambda: on3d("front"))
+        self.btnCamBack.clicked.connect(lambda: on3d("back"))
+        self.btnCamLeft.clicked.connect(lambda: on3d("left"))
+        self.btnCamRight.clicked.connect(lambda: on3d("right"))
+        # 2D
+        self.btn2DTop.clicked.connect(lambda: on2d("top"))
+        self.btn2DFront.clicked.connect(lambda: on2d("front"))
+        self.btn2DBack.clicked.connect(lambda: on2d("back"))
+        self.btn2DLeft.clicked.connect(lambda: on2d("left"))
+        self.btn2DRight.clicked.connect(lambda: on2d("right"))
+
+    # ---------- Helpers ----------
     def _bold(self, txt: str) -> QLabel:
         lab = QLabel(txt, self)
         lab.setStyleSheet("font-weight:600;")

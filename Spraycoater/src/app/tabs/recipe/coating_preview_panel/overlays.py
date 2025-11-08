@@ -224,8 +224,8 @@ class OverlayRenderer:
         except Exception:
             _LOG.exception("show_frames_at (toggle) failed")
 
-    def apply_visibility(self, vis: Dict[str, bool] | None):
-        if vis:
+    def apply_visibility(self, vis: dict | None):
+        if vis is not None:
             self._vis.update({
                 "mask":    bool(vis.get("mask",    self._vis["mask"])),
                 "path":    bool(vis.get("path",    self._vis["path"])),
@@ -234,11 +234,28 @@ class OverlayRenderer:
                 "normals": bool(vis.get("normals", self._vis["normals"])),
                 "frames":  bool(vis.get("frames",  self._vis["frames"])),
             })
-        self.set_mask_visible(self._vis["mask"], render=False)
-        self.set_path_visible(self._vis["path"], render=False)
-        self.set_hits_visible(self._vis["hits"], render=False)
-        self.set_misses_visible(self._vis["misses"], render=False)
-        self.set_normals_visible(self._vis["normals"], render=True)
+
+        # 1) Alle Layer-Sichtbarkeiten setzen, noch ohne Render
+        self.set_mask_visible(self._vis["mask"],       render=False)
+        self.set_path_visible(self._vis["path"],       render=False)
+        self.set_hits_visible(self._vis["hits"],       render=False)
+        self.set_misses_visible(self._vis["misses"],   render=False)
+        self.set_normals_visible(self._vis["normals"], render=False)
+
+        # 2) EIN Render-Tick auf dem ersten sichtbaren Layer
+        for fn, flag in (
+            (self.set_path_visible,   self._vis["path"]),
+            (self.set_mask_visible,   self._vis["mask"]),
+            (self.set_hits_visible,   self._vis["hits"]),
+            (self.set_misses_visible, self._vis["misses"]),
+            (self.set_normals_visible,self._vis["normals"]),
+        ):
+            if flag:
+                fn(True, render=True)
+                break
+
+        # 3) Frames separat, weil die per Funktion zeichnen/clearen
+        self.set_frames_visible(self._vis["frames"], render=False)
 
     def render_from_model(
         self,
