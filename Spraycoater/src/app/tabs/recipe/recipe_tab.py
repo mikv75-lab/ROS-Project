@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# File: app/tabs/recipe/recipe_tab.py
 from __future__ import annotations
 import logging
 from typing import Optional, Callable, Any, Dict
@@ -56,7 +57,7 @@ class RecipeTab(QWidget):
 
         # --- Wiring: Recipe → Preview (Render anstoßen)
         self.recipePanel.updatePreviewRequested.connect(
-            lambda model: self._render_preview(model),
+            lambda payload: self._render_preview(payload.get("model"), payload.get("sides")),
             Qt.ConnectionType.QueuedConnection
         )
 
@@ -145,8 +146,13 @@ class RecipeTab(QWidget):
         }
 
     # --- Render orchestration ---
-    def _render_preview(self, model: object):
+    def _render_preview(self, model_or_payload: object, sides: Optional[list] = None):
         try:
+            # robust entpacken (falls doch jemand direkt das Model durchreicht)
+            model = model_or_payload
+            if isinstance(model_or_payload, dict):
+                model = model_or_payload.get("model", model_or_payload)
+
             mount_key = self._get_required_str(model, "substrate_mount", "Recipe benötigt 'substrate_mount'.")
             substrate_key = self._get_required_str(model, "substrate", "Recipe benötigt 'substrate'.")
 

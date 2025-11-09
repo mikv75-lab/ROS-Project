@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
-    QDoubleSpinBox, QSpinBox, QCheckBox, QComboBox, QStackedWidget, QSizePolicy, QLineEdit
+    QDoubleSpinBox, QSpinBox, QCheckBox, QComboBox, QStackedWidget, QLineEdit
 )
 
 from app.model.recipe.recipe_store import RecipeStore
@@ -70,7 +70,6 @@ class SidePathEditor(QWidget):
         self.store = store
 
         # aktuell gebundene Side-Config (nur aus Rezept)
-        # erwartet Keys: allowed_path_types, default_path, schemas
         self._side_cfg: Dict[str, Any] = {}
 
         # pro Typ: (page_widget, fields_map, schema_params)
@@ -90,7 +89,6 @@ class SidePathEditor(QWidget):
         form.addRow(f"type ({self.side_name})", self.type_combo)
 
         self.stack = QStackedWidget()
-        self.stack.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         root.addWidget(self.stack)
 
         # Verhalten
@@ -136,7 +134,6 @@ class SidePathEditor(QWidget):
 
         # Reihenfolge stabil: keys alphabetisch, außer sichtbarkeitsrelevante Schlüssel zuerst (z. B. area.shape)
         keys = list(params.keys())
-        # leichte Heuristik: shape zuerst, damit visible_if sofort wirkt
         keys.sort(key=lambda k: (0 if k.endswith("shape") else 1, k))
 
         for key in keys:
@@ -186,27 +183,20 @@ class SidePathEditor(QWidget):
                 continue
 
             fields[key] = (w, kind, spec)
-            if kind == "check":
-                f.addRow(row_label, w)
-            else:
-                f.addRow(row_label, w)
+            # sowohl bei Checkbox (Label im Widget) als auch bei anderen – addRow einheitlich
+            f.addRow(row_label, w)
 
             if spec.get("help") and hasattr(w, "setToolTip"):
                 w.setToolTip(str(spec["help"]))
 
         # Sichtbarkeitsregeln verdrahten (visible_if: {"other_key":"value"})
-        self._wire_visibility(fields)
+        self._wire_visibility(fields, form=f)
 
-        # kompakter Look
-        for _, (w, _, _) in fields.items():
-            sp = w.sizePolicy()
-            sp.setVerticalPolicy(QSizePolicy.Maximum)
-            w.setSizePolicy(sp)
-
+        # keine SizePolicies setzen → Layout regelt
         return page, fields
 
     # ---------- Sichtbarkeit (visible_if) ----------
-    def _wire_visibility(self, fields: Dict[str, Tuple[QWidget, str, Dict[str, Any]]]) -> None:
+    def _wire_visibility(self, fields: Dict[str, Tuple[QWidget, str, Dict[str, Any]]], *, form: QFormLayout) -> None:
         # mapping: target_key -> (dep_key, dep_value)
         deps: Dict[str, Tuple[str, Any]] = {}
         for key, (w, kind, spec) in fields.items():
@@ -222,15 +212,12 @@ class SidePathEditor(QWidget):
                 values[k] = self._get_widget_value(w, kind)
             # setze Sichtbarkeit
             for tgt, (dep_k, dep_v) in deps.items():
+                widget = fields[tgt][0]
                 if dep_k not in values:
-                    # wenn Abhängigkeit (noch) nicht existiert, ausblenden
-                    fields[tgt][0].setVisible(False)
-                    # auch Label im Formular verstecken:
-                    self._set_form_row_visible(fields[tgt][0], False)
+                    self._set_form_row_visible(form, widget, False)
                     continue
                 visible = (str(values[dep_k]) == str(dep_v))
-                fields[tgt][0].setVisible(visible)
-                self._set_form_row_visible(fields[tgt][0], visible)
+                self._set_form_row_visible(form, widget, visible)
 
             self._lock_stack_height()
 
@@ -247,20 +234,64 @@ class SidePathEditor(QWidget):
                 w.stateChanged.connect(lambda _v, fn=_apply_visibility: fn())
             elif kind == "string":
                 w.textChanged.connect(lambda _v, fn=_apply_visibility: fn())
-            elif kind == "vec2":
-                # kein direkter Signalbedarf – Sichtbarkeit hängt i.d.R. nicht an vec2
-                pass
+            # vec2 typischerweise keine visible_if-Quelle
 
         # initial anwenden
         _apply_visibility()
 
-    def _set_form_row_visible(self, widget: QWidget, visible: bool):
-        # versucht, die passende Label-Zeile im FormLayout mitzuschalten
-        parent = widget.parent()
-        while parent and not isinstance(parent, QFormLayout):
-            parent = parent.parent()
-        # wenn nicht gefunden, ignorieren – die meisten Widgets liegen direkt im FormLayout
-        # (Qt verpackt intern Labels/Fields; vollständiges Traversing sparen wir uns hier.)
+    def _set_form_row_visible(self, form: QFormLayout, field_widget: QWidget, visible: bool):
+        """
+        PyQt6-sicher: Finde die Form-Zeile, zu der field_widget gehört (direkt oder als Kind),
+        und schalte sowohl Label- als auch Field-Zelle sichtbar/unsichtbar.
+        """
+        row = self._form_row_for_widget(form, field_widget)
+        if row < 0:
+            # Fallback: wenigstens das Widget selbst toggeln
+            field_widget.setVisible(visible)
+            return
+
+        # Label-Zelle
+        li = form.itemAt(row, QFormLayout.ItemRole.LabelRole)
+        lw = li.widget() if li is not None else None
+        if lw is not None:
+            lw.setVisible(visible)
+
+        # Field-Zelle
+        fi = form.itemAt(row, QFormLayout.ItemRole.FieldRole)
+        fw = fi.widget() if fi is not None else None
+        if fw is not None:
+            fw.setVisible(visible)
+
+
+    def _form_row_for_widget(self, form: QFormLayout, w: QWidget) -> int:
+        """
+        Liefert die row-Index der Zeile, die das Widget 'w' (oder dessen Parent/Child)
+        in Label- oder Field-Zelle enthält. Gibt -1 zurück, wenn nicht gefunden.
+        """
+        # schneller Direkt-Vergleich zuerst
+        idx = form.indexOf(w)
+        if idx >= 0:
+            # PyQt6: getItemPosition(idx) -> (row, role)
+            row, _role = form.getItemPosition(idx)
+            return row
+
+        # Sonst über alle Zeilen gehen und Label/Field prüfen
+        rc = form.rowCount()
+        for row in range(rc):
+            for role in (QFormLayout.ItemRole.LabelRole, QFormLayout.ItemRole.FieldRole):
+                it = form.itemAt(row, role)
+                if it is None:
+                    continue
+                ww = it.widget()
+                if ww is None:
+                    continue
+                if ww is w or ww == w:
+                    return row
+                # robust: auch Kinder/Eltern berücksichtigen
+                if ww is not None and (ww.isAncestorOf(w) or w.isAncestorOf(ww)):
+                    return row
+        return -1
+
 
     # ---------- Default/Values anwenden ----------
 
@@ -268,8 +299,8 @@ class SidePathEditor(QWidget):
         self,
         path: Dict[str, Any],
         *,
-        helix_enums: Optional[Dict[str, Any]] = None,  # ignoriert (kein Fallback)
-        plane_enums: Optional[Dict[str, Any]] = None,  # ignoriert (kein Fallback)
+        helix_enums: Optional[Dict[str, Any]] = None,  # ignoriert
+        plane_enums: Optional[Dict[str, Any]] = None,  # ignoriert
     ) -> None:
         # Side-Config aktualisieren, falls mitgeliefert
         if isinstance(path, dict) and "_side_cfg" in path:
@@ -303,7 +334,7 @@ class SidePathEditor(QWidget):
                 if isinstance(val, (list, tuple)) and len(val) >= 2:
                     w.set([float(val[0]), float(val[1])])
                 elif val is None and "default" in spec:
-                    dv = spec["default"]; 
+                    dv = spec["default"]
                     if isinstance(dv, (list, tuple)) and len(dv) >= 2:
                         w.set([float(dv[0]), float(dv[1])])
 
@@ -328,7 +359,6 @@ class SidePathEditor(QWidget):
           - type = aktuelle Auswahl
           - KEIN Fallback.
         """
-        # _side_cfg beim ersten Aufruf aus dem Store strikt erzeugen
         self._side_cfg = self.store.build_side_runtime_cfg_strict(rec_def, side_name)
 
         def _reload_defaults():
@@ -343,10 +373,9 @@ class SidePathEditor(QWidget):
     # ---------- intern ----------
 
     def _on_type_changed(self, _idx: int) -> None:
-        t = self.type_combo.currentText()
-        # finde Index der Page: Reihenfolge = Reihenfolge in Combo
+        # Page per Combo-Index (gleiche Reihenfolge) umschalten
         idx = max(0, self.type_combo.currentIndex())
-        if idx < self.stack.count():
+        if 0 <= idx < self.stack.count():
             self.stack.setCurrentIndex(idx)
             self._lock_stack_height()
 
@@ -366,13 +395,8 @@ class SidePathEditor(QWidget):
         return None
 
     def _lock_stack_height(self) -> None:
-        w = self.stack.currentWidget()
-        if w is None:
-            return
-        w.adjustSize()
+        """
+        Keine fixe Höhe mehr – nur sanft anpassen lassen.
+        """
         self.stack.adjustSize()
-        h = max(w.sizeHint().height(), self.stack.sizeHint().height())
-        self.stack.setMinimumHeight(h)
-        self.stack.setMaximumHeight(h)
-        self.stack.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.adjustSize()

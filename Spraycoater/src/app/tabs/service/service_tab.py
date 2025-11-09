@@ -51,6 +51,22 @@ class ServiceTab(QWidget):
         self.commandStatus.setSizePolicy(sp)
         root.addWidget(self.commandStatus)
 
+        # --- [2] Unten: Poses | Tool | Scene nebeneinander ------------------
+        self.posesBox = PosesGroupBox(self.bridge, self)
+        self.toolBox  = ToolGroupBox(self.bridge, self)
+        self.sceneBox = SceneGroupBox(self.bridge, self)
+
+        rowBottom = QHBoxLayout()
+        rowBottom.setSpacing(8)
+        rowBottom.addWidget(self.posesBox)
+        rowBottom.addWidget(self.toolBox)
+        rowBottom.addWidget(self.sceneBox)
+        # gleichmäßig stretchen
+        rowBottom.setStretch(0, 1)
+        rowBottom.setStretch(1, 1)
+        rowBottom.setStretch(2, 1)
+        root.addLayout(rowBottom)
+
         # --- [1] Subtabs: Motion | Joint Jog | Cartesian Jog ----------------
         self.tabs = QTabWidget(self)
         root.addWidget(self.tabs)
@@ -72,22 +88,6 @@ class ServiceTab(QWidget):
             sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
             sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
             w.setSizePolicy(sp)
-
-        # --- [2] Unten: Poses | Tool | Scene nebeneinander ------------------
-        self.posesBox = PosesGroupBox(self.bridge, self)
-        self.toolBox  = ToolGroupBox(self.bridge, self)
-        self.sceneBox = SceneGroupBox(self.bridge, self)
-
-        rowBottom = QHBoxLayout()
-        rowBottom.setSpacing(8)
-        rowBottom.addWidget(self.posesBox)
-        rowBottom.addWidget(self.toolBox)
-        rowBottom.addWidget(self.sceneBox)
-        # gleichmäßig stretchen
-        rowBottom.setStretch(0, 1)
-        rowBottom.setStretch(1, 1)
-        rowBottom.setStretch(2, 1)
-        root.addLayout(rowBottom)
 
         # Resize-Policies für die drei Boxen
         for w in (self.posesBox, self.toolBox, self.sceneBox):

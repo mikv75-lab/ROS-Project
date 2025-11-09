@@ -2,7 +2,7 @@
 # File: tabs/recipe/recipe_editor_panel.py
 from __future__ import annotations
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
@@ -17,7 +17,8 @@ from .recipe_editor_content import RecipeEditorContent
 
 class RecipeEditorPanel(QWidget):
     """VBox: Recipe-GB (Buttons + Description) | Content (mit Selectors inkl. Recipe) | UpdatePreview"""
-    updatePreviewRequested = pyqtSignal(object)   # emits Recipe
+    # emit { "model": Recipe, "sides": List[str] }
+    updatePreviewRequested = pyqtSignal(object)
 
     def __init__(self, *, ctx, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -34,14 +35,14 @@ class RecipeEditorPanel(QWidget):
         vroot.setContentsMargins(8, 8, 8, 8)
         vroot.setSpacing(8)
 
-        # ---------- [1] Recipe GroupBox (Buttons + Description) ----------
+        # ---------- [1] Recipe GroupBox ----------
         self.gbRecipe = QGroupBox("Recipe", self)
         vroot.addWidget(self.gbRecipe)
         vRecipe = QVBoxLayout(self.gbRecipe)
         vRecipe.setContentsMargins(8, 6, 8, 6)
         vRecipe.setSpacing(6)
 
-        # Buttonzeile
+        # Buttons
         hButtons = QHBoxLayout()
         self.btnNew    = QPushButton("New", self.gbRecipe)
         self.btnLoad   = QPushButton("Load", self.gbRecipe)
@@ -56,7 +57,7 @@ class RecipeEditorPanel(QWidget):
         hButtons.addStretch(1)
         vRecipe.addLayout(hButtons)
 
-        # Description-Feld (gehört jetzt nach oben in die Recipe-Box)
+        # Description
         hDesc = QHBoxLayout()
         self.lblDesc = QLabel("Description:", self.gbRecipe)
         self.e_desc = QLineEdit(self.gbRecipe)
@@ -65,11 +66,10 @@ class RecipeEditorPanel(QWidget):
         hDesc.addWidget(self.e_desc)
         vRecipe.addLayout(hDesc)
 
-        # ---------- [2] Content (enthält Selectors inkl. 'recipe' + Sides-Scroll) ----------
+        # ---------- [2] Content ----------
         self.content = RecipeEditorContent(ctx=self.ctx, store=self.store, parent=self)
         vroot.addWidget(self.content)
 
-        # Defaults ins Formular
         self.content.apply_defaults()
 
         # ---------- [3] Update Preview ----------
@@ -81,7 +81,7 @@ class RecipeEditorPanel(QWidget):
         vroot.addWidget(self.btnUpdatePreview)
 
         # ---------- Wiring ----------
-        self._fill_recipe_select()  # füllt self.content.sel_recipe
+        self._fill_recipe_select()
         if self.content.sel_recipe is not None:
             self.content.sel_recipe.currentIndexChanged.connect(self._on_recipe_select_changed)
 
@@ -90,9 +90,17 @@ class RecipeEditorPanel(QWidget):
         self.btnSave.clicked.connect(self._on_save_clicked)
         self.btnDelete.clicked.connect(self._on_delete_clicked)
 
-        self.btnUpdatePreview.clicked.connect(lambda: self.updatePreviewRequested.emit(self.current_model()))
+        # Emit: { model, sides }
+        def _emit_update():
+            payload = {
+                "model": self.current_model(),
+                "sides": self._selected_existing_sides()
+            }
+            self.updatePreviewRequested.emit(payload)
 
-        # Erstes Rezept initialisieren (kein Preview-Emit)
+        self.btnUpdatePreview.clicked.connect(_emit_update)
+
+        # Erstes Rezept initialisieren
         if self.content.sel_recipe and self.content.sel_recipe.count() > 0:
             if self.content.sel_recipe.currentIndex() < 0:
                 self.content.sel_recipe.setCurrentIndex(0)
@@ -101,7 +109,6 @@ class RecipeEditorPanel(QWidget):
     # ============================ Rezepte ===============================
 
     def _fill_recipe_select(self) -> None:
-        """Füllt die Recipe-Combo in den Selectors (content.sel_recipe)."""
         combo = getattr(self.content, "sel_recipe", None)
         if combo is None:
             return
@@ -144,7 +151,6 @@ class RecipeEditorPanel(QWidget):
             "parameters": params,
             "paths_by_side": pbs,
         })
-        # Kataloge für UI-Coalesce
         model.tools = tools
         model.substrates = subs
         model.substrate_mounts = mounts
@@ -153,7 +159,6 @@ class RecipeEditorPanel(QWidget):
     def _apply_model(self, model: Recipe, rec_def: Dict[str, Any]) -> None:
         self._active_model = model
         self._active_rec_def = rec_def
-        # description in Top-Box spiegeln
         self.e_desc.setText(getattr(model, "description", "") or "")
         self.content.apply_recipe_model(model, rec_def)
 
@@ -196,8 +201,7 @@ class RecipeEditorPanel(QWidget):
             start_dir = getattr(getattr(self.ctx, "paths", None), "recipe_dir", os.getcwd())
             suggested = f"{(model.id or 'recipe').strip()}.yaml"
             fname, _ = QFileDialog.getSaveFileName(
-                self, "Rezept speichern", os.path.join(start_dir, suggested), "YAML (*.yaml *.yml)"
-            )
+                self, "Rezept speichern", os.path.join(start_dir, suggested), "YAML (*.yaml *.yml)")
             if not fname:
                 return
             model.save_yaml(fname)
@@ -219,16 +223,21 @@ class RecipeEditorPanel(QWidget):
     # ============================ Export/Trigger ========================
 
     def current_model(self) -> Recipe:
+        # 1) Aktuelle Globals/Paths aus dem UI holen
         params = self.content.collect_globals()
         paths_by_side = self.content.collect_paths_by_side()
-        tool, sub, mnt = self.content.active_selectors_values()
-        desc = self.e_desc.text().strip()  # <- Description kommt jetzt aus Top-Box
 
+        # 2) Aktuelle Selector-Werte über die Helper holen (bereinigt/None-safe)
+        tool, sub, mnt = self.content.active_selectors_values()
+        desc = self.e_desc.text().strip()
+
+        # 3) Model bereitstellen
         model = self._active_model
         if model is None:
             rec_def = self._current_recipe_def() or {}
             model = self._new_model_from_rec_def(rec_def)
 
+        # 4) UI -> Model (hart überschreiben)
         model.description = desc
         model.tool = tool
         model.substrate = sub
@@ -239,3 +248,13 @@ class RecipeEditorPanel(QWidget):
 
         self._active_model = model
         return model
+
+    # --------- Auswahl der Sides (gecheckt und existent) ----------
+    def _selected_existing_sides(self) -> List[str]:
+        rec_def = self._current_recipe_def() or {}
+        defined = set(((rec_def.get("sides") or {}).keys()))
+        try:
+            checked = self.content.checked_sides()
+        except Exception:
+            checked = []
+        return [s for s in checked if s in defined]

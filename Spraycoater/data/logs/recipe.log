@@ -581,3 +581,385 @@ AttributeError: 'Matplot2DView' object has no attribute '_draw_mesh_fill'
 2025-11-08 22:06:46 WARNING [77769] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
 2025-11-08 22:06:46 WARNING [77769] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
 2025-11-08 22:06:46 WARNING [77769] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:45:24 WARNING [6008] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:45:24 WARNING [6008] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:45:24 WARNING [6008] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:45:24 WARNING [6008] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:45:24 WARNING [6008] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:45:24 WARNING [6008] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:45:24 WARNING [6008] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:45:24 WARNING [6008] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:45:24 WARNING [6008] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:45:24 WARNING [6008] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:45:24 WARNING [6008] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:45:24 WARNING [6008] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:45:24 WARNING [6008] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:48:12 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:48:12 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:48:12 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:48:12 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:48:12 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:48:12 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:48:12 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:48:12 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:48:12 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:48:12 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:48:12 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:48:12 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:48:12 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:50:31 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:50:31 INFO [8103] app.tabs.recipe.mesh_utils:230 - Mount 'post_d30mm_h100mm' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/post_d30mm_h100mm.stl
+2025-11-09 01:50:31 DEBUG [8103] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/post_d30mm_h100mm.stl
+2025-11-09 01:50:31 DEBUG [8103] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/cylinder_d100_h100.stl
+2025-11-09 01:50:31 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:50:31 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:50:31 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:50:31 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:50:31 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:50:31 WARNING [8103] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:55:41 WARNING [12985] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:55:41 WARNING [12985] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:55:41 WARNING [12985] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:55:41 WARNING [12985] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:55:41 WARNING [12985] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:55:41 WARNING [12985] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:55:41 WARNING [12985] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:55:41 WARNING [12985] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:55:41 WARNING [12985] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:55:41 WARNING [12985] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:55:41 WARNING [12985] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:58:20 WARNING [14772] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:58:20 WARNING [14772] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:58:20 WARNING [14772] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:58:20 WARNING [14772] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:58:20 WARNING [14772] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:58:20 WARNING [14772] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:58:20 WARNING [14772] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:58:20 WARNING [14772] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:58:20 WARNING [14772] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:58:20 WARNING [14772] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:58:20 WARNING [14772] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 01:58:32 ERROR [14772] app.tabs.recipe:256 - Render orchestration failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 150, in _render_preview
+    mount_key = self._get_required_str(model, "substrate_mount", "Recipe benötigt 'substrate_mount'.")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 127, in _get_required_str
+    raise ValueError(err)
+ValueError: Recipe benötigt 'substrate_mount'.
+2025-11-09 02:05:37 WARNING [19183] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:05:37 WARNING [19183] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:05:37 WARNING [19183] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:05:37 WARNING [19183] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:05:37 WARNING [19183] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:05:37 WARNING [19183] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:05:37 WARNING [19183] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:05:37 WARNING [19183] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:05:37 WARNING [19183] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:05:37 WARNING [19183] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:05:37 WARNING [19183] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:06:50 ERROR [19183] app.tabs.recipe:256 - Render orchestration failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 150, in _render_preview
+    mount_key = self._get_required_str(model, "substrate_mount", "Recipe benötigt 'substrate_mount'.")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 127, in _get_required_str
+    raise ValueError(err)
+ValueError: Recipe benötigt 'substrate_mount'.
+2025-11-09 02:14:45 WARNING [24949] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:14:45 WARNING [24949] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:14:45 WARNING [24949] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:14:45 WARNING [24949] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:14:45 WARNING [24949] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:14:45 WARNING [24949] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:14:45 WARNING [24949] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:14:45 WARNING [24949] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:14:45 WARNING [24949] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:14:45 WARNING [24949] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:14:45 WARNING [24949] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:14:55 ERROR [24949] app.tabs.recipe:256 - Render orchestration failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 150, in _render_preview
+    mount_key = self._get_required_str(model, "substrate_mount", "Recipe benötigt 'substrate_mount'.")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 127, in _get_required_str
+    raise ValueError(err)
+ValueError: Recipe benötigt 'substrate_mount'.
+2025-11-09 02:19:41 WARNING [28498] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:19:41 WARNING [28498] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:19:41 WARNING [28498] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:19:41 WARNING [28498] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:19:41 WARNING [28498] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:19:41 WARNING [28498] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:19:41 WARNING [28498] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:19:41 WARNING [28498] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:19:41 WARNING [28498] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:19:41 WARNING [28498] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:19:41 WARNING [28498] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:20:05 ERROR [28498] app.tabs.recipe:256 - Render orchestration failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 150, in _render_preview
+    mount_key = self._get_required_str(model, "substrate_mount", "Recipe benötigt 'substrate_mount'.")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 127, in _get_required_str
+    raise ValueError(err)
+ValueError: Recipe benötigt 'substrate_mount'.
+2025-11-09 02:20:52 WARNING [29664] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:20:52 WARNING [29664] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:20:52 WARNING [29664] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:20:52 WARNING [29664] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:20:52 WARNING [29664] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:20:52 WARNING [29664] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:20:52 WARNING [29664] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:20:52 WARNING [29664] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:20:52 WARNING [29664] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:20:52 WARNING [29664] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:20:52 WARNING [29664] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:21:07 ERROR [29664] app.tabs.recipe:256 - Render orchestration failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 150, in _render_preview
+    mount_key = self._get_required_str(model, "mount", "Recipe benötigt 'substrate_mount'.")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 127, in _get_required_str
+    raise ValueError(err)
+ValueError: Recipe benötigt 'substrate_mount'.
+2025-11-09 02:30:33 WARNING [37678] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:30:33 WARNING [37678] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:30:33 WARNING [37678] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:30:33 WARNING [37678] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:30:33 WARNING [37678] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:30:33 WARNING [37678] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:30:33 WARNING [37678] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:30:33 WARNING [37678] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:30:33 WARNING [37678] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:30:33 WARNING [37678] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:30:33 WARNING [37678] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:30:58 ERROR [37678] app.tabs.recipe:256 - Render orchestration failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 150, in _render_preview
+    mount_key = self._get_required_str(model, "substrate_mount", "Recipe benötigt 'substrate_mount'.")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 127, in _get_required_str
+    raise ValueError(err)
+ValueError: Recipe benötigt 'substrate_mount'.
+2025-11-09 02:35:18 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:18 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:18 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:18 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:18 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:18 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:18 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:18 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:18 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:18 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:18 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:26 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:26 INFO [41242] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-09 02:35:26 DEBUG [41242] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-09 02:35:26 DEBUG [41242] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-09 02:35:26 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:26 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:26 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:26 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:26 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:26 WARNING [41242] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:35:26 ERROR [41242] app.tabs.recipe:255 - Overlays.render_from_model failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 243, in _render_preview
+    self.previewPanel.overlays.render_from_model(
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'OverlayRenderer' object has no attribute 'render_from_model'
+2025-11-09 02:39:19 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:19 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:19 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:19 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:19 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:19 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:19 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:19 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:19 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:19 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:19 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:31 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:31 INFO [43676] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-09 02:39:31 DEBUG [43676] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-09 02:39:31 DEBUG [43676] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-09 02:39:31 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:31 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:31 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:31 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:31 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:31 WARNING [43676] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:39:31 ERROR [43676] app.tabs.recipe:256 - Overlays.render_from_model failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 244, in _render_preview
+    self.previewPanel.overlays.render_from_model(
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'OverlayRenderer' object has no attribute 'render_from_model'
+2025-11-09 02:42:21 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:21 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:21 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:21 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:21 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:21 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:21 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:21 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:21 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:21 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:21 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:31 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:31 INFO [45860] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-09 02:42:31 DEBUG [45860] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-09 02:42:31 DEBUG [45860] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-09 02:42:31 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:31 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:31 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:31 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:31 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:31 WARNING [45860] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:42:31 ERROR [45860] app.tabs.recipe:256 - Overlays.render_from_model failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 244, in _render_preview
+    self.previewPanel.overlays.render_from_model(
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/overlays.py", line 260, in render_from_model
+    if primary and primary in outputs_by_side:
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: argument of type 'NoneType' is not iterable
+2025-11-09 02:46:40 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:40 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:40 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:40 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:40 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:40 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:40 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:40 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:40 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:40 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:40 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:47 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:47 INFO [48470] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-09 02:46:47 DEBUG [48470] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-09 02:46:47 DEBUG [48470] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-09 02:46:47 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:47 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:47 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:47 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:47 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:46:47 WARNING [48470] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 02:47:05 INFO [48470] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-09 02:47:05 DEBUG [48470] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-09 02:47:05 DEBUG [48470] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/pyramid_d150_h150.stl
+2025-11-09 02:47:16 INFO [48470] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-09 02:47:16 DEBUG [48470] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-09 02:47:16 DEBUG [48470] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/pyramid_d150_h150.stl
+2025-11-09 16:27:41 WARNING [2556] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:27:41 WARNING [2556] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:27:41 WARNING [2556] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:27:41 WARNING [2556] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:27:41 WARNING [2556] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:27:41 WARNING [2556] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:27:41 WARNING [2556] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:27:41 WARNING [2556] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:27:41 WARNING [2556] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:27:41 WARNING [2556] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:27:41 WARNING [2556] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:29:46 WARNING [4079] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:29:46 WARNING [4079] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:29:46 WARNING [4079] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:29:46 WARNING [4079] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:29:46 WARNING [4079] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:29:46 WARNING [4079] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:29:46 WARNING [4079] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:29:46 WARNING [4079] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:29:46 WARNING [4079] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:29:46 WARNING [4079] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:29:46 WARNING [4079] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:23 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:23 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:23 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:23 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:23 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:23 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:23 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:23 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:23 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:23 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:23 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:34 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:34 INFO [6561] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-09 16:33:34 DEBUG [6561] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-09 16:33:34 DEBUG [6561] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-09 16:33:34 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:34 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:34 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:34 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:34 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:33:34 WARNING [6561] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:34:34 INFO [6561] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-09 16:34:34 DEBUG [6561] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-09 16:34:34 DEBUG [6561] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-09 16:51:43 WARNING [18219] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:51:43 WARNING [18219] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:51:43 WARNING [18219] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:51:43 WARNING [18219] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:51:43 WARNING [18219] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:51:43 WARNING [18219] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:51:43 WARNING [18219] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:51:43 WARNING [18219] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:51:43 WARNING [18219] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:51:43 WARNING [18219] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 16:51:43 WARNING [18219] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:10:01 WARNING [29066] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:10:01 WARNING [29066] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:10:01 WARNING [29066] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:10:01 WARNING [29066] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:10:01 WARNING [29066] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:10:01 WARNING [29066] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:10:01 WARNING [29066] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:10:01 WARNING [29066] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:10:01 WARNING [29066] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:10:01 WARNING [29066] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:10:01 WARNING [29066] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:45:43 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:45:43 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:45:43 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:45:43 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:45:43 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:45:43 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:45:43 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:45:43 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:45:43 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:45:43 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:45:43 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:48:55 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:48:55 INFO [58350] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-09 17:48:55 DEBUG [58350] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-09 17:48:55 DEBUG [58350] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-09 17:48:55 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:48:55 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:48:55 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:48:55 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:48:55 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:48:55 WARNING [58350] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:50:29 WARNING [61433] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:50:29 WARNING [61433] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:50:29 WARNING [61433] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:50:29 WARNING [61433] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:50:29 WARNING [61433] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:50:29 WARNING [61433] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:50:29 WARNING [61433] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:50:29 WARNING [61433] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:50:29 WARNING [61433] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:50:29 WARNING [61433] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:50:29 WARNING [61433] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:52:05 WARNING [62818] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:52:05 WARNING [62818] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:52:05 WARNING [62818] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:52:05 WARNING [62818] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:52:05 WARNING [62818] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:52:05 WARNING [62818] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:52:05 WARNING [62818] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:52:05 WARNING [62818] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:52:05 WARNING [62818] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:52:05 WARNING [62818] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-09 17:52:05 WARNING [62818] app.tabs.recipe.scene:27 - SceneManager: Interactor not available

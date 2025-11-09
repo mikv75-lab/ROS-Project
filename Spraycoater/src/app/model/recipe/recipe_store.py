@@ -142,7 +142,7 @@ class RecipeStore:
         node = self._get_params_node(key)
         if not isinstance(node, dict):
             # hilfreiche Fehlermeldung mit vorhandenen Schlüsseln:
-            available = ", ".join(sorted([k for k in (self.params_schema or {}).keys() if str(k).startsWith("path.") or str(k).startswith("path.")]))
+            available = ", ".join([k for k in (self.params_schema or {}).keys() if str(k).startsWith("path.") or str(k).startswith("path.")])
             raise KeyError(
                 f"Schema not found at recipe_params.{key} for type '{ptype}'. "
                 f"Available path.* keys: [{available}]"

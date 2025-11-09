@@ -28,8 +28,11 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None, title: str = "Planner"):
         super().__init__(parent)
         self.setTitle(title)
-        # kompakte Rahmenoptik erlaubt noch etwas weniger vertical chrome
         self.setFlat(False)
+
+        # 👉 vertikal minimal halten
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred,
+                           QtWidgets.QSizePolicy.Policy.Maximum)
 
         self._stack_map = {"ompl": 0, "chomp": 1, "stomp": 2, "pilz": 3, "servo": 4}
         self._build_ui()
@@ -38,10 +41,10 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
     # ---------- UI ----------
     def _build_ui(self):
         root = QtWidgets.QVBoxLayout(self)
-        root.setContentsMargins(6, 6, 6, 6)
-        root.setSpacing(8)
+        # „am Inhalt kleben“
+        root.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetMinAndMaxSize)
 
-        # --- COMMON (always on top) ---
+        # --- COMMON ---
         commonForm = QtWidgets.QFormLayout()
         commonForm.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
 
@@ -62,6 +65,9 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
 
         commonWrap = QtWidgets.QWidget(self)
         commonWrap.setLayout(commonForm)
+        # 👉 Wrapper minimal halten
+        commonWrap.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred,
+                                 QtWidgets.QSizePolicy.Policy.Maximum)
         root.addWidget(commonWrap)
 
         # --- Pipeline + Planner ID ---
@@ -86,13 +92,17 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
 
         headerWrap = QtWidgets.QWidget(self)
         headerWrap.setLayout(header)
+        headerWrap.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred,
+                                 QtWidgets.QSizePolicy.Policy.Maximum)
         root.addWidget(headerWrap)
 
         # --- Per-pipeline params (Stack) ---
         self.paramsStack = QtWidgets.QStackedWidget(self)
+        # 👉 Stack nicht vertikal ausdehnen
+        self.paramsStack.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred,
+                                       QtWidgets.QSizePolicy.Policy.Maximum)
         root.addWidget(self.paramsStack)
 
-        # Keep strong refs to pages AND their forms to avoid GC
         # OMPL
         self.pageOmpl = QtWidgets.QWidget(self)
         self.formOmpl = QtWidgets.QFormLayout(self.pageOmpl)
@@ -102,7 +112,7 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
         self.spinOmplGoalBias.setRange(0.0, 1.0); self.spinOmplGoalBias.setSingleStep(0.01)
         self.formOmpl.addRow("Range (m)", self.spinOmplRange)
         self.formOmpl.addRow("Goal bias", self.spinOmplGoalBias)
-        self.paramsStack.addWidget(self.pageOmpl)   # index 0
+        self.paramsStack.addWidget(self.pageOmpl)
 
         # CHOMP
         self.pageChomp = QtWidgets.QWidget(self)
@@ -117,7 +127,7 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
         self.formChomp.addRow("Learning rate", self.spinChompLR)
         self.formChomp.addRow("Smoothness weight", self.spinChompSmooth)
         self.formChomp.addRow("Obstacle weight", self.spinChompObs)
-        self.paramsStack.addWidget(self.pageChomp)  # index 1
+        self.paramsStack.addWidget(self.pageChomp)
 
         # STOMP
         self.pageStomp = QtWidgets.QWidget(self)
@@ -128,7 +138,7 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
         self.formStomp.addRow("Iterations", self.spinStompIter)
         self.formStomp.addRow("Rollouts", self.spinStompRoll)
         self.formStomp.addRow("Noise stddev", self.spinStompStd)
-        self.paramsStack.addWidget(self.pageStomp)  # index 2
+        self.paramsStack.addWidget(self.pageStomp)
 
         # Pilz
         self.pagePilz = QtWidgets.QWidget(self)
@@ -137,7 +147,7 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
         self.spinPilzAcc = QtWidgets.QDoubleSpinBox(self.pagePilz); self.spinPilzAcc.setRange(0.0, 1.0)
         self.formPilz.addRow("Max vel. scaling", self.spinPilzVel)
         self.formPilz.addRow("Max acc. scaling", self.spinPilzAcc)
-        self.paramsStack.addWidget(self.pagePilz)   # index 3
+        self.paramsStack.addWidget(self.pagePilz)
 
         # Servo
         self.pageServo = QtWidgets.QWidget(self)
@@ -147,18 +157,18 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
         self.spinServoLP = QtWidgets.QDoubleSpinBox(self.pageServo); self.spinServoLP.setRange(0.1, 10.0)
         self.formServo.addRow("Publish period (s)", self.spinServoPeriod)
         self.formServo.addRow("Low-pass coeff", self.spinServoLP)
-        self.paramsStack.addWidget(self.pageServo)  # index 4
+        self.paramsStack.addWidget(self.pageServo)
 
-        # Bottom row (Reset) – do NOT let it hog vertical space
+        # Bottom row (Reset)
         btnRow = QtWidgets.QHBoxLayout()
         btnRow.addStretch(1)
         self.btnDefaults = QtWidgets.QPushButton("Reset defaults", self)
         btnRow.addWidget(self.btnDefaults)
-        self.btnDefaults.clicked.connect(self.reset_defaults)
         btnWrap = QtWidgets.QWidget(self)
         btnWrap.setLayout(btnRow)
-        btnWrap.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Minimum)
-        root.addWidget(btnWrap, 0)  # stretch 0 so it stays compact
+        btnWrap.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred,
+                              QtWidgets.QSizePolicy.Policy.Maximum)
+        root.addWidget(btnWrap)
 
         # start on OMPL page
         self._on_pipeline_changed(self.pipelineCombo.currentText())

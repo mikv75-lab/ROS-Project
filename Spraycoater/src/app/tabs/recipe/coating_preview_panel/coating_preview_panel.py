@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# File: tabs/recipe/coating_preview_panel.py
 from __future__ import annotations
 import logging
 from typing import Optional, Any
@@ -7,7 +8,7 @@ import numpy as np
 import pyvista as pv
 from PyQt6.QtCore import pyqtSignal, QTimer
 from PyQt6.QtWidgets import (
-    QWidget, QFrame, QStackedWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSizePolicy
+    QWidget, QFrame, QStackedWidget, QVBoxLayout, QHBoxLayout, QPushButton
 )
 
 from .interactor_host import InteractorHost
@@ -25,23 +26,20 @@ _LOG = logging.getLogger("app.tabs.recipe")
 
 class CoatingPreviewPanel(QWidget):
     """
-    Layout (reine Programmierung):
-      [ OverlaysGroupBox (eine Zeile, horizontal) ]
-      [ ViewsGroupBox  ("Kamera", 3D & 2D)       ]
-      [ QStackedWidget (3D-PyVista / 2D-Matplot) ]  <- bekommt am meisten Platz
-      [ PlannerGroupBox (kompakt, vertikal gequetscht) ]
-      [  Validate | Optimize  ]  (HBox, Buttons gestreckt)
+    Kompakter Aufbau:
+      [ OverlaysGroupBox ]
+      [ ViewsGroupBox    ]
+      [ QStackedWidget (3D/2D) ]
+      [ PlannerGroupBox  ]
+      [ Validate | Optimize ]
     """
 
-    # Ausgänge
     pathReady = pyqtSignal(object)       # np.ndarray | None
     previewYamlReady = pyqtSignal(str)   # YAML Text
 
-    # Aktionen
     validateRequested = pyqtSignal()
     optimizeRequested = pyqtSignal()
 
-    # Farben (falls du später im SceneManager einfärben willst)
     DEFAULT_GROUND_COLOR    = "#3a3a3a"
     DEFAULT_MOUNT_COLOR     = "#5d5d5d"
     DEFAULT_SUBSTRATE_COLOR = "#d0d6dd"
@@ -60,15 +58,15 @@ class CoatingPreviewPanel(QWidget):
         self.grpOverlays.set_defaults(
             mask=False, path=True, hits=False, misses=False, normals=False, local_frames=False
         )
-        root.addWidget(self.grpOverlays, 0)
+        root.addWidget(self.grpOverlays)
 
         # ---------- Views ----------
         self.grpViews = ViewsGroupBox(self)
-        root.addWidget(self.grpViews, 0)
+        root.addWidget(self.grpViews)
 
         # ---------- Stacked (3D/2D) ----------
         self._stack = QStackedWidget(self)
-        root.addWidget(self._stack, 1)
+        root.addWidget(self._stack)
 
         # ---- 3D-Seite
         self._page3d = QWidget(self)
@@ -90,11 +88,9 @@ class CoatingPreviewPanel(QWidget):
         self._hoster = InteractorHost(self, self._host3d)
         self.scene = SceneManager(lambda: self._hoster.ia)
 
-        # Welt-/View-Bounds (mm): xmin, xmax, ymin, ymax, zmin, zmax
         self._bounds = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
         self._grid_step = 10.0
 
-        # View-Controller
         self.views = ViewController(
             interactor_getter=self._get_ia,
             render_callable=self.render,
@@ -124,7 +120,7 @@ class CoatingPreviewPanel(QWidget):
             clear_layer_fn=self.clear_layer,
             add_path_polyline_fn=self.scene.add_path_polyline,
             show_poly_fn=self.scene.show_poly,
-            show_frames_at_fn=self.scene.add_frames,  # Frames jetzt im SceneManager
+            show_frames_at_fn=self.scene.add_frames,
             set_layer_visible_fn=lambda layer, vis, render=True: self.scene.set_layer_visible(layer, vis, render=render),
             update_2d_scene_fn=lambda mesh, path_xyz, mask_poly: self.update_2d_scene(
                 substrate_mesh=mesh, path_xyz=path_xyz, mask_poly=mask_poly
@@ -142,7 +138,7 @@ class CoatingPreviewPanel(QWidget):
         self.grpOverlays.normalsToggled.connect(lambda v: self.overlays.set_normals_visible(bool(v)))
         self.grpOverlays.localFramesToggled.connect(lambda v: self.overlays.set_frames_visible(bool(v)))
 
-        # ---------- View-Buttons (Wiring direkt im Widget) ----------
+        # ---------- View-Buttons ----------
         self.grpViews.set_handlers(
             on3d=lambda name: (
                 self._switch_to_3d(),
@@ -158,16 +154,11 @@ class CoatingPreviewPanel(QWidget):
             on2d=self._switch_2d_plane,
         )
 
-        # Initiale Sichtbarkeit pushen (erzwingt Render, wenn path=True)
         QTimer.singleShot(0, self._push_initial_visibility)
 
         # ---------- Planner ----------
         self.plannerBox = PlannerGroupBox(parent=self)
-        self.plannerBox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
-        self.plannerBox.setMaximumHeight(220)
-        if self.plannerBox.layout() is not None:
-            self.plannerBox.layout().setContentsMargins(6, 6, 6, 6)
-        root.addWidget(self.plannerBox, 0)
+        root.addWidget(self.plannerBox)
 
         # ---------- Validate/Optimize ----------
         row = QHBoxLayout(); row.setContentsMargins(0, 0, 0, 0); row.setSpacing(8)
@@ -175,12 +166,8 @@ class CoatingPreviewPanel(QWidget):
         self.btnOptimize = QPushButton("Optimize", self)
         for b in (self.btnValidate, self.btnOptimize):
             b.setAutoDefault(False)
-            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            row.addWidget(b, 1)
+            row.addWidget(b)
         root.addLayout(row)
-
-        self.btnValidate.clicked.connect(self.validateRequested.emit)
-        self.btnOptimize.clicked.connect(self.optimizeRequested.emit)
 
         # ---------- Initial: 3D Iso ----------
         self._switch_to_3d()
@@ -264,7 +251,6 @@ class CoatingPreviewPanel(QWidget):
         if ia is None:
             return
         try:
-            # Kamera-Fokus auf Bodenmitte
             xmin, xmax, ymin, ymax, zmin, _ = self._bounds
             target = np.array([(xmin + xmax) * 0.5, (ymin + ymax) * 0.5, zmin], dtype=float)
             ia.camera.focal_point = tuple(target.tolist())
@@ -300,7 +286,6 @@ class CoatingPreviewPanel(QWidget):
 
     def _apply_bounds(self) -> None:
         try:
-            # komplette Deko an SceneManager delegiert
             self.scene.refresh_floor(bounds=self._bounds, step=self._grid_step)
         except Exception:
             _LOG.exception("apply_bounds: refresh_floor failed")
