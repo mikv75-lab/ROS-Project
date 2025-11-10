@@ -8,7 +8,8 @@ import numpy as np
 import pyvista as pv
 from PyQt6.QtCore import pyqtSignal, QTimer
 from PyQt6.QtWidgets import (
-    QWidget, QFrame, QStackedWidget, QVBoxLayout, QHBoxLayout, QPushButton
+    QWidget, QFrame, QStackedWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+    QSizePolicy, QGroupBox
 )
 
 from .interactor_host import InteractorHost
@@ -28,11 +29,11 @@ _LOG = logging.getLogger("app.tabs.recipe")
 class CoatingPreviewPanel(QWidget):
     """
     Kompakter Aufbau:
-      [ OverlaysGroupBox ]
-      [ ViewsGroupBox    ]
-      [ QStackedWidget (3D/2D) ]
-      [ PlannerGroupBox  ]
-      [ Validate | Optimize ]
+      [ OverlaysGroupBox ]  (min. vertikal)
+      [ ViewsGroupBox    ]  (min. vertikal)
+      [ QStackedWidget   ]  (füllt den Rest)
+      [ PlannerGroupBox  ]  (min. vertikal)
+      [ Validate | Optimize ] (min. vertikal)
     """
 
     pathReady = pyqtSignal(object)       # np.ndarray | None
@@ -60,15 +61,26 @@ class CoatingPreviewPanel(QWidget):
         self.grpOverlays.set_defaults(
             mask=False, path=True, hits=False, misses=False, normals=False, local_frames=False
         )
-        root.addWidget(self.grpOverlays)
+        # so schmal wie möglich vertikal
+        sp = self.grpOverlays.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Maximum)
+        self.grpOverlays.setSizePolicy(sp)
+        root.addWidget(self.grpOverlays, 0)
 
         # ---------- Views ----------
         self.grpViews = ViewsGroupBox(self)
-        root.addWidget(self.grpViews)
+        sp = self.grpViews.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Maximum)
+        self.grpViews.setSizePolicy(sp)
+        root.addWidget(self.grpViews, 0)
 
         # ---------- Stacked (3D/2D) ----------
         self._stack = QStackedWidget(self)
-        root.addWidget(self._stack)
+        # darf maximal wachsen
+        self._stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        root.addWidget(self._stack, 1)  # Stretch 1 = füllt Rest
 
         # ---- 3D-Seite
         self._page3d = QWidget(self)
@@ -79,6 +91,8 @@ class CoatingPreviewPanel(QWidget):
         vhost = QVBoxLayout(self._host3d)
         vhost.setContentsMargins(0, 0, 0, 0)
         vhost.setSpacing(0)
+        # Host selbst auch expandierend
+        self._host3d.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         v3d.addWidget(self._host3d)
         self._stack.addWidget(self._page3d)
 
@@ -91,6 +105,7 @@ class CoatingPreviewPanel(QWidget):
         vmat = QVBoxLayout(self._host2d)
         vmat.setContentsMargins(0, 0, 0, 0)
         vmat.setSpacing(0)
+        self._host2d.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         v2d.addWidget(self._host2d)
         self._stack.addWidget(self._page2d)
 
@@ -110,6 +125,8 @@ class CoatingPreviewPanel(QWidget):
 
         # ---------- 2D-View ----------
         self._mat2d = Matplot2DView(parent=None)
+        # 2D-Canvas soll sich auch voll ausdehnen
+        self._mat2d.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._host2d.layout().addWidget(self._mat2d)
 
         # ---------- OverlayRenderer ----------
@@ -171,7 +188,11 @@ class CoatingPreviewPanel(QWidget):
 
         # ---------- Planner (benötigt RecipeStore) ----------
         self.plannerBox = PlannerGroupBox(parent=self, store=self.store)
-        root.addWidget(self.plannerBox)
+        sp = self.plannerBox.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Maximum)
+        self.plannerBox.setSizePolicy(sp)
+        root.addWidget(self.plannerBox, 0)
 
         # ---------- Validate/Optimize ----------
         row = QHBoxLayout()
@@ -181,8 +202,14 @@ class CoatingPreviewPanel(QWidget):
         self.btnOptimize = QPushButton("Optimize", self)
         for b in (self.btnValidate, self.btnOptimize):
             b.setAutoDefault(False)
+            # Buttons sollen keine Höhe ziehen
+            bsp = b.sizePolicy()
+            bsp.setHorizontalPolicy(QSizePolicy.Expanding)
+            bsp.setVerticalPolicy(QSizePolicy.Maximum)
+            b.setSizePolicy(bsp)
             row.addWidget(b)
-        root.addLayout(row)
+        # explizit mit Stretch 0
+        root.addLayout(row, 0)
 
         # ---------- Initial: 3D Iso ----------
         self._switch_to_3d()
@@ -200,36 +227,28 @@ class CoatingPreviewPanel(QWidget):
         return ia
 
     def ensure_interactor(self) -> bool:
-        """
-        Stellt sicher, dass der PyVista-Interactor existiert.
-        Gibt True zurück, wenn er bereit ist.
-        """
         ia = self._get_ia()
         return ia is not None
 
     def is_3d_active(self) -> bool:
-        """True, wenn aktuell die 3D-Ansicht aktiv ist."""
         try:
             return self._current_view == "3d" and self._stack.currentIndex() == 0
         except Exception:
             return False
 
     def is_2d_active(self) -> bool:
-        """True, wenn aktuell die 2D-Ansicht aktiv ist."""
         try:
             return self._current_view == "2d" and self._stack.currentIndex() == 1
         except Exception:
             return False
 
     def current_plane(self) -> str:
-        """Aktuelle 2D-Ebene ('top'|'front'|'back'|'left'|'right')."""
         return self._current_plane
 
     def _switch_to_3d(self):
         self._current_view = "3d"
         if self._stack.currentIndex() != 0:
             self._stack.setCurrentIndex(0)
-        # Bei 3D auf isometrisch gehen, Interactor ggf. lazy erstellen
         self.view_isometric()
 
     def _switch_2d_plane(self, plane: str) -> None:
@@ -344,16 +363,10 @@ class CoatingPreviewPanel(QWidget):
     def view_right(self):     self.views.view_right()
 
     def refresh_current_view(self, *, hard_reset: bool = False) -> None:
-        """
-        Aktualisiert die derzeit aktive Ansicht.
-        - 3D: rendert erneut; bei hard_reset wird die Kamera (bounds-basiert) zurückgesetzt.
-        - 2D: setzt Bounds erneut (triggert redraw und behält User-Zoom, falls gesetzt).
-        """
         try:
             if self.is_3d_active():
                 self.render(reset_camera=bool(hard_reset))
             else:
-                # 2D-Refresh: set_bounds löst Redraw aus, Matplot2DView behält user_limits.
                 self._mat2d.set_bounds(self._bounds)
         except Exception:
             _LOG.exception("refresh_current_view failed")
@@ -361,7 +374,6 @@ class CoatingPreviewPanel(QWidget):
     def render(self, *, reset_camera: bool = True) -> None:
         ia = self._get_ia()
         if ia is None:
-            # Interactor wird erst später durch MainWindow angehängt
             return
         try:
             xmin, xmax, ymin, ymax, zmin, _ = self._bounds
@@ -399,10 +411,8 @@ class CoatingPreviewPanel(QWidget):
 
     def _apply_bounds(self) -> None:
         try:
-            # 3D: erst arbeiten, wenn Interactor existiert (sonst kein Spam)
             if self.ensure_interactor():
                 self.scene.refresh_floor(bounds=self._bounds, step=self._grid_step)
-            # 2D: Achsenbegrenzungen immer vorhalten
             self._mat2d.set_bounds(self._bounds)
         except Exception:
             _LOG.exception("apply_bounds: refresh_floor failed")

@@ -120,15 +120,14 @@ def _side_frame(bounds: Tuple[float, float, float, float, float, float]):
     cy = 0.5 * (ymin + ymax)
     cz = 0.5 * (zmin + zmax)
     cfgs = {
-        # normal = Strahlrichtung (vom Start zur Oberfläche)
+        # normal = Strahlrichtung (vom Start zur Oberfläche, d.h. *in* das Werkstück)
         # anchor = welche Koordinate am Face fixiert wird (min/max)
         # axes   = Path-UV -> Weltachsen Mapping
-        # lift_sign = +1 hebt in +normal an, -1 in -normal
-        "top":   {"normal": np.array([0,  0, -1.0]), "anchor": ("z", "max"), "axes": ("x", "y"), "lift_sign": +1},
-        "front": {"normal": np.array([0, +1,  0.0]), "anchor": ("y", "min"), "axes": ("x", "z"), "lift_sign": -1},
-        "back":  {"normal": np.array([0, -1,  0.0]), "anchor": ("y", "max"), "axes": ("x", "z"), "lift_sign": +1},
-        "left":  {"normal": np.array([+1, 0,  0.0]), "anchor": ("x", "min"), "axes": ("y", "z"), "lift_sign": -1},
-        "right": {"normal": np.array([-1, 0,  0.0]), "anchor": ("x", "max"), "axes": ("y", "z"), "lift_sign": +1},
+        "top":   {"normal": np.array([0,  0, -1.0]), "anchor": ("z", "max"), "axes": ("x", "y")},
+        "front": {"normal": np.array([0, +1,  0.0]), "anchor": ("y", "min"), "axes": ("x", "z")},
+        "back":  {"normal": np.array([0, -1,  0.0]), "anchor": ("y", "max"), "axes": ("x", "z")},
+        "left":  {"normal": np.array([+1, 0,  0.0]), "anchor": ("x", "min"), "axes": ("y", "z")},
+        "right": {"normal": np.array([-1, 0,  0.0]), "anchor": ("x", "max"), "axes": ("y", "z")},
     }
     return cfgs, (cx, cy, cz)
 
@@ -287,15 +286,15 @@ class OverlayRenderer:
 
             cfg = cfgs.get(side, cfgs["top"])
             normal = cfg["normal"]
-            lift_sign = cfg["lift_sign"]
 
             # 1) Pfad auf Face einbetten
             P_face = _embed_path_on_face(pts, side, bounds)
 
-            # 2) Startlinie vor dem Face (Masken-Start in Normalenrichtung)
+            # 2) Startlinie vor dem Face (Masken-Start *weg* von der Oberfläche)
             try:
                 nrm = normal / (np.linalg.norm(normal) + 1e-12)
-                P_mask = P_face + (lift_sign * float(mask_lift_mm)) * nrm
+                # Wichtig: entgegen der Ray-/Normalenrichtung anheben => "nach oben über die Linie"
+                P_mask = P_face - float(mask_lift_mm) * nrm
                 mask_poly = pv.lines_from_points(P_mask, close=False)
             except Exception:
                 P_mask = None

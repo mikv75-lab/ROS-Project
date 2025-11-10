@@ -205,11 +205,20 @@ class RecipeEditorContent(QWidget):
         schema = self.store.globals_schema()  # Dict[key] = spec
 
         # Priorisierte Reihenfolge (falls vorhanden)
-        priority = ["max_points", "sample_step_mm", "stand_off_mm", "max_angle_deg"]
+        priority = [
+            "max_points",
+            "sample_step_mm",
+            "stand_off_mm",
+            "max_angle_deg",
+            # neu: oberhalb der Trennlinie
+            "predispense.angle_deg",
+            "predispense.distance_mm",
+            "retreat.angle_deg",
+            "retreat.distance_mm",
+        ]
         keys_all = list(schema.keys())
         first = [k for k in priority if k in schema]
         rest = sorted([k for k in keys_all if k not in set(first)])
-        ordered_keys = first + rest
 
         def _add_row_for_key(key: str):
             spec = dict(schema[key] or {})
@@ -280,7 +289,7 @@ class RecipeEditorContent(QWidget):
         for k in first:
             _add_row_for_key(k)
 
-        # Trenner zwischen „Top 4“ und Rest (nur wenn beides existiert)
+        # Trenner zwischen „Top-Feldern“ und Rest (nur wenn beides existiert)
         if first and rest:
             self.globals_form.addRow(_hline())
 
