@@ -61,7 +61,6 @@ class CoatingPreviewPanel(QWidget):
         self.grpOverlays.set_defaults(
             mask=False, path=True, hits=False, misses=False, normals=False, local_frames=False
         )
-        # so schmal wie möglich vertikal
         sp = self.grpOverlays.sizePolicy()
         sp.setHorizontalPolicy(QSizePolicy.Expanding)
         sp.setVerticalPolicy(QSizePolicy.Maximum)
@@ -78,7 +77,6 @@ class CoatingPreviewPanel(QWidget):
 
         # ---------- Stacked (3D/2D) ----------
         self._stack = QStackedWidget(self)
-        # darf maximal wachsen
         self._stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         root.addWidget(self._stack, 1)  # Stretch 1 = füllt Rest
 
@@ -91,7 +89,6 @@ class CoatingPreviewPanel(QWidget):
         vhost = QVBoxLayout(self._host3d)
         vhost.setContentsMargins(0, 0, 0, 0)
         vhost.setSpacing(0)
-        # Host selbst auch expandierend
         self._host3d.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         v3d.addWidget(self._host3d)
         self._stack.addWidget(self._page3d)
@@ -125,7 +122,6 @@ class CoatingPreviewPanel(QWidget):
 
         # ---------- 2D-View ----------
         self._mat2d = Matplot2DView(parent=None)
-        # 2D-Canvas soll sich auch voll ausdehnen
         self._mat2d.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._host2d.layout().addWidget(self._mat2d)
 
@@ -202,13 +198,11 @@ class CoatingPreviewPanel(QWidget):
         self.btnOptimize = QPushButton("Optimize", self)
         for b in (self.btnValidate, self.btnOptimize):
             b.setAutoDefault(False)
-            # Buttons sollen keine Höhe ziehen
             bsp = b.sizePolicy()
             bsp.setHorizontalPolicy(QSizePolicy.Expanding)
             bsp.setVerticalPolicy(QSizePolicy.Maximum)
             b.setSizePolicy(bsp)
             row.addWidget(b)
-        # explizit mit Stretch 0
         root.addLayout(row, 0)
 
         # ---------- Initial: 3D Iso ----------

@@ -173,7 +173,6 @@ class RecipeEditorPanel(QWidget):
         self.e_name.setText(getattr(model, "id", "") or "")
         self.e_desc.setText(getattr(model, "description", "") or "")
         self.content.apply_recipe_model(model, rec_def)
-        # Planner in UI schieben (falls vorhanden)
         apply_planner = getattr(self.content, "apply_planner_model", None)
         if callable(apply_planner):
             apply_planner(model.planner or {})

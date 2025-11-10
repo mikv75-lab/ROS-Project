@@ -23,6 +23,7 @@ class PathData:
 class PathBuilder:
     """
     Bauen von **rohen Pfaden** (mm) aus einzelnen Path-Definitionen.
+
     Unterstützte path.type:
       - meander_plane
       - spiral_plane
@@ -31,54 +32,91 @@ class PathBuilder:
       - polyhelix_pyramid
       - polyhelix_cube
       - direkt: points_mm / polyline_mm
+
+    WICHTIG:
+    - KEINE Fallbacks auf Rezept-Defaults/Schemas/etc.
+    - `globals_params` MUSS die folgenden Keys enthalten:
+        stand_off_mm
+        max_angle_deg
+        predispense.angle_deg
+        predispense.distance_mm
+        retreat.angle_deg
+        retreat.distance_mm
     """
 
-    # ---------------- Public API ----------------
+    # --------- Public API (ohne Fallbacks) ---------
     @staticmethod
     def from_side(
         recipe: Any,
         *,
         side: str,
-        sample_step_mm: float = 1.0,
-        max_points: int = 200_000,
+        globals_params: Dict[str, Any],
+        sample_step_mm: float,
+        max_points: int,
     ) -> PathData:
         """
         Erzeugt PathData für GENAU EINE Side aus recipe.paths_by_side[side].
+        `globals_params` ist Pflicht (siehe Klassendocstring).
         """
+        PathBuilder._validate_globals(globals_params)
         p = PathBuilder._extract_path_for_side(recipe, side)
-        return PathBuilder._from_path_dict(
+        pd = PathBuilder._from_path_dict(
             p, sample_step_mm=sample_step_mm, max_points=max_points
         )
+        # Post-Prozess: predispense/retreat anhängen und Meta setzen
+        pd = PathBuilder._apply_predispense_retreat(pd, globals_params)
+        PathBuilder._inject_globals_meta(pd, globals_params)
+        return pd
 
     @staticmethod
     def from_recipe_paths(
         recipe: Any,
         *,
         sides: Iterable[str],
-        sample_step_mm: float = 1.0,
-        max_points: int = 200_000,
+        globals_params: Dict[str, Any],
+        sample_step_mm: float,
+        max_points: int,
     ) -> List[Tuple[str, PathData]]:
         """
         Baut mehrere Sides und gibt Liste [(side, PathData), ...] zurück.
         """
+        PathBuilder._validate_globals(globals_params)
         out: List[Tuple[str, PathData]] = []
         for s in sides:
             pd = PathBuilder.from_side(
-                recipe, side=s, sample_step_mm=sample_step_mm, max_points=max_points
+                recipe,
+                side=s,
+                globals_params=globals_params,
+                sample_step_mm=sample_step_mm,
+                max_points=max_points,
             )
             out.append((s, pd))
         return out
 
     # ---------------- Internals ----------------
     @staticmethod
+    def _validate_globals(g: Dict[str, Any]) -> None:
+        required = [
+            "stand_off_mm",
+            "max_angle_deg",
+            "predispense.angle_deg",
+            "predispense.distance_mm",
+            "retreat.angle_deg",
+            "retreat.distance_mm",
+        ]
+        if not isinstance(g, dict):
+            raise ValueError("PathBuilder: globals_params muss ein Dict sein (kein Fallback).")
+        missing = [k for k in required if k not in g]
+        if missing:
+            raise ValueError(f"PathBuilder: globals_params fehlen Keys: {missing} (kein Fallback).")
+
+    @staticmethod
     def _extract_path_for_side(recipe: Any, side: str) -> Dict[str, Any]:
         if recipe is None:
             raise TypeError("PathBuilder: recipe ist None.")
-        # Dict
         if isinstance(recipe, dict):
             pbs = dict(recipe.get("paths_by_side") or {})
         else:
-            # Objekt mit Attribut
             pbs = dict(getattr(recipe, "paths_by_side", {}) or {})
         if not pbs:
             raise KeyError("PathBuilder: recipe.paths_by_side ist leer.")
@@ -96,7 +134,6 @@ class PathBuilder:
         sample_step_mm: float,
         max_points: int,
     ) -> PathData:
-        # direkte Punkte?
         pts = p.get("points_mm") or p.get("polyline_mm")
         if pts is not None:
             P = np.asarray(pts, dtype=float).reshape(-1, 3)
@@ -105,7 +142,6 @@ class PathBuilder:
                 P = P[::stride]
             return PathData(points_mm=P, meta={"source": "points"})
 
-        # generativ
         ptype = str(p.get("type", "")).strip().lower()
 
         if ptype in ("meander", "meander_plane"):
@@ -136,6 +172,54 @@ class PathBuilder:
             raise ValueError(f"Unsupported path.type: {ptype!r}")
 
         return PathData(points_mm=P, meta=meta)
+
+    # --------------- Post-Prozess: Approach/Retreat ---------------
+    @staticmethod
+    def _apply_predispense_retreat(pd: PathData, g: Dict[str, Any]) -> PathData:
+        P = np.asarray(pd.points_mm, dtype=float).reshape(-1, 3)
+        if P.shape[0] < 2:
+            # zu wenig Punkte, nur Meta anhängen
+            return PathData(points_mm=P, meta=dict(pd.meta))
+
+        d_pre = float(g["predispense.distance_mm"])
+        d_ret = float(g["retreat.distance_mm"])
+
+        # Start-Tangente
+        t0 = P[1] - P[0]
+        n0 = float(np.linalg.norm(t0))
+        t0 = (t0 / n0) if n0 > 1e-12 else np.array([1.0, 0.0, 0.0], dtype=float)
+        pre_pt = P[0] - t0 * d_pre if d_pre > 1e-12 else None
+
+        # End-Tangente
+        t1 = P[-1] - P[-2]
+        n1 = float(np.linalg.norm(t1))
+        t1 = (t1 / n1) if n1 > 1e-12 else np.array([1.0, 0.0, 0.0], dtype=float)
+        ret_pt = P[-1] + t1 * d_ret if d_ret > 1e-12 else None
+
+        parts = []
+        if pre_pt is not None:
+            parts.append(pre_pt.reshape(1, 3))
+        parts.append(P)
+        if ret_pt is not None:
+            parts.append(ret_pt.reshape(1, 3))
+
+        P2 = np.vstack(parts) if len(parts) > 1 else P
+
+        meta = dict(pd.meta)
+        meta["predispense"] = {
+            "angle_deg": float(g["predispense.angle_deg"]),
+            "distance_mm": d_pre,
+        }
+        meta["retreat"] = {
+            "angle_deg": float(g["retreat.angle_deg"]),
+            "distance_mm": d_ret,
+        }
+        return PathData(points_mm=P2, meta=meta)
+
+    @staticmethod
+    def _inject_globals_meta(pd: PathData, g: Dict[str, Any]) -> None:
+        pd.meta["stand_off_mm"] = float(g["stand_off_mm"])
+        pd.meta["max_angle_deg"] = float(g["max_angle_deg"])
 
     # ------------------- Plane: Meander -------------------
     @staticmethod
@@ -175,14 +259,12 @@ class PathBuilder:
                 rows.append(np.c_[xs, np.full_like(xs, y)])
             poly2d = np.vstack(rows) if rows else np.zeros((0, 2))
 
-        # Rotation
         if abs(angle) > 1e-9:
             th = math.radians(angle)
             R2 = np.array([[math.cos(th), -math.sin(th)],
                            [math.sin(th),  math.cos(th)]])
             poly2d = poly2d @ R2.T
 
-        # Offset ins Zentrum
         poly2d += np.array([cx, cy], dtype=float)
 
         P = np.c_[poly2d, np.zeros((len(poly2d),), dtype=float)]
@@ -253,13 +335,9 @@ class PathBuilder:
             P = P[::stride]
         return P
 
-    # ------------------- Plane: Perimeter Follow (Rand) -------------------
+    # ------------------- Plane: Perimeter Follow -------------------
     @staticmethod
     def _perimeter_follow_plane(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
-        """
-        Generiert konzentrische Perimeter (Loops) um circle/rect-Area mit optionalem Ecken-Blend
-        und Boustrophedon-Richtungswechsel zwischen Loops.
-        """
         area     = dict(p.get("area") or {})
         shape    = str(area.get("shape", "circle")).lower()
         cx, cy   = (area.get("center_xy_mm") or [0.0, 0.0])
@@ -275,13 +353,13 @@ class PathBuilder:
             off = off0 + k * offstep
             if shape in ("circle", "disk"):
                 R = float(area.get("radius_mm", 50.0))
-                r = R - off  # positiv = nach innen
+                r = R - off
                 if r <= 0.0:
                     continue
                 poly = PathBuilder._polyline_circle(cx, cy, r, step)
             else:
                 sx, sy = area.get("size_mm", [100.0, 100.0])
-                hx = 0.5 * float(sx) - off   # positiv = nach innen
+                hx = 0.5 * float(sx) - off
                 hy = 0.5 * float(sy) - off
                 if hx <= 0.0 or hy <= 0.0:
                     continue
@@ -292,11 +370,9 @@ class PathBuilder:
             if poly.shape[0] == 0:
                 continue
 
-            # boustrophedon: jeden zweiten Loop invertieren
             if (k % 2) == 1:
                 poly = poly[::-1].copy()
 
-            # optionaler Lead-In
             if lead_in > 1e-9 and poly.shape[0] >= 2:
                 dir_vec = (poly[1] - poly[0])
                 n = np.linalg.norm(dir_vec)
@@ -329,10 +405,6 @@ class PathBuilder:
 
     @staticmethod
     def _polyline_rounded_rect(cx: float, cy: float, hx: float, hy: float, r: float, step: float) -> np.ndarray:
-        """
-        Rechteck mit Halbbreiten hx, hy um (cx,cy), abgerundete Ecken mit Radius r.
-        r wird automatisch auf [0, min(hx,hy)] begrenzt.
-        """
         hx = float(hx); hy = float(hy)
         r = max(0.0, min(float(r), hx, hy))
         straight_x = max(0.0, 2.0 * (hx - r))
@@ -368,25 +440,21 @@ class PathBuilder:
         c_bl = np.array([cx - hx + r, cy - hy + r, z0])  # bottom-left
         c_br = np.array([cx + hx - r, cy - hy + r, z0])  # bottom-right
 
-        # 1) unten (→)
         p_bl = np.array([cx - hx + r, cy - hy, z0])
         p_br = np.array([cx + hx - r, cy - hy, z0])
         append_line(p_bl, p_br, n_for_len(2.0 * (hx - r)))
         append_arc(c_br, r, -0.5 * math.pi, 0.0, n_for_len(0.5 * math.pi * r))
 
-        # 2) rechts (↑)
         p_r_bot = np.array([cx + hx, cy - hy + r, z0])
         p_r_top = np.array([cx + hx, cy + hy - r, z0])
         append_line(p_r_bot, p_r_top, n_for_len(2.0 * (hy - r)))
         append_arc(c_tr, r, 0.0, 0.5 * math.pi, n_for_len(0.5 * math.pi * r))
 
-        # 3) oben (←)
         p_tr = np.array([cx + hx - r, cy + hy, z0])
         p_tl = np.array([cx - hx + r, cy + hy, z0])
         append_line(p_tr, p_tl, n_for_len(2.0 * (hx - r)))
         append_arc(c_tl, r, 0.5 * math.pi, math.pi, n_for_len(0.5 * math.pi * r))
 
-        # 4) links (↓)
         p_l_top = np.array([cx - hx, cy + hy - r, z0])
         p_l_bot = np.array([cx - hx, cy - hy + r, z0])
         append_line(p_l_top, p_l_bot, n_for_len(2.0 * (hy - r)))
@@ -402,7 +470,6 @@ class PathBuilder:
             return np.zeros((0, 3), dtype=float)
         poly = np.vstack(arrs)
 
-        # doppelte Punkte vermeiden
         if poly.shape[0] >= 2:
             mask = np.ones((poly.shape[0],), dtype=bool)
             mask[1:] = np.linalg.norm(poly[1:] - poly[:-1], axis=1) > 1e-9
@@ -412,7 +479,6 @@ class PathBuilder:
     # ------------------- Polyhelix Helper -------------------
     @staticmethod
     def _point_on_polyline_by_arclength(poly2d: np.ndarray, s: float) -> np.ndarray:
-        """Interpoliert Punkt (x,y) auf geschlossener 2D-Polyline bei Bogenlänge s (periodisch)."""
         if poly2d.shape[0] < 2:
             return np.array([0.0, 0.0])
         P = poly2d[:, :2]
@@ -435,7 +501,6 @@ class PathBuilder:
     # ------------------- Polyhelix: Pyramid -------------------
     @staticmethod
     def _polyhelix_pyramid(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
-        """Helix entlang regulärem n-Eck, dessen Größe linear mit z schrumpft (Pyramide)."""
         n = int(p.get("base_polygon_sides", 4))
         n = min(128, max(3, n))
         edge_len = float(p.get("base_edge_len_mm", 100.0))
@@ -446,23 +511,19 @@ class PathBuilder:
         stand_off= float(p.get("stand_off_mm", 25.0))
         cap_top  = max(0.0, float(p.get("cap_top_mm", 8.0)))
 
-        # Grundradius eines regulären n-Ecks aus Kantenlänge:
-        # edge = 2 R sin(pi/n)  ->  R = edge / (2 sin(pi/n))
         R_base = edge_len / (2.0 * math.sin(math.pi / n)) + stand_off
 
         z_min = -0.5 * height
-        z_max =  0.5 * height - cap_top  # Kappe am Top nicht anfahren
+        z_max =  0.5 * height - cap_top
         if z_max <= z_min:
             return np.zeros((0, 3), dtype=float)
 
-        # Basis-Polyline des regulären n-Ecks (als 2D-Polyline; Startphase beachten)
         def ngon_polyline(radius: float, samples_per_edge: int = 8) -> np.ndarray:
             verts = []
             for i in range(n):
                 a = phase + 2.0 * math.pi * (i / n)
                 verts.append([radius * math.cos(a), radius * math.sin(a)])
             verts = np.asarray(verts, float)
-            # in Kanten segmentieren
             segs = []
             for i in range(n):
                 p0 = verts[i]
@@ -473,28 +534,22 @@ class PathBuilder:
             poly = np.vstack(segs)
             return np.c_[poly, np.zeros((poly.shape[0],))]
 
-        # Wir benutzen eine moderate Segmentierung pro Kante
         base_poly = ngon_polyline(R_base, samples_per_edge=max(3, int(max(4.0, step) // 1.0)))
         base2d = base_poly[:, :2]
-        # Gesamtumfang:
         seg = base2d[1:] - base2d[:-1]
         L_base = float(np.linalg.norm(seg, axis=1).sum())
         if L_base <= 1e-9:
             return np.zeros((0, 3), dtype=float)
 
-        # Arclength-Schritt pro z-Schritt, um pitch zu erfüllen:
         ds_per_dz = L_base / pitch
         pts = []
         s_acc = 0.0
         z = z_min
         while z <= z_max + 1e-9:
-            # lineare Schrumpfung des Radius bis Spitze
-            alpha = (z - z_min) / max((z_max - z_min), 1e-9)  # 0..1
-            scale = max(1e-3, 1.0 - alpha)  # gegen 0 am Top
+            alpha = (z - z_min) / max((z_max - z_min), 1e-9)
+            scale = max(1e-3, 1.0 - alpha)
             Rz = R_base * scale
-            # skaliere Grund-Polyline
             poly_z = base2d * (Rz / max(R_base, 1e-9))
-            # Punkt auf (skaliertem) Umfang bei s_acc:
             pt_xy = PathBuilder._point_on_polyline_by_arclength(np.c_[poly_z, np.zeros((poly_z.shape[0],))], s_acc)
             pts.append([pt_xy[0], pt_xy[1], z])
             s_acc += ds_per_dz * dz
@@ -509,7 +564,6 @@ class PathBuilder:
     # ------------------- Polyhelix: Cube -------------------
     @staticmethod
     def _polyhelix_cube(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
-        """Helix entlang eines (abgerundeten) Rechteck-Perimeters mit konstanter Größe (Wicklung um den 'Cube')."""
         edge = float(p.get("edge_len_mm", 100.0))
         height = float(p.get("height_mm", 100.0))
         pitch  = max(1e-6, float(p.get("pitch_mm", 6.0)))
@@ -518,21 +572,17 @@ class PathBuilder:
         stand_off = float(p.get("stand_off_mm", 25.0))
         corner_r  = float(p.get("corner_roll_radius_mm", 8.0))
 
-        # Halbbreiten + Stand-off
         hx = 0.5 * edge + stand_off
         hy = 0.5 * edge + stand_off
 
-        # Basis: abgerundetes Rechteck als Polyline
         base_poly = PathBuilder._polyline_rounded_rect(0.0, 0.0, hx, hy, corner_r, step=max(1.0, step))
         base_xy = base_poly[:, :2]
 
-        # optional Startphase (Rotation)
         if abs(phase) > 1e-12:
             R2 = np.array([[math.cos(phase), -math.sin(phase)],
                            [math.sin(phase),  math.cos(phase)]], dtype=float)
             base_xy = base_xy @ R2.T
 
-        # Umfang:
         seg = base_xy[1:] - base_xy[:-1]
         L = float(np.linalg.norm(seg, axis=1).sum())
         if L <= 1e-9:

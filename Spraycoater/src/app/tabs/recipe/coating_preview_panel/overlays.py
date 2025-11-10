@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# app/tabs/recipe/coating_preview_panel/overlays.py
 from __future__ import annotations
 import logging
 from typing import Any, Callable, Dict, Optional, List, Tuple
@@ -6,9 +7,9 @@ from typing import Any, Callable, Dict, Optional, List, Tuple
 import numpy as np
 import pyvista as pv
 
-# Wichtig: PathBuilder wird NUR noch dann genutzt, wenn KEINE Punkte vorliegen (Back-Compat).
+# PathBuilder wird für den Legacy-Aufbau genutzt (strict).
 try:
-    from app.model.recipe.path_builder import PathBuilder  # optional fallback
+    from app.model.recipe.path_builder import PathBuilder
 except Exception:  # pragma: no cover
     PathBuilder = None  # type: ignore
 
@@ -113,6 +114,34 @@ def _make_yaml_hits_with_defaults(
         )
     return "\n".join(lines) + "\n"
 
+# -------- Strict-Helper für Globals / SampleStep / MaxPoints -----------------
+def _strict_globals_from_model(model) -> dict:
+    g = dict(getattr(model, "parameters", {}) or {})
+    required = [
+        "stand_off_mm",
+        "max_angle_deg",
+        "predispense.angle_deg",
+        "predispense.distance_mm",
+        "retreat.angle_deg",
+        "retreat.distance_mm",
+    ]
+    missing = [k for k in required if k not in g]
+    if missing:
+        raise ValueError(f"Preview: Missing required globals in model.parameters: {missing} (kein Fallback).")
+    return {k: g[k] for k in required}
+
+def _strict_sample_step_from_model(model) -> float:
+    g = dict(getattr(model, "parameters", {}) or {})
+    if "sample_step_mm" not in g:
+        raise ValueError("Preview: parameters.sample_step_mm fehlt (kein Fallback).")
+    return float(g["sample_step_mm"])
+
+def _strict_max_points_from_model(model) -> int:
+    g = dict(getattr(model, "parameters", {}) or {})
+    if "max_points" not in g:
+        raise ValueError("Preview: parameters.max_points fehlt (kein Fallback).")
+    return int(g["max_points"])
+
 # -------- Neu: Side-Frame & Einbettung ---------------------------------------
 def _side_frame(bounds: Tuple[float, float, float, float, float, float]):
     xmin, xmax, ymin, ymax, zmin, zmax = bounds
@@ -120,9 +149,6 @@ def _side_frame(bounds: Tuple[float, float, float, float, float, float]):
     cy = 0.5 * (ymin + ymax)
     cz = 0.5 * (zmin + zmax)
     cfgs = {
-        # normal = Strahlrichtung (vom Start zur Oberfläche, d.h. *in* das Werkstück)
-        # anchor = welche Koordinate am Face fixiert wird (min/max)
-        # axes   = Path-UV -> Weltachsen Mapping
         "top":   {"normal": np.array([0,  0, -1.0]), "anchor": ("z", "max"), "axes": ("x", "y")},
         "front": {"normal": np.array([0, +1,  0.0]), "anchor": ("y", "min"), "axes": ("x", "z")},
         "back":  {"normal": np.array([0, -1,  0.0]), "anchor": ("y", "max"), "axes": ("x", "z")},
@@ -132,7 +158,6 @@ def _side_frame(bounds: Tuple[float, float, float, float, float, float]):
     return cfgs, (cx, cy, cz)
 
 def _embed_path_on_face(P0_local: np.ndarray, side: str, bounds) -> np.ndarray:
-    """Mappe 2D/3D-Pathpunkte P0_local auf die jeweilige Face-Ebene im Weltkoordinatensystem."""
     (cfgs, (cx, cy, cz)) = _side_frame(bounds)
     cfg = cfgs.get(side, cfgs["top"])
     ax0, ax1 = cfg["axes"]
@@ -261,14 +286,16 @@ class OverlayRenderer:
         mask_lift_mm: float = 50.0,
         default_stand_off_mm: float = 10.0,
         ray_len_mm: float = 1000.0,
+        sides: Optional[List[str]] = None,   # Seitenfilter
     ) -> Dict[str, Dict[str, Any]]:
-        """
-        Zeichnet vor-kompilierte Pfade (points_mm). Für TCP/Rays wird raycast_projector genutzt.
-        Gibt pro Side die Ergebnisse zurück (tcp_points, dirs, ...).
-        """
-        pbs = dict(compiled.get("paths_by_side") or {})
+        pbs_all = dict(compiled.get("paths_by_side") or {})
+        # Seitenfilter anwenden (nur gecheckte)
+        if sides:
+            side_set = {str(s) for s in sides}
+            pbs = {s: rec for s, rec in pbs_all.items() if s in side_set}
+        else:
+            pbs = pbs_all
 
-        # 3D-Layer leeren
         for ly in ("mask", "mask_markers", "rays_hit", "rays_miss", "normals", "path", "path_markers",
                    "frames_x", "frames_y", "frames_z", "frames_labels"):
             self._clear_layer(self._L(ly))
@@ -287,20 +314,16 @@ class OverlayRenderer:
             cfg = cfgs.get(side, cfgs["top"])
             normal = cfg["normal"]
 
-            # 1) Pfad auf Face einbetten
             P_face = _embed_path_on_face(pts, side, bounds)
 
-            # 2) Startlinie vor dem Face (Masken-Start *weg* von der Oberfläche)
             try:
                 nrm = normal / (np.linalg.norm(normal) + 1e-12)
-                # Wichtig: entgegen der Ray-/Normalenrichtung anheben => "nach oben über die Linie"
                 P_mask = P_face - float(mask_lift_mm) * nrm
                 mask_poly = pv.lines_from_points(P_mask, close=False)
             except Exception:
                 P_mask = None
                 mask_poly = None
 
-            # 3) Rays/TCP rechnen
             tcp_points = None
             tcp_poly = None
             rays_hit_poly = None
@@ -341,7 +364,6 @@ class OverlayRenderer:
             except Exception:
                 _LOG.exception("cast_rays_for_side failed (%s)", side)
 
-            # 4) Fallback X-Richtung aus Tangenten + z_dirs
             if tcp_points is not None and (x_dirs is None or len(x_dirs) != len(tcp_points)):
                 try:
                     T = _tangents_from_path(tcp_points)
@@ -357,7 +379,6 @@ class OverlayRenderer:
                 except Exception:
                     _LOG.exception("Fallback X via tangents failed (%s)", side)
 
-            # 5) Miss-Rays (optional) – einfache Projektion zur Anker-Ebene
             rays_miss = None
             try:
                 xmin, xmax, ymin, ymax, zmin, zmax = bounds
@@ -390,7 +411,6 @@ class OverlayRenderer:
             except Exception:
                 _LOG.exception("miss rays build failed (%s)", side)
 
-            # 6) 3D-Layer füllen
             if mask_poly is not None:
                 self._add_mesh(mask_poly, color="royalblue", layer=self._L("mask"),
                                line_width=2.0, lighting=False, render=False, reset_camera=False)
@@ -427,9 +447,26 @@ class OverlayRenderer:
 
         # Sichtbarkeit anwenden
         self.apply_visibility(visibility)
+
+        # ---- 2D-Ansicht versorgen (erste Side mit Pfad nehmen) ----
+        try:
+            tcp_for_2d: Optional[np.ndarray] = None
+            mask_for_2d: Optional[pv.PolyData] = None
+            for s in pbs.keys():
+                out = outputs_by_side.get(s) or {}
+                t = out.get("tcp_points")
+                if t is not None and len(t):
+                    tcp_for_2d = t
+                    mask_for_2d = out.get("mask_poly")
+                    break
+            # substrate_mesh, tcp_points, mask_poly
+            self._update_2d(substrate_mesh, tcp_for_2d, mask_for_2d)
+        except Exception:
+            _LOG.exception("update_2d (compiled) failed")
+
         return outputs_by_side
 
-    # ---- Back-Compat: baut Pfade falls keine Punkte vorhanden ------------
+    # ---- Strict Legacy-Aufbau (wenn keine Punkte im Modell) --------------
     def render_from_model(
         self,
         *,
@@ -442,10 +479,7 @@ class OverlayRenderer:
         ray_len_mm: float = 1000.0,
         visibility: Optional[Dict[str, bool]] = None,
     ) -> Dict[str, Dict[str, Any]]:
-        """
-        Prefer compiled points if present; otherwise build via PathBuilder (legacy).
-        """
-        # 1) sides
+        # 1) Side-Liste
         if sides and len(sides) > 0:
             side_list = list(dict.fromkeys([str(s) for s in sides if str(s).strip()]))
         elif side and str(side).strip():
@@ -457,7 +491,7 @@ class OverlayRenderer:
                 pbs = dict(getattr(model, "paths_by_side", {}) or {})
             side_list = list(pbs.keys()) if pbs else ["top"]
 
-        # 2) wenn "points_mm" bereits im model/Dict: benutze render_compiled
+        # 2) Wenn bereits Punkte vorhanden → direkt rendern
         def _has_points(m) -> bool:
             if not m:
                 return False
@@ -475,36 +509,54 @@ class OverlayRenderer:
                 mask_lift_mm=mask_lift_mm,
                 default_stand_off_mm=default_stand_off_mm,
                 ray_len_mm=ray_len_mm,
+                sides=side_list,  # Seitenfilter durchreichen
             )
 
-        # 3) ansonsten: pro Side PathBuilder nutzen (Fallback-Flow)
+        # 3) Strikter Pfadaufbau via PathBuilder (kein Fallback)
         if PathBuilder is None:
-            _LOG.error("PathBuilder unavailable and no points_mm in model.")
-            return {}
+            raise RuntimeError("PathBuilder unavailable and no points_mm in model (strict mode).")
+
+        if isinstance(model, dict):
+            params = dict(model.get("parameters") or {})
+        else:
+            params = dict(getattr(model, "parameters", {}) or {})
+
+        globals_params = _strict_globals_from_model(model)
+        sample_step = _strict_sample_step_from_model(model)  # STRICT global
+        max_points = _strict_max_points_from_model(model)
+
         compiled = {"paths_by_side": {}}
         for s in side_list:
+            # Typ-Info als rein kosmetische Meta (falls vorhanden)
+            if isinstance(model, dict):
+                pdef = dict((model.get("paths_by_side") or {}).get(s) or {})
+            else:
+                pdef = dict((getattr(model, "paths_by_side", {}) or {}).get(s) or {})
+
             try:
-                # sample_step aus Pathdef oder Fallback 1.0
-                if isinstance(model, dict):
-                    pdef = (model.get("paths_by_side") or {}).get(s, {}) or {}
-                else:
-                    pdef = getattr(model, "get_path_for_side", lambda _s: {}) (s) or {}
-                sstep = float(pdef.get("sample_step_mm", 1.0))
-                pd = PathBuilder.from_side(model, side=s, sample_step_mm=sstep)
+                pd = PathBuilder.from_side(
+                    model,
+                    side=s,
+                    globals_params=globals_params,
+                    sample_step_mm=sample_step,  # global
+                    max_points=max_points,
+                )
                 compiled["paths_by_side"][s] = {
                     "type": (pdef.get("type") or pd.meta.get("source") or "points"),
-                    "points_mm": pd.points_mm.tolist(),
+                    "points_mm": np.asarray(pd.points_mm, float).reshape(-1, 3).tolist(),
                     "meta": dict(pd.meta or {}),
                 }
             except Exception:
                 _LOG.exception("PathBuilder.from_side failed (%s)", s)
-                compiled["paths_by_side"][s] = {"type": "points", "points_mm": [], "meta": {}}
+                compiled["paths_by_side"][s] = {"type": pdef.get("type") or "points", "points_mm": [], "meta": {}}
 
-        return self.render_compiled(
+        out = self.render_compiled(
             substrate_mesh=substrate_mesh,
             compiled=compiled,
             visibility=visibility,
             mask_lift_mm=mask_lift_mm,
             default_stand_off_mm=default_stand_off_mm,
             ray_len_mm=ray_len_mm,
+            sides=side_list,  # Seitenfilter durchreichen
         )
+        return out

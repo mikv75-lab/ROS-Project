@@ -79,6 +79,24 @@ class Recipe:
         with open(path, "w", encoding="utf-8") as f:
             yaml.safe_dump(self.to_dict(), f, allow_unicode=True, sort_keys=False)
 
+    # ------- Pflicht-Globals für PathBuilder (strict, kein Fallback) -------
+    def _globals_params_strict(self) -> Dict[str, Any]:
+        g = dict(self.parameters or {})
+        required = [
+            "stand_off_mm",
+            "max_angle_deg",
+            "sample_step_mm",   # strikt global
+            "max_points",       # strikt global
+            "predispense.angle_deg",
+            "predispense.distance_mm",
+            "retreat.angle_deg",
+            "retreat.distance_mm",
+        ]
+        missing = [k for k in required if k not in g]
+        if missing:
+            raise ValueError(f"Recipe: Missing required globals in parameters: {missing} (kein Fallback).")
+        return {k: g[k] for k in required}
+
     # ------- Pfad-Cache -------
     def _side_list(self, sides: Optional[Iterable[str]]) -> List[str]:
         return [str(s) for s in sides] if sides else list(self.paths_by_side.keys())
@@ -86,18 +104,41 @@ class Recipe:
     def invalidate_paths(self) -> None:
         self._paths_cache.clear()
 
-    def rebuild_paths(self, *, sides: Optional[Iterable[str]] = None,
-                      sample_step_mm_default: float = 1.0,
-                      max_points: int = 200_000) -> Dict[str, np.ndarray]:
-        """Erzeugt rohe Geometriepfade (N,3) je Side (nur RAM)."""
+    def rebuild_paths(
+        self,
+        *,
+        sides: Optional[Iterable[str]] = None,
+        max_points: Optional[int] = None
+    ) -> Dict[str, np.ndarray]:
+        """
+        Erzeugt rohe Geometriepfade (N,3) je Side (nur RAM) – strikt, ohne Fallbacks.
+        - sample_step_mm ausschließlich global (parameters.sample_step_mm)
+        - max_points strikt (parameters.max_points oder explizit)
+        """
         from app.model.recipe.path_builder import PathBuilder
+
+        globals_params = self._globals_params_strict()  # prüft sample_step_mm + max_points etc.
+
+        # max_points strikt
+        if max_points is None:
+            max_points = int(self.parameters["max_points"])
+
+        # Schritt strikt global:
+        step = float(self.parameters["sample_step_mm"])
+
         if not sides:
             self._paths_cache.clear()
+
         for side in self._side_list(sides):
-            pdef = self.paths_by_side.get(side, {})
-            step = float(pdef.get("sample_step_mm", sample_step_mm_default))
-            pd = PathBuilder.from_side(self, side=side, sample_step_mm=step, max_points=max_points)
+            pd = PathBuilder.from_side(
+                self,
+                side=side,
+                globals_params=globals_params,
+                sample_step_mm=step,     # global
+                max_points=max_points,
+            )
             self._paths_cache[side] = np.asarray(pd.points_mm, float).reshape(-1, 3)
+
         return self._paths_cache
 
     @property
@@ -133,7 +174,10 @@ class Recipe:
         xmin, xmax, ymin, ymax, zmin, zmax = bounds
         cx, cy, cz = (0.5 * (xmin + xmax), 0.5 * (ymin + ymax), 0.5 * (zmin + zmax))
 
-        # Defaults aus parameters/planner ziehen, falls nicht übergeben
+        # Pflicht-Globals prüfen
+        _ = self._globals_params_strict()
+
+        # Compile-Parameter (Default aus parameters / planner)
         if stand_off_mm is None:
             stand_off_mm = float(self.parameters.get("stand_off_mm", 0.0))
         if tool_frame is None:
@@ -149,14 +193,13 @@ class Recipe:
                 "angle_deg":   float(self.parameters.get("retreat.angle_deg",   15.0)),
             }
 
-        # Face/Side-Konfiguration: Normalen + Verankerung
         face = {
             "top":   {"n": np.array([0, 0, -1.0]), "anchor": ("z", zmax), "axes": ("x", "y")},
             "front": {"n": np.array([0, 1,  0.0]), "anchor": ("y", ymin), "axes": ("x", "z")},
             "back":  {"n": np.array([0,-1,  0.0]), "anchor": ("y", ymax), "axes": ("x", "z")},
             "left":  {"n": np.array([1, 0,  0.0]), "anchor": ("x", xmin), "axes": ("y", "z")},
             "right": {"n": np.array([-1,0,  0.0]), "anchor": ("x", xmax), "axes": ("y", "z")},
-            "helix": {"n": np.array([0, 0,  1.0]), "anchor": ("z", cz),   "axes": ("x", "y")},  # generisch
+            "helix": {"n": np.array([0, 0,  1.0]), "anchor": ("z", cz),   "axes": ("x", "y")},
         }
 
         def _safe_norm(v: np.ndarray) -> np.ndarray:
@@ -215,13 +258,21 @@ class Recipe:
 
         for side in sides_in:
             pdef = dict(self.paths_by_side.get(side, {}))
-            step = float(pdef.get("sample_step_mm", 1.0))
 
-            # Geometrie holen
+            # Schritt STRICT global
+            step = float(self.parameters["sample_step_mm"])
+
+            # Geometrie aus Cache (wenn vorhanden), sonst frisch generieren
             P_local = self._paths_cache.get(side)
             if P_local is None:
                 from app.model.recipe.path_builder import PathBuilder
-                pd = PathBuilder.from_side(self, side=side, sample_step_mm=step)
+                pd = PathBuilder.from_side(
+                    self,
+                    side=side,
+                    globals_params=self._globals_params_strict(),
+                    sample_step_mm=step,
+                    max_points=int(self.parameters["max_points"]),
+                )
                 P_local = np.asarray(pd.points_mm, float).reshape(-1, 3)
                 source = pd.meta.get("source", "points")
             else:
@@ -231,7 +282,8 @@ class Recipe:
             n = _safe_norm(cfg["n"])
 
             if P_local.shape[0] == 0:
-                sides_out[side] = {"meta": {
+                sides_out[side] = {
+                    "meta": {
                         "side": side, "source": source, "path_type": pdef.get("type"),
                         "path_params": pdef, "globals": dict(self.parameters or {}),
                         "sample_step_mm": step, "stand_off_mm": float(stand_off_mm),
@@ -241,12 +293,10 @@ class Recipe:
                 }
                 continue
 
-            # Einbetten + Stand-off
             Pw = _embed_local(P_local, side)
             if abs(stand_off_mm) > 1e-9:
                 Pw = Pw + n.reshape(1, 3) * stand_off_mm
 
-            # Tangenten (in Ebene), gleichrichten
             T = np.empty_like(Pw)
             T[0] = Pw[1] - Pw[0]
             T[-1] = Pw[-1] - Pw[-2] if len(Pw) >= 2 else np.array([1.0, 0.0, 0.0])
@@ -254,12 +304,11 @@ class Recipe:
                 T[1:-1] = Pw[2:] - Pw[:-2]
             for i in range(len(T)):
                 t = T[i] - n * float(np.dot(T[i], n))
-                T[i] = _safe_norm(t)
+                T[i] = (t / (np.linalg.norm(t) + 1e-12))
             for i in range(1, len(T)):
                 if float(np.dot(T[i-1], T[i])) < 0.0:
                     T[i] = -T[i]
 
-            # Hauptposen
             poses: List[Dict[str, float]] = []
             for i in range(len(Pw)):
                 x = T[i]
@@ -268,25 +317,25 @@ class Recipe:
                 poses.append({"x": float(Pw[i,0]), "y": float(Pw[i,1]), "z": float(Pw[i,2]),
                               "qx": qx, "qy": qy, "qz": qz, "qw": qw})
 
-            # Entry (predispense)
             pre_pose = None
             if predispense:
                 dist = float(predispose.get("distance_mm", predispense.get("distance_mm", 30.0))) if "predispose" in locals() else float(predispose.get("distance_mm", 30.0))  # type: ignore
                 ang  = math.radians(float(predispose.get("angle_deg", predispense.get("angle_deg", 0.0)))) if "predispose" in locals() else math.radians(float(predispose.get("angle_deg", 0.0)))  # type: ignore
-                dir_out = _safe_norm((-math.cos(ang))*n + (-math.sin(ang))*T[0])
+                dir_out = ( (-math.cos(ang))*n + (-math.sin(ang))*T[0] )
+                dir_out = dir_out / (np.linalg.norm(dir_out) + 1e-12)
                 P0 = Pw[0] + dist * dir_out
                 x0 = T[0]; y0 = np.cross(n, x0)
                 qx, qy, qz, qw = _quat_from_axes(x0, y0, n)
                 pre_pose = {"x": float(P0[0]), "y": float(P0[1]), "z": float(P0[2]),
                             "qx": qx, "qy": qy, "qz": qz, "qw": qw}
 
-            # Exit (retreat)
             ret_pose = None
             if retreat:
                 dist = float(retreat.get("distance_mm", 30.0))
                 ang  = math.radians(float(retreat.get("angle_deg", 0.0)))
                 tend = T[-1]
-                dir_out = _safe_norm((-math.cos(ang))*n + ( math.sin(ang))*tend)
+                dir_out = ( (-math.cos(ang))*n + ( math.sin(ang))*tend )
+                dir_out = dir_out / (np.linalg.norm(dir_out) + 1e-12)
                 Pe = Pw[-1] + dist * dir_out
                 xE = tend; yE = np.cross(n, xE)
                 qx, qy, qz, qw = _quat_from_axes(xE, yE, n)

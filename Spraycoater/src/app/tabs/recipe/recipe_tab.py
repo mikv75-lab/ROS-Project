@@ -64,7 +64,6 @@ class RecipeTab(QWidget):
         # --- Preview → interne Puffer -------------------
         try:
             self.previewPanel.previewYamlReady.connect(self._on_preview_yaml_ready)
-            # sanfter Refresh bei YAML-Update
             self.previewPanel.previewYamlReady.connect(lambda *_: self._on_preview_event())
         except Exception:
             _LOG.exception("connect previewYamlReady failed")
@@ -116,7 +115,6 @@ class RecipeTab(QWidget):
         return val.strip()
 
     def _visibility_snapshot(self) -> dict:
-        """Liest die Checkboxen aus dem Panel und gibt eine Sichtbarkeits-Map zurück."""
         p = self.previewPanel
 
         def b(x):
@@ -141,17 +139,14 @@ class RecipeTab(QWidget):
             model = model_or_payload
             if isinstance(model_or_payload, dict):
                 model = model_or_payload.get("model", model_or_payload)
-                # wenn payload.sides gesetzt ist, überschreibt es das 2. Argument
                 sides = model_or_payload.get("sides", sides)
 
             mount_key = self._get_required_str(model, "substrate_mount", "Recipe benötigt 'substrate_mount'.")
             substrate_key = self._get_required_str(model, "substrate", "Recipe benötigt 'substrate'.")
 
-            # Ansicht/Kamera merken, bevor Szene neu aufgebaut wird
             view_is_3d = self.previewPanel.is_3d_active()
             cam_snap = self.previewPanel.snapshot_camera()
 
-            # Szene leeren
             self.previewPanel.clear()
 
             # 1) Mount-Mesh laden
@@ -263,7 +258,6 @@ class RecipeTab(QWidget):
                             force=False,
                         )
                     elif isinstance(model, dict) and "paths_by_side" in model:
-                        # Falls Dict schon points_mm enthält, direkt nutzen
                         pbs = model.get("paths_by_side") or {}
                         if any(isinstance(v, dict) and v.get("points_mm") is not None for v in pbs.values()):
                             compiled = {"paths_by_side": pbs}
@@ -276,6 +270,7 @@ class RecipeTab(QWidget):
                             mask_lift_mm=50.0,
                             default_stand_off_mm=10.0,
                             ray_len_mm=1000.0,
+                            sides=sides,                # Seitenfilter durchreichen
                         )
                         used_compiled = True
                 except Exception:
@@ -287,6 +282,7 @@ class RecipeTab(QWidget):
                         model=model,
                         substrate_mesh=smesh,
                         side=None,                    # auto: 'top' oder erster key
+                        sides=sides,                  # Seitenfilter durchreichen
                         default_stand_off_mm=10.0,
                         mask_lift_mm=50.0,
                         ray_len_mm=1000.0,
@@ -303,7 +299,6 @@ class RecipeTab(QWidget):
             try:
                 if view_is_3d:
                     self.previewPanel.restore_camera(cam_snap)
-                # genau EIN Refresh der aktiven Ansicht
                 self.previewPanel.refresh_current_view(hard_reset=not view_is_3d)
             except Exception:
                 _LOG.exception("finalize view failed")

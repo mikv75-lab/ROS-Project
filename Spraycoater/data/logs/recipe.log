@@ -1323,3 +1323,125 @@ AttributeError: 'CoatingPreviewPanel' object has no attribute 'refresh_current_v
 2025-11-10 21:44:20 INFO [11543] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
 2025-11-10 21:44:20 DEBUG [11543] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
 2025-11-10 21:44:20 DEBUG [11543] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/pyramid_d150_h150.stl
+2025-11-10 22:13:06 WARNING [30402] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:13:06 WARNING [30402] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:13:06 WARNING [30402] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:13:06 WARNING [30402] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:13:06 WARNING [30402] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:13:06 WARNING [30402] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:13:06 WARNING [30402] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:13:06 WARNING [30402] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:13:06 WARNING [30402] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:13:06 WARNING [30402] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:13:06 WARNING [30402] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:16:01 INFO [30402] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:16:01 DEBUG [30402] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:16:01 DEBUG [30402] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-10 22:16:01 ERROR [30402] app.tabs.recipe.preview.overlays:500 - PathBuilder.from_side failed (top)
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/overlays.py", line 493, in render_from_model
+    pd = PathBuilder.from_side(model, side=s, sample_step_mm=sstep)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: PathBuilder.from_side() missing 2 required keyword-only arguments: 'globals_params' and 'max_points'
+2025-11-10 22:23:06 WARNING [36533] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:23:06 WARNING [36533] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:23:06 WARNING [36533] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:23:06 WARNING [36533] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:23:06 WARNING [36533] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:23:06 WARNING [36533] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:23:06 WARNING [36533] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:23:06 WARNING [36533] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:23:06 WARNING [36533] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:23:06 WARNING [36533] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:23:06 WARNING [36533] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:23:10 INFO [36533] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:23:10 DEBUG [36533] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:23:10 DEBUG [36533] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-10 22:23:11 ERROR [36533] app.tabs.recipe:300 - Overlays (render) failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 286, in _render_preview
+    self.previewPanel.overlays.render_from_model(
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/overlays.py", line 500, in render_from_model
+    raise ValueError(f"Preview: paths_by_side['{s}'].sample_step_mm fehlt (kein Fallback).")
+ValueError: Preview: paths_by_side['top'].sample_step_mm fehlt (kein Fallback).
+2025-11-10 22:33:14 WARNING [43866] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:33:14 WARNING [43866] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:33:14 WARNING [43866] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:33:14 WARNING [43866] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:33:14 WARNING [43866] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:33:14 WARNING [43866] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:33:14 WARNING [43866] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:33:14 WARNING [43866] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:33:14 WARNING [43866] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:33:14 WARNING [43866] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:33:14 WARNING [43866] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:33:22 INFO [43866] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:33:22 DEBUG [43866] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:33:22 DEBUG [43866] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-10 22:33:48 INFO [43866] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-10 22:33:48 DEBUG [43866] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-10 22:33:48 DEBUG [43866] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/cube_100.stl
+2025-11-10 22:35:24 INFO [43866] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-10 22:35:24 DEBUG [43866] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-10 22:35:24 DEBUG [43866] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/cube_100.stl
+2025-11-10 22:43:02 WARNING [49955] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:43:02 WARNING [49955] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:43:02 WARNING [49955] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:43:02 WARNING [49955] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:43:02 WARNING [49955] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:43:02 WARNING [49955] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:43:02 WARNING [49955] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:43:02 WARNING [49955] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:43:02 WARNING [49955] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:43:02 WARNING [49955] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:43:02 WARNING [49955] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 22:43:08 INFO [49955] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:43:08 DEBUG [49955] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:43:08 DEBUG [49955] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-10 22:43:59 INFO [49955] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:43:59 DEBUG [49955] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:43:59 DEBUG [49955] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-10 22:44:07 INFO [49955] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:44:07 DEBUG [49955] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:44:07 DEBUG [49955] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-10 22:44:34 INFO [49955] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:44:34 DEBUG [49955] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:44:34 DEBUG [49955] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/hemisphere_d200.stl
+2025-11-10 22:46:27 INFO [49955] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:46:27 DEBUG [49955] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:46:27 DEBUG [49955] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-10 22:46:29 INFO [49955] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:46:29 DEBUG [49955] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:46:29 DEBUG [49955] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-10 22:51:04 INFO [49955] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:51:04 DEBUG [49955] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 22:51:04 DEBUG [49955] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-10 22:55:53 INFO [49955] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-10 22:55:53 DEBUG [49955] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-10 22:55:53 DEBUG [49955] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/cube_100.stl
+2025-11-10 22:55:56 INFO [49955] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-10 22:55:56 DEBUG [49955] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-10 22:55:56 DEBUG [49955] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/cube_100.stl
+2025-11-10 22:56:11 INFO [49955] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-10 22:56:11 DEBUG [49955] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-10 22:56:11 DEBUG [49955] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/cube_100.stl
+2025-11-10 22:56:20 INFO [49955] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-10 22:56:20 DEBUG [49955] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-10 22:56:20 DEBUG [49955] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/cube_100.stl
+2025-11-10 22:56:29 INFO [49955] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-10 22:56:29 DEBUG [49955] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-11-10 22:56:29 DEBUG [49955] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/cube_100.stl
+2025-11-10 23:08:28 WARNING [65501] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 23:08:28 WARNING [65501] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 23:08:28 WARNING [65501] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 23:08:28 WARNING [65501] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 23:08:28 WARNING [65501] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 23:08:28 WARNING [65501] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 23:08:28 WARNING [65501] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 23:08:28 WARNING [65501] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 23:08:28 WARNING [65501] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 23:08:28 WARNING [65501] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 23:08:28 WARNING [65501] app.tabs.recipe.scene:27 - SceneManager: Interactor not available
+2025-11-10 23:09:07 INFO [65501] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 23:09:07 DEBUG [65501] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-10 23:09:07 DEBUG [65501] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
