@@ -25,7 +25,7 @@ def _project_points_xyz_to_plane(P: np.ndarray, plane: str) -> np.ndarray:
 
 
 class Matplot2DView(FigureCanvas):
-    """Minimaler 2D-Renderer: zeigt ausschließlich den Pfad in Grün."""
+    """Minimaler 2D-Renderer: zeigt ausschließlich den Pfad."""
     def __init__(self, parent=None):
         self._fig: Figure = Figure(figsize=(6, 6), dpi=100)
         super().__init__(self._fig)
@@ -39,7 +39,7 @@ class Matplot2DView(FigureCanvas):
         # Cache der projizierten Pfade je Ebene
         self._path2d: Dict[str, Optional[np.ndarray]] = {p: None for p in PLANES}
 
-        # UI-Zustand
+        # UI-Zustand (Pan/Zoom)
         self._user_limits: Optional[Tuple[float, float, float, float]] = None
 
         self._style = {
@@ -60,21 +60,32 @@ class Matplot2DView(FigureCanvas):
             _LOG.warning("Unknown plane '%s'", plane)
             return
         self._plane = plane
+        # plane-Wechsel: Limits verlieren (sonst projizierte Werte können off sein)
         self._user_limits = None
         self._redraw()
 
+    def get_plane(self) -> str:
+        return self._plane
+
+    def redraw(self):
+        """Öffentliche Neuzeichnung, behält Pan/Zoom falls vorhanden."""
+        self._redraw(keep_limits=True)
+
+    # Synonym, falls du in anderem Code `refresh()` nutzt:
+    def refresh(self):
+        self._redraw(keep_limits=True)
+
     def set_bounds(self, bounds: Tuple[float, float, float, float, float, float]):
         self._bounds = tuple(map(float, bounds))
-        if self._user_limits is None:
-            self._redraw()
-        else:
-            self._redraw(keep_limits=True)
+        # Wenn Nutzer bereits gezoomt hat, lass es so – nur neu zeichnen.
+        self._redraw(keep_limits=self._user_limits is not None)
 
     def set_path_xyz(self, path_xyz: np.ndarray | None):
         self._path_xyz = None if path_xyz is None else np.asarray(path_xyz, dtype=float).reshape(-1, 3)
         # Cache neu aufbauen
         for p in PLANES:
             self._path2d[p] = None if self._path_xyz is None else _project_points_xyz_to_plane(self._path_xyz, p)
+        # Pfadwechsel: Pan/Zoom behalten, wenn Nutzer es gesetzt hat
         self._redraw(keep_limits=True)
 
     def set_scene(self, *, substrate_mesh, path_xyz, bounds=None, mask_poly=None, **_kwargs):

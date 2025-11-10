@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
+# File: app/model/recipe/recipe_store.py
 from __future__ import annotations
-
 from copy import deepcopy
 from typing import Any, Dict, Optional, List
 
@@ -9,15 +9,15 @@ class RecipeStore:
     """
     Liest die YAML-Struktur aus ctx.recipes_yaml und bietet Zugriffe für UI/Preview.
 
-    Wichtige Punkte:
-    - Kein spraycoater.defaults mehr.
-    - Keine substrate_types mehr.
+    Designziele:
+    - Keine hartcodierten Defaults im Code – alles kommt aus der YAML.
     - Sides hängen direkt an jedem Rezept unter recipes[i].sides.
-    - Globale Defaults kommen ausschließlich aus recipe_params.globals.*.default.
-    - Schemas werden STRIKT aus recipe_params.path.* gelesen (keine Hidden-Fallbacks).
+    - Globale Defaults: recipe_params.globals.*.default
+    - Planner-Defaults: recipe_params.planner.*.default
+    - Path-Schemata: recipe_params.path.*
     """
 
-    # Mapping von UI-Path-Typen zu Schema-Keys in recipe_params
+    # Mapping vom internen "type" → Schema-Schlüssel unter recipe_params.*
     _TYPE_TO_SCHEMA_KEY: Dict[str, str] = {
         "meander_plane":          "path.meander.plane",
         "spiral_plane":           "path.spiral.plane",
@@ -27,21 +27,31 @@ class RecipeStore:
         "polyhelix_pyramid":      "path.polyhelix.pyramid",
     }
 
+    # ------------------------------------------------------------------ #
+    # Konstruktion
+    # ------------------------------------------------------------------ #
     def __init__(self, data: Dict[str, Any]):
+        # Gesamter YAML-Inhalt (dict)
         self.data = data or {}
-        # Achtung: recipe_params ist eine flache Map mit punktigen Keys (z. B. "path.meander.plane")
+        # recipe_params-Knoten (Schema/Defaults)
         self.params_schema: Dict[str, Any] = (self.data.get("recipe_params") or {})
+        # Liste aller Rezeptdefinitionen
         self.recipes: List[Dict[str, Any]] = list((self.data.get("recipes") or []))
 
-    # -------------------- Factory --------------------
     @staticmethod
     def from_ctx(ctx) -> "RecipeStore":
+        """Factory: liest ctx.recipes_yaml (bereits geparstes YAML-Dict)."""
         return RecipeStore(getattr(ctx, "recipes_yaml", {}) or {})
 
-    # -------------------- Hilfsfunktionen --------------------
+    # ------------------------------------------------------------------ #
+    # interne Helfer
+    # ------------------------------------------------------------------ #
     @staticmethod
     def _nested_get(data: dict, dotted: str):
-        """Versucht, 'a.b.c' verschachtelt zu lesen; gibt None falls nicht möglich."""
+        """
+        Klassischer dotted-Getter (z. B. "path.spiral.plane").
+        Gibt None zurück, wenn ein Teilpfad fehlt.
+        """
         cur = data
         for part in dotted.split("."):
             if not isinstance(cur, dict) or part not in cur:
@@ -49,20 +59,50 @@ class RecipeStore:
             cur = cur[part]
         return cur
 
-    def _get_params_node(self, key: str) -> Optional[Dict[str, Any]]:
+    @staticmethod
+    def _get_params_node(ps: dict, key: str):
         """
-        Holt einen Knoten aus recipe_params – zuerst flach (exakter Key),
-        dann optional verschachtelt (falls Struktur später geändert wird).
+        Tolerante Auflösung eines Schemaknotens unter recipe_params:
+          1) direkter Key (z. B. 'path.meander.plane')
+          2) dotted Traversal (verschachtelt)
+          3) heuristisch: '_' <-> '.' und lower()-Vergleich auf Top-Level
         """
-        ps = self.params_schema or {}
-        # 1) flacher Zugriff (wie in deiner aktuellen YAML)
-        if key in ps and isinstance(ps[key], dict):
-            return dict(ps[key])
-        # 2) verschachtelte Auflösung als Absicherung gegen spätere Strukturänderungen
-        node = self._nested_get(ps, key)
-        return dict(node) if isinstance(node, dict) else None
+        if not isinstance(ps, dict):
+            return None
 
-    # -------------------- Queries: Rezepte --------------------
+        # 1) direkter Key
+        node = ps.get(key)
+        if isinstance(node, dict):
+            return dict(node)
+
+        # 2) dotted traversal
+        cur = ps
+        ok = True
+        for part in key.split("."):
+            if not isinstance(cur, dict) or part not in cur:
+                ok = False
+                break
+            cur = cur[part]
+        if ok and isinstance(cur, dict):
+            return dict(cur)
+
+        # 3) heuristisch: '_' <-> '.' und lower()
+        k_l = key.replace("_", ".").lower()
+        for k, v in ps.items():
+            if isinstance(v, dict) and k.replace("_", ".").lower() == k_l:
+                return dict(v)
+
+        return None
+
+    def _get_params_node_key(self, key: str) -> Optional[Dict[str, Any]]:
+        """
+        Convenience: ruft _get_params_node für self.params_schema auf.
+        """
+        return self._get_params_node(self.params_schema or {}, key)
+
+    # ------------------------------------------------------------------ #
+    # Recipes (IDs, Lookup, Listen)
+    # ------------------------------------------------------------------ #
     def recipe_ids(self) -> List[str]:
         return [str(r.get("id")) for r in self.recipes if r.get("id")]
 
@@ -79,22 +119,19 @@ class RecipeStore:
         return [str(s) for s in (rec_def.get("substrates") or [])]
 
     def mounts_for_recipe(self, rec_def: Dict[str, Any]) -> List[str]:
-        # YAML-Feld heißt "substrate_mounts"
         return [str(m) for m in (rec_def.get("substrate_mounts") or [])]
 
-    # -------------------- Globals --------------------
+    # ------------------------------------------------------------------ #
+    # Globals (Schema/Defaults)
+    # ------------------------------------------------------------------ #
     def globals_schema(self) -> Dict[str, Any]:
-        """
-        Liefert das Schema-Objekt unter recipe_params.globals (direkt aus YAML).
-        Erwartet eine Dict-Struktur: { <param>: {type:..., default:..., ...}, ... }
-        """
         gs = (self.params_schema or {}).get("globals")
         return dict(gs) if isinstance(gs, dict) else {}
 
     def collect_global_defaults(self) -> Dict[str, Any]:
         """
-        Kombiniert nur recipe_params.globals.*.default.
-        (spraycoater.defaults existiert nicht mehr)
+        Liest *ausschließlich* die default-Werte aus recipe_params.globals.*.
+        Keine Fallbacks im Code.
         """
         out: Dict[str, Any] = {}
         for key, spec in self.globals_schema().items():
@@ -102,89 +139,160 @@ class RecipeStore:
                 out[key] = spec["default"]
         return out
 
-    # -------------------- Sides direkt aus dem Rezept --------------------
+    # ------------------------------------------------------------------ #
+    # Planner (Schema/Defaults)
+    # ------------------------------------------------------------------ #
+    def planner_schema(self) -> Dict[str, Any]:
+        node = (self.params_schema or {}).get("planner") or {}
+        return dict(node) if isinstance(node, dict) else {}
+
+    def collect_planner_defaults(self) -> Dict[str, Any]:
+        """
+        Liest *ausschließlich* die default-Werte aus recipe_params.planner.*.
+        """
+        out: Dict[str, Any] = {}
+        for key, spec in (self.planner_schema() or {}).items():
+            if isinstance(spec, dict) and "default" in spec:
+                out[key] = spec["default"]
+        return out
+
+    # ------------------------------------------------------------------ #
+    # Sides/Paths (aus Rezepten)
+    # ------------------------------------------------------------------ #
     def sides_for_recipe(self, rec_def: Dict[str, Any]) -> Dict[str, Any]:
-        """recipes[i].sides → Dict[side_name, side_cfg]"""
         sides = rec_def.get("sides") or {}
         return dict(sides) if isinstance(sides, dict) else {}
 
     def allowed_and_default_for(self, rec_def: Dict[str, Any], side: str) -> Dict[str, Any]:
         """
-        Gibt die Side-Config aus dem Rezept zurück (allowed_path_types, default_path, evtl. weitere Felder).
-        KEINE Schema-Ergänzung: alles kommt direkt aus YAML.
+        Gibt die rohe Side-Config zurück (allowed_path_types/default_path),
+        ohne Normalisierung.
         """
         sides = self.sides_for_recipe(rec_def)
         return deepcopy(sides.get(side) or {})
 
     def build_default_paths_for_recipe(self, rec_def: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         """
-        Erzeugt ein {side: default_path}-Dict für ein Rezept.
-        Falls default_path fehlt, wird eine Minimalstruktur gesetzt (nur 'type' leer).
+        Baut pro Side eine Starter-Config auf Basis des im Rezept angegebenen default_path.
+        (Nur Kopie – UI/Editor normalisiert später bei Bedarf.)
         """
         out: Dict[str, Dict[str, Any]] = {}
         for side, scfg in self.sides_for_recipe(rec_def).items():
             dp = dict((scfg.get("default_path") or {}))
             if not dp:
-                dp = {"type": ""}  # UI kann das dann setzen
+                dp = {"type": ""}  # UI setzt später explizit
             out[str(side)] = dp
         return out
 
-    # -------------------- Strikte Path-Schemata --------------------
+    # ------------------------------------------------------------------ #
+    # Path-Schema Auflösung (robust)
+    # ------------------------------------------------------------------ #
     def schema_for_type_strict(self, ptype: str) -> Dict[str, Any]:
         """
-        Liefert das Schema zu einem Path-Typ direkt aus recipe_params.path.*.
-        Wirft KeyError, wenn nichts gefunden wird (strikt, kein Fallback).
+        Liefert das Param-Schema (recipe_params.path.*) für einen Path-Typ.
+        - Nutzt das Mapping _TYPE_TO_SCHEMA_KEY.
+        - Auflösung ist tolerant gegen verschachtelte/dotted/umbenannte Knoten.
+        - Bei echtem Fehlen wird ein klarer KeyError geworfen (kein stilles Fallback).
         """
         p = str(ptype).strip()
         key = self._TYPE_TO_SCHEMA_KEY.get(p)
         if not key:
             raise KeyError(f"Unknown path type '{ptype}' – no schema key mapping.")
-        node = self._get_params_node(key)
+
+        ps = self.params_schema or {}
+        node = self._get_params_node(ps, key)
         if not isinstance(node, dict):
-            # hilfreiche Fehlermeldung mit vorhandenen Schlüsseln:
-            available = ", ".join([k for k in (self.params_schema or {}).keys() if str(k).startsWith("path.") or str(k).startswith("path.")])
+            # Zusätzliche Suche: alle path.*-Knoten scannen, die den Typ im Namen tragen
+            for k, v in (ps.items() if isinstance(ps, dict) else []):
+                if isinstance(v, dict) and str(k).startswith("path.") and p in str(k):
+                    return dict(v)
+            available = ", ".join(
+                [k for k in (ps.keys() if isinstance(ps, dict) else []) if str(k).startswith("path.")]
+            )
             raise KeyError(
                 f"Schema not found at recipe_params.{key} for type '{ptype}'. "
                 f"Available path.* keys: [{available}]"
             )
         return node
 
+    # ------------------------------------------------------------------ #
+    # Runtime-Normalisierung einer Side (strict w.r.t. Schema)
+    # ------------------------------------------------------------------ #
     def build_side_runtime_cfg_strict(self, rec_def: Dict[str, Any], side: str) -> Dict[str, Any]:
         """
-        Baut eine Runtime-Config pro Side ausschließlich aus dem Rezept + den strikten recipe_params-Schemata:
+        Liefert eine normalisierte Runtime-Config für eine Side:
           {
-            'allowed_path_types': [...],
-            'default_path': {...},
-            'schemas': { <ptype>: <schema-dict>, ... }
+            "allowed_path_types": [...],
+            "default_path": { "type": "...", <param>=... },
+            "schemas": { <ptype>: {<param_key>: spec, ...}, ... }
           }
         """
-        sides = self.sides_for_recipe(rec_def)
-        scfg = sides.get(side) or {}
-        if not isinstance(scfg, dict):
-            scfg = {}
+        scfg = self.allowed_and_default_for(rec_def, side) or {}
 
-        allowed: List[str] = list(scfg.get("allowed_path_types") or [])
-        default_path: Dict[str, Any] = dict(scfg.get("default_path") or {})
+        # --- allowed_path_types (liberal gelesen) ---
+        allowed_keys = ["allowed_path_types", "allowed_types", "allowed", "types", "path_types"]
+        allowed: List[str] = []
+        for k in allowed_keys:
+            v = scfg.get(k)
+            if isinstance(v, (list, tuple)):
+                allowed = [str(x) for x in v]
+                break
 
+        # --- default_path (liberal: 'default_path' oder 'default') ---
+        default_path = dict(scfg.get("default_path") or scfg.get("default") or {})
+        if "type" not in default_path or not str(default_path["type"]).strip():
+            if allowed:
+                default_path["type"] = allowed[0]
+            else:
+                raise ValueError(
+                    f"Recipe side '{side}' besitzt weder default_path.type noch allowed_path_types."
+                )
+
+        ptype = str(default_path["type"]).strip()
+
+        # --- Schema des Default-Typs (validiert Typ und liefert Defaults) ---
+        schema_default = self.schema_for_type_strict(ptype)
+
+        # --- strict: Default-Params = Schema-Defaults, dann Rezept-Overrides ---
+        norm: Dict[str, Any] = {"type": ptype}
+        for key, spec in (schema_default or {}).items():
+            if isinstance(spec, dict) and "default" in spec:
+                norm[key] = spec["default"]
+        for k, v in default_path.items():
+            if k != "type" and k in schema_default:
+                norm[k] = v
+
+        # --- schemas: für alle erlaubten Typen (inkl. Default) bereitstellen ---
+        types_to_resolve = list(dict.fromkeys([ptype] + list(allowed)))  # Reihenfolge stabil, ohne Duplikate
         schemas: Dict[str, Dict[str, Any]] = {}
-        for p in allowed:
-            schemas[p] = self.schema_for_type_strict(p)
+        resolved_allowed: List[str] = []
+
+        for t in types_to_resolve:
+            try:
+                sch = self.schema_for_type_strict(t)
+            except KeyError:
+                # Unbekannter Typ in YAML → einfach überspringen (kein Crash im UI)
+                continue
+            schemas[t] = sch
+            if t in allowed and t not in resolved_allowed:
+                resolved_allowed.append(t)
+
+        # Falls allowed leer war oder nur ungültige Einträge hatte: wenigstens den Default-Typ erlauben
+        if not resolved_allowed:
+            resolved_allowed = [ptype]
 
         return {
-            "allowed_path_types": allowed,
-            "default_path": default_path,
+            "allowed_path_types": resolved_allowed,
+            "default_path": norm,
             "schemas": schemas,
         }
 
-    # -------------------- Enums direkt aus recipe_params (UI-Helfer) --------------------
+    # ------------------------------------------------------------------ #
+    # UI-Enum-Helper (optional, rein lesend aus dem Schema)
+    # ------------------------------------------------------------------ #
     def spiral_plane_enums(self) -> Dict[str, List[str]]:
-        """
-        Liest z. B. direction=['cw','ccw'] für spiral_plane aus recipe_params.
-        Gibt Dict mit evtl. vorhandenen Keys (z. B. {'direction': [...]}) zurück.
-        (Keine Fallback-Logik; Quelle ist allein recipe_params.)
-        """
         out: Dict[str, List[str]] = {}
-        node = self._get_params_node("path.spiral.plane") or {}
+        node = self._get_params_node_key("path.spiral.plane") or {}
         if isinstance(node, dict):
             dir_spec = node.get("direction")
             if isinstance(dir_spec, dict) and isinstance(dir_spec.get("values"), list):
@@ -192,12 +300,8 @@ class RecipeStore:
         return out
 
     def spiral_cylinder_enums(self) -> Dict[str, List[str]]:
-        """
-        Liest start_from / direction für spiral_cylinder aus recipe_params.
-        (Keine Fallback-Logik; Quelle ist allein recipe_params.)
-        """
         out: Dict[str, List[str]] = {}
-        node = self._get_params_node("path.spiral.cylinder") or {}
+        node = self._get_params_node_key("path.spiral.cylinder") or {}
         if isinstance(node, dict):
             sf_spec = node.get("start_from")
             if isinstance(sf_spec, dict) and isinstance(sf_spec.get("values"), list):

@@ -1,4 +1,3 @@
-# src/app/main_window.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import logging
@@ -10,6 +9,7 @@ from app.tabs.recipe.recipe_tab import RecipeTab
 from app.tabs.service.service_tab import ServiceTab
 from app.tabs.system.system_tab import SystemTab
 
+from app.model.recipe.recipe_store import RecipeStore
 from pyvistaqt import QtInteractor
 
 _LOG = logging.getLogger(__name__)
@@ -24,6 +24,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("SprayCoater UI")
         self.resize(1280, 800)
 
+        # 🔹 Zentralen RecipeStore einmal erstellen und weiterreichen
+        self.store = RecipeStore.from_ctx(self.ctx)
+
         # Persistenter Preview-Interactor (lebt im MainWindow)
         self.previewPlot = QtInteractor(self)
         self.previewPlot.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
@@ -32,14 +35,17 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget(self)
         tabs.addTab(ProcessTab(ctx=self.ctx, bridge=self.bridge), "Process")
 
+        # RecipeTab bekommt Store + attach_preview
         self.recipeTab = RecipeTab(   # Referenz behalten
             ctx=self.ctx,
+            store=self.store,
             bridge=self.bridge,
             attach_preview_widget=self.attach_preview_widget,
         )
         tabs.addTab(self.recipeTab, "Recipe")
 
-        tabs.addTab(ServiceTab(ctx=self.ctx, bridge=self.bridge), "Service")
+        # ServiceTab bekommt denselben Store
+        tabs.addTab(ServiceTab(ctx=self.ctx, store=self.store, bridge=self.bridge), "Service")
         tabs.addTab(SystemTab(ctx=self.ctx, bridge=self.bridge), "System")
         self.setCentralWidget(tabs)
 

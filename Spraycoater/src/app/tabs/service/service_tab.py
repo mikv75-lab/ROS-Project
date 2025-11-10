@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# File: tabs/service_tab.py
 from __future__ import annotations
 import logging
 from typing import Optional, Dict, Any
@@ -8,6 +7,9 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QSpacerItem, QSizePolicy
 )
+
+# RecipeStore für planner- und defaultsgetriebene Widgets
+from app.model.recipe.recipe_store import RecipeStore
 
 # Eigenständige Widgets (verdrahten sich selbst mit der Bridge)
 from ...widgets.robot_command_status_box import RobotCommandStatusWidget  # ⬅️ kombiniert: Commands (links) + Status (rechts)
@@ -33,9 +35,10 @@ class ServiceTab(QWidget):
       [3] Spacer (Expanding)
     """
 
-    def __init__(self, *, ctx, bridge, parent: Optional[QWidget] = None):
+    def __init__(self, *, ctx, store: RecipeStore, bridge, parent: Optional[Widget] = None):
         super().__init__(parent)
         self.ctx = ctx
+        self.store = store
         self.bridge = bridge
 
         # Root-Layout
@@ -47,7 +50,7 @@ class ServiceTab(QWidget):
         self.commandStatus = RobotCommandStatusWidget(self.bridge, self)
         sp = self.commandStatus.sizePolicy()
         sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+        sp.setVerticalPolicy(QSizePolicy.Preferred)
         self.commandStatus.setSizePolicy(sp)
         root.addWidget(self.commandStatus)
 
@@ -71,8 +74,8 @@ class ServiceTab(QWidget):
         self.tabs = QTabWidget(self)
         root.addWidget(self.tabs)
 
-        # (a) Motion
-        self.motionWidget = MotionWidget(self.bridge, self.tabs)
+        # (a) Motion — jetzt strikt Store-geführt
+        self.motionWidget = MotionWidget(store=self.store, bridge=self.bridge, parent=self.tabs)
         self.tabs.addTab(self.motionWidget, "Motion")
 
         # (b) Joint Jog
@@ -85,19 +88,19 @@ class ServiceTab(QWidget):
 
         for w in (self.motionWidget, self.jointJogWidget, self.cartJogWidget):
             sp = w.sizePolicy()
-            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-            sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+            sp.setHorizontalPolicy(QSizePolicy.Expanding)
+            sp.setVerticalPolicy(QSizePolicy.Preferred)
             w.setSizePolicy(sp)
 
         # Resize-Policies für die drei Boxen
         for w in (self.posesBox, self.toolBox, self.sceneBox):
             sp = w.sizePolicy()
-            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-            sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+            sp.setHorizontalPolicy(QSizePolicy.Expanding)
+            sp.setVerticalPolicy(QSizePolicy.Preferred)
             w.setSizePolicy(sp)
 
         # --- [3] EIN Expanding Spacer am Ende -------------------------------
-        root.addItem(QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
+        root.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
     # ------------ Forwarder (optional) ---------------------------------------
     # Planner (aus Motion-Subtab)

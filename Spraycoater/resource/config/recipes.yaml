@@ -1,5 +1,4 @@
 version: 1
-units: "mm"   # Alle Pfad-/Geometrieparameter in mm
 
 # -------------------------------------------------------------------
 # Zentrale UI-/Validierungs-Spezifikationen mit DEFAULT-WERTEN
@@ -12,11 +11,38 @@ recipe_params:
     stand_off_mm:     { type: number, min: 0.1,  max: 200,  step: 0.1, unit: "mm",    default: 10 }
     sample_step_mm:   { type: number, min: 0.05, max: 50, step: 0.05, unit: "mm", default: 1.0 }
     max_points:       { type: number, min: 100,  max: 2000000, step: 100, default: 200000 }
-    max_angle_deg:    { type: number, min: 0,    max: 45, step: 0.5, default: 0 } # 0 = aus
+    max_angle_deg:    { type: number, min: 0,    max: 45, step: 0.5, default: 0 }
 
     flow_ml_min:      { type: number, min: 0.0,  max: 100.0,step: 0.1, unit: "ml/min",default: 5.0 }
     pre_dispense_s:   { type: number, min: 0.0,  max: 10.0, step: 0.1, unit: "s",     default: 0.2 }
     post_dispense_s:  { type: number, min: 0.0,  max: 10.0, step: 0.1, unit: "s",     default: 0.1 }
+
+    # ✨ NEU: Geometrische Entry/Exit-Parameter (werden in compile_poses genutzt)
+    predispense.distance_mm: { type: number, min: 0.0, max: 500, step: 0.5, unit: "mm", default: 30.0 }
+    predispense.angle_deg:   { type: number, min: 0.0, max: 90,  step: 1.0, unit: "deg", default: 15.0 }
+    retreat.distance_mm:     { type: number, min: 0.0, max: 500, step: 0.5, unit: "mm", default: 30.0 }
+    retreat.angle_deg:       { type: number, min: 0.0, max: 90,  step: 1.0, unit: "deg", default: 15.0 }
+  
+  planner:
+      pipeline:              { type: enum,   values: ["ompl","pilz","chomp","stomp","servo"], default: "ompl" }
+      planner_id:            { type: string, default: "RRTConnectkConfigDefault" }
+
+      planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1, default: 2.0 }
+      attempts:              { type: integer,min: 1,   max: 100,  step: 1,   default: 1 }
+
+      # Skalierungen
+      velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+      acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+
+      # Cartesian Optionen (für z.B. Pilz/Cartesian/Servo-Usecases)
+      cartesian.eef_step_mm:   { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+      cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+      # Servo (nur sichtbar wenn pipeline=servo)
+      servo.publish_period_s:        { type: number, min: 0.002, max: 0.1, step: 0.001, default: 0.01, visible_if: {"pipeline":"servo"} }
+      servo.linear_scale:            { type: number, min: 0.0,   max: 2.0, step: 0.05,  default: 0.6,  visible_if: {"pipeline":"servo"} }
+      servo.rotational_scale:        { type: number, min: 0.0,   max: 2.0, step: 0.05,  default: 1.0,  visible_if: {"pipeline":"servo"} }
+      servo.low_pass_filter_coeff:   { type: number, min: 0.0,   max: 10.0,step: 0.1,   default: 2.0,  visible_if: {"pipeline":"servo"} }
 
   # --- Meander (Ebene) ---
   path.meander.plane:
@@ -111,7 +137,7 @@ recipes:
     substrate_type: "wafer"
     tools: ["spray_nozzle_01", "spray_nozzle_02"]
     substrates: ["wafer_d100_h2", "wafer_d150_h2", "wafer_d200_h2"]
-    substrate_mounts: ["circle_d240_h50", "flat_240x240x50"]
+    substrate_mounts: ["circle_d240_h50"]
     parameters: {}
     sides:
       top:

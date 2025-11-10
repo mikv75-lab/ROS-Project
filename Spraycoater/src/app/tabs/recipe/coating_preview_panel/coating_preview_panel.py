@@ -20,6 +20,7 @@ from .overlays import OverlayRenderer
 from .overlays_groupbox import OverlaysGroupBox
 from .views_groupbox import ViewsGroupBox
 from app.widgets.planner_groupbox import PlannerGroupBox
+from app.model.recipe.recipe_store import RecipeStore
 
 _LOG = logging.getLogger("app.tabs.recipe")
 
@@ -44,9 +45,10 @@ class CoatingPreviewPanel(QWidget):
     DEFAULT_MOUNT_COLOR     = "#5d5d5d"
     DEFAULT_SUBSTRATE_COLOR = "#d0d6dd"
 
-    def __init__(self, *, ctx, parent: Optional[QWidget] = None):
+    def __init__(self, *, ctx, store: RecipeStore, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
+        self.store = store
 
         # ---------- Root Layout ----------
         root = QVBoxLayout(self)
@@ -70,17 +72,25 @@ class CoatingPreviewPanel(QWidget):
 
         # ---- 3D-Seite
         self._page3d = QWidget(self)
-        v3d = QVBoxLayout(self._page3d); v3d.setContentsMargins(0, 0, 0, 0); v3d.setSpacing(0)
+        v3d = QVBoxLayout(self._page3d)
+        v3d.setContentsMargins(0, 0, 0, 0)
+        v3d.setSpacing(0)
         self._host3d = QFrame(self._page3d)
-        vhost = QVBoxLayout(self._host3d); vhost.setContentsMargins(0, 0, 0, 0); vhost.setSpacing(0)
+        vhost = QVBoxLayout(self._host3d)
+        vhost.setContentsMargins(0, 0, 0, 0)
+        vhost.setSpacing(0)
         v3d.addWidget(self._host3d)
         self._stack.addWidget(self._page3d)
 
         # ---- 2D-Seite
         self._page2d = QWidget(self)
-        v2d = QVBoxLayout(self._page2d); v2d.setContentsMargins(0, 0, 0, 0); v2d.setSpacing(0)
+        v2d = QVBoxLayout(self._page2d)
+        v2d.setContentsMargins(0, 0, 0, 0)
+        v2d.setSpacing(0)
         self._host2d = QWidget(self._page2d)
-        vmat = QVBoxLayout(self._host2d); vmat.setContentsMargins(0, 0, 0, 0); vmat.setSpacing(0)
+        vmat = QVBoxLayout(self._host2d)
+        vmat.setContentsMargins(0, 0, 0, 0)
+        vmat.setSpacing(0)
         v2d.addWidget(self._host2d)
         self._stack.addWidget(self._page2d)
 
@@ -139,6 +149,9 @@ class CoatingPreviewPanel(QWidget):
         self.grpOverlays.localFramesToggled.connect(lambda v: self.overlays.set_frames_visible(bool(v)))
 
         # ---------- View-Buttons ----------
+        self._current_view: str = "3d"     # "3d" | "2d"
+        self._current_plane: str = "top"   # top/front/back/left/right
+
         self.grpViews.set_handlers(
             on3d=lambda name: (
                 self._switch_to_3d(),
@@ -156,12 +169,14 @@ class CoatingPreviewPanel(QWidget):
 
         QTimer.singleShot(0, self._push_initial_visibility)
 
-        # ---------- Planner ----------
-        self.plannerBox = PlannerGroupBox(parent=self)
+        # ---------- Planner (benötigt RecipeStore) ----------
+        self.plannerBox = PlannerGroupBox(parent=self, store=self.store)
         root.addWidget(self.plannerBox)
 
         # ---------- Validate/Optimize ----------
-        row = QHBoxLayout(); row.setContentsMargins(0, 0, 0, 0); row.setSpacing(8)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
         self.btnValidate = QPushButton("Validate", self)
         self.btnOptimize = QPushButton("Optimize", self)
         for b in (self.btnValidate, self.btnOptimize):
@@ -184,14 +199,44 @@ class CoatingPreviewPanel(QWidget):
             ia = self._hoster.ia
         return ia
 
+    def ensure_interactor(self) -> bool:
+        """
+        Stellt sicher, dass der PyVista-Interactor existiert.
+        Gibt True zurück, wenn er bereit ist.
+        """
+        ia = self._get_ia()
+        return ia is not None
+
+    def is_3d_active(self) -> bool:
+        """True, wenn aktuell die 3D-Ansicht aktiv ist."""
+        try:
+            return self._current_view == "3d" and self._stack.currentIndex() == 0
+        except Exception:
+            return False
+
+    def is_2d_active(self) -> bool:
+        """True, wenn aktuell die 2D-Ansicht aktiv ist."""
+        try:
+            return self._current_view == "2d" and self._stack.currentIndex() == 1
+        except Exception:
+            return False
+
+    def current_plane(self) -> str:
+        """Aktuelle 2D-Ebene ('top'|'front'|'back'|'left'|'right')."""
+        return self._current_plane
+
     def _switch_to_3d(self):
+        self._current_view = "3d"
         if self._stack.currentIndex() != 0:
             self._stack.setCurrentIndex(0)
+        # Bei 3D auf isometrisch gehen, Interactor ggf. lazy erstellen
         self.view_isometric()
 
     def _switch_2d_plane(self, plane: str) -> None:
         try:
-            self._mat2d.set_plane(plane)
+            self._current_view = "2d"
+            self._current_plane = str(plane or "top")
+            self._mat2d.set_plane(self._current_plane)
             if self._stack.currentIndex() != 1:
                 self._stack.setCurrentIndex(1)
         except Exception:
@@ -218,6 +263,58 @@ class CoatingPreviewPanel(QWidget):
 
     def attach_interactor(self, interactor: Any) -> None:
         self._hoster.attach(interactor)
+
+    # -------- Camera snapshot helpers --------
+    def snapshot_camera(self) -> Optional[dict]:
+        ia = self._get_ia()
+        if ia is None:
+            return None
+        try:
+            cam = ia.camera
+            return {
+                "position": tuple(getattr(cam, "position", (0.0, 0.0, 1.0))),
+                "focal_point": tuple(getattr(cam, "focal_point", (0.0, 0.0, 0.0))),
+                "view_up": tuple(getattr(cam, "up", (0.0, 1.0, 0.0))),
+                "parallel_projection": bool(getattr(cam, "parallel_projection", False)),
+                "parallel_scale": float(getattr(cam, "parallel_scale", 1.0)),
+                "clipping_range": tuple(getattr(cam, "clipping_range", (0.1, 10000.0))),
+                "view_angle": float(getattr(cam, "view_angle", 30.0)),
+            }
+        except Exception:
+            _LOG.exception("snapshot_camera failed")
+            return None
+
+    def restore_camera(self, snap: Optional[dict]) -> None:
+        if not isinstance(snap, dict):
+            return
+        ia = self._get_ia()
+        if ia is None:
+            return
+        try:
+            cam = ia.camera
+            if "position" in snap:
+                cam.position = tuple(snap["position"])
+            if "focal_point" in snap:
+                cam.focal_point = tuple(snap["focal_point"])
+            if "view_up" in snap:
+                cam.up = tuple(snap["view_up"])
+            if "parallel_projection" in snap:
+                cam.parallel_projection = bool(snap["parallel_projection"])
+            if "parallel_scale" in snap:
+                cam.parallel_scale = float(snap["parallel_scale"])
+            if "clipping_range" in snap:
+                try:
+                    cam.clipping_range = tuple(snap["clipping_range"])
+                except Exception:
+                    pass
+            if "view_angle" in snap:
+                try:
+                    cam.view_angle = float(snap["view_angle"])
+                except Exception:
+                    pass
+            ia.render()
+        except Exception:
+            _LOG.exception("restore_camera failed")
 
     # -------- 2D Scene Feeder --------
     def update_2d_scene(
@@ -246,9 +343,25 @@ class CoatingPreviewPanel(QWidget):
     def view_left(self):      self.views.view_left()
     def view_right(self):     self.views.view_right()
 
+    def refresh_current_view(self, *, hard_reset: bool = False) -> None:
+        """
+        Aktualisiert die derzeit aktive Ansicht.
+        - 3D: rendert erneut; bei hard_reset wird die Kamera (bounds-basiert) zurückgesetzt.
+        - 2D: setzt Bounds erneut (triggert redraw und behält User-Zoom, falls gesetzt).
+        """
+        try:
+            if self.is_3d_active():
+                self.render(reset_camera=bool(hard_reset))
+            else:
+                # 2D-Refresh: set_bounds löst Redraw aus, Matplot2DView behält user_limits.
+                self._mat2d.set_bounds(self._bounds)
+        except Exception:
+            _LOG.exception("refresh_current_view failed")
+
     def render(self, *, reset_camera: bool = True) -> None:
         ia = self._get_ia()
         if ia is None:
+            # Interactor wird erst später durch MainWindow angehängt
             return
         try:
             xmin, xmax, ymin, ymax, zmin, _ = self._bounds
@@ -286,20 +399,32 @@ class CoatingPreviewPanel(QWidget):
 
     def _apply_bounds(self) -> None:
         try:
-            self.scene.refresh_floor(bounds=self._bounds, step=self._grid_step)
+            # 3D: erst arbeiten, wenn Interactor existiert (sonst kein Spam)
+            if self.ensure_interactor():
+                self.scene.refresh_floor(bounds=self._bounds, step=self._grid_step)
+            # 2D: Achsenbegrenzungen immer vorhalten
+            self._mat2d.set_bounds(self._bounds)
         except Exception:
             _LOG.exception("apply_bounds: refresh_floor failed")
 
     # -------- Scene passthrough --------
     def clear(self) -> None:
+        if not self.ensure_interactor():
+            return
         self.scene.clear()
 
     def add_mesh(self, mesh, **kwargs) -> None:
+        if not self.ensure_interactor():
+            return
         _ = self._get_ia()
         self.scene.add_mesh(mesh, **kwargs)
 
     def clear_layer(self, layer: str) -> None:
+        if not self.ensure_interactor():
+            return
         self.scene.clear_layer(layer)
 
     def add_path_polyline(self, *a, **kw):
+        if not self.ensure_interactor():
+            return
         self.scene.add_path_polyline(*a, **kw)

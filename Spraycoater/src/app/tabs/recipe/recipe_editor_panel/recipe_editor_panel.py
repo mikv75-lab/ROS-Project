@@ -1,82 +1,91 @@
 # -*- coding: utf-8 -*-
-# File: tabs/recipe/recipe_editor_panel.py
 from __future__ import annotations
-import os
+import os, re
 from typing import Optional, Dict, Any, List
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
-    QPushButton, QLineEdit, QLabel, QFileDialog, QMessageBox, QSizePolicy
+    QPushButton, QLineEdit, QLabel, QFileDialog, QMessageBox, QSizePolicy, QFormLayout
 )
 
 from app.model.recipe.recipe import Recipe
 from app.model.recipe.recipe_store import RecipeStore
-from .recipe_editor_content import RecipeEditorContent
+from .recipe_editor_content import RecipeEditorContent  # erwartet collect_* / apply_* Shims
 
+def _slugify(s: str) -> str:
+    s = s.strip()
+    s = re.sub(r"\s+", "_", s)
+    s = re.sub(r"[^-a-zA-Z0-9_]", "", s)
+    s = re.sub(r"_+", "_", s)
+    return s
 
 class RecipeEditorPanel(QWidget):
-    """VBox: Recipe-GB (Buttons + Description) | Content (mit Selectors inkl. Recipe) | UpdatePreview"""
-    # emit { "model": Recipe, "sides": List[str] }
+    """Layout:
+        [ Commands ]                 -> New | Load | Save | Delete
+        [ Name & Description ]       -> Name(LineEdit) + Description(LineEdit)
+        [ Content ]                  -> Globals / Selectors / Planner / SideTabs
+        [ Update Preview ]
+    """
     updatePreviewRequested = pyqtSignal(object)
 
-    def __init__(self, *, ctx, parent: Optional[QWidget] = None):
+    def __init__(self, *, ctx, store: RecipeStore, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
-        self.store = RecipeStore.from_ctx(ctx)
+        self.store = store
 
-        # interne States
         self._active_model: Optional[Recipe] = None
         self._active_rec_def: Optional[Dict[str, Any]] = None
         self._recipes_by_id: Dict[str, Dict[str, Any]] = {}
 
-        # ---------- Root-Layout ----------
         vroot = QVBoxLayout(self)
         vroot.setContentsMargins(8, 8, 8, 8)
         vroot.setSpacing(8)
 
-        # ---------- [1] Recipe GroupBox ----------
-        self.gbRecipe = QGroupBox("Recipe", self)
-        vroot.addWidget(self.gbRecipe)
-        vRecipe = QVBoxLayout(self.gbRecipe)
-        vRecipe.setContentsMargins(8, 6, 8, 6)
-        vRecipe.setSpacing(6)
+        # ---------- [1] Commands ----------
+        self.gbCommands = QGroupBox("Commands", self)
+        vroot.addWidget(self.gbCommands)
+        hButtons = QHBoxLayout(self.gbCommands)
+        hButtons.setContentsMargins(8, 6, 8, 6)
+        hButtons.setSpacing(6)
 
-        # Buttons
-        hButtons = QHBoxLayout()
-        self.btnNew    = QPushButton("New", self.gbRecipe)
-        self.btnLoad   = QPushButton("Load", self.gbRecipe)
-        self.btnSave   = QPushButton("Save", self.gbRecipe)
-        self.btnDelete = QPushButton("Delete", self.gbRecipe)
+        self.btnNew    = QPushButton("New", self.gbCommands)
+        self.btnLoad   = QPushButton("Load", self.gbCommands)
+        self.btnSave   = QPushButton("Save", self.gbCommands)
+        self.btnDelete = QPushButton("Delete", self.gbCommands)
+
         for b in (self.btnNew, self.btnLoad, self.btnSave, self.btnDelete):
             sp = b.sizePolicy()
-            sp.setVerticalPolicy(QSizePolicy.Policy.Maximum)
-            sp.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+            sp.setVerticalPolicy(QSizePolicy.Maximum)
+            sp.setHorizontalPolicy(QSizePolicy.Expanding)
             b.setSizePolicy(sp)
-            hButtons.addWidget(b)
-        hButtons.addStretch(1)
-        vRecipe.addLayout(hButtons)
+            hButtons.addWidget(b, 1)
 
-        # Description
-        hDesc = QHBoxLayout()
-        self.lblDesc = QLabel("Description:", self.gbRecipe)
-        self.e_desc = QLineEdit(self.gbRecipe)
+        # ---------- [2] Name & Description ----------
+        self.gbMeta = QGroupBox("Name & Description", self)
+        vroot.addWidget(self.gbMeta)
+        metaForm = QFormLayout(self.gbMeta)
+        metaForm.setContentsMargins(8, 6, 8, 6)
+        metaForm.setSpacing(6)
+
+        self.e_name = QLineEdit(self.gbMeta)
+        self.e_name.setPlaceholderText("recipe_name (Dateiname & YAML id – wird nur beim Save verwendet)")
+        self.e_desc = QLineEdit(self.gbMeta)
         self.e_desc.setPlaceholderText("Short description of the recipe ...")
-        hDesc.addWidget(self.lblDesc)
-        hDesc.addWidget(self.e_desc)
-        vRecipe.addLayout(hDesc)
 
-        # ---------- [2] Content ----------
+        metaForm.addRow(QLabel("Name:", self.gbMeta), self.e_name)
+        metaForm.addRow(QLabel("Description:", self.gbMeta), self.e_desc)
+
+        # ---------- [3] Content ----------
         self.content = RecipeEditorContent(ctx=self.ctx, store=self.store, parent=self)
         vroot.addWidget(self.content)
-
         self.content.apply_defaults()
 
-        # ---------- [3] Update Preview ----------
+        # ---------- [4] Update Preview ----------
         self.btnUpdatePreview = QPushButton("Update Preview", self)
         sp_upd = self.btnUpdatePreview.sizePolicy()
-        sp_upd.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        sp_upd.setVerticalPolicy(QSizePolicy.Policy.Maximum)
+        sp_upd.setHorizontalPolicy(QSizePolicy.Expanding)
+        sp_upd.setVerticalPolicy(QSizePolicy.Maximum)
         self.btnUpdatePreview.setSizePolicy(sp_upd)
         vroot.addWidget(self.btnUpdatePreview)
 
@@ -90,14 +99,12 @@ class RecipeEditorPanel(QWidget):
         self.btnSave.clicked.connect(self._on_save_clicked)
         self.btnDelete.clicked.connect(self._on_delete_clicked)
 
-        # Emit: { model, sides }
         def _emit_update():
             payload = {
                 "model": self.current_model(),
                 "sides": self._selected_existing_sides()
             }
             self.updatePreviewRequested.emit(payload)
-
         self.btnUpdatePreview.clicked.connect(_emit_update)
 
         # Erstes Rezept initialisieren
@@ -131,36 +138,45 @@ class RecipeEditorPanel(QWidget):
         return self._recipes_by_id.get(rid)
 
     def _new_model_from_rec_def(self, rec_def: Dict[str, Any]) -> Recipe:
-        params = self.store.collect_global_defaults()
-        pbs = self.store.build_default_paths_for_recipe(rec_def)
+        params  = self.store.collect_global_defaults()
+        planner = self.store.collect_planner_defaults()
+        pbs     = self.store.build_default_paths_for_recipe(rec_def)
 
-        subs = rec_def.get("substrates") or []
-        sub = subs[0] if subs else None
-        mounts = rec_def.get("substrate_mounts") or []
-        mnt = mounts[0] if mounts else None
+        subs  = rec_def.get("substrates") or []
+        sub   = subs[0] if subs else None
+        mounts= rec_def.get("substrate_mounts") or []
+        mnt   = mounts[0] if mounts else None
         tools = rec_def.get("tools") or []
-        tool = tools[0] if tools else None
+        tool  = tools[0] if tools else None
 
         model = Recipe.from_dict({
-            "id": rec_def.get("id") or "recipe",
+            "id": "",
             "description": rec_def.get("description") or "",
             "tool": tool,
             "substrate": sub,
             "substrates": [sub] if sub else [],
             "substrate_mount": mnt,
             "parameters": params,
+            "planner": planner,
             "paths_by_side": pbs,
         })
-        model.tools = tools
-        model.substrates = subs
-        model.substrate_mounts = mounts
+
+        # Optional (nur für UI-Komfort):
+        model.tools = tools                     # type: ignore[attr-defined]
+        model.substrates = subs                 # type: ignore[assignment]
+        model.substrate_mounts = mounts         # type: ignore[attr-defined]
         return model
 
     def _apply_model(self, model: Recipe, rec_def: Dict[str, Any]) -> None:
         self._active_model = model
         self._active_rec_def = rec_def
+        self.e_name.setText(getattr(model, "id", "") or "")
         self.e_desc.setText(getattr(model, "description", "") or "")
         self.content.apply_recipe_model(model, rec_def)
+        # Planner in UI schieben (falls vorhanden)
+        apply_planner = getattr(self.content, "apply_planner_model", None)
+        if callable(apply_planner):
+            apply_planner(model.planner or {})
 
     def _on_recipe_select_changed(self, _index: int) -> None:
         rec_def = self._current_recipe_def()
@@ -180,6 +196,7 @@ class RecipeEditorPanel(QWidget):
             self.content.apply_defaults()
             self._active_model = None
             self._active_rec_def = None
+            self.e_name.setText("")
             self.e_desc.setText("")
 
     def _on_load_clicked(self) -> None:
@@ -189,6 +206,8 @@ class RecipeEditorPanel(QWidget):
             return
         try:
             model = Recipe.load_yaml(fname)
+            self.e_name.setText(model.id or "")
+            self.e_desc.setText(getattr(model, "description", "") or "")
             rec_def = self._recipes_by_id.get(model.id) or self._current_recipe_def() or {}
             self._apply_model(model, rec_def)
             QMessageBox.information(self, "Geladen", os.path.basename(fname))
@@ -198,8 +217,14 @@ class RecipeEditorPanel(QWidget):
     def _on_save_clicked(self) -> None:
         try:
             model = self.current_model()
+            name = _slugify((self.e_name.text() or "").strip())
+            if not name:
+                QMessageBox.warning(self, "Name fehlt", "Bitte zuerst einen Recipe-Namen eingeben.")
+                return
+            model.id = name
+
             start_dir = getattr(getattr(self.ctx, "paths", None), "recipe_dir", os.getcwd())
-            suggested = f"{(model.id or 'recipe').strip()}.yaml"
+            suggested = f"{name}.yaml"
             fname, _ = QFileDialog.getSaveFileName(
                 self, "Rezept speichern", os.path.join(start_dir, suggested), "YAML (*.yaml *.yml)")
             if not fname:
@@ -218,38 +243,39 @@ class RecipeEditorPanel(QWidget):
             self.content.apply_defaults()
             self._active_model = None
             self._active_rec_def = None
+            self.e_name.setText("")
             self.e_desc.setText("")
 
     # ============================ Export/Trigger ========================
 
     def current_model(self) -> Recipe:
-        # 1) Aktuelle Globals/Paths aus dem UI holen
-        params = self.content.collect_globals()
-        paths_by_side = self.content.collect_paths_by_side()
-
-        # 2) Aktuelle Selector-Werte über die Helper holen (bereinigt/None-safe)
+        """
+        Sammelt UI -> Model, fasst 'id' NICHT an (id wird nur beim Save gesetzt).
+        """
+        collect_planner = getattr(self.content, "collect_planner", lambda: {})
+        params         = self.content.collect_globals()
+        paths_by_side  = self.content.collect_paths_by_side()
+        planner        = collect_planner()
         tool, sub, mnt = self.content.active_selectors_values()
-        desc = self.e_desc.text().strip()
+        desc           = self.e_desc.text().strip()
 
-        # 3) Model bereitstellen
         model = self._active_model
         if model is None:
             rec_def = self._current_recipe_def() or {}
             model = self._new_model_from_rec_def(rec_def)
 
-        # 4) UI -> Model (hart überschreiben)
         model.description = desc
         model.tool = tool
         model.substrate = sub
         model.substrates = [sub] if sub else []
         model.substrate_mount = mnt
         model.parameters = params
+        model.planner = planner
         model.paths_by_side = paths_by_side
 
         self._active_model = model
         return model
 
-    # --------- Auswahl der Sides (gecheckt und existent) ----------
     def _selected_existing_sides(self) -> List[str]:
         rec_def = self._current_recipe_def() or {}
         defined = set(((rec_def.get("sides") or {}).keys()))

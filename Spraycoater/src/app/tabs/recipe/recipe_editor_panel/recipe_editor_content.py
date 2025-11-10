@@ -203,11 +203,17 @@ class RecipeEditorContent(QWidget):
         self._globals_widgets.clear()
 
         schema = self.store.globals_schema()  # Dict[key] = spec
-        keys = sorted(schema.keys())
 
-        for key in keys:
+        # Priorisierte Reihenfolge (falls vorhanden)
+        priority = ["max_points", "sample_step_mm", "stand_off_mm", "max_angle_deg"]
+        keys_all = list(schema.keys())
+        first = [k for k in priority if k in schema]
+        rest = sorted([k for k in keys_all if k not in set(first)])
+        ordered_keys = first + rest
+
+        def _add_row_for_key(key: str):
             spec = dict(schema[key] or {})
-            t = str(spec.get("type", "")).lower()
+            t = (spec.get("type") or "").strip().lower()
             unit = str(spec.get("unit", "") or "")
             label = key
 
@@ -225,7 +231,7 @@ class RecipeEditorContent(QWidget):
                 step = float(spec.get("step", 1.0))
                 minv = float(spec.get("min", 0.0))
                 maxv = float(spec.get("max", 0.0))
-                # int vs double Heuristik
+                # int vs. double
                 intish = False
                 try:
                     intish = float(step).is_integer() and float(minv).is_integer() and float(maxv).is_integer()
@@ -259,8 +265,8 @@ class RecipeEditorContent(QWidget):
                 if isinstance(w, QCheckBox):
                     w.setChecked(bool(dv))
                 elif isinstance(w, QComboBox):
-                    idx = w.findText(str(dv))
-                    w.setCurrentIndex(idx if idx >= 0 else (0 if w.count() > 0 else -1))
+                    ix = w.findText(str(dv))
+                    w.setCurrentIndex(ix if ix >= 0 else (0 if w.count() > 0 else -1))
                 elif isinstance(w, QLineEdit):
                     w.setText(str(dv))
                 elif isinstance(w, QSpinBox):
@@ -270,7 +276,17 @@ class RecipeEditorContent(QWidget):
 
             self._globals_widgets[key] = w
 
-        self.globals_form.addRow(_hline())
+        # zuerst priorisierte Felder
+        for k in first:
+            _add_row_for_key(k)
+
+        # Trenner zwischen „Top 4“ und Rest (nur wenn beides existiert)
+        if first and rest:
+            self.globals_form.addRow(_hline())
+
+        # restliche Felder
+        for k in rest:
+            _add_row_for_key(k)
 
     # ------------------- Defaults (nur Formular-Reset) -------------------
     def apply_defaults(self) -> None:

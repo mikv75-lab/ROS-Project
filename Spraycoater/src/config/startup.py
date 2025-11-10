@@ -92,7 +92,6 @@ class AppContext:
     recipes_yaml: Dict[str, Any]
     recipes: List[Dict[str, Any]]
     recipe_params: Dict[str, Any]
-    units: str
     mounts_yaml: Optional[Dict[str, Any]] = None
 
 # ---------- Loader (bestehend) ----------
@@ -145,9 +144,6 @@ def load_startup(startup_yaml_path: str) -> AppContext:
 
     # recipes.yaml laden (strict)
     ry = _load_yaml(recipe_file_abs, strict=True)
-    units = ry.get("units")
-    if units != "mm":
-        _err("recipes.yaml: 'units' muss 'mm' sein.")
     recipe_params = ry.get("recipe_params")
     recipes_list  = ry.get("recipes")
     if not isinstance(recipe_params, dict) or not recipe_params:
@@ -177,7 +173,6 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         recipes_yaml=ry,
         recipes=recipes_list,
         recipe_params=recipe_params,
-        units=units,
         mounts_yaml=mounts_yaml,
     )
 
