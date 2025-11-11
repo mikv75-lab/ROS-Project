@@ -19,19 +19,8 @@ _LOG = logging.getLogger("app.tabs.recipe.preview.panel")
 
 
 class CoatingPreviewPanel(QWidget):
-    """
-    Preview-Panel:
-      [ OverlaysGroupBox ]
-      [ ViewsGroupBox    ]  <- steuert Kamera/2D
-      [ QStackedWidget (3D/2D) ]
-      [ PlannerGroupBox  ]
-      [  Validate | Optimize  ]
-    """
-
-    # -> MarkerArray an ROS
     sprayPathSetRequested = pyqtSignal(object)
 
-    # Farben (SceneManager nutzt diese)
     DEFAULT_GROUND_COLOR    = "#3a3a3a"
     DEFAULT_MOUNT_COLOR     = "#5d5d5d"
     DEFAULT_SUBSTRATE_COLOR = "#d0d6dd"
@@ -41,14 +30,12 @@ class CoatingPreviewPanel(QWidget):
         self.ctx = ctx
         self.store = store
 
-        # ----------- Root-Layout -----------
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(6)
 
-        # ----------- 3D/2D-Stack -----------
         self._stack = QStackedWidget(self)
-
+        self._stack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         # 3D-Seite
         self._page3d = QWidget(self)
         v3d = QVBoxLayout(self._page3d); v3d.setContentsMargins(0, 0, 0, 0); v3d.setSpacing(0)
@@ -64,13 +51,13 @@ class CoatingPreviewPanel(QWidget):
         v2d.addWidget(self._mat2d)
         self._stack.addWidget(self._page2d)
 
-        # ----------- SceneManager (Interactor intern) -----------
-        self.scene = SceneManager(self._host3d)
+        # SceneManager — parent_widget + container_widget explizit
+        self.scene = SceneManager(parent_widget=self._page3d, container_widget=self._host3d)
 
         # Welt-Bounds (mm)
         self._bounds: Tuple[float, float, float, float, float, float] = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
 
-        # ----------- OverlaysGroupBox -----------
+        # Overlays
         self.grpOverlays = OverlaysGroupBox(
             self,
             add_mesh_fn=self.add_mesh,
@@ -93,35 +80,35 @@ class CoatingPreviewPanel(QWidget):
                 "rays_hit": "rays_hit",
                 "rays_miss": "rays_miss",
                 "normals": "normals",
+                "frames_x": "frames_x",
+                "frames_y": "frames_y",
+                "frames_z": "frames_z",
+                "frames_labels": "frames_labels",
             },
             get_bounds=self.get_bounds,
         )
+        self.grpOverlays.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Maximum)
         root.addWidget(self.grpOverlays, 0)
 
-        # ----------- ViewsGroupBox (alle Views dort!) -----------
+        # Views: nur Callbacks zum Umschalten (kein direkter Scene-Zugriff hier)
         self.grpViews = ViewsGroupBox(
             self,
             interactor_getter=lambda: self.scene._ia(),
-            render_callable=self.render,          # Panel-Render (entscheidet 3D/2D)
+            render_callable=self.render,
             bounds_getter=self.get_bounds,
             cam_pad=1.8,
-            activate_3d=self._switch_to_3d,       # nur Stack-Umschalten
-            switch_2d=self._switch_2d_plane,      # nur Stack-Umschalten + Plane setzen
+            activate_3d=self._switch_to_3d,
+            switch_2d=self._switch_2d_plane,
         )
+        self.grpViews.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Maximum)
         root.addWidget(self.grpViews, 0)
 
-        # ----------- Stack einhängen -----------
         root.addWidget(self._stack, 1)
 
-        # ----------- Planner kompakt -----------
         self.plannerBox = PlannerGroupBox(store=self.store, parent=self)
-        self.plannerBox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
-        self.plannerBox.setMaximumHeight(220)
-        if self.plannerBox.layout() is not None:
-            self.plannerBox.layout().setContentsMargins(6, 6, 6, 6)
+        self.plannerBox.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Maximum)
         root.addWidget(self.plannerBox, 0)
 
-        # ----------- Validate/Optimize -----------
         row = QHBoxLayout(); row.setContentsMargins(0, 0, 0, 0); row.setSpacing(8)
         self.btnValidate = QPushButton("Validate", self)
         self.btnOptimize = QPushButton("Optimize", self)
@@ -131,51 +118,118 @@ class CoatingPreviewPanel(QWidget):
             row.addWidget(b, 1)
         root.addLayout(row)
 
-        # Aliase für externe Verbindungen
         self.validateRequested = self.btnValidate.clicked
         self.optimizeRequested = self.btnOptimize.clicked
 
-        # Interactor aktivieren & 3D sichtbar schalten (keine eigenen View-Calls)
+        # Interactor vorbereiten & 3D aktivieren
         self.ensure_interactor()
         self._switch_to_3d()
-
-        # erste Sichtbarkeit aus Overlays erzwingen
         QTimer.singleShot(0, self._push_initial_visibility)
 
-    # =================== EXACT API (vom RecipeTab aufgerufen) ===================
+    # --- sorgt dafür, dass der Interactor erst NACH dem Einhängen existiert ---
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        try:
+            self.ensure_interactor()
+        except Exception:
+            _LOG.exception("showEvent.ensure_interactor failed")
 
+    # =================== API vom RecipeTab ===================
     def handle_update_preview(self, model: object) -> None:
-        """Rendert alle aktiven Overlays (sides=None)."""
-        self.request_render(model=model, sides=None)
+        """Neuer Render-Flow: Build -> Draw -> Overlays."""
+        if not self.ensure_interactor():
+            _LOG.error("handle_update_preview: no interactor")
+            return
 
-    def request_render(self, *, model: object, sides) -> None:
-        self.scene.render_recipe_preview(panel=self, model=model, sides=sides)
+        view_is_3d = self.is_3d_active()
+        cam_snap = self.snapshot_camera() if view_is_3d else None
+
+        # Panels/Layers leeren
+        self.clear()
+
+        # Scene bauen & Grenzen setzen
+        try:
+            scene = self.scene.build_scene(self.ctx, model)
+        except Exception:
+            _LOG.exception("build_scene failed")
+            return
+        self.set_bounds(scene.bounds)
+
+        # Grundszene zeichnen
+        try:
+            self.scene.draw_scene(scene, visibility=None)
+        except Exception:
+            _LOG.exception("draw_scene failed")
+
+        # compile_poses -> Overlays rendern
+        stand_off = 10.0
+        try:
+            recipe_params = getattr(model, "parameters", {}) or {}
+            stand_off = float(recipe_params.get("stand_off_mm", 10.0))
+        except Exception:
+            pass
+
+        compiled = None
+        try:
+            if hasattr(model, "compile_poses") and callable(getattr(model, "compile_poses")):
+                b = scene.substrate_mesh.bounds if scene.substrate_mesh is not None else scene.bounds
+                compiled = model.compile_poses(
+                    bounds=b,
+                    sides=None,
+                    stand_off_mm=stand_off,
+                    tool_frame=None,
+                )
+        except Exception:
+            _LOG.exception("compile_poses failed")
+
+        if compiled:
+            try:
+                self.grpOverlays.render_compiled(
+                    substrate_mesh=scene.substrate_mesh or scene.ground_mesh,
+                    compiled=compiled,
+                    visibility=self._visibility_from_ui(),
+                    mask_lift_mm=50.0,
+                    default_stand_off_mm=stand_off,
+                    ray_len_mm=1000.0,
+                    sides=None,
+                    only_selected=True,
+                )
+            except Exception:
+                _LOG.exception("Overlays render failed")
+
+        # Kamera zurück + Refresh
+        try:
+            if view_is_3d and cam_snap:
+                self.restore_camera(cam_snap)
+            self.refresh_all_views(hard_reset=not view_is_3d)
+        except Exception:
+            _LOG.exception("finalize view failed")
 
     # =================== Helpers ===================
+    def _visibility_from_ui(self) -> dict:
+        gb = self.grpOverlays
+        return {
+            "mask":   gb.chkShowMask.isChecked(),
+            "path":   gb.chkShowPath.isChecked(),
+            "hits":   gb.chkShowHits.isChecked(),
+            "misses": gb.chkShowMisses.isChecked(),
+            "normals":gb.chkShowNormals.isChecked(),
+            "frames": gb.chkShowLocalFrames.isChecked(),
+        }
 
     def _push_initial_visibility(self) -> None:
         try:
-            vis = {
-                "mask":   self.grpOverlays.chkShowMask.isChecked(),
-                "path":   self.grpOverlays.chkShowPath.isChecked(),
-                "hits":   self.grpOverlays.chkShowHits.isChecked(),
-                "misses": self.grpOverlays.chkShowMisses.isChecked(),
-                "normals":self.grpOverlays.chkShowNormals.isChecked(),
-                "frames": self.grpOverlays.chkShowLocalFrames.isChecked(),
-            }
-            self.grpOverlays.overlays.apply_visibility(vis)
+            self.grpOverlays.overlays.apply_visibility(self._visibility_from_ui())
         except Exception:
             _LOG.exception("Initial visibility push failed")
 
-    # ---- SprayPath-Bridge Hook ------------------------------------------------
     def _emit_spraypath(self, marker_array: object) -> None:
         try:
             self.sprayPathSetRequested.emit(marker_array)
         except Exception:
             _LOG.exception("emit sprayPathSetRequested failed")
 
-    # =================== Public API (Panel <-> Scene) ===================
-
+    # -------- Scene passthrough --------
     def ensure_interactor(self) -> bool:
         try:
             return bool(self.scene.ensure_interactor())
@@ -221,7 +275,6 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("restore_camera failed")
 
-    # >>> Zentraler Refresh (3D + 2D) <<<
     def refresh_all_views(self, *, hard_reset: bool = False) -> None:
         ia = self._ia()
         try:
@@ -230,10 +283,8 @@ class CoatingPreviewPanel(QWidget):
                     ia.reset_camera(bounds=self._bounds)
                 if hasattr(ia, "reset_camera_clipping_range"):
                     ia.reset_camera_clipping_range()
-                ia.render()          # 3D immer rendern
-            self._mat2d.refresh()     # 2D immer aktualisieren
-
-            # sichtbaren View „anstoßen“
+                ia.render()
+            self._mat2d.refresh()
             if self.is_3d_active():
                 if ia is not None:
                     ia.render()
@@ -242,7 +293,34 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("refresh_all_views failed")
 
-    # -------- Stack-Steuerung (nur Umschalten/Refresh) --------
+    # --- Wird von ViewsGroupBox als render_callable aufgerufen ---
+    def render(self, *, reset_camera: bool = False, view: str | None = None) -> None:
+        ia = self._ia()
+        if ia is None:
+            return
+        try:
+            if view == "iso":
+                ia.view_isometric()
+            elif view == "top3d":
+                ia.view_xy()
+            elif view == "front3d":
+                ia.view_yz()
+            elif view == "back3d":
+                ia.view_yz(); ia.camera.azimuth(180)
+            elif view == "left3d":
+                ia.view_xz()
+            elif view == "right3d":
+                ia.view_xz(); ia.camera.azimuth(180)
+
+            if reset_camera:
+                ia.reset_camera(bounds=self._bounds)
+            if hasattr(ia, "reset_camera_clipping_range"):
+                ia.reset_camera_clipping_range()
+            ia.render()
+        except Exception:
+            _LOG.exception("render() failed")
+
+    # -------- Stack-Steuerung --------
     def _switch_to_3d(self):
         try:
             self.ensure_interactor()

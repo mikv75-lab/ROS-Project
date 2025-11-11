@@ -2250,3 +2250,63 @@ AttributeError: 'CoatingPreviewPanel' object has no attribute 'overlays'. Did yo
 2025-11-11 21:24:39 WARNING [3523] app.tabs.recipe.scene:51 - SceneManager: Interactor not available
 2025-11-11 21:24:39 WARNING [3523] app.tabs.recipe.scene:51 - SceneManager: Interactor not available
 2025-11-11 21:24:39 WARNING [3523] app.tabs.recipe.scene:51 - SceneManager: Interactor not available
+2025-11-11 22:09:41 WARNING [32101] app.tabs.recipe.scene:53 - SceneManager.ensure_interactor(): Interactor not available
+2025-11-11 22:09:41 WARNING [32101] app.tabs.recipe.scene:53 - SceneManager.ensure_interactor(): Interactor not available
+2025-11-11 22:09:41 WARNING [32101] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:09:41 WARNING [32101] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:09:41 WARNING [32101] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:09:41 WARNING [32101] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:09:41 WARNING [32101] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:09:41 WARNING [32101] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:09:41 WARNING [32101] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:09:41 WARNING [32101] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:09:41 WARNING [32101] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:09:41 WARNING [32101] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:09:41 WARNING [32101] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:09:41 WARNING [32101] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:09:55 ERROR [32101] app.tabs.recipe.preview.panel:147 - build_scene failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 145, in handle_update_preview
+    scene = self.scene.build_scene(self.ctx, model)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/scene_manager.py", line 348, in build_scene
+    mount_key = self._get_required_str(model, "substrate_mount", "Recipe benötigt 'substrate_mount'.")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/scene_manager.py", line 344, in _get_required_str
+    raise ValueError(err)
+ValueError: Recipe benötigt 'substrate_mount'.
+2025-11-11 22:42:51 WARNING [50505] app.tabs.recipe.scene:53 - SceneManager.ensure_interactor(): Interactor not available
+2025-11-11 22:42:51 WARNING [50505] app.tabs.recipe.scene:53 - SceneManager.ensure_interactor(): Interactor not available
+2025-11-11 22:42:51 WARNING [50505] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:42:51 WARNING [50505] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:42:51 WARNING [50505] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:42:51 WARNING [50505] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:42:51 WARNING [50505] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:42:51 WARNING [50505] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:42:51 WARNING [50505] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:42:51 WARNING [50505] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:42:51 WARNING [50505] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:42:51 WARNING [50505] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:42:51 WARNING [50505] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:42:51 WARNING [50505] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:43:41 WARNING [51265] app.tabs.recipe.scene:53 - SceneManager.ensure_interactor(): Interactor not available
+2025-11-11 22:43:41 WARNING [51265] app.tabs.recipe.scene:53 - SceneManager.ensure_interactor(): Interactor not available
+2025-11-11 22:43:41 WARNING [51265] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:43:41 WARNING [51265] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:43:41 WARNING [51265] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:43:41 WARNING [51265] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:43:41 WARNING [51265] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:43:41 WARNING [51265] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:43:41 WARNING [51265] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:43:41 WARNING [51265] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:43:41 WARNING [51265] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:43:41 WARNING [51265] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:43:41 WARNING [51265] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 22:43:41 WARNING [51265] app.tabs.recipe.scene:67 - SceneManager: Interactor not available
+2025-11-11 23:05:27 DEBUG [62898] app.tabs.recipe.preview.overlays:414 - rebuild_layers: no cache yet; nothing to rebuild
+2025-11-11 23:05:28 DEBUG [62898] app.tabs.recipe.preview.overlays:414 - rebuild_layers: no cache yet; nothing to rebuild
+2025-11-11 23:05:29 DEBUG [62898] app.tabs.recipe.preview.overlays:414 - rebuild_layers: no cache yet; nothing to rebuild
+2025-11-11 23:05:30 DEBUG [62898] app.tabs.recipe.preview.overlays:414 - rebuild_layers: no cache yet; nothing to rebuild
+2025-11-11 23:05:32 DEBUG [62898] app.tabs.recipe.preview.overlays:414 - rebuild_layers: no cache yet; nothing to rebuild
+2025-11-11 23:05:33 DEBUG [62898] app.tabs.recipe.preview.overlays:414 - rebuild_layers: no cache yet; nothing to rebuild
+2025-11-11 23:05:34 DEBUG [62898] app.tabs.recipe.preview.overlays:414 - rebuild_layers: no cache yet; nothing to rebuild
