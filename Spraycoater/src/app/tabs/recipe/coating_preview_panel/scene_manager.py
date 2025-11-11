@@ -6,13 +6,24 @@ from typing import Callable, Dict, List, Optional, Any, Tuple
 import numpy as np
 import pyvista as pv
 
+# Mesh-Helper aus dem Preview-Paket
+from .mesh_utils import (
+    load_mount_mesh_from_key,
+    load_substrate_mesh_from_key,
+    place_substrate_on_mount,
+)
+
 _LOG = logging.getLogger("app.tabs.recipe.scene")
 
 
 class SceneManager:
     """
-    Dünne Schicht über dem PyVista-Interactor mit Layer-Verwaltung.
-    + Utilitys für Floor-Grid, Achsen + Tick-Labels, Frames und Start/Ende-Marker.
+    Dünne Schicht über dem PyVista-Interactor mit Layer-Verwaltung +
+    Helfern für Grid/Labels/Frames/Marker.
+
+    Neu:
+      - render_recipe_preview(panel, model, sides)
+        -> übernimmt komplette Orchestrierung des Preview-Renderings.
     """
 
     def __init__(self, interactor_getter: Callable[[], Any], init_scene_builder: Callable[[], None] | None = None):
@@ -225,35 +236,27 @@ class SceneManager:
 
         # labels
         self.clear_layer(layer_labels)
-        new_labels: list = []
-        label_z = zmin + max(0.5, tick_len * 0.5)
         try:
             if len(xt):
-                labx = ia.add_point_labels(
-                    np.c_[xt, np.full_like(xt, cy), np.full_like(xt, label_z)],
+                ia.add_point_labels(
+                    np.c_[xt, np.full_like(xt, cy), np.full_like(xt, zmin + tick_len * 0.5)],
                     [f"{int(v)}" if abs(v - int(v)) < 1e-6 else f"{v:.1f}" for v in xt],
                     point_size=0, font_size=10, text_color="black",
                     shape_opacity=0.0, render=False
                 )
-                self._ensure_layer(layer_labels).append(labx)
-                new_labels.append(labx)
             if len(yt):
-                laby = ia.add_point_labels(
-                    np.c_[np.full_like(yt, cx), yt, np.full_like(yt, label_z)],
+                ia.add_point_labels(
+                    np.c_[np.full_like(yt, cx), yt, np.full_like(yt, zmin + tick_len * 0.5)],
                     [f"{int(v)}" if abs(v - int(v)) < 1e-6 else f"{v:.1f}" for v in yt],
                     point_size=0, font_size=10, text_color="black",
                     shape_opacity=0.0, render=False
                 )
-                self._ensure_layer(layer_labels).append(laby)
-                new_labels.append(laby)
-            labxy = ia.add_point_labels(
-                [(xmax, cy, label_z), (cx, ymax, label_z)],
+            ia.add_point_labels(
+                [(xmax, cy, zmin + tick_len * 0.5), (cx, ymax, zmin + tick_len * 0.5)],
                 ["X (mm)", "Y (mm)"],
                 point_size=0, font_size=12, text_color="black",
                 shape_opacity=0.0, render=False
             )
-            self._ensure_layer(layer_labels).append(labxy)
-            new_labels.append(labxy)
         except Exception:
             _LOG.exception("floor labels failed")
 
@@ -386,12 +389,11 @@ class SceneManager:
         except Exception:
             _LOG.exception("add_start_end_markers: spheres failed")
         try:
-            lab = ia.add_point_labels(
+            ia.add_point_labels(
                 [start, end], ["Start", "Ende"],
                 point_size=0, font_size=12, text_color="black",
                 shape_opacity=0.25, render=False
             )
-            self._ensure_layer(layer).append(lab)
         except Exception:
             _LOG.exception("add_start_end_markers: labels failed")
 
@@ -462,3 +464,211 @@ class SceneManager:
         return (float(mins[0]), float(maxs[0]),
                 float(mins[1]), float(maxs[1]),
                 float(mins[2]), float(maxs[2]))
+
+    # ========================================================================
+    #                            ORCHESTRIERUNG
+    # ========================================================================
+    @staticmethod
+    def _get_required_str(model: object, key: str, err: str) -> str:
+        if hasattr(model, key):
+            val = getattr(model, key)
+        elif isinstance(model, dict):
+            val = model.get(key)
+        else:
+            val = None
+        if not isinstance(val, str) or not val.strip():
+            raise ValueError(err)
+        return val.strip()
+
+    def render_recipe_preview(self, *, panel, model: object, sides: Optional[list] = None) -> None:
+        """
+        Orchestriert das komplette Preview-Rendering:
+          - Interactor sicherstellen, Kamera-Snapshot
+          - Meshes laden/platzieren
+          - Bounds & Boden
+          - Mesh-Tris Info
+          - compile_poses + Overlays rendern (über GroupBox)
+          - Kamera/Refresh
+        Erwartete Panel-API:
+          panel.[add_mesh|clear|set_bounds_from_mesh|set_runtime_info|snapshot_camera|restore_camera|refresh_current_view]
+          panel.grpOverlays.[render_compiled|apply_visibility]
+          panel.is_3d_active()
+        """
+        try:
+            # Sicherstellen, dass der Interactor existiert
+            try:
+                _ = panel.ensure_interactor()
+            except Exception:
+                _LOG.warning("SceneManager: ensure_interactor failed")
+
+            view_is_3d = bool(panel.is_3d_active())
+            cam_snap = panel.snapshot_camera()
+
+            panel.clear()
+
+            # Keys
+            mount_key = self._get_required_str(model, "substrate_mount", "Recipe benötigt 'substrate_mount'.")
+            substrate_key = self._get_required_str(model, "substrate", "Recipe benötigt 'substrate'.")
+
+            # Meshes
+            mmesh: pv.PolyData | None = None
+            smesh: pv.PolyData | None = None
+            try:
+                mmesh = load_mount_mesh_from_key(panel.ctx, mount_key)
+            except Exception as e:
+                _LOG.error("Mount-Mesh Fehler: %s", e, exc_info=True)
+            try:
+                smesh = load_substrate_mesh_from_key(panel.ctx, substrate_key)
+                smesh = place_substrate_on_mount(panel.ctx, smesh, mount_key=mount_key)
+                try:
+                    if hasattr(smesh, "is_all_triangles"):
+                        is_tris = smesh.is_all_triangles
+                        if callable(is_tris):
+                            is_tris = smesh.is_all_triangles()
+                        if not bool(is_tris):
+                            smesh = smesh.triangulate()
+                except Exception:
+                    pass
+            except Exception as e:
+                _LOG.error("Substrat-Mesh Fehler: %s", e, exc_info=True)
+
+            # Bounds
+            if smesh is not None:
+                panel.set_bounds_from_mesh(smesh, use_contact_plane=True, span_xy=240.0, span_z=240.0)
+            elif mmesh is not None:
+                panel.set_bounds_from_mesh(mmesh, use_contact_plane=False, span_xy=240.0, span_z=240.0)
+
+            # Boden-Plane
+            cx = cy = 0.0
+            z_ground = 0.0
+            if mmesh is not None:
+                xmin, xmax, ymin, ymax, zmin_m, _ = mmesh.bounds
+                cx, cy = 0.5 * (xmin + xmax), 0.5 * (ymin + ymax)
+                z_ground = float(zmin_m)
+            elif smesh is not None:
+                xmin, xmax, ymin, ymax, zmin_s, _ = smesh.bounds
+                cx, cy = 0.5 * (xmin + xmax), 0.5 * (ymin + ymax)
+                z_ground = float(zmin_s)
+
+            try:
+                ground = pv.Plane(center=(cx, cy, z_ground), direction=(0, 0, 1),
+                                  i_size=500.0, j_size=500.0, i_resolution=1, j_resolution=1)
+                panel.add_mesh(
+                    ground,
+                    color=panel.DEFAULT_GROUND_COLOR,
+                    opacity=1.0,
+                    lighting=False,
+                    layer="ground",
+                    render=False,
+                    reset_camera=False,
+                )
+            except Exception:
+                _LOG.exception("Ground-Plane Erzeugung fehlgeschlagen")
+
+            # Mount/Substrat zeichnen
+            if mmesh is not None:
+                try:
+                    panel.add_mesh(
+                        mmesh,
+                        color=panel.DEFAULT_MOUNT_COLOR,
+                        opacity=0.95,
+                        lighting=False,
+                        layer="mount",
+                        render=False,
+                        reset_camera=False,
+                    )
+                except Exception:
+                    _LOG.exception("Mount zeichnen fehlgeschlagen")
+
+            mesh_tris = None
+            if smesh is not None:
+                try:
+                    panel.add_mesh(
+                        smesh,
+                        color=panel.DEFAULT_SUBSTRATE_COLOR,
+                        opacity=1.0,
+                        lighting=False,
+                        layer="substrate",
+                        render=False,
+                        reset_camera=False,
+                    )
+                except Exception:
+                    _LOG.exception("Substrat zeichnen fehlgeschlagen")
+                try:
+                    if hasattr(smesh, "n_faces"):
+                        mesh_tris = int(smesh.n_faces)
+                    else:
+                        fa = np.asarray(smesh.faces).ravel() if hasattr(smesh, "faces") else None
+                        if fa is not None and fa.size:
+                            mesh_tris = int((fa == 3).sum())
+                except Exception:
+                    mesh_tris = None
+            if mesh_tris is not None:
+                panel.set_runtime_info({"mesh_tris": mesh_tris})
+
+            # Sichtbarkeit
+            gb = getattr(panel, "grpOverlays", None)
+            def _b(chk):
+                try:
+                    return bool(chk.isChecked())
+                except Exception:
+                    return False
+            vis = {
+                "mask":    _b(getattr(gb, "chkShowMask", None)),
+                "path":    _b(getattr(gb, "chkShowPath", None)),
+                "hits":    _b(getattr(gb, "chkShowHits", None)),
+                "misses":  _b(getattr(gb, "chkShowMisses", None)),
+                "normals": _b(getattr(gb, "chkShowNormals", None)),
+                "frames":  _b(getattr(gb, "chkShowLocalFrames", None)),
+            }
+
+            # Stand-off aus Recipe
+            try:
+                recipe_params = getattr(model, "parameters", {}) or {}
+            except Exception:
+                recipe_params = {}
+            stand_off_from_recipe = float(recipe_params.get("stand_off_mm", 10.0))
+
+            # Compile + Overlays
+            try:
+                if smesh is None:
+                    raise RuntimeError("Kein Substratmesh für Spray-Preview")
+
+                compiled = None
+                try:
+                    if hasattr(model, "compile_poses") and callable(getattr(model, "compile_poses")):
+                        compiled = model.compile_poses(
+                            bounds=smesh.bounds,
+                            sides=sides,
+                            stand_off_mm=stand_off_from_recipe,
+                            tool_frame=None,
+                        )
+                except Exception:
+                    _LOG.exception("compile_poses failed")
+
+                if not compiled:
+                    _LOG.warning("Keine kompilierte/gegebene Pfade gefunden – nichts zu rendern.")
+                else:
+                    panel.grpOverlays.render_compiled(
+                        substrate_mesh=smesh,
+                        compiled=compiled,
+                        visibility=vis,
+                        mask_lift_mm=50.0,
+                        default_stand_off_mm=stand_off_from_recipe,
+                        ray_len_mm=1000.0,
+                        sides=sides,
+                    )
+                panel.grpOverlays.apply_visibility(vis)
+            except Exception:
+                _LOG.exception("Overlays (render) failed")
+
+            # Finalisierung
+            try:
+                if view_is_3d:
+                    panel.restore_camera(cam_snap)
+                panel.refresh_current_view(hard_reset=not view_is_3d)
+            except Exception:
+                _LOG.exception("finalize view failed")
+
+        except Exception:
+            _LOG.exception("render_recipe_preview failed")

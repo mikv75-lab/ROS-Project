@@ -4,18 +4,11 @@ import logging
 from typing import Optional, Callable, Any, Dict
 
 import numpy as np
-import pyvista as pv
 from PyQt6.QtWidgets import QWidget, QHBoxLayout
 from PyQt6.QtCore import Qt
 
 from .recipe_editor_panel.recipe_editor_panel import RecipeEditorPanel
 from .coating_preview_panel.coating_preview_panel import CoatingPreviewPanel
-
-from .coating_preview_panel.mesh_utils import (
-    load_mount_mesh_from_key,
-    load_substrate_mesh_from_key,
-    place_substrate_on_mount,
-)
 
 _LOG = logging.getLogger("app.tabs.recipe")
 
@@ -32,6 +25,7 @@ class RecipeTab(QWidget):
         # Interner Traj-/Meta-Puffer (ohne PlanningPanel)
         self._last_traj: Optional[Dict[str, Any]] = None
         self._last_yaml: str = ""
+        self._info_base: Dict[str, float] = {}   # speed/flow/pre/post cache
 
         # Layout
         hroot = QHBoxLayout(self)
@@ -55,13 +49,13 @@ class RecipeTab(QWidget):
         except Exception:
             _LOG.exception("RecipeTab: adopt previewPlot into previewPanel failed")
 
-        # --- Wiring: Recipe → Preview (Render anstoßen)
+        # --- Wiring: Recipe → Preview (Render anstoßen) --------------------
         self.recipePanel.updatePreviewRequested.connect(
-            lambda payload: self._render_preview(payload.get("model"), payload.get("sides")),
+            lambda payload: self._on_update_preview(payload.get("model"), payload.get("sides")),
             Qt.ConnectionType.QueuedConnection
         )
 
-        # --- Preview → interne Puffer -------------------
+        # --- Preview → interne Puffer -------------------------------------
         try:
             self.previewPanel.previewYamlReady.connect(self._on_preview_yaml_ready)
             self.previewPanel.previewYamlReady.connect(lambda *_: self._on_preview_event())
@@ -74,7 +68,38 @@ class RecipeTab(QWidget):
         except Exception:
             _LOG.exception("connect pathReady failed")
 
-    # --- Slots für Preview-Signale ---
+    # ---------- Slots ----------
+    def _on_update_preview(self, model_or_payload: object, sides: Optional[list] = None) -> None:
+        """Nur Übergabe: Param-Cache setzen (für Info-Berechnung) + SceneManager rendern lassen."""
+        try:
+            model = model_or_payload
+            if isinstance(model_or_payload, dict):
+                model = model_or_payload.get("model", model_or_payload)
+                sides = model_or_payload.get("sides", sides)
+
+            # Param-Cache für Info-Berechnung (ETA/Medium) – bleibt hier
+            try:
+                params = dict(getattr(model, "parameters", {}) or {})
+            except Exception:
+                params = {}
+            import math
+            def _f(x, default=np.nan):
+                try:
+                    return float(x)
+                except Exception:
+                    return float(default)
+            self._info_base = {
+                "speed_mm_s":      _f(params.get("speed_mm_s")),
+                "flow_ml_min":     _f(params.get("flow_ml_min")),
+                "pre_dispense_s":  _f(params.get("pre_dispense_s"), 0.0),
+                "post_dispense_s": _f(params.get("post_dispense_s"), 0.0),
+            }
+
+            # Orchestrierung vollständig im SceneManager
+            self.previewPanel.scene.render_recipe_preview(panel=self.previewPanel, model=model, sides=sides)
+        except Exception:
+            _LOG.exception("_on_update_preview failed")
+
     def _on_preview_yaml_ready(self, text: str) -> None:
         try:
             self._last_yaml = text or ""
@@ -82,15 +107,48 @@ class RecipeTab(QWidget):
             _LOG.exception("_on_preview_yaml_ready failed")
 
     def _on_path_ready(self, path_xyz: Optional[np.ndarray]) -> None:
+        """
+        Aktualisiert Traj-Puffer und berechnet InfoPanel-Kennzahlen:
+          - Points
+          - Path length (mm)
+          - ETA (s) = length / speed_mm_s
+          - Medium (ml) = flow_ml_min * (ETA + pre + post) / 60
+        """
         try:
             if path_xyz is None:
                 self._last_traj = {"points_mm": [], "count": 0}
-            else:
-                P = np.asarray(path_xyz, dtype=float).reshape(-1, 3)
-                self._last_traj = {
-                    "points_mm": P.tolist(),
-                    "count": int(P.shape[0]),
-                }
+                self.previewPanel.set_runtime_info({
+                    "points": 0,
+                    "length_mm": 0.0,
+                    "eta_s": None,
+                    "medium_ml": None,
+                })
+                return
+
+            P = np.asarray(path_xyz, dtype=float).reshape(-1, 3)
+            npts = int(P.shape[0])
+            length = 0.0
+            if npts >= 2:
+                d = np.linalg.norm(P[1:] - P[:-1], axis=1)
+                length = float(d.sum())
+
+            self._last_traj = {"points_mm": P.tolist(), "count": npts}
+
+            speed = self._info_base.get("speed_mm_s")
+            eta_s = (length / float(speed)) if (isinstance(speed, (int, float)) and speed and speed > 1e-12) else None
+
+            flow = self._info_base.get("flow_ml_min")
+            pre  = float(self._info_base.get("pre_dispense_s", 0.0) or 0.0)
+            post = float(self._info_base.get("post_dispense_s", 0.0) or 0.0)
+            total_s = (eta_s or 0.0) + pre + post
+            medium_ml = (float(flow) * (total_s / 60.0)) if (isinstance(flow, (int, float)) and flow and flow > 0.0) else None
+
+            self.previewPanel.set_runtime_info({
+                "points": npts,
+                "length_mm": length,
+                "eta_s": eta_s,
+                "medium_ml": medium_ml,
+            })
         except Exception:
             _LOG.exception("_on_path_ready failed")
 
@@ -100,200 +158,3 @@ class RecipeTab(QWidget):
             self.previewPanel.refresh_current_view(hard_reset=False)
         except Exception:
             _LOG.exception("preview refresh failed")
-
-    # --- helpers ---
-    @staticmethod
-    def _get_required_str(model: object, key: str, err: str) -> str:
-        if hasattr(model, key):
-            val = getattr(model, key)
-        elif isinstance(model, dict):
-            val = model.get(key)
-        else:
-            val = None
-        if not isinstance(val, str) or not val.strip():
-            raise ValueError(err)
-        return val.strip()
-
-    def _visibility_snapshot(self) -> dict:
-        p = self.previewPanel
-
-        def b(x):
-            try:
-                return bool(x.isChecked())
-            except Exception:
-                return False
-
-        return {
-            "mask":    b(getattr(p, "chkShowMask", None)),
-            "path":    b(getattr(p, "chkShowPath", None)),
-            "hits":    b(getattr(p, "chkShowHits", None)),
-            "misses":  b(getattr(p, "chkShowMisses", None)),
-            "normals": b(getattr(p, "chkShowNormals", None)),
-            "frames":  b(getattr(p, "chkShowLocalFrames", None)),
-        }
-
-    # --- Render orchestration ---
-    def _render_preview(self, model_or_payload: object, sides: Optional[list] = None):
-        try:
-            # robust entpacken (falls direkt ein dict kommt)
-            model = model_or_payload
-            if isinstance(model_or_payload, dict):
-                model = model_or_payload.get("model", model_or_payload)
-                sides = model_or_payload.get("sides", sides)
-
-            mount_key = self._get_required_str(model, "substrate_mount", "Recipe benötigt 'substrate_mount'.")
-            substrate_key = self._get_required_str(model, "substrate", "Recipe benötigt 'substrate'.")
-
-            view_is_3d = self.previewPanel.is_3d_active()
-            cam_snap = self.previewPanel.snapshot_camera()
-
-            self.previewPanel.clear()
-
-            # 1) Mount-Mesh laden
-            mmesh: pv.PolyData | None = None
-            try:
-                mmesh = load_mount_mesh_from_key(self.ctx, mount_key)
-            except Exception as e:
-                _LOG.error("Mount-Mesh Fehler: %s", e, exc_info=True)
-
-            # 2) Substrat (auf Mount positioniert)
-            smesh: pv.PolyData | None = None
-            try:
-                smesh = load_substrate_mesh_from_key(self.ctx, substrate_key)
-                smesh = place_substrate_on_mount(self.ctx, smesh, mount_key=mount_key)
-                # PyVista: is_all_triangles kann Property ODER Methode sein
-                try:
-                    if hasattr(smesh, "is_all_triangles"):
-                        is_tris = smesh.is_all_triangles
-                        if callable(is_tris):
-                            is_tris = smesh.is_all_triangles()
-                        if not bool(is_tris):
-                            smesh = smesh.triangulate()
-                except Exception:
-                    pass
-            except Exception as e:
-                _LOG.error("Substrat-Mesh Fehler: %s", e, exc_info=True)
-
-            # 3) Bounds setzen
-            if smesh is not None:
-                self.previewPanel.set_bounds_from_mesh(smesh, use_contact_plane=True, span_xy=240.0, span_z=240.0)
-            elif mmesh is not None:
-                self.previewPanel.set_bounds_from_mesh(mmesh, use_contact_plane=False, span_xy=240.0, span_z=240.0)
-
-            # --- Center/Levels bestimmen ---
-            cx = cy = 0.0
-            z_ground = 0.0
-            if mmesh is not None:
-                xmin, xmax, ymin, ymax, zmin_m, _ = mmesh.bounds
-                cx, cy = 0.5 * (xmin + xmax), 0.5 * (ymin + ymax)
-                z_ground = float(zmin_m)
-            elif smesh is not None:
-                xmin, xmax, ymin, ymax, zmin_s, _ = smesh.bounds
-                cx, cy = 0.5 * (xmin + xmax), 0.5 * (ymin + ymax)
-                z_ground = float(zmin_s)
-
-            # 4) Ground zuerst
-            try:
-                ground = pv.Plane(
-                    center=(cx, cy, z_ground),
-                    direction=(0, 0, 1),
-                    i_size=500.0, j_size=500.0,
-                    i_resolution=1, j_resolution=1
-                )
-                self.previewPanel.add_mesh(
-                    ground,
-                    color=self.previewPanel.DEFAULT_GROUND_COLOR,
-                    opacity=1.0,
-                    lighting=False,
-                    layer="ground",
-                    render=False,
-                    reset_camera=False,
-                )
-            except Exception:
-                _LOG.exception("Ground-Plane Erzeugung fehlgeschlagen")
-
-            # 5) Mount
-            if mmesh is not None:
-                try:
-                    self.previewPanel.add_mesh(
-                        mmesh,
-                        color=self.previewPanel.DEFAULT_MOUNT_COLOR,
-                        opacity=0.95,
-                        lighting=False,
-                        layer="mount",
-                        render=False,
-                        reset_camera=False,
-                    )
-                except Exception:
-                    _LOG.exception("Mount zeichnen fehlgeschlagen")
-
-            # 6) Substrat
-            if smesh is not None:
-                try:
-                    self.previewPanel.add_mesh(
-                        smesh,
-                        color=self.previewPanel.DEFAULT_SUBSTRATE_COLOR,
-                        opacity=1.0,
-                        lighting=False,
-                        layer="substrate",
-                        render=False,
-                        reset_camera=False,
-                    )
-                except Exception:
-                    _LOG.exception("Substrat zeichnen fehlgeschlagen")
-
-            # 7) Spray-Visualisierung – NUR noch Quaternion-Compile
-            try:
-                if smesh is None:
-                    raise RuntimeError("Kein Substratmesh für Spray-Preview")
-
-                vis = self._visibility_snapshot()  # Checkboxen lesen
-
-                # Stand-off strikt global aus dem Recipe ziehen
-                try:
-                    recipe_params = getattr(model, "parameters", {}) or {}
-                except Exception:
-                    recipe_params = {}
-                stand_off_from_recipe = float(recipe_params.get("stand_off_mm", 10.0))
-
-                compiled = None
-                try:
-                    if hasattr(model, "compile_poses") and callable(getattr(model, "compile_poses")):
-                        compiled = model.compile_poses(
-                            bounds=smesh.bounds,
-                            sides=sides,
-                            stand_off_mm=stand_off_from_recipe,
-                            tool_frame=None,
-                        )
-                except Exception:
-                    _LOG.exception("compile_poses failed")
-
-                if not compiled:
-                    _LOG.warning("Keine kompilierte/gegebene Pfade gefunden – nichts zu rendern.")
-                else:
-                    self.previewPanel.overlays.render_compiled(
-                        substrate_mesh=smesh,
-                        compiled=compiled,          # versteht 'paths_compiled.sides[*].poses_quat'
-                        visibility=vis,
-                        mask_lift_mm=50.0,
-                        default_stand_off_mm=stand_off_from_recipe,  # Masken-Offset nutzt globalen Stand-off
-                        ray_len_mm=1000.0,
-                        sides=sides,
-                    )
-
-                if hasattr(self.previewPanel.overlays, "apply_visibility"):
-                    self.previewPanel.overlays.apply_visibility(vis)
-
-            except Exception:
-                _LOG.exception("Overlays (render) failed")
-
-            # 8) View finalisieren – aktuelle Ansicht beibehalten
-            try:
-                if view_is_3d:
-                    self.previewPanel.restore_camera(cam_snap)
-                self.previewPanel.refresh_current_view(hard_reset=not view_is_3d)
-            except Exception:
-                _LOG.exception("finalize view failed")
-
-        except Exception:
-            _LOG.exception("Render orchestration failed")

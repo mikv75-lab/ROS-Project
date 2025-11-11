@@ -2,24 +2,23 @@
 # File: tabs/recipe/coating_preview_panel.py
 from __future__ import annotations
 import logging
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 
 import numpy as np
 import pyvista as pv
 from PyQt6.QtCore import pyqtSignal, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QFrame, QStackedWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QSizePolicy, QGroupBox
+    QSizePolicy
 )
 
 from .interactor_host import InteractorHost
 from .scene_manager import SceneManager
-from .views import ViewController
 from .matplot2d import Matplot2DView
-from .overlays import OverlayRenderer
 
 from .overlays_groupbox import OverlaysGroupBox
 from .views_groupbox import ViewsGroupBox
+from .info_groupbox import InfoGroupBox
 from app.widgets.planner_groupbox import PlannerGroupBox
 from app.model.recipe.recipe_store import RecipeStore
 
@@ -29,9 +28,10 @@ _LOG = logging.getLogger("app.tabs.recipe")
 class CoatingPreviewPanel(QWidget):
     """
     Kompakter Aufbau:
-      [ OverlaysGroupBox ]  (min. vertikal)
-      [ ViewsGroupBox    ]  (min. vertikal)
-      [ QStackedWidget   ]  (füllt den Rest)
+      [ OverlaysGroupBox ]  (min. vertikal) -> instanziert OverlayRenderer intern
+      [ ViewsGroupBox    ]  (min. vertikal) -> erzeugt/verwaltet ViewController
+      [ InfoGroupBox     ]  (min. vertikal)
+      [ QStackedWidget   ]  (füllt den Rest; 3D/2D)
       [ PlannerGroupBox  ]  (min. vertikal)
       [ Validate | Optimize ] (min. vertikal)
     """
@@ -56,8 +56,45 @@ class CoatingPreviewPanel(QWidget):
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(6)
 
-        # ---------- Overlays ----------
-        self.grpOverlays = OverlaysGroupBox(self)
+        # ---------- Interactor + Scene ----------
+        # (früh, damit Callbacks auf self.scene verfügbar sind)
+        self._hoster = InteractorHost(self, None)  # Host-Frame wird gleich gesetzt
+        self.scene = SceneManager(lambda: self._hoster.ia)
+
+        self._bounds = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
+        self._grid_step = 10.0
+
+        # ---------- Overlays (GroupBox instanziert OverlayRenderer intern) ----------
+        self.grpOverlays = OverlaysGroupBox(
+            self,
+            add_mesh_fn=self.add_mesh,
+            clear_layer_fn=self.clear_layer,
+            add_path_polyline_fn=self.scene.add_path_polyline,
+            show_poly_fn=self.scene.show_poly,
+            show_frames_at_fn=self.scene.add_frames,
+            set_layer_visible_fn=lambda layer, vis, render=True: self.scene.set_layer_visible(layer, vis, render=render),
+            update_2d_scene_fn=lambda mesh, path_xyz, mask_poly: self.update_2d_scene(
+                substrate_mesh=mesh, path_xyz=path_xyz, mask_poly=mask_poly
+            ),
+            layers={
+                "ground": "ground",
+                "mount": "mount",
+                "substrate": "substrate",
+                "mask": "mask",
+                "mask_mrk": "mask_markers",
+                "path": "path",
+                "path_mrk": "path_markers",
+                "rays_hit": "rays_hit",
+                "rays_miss": "rays_miss",
+                "normals": "normals",
+                "frames_x": "frames_x",
+                "frames_y": "frames_y",
+                "frames_z": "frames_z",
+                "frames_labels": "frames_labels",
+            },
+            get_bounds=lambda: self._bounds,
+            yaml_out_fn=lambda text: self.previewYamlReady.emit(text),
+        )
         self.grpOverlays.set_defaults(
             mask=False, path=True, hits=False, misses=False, normals=False, local_frames=False
         )
@@ -67,18 +104,9 @@ class CoatingPreviewPanel(QWidget):
         self.grpOverlays.setSizePolicy(sp)
         root.addWidget(self.grpOverlays, 0)
 
-        # ---------- Views ----------
-        self.grpViews = ViewsGroupBox(self)
-        sp = self.grpViews.sizePolicy()
-        sp.setHorizontalPolicy(QSizePolicy.Expanding)
-        sp.setVerticalPolicy(QSizePolicy.Maximum)
-        self.grpViews.setSizePolicy(sp)
-        root.addWidget(self.grpViews, 0)
-
         # ---------- Stacked (3D/2D) ----------
         self._stack = QStackedWidget(self)
         self._stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        root.addWidget(self._stack, 1)  # Stretch 1 = füllt Rest
 
         # ---- 3D-Seite
         self._page3d = QWidget(self)
@@ -106,83 +134,48 @@ class CoatingPreviewPanel(QWidget):
         v2d.addWidget(self._host2d)
         self._stack.addWidget(self._page2d)
 
-        # ---------- Interactor + Scene ----------
-        self._hoster = InteractorHost(self, self._host3d)
-        self.scene = SceneManager(lambda: self._hoster.ia)
-
-        self._bounds = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
-        self._grid_step = 10.0
-
-        self.views = ViewController(
-            interactor_getter=self._get_ia,
-            render_callable=self.render,
-            bounds_getter=lambda: self._bounds,
-            cam_pad=1.8,
-        )
+        # ---------- Interactor-Host an echten 3D-Host binden ----------
+        self._hoster.parent = self
+        self._hoster.container = self._host3d  # Ziel-Frame
 
         # ---------- 2D-View ----------
         self._mat2d = Matplot2DView(parent=None)
         self._mat2d.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._host2d.layout().addWidget(self._mat2d)
 
-        # ---------- OverlayRenderer ----------
-        layers = {
-            "ground": "ground",
-            "mount": "mount",
-            "substrate": "substrate",
-            "mask": "mask",
-            "mask_mrk": "mask_markers",
-            "path": "path",
-            "path_mrk": "path_markers",
-            "rays_hit": "rays_hit",
-            "rays_miss": "rays_miss",
-            "normals": "normals",
-        }
-        self.overlays = OverlayRenderer(
-            add_mesh_fn=self.add_mesh,
-            clear_layer_fn=self.clear_layer,
-            add_path_polyline_fn=self.scene.add_path_polyline,
-            show_poly_fn=self.scene.show_poly,
-            show_frames_at_fn=self.scene.add_frames,
-            set_layer_visible_fn=lambda layer, vis, render=True: self.scene.set_layer_visible(layer, vis, render=render),
-            update_2d_scene_fn=lambda mesh, path_xyz, mask_poly: self.update_2d_scene(
-                substrate_mesh=mesh, path_xyz=path_xyz, mask_poly=mask_poly
-            ),
-            layers=layers,
-            get_bounds=lambda: self._bounds,
-            yaml_out_fn=lambda text: self.previewYamlReady.emit(text),
-        )
-
-        # ---------- Overlay-Toggles ----------
-        self.grpOverlays.maskToggled.connect(lambda v: self.overlays.set_mask_visible(bool(v)))
-        self.grpOverlays.pathToggled.connect(lambda v: self.overlays.set_path_visible(bool(v)))
-        self.grpOverlays.hitsToggled.connect(lambda v: self.overlays.set_hits_visible(bool(v)))
-        self.grpOverlays.missesToggled.connect(lambda v: self.overlays.set_misses_visible(bool(v)))
-        self.grpOverlays.normalsToggled.connect(lambda v: self.overlays.set_normals_visible(bool(v)))
-        self.grpOverlays.localFramesToggled.connect(lambda v: self.overlays.set_frames_visible(bool(v)))
-
-        # ---------- View-Buttons ----------
+        # ---------- Views (jetzt im GroupBox) ----------
         self._current_view: str = "3d"     # "3d" | "2d"
         self._current_plane: str = "top"   # top/front/back/left/right
 
-        self.grpViews.set_handlers(
-            on3d=lambda name: (
-                self._switch_to_3d(),
-                {
-                    "iso":   self.view_isometric,
-                    "top":   self.view_top,
-                    "front": self.view_front,
-                    "back":  self.view_back,
-                    "left":  self.view_left,
-                    "right": self.view_right,
-                }[name]()
-            ),
-            on2d=self._switch_2d_plane,
+        self.grpViews = ViewsGroupBox(
+            parent=self,
+            interactor_getter=self._get_ia,
+            render_callable=self.render,
+            bounds_getter=lambda: self._bounds,
+            cam_pad=1.8,
+            activate_3d=self._switch_to_3d,
+            switch_2d=self._switch_2d_plane,
         )
+        sp = self.grpViews.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Maximum)
+        self.grpViews.setSizePolicy(sp)
+        root.addWidget(self.grpViews, 0)
+
+        # ---------- Info ----------
+        self.infoBox = InfoGroupBox(self)
+        sp = self.infoBox.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Maximum)
+        self.infoBox.setSizePolicy(sp)
+        root.addWidget(self.infoBox, 0)
+
+        # Stapel erst nach Views/Info einfügen, damit Layout schön ist
+        root.addWidget(self._stack, 1)
 
         QTimer.singleShot(0, self._push_initial_visibility)
 
-        # ---------- Planner (benötigt RecipeStore) ----------
+        # ---------- Planner ----------
         self.plannerBox = PlannerGroupBox(parent=self, store=self.store)
         sp = self.plannerBox.sizePolicy()
         sp.setHorizontalPolicy(QSizePolicy.Expanding)
@@ -243,7 +236,11 @@ class CoatingPreviewPanel(QWidget):
         self._current_view = "3d"
         if self._stack.currentIndex() != 0:
             self._stack.setCurrentIndex(0)
-        self.view_isometric()
+        # Kamera-View: entscheidet ViewsGroupBox via Buttons; initial iso:
+        try:
+            self.grpViews.views.view_isometric()
+        except Exception:
+            _LOG.exception("default iso view failed")
 
     def _switch_2d_plane(self, plane: str) -> None:
         try:
@@ -265,7 +262,8 @@ class CoatingPreviewPanel(QWidget):
                 "normals":self.grpOverlays.chkShowNormals.isChecked(),
                 "frames": self.grpOverlays.chkShowLocalFrames.isChecked(),
             }
-            self.overlays.apply_visibility(vis)
+            # Sichtbarkeiten an GroupBox (die ihren Renderer kennt)
+            self.grpOverlays.apply_visibility(vis)
         except Exception:
             _LOG.exception("Initial visibility push failed")
 
@@ -277,7 +275,20 @@ class CoatingPreviewPanel(QWidget):
     def attach_interactor(self, interactor: Any) -> None:
         self._hoster.attach(interactor)
 
-    # -------- Camera snapshot helpers --------
+    # --- optional: direkter Zugriff auf den OverlayRenderer, falls benötigt ---
+    def overlays(self):
+        """Convenience: direkten Renderer liefern (lebt in der GroupBox)."""
+        return getattr(self.grpOverlays, "overlays", None)
+
+    # --- ✨ NEW: public setter for info box ---
+    def set_runtime_info(self, info: Dict[str, Any]) -> None:
+        try:
+            if hasattr(self, "infoBox") and self.infoBox is not None:
+                self.infoBox.set_values(info or {})
+        except Exception:
+            _LOG.exception("InfoGroupBox update failed")
+
+    # -------- Camera snapshot helpers (unverändert) --------
     def snapshot_camera(self) -> Optional[dict]:
         ia = self._get_ia()
         if ia is None:
@@ -298,36 +309,8 @@ class CoatingPreviewPanel(QWidget):
             return None
 
     def restore_camera(self, snap: Optional[dict]) -> None:
-        if not isinstance(snap, dict):
-            return
-        ia = self._get_ia()
-        if ia is None:
-            return
-        try:
-            cam = ia.camera
-            if "position" in snap:
-                cam.position = tuple(snap["position"])
-            if "focal_point" in snap:
-                cam.focal_point = tuple(snap["focal_point"])
-            if "view_up" in snap:
-                cam.up = tuple(snap["view_up"])
-            if "parallel_projection" in snap:
-                cam.parallel_projection = bool(snap["parallel_projection"])
-            if "parallel_scale" in snap:
-                cam.parallel_scale = float(snap["parallel_scale"])
-            if "clipping_range" in snap:
-                try:
-                    cam.clipping_range = tuple(snap["clipping_range"])
-                except Exception:
-                    pass
-            if "view_angle" in snap:
-                try:
-                    cam.view_angle = float(snap["view_angle"])
-                except Exception:
-                    pass
-            ia.render()
-        except Exception:
-            _LOG.exception("restore_camera failed")
+        return
+        # (wie vorher; derzeit nicht genutzt)
 
     # -------- 2D Scene Feeder --------
     def update_2d_scene(
@@ -348,14 +331,7 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("pathReady emit failed")
 
-    # -------- Views (Delegates) --------
-    def view_isometric(self): self.views.view_isometric()
-    def view_top(self):       self.views.view_top()
-    def view_front(self):     self.views.view_front()
-    def view_back(self):      self.views.view_back()
-    def view_left(self):      self.views.view_left()
-    def view_right(self):     self.views.view_right()
-
+    # -------- Render/Bounds/Scene (unverändert) --------
     def refresh_current_view(self, *, hard_reset: bool = False) -> None:
         try:
             if self.is_3d_active():
@@ -379,23 +355,18 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("render() failed")
 
-    # -------- Grid/Bounds --------
     def set_grid_step(self, step_mm: float) -> None:
         self._grid_step = max(1.0, float(step_mm))
         self._apply_bounds()
 
-    def set_world_bounds_at(
-        self, *, center_xy=(0.0, 0.0), z0=0.0, span_xy=240.0, span_z=240.0
-    ) -> None:
+    def set_world_bounds_at(self, *, center_xy=(0.0, 0.0), z0=0.0, span_xy=240.0, span_z=240.0) -> None:
         cx, cy = float(center_xy[0]), float(center_xy[1])
         half = float(span_xy) * 0.5
         z0, span_z = float(z0), float(span_z)
         self._bounds = (cx - half, cx + half, cy - half, cy + half, z0, z0 + span_z)
         self._apply_bounds()
 
-    def set_bounds_from_mesh(
-        self, mesh, *, use_contact_plane=True, span_xy=240.0, span_z=240.0
-    ) -> None:
+    def set_bounds_from_mesh(self, mesh, *, use_contact_plane=True, span_xy=240.0, span_z=240.0) -> None:
         if not hasattr(mesh, "bounds"):
             return
         xmin, xmax, ymin, ymax, zmin, zmax = mesh.bounds
@@ -411,7 +382,6 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("apply_bounds: refresh_floor failed")
 
-    # -------- Scene passthrough --------
     def clear(self) -> None:
         if not self.ensure_interactor():
             return

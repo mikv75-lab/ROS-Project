@@ -7,25 +7,47 @@ from PyQt6.QtWidgets import (
     QGroupBox, QWidget, QGridLayout, QLabel, QPushButton, QSizePolicy
 )
 
+from .views import ViewController
+
 
 class ViewsGroupBox(QGroupBox):
     """
     Kamera/Views-Steuerung (3D + 2D).
 
       Kamera: [Iso] [Top] [Front] [Back] [Left] [Right]
-      2D:           [Top] [Front] [Back] [Left] [Right]   (eine Spalte nach rechts eingerückt)
+      2D:           [Top] [Front] [Back] [Left] [Right]
 
-    Verwendung:
-        grp = ViewsGroupBox(parent)
-        grp.set_handlers(
-            on3d=lambda name: ...,   # name in {"iso","top","front","back","left","right"}
-            on2d=lambda plane: ...   # plane in {"top","front","back","left","right"}
-        )
+    Diese Klasse erzeugt und verwaltet intern den ViewController und verdrahtet die Buttons.
+    Der Host (Panel) liefert nur noch:
+      - activate_3d():  Stack auf 3D schalten
+      - switch_2d(plane): "top|front|back|left|right" -> 2D-Seite wählen
     """
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(
+        self,
+        parent: Optional[Widget] = None,
+        *,
+        interactor_getter: Callable[[], object],
+        render_callable: Callable[..., None],
+        bounds_getter: Optional[Callable[[], tuple]] = None,
+        cam_pad: float = 1.6,
+        activate_3d: Callable[[], None],
+        switch_2d: Callable[[str], None],
+    ):
         super().__init__("Kamera", parent)
+        self._activate_3d = activate_3d
+        self._switch_2d = switch_2d
+
+        # ViewController erzeugen
+        self.views = ViewController(
+            interactor_getter=interactor_getter,
+            render_callable=render_callable,
+            bounds_getter=bounds_getter,
+            cam_pad=cam_pad,
+        )
+
         self._build_ui()
+        self._wire_buttons()
 
     # ---------- UI ----------
     def _build_ui(self) -> None:
@@ -59,32 +81,32 @@ class ViewsGroupBox(QGroupBox):
         for b in (self.btn2DTop, self.btn2DFront, self.btn2DBack, self.btn2DLeft, self.btn2DRight):
             lay.addWidget(b, row, col); col += 1
 
-        # size policy
         sp = self.sizePolicy()
         sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
         sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
         self.setSizePolicy(sp)
 
-    # ---------- Public API ----------
-    def set_handlers(self, *, on3d: Callable[[str], None], on2d: Callable[[str], None]) -> None:
-        """
-        Verdrahtet die Buttons intern mit bereitgestellten Handlern.
-        - on3d(name): name ∈ {"iso","top","front","back","left","right"}
-        - on2d(plane): plane ∈ {"top","front","back","left","right"}
-        """
-        # 3D
-        self.btnCamIso.clicked.connect(lambda: on3d("iso"))
-        self.btnCamTop.clicked.connect(lambda: on3d("top"))
-        self.btnCamFront.clicked.connect(lambda: on3d("front"))
-        self.btnCamBack.clicked.connect(lambda: on3d("back"))
-        self.btnCamLeft.clicked.connect(lambda: on3d("left"))
-        self.btnCamRight.clicked.connect(lambda: on3d("right"))
-        # 2D
-        self.btn2DTop.clicked.connect(lambda: on2d("top"))
-        self.btn2DFront.clicked.connect(lambda: on2d("front"))
-        self.btn2DBack.clicked.connect(lambda: on2d("back"))
-        self.btn2DLeft.clicked.connect(lambda: on2d("left"))
-        self.btn2DRight.clicked.connect(lambda: on2d("right"))
+    def _wire_buttons(self) -> None:
+        # 3D: zuerst Panel auf 3D umschalten, dann Kamera-View setzen
+        def on_3d():
+            try:
+                self._activate_3d()
+            except Exception:
+                pass
+
+        self.btnCamIso.clicked.connect(  lambda: (on_3d(), self.views.view_isometric()))
+        self.btnCamTop.clicked.connect(  lambda: (on_3d(), self.views.view_top()))
+        self.btnCamFront.clicked.connect(lambda: (on_3d(), self.views.view_front()))
+        self.btnCamBack.clicked.connect( lambda: (on_3d(), self.views.view_back()))
+        self.btnCamLeft.clicked.connect( lambda: (on_3d(), self.views.view_left()))
+        self.btnCamRight.clicked.connect(lambda: (on_3d(), self.views.view_right()))
+
+        # 2D: Panel-Seite/Plane wählen
+        self.btn2DTop.clicked.connect(  lambda: self._switch_2d("top"))
+        self.btn2DFront.clicked.connect(lambda: self._switch_2d("front"))
+        self.btn2DBack.clicked.connect( lambda: self._switch_2d("back"))
+        self.btn2DLeft.clicked.connect( lambda: self._switch_2d("left"))
+        self.btn2DRight.clicked.connect(lambda: self._switch_2d("right"))
 
     # ---------- Helpers ----------
     def _bold(self, txt: str) -> QLabel:
