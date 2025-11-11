@@ -5,7 +5,8 @@ import logging
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QGroupBox, QWidget, QGridLayout, QLabel, QPushButton, QSizePolicy
+    QGroupBox, QWidget, QFormLayout, QHBoxLayout, QPushButton,
+    QSizePolicy, QLabel
 )
 
 _LOG = logging.getLogger("app.tabs.recipe.preview.views")
@@ -13,11 +14,9 @@ _LOG = logging.getLogger("app.tabs.recipe.preview.views")
 
 class ViewsGroupBox(QGroupBox):
     """
-    Kamera/Views-Steuerung (3D + 2D).
-
-      Kamera: [Iso] [Top] [Front] [Back] [Left] [Right]
-      2D:           [Top] [Front] [Back] [Left] [Right]
-
+    3D-/2D-View-Steuerung im kompakten Formlayout (Labels linksbündig).
+      3D: [Iso] [Top] [Front] [Back] [Left] [Right]
+      2D: [Top] [Front] [Back] [Left] [Right]
     Host liefert:
       - activate_3d():  Stack auf 3D schalten
       - switch_2d(plane): "top|front|back|left|right" -> 2D-Seite
@@ -34,7 +33,11 @@ class ViewsGroupBox(QGroupBox):
         activate_3d: Callable[[], None],
         switch_2d: Callable[[str], None],
     ):
-        super().__init__("Kamera", parent)
+        super().__init__("Views", parent)
+
+        # SizePolicy: Maximum x, Minimum y
+        self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
+
         self._activate_3d = activate_3d
         self._switch_2d = switch_2d
 
@@ -50,38 +53,50 @@ class ViewsGroupBox(QGroupBox):
 
     # ---------- UI ----------
     def _build_ui(self) -> None:
-        lay = QGridLayout(self)
-        lay.setContentsMargins(8, 8, 8, 8)
-        lay.setHorizontalSpacing(8)
-        lay.setVerticalSpacing(6)
+        form = QFormLayout(self)
+        form.setContentsMargins(8, 8, 8, 8)
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(4)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
-        row = 0
-        lay.addWidget(self._bold("Kamera"), row, 0, alignment=Qt.AlignmentFlag.AlignRight)
+        # --- 3D-Buttons ---
+        row3d = QWidget(self)
+        lay3d = QHBoxLayout(row3d)
+        lay3d.setContentsMargins(0, 0, 0, 0)
+        lay3d.setSpacing(6)
+
         self.btnCamIso   = QPushButton("Iso", self)
         self.btnCamTop   = QPushButton("Top", self)
         self.btnCamFront = QPushButton("Front", self)
         self.btnCamBack  = QPushButton("Back", self)
         self.btnCamLeft  = QPushButton("Left", self)
         self.btnCamRight = QPushButton("Right", self)
-        col = 1
-        for b in (self.btnCamIso, self.btnCamTop, self.btnCamFront, self.btnCamBack, self.btnCamLeft, self.btnCamRight):
-            lay.addWidget(b, row, col); col += 1
 
-        row += 1
-        lay.addWidget(self._bold("2D"), row, 0, alignment=Qt.AlignmentFlag.AlignRight)
+        for b in (self.btnCamIso, self.btnCamTop, self.btnCamFront, self.btnCamBack, self.btnCamLeft, self.btnCamRight):
+            b.setAutoDefault(False)
+            lay3d.addWidget(b)
+
+        form.addRow(QLabel("3D", self), row3d)
+
+        # --- 2D-Buttons ---
+        row2d = QWidget(self)
+        lay2d = QHBoxLayout(row2d)
+        lay2d.setContentsMargins(0, 0, 0, 0)
+        lay2d.setSpacing(6)
+
         self.btn2DTop   = QPushButton("Top", self)
         self.btn2DFront = QPushButton("Front", self)
         self.btn2DBack  = QPushButton("Back", self)
         self.btn2DLeft  = QPushButton("Left", self)
         self.btn2DRight = QPushButton("Right", self)
-        col = 2
-        for b in (self.btn2DTop, self.btn2DFront, self.btn2DBack, self.btn2DLeft, self.btn2DRight):
-            lay.addWidget(b, row, col); col += 1
 
-        sp = self.sizePolicy()
-        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
-        self.setSizePolicy(sp)
+        for b in (self.btn2DTop, self.btn2DFront, self.btn2DBack, self.btn2DLeft, self.btn2DRight):
+            b.setAutoDefault(False)
+            lay2d.addWidget(b)
+
+        form.addRow(QLabel("2D", self), row2d)
 
     def _wire_buttons(self) -> None:
         def on_3d():
@@ -102,11 +117,6 @@ class ViewsGroupBox(QGroupBox):
         self.btn2DBack.clicked.connect( lambda: self._switch_2d("back"))
         self.btn2DLeft.clicked.connect( lambda: self._switch_2d("left"))
         self.btn2DRight.clicked.connect(lambda: self._switch_2d("right"))
-
-    def _bold(self, txt: str) -> QLabel:
-        lab = QLabel(txt, self)
-        lab.setStyleSheet("font-weight:600;")
-        return lab
 
 
 class ViewController:

@@ -108,12 +108,7 @@ class RecipeEditorPanel(QWidget):
         self.btnDelete.clicked.connect(self._on_delete_clicked)
 
         def _emit_update():
-            payload = {
-                "model": self.current_model(),
-                # nur gecheckte Sides, sortiert nach aktueller Tab-Reihenfolge
-                "sides": self._selected_existing_sides_ordered(),
-            }
-            self.updatePreviewRequested.emit(payload)
+            self.updatePreviewRequested.emit(self.current_model())
         self.btnUpdatePreview.clicked.connect(_emit_update)
 
         # Erstes Rezept initialisieren

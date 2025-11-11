@@ -14,6 +14,8 @@ from .mesh_utils import (
 )
 from .interactor_host import InteractorHost
 
+from app.model.recipe.recipe import Recipe
+
 _LOG = logging.getLogger("app.tabs.recipe.scene")
 
 
@@ -331,19 +333,13 @@ class SceneManager:
         except Exception:
             _LOG.exception("refresh_floor: reset/render failed")
 
-    # --- Build & Draw Scene --------------------------------------------------
-    @staticmethod
-    def _get_optional_str(model: object, key: str) -> Optional[str]:
-        val = getattr(model, key, None) if hasattr(model, key) else (model.get(key) if isinstance(model, dict) else None)
-        return val.strip() if isinstance(val, str) and val.strip() else None
-
-    def build_scene(self, ctx, model: object) -> PreviewScene:
-        # Felder weich lesen – keine Exceptions wenn noch nicht gesetzt
-        mount_key = self._get_optional_str(model, "substrate_mount")
-        substrate_key = self._get_optional_str(model, "substrate")
+    def build_scene(self, ctx, model: Recipe) -> PreviewScene:
+        mount_key = model.substrate_mount
+        substrate_key = model.substrate
 
         mmesh: pv.PolyData | None = None
         smesh: pv.PolyData | None = None
+
         if mount_key:
             try:
                 mmesh = load_mount_mesh_from_key(ctx, mount_key)

@@ -2310,3 +2310,10 @@ ValueError: Recipe benötigt 'substrate_mount'.
 2025-11-11 23:05:32 DEBUG [62898] app.tabs.recipe.preview.overlays:414 - rebuild_layers: no cache yet; nothing to rebuild
 2025-11-11 23:05:33 DEBUG [62898] app.tabs.recipe.preview.overlays:414 - rebuild_layers: no cache yet; nothing to rebuild
 2025-11-11 23:05:34 DEBUG [62898] app.tabs.recipe.preview.overlays:414 - rebuild_layers: no cache yet; nothing to rebuild
+2025-11-11 23:29:06 DEBUG [82781] app.tabs.recipe.preview.overlays:414 - rebuild_layers: no cache yet; nothing to rebuild
+2025-11-11 23:35:16 DEBUG [87055] app.tabs.recipe.scene:368 - Scene build: model=dict mount=None substrate=None
+2025-11-11 23:39:28 DEBUG [89763] app.tabs.recipe.scene:368 - Scene build: model=dict mount=None substrate=None
+2025-11-11 23:41:53 DEBUG [90967] app.tabs.recipe.scene:368 - Scene build: model=dict mount=None substrate=None
+2025-11-11 23:47:41 INFO [98132] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-11 23:47:41 DEBUG [98132] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-11 23:47:42 DEBUG [98132] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl

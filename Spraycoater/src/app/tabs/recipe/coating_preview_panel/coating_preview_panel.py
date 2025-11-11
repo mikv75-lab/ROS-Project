@@ -1,18 +1,20 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import logging
-from typing import Optional, Any, Dict, Tuple
+from typing import Optional, Any, Dict, Tuple, List
 
 import numpy as np
 from PyQt6.QtCore import pyqtSignal, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QFrame, QStackedWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSizePolicy
 )
+from app.model.recipe.recipe import Recipe
 
 from .scene_manager import SceneManager
 from .matplot2d import Matplot2DView
 from .overlays_groupbox import OverlaysGroupBox
 from .views_groupbox import ViewsGroupBox
+from .info_groupbox import InfoGroupBox           # <— NEU: Info-Panel
 from app.widgets.planner_groupbox import PlannerGroupBox
 
 _LOG = logging.getLogger("app.tabs.recipe.preview.panel")
@@ -35,7 +37,7 @@ class CoatingPreviewPanel(QWidget):
         root.setSpacing(6)
 
         self._stack = QStackedWidget(self)
-        self._stack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
         # 3D-Seite
         self._page3d = QWidget(self)
         v3d = QVBoxLayout(self._page3d); v3d.setContentsMargins(0, 0, 0, 0); v3d.setSpacing(0)
@@ -51,7 +53,7 @@ class CoatingPreviewPanel(QWidget):
         v2d.addWidget(self._mat2d)
         self._stack.addWidget(self._page2d)
 
-        # SceneManager — parent_widget + container_widget explizit
+        # SceneManager
         self.scene = SceneManager(parent_widget=self._page3d, container_widget=self._host3d)
 
         # Welt-Bounds (mm)
@@ -87,10 +89,9 @@ class CoatingPreviewPanel(QWidget):
             },
             get_bounds=self.get_bounds,
         )
-        self.grpOverlays.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Maximum)
         root.addWidget(self.grpOverlays, 0)
 
-        # Views: nur Callbacks zum Umschalten (kein direkter Scene-Zugriff hier)
+        # Views
         self.grpViews = ViewsGroupBox(
             self,
             interactor_getter=lambda: self.scene._ia(),
@@ -100,15 +101,25 @@ class CoatingPreviewPanel(QWidget):
             activate_3d=self._switch_to_3d,
             switch_2d=self._switch_2d_plane,
         )
-        self.grpViews.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Maximum)
         root.addWidget(self.grpViews, 0)
 
+        # Info (eine Zeile, linksbündig)
+        self.grpInfo = InfoGroupBox(self)
+        self.grpInfo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        root.addWidget(self.grpInfo, 0)
+
+        # Stack (3D/2D Viewport)
         root.addWidget(self._stack, 1)
 
+        # Planner kompakt
         self.plannerBox = PlannerGroupBox(store=self.store, parent=self)
-        self.plannerBox.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Maximum)
+        self.plannerBox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        self.plannerBox.setMaximumHeight(220)
+        if self.plannerBox.layout() is not None:
+            self.plannerBox.layout().setContentsMargins(6, 6, 6, 6)
         root.addWidget(self.plannerBox, 0)
 
+        # Buttons
         row = QHBoxLayout(); row.setContentsMargins(0, 0, 0, 0); row.setSpacing(8)
         self.btnValidate = QPushButton("Validate", self)
         self.btnOptimize = QPushButton("Optimize", self)
@@ -126,19 +137,12 @@ class CoatingPreviewPanel(QWidget):
         self._switch_to_3d()
         QTimer.singleShot(0, self._push_initial_visibility)
 
-    # --- sorgt dafür, dass der Interactor erst NACH dem Einhängen existiert ---
-    def showEvent(self, ev):
-        super().showEvent(ev)
-        try:
-            self.ensure_interactor()
-        except Exception:
-            _LOG.exception("showEvent.ensure_interactor failed")
-
     # =================== API vom RecipeTab ===================
-    def handle_update_preview(self, model: object) -> None:
-        """Neuer Render-Flow: Build -> Draw -> Overlays."""
+    def handle_update_preview(self, model: Recipe) -> None:
+        """Neuer Render-Flow: Build -> Draw -> Overlays -> Info."""
         if not self.ensure_interactor():
             _LOG.error("handle_update_preview: no interactor")
+            self._set_info_defaults()
             return
 
         view_is_3d = self.is_3d_active()
@@ -152,6 +156,7 @@ class CoatingPreviewPanel(QWidget):
             scene = self.scene.build_scene(self.ctx, model)
         except Exception:
             _LOG.exception("build_scene failed")
+            self._set_info_defaults()
             return
         self.set_bounds(scene.bounds)
 
@@ -161,7 +166,7 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("draw_scene failed")
 
-        # compile_poses -> Overlays rendern
+        # compile_poses -> Overlays + Info
         stand_off = 10.0
         try:
             recipe_params = getattr(model, "parameters", {}) or {}
@@ -197,6 +202,14 @@ class CoatingPreviewPanel(QWidget):
             except Exception:
                 _LOG.exception("Overlays render failed")
 
+        # Info: immer berechnen (auch wenn compiled None ist -> Defaults)
+        try:
+            info = self._calc_info(scene=scene, model=model, compiled=compiled)
+            self.grpInfo.set_values(info)
+        except Exception:
+            _LOG.exception("set info failed")
+            self._set_info_defaults()
+
         # Kamera zurück + Refresh
         try:
             if view_is_3d and cam_snap:
@@ -204,6 +217,54 @@ class CoatingPreviewPanel(QWidget):
             self.refresh_all_views(hard_reset=not view_is_3d)
         except Exception:
             _LOG.exception("finalize view failed")
+
+    # =================== Info helpers ===================
+    def _set_info_defaults(self) -> None:
+        try:
+            self.grpInfo.set_values({
+                "points": None,
+                "length_mm": None,
+                "eta_s": None,
+                "medium_ml": None,
+                "mesh_tris": None,
+            })
+        except Exception:
+            pass
+
+    def _calc_info(self, *, scene, model, compiled) -> Dict[str, Any]:
+        """
+        Punkte/Laenge/ETA/Medium/Tris aus compiled + params berechnen.
+        """
+        params = getattr(model, "parameters", {}) or {}
+        speed = float(params.get("speed_mm_s", 0.0)) if isinstance(params, dict) else 0.0
+        flow_ml_min = float(params.get("flow_ml_min", 0.0)) if isinstance(params, dict) else 0.0
+
+        points_total = 0
+        length_mm = 0.0
+
+        if isinstance(compiled, dict):
+            sides = compiled.get("sides", {}) or {}
+            for _side, data in sides.items():
+                poses: List[Dict[str, float]] = (data or {}).get("poses_quat", []) or []
+                n = len(poses)
+                points_total += n
+                if n >= 2:
+                    P = np.array([[p["x"], p["y"], p["z"]] for p in poses], dtype=float).reshape(-1, 3)
+                    seg = np.linalg.norm(P[1:] - P[:-1], axis=1)
+                    length_mm += float(np.sum(seg))
+
+        eta_s = (length_mm / speed) if speed > 1e-9 else 0.0
+        medium_ml = (flow_ml_min / 60.0) * eta_s if flow_ml_min > 0.0 else 0.0
+
+        mesh_tris = getattr(scene, "mesh_tris", None)
+
+        return {
+            "points": points_total if points_total > 0 else None,
+            "length_mm": length_mm if length_mm > 0 else None,
+            "eta_s": eta_s if eta_s > 0 else None,
+            "medium_ml": medium_ml if medium_ml > 0 else None,
+            "mesh_tris": mesh_tris,
+        }
 
     # =================== Helpers ===================
     def _visibility_from_ui(self) -> dict:
@@ -292,33 +353,6 @@ class CoatingPreviewPanel(QWidget):
                 self._mat2d.refresh()
         except Exception:
             _LOG.exception("refresh_all_views failed")
-
-    # --- Wird von ViewsGroupBox als render_callable aufgerufen ---
-    def render(self, *, reset_camera: bool = False, view: str | None = None) -> None:
-        ia = self._ia()
-        if ia is None:
-            return
-        try:
-            if view == "iso":
-                ia.view_isometric()
-            elif view == "top3d":
-                ia.view_xy()
-            elif view == "front3d":
-                ia.view_yz()
-            elif view == "back3d":
-                ia.view_yz(); ia.camera.azimuth(180)
-            elif view == "left3d":
-                ia.view_xz()
-            elif view == "right3d":
-                ia.view_xz(); ia.camera.azimuth(180)
-
-            if reset_camera:
-                ia.reset_camera(bounds=self._bounds)
-            if hasattr(ia, "reset_camera_clipping_range"):
-                ia.reset_camera_clipping_range()
-            ia.render()
-        except Exception:
-            _LOG.exception("render() failed")
 
     # -------- Stack-Steuerung --------
     def _switch_to_3d(self):

@@ -22,7 +22,6 @@ class MainWindow(QMainWindow):
         self.ctx = ctx
         self.bridge = bridge
         self.setWindowTitle("SprayCoater UI")
-        self.resize(1280, 800)
 
         # 🔹 Zentralen RecipeStore einmal erstellen und weiterreichen
         self.store = RecipeStore.from_ctx(self.ctx)
