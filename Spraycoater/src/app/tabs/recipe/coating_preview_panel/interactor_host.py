@@ -14,10 +14,14 @@ except Exception:
 
 class InteractorHost:
     """Verantwortlich für das Finden/Anhängen/Absichern des QtInteractor."""
-    def __init__(self, panel: QWidget, host_widget: QWidget):
+    def __init__(self, panel: QWidget, host_widget: QWidget | None):
+        # internal
         self._panel = panel
         self._host = host_widget
         self._ia: Optional[Any] = None
+        # public aliases (können vom Caller gesetzt werden)
+        self.parent: QWidget = panel
+        self.container: Optional[QWidget] = host_widget
 
     @property
     def ia(self) -> Optional[Any]:
@@ -34,7 +38,7 @@ class InteractorHost:
 
     def _resolve_via_parents(self) -> Optional[Any]:
         cand_attr_names = ("previewPlot", "plotter", "interactor", "plot")
-        p = self._panel
+        p = self.parent or self._panel
         while p is not None:
             for name in cand_attr_names:
                 if hasattr(p, name):
@@ -51,16 +55,25 @@ class InteractorHost:
         if interactor is None:
             raise ValueError("InteractorHost.attach: interactor is None")
         self._ia = interactor
-        ly = self._host.layout()
+
+        host = self.container or self._host
+        if host is None:
+            # Kein Container vorhanden – leise überspringen
+            _LOG.debug("InteractorHost.attach: no host/container yet; skipping widget mount")
+            return
+
+        ly = host.layout()
         if ly is None:
-            ly = QVBoxLayout(self._host)
+            ly = QVBoxLayout(host)
             ly.setContentsMargins(0, 0, 0, 0)
             ly.setSpacing(0)
-        self._ia.setParent(self._host)
+
+        self._ia.setParent(host)
         try:
             ly.addWidget(self._ia)
         except Exception:
             pass
+
         self._ia.setEnabled(True)
         self._ia.show()
         self._ia.update()

@@ -25,7 +25,7 @@ class ViewsGroupBox(QGroupBox):
 
     def __init__(
         self,
-        parent: Optional[Widget] = None,
+        parent: Optional[QWidget] = None,
         *,
         interactor_getter: Callable[[], object],
         render_callable: Callable[..., None],

@@ -37,7 +37,6 @@ class OverlaysGroupBox(QGroupBox):
         update_2d_scene_fn: Callable[[Any, Any, Any], None],
         layers: Dict[str, str],
         get_bounds: Callable[[], Any],
-        yaml_out_fn: Optional[Callable[[str], None]] = None,
     ):
         super().__init__("Overlays", parent)
         self._build_ui()
@@ -53,16 +52,15 @@ class OverlaysGroupBox(QGroupBox):
             update_2d_scene_fn=update_2d_scene_fn,
             layers=layers,
             get_bounds=get_bounds,
-            yaml_out_fn=yaml_out_fn,
         )
 
-        # Wiring Sichtbarkeit -> OverlayRenderer
-        self.maskToggled.connect(lambda v: self.overlays.set_mask_visible(v))
-        self.pathToggled.connect(lambda v: self.overlays.set_path_visible(v))
-        self.hitsToggled.connect(lambda v: self.overlays.set_hits_visible(v))
-        self.missesToggled.connect(lambda v: self.overlays.set_misses_visible(v))
-        self.normalsToggled.connect(lambda v: self.overlays.set_normals_visible(v))
-        self.localFramesToggled.connect(lambda v: self.overlays.set_frames_visible(v))
+        # Wiring Sichtbarkeit -> OverlayRenderer (+ Rebuild beim Aktivieren)
+        self.chkShowMask.toggled.connect(self._on_mask_toggled)
+        self.chkShowPath.toggled.connect(self._on_path_toggled)
+        self.chkShowHits.toggled.connect(self._on_hits_toggled)
+        self.chkShowMisses.toggled.connect(self._on_misses_toggled)
+        self.chkShowNormals.toggled.connect(self._on_normals_toggled)
+        self.chkShowLocalFrames.toggled.connect(self._on_frames_toggled)
 
     # ---------- UI ----------
     def _build_ui(self) -> None:
@@ -93,19 +91,18 @@ class OverlaysGroupBox(QGroupBox):
         sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
         self.setSizePolicy(sp)
 
-        # UI-Events -> Signale
-        self.chkShowMask.toggled.connect(self.maskToggled)
-        self.chkShowPath.toggled.connect(self.pathToggled)
-        self.chkShowHits.toggled.connect(self.hitsToggled)
-        self.chkShowMisses.toggled.connect(self.missesToggled)
-        self.chkShowNormals.toggled.connect(self.normalsToggled)
-        self.chkShowLocalFrames.toggled.connect(self.localFramesToggled)
+        # Signale für externe Listener (optional)
+        self.maskToggled = self.chkShowMask.toggled
+        self.pathToggled = self.chkShowPath.toggled
+        self.hitsToggled = self.chkShowHits.toggled
+        self.missesToggled = self.chkShowMisses.toggled
+        self.normalsToggled = self.chkShowNormals.toggled
+        self.localFramesToggled = self.chkShowLocalFrames.toggled
 
     # ---------- Convenience ----------
     def set_defaults(
         self, *, mask=False, path=True, hits=False, misses=False, normals=False, local_frames=False
     ) -> None:
-        # Checkboxes setzen (triggert damit auch den Renderer via Signals)
         self.chkShowMask.setChecked(bool(mask))
         self.chkShowPath.setChecked(bool(path))
         self.chkShowHits.setChecked(bool(hits))
@@ -114,10 +111,39 @@ class OverlaysGroupBox(QGroupBox):
         self.chkShowLocalFrames.setChecked(bool(local_frames))
 
     def apply_visibility(self, vis: dict | None) -> None:
-        """Optional direkte Sichtbarkeitsübernahme (ohne UI ändern)."""
+        """Direkte Sichtbarkeitsübernahme (ohne UI ändern)."""
         if hasattr(self, "overlays") and self.overlays:
             self.overlays.apply_visibility(vis or {})
 
     # ---- Durchreicher fürs Rendern der kompilierten Pfade ----
     def render_compiled(self, **kwargs) -> dict:
         return self.overlays.render_compiled(**kwargs)
+
+    # ---------- Toggle-Handler: set_visible + optionaler Rebuild ----------
+    def _rebuild_if_enabled(self, flag: bool, keys: list[str]) -> None:
+        if flag and hasattr(self, "overlays") and self.overlays:
+            self.overlays.rebuild_layers(keys)
+
+    def _on_mask_toggled(self, v: bool) -> None:
+        self.overlays.set_mask_visible(v)
+        self._rebuild_if_enabled(v, ["mask"])
+
+    def _on_path_toggled(self, v: bool) -> None:
+        self.overlays.set_path_visible(v)
+        self._rebuild_if_enabled(v, ["path"])
+
+    def _on_hits_toggled(self, v: bool) -> None:
+        self.overlays.set_hits_visible(v)
+        self._rebuild_if_enabled(v, ["hits"])
+
+    def _on_misses_toggled(self, v: bool) -> None:
+        self.overlays.set_misses_visible(v)
+        self._rebuild_if_enabled(v, ["misses"])
+
+    def _on_normals_toggled(self, v: bool) -> None:
+        self.overlays.set_normals_visible(v)
+        self._rebuild_if_enabled(v, ["normals"])
+
+    def _on_frames_toggled(self, v: bool) -> None:
+        self.overlays.set_frames_visible(v)
+        self._rebuild_if_enabled(v, ["frames"])

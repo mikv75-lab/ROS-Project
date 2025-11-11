@@ -1,0 +1,19 @@
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/main_gui.py", line 149, in _on_ready
+    win = MainWindow(ctx=ctx, bridge=bridge)  # zeigt Splitter (RViz Placeholder rechts) + PyVista nur im RecipeTab
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/main_window.py", line 39, in __init__
+    self.recipeTab = RecipeTab(   # Referenz behalten
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 41, in __init__
+    self.previewPanel = CoatingPreviewPanel(ctx=self.ctx, store=self.store, parent=self)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 68, in __init__
+    self.scene = SceneManager(self._host3d)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: SceneManager.__init__() takes 1 positional argument but 2 were given
+Traceback (most recent call last):
+  File "/root/Spraycoater/.venv/lib/python3.12/site-packages/pyvistaqt/plotting.py", line 322, in render
+    @conditional_decorator(threaded, platform.system() == "Darwin")
+    
+KeyboardInterrupt

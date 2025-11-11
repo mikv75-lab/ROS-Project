@@ -14,7 +14,7 @@ class InfoGroupBox(QGroupBox):
     Shows:
       Points | Path length (mm) | ETA (s) | Medium (ml) | Mesh tris
     """
-    def __init__(self, parent: Optional[Widget] = None):
+    def __init__(self, parent: Optional[QWidget] = None):
         super().__init__("Info", parent)
         self._build_ui()
 

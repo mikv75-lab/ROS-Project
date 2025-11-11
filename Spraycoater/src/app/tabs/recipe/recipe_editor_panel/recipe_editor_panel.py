@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-import os, re
-from typing import Optional, Dict, Any, List
+import os
+import re
+from typing import Optional, Dict, Any, List, Callable
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
@@ -10,6 +11,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.model.recipe.recipe import Recipe
+    # Achtung: Recipe hat from_dict/load_yaml/save_yaml etc.
 from app.model.recipe.recipe_store import RecipeStore
 from .recipe_editor_content import RecipeEditorContent  # erwartet collect_* / apply_* Shims
 
@@ -29,7 +31,8 @@ class RecipeEditorPanel(QWidget):
         [ Content ]                  -> Globals / Selectors / Planner / SideTabs
         [ Update Preview ]
 
-    Hinweis: Update Preview übergibt nur die **gecheckten Sides** an die Preview.
+    Hinweis: Update Preview übergibt nur die **gecheckten Sides** an die Preview –
+    und zwar in der **aktuellen Tab-Reihenfolge**.
     """
     updatePreviewRequested = pyqtSignal(object)
 
@@ -83,6 +86,7 @@ class RecipeEditorPanel(QWidget):
         # ---------- [3] Content ----------
         self.content = RecipeEditorContent(ctx=self.ctx, store=self.store, parent=self)
         vroot.addWidget(self.content)
+        # Defaults in UI setzen
         self.content.apply_defaults()
 
         # ---------- [4] Update Preview ----------
@@ -106,17 +110,18 @@ class RecipeEditorPanel(QWidget):
         def _emit_update():
             payload = {
                 "model": self.current_model(),
-                # nur gecheckte & existierende Sides in der Preview berücksichtigen
-                "sides": self._selected_existing_sides(),
+                # nur gecheckte Sides, sortiert nach aktueller Tab-Reihenfolge
+                "sides": self._selected_existing_sides_ordered(),
             }
             self.updatePreviewRequested.emit(payload)
         self.btnUpdatePreview.clicked.connect(_emit_update)
 
         # Erstes Rezept initialisieren
-        if self.content.sel_recipe and self.content.sel_recipe.count() > 0:
-            if self.content.sel_recipe.currentIndex() < 0:
-                self.content.sel_recipe.setCurrentIndex(0)
-            self._on_recipe_select_changed(self.content.sel_recipe.currentIndex())
+        combo = getattr(self.content, "sel_recipe", None)
+        if combo and combo.count() > 0:
+            if combo.currentIndex() < 0:
+                combo.setCurrentIndex(0)
+            self._on_recipe_select_changed(combo.currentIndex())
 
     # ============================ Rezepte ===============================
 
@@ -144,7 +149,7 @@ class RecipeEditorPanel(QWidget):
 
     def _new_model_from_rec_def(self, rec_def: Dict[str, Any]) -> Recipe:
         params  = self.store.collect_global_defaults()
-        planner = self.store.collect_planner_defaults()
+        planner = self._safe_call(self.store.collect_planner_defaults, default={})
         pbs     = self.store.build_default_paths_for_recipe(rec_def)
 
         subs  = rec_def.get("substrates") or []
@@ -178,9 +183,14 @@ class RecipeEditorPanel(QWidget):
         self.e_name.setText(getattr(model, "id", "") or "")
         self.e_desc.setText(getattr(model, "description", "") or "")
         self.content.apply_recipe_model(model, rec_def)
+
+        # Planner optional anwenden
         apply_planner = getattr(self.content, "apply_planner_model", None)
         if callable(apply_planner):
-            apply_planner(model.planner or {})
+            try:
+                apply_planner(model.planner or {})
+            except Exception:
+                pass
 
     def _on_recipe_select_changed(self, _index: int) -> None:
         rec_def = self._current_recipe_def()
@@ -255,9 +265,9 @@ class RecipeEditorPanel(QWidget):
     def current_model(self) -> Recipe:
         """
         Sammelt UI -> Model, fasst 'id' NICHT an (id wird nur beim Save gesetzt).
-        Angles bleiben Meta (kein Zeichnen) – Speicherung erfolgt in parameters/paths.
         """
-        collect_planner = getattr(self.content, "collect_planner", lambda: {})
+        # Planner ist optional
+        collect_planner: Callable[[], Dict[str, Any]] = getattr(self.content, "collect_planner", lambda: {})
         params         = self.content.collect_globals()
         paths_by_side  = self.content.collect_paths_by_side()
         planner        = collect_planner()
@@ -281,11 +291,26 @@ class RecipeEditorPanel(QWidget):
         self._active_model = model
         return model
 
-    def _selected_existing_sides(self) -> List[str]:
+    # ---- Sides: gecheckt & in Tab-Reihenfolge ----
+    def _selected_existing_sides_ordered(self) -> List[str]:
         rec_def = self._current_recipe_def() or {}
         defined = set(((rec_def.get("sides") or {}).keys()))
+        # Neuer Name in RecipeEditorContent: checked_sides_ordered(); Fallback: checked_sides()
         try:
-            checked = self.content.checked_sides()
+            get_checked = getattr(self.content, "checked_sides_ordered", None)
+            if callable(get_checked):
+                checked = list(get_checked())
+            else:
+                checked = list(getattr(self.content, "checked_sides", lambda: [])())
         except Exception:
             checked = []
+        # Nur Sides, die im Rezept definiert sind
         return [s for s in checked if s in defined]
+
+    # --------------------------- Helpers ---------------------------
+    @staticmethod
+    def _safe_call(fn, default=None):
+        try:
+            return fn()
+        except Exception:
+            return default

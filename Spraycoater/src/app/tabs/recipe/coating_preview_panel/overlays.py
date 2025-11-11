@@ -160,7 +160,7 @@ class OverlayRenderer:
 
         self._vis = {"mask": False, "path": True, "hits": False, "misses": False, "normals": False, "frames": False}
 
-        # 🧠 Cache der letzten Kompilation, damit wir beim Aktivieren nachbauen können
+        # Cache der letzten Kompilation (für Rebuild beim Aktivieren)
         self._cache: Dict[str, Any] = {}
 
     # ---- Sichtbarkeit ----
@@ -217,7 +217,7 @@ class OverlayRenderer:
         self.set_normals_visible(self._vis["normals"], render=False)
         self.set_frames_visible(self._vis["frames"], render=True)
 
-    # ---- Neuer Weg: kompilierte Pfade zeichnen ----------------------------
+    # ---- Kompiliertes Zeichnen --------------------------------------------
     def _compiled_iter(self, compiled: dict, sides_filter: Optional[List[str]]) -> List[tuple[str, dict]]:
         if isinstance(compiled, dict) and "sides" in compiled:
             items = list((compiled.get("sides") or {}).items())
@@ -286,7 +286,7 @@ class OverlayRenderer:
         sides: Optional[List[str]] = None,
         only_selected: bool = True,
     ) -> Dict[str, Dict[str, Any]]:
-        # 🔒 Cache ablegen (für späteres Nachbauen beim Aktivieren)
+        # Cache ablegen (für späteren Rebuild)
         self._cache = {
             "substrate_mesh": substrate_mesh,
             "compiled": compiled,
@@ -308,10 +308,11 @@ class OverlayRenderer:
             if cond:
                 self._clear_layer(self._L(name))
 
+        # WICHTIG: konsistente Keys zu layers{} (mask_mrk/path_mrk)
         _clear_layer_if("mask",         (show_mask or not only_selected))
-        _clear_layer_if("mask_markers", (show_mask or not only_selected))
+        _clear_layer_if("mask_mrk",     (show_mask or not only_selected))
         _clear_layer_if("path",         (show_path or not only_selected))
-        _clear_layer_if("path_markers", (show_path or not only_selected))
+        _clear_layer_if("path_mrk",     (show_path or not only_selected))
         _clear_layer_if("rays_hit",     (show_hits or not only_selected))
         _clear_layer_if("rays_miss",    (show_misses or not only_selected))
         _clear_layer_if("normals",      (show_normals or not only_selected))
@@ -343,7 +344,7 @@ class OverlayRenderer:
                 try:
                     step = max(1, int(round(max(1, tcp_points.shape[0] // 200))))
                     pts_s = tcp_points[::step]
-                    self._add_mesh(pv.PolyData(pts_s), color="#2ecc71", layer=self._L("path_markers"),
+                    self._add_mesh(pv.PolyData(pts_s), color="#2ecc71", layer=self._L("path_mrk"),
                                    point_size=8.0, lighting=False, render=False, reset_camera=False)
                 except Exception:
                     _LOG.exception("path markers failed (%s)", side)
@@ -406,7 +407,7 @@ class OverlayRenderer:
 
         return outputs_by_side
 
-    # 🧩 Neu: gezieltes Nachbauen einzelner Layer beim Aktivieren
+    # ---- Rebuild einzelner Layer beim Aktivieren --------------------------
     def rebuild_layers(self, layer_names: List[str]) -> None:
         """Rendert nur die angegebenen Overlays nach (path/mask/normals/frames)."""
         if not self._cache:
@@ -425,7 +426,7 @@ class OverlayRenderer:
                 default_stand_off_mm=self._cache.get("default_stand_off_mm", 10.0),
                 ray_len_mm=self._cache.get("ray_len_mm", 1000.0),
                 sides=self._cache.get("sides"),
-                only_selected=True,  # wichtig: nur die angeforderten Layer anfassen
+                only_selected=True,  # nur angeforderte Layer anfassen
             )
         except Exception:
             _LOG.exception("rebuild_layers failed")
