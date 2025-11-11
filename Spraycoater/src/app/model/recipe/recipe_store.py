@@ -48,10 +48,6 @@ class RecipeStore:
     # ------------------------------------------------------------------ #
     @staticmethod
     def _nested_get(data: dict, dotted: str):
-        """
-        Klassischer dotted-Getter (z. B. "path.spiral.plane").
-        Gibt None zurück, wenn ein Teilpfad fehlt.
-        """
         cur = data
         for part in dotted.split("."):
             if not isinstance(cur, dict) or part not in cur:
@@ -61,12 +57,6 @@ class RecipeStore:
 
     @staticmethod
     def _get_params_node(ps: dict, key: str):
-        """
-        Tolerante Auflösung eines Schemaknotens unter recipe_params:
-          1) direkter Key (z. B. 'path.meander.plane')
-          2) dotted Traversal (verschachtelt)
-          3) heuristisch: '_' <-> '.' und lower()-Vergleich auf Top-Level
-        """
         if not isinstance(ps, dict):
             return None
 
@@ -95,9 +85,6 @@ class RecipeStore:
         return None
 
     def _get_params_node_key(self, key: str) -> Optional[Dict[str, Any]]:
-        """
-        Convenience: ruft _get_params_node für self.params_schema auf.
-        """
         return self._get_params_node(self.params_schema or {}, key)
 
     # ------------------------------------------------------------------ #
@@ -129,10 +116,6 @@ class RecipeStore:
         return dict(gs) if isinstance(gs, dict) else {}
 
     def collect_global_defaults(self) -> Dict[str, Any]:
-        """
-        Liest *ausschließlich* die default-Werte aus recipe_params.globals.*.
-        Keine Fallbacks im Code.
-        """
         out: Dict[str, Any] = {}
         for key, spec in self.globals_schema().items():
             if isinstance(spec, dict) and "default" in spec:
@@ -147,9 +130,6 @@ class RecipeStore:
         return dict(node) if isinstance(node, dict) else {}
 
     def collect_planner_defaults(self) -> Dict[str, Any]:
-        """
-        Liest *ausschließlich* die default-Werte aus recipe_params.planner.*.
-        """
         out: Dict[str, Any] = {}
         for key, spec in (self.planner_schema() or {}).items():
             if isinstance(spec, dict) and "default" in spec:
@@ -164,18 +144,10 @@ class RecipeStore:
         return dict(sides) if isinstance(sides, dict) else {}
 
     def allowed_and_default_for(self, rec_def: Dict[str, Any], side: str) -> Dict[str, Any]:
-        """
-        Gibt die rohe Side-Config zurück (allowed_path_types/default_path),
-        ohne Normalisierung.
-        """
         sides = self.sides_for_recipe(rec_def)
         return deepcopy(sides.get(side) or {})
 
     def build_default_paths_for_recipe(self, rec_def: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-        """
-        Baut pro Side eine Starter-Config auf Basis des im Rezept angegebenen default_path.
-        (Nur Kopie – UI/Editor normalisiert später bei Bedarf.)
-        """
         out: Dict[str, Dict[str, Any]] = {}
         for side, scfg in self.sides_for_recipe(rec_def).items():
             dp = dict((scfg.get("default_path") or {}))
@@ -188,12 +160,6 @@ class RecipeStore:
     # Path-Schema Auflösung (robust)
     # ------------------------------------------------------------------ #
     def schema_for_type_strict(self, ptype: str) -> Dict[str, Any]:
-        """
-        Liefert das Param-Schema (recipe_params.path.*) für einen Path-Typ.
-        - Nutzt das Mapping _TYPE_TO_SCHEMA_KEY.
-        - Auflösung ist tolerant gegen verschachtelte/dotted/umbenannte Knoten.
-        - Bei echtem Fehlen wird ein klarer KeyError geworfen (kein stilles Fallback).
-        """
         p = str(ptype).strip()
         key = self._TYPE_TO_SCHEMA_KEY.get(p)
         if not key:
@@ -202,7 +168,6 @@ class RecipeStore:
         ps = self.params_schema or {}
         node = self._get_params_node(ps, key)
         if not isinstance(node, dict):
-            # Zusätzliche Suche: alle path.*-Knoten scannen, die den Typ im Namen tragen
             for k, v in (ps.items() if isinstance(ps, dict) else []):
                 if isinstance(v, dict) and str(k).startswith("path.") and p in str(k):
                     return dict(v)
@@ -219,14 +184,6 @@ class RecipeStore:
     # Runtime-Normalisierung einer Side (strict w.r.t. Schema)
     # ------------------------------------------------------------------ #
     def build_side_runtime_cfg_strict(self, rec_def: Dict[str, Any], side: str) -> Dict[str, Any]:
-        """
-        Liefert eine normalisierte Runtime-Config für eine Side:
-          {
-            "allowed_path_types": [...],
-            "default_path": { "type": "...", <param>=... },
-            "schemas": { <ptype>: {<param_key>: spec, ...}, ... }
-          }
-        """
         scfg = self.allowed_and_default_for(rec_def, side) or {}
 
         # --- allowed_path_types (liberal gelesen) ---
@@ -250,7 +207,7 @@ class RecipeStore:
 
         ptype = str(default_path["type"]).strip()
 
-        # --- Schema des Default-Typs (validiert Typ und liefert Defaults) ---
+        # --- Schema des Default-Typs ---
         schema_default = self.schema_for_type_strict(ptype)
 
         # --- strict: Default-Params = Schema-Defaults, dann Rezept-Overrides ---
@@ -263,7 +220,7 @@ class RecipeStore:
                 norm[k] = v
 
         # --- schemas: für alle erlaubten Typen (inkl. Default) bereitstellen ---
-        types_to_resolve = list(dict.fromkeys([ptype] + list(allowed)))  # Reihenfolge stabil, ohne Duplikate
+        types_to_resolve = list(dict.fromkeys([ptype] + list(allowed)))
         schemas: Dict[str, Dict[str, Any]] = {}
         resolved_allowed: List[str] = []
 
@@ -271,13 +228,11 @@ class RecipeStore:
             try:
                 sch = self.schema_for_type_strict(t)
             except KeyError:
-                # Unbekannter Typ in YAML → einfach überspringen (kein Crash im UI)
                 continue
             schemas[t] = sch
             if t in allowed and t not in resolved_allowed:
                 resolved_allowed.append(t)
 
-        # Falls allowed leer war oder nur ungültige Einträge hatte: wenigstens den Default-Typ erlauben
         if not resolved_allowed:
             resolved_allowed = [ptype]
 
@@ -288,7 +243,7 @@ class RecipeStore:
         }
 
     # ------------------------------------------------------------------ #
-    # UI-Enum-Helper (optional, rein lesend aus dem Schema)
+    # UI-Enum-Helper (optional)
     # ------------------------------------------------------------------ #
     def spiral_plane_enums(self) -> Dict[str, List[str]]:
         out: Dict[str, List[str]] = {}

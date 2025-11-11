@@ -13,6 +13,7 @@ from app.model.recipe.recipe import Recipe
 from app.model.recipe.recipe_store import RecipeStore
 from .recipe_editor_content import RecipeEditorContent  # erwartet collect_* / apply_* Shims
 
+
 def _slugify(s: str) -> str:
     s = s.strip()
     s = re.sub(r"\s+", "_", s)
@@ -20,12 +21,15 @@ def _slugify(s: str) -> str:
     s = re.sub(r"_+", "_", s)
     return s
 
+
 class RecipeEditorPanel(QWidget):
     """Layout:
         [ Commands ]                 -> New | Load | Save | Delete
         [ Name & Description ]       -> Name(LineEdit) + Description(LineEdit)
         [ Content ]                  -> Globals / Selectors / Planner / SideTabs
         [ Update Preview ]
+
+    Hinweis: Update Preview übergibt nur die **gecheckten Sides** an die Preview.
     """
     updatePreviewRequested = pyqtSignal(object)
 
@@ -102,7 +106,8 @@ class RecipeEditorPanel(QWidget):
         def _emit_update():
             payload = {
                 "model": self.current_model(),
-                "sides": self._selected_existing_sides()
+                # nur gecheckte & existierende Sides in der Preview berücksichtigen
+                "sides": self._selected_existing_sides(),
             }
             self.updatePreviewRequested.emit(payload)
         self.btnUpdatePreview.clicked.connect(_emit_update)
@@ -250,6 +255,7 @@ class RecipeEditorPanel(QWidget):
     def current_model(self) -> Recipe:
         """
         Sammelt UI -> Model, fasst 'id' NICHT an (id wird nur beim Save gesetzt).
+        Angles bleiben Meta (kein Zeichnen) – Speicherung erfolgt in parameters/paths.
         """
         collect_planner = getattr(self.content, "collect_planner", lambda: {})
         params         = self.content.collect_globals()

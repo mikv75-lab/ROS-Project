@@ -161,9 +161,14 @@ class RecipeTab(QWidget):
             try:
                 smesh = load_substrate_mesh_from_key(self.ctx, substrate_key)
                 smesh = place_substrate_on_mount(self.ctx, smesh, mount_key=mount_key)
+                # PyVista: is_all_triangles kann Property ODER Methode sein
                 try:
-                    if hasattr(smesh, "is_all_triangles") and not smesh.is_all_triangles():
-                        smesh = smesh.triangulate()
+                    if hasattr(smesh, "is_all_triangles"):
+                        is_tris = smesh.is_all_triangles
+                        if callable(is_tris):
+                            is_tris = smesh.is_all_triangles()
+                        if not bool(is_tris):
+                            smesh = smesh.triangulate()
                 except Exception:
                     pass
             except Exception as e:
@@ -237,56 +242,43 @@ class RecipeTab(QWidget):
                 except Exception:
                     _LOG.exception("Substrat zeichnen fehlgeschlagen")
 
-            # 7) Spray-Visualisierung – kompilierte Pfade bevorzugen
+            # 7) Spray-Visualisierung – NUR noch Quaternion-Compile
             try:
                 if smesh is None:
                     raise RuntimeError("Kein Substratmesh für Spray-Preview")
 
                 vis = self._visibility_snapshot()  # Checkboxen lesen
 
-                used_compiled = False
+                # Stand-off strikt global aus dem Recipe ziehen
+                try:
+                    recipe_params = getattr(model, "parameters", {}) or {}
+                except Exception:
+                    recipe_params = {}
+                stand_off_from_recipe = float(recipe_params.get("stand_off_mm", 10.0))
+
                 compiled = None
                 try:
-                    # Recipe.compile_paths(...) vorhanden?
-                    if hasattr(model, "compile_paths") and callable(getattr(model, "compile_paths")):
-                        compiled = model.compile_paths(
-                            sides=sides,                 # None => alle Sides im Modell
-                            default_stand_off_mm=10.0,
-                            sample_step_mm=None,        # per-Side/Globals nutzen
-                            ray_len_mm=1000.0,
-                            mask_lift_mm=50.0,
-                            force=False,
+                    if hasattr(model, "compile_poses") and callable(getattr(model, "compile_poses")):
+                        compiled = model.compile_poses(
+                            bounds=smesh.bounds,
+                            sides=sides,
+                            stand_off_mm=stand_off_from_recipe,
+                            tool_frame=None,
                         )
-                    elif isinstance(model, dict) and "paths_by_side" in model:
-                        pbs = model.get("paths_by_side") or {}
-                        if any(isinstance(v, dict) and v.get("points_mm") is not None for v in pbs.values()):
-                            compiled = {"paths_by_side": pbs}
-                    # Wenn compiled vorhanden, zeichnen
-                    if compiled is not None:
-                        self.previewPanel.overlays.render_compiled(
-                            substrate_mesh=smesh,
-                            compiled=compiled,
-                            visibility=vis,
-                            mask_lift_mm=50.0,
-                            default_stand_off_mm=10.0,
-                            ray_len_mm=1000.0,
-                            sides=sides,                # Seitenfilter durchreichen
-                        )
-                        used_compiled = True
                 except Exception:
-                    _LOG.exception("compile_paths/render_compiled failed; fallback to render_from_model")
+                    _LOG.exception("compile_poses failed")
 
-                if not used_compiled:
-                    # Back-Compat: baut Pfade innerhalb der Overlays
-                    self.previewPanel.overlays.render_from_model(
-                        model=model,
+                if not compiled:
+                    _LOG.warning("Keine kompilierte/gegebene Pfade gefunden – nichts zu rendern.")
+                else:
+                    self.previewPanel.overlays.render_compiled(
                         substrate_mesh=smesh,
-                        side=None,                    # auto: 'top' oder erster key
-                        sides=sides,                  # Seitenfilter durchreichen
-                        default_stand_off_mm=10.0,
-                        mask_lift_mm=50.0,
-                        ray_len_mm=1000.0,
+                        compiled=compiled,          # versteht 'paths_compiled.sides[*].poses_quat'
                         visibility=vis,
+                        mask_lift_mm=50.0,
+                        default_stand_off_mm=stand_off_from_recipe,  # Masken-Offset nutzt globalen Stand-off
+                        ray_len_mm=1000.0,
+                        sides=sides,
                     )
 
                 if hasattr(self.previewPanel.overlays, "apply_visibility"):

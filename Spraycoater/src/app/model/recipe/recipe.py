@@ -87,10 +87,6 @@ class Recipe:
             "max_angle_deg",
             "sample_step_mm",   # strikt global
             "max_points",       # strikt global
-            "predispense.angle_deg",
-            "predispense.distance_mm",
-            "retreat.angle_deg",
-            "retreat.distance_mm",
         ]
         missing = [k for k in required if k not in g]
         if missing:
@@ -145,7 +141,7 @@ class Recipe:
     def paths(self) -> Dict[str, np.ndarray]:
         return self._paths_cache
 
-    # ------- Quaternion-Posen + Entry/Exit -------
+    # ------- Quaternion-Posen (ohne Pre-/Retreat-Zeichnen) -------
     def compile_poses(
         self,
         *,
@@ -153,19 +149,21 @@ class Recipe:
         sides: Optional[Iterable[str]] = None,
         stand_off_mm: Optional[float] = None,
         tool_frame: Optional[str] = None,
-        predispense: Optional[Dict[str, float]] = None,  # {"distance_mm":..,"angle_deg":..}
-        retreat: Optional[Dict[str, float]] = None,      # {"distance_mm":..,"angle_deg":..}
     ) -> Dict[str, Any]:
         """
-        Ergebnisformat:
+        Ergebnisformat (Pre-/Retreat werden NICHT gezeichnet, nur Meta-Hints):
         paths_compiled = {
           "frame": "scene",
           "tool_frame": "tool_mount",
           "sides": {
             "<side>": {
-              "meta": { path_type, path_params, globals, sample_step_mm, stand_off_mm, tool_frame, ... },
-              "predispense": {x,y,z,qx,qy,qz,qw}?,   # optional
-              "retreat":     {x,y,z,qx,qy,qz,qw}?,   # optional
+              "meta": {
+                path_type, path_params, globals, sample_step_mm, stand_off_mm, tool_frame,
+                angle_hints: {
+                  "predispense": {angle_mode?, angle_deg?},
+                  "retreat":     {angle_mode?, angle_deg?}
+                }
+              },
               "poses_quat": [ {x,y,z,qx,qy,qz,qw}, ... ]
             }
           }
@@ -177,29 +175,20 @@ class Recipe:
         # Pflicht-Globals prüfen
         _ = self._globals_params_strict()
 
-        # Compile-Parameter (Default aus parameters / planner)
+        # Compile-Parameter
         if stand_off_mm is None:
             stand_off_mm = float(self.parameters.get("stand_off_mm", 0.0))
         if tool_frame is None:
             tool_frame = str((self.planner or {}).get("tool_frame", "tool_mount"))
-        if predispense is None:
-            predispense = {
-                "distance_mm": float(self.parameters.get("predispense.distance_mm", 30.0)),
-                "angle_deg":   float(self.parameters.get("predispense.angle_deg",   15.0)),
-            }
-        if retreat is None:
-            retreat = {
-                "distance_mm": float(self.parameters.get("retreat.distance_mm", 30.0)),
-                "angle_deg":   float(self.parameters.get("retreat.angle_deg",   15.0)),
-            }
 
+        # Surface-Normalen (zeigen VON der Oberfläche weg/ins Freie)
         face = {
-            "top":   {"n": np.array([0, 0, -1.0]), "anchor": ("z", zmax), "axes": ("x", "y")},
-            "front": {"n": np.array([0, 1,  0.0]), "anchor": ("y", ymin), "axes": ("x", "z")},
-            "back":  {"n": np.array([0,-1,  0.0]), "anchor": ("y", ymax), "axes": ("x", "z")},
-            "left":  {"n": np.array([1, 0,  0.0]), "anchor": ("x", xmin), "axes": ("y", "z")},
-            "right": {"n": np.array([-1,0,  0.0]), "anchor": ("x", xmax), "axes": ("y", "z")},
-            "helix": {"n": np.array([0, 0,  1.0]), "anchor": ("z", cz),   "axes": ("x", "y")},
+            "top":   {"surface_n": np.array([0, 0,  1.0]), "anchor": ("z", zmax), "axes": ("x", "y")},
+            "front": {"surface_n": np.array([0, -1, 0.0]), "anchor": ("y", ymin), "axes": ("x", "z")},
+            "back":  {"surface_n": np.array([0,  1, 0.0]), "anchor": ("y", ymax), "axes": ("x", "z")},
+            "left":  {"surface_n": np.array([-1, 0, 0.0]), "anchor": ("x", xmin), "axes": ("y", "z")},
+            "right": {"surface_n": np.array([ 1, 0, 0.0]), "anchor": ("x", xmax), "axes": ("y", "z")},
+            "helix": {"surface_n": np.array([0, 0,  1.0]), "anchor": ("z", cz),   "axes": ("x", "y")},
         }
 
         def _safe_norm(v: np.ndarray) -> np.ndarray:
@@ -279,7 +268,8 @@ class Recipe:
                 source = pdef.get("type", "points")
 
             cfg = face.get(side, face["top"])
-            n = _safe_norm(cfg["n"])
+            surface_n = _safe_norm(cfg["surface_n"])   # zeigt vom Substrat weg
+            tool_z = -surface_n                        # Düse zeigt zur Fläche
 
             if P_local.shape[0] == 0:
                 sides_out[side] = {
@@ -287,60 +277,44 @@ class Recipe:
                         "side": side, "source": source, "path_type": pdef.get("type"),
                         "path_params": pdef, "globals": dict(self.parameters or {}),
                         "sample_step_mm": step, "stand_off_mm": float(stand_off_mm),
-                        "tool_frame": tool_frame
+                        "tool_frame": tool_frame,
+                        "angle_hints": _extract_angle_hints(pdef),
                     },
                     "poses_quat": []
                 }
                 continue
 
+            # Pfad in Weltkoordinaten einbetten
             Pw = _embed_local(P_local, side)
-            if abs(stand_off_mm) > 1e-9:
-                Pw = Pw + n.reshape(1, 3) * stand_off_mm
 
+            # Stand-off: vom Surface weg schieben
+            if abs(stand_off_mm) > 1e-9:
+                Pw = Pw + surface_n.reshape(1, 3) * float(stand_off_mm)
+
+            # Tangenten in Ebene senkrecht zur Tool-Z-Achse (tool_z) projizieren
             T = np.empty_like(Pw)
-            T[0] = Pw[1] - Pw[0]
+            T[0]  = Pw[1] - Pw[0]
             T[-1] = Pw[-1] - Pw[-2] if len(Pw) >= 2 else np.array([1.0, 0.0, 0.0])
             if len(Pw) > 2:
                 T[1:-1] = Pw[2:] - Pw[:-2]
             for i in range(len(T)):
-                t = T[i] - n * float(np.dot(T[i], n))
-                T[i] = (t / (np.linalg.norm(t) + 1e-12))
+                t = T[i] - tool_z * float(np.dot(T[i], tool_z))
+                nrm = float(np.linalg.norm(t))
+                T[i] = (t / nrm) if nrm > 1e-12 else np.array([1.0, 0.0, 0.0])
             for i in range(1, len(T)):
                 if float(np.dot(T[i-1], T[i])) < 0.0:
                     T[i] = -T[i]
 
+            # Orientierung: x = Tangente, y = tool_z × x, z = tool_z
             poses: List[Dict[str, float]] = []
             for i in range(len(Pw)):
                 x = T[i]
-                y = np.cross(n, x)
-                qx, qy, qz, qw = _quat_from_axes(x, y, n)
-                poses.append({"x": float(Pw[i,0]), "y": float(Pw[i,1]), "z": float(Pw[i,2]),
-                              "qx": qx, "qy": qy, "qz": qz, "qw": qw})
-
-            pre_pose = None
-            if predispense:
-                dist = float(predispose.get("distance_mm", predispense.get("distance_mm", 30.0))) if "predispose" in locals() else float(predispose.get("distance_mm", 30.0))  # type: ignore
-                ang  = math.radians(float(predispose.get("angle_deg", predispense.get("angle_deg", 0.0)))) if "predispose" in locals() else math.radians(float(predispose.get("angle_deg", 0.0)))  # type: ignore
-                dir_out = ( (-math.cos(ang))*n + (-math.sin(ang))*T[0] )
-                dir_out = dir_out / (np.linalg.norm(dir_out) + 1e-12)
-                P0 = Pw[0] + dist * dir_out
-                x0 = T[0]; y0 = np.cross(n, x0)
-                qx, qy, qz, qw = _quat_from_axes(x0, y0, n)
-                pre_pose = {"x": float(P0[0]), "y": float(P0[1]), "z": float(P0[2]),
-                            "qx": qx, "qy": qy, "qz": qz, "qw": qw}
-
-            ret_pose = None
-            if retreat:
-                dist = float(retreat.get("distance_mm", 30.0))
-                ang  = math.radians(float(retreat.get("angle_deg", 0.0)))
-                tend = T[-1]
-                dir_out = ( (-math.cos(ang))*n + ( math.sin(ang))*tend )
-                dir_out = dir_out / (np.linalg.norm(dir_out) + 1e-12)
-                Pe = Pw[-1] + dist * dir_out
-                xE = tend; yE = np.cross(n, xE)
-                qx, qy, qz, qw = _quat_from_axes(xE, yE, n)
-                ret_pose = {"x": float(Pe[0]), "y": float(Pe[1]), "z": float(Pe[2]),
-                            "qx": qx, "qy": qy, "qz": qz, "qw": qw}
+                y = np.cross(tool_z, x)
+                qx, qy, qz, qw = _quat_from_axes(x, y, tool_z)
+                poses.append({
+                    "x": float(Pw[i,0]), "y": float(Pw[i,1]), "z": float(Pw[i,2]),
+                    "qx": qx, "qy": qy, "qz": qz, "qw": qw
+                })
 
             meta = {
                 "side": side,
@@ -351,38 +325,34 @@ class Recipe:
                 "sample_step_mm": step,
                 "stand_off_mm": float(stand_off_mm),
                 "tool_frame": tool_frame,
+                # Nur Hinweise, NICHT gemalt:
+                "angle_hints": _extract_angle_hints(pdef),
             }
-            if predispense:
-                meta["predispense_cfg"] = {
-                    "distance_mm": float(predispose.get("distance_mm", predispense.get("distance_mm", 30.0))) if "predispose" in locals() else float(predispose.get("distance_mm", 30.0)),  # type: ignore
-                    "angle_deg":   float(predispose.get("angle_deg",   predispense.get("angle_deg",   15.0))) if "predispose" in locals() else float(predispose.get("angle_deg", 15.0)),  # type: ignore
-                }
-            if retreat:
-                meta["retreat_cfg"] = {
-                    "distance_mm": float(retreat.get("distance_mm", 30.0)),
-                    "angle_deg":   float(retreat.get("angle_deg",   15.0)),
-                }
 
-            item = {"meta": meta, "poses_quat": poses}
-            if pre_pose: item["predispense"] = pre_pose
-            if ret_pose: item["retreat"] = ret_pose
-            sides_out[side] = item
+            sides_out[side] = {"meta": meta, "poses_quat": poses}
 
         self.paths_compiled = {"frame": "scene", "tool_frame": tool_frame, "sides": sides_out}
         return self.paths_compiled
 
-    # ------- Setter -------
-    def set_parameters(self, params: Dict[str, Any]) -> None:
-        self.parameters = dict(params or {})
-        self.invalidate_paths()
 
-    def set_planner(self, planner: Dict[str, Any]) -> None:
-        self.planner = dict(planner or {})
+def _extract_angle_hints(path_params: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """
+    Extrahiert optionale Winkelhinweise aus dem Path (ohne irgendwas zu zeichnen).
+    Erwartete Keys (falls vorhanden):
+      - predispense.angle_mode / predispense.angle_deg
+      - retreat.angle_mode    / retreat.angle_deg
+    """
+    def pick(prefix: str) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        am = path_params.get(f"{prefix}.angle_mode")
+        ad = path_params.get(f"{prefix}.angle_deg")
+        if am is not None:
+            out["angle_mode"] = am
+        if ad is not None:
+            out["angle_deg"] = ad
+        return out
 
-    def set_paths_by_side(self, pbs: Dict[str, Dict[str, Any]]) -> None:
-        self.paths_by_side = dict(pbs or {})
-        self.invalidate_paths()
-
-    def set_selection(self, *, tool: Optional[str], substrate: Optional[str], substrate_mount: Optional[str]) -> None:
-        self.tool = tool; self.substrate = substrate; self.substrate_mount = substrate_mount
-        self.invalidate_paths()
+    return {
+        "predispense": pick("predispense"),
+        "retreat":     pick("retreat"),
+    }

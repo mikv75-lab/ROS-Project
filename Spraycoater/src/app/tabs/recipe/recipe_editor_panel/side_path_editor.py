@@ -13,7 +13,7 @@ from app.model.recipe.recipe_store import RecipeStore
 # -------------------- Vec2 Widget --------------------
 
 class Vec2Edit(QWidget):
-    def __init__(self, step: float = 0.1, unit: str = "", parent: Optional[QWidget] = None):
+    def __init__(self, step: float = 0.1, unit: str = "", parent: Optional[Widget] = None):
         super().__init__(parent)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -62,7 +62,9 @@ class SidePathEditor(QWidget):
       - schemas: ptype -> { <param_key>: spec }
         spec: { type: number|boolean|string|enum|vec2, [min|max|step|unit|values|default|visible_if|help] }
 
-    Keine Fallbacks auf recipe_params außerhalb der Side-Runtime, keine Code-Defaults.
+    WICHTIG:
+    - Angle-Felder wie 'predispense.angle_mode' / 'predispense.angle_deg' / 'retreat.angle_*'
+      sind **Meta** (PathBuilder zeichnet keine Zusatzpunkte).
     """
     def __init__(self, *, side_name: str, store: RecipeStore, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -125,7 +127,7 @@ class SidePathEditor(QWidget):
         if self.type_combo.count() > 0:
             self._on_type_changed(0)
 
-    def _build_page_for_type(self, ptype: str, params: Dict[str, Any]) -> Tuple[Widget, Dict[str, Tuple[QWidget, str, Dict[str, Any]]]]:
+    def _build_page_for_type(self, ptype: str, params: Dict[str, Any]) -> Tuple[QWidget, Dict[str, Tuple[QWidget, str, Dict[str, Any]]]]:
         page = QWidget()
         f = QFormLayout(page)
         _compact_form(f)
@@ -134,6 +136,7 @@ class SidePathEditor(QWidget):
 
         # Reihenfolge stabil
         keys = list(params.keys())
+        # (Heuristik: "*shape" zuerst)
         keys.sort(key=lambda k: (0 if k.endswith("shape") else 1, k))
 
         for key in keys:
@@ -315,7 +318,7 @@ class SidePathEditor(QWidget):
         page, fields_map, _params = self._type_pages.get(t, (None, {}, {}))
         for key, (w, kind, _spec) in fields_map.items():
             out[key] = self._get_widget_value(w, kind)
-        return out
+        return out  # enthält ggf. angle-Felder als Meta (kein Zeichnen)
 
     # ---------- Auto-Reset ausschließlich aus Rezept ----------
 

@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# app/tabs/recipe/coating_preview_panel/overlays.py
 from __future__ import annotations
 import logging
 from typing import Any, Callable, Dict, Optional, List, Tuple
@@ -7,13 +6,7 @@ from typing import Any, Callable, Dict, Optional, List, Tuple
 import numpy as np
 import pyvista as pv
 
-# PathBuilder wird für den Legacy-Aufbau genutzt (strict).
-try:
-    from app.model.recipe.path_builder import PathBuilder
-except Exception:  # pragma: no cover
-    PathBuilder = None  # type: ignore
-
-from .raycast_projector import cast_rays_for_side
+from .raycast_projector import cast_rays_for_side  # bleibt, nutzen wir für altes Format optional
 
 _LOG = logging.getLogger("app.tabs.recipe.preview.overlays")
 
@@ -32,29 +25,20 @@ def _orthonormal_basis_from_z(z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np
     y = _safe_norm(np.cross(z, x))
     return x, y, z
 
-def _orthonormal_basis_from_zx(z: np.ndarray, x_hint: np.ndarray | None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    z = _safe_norm(z)
-    if x_hint is None:
-        return _orthonormal_basis_from_z(z)
-    x = _safe_norm(x_hint)
-    x = _safe_norm(np.cross(np.cross(x, z), z))
-    y = _safe_norm(np.cross(z, x))
-    return x, y, z
-
-def _rotmat_to_rpy_xyz(R: np.ndarray) -> tuple[float, float, float]:
-    R = np.asarray(R, dtype=float).reshape(3, 3)
-    eps = 1e-9
-    sy = -R[2, 0]
-    sy = np.clip(sy, -1.0, 1.0)
-    ry = np.arcsin(sy)
-    cy = np.cos(ry)
-    if abs(cy) > eps:
-        rx = np.arctan2(R[2, 1] / cy, R[2, 2] / cy)
-        rz = np.arctan2(R[1, 0] / cy, R[0, 0] / cy)
-    else:
-        rx = 0.0
-        rz = np.arctan2(-R[0, 1], R[1, 1])
-    return float(np.degrees(rx)), float(np.degrees(ry)), float(np.degrees(rz))
+def _quat_to_axes(qx: float, qy: float, qz: float, qw: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Quaternion -> Spalten der Rotationsmatrix: X,Y,Z."""
+    x2, y2, z2 = 2*qx, 2*qy, 2*qz
+    xx, yy, zz = qx*x2, qy*y2, qz*z2
+    xy, xz, yz = qx*y2, qx*z2, qy*z2
+    wx, wy, wz = qw*x2, qw*y2, qw*z2
+    # Rotationsmatrix (Zeilen)
+    R = np.array([
+        [1.0 - (yy + zz), xy - wz,        xz + wy       ],
+        [xy + wz,         1.0 - (xx + zz), yz - wx       ],
+        [xz - wy,         yz + wx,         1.0 - (xx + yy)]
+    ], dtype=float)
+    X = R[:, 0]; Y = R[:, 1]; Z = R[:, 2]
+    return _safe_norm(X), _safe_norm(Y), _safe_norm(Z)
 
 def _tangents_from_path(P: np.ndarray) -> np.ndarray:
     P = np.asarray(P, dtype=float).reshape(-1, 3)
@@ -76,73 +60,7 @@ def _tangents_from_path(P: np.ndarray) -> np.ndarray:
             T[i] = -T[i]
     return T
 
-def _make_yaml_hits_with_defaults(
-    points_hits: Optional[np.ndarray],
-    z_dirs_hits: Optional[np.ndarray],
-    x_dirs_hits: Optional[np.ndarray],
-    *,
-    default_rpy: tuple[float, float, float] = (0.0, 0.0, -90.0)
-) -> Optional[str]:
-    if points_hits is None or z_dirs_hits is None:
-        return None
-    O = np.asarray(points_hits, float).reshape(-1, 3)
-    Z = np.asarray(z_dirs_hits, float).reshape(-1, 3)
-    if O.shape != Z.shape or O.shape[0] == 0:
-        return None
-
-    X = None
-    if x_dirs_hits is not None:
-        X = np.asarray(x_dirs_hits, float).reshape(-1, 3)
-        if X.shape != O.shape:
-            X = None
-
-    lines = ["points:"]
-    for i in range(O.shape[0]):
-        z = Z[i]
-        if not np.all(np.isfinite(z)) or np.linalg.norm(z) < 1e-9:
-            rx, ry, rz = default_rpy
-        else:
-            x_hint = X[i] if X is not None else None
-            x, y, z = _orthonormal_basis_from_zx(z, x_hint)
-            R = np.column_stack([x, y, z])
-            rx, ry, rz = _rotmat_to_rpy_xyz(R)
-        lines.append(
-            "  - {x: %.6f, y: %.6f, z: %.6f, rx: %.6f, ry: %.6f, rz: %.6f}" % (
-                float(O[i, 0]), float(O[i, 1]), float(O[i, 2]),
-                float(rx), float(ry), float(rz)
-            )
-        )
-    return "\n".join(lines) + "\n"
-
-# -------- Strict-Helper für Globals / SampleStep / MaxPoints -----------------
-def _strict_globals_from_model(model) -> dict:
-    g = dict(getattr(model, "parameters", {}) or {})
-    required = [
-        "stand_off_mm",
-        "max_angle_deg",
-        "predispense.angle_deg",
-        "predispense.distance_mm",
-        "retreat.angle_deg",
-        "retreat.distance_mm",
-    ]
-    missing = [k for k in required if k not in g]
-    if missing:
-        raise ValueError(f"Preview: Missing required globals in model.parameters: {missing} (kein Fallback).")
-    return {k: g[k] for k in required}
-
-def _strict_sample_step_from_model(model) -> float:
-    g = dict(getattr(model, "parameters", {}) or {})
-    if "sample_step_mm" not in g:
-        raise ValueError("Preview: parameters.sample_step_mm fehlt (kein Fallback).")
-    return float(g["sample_step_mm"])
-
-def _strict_max_points_from_model(model) -> int:
-    g = dict(getattr(model, "parameters", {}) or {})
-    if "max_points" not in g:
-        raise ValueError("Preview: parameters.max_points fehlt (kein Fallback).")
-    return int(g["max_points"])
-
-# -------- Neu: Side-Frame & Einbettung ---------------------------------------
+# -------- Side-Frame & Einbettung -------------------------------------------
 def _side_frame(bounds: Tuple[float, float, float, float, float, float]):
     xmin, xmax, ymin, ymax, zmin, zmax = bounds
     cx = 0.5 * (xmin + xmax)
@@ -192,6 +110,30 @@ def _embed_path_on_face(P0_local: np.ndarray, side: str, bounds) -> np.ndarray:
     out[:, 2] = axes["z"]
     return out
 
+def _mk_poly_segments(starts: np.ndarray, dirs: np.ndarray, length: float) -> Optional[pv.PolyData]:
+    """Erzeuge Liniensegmente (Normals/Frames) als PolyData-Lines."""
+    try:
+        if starts is None or dirs is None or len(starts) == 0:
+            return None
+        S = np.asarray(starts, float).reshape(-1, 3)
+        D = np.asarray(dirs, float).reshape(-1, 3)
+        n = min(len(S), len(D))
+        if n == 0: return None
+        S = S[:n]; D = D[:n]
+        D = np.array([_safe_norm(d) for d in D], float)
+        E = S + D * float(length)
+        pts = np.vstack([S, E])
+        lines = np.empty((n, 3), dtype=np.int64)
+        lines[:, 0] = 2
+        lines[:, 1] = np.arange(n, dtype=np.int64)
+        lines[:, 2] = lines[:, 1] + n
+        poly = pv.PolyData(pts)
+        poly.lines = lines.reshape(-1)
+        return poly
+    except Exception:
+        _LOG.exception("mk_poly_segments failed")
+        return None
+
 # -------- OverlayRenderer -----------------------------------------------------
 class OverlayRenderer:
     def __init__(
@@ -202,7 +144,7 @@ class OverlayRenderer:
         add_path_polyline_fn: Callable[..., Any],
         show_poly_fn: Callable[..., Any],
         show_frames_at_fn: Callable[..., None],
-        set_layer_visible_fn: Callable[[str, bool, bool], None] | Callable[[str, bool], None],
+        set_layer_visible_fn: Callable[[str], bool] | Callable[[str, bool], None] | Callable[[str, bool, bool], None],
         update_2d_scene_fn: Callable[[Optional[pv.PolyData], Optional[np.ndarray], Optional[pv.PolyData]], None],
         layers: Dict[str, str],
         get_bounds: Callable[[], Any],
@@ -219,7 +161,6 @@ class OverlayRenderer:
         self._get_bounds = get_bounds
         self._yaml_out = yaml_out_fn
 
-        self._out: Dict[str, Any] = {}
         self._vis = {"mask": False, "path": True, "hits": False, "misses": False, "normals": False, "frames": False}
 
     # ---- Sichtbarkeit ----
@@ -276,26 +217,84 @@ class OverlayRenderer:
         self.set_normals_visible(self._vis["normals"], render=False)
         self.set_frames_visible(self._vis["frames"], render=True)
 
-    # ---- Neuer Weg: vor-kompilierte Pfade zeichnen ----------------------
+    # ---- Neuer Weg: kompilierte Pfade zeichnen ----------------------------
+    def _compiled_iter(self, compiled: dict, sides_filter: Optional[List[str]]) -> List[tuple[str, dict]]:
+        """Abstrahiert beide Formate:
+        - neues: {"sides": {"top": {"poses_quat":[...]}}}
+        - alt : {"paths_by_side": {"top": {"points_mm":[...]}}}
+        Gibt Liste (side, entry_dict) zurück.
+        """
+        if isinstance(compiled, dict) and "sides" in compiled:
+            items = list((compiled.get("sides") or {}).items())
+        else:
+            items = list((compiled.get("paths_by_side") or {}).items())
+        if sides_filter:
+            keep = set(map(str, sides_filter))
+            items = [(s, e) for (s, e) in items if s in keep]
+        return items
+
+    @staticmethod
+    def _entry_to_tcp_and_dirs(side: str, entry: dict, bounds, *, default_mask_dir: np.ndarray) -> tuple[
+        Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Optional[pv.PolyData]
+    ]:
+        """Erzeugt tcp_points, x_dirs, z_dirs und eine Mask-Polyline (optional) aus entry."""
+        # neues Format: poses_quat
+        if isinstance(entry, dict) and "poses_quat" in entry:
+            poses = entry.get("poses_quat") or []
+            if not poses:
+                return None, None, None, None
+            P = np.array([[p["x"], p["y"], p["z"]] for p in poses], dtype=float).reshape(-1, 3)
+            X = []; Z = []
+            for p in poses:
+                qx, qy, qz, qw = float(p["qx"]), float(p["qy"]), float(p["qz"]), float(p["qw"])
+                x_axis, _y_axis, z_axis = _quat_to_axes(qx, qy, qz, qw)
+                X.append(x_axis); Z.append(z_axis)
+            X = np.asarray(X, float)
+            Z = np.asarray(Z, float)
+            # einfache Maskenlinie: Pfad um kleinen Offset in default Face-Normal
+            mask_poly = None
+            try:
+                Pmask = P - default_mask_dir.reshape(1, 3) * 10.0  # 10 mm „Lift“ nur für 2D-Schatten
+                mask_poly = pv.lines_from_points(Pmask, close=False)
+            except Exception:
+                mask_poly = None
+            return P, X, Z, mask_poly
+
+        # altes Format: points_mm (lokal in Face → wird später eingebettet)
+        if isinstance(entry, dict) and "points_mm" in entry:
+            P_local = np.asarray(entry.get("points_mm") or [], dtype=float).reshape(-1, 3)
+            if P_local.size == 0:
+                return None, None, None, None
+            P_world = _embed_path_on_face(P_local, side, bounds)
+            # Richtungen per Tangente + Face-Normal
+            cfgs, _ = _side_frame(bounds)
+            n = cfgs.get(side, cfgs["top"])["normal"]
+            T = _tangents_from_path(P_world)
+            X = np.array([_safe_norm(t - n * float(np.dot(t, n))) for t in T], float)
+            for i in range(1, len(X)):
+                if float(np.dot(X[i-1], X[i])) < 0.0:
+                    X[i] = -X[i]
+            Z = np.tile(_safe_norm(n), (len(P_world), 1))
+            try:
+                Pmask = P_world - _safe_norm(n).reshape(1, 3) * 10.0
+                mask_poly = pv.lines_from_points(Pmask, close=False)
+            except Exception:
+                mask_poly = None
+            return P_world, X, Z, mask_poly
+
+        return None, None, None, None
+
     def render_compiled(
         self,
         *,
         substrate_mesh: pv.PolyData,
-        compiled: dict,                 # output von Recipe.compile_paths()
+        compiled: dict,                 # paths_compiled (neu) ODER alt
         visibility: Optional[Dict[str, bool]] = None,
         mask_lift_mm: float = 50.0,
         default_stand_off_mm: float = 10.0,
         ray_len_mm: float = 1000.0,
         sides: Optional[List[str]] = None,   # Seitenfilter
     ) -> Dict[str, Dict[str, Any]]:
-        pbs_all = dict(compiled.get("paths_by_side") or {})
-        # Seitenfilter anwenden (nur gecheckte)
-        if sides:
-            side_set = {str(s) for s in sides}
-            pbs = {s: rec for s, rec in pbs_all.items() if s in side_set}
-        else:
-            pbs = pbs_all
-
         for ly in ("mask", "mask_markers", "rays_hit", "rays_miss", "normals", "path", "path_markers",
                    "frames_x", "frames_y", "frames_z", "frames_labels"):
             self._clear_layer(self._L(ly))
@@ -305,129 +304,21 @@ class OverlayRenderer:
 
         outputs_by_side: Dict[str, Dict[str, Any]] = {}
 
-        for side, rec in pbs.items():
-            pts = np.asarray(rec.get("points_mm", []), dtype=float).reshape(-1, 3)
-            if pts.size == 0:
-                outputs_by_side[side] = {}
-                continue
+        items = self._compiled_iter(compiled, sides)
 
+        if not items:
+            return outputs_by_side
+
+        for side, entry in items:
             cfg = cfgs.get(side, cfgs["top"])
-            normal = cfg["normal"]
+            face_n = _safe_norm(cfg["normal"])
 
-            P_face = _embed_path_on_face(pts, side, bounds)
-
-            try:
-                nrm = normal / (np.linalg.norm(normal) + 1e-12)
-                P_mask = P_face - float(mask_lift_mm) * nrm
-                mask_poly = pv.lines_from_points(P_mask, close=False)
-            except Exception:
-                P_mask = None
-                mask_poly = None
-
-            tcp_points = None
-            tcp_poly = None
-            rays_hit_poly = None
-            valid_mask = None
-            z_dirs = None
-            x_dirs = None
-            try:
-                stand_off = float(default_stand_off_mm)
-                rc, rays_hit_poly, tcp_poly = cast_rays_for_side(
-                    P_world_start=P_mask,
-                    sub_mesh_world=substrate_mesh,
-                    side=side,
-                    source=str(rec.get("type") or "points"),
-                    stand_off_mm=stand_off,
-                    ray_len_mm=float(ray_len_mm),
-                    start_lift_mm=0.0,
-                    flip_normals_to_face_rays=True,
-                    invert_dirs=False,
-                    lock_xy=True,
-                )
-                valid_mask = getattr(rc, "valid", None)
-
-                if rc is not None and getattr(rc, "tcp_mm", None) is not None:
-                    tcp_all = rc.tcp_mm
-                    tcp_points = tcp_all[valid_mask] if (valid_mask is not None and np.any(valid_mask)) else tcp_all
-
-                z_full = getattr(rc, "refl_dir", None)
-                x_full = getattr(rc, "x_dir", None) or getattr(rc, "frame_x", None)
-
-                if z_full is not None:
-                    ZF = np.asarray(z_full, dtype=float).reshape(-1, 3)
-                    z_dirs = ZF[valid_mask] if (valid_mask is not None and len(ZF) == len(valid_mask)) else ZF
-
-                if x_full is not None:
-                    XF = np.asarray(x_full, dtype=float).reshape(-1, 3)
-                    x_dirs = XF[valid_mask] if (valid_mask is not None and len(XF) == len(valid_mask)) else XF
-
-            except Exception:
-                _LOG.exception("cast_rays_for_side failed (%s)", side)
-
-            if tcp_points is not None and (x_dirs is None or len(x_dirs) != len(tcp_points)):
-                try:
-                    T = _tangents_from_path(tcp_points)
-                    if z_dirs is not None and len(z_dirs) == len(T):
-                        Xo = np.cross(np.cross(T, z_dirs), z_dirs)
-                        for i in range(Xo.shape[0]):
-                            nrm = np.linalg.norm(Xo[i])
-                            Xo[i] = (Xo[i] / nrm) if nrm > 1e-12 else _orthonormal_basis_from_z(z_dirs[i])[0]
-                        for i in range(1, Xo.shape[0]):
-                            if np.dot(Xo[i-1], Xo[i]) < 0.0:
-                                Xo[i] = -Xo[i]
-                        x_dirs = Xo
-                except Exception:
-                    _LOG.exception("Fallback X via tangents failed (%s)", side)
-
-            rays_miss = None
-            try:
-                xmin, xmax, ymin, ymax, zmin, zmax = bounds
-                cfg = cfgs.get(side, cfgs["top"])
-                anchor_axis, anchor_side = cfg["anchor"]
-                anchor_val = {"x": (xmin if anchor_side == "min" else xmax),
-                              "y": (ymin if anchor_side == "min" else ymax),
-                              "z": (zmin if anchor_side == "min" else zmax)}[anchor_axis]
-                axis_idx = {"x": 0, "y": 1, "z": 2}[anchor_axis]
-                if valid_mask is not None and P_mask is not None and len(P_mask) == len(valid_mask) and np.any(~valid_mask):
-                    base_dir = cfg["normal"]
-                    Pmiss_start = P_mask[~valid_mask]
-                    D = np.tile(base_dir / (np.linalg.norm(base_dir) + 1e-12), (len(Pmiss_start), 1))
-                    have_comp = np.abs(D[:, axis_idx]) > 1e-9
-                    if np.any(have_comp):
-                        S = Pmiss_start[have_comp]; Dn = D[have_comp]
-                        t = (anchor_val - S[:, axis_idx]) / Dn[:, axis_idx]
-                        pos = t > 0
-                        S = S[pos]; Dn = Dn[pos]; t = t[pos]
-                        if len(S):
-                            Pend = S + Dn * t.reshape(-1, 1)
-                            pts = np.vstack([S, Pend])
-                            nseg = len(S)
-                            lines = np.empty((nseg, 3), dtype=np.int64)
-                            lines[:, 0] = 2
-                            lines[:, 1] = np.arange(nseg, dtype=np.int64)
-                            lines[:, 2] = lines[:, 1] + nseg
-                            rays_miss = pv.PolyData(pts)
-                            rays_miss.lines = lines.reshape(-1)
-            except Exception:
-                _LOG.exception("miss rays build failed (%s)", side)
-
-            if mask_poly is not None:
-                self._add_mesh(mask_poly, color="royalblue", layer=self._L("mask"),
-                               line_width=2.0, lighting=False, render=False, reset_camera=False)
-
-            if getattr(rays_hit_poly, "n_lines", 0):
-                self._add_mesh(rays_hit_poly, color="#85C1E9", layer=self._L("rays_hit"),
-                               line_width=1.5, lighting=False, render=False, reset_camera=False)
-
-            if rays_miss is not None:
-                self._add_mesh(rays_miss, color="#e74c3c", layer=self._L("rays_miss"),
-                               line_width=1.2, lighting=False, render=False, reset_camera=False)
-
-            if getattr(tcp_poly, "n_lines", 0):
-                self._add_mesh(tcp_poly, color="#f1c40f", layer=self._L("normals"),
-                               line_width=1.3, lighting=False, render=False, reset_camera=False)
+            tcp_points, x_dirs, z_dirs, mask_poly = self._entry_to_tcp_and_dirs(
+                side, entry, bounds, default_mask_dir=face_n
+            )
 
             if tcp_points is not None and len(tcp_points):
+                # Pfadlinie + Marker
                 self._add_path_polyline(tcp_points, layer=self._L("path"), color="#2ecc71",
                                         line_width=2.0, lighting=False, render=False, reset_camera=False)
                 try:
@@ -437,12 +328,30 @@ class OverlayRenderer:
                 except Exception:
                     _LOG.exception("path markers failed (%s)", side)
 
+                # Normals/Frames (aus Quaternionen oder Tangenten)
+                try:
+                    if z_dirs is not None:
+                        normals_poly = _mk_poly_segments(tcp_points, z_dirs, length=10.0)
+                        if normals_poly is not None:
+                            self._add_mesh(normals_poly, color="#f1c40f", layer=self._L("normals"),
+                                           line_width=1.3, lighting=False, render=False, reset_camera=False)
+                except Exception:
+                    _LOG.exception("normals poly failed (%s)", side)
+
+            # optionale Maske
+            if mask_poly is not None:
+                self._add_mesh(mask_poly, color="royalblue", layer=self._L("mask"),
+                               line_width=2.0, lighting=False, render=False, reset_camera=False)
+
+            # (Für das neue Quaternion-Format verzichten wir bewusst auf Ray-Cast-Hits/Misses:
+            #  die Pose *ist bereits* die TCP-Pose. Altformat könnte hier cast_rays_for_side nutzen.)
+
             outputs_by_side[side] = {
                 "tcp_points": tcp_points,
                 "mask_poly": mask_poly,
                 "z_dirs": z_dirs,
                 "x_dirs": x_dirs,
-                "valid_mask": valid_mask,
+                "valid_mask": None,
             }
 
         # Sichtbarkeit anwenden
@@ -452,111 +361,15 @@ class OverlayRenderer:
         try:
             tcp_for_2d: Optional[np.ndarray] = None
             mask_for_2d: Optional[pv.PolyData] = None
-            for s in pbs.keys():
+            for s, _ in items:
                 out = outputs_by_side.get(s) or {}
                 t = out.get("tcp_points")
                 if t is not None and len(t):
                     tcp_for_2d = t
                     mask_for_2d = out.get("mask_poly")
                     break
-            # substrate_mesh, tcp_points, mask_poly
             self._update_2d(substrate_mesh, tcp_for_2d, mask_for_2d)
         except Exception:
             _LOG.exception("update_2d (compiled) failed")
 
         return outputs_by_side
-
-    # ---- Strict Legacy-Aufbau (wenn keine Punkte im Modell) --------------
-    def render_from_model(
-        self,
-        *,
-        model: object,
-        substrate_mesh: pv.PolyData,
-        side: Optional[str] = None,
-        sides: Optional[List[str]] = None,
-        default_stand_off_mm: float = 10.0,
-        mask_lift_mm: float = 50.0,
-        ray_len_mm: float = 1000.0,
-        visibility: Optional[Dict[str, bool]] = None,
-    ) -> Dict[str, Dict[str, Any]]:
-        # 1) Side-Liste
-        if sides and len(sides) > 0:
-            side_list = list(dict.fromkeys([str(s) for s in sides if str(s).strip()]))
-        elif side and str(side).strip():
-            side_list = [str(side).strip()]
-        else:
-            if isinstance(model, dict):
-                pbs = dict(model.get("paths_by_side") or {})
-            else:
-                pbs = dict(getattr(model, "paths_by_side", {}) or {})
-            side_list = list(pbs.keys()) if pbs else ["top"]
-
-        # 2) Wenn bereits Punkte vorhanden → direkt rendern
-        def _has_points(m) -> bool:
-            if not m:
-                return False
-            pbs = dict(m.get("paths_by_side") or {})
-            for _, rec in pbs.items():
-                if isinstance(rec, dict) and rec.get("points_mm") is not None:
-                    return True
-            return False
-
-        if isinstance(model, dict) and _has_points(model):
-            return self.render_compiled(
-                substrate_mesh=substrate_mesh,
-                compiled=model,
-                visibility=visibility,
-                mask_lift_mm=mask_lift_mm,
-                default_stand_off_mm=default_stand_off_mm,
-                ray_len_mm=ray_len_mm,
-                sides=side_list,  # Seitenfilter durchreichen
-            )
-
-        # 3) Strikter Pfadaufbau via PathBuilder (kein Fallback)
-        if PathBuilder is None:
-            raise RuntimeError("PathBuilder unavailable and no points_mm in model (strict mode).")
-
-        if isinstance(model, dict):
-            params = dict(model.get("parameters") or {})
-        else:
-            params = dict(getattr(model, "parameters", {}) or {})
-
-        globals_params = _strict_globals_from_model(model)
-        sample_step = _strict_sample_step_from_model(model)  # STRICT global
-        max_points = _strict_max_points_from_model(model)
-
-        compiled = {"paths_by_side": {}}
-        for s in side_list:
-            # Typ-Info als rein kosmetische Meta (falls vorhanden)
-            if isinstance(model, dict):
-                pdef = dict((model.get("paths_by_side") or {}).get(s) or {})
-            else:
-                pdef = dict((getattr(model, "paths_by_side", {}) or {}).get(s) or {})
-
-            try:
-                pd = PathBuilder.from_side(
-                    model,
-                    side=s,
-                    globals_params=globals_params,
-                    sample_step_mm=sample_step,  # global
-                    max_points=max_points,
-                )
-                compiled["paths_by_side"][s] = {
-                    "type": (pdef.get("type") or pd.meta.get("source") or "points"),
-                    "points_mm": np.asarray(pd.points_mm, float).reshape(-1, 3).tolist(),
-                    "meta": dict(pd.meta or {}),
-                }
-            except Exception:
-                _LOG.exception("PathBuilder.from_side failed (%s)", s)
-                compiled["paths_by_side"][s] = {"type": pdef.get("type") or "points", "points_mm": [], "meta": {}}
-
-        out = self.render_compiled(
-            substrate_mesh=substrate_mesh,
-            compiled=compiled,
-            visibility=visibility,
-            mask_lift_mm=mask_lift_mm,
-            default_stand_off_mm=default_stand_off_mm,
-            ray_len_mm=ray_len_mm,
-            sides=side_list,  # Seitenfilter durchreichen
-        )
-        return out

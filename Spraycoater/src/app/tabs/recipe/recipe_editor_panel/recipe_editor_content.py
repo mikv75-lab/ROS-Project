@@ -132,6 +132,8 @@ class RecipeEditorContent(QWidget):
         ├─ GroupBox "Globals" (aus recipe_params.globals dynamisch gebaut)
         ├─ GroupBox "Selectors" (recipe/tool/substrate/mount)
         └─ CheckableTabWidget (jede Side = eigener Tab; direkt SidePathEditor als Inhalt)
+
+    WICHTIG: Angles (predispense/retreat) sind rein Meta – die Punkte werden NICHT gezeichnet.
     """
     def __init__(self, *, ctx=None, store: RecipeStore, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -187,6 +189,7 @@ class RecipeEditorContent(QWidget):
 
         schema = self.store.globals_schema()
 
+        # Reihenfolge; Angles sind meta-only (kein Zeichnen)
         priority = [
             "max_points",
             "sample_step_mm",
@@ -383,7 +386,7 @@ class RecipeEditorContent(QWidget):
                 out[key] = int(w.value())
             elif isinstance(w, QDoubleSpinBox):
                 out[key] = float(w.value())
-        return out
+        return out  # Keys mit Punkten bleiben unverändert (z.B. "predispense.angle_deg")
 
     def collect_paths_by_side(self) -> Dict[str, Any]:
         out: Dict[str, Dict[str, Any]] = {}

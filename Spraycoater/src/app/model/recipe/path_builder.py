@@ -38,10 +38,6 @@ class PathBuilder:
     - `globals_params` MUSS die folgenden Keys enthalten:
         stand_off_mm
         max_angle_deg
-        predispense.angle_deg
-        predispense.distance_mm
-        retreat.angle_deg
-        retreat.distance_mm
     """
 
     # --------- Public API (ohne Fallbacks) ---------
@@ -63,7 +59,7 @@ class PathBuilder:
         pd = PathBuilder._from_path_dict(
             p, sample_step_mm=sample_step_mm, max_points=max_points
         )
-        # Post-Prozess: predispense/retreat anhängen und Meta setzen
+        # Pre/Retreat nicht mehr geometrisch anhängen (keine Distanzen in Globals).
         pd = PathBuilder._apply_predispense_retreat(pd, globals_params)
         PathBuilder._inject_globals_meta(pd, globals_params)
         return pd
@@ -77,9 +73,7 @@ class PathBuilder:
         sample_step_mm: float,
         max_points: int,
     ) -> List[Tuple[str, PathData]]:
-        """
-        Baut mehrere Sides und gibt Liste [(side, PathData), ...] zurück.
-        """
+        """Baut mehrere Sides und gibt Liste [(side, PathData), ...] zurück."""
         PathBuilder._validate_globals(globals_params)
         out: List[Tuple[str, PathData]] = []
         for s in sides:
@@ -99,10 +93,6 @@ class PathBuilder:
         required = [
             "stand_off_mm",
             "max_angle_deg",
-            "predispense.angle_deg",
-            "predispense.distance_mm",
-            "retreat.angle_deg",
-            "retreat.distance_mm",
         ]
         if not isinstance(g, dict):
             raise ValueError("PathBuilder: globals_params muss ein Dict sein (kein Fallback).")
@@ -173,48 +163,17 @@ class PathBuilder:
 
         return PathData(points_mm=P, meta=meta)
 
-    # --------------- Post-Prozess: Approach/Retreat ---------------
+    # --------------- Post-Prozess: (kein) Approach/Retreat ---------------
     @staticmethod
     def _apply_predispense_retreat(pd: PathData, g: Dict[str, Any]) -> PathData:
+        """
+        Kein Pre/Retreat-Anhängsel mehr – die UI-Hints (angle_mode/angle_deg)
+        verbleiben in den Path-Parametern und werden nicht in die Geometrie
+        übernommen.
+        """
         P = np.asarray(pd.points_mm, dtype=float).reshape(-1, 3)
-        if P.shape[0] < 2:
-            # zu wenig Punkte, nur Meta anhängen
-            return PathData(points_mm=P, meta=dict(pd.meta))
-
-        d_pre = float(g["predispense.distance_mm"])
-        d_ret = float(g["retreat.distance_mm"])
-
-        # Start-Tangente
-        t0 = P[1] - P[0]
-        n0 = float(np.linalg.norm(t0))
-        t0 = (t0 / n0) if n0 > 1e-12 else np.array([1.0, 0.0, 0.0], dtype=float)
-        pre_pt = P[0] - t0 * d_pre if d_pre > 1e-12 else None
-
-        # End-Tangente
-        t1 = P[-1] - P[-2]
-        n1 = float(np.linalg.norm(t1))
-        t1 = (t1 / n1) if n1 > 1e-12 else np.array([1.0, 0.0, 0.0], dtype=float)
-        ret_pt = P[-1] + t1 * d_ret if d_ret > 1e-12 else None
-
-        parts = []
-        if pre_pt is not None:
-            parts.append(pre_pt.reshape(1, 3))
-        parts.append(P)
-        if ret_pt is not None:
-            parts.append(ret_pt.reshape(1, 3))
-
-        P2 = np.vstack(parts) if len(parts) > 1 else P
-
         meta = dict(pd.meta)
-        meta["predispense"] = {
-            "angle_deg": float(g["predispense.angle_deg"]),
-            "distance_mm": d_pre,
-        }
-        meta["retreat"] = {
-            "angle_deg": float(g["retreat.angle_deg"]),
-            "distance_mm": d_ret,
-        }
-        return PathData(points_mm=P2, meta=meta)
+        return PathData(points_mm=P, meta=meta)
 
     @staticmethod
     def _inject_globals_meta(pd: PathData, g: Dict[str, Any]) -> None:
