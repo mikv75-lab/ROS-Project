@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from typing import Optional, Callable, Dict, Any, List
+from typing import Optional, Callable, Dict, Any
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QGroupBox, QWidget, QHBoxLayout, QCheckBox, QLabel, QSizePolicy
 )
 
-from .overlays import OverlayRenderer  # ✨ NEU: Renderer lebt in der GroupBox
+from .overlays import OverlayRenderer  # Renderer lebt in der GroupBox
+
 
 class OverlaysGroupBox(QGroupBox):
     """
@@ -24,7 +25,7 @@ class OverlaysGroupBox(QGroupBox):
 
     def __init__(
         self,
-        parent: Optional[Widget] = None,
+        parent: Optional[QWidget] = None,
         *,
         # --- Funktionen/Callbacks aus dem Panel/Scene ----
         add_mesh_fn: Callable[..., Any],
@@ -41,7 +42,7 @@ class OverlaysGroupBox(QGroupBox):
         super().__init__("Overlays", parent)
         self._build_ui()
 
-        # ✨ Renderer hier erzeugen
+        # Renderer hier erzeugen
         self.overlays = OverlayRenderer(
             add_mesh_fn=add_mesh_fn,
             clear_layer_fn=clear_layer_fn,

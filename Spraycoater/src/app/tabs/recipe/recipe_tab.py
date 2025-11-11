@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import logging
-from typing import Optional, Callable, Any, Dict
+from typing import Optional, Callable, Any, Dict, List
 
 import numpy as np
 from PyQt6.QtWidgets import QWidget, QHBoxLayout
@@ -9,6 +9,8 @@ from PyQt6.QtCore import Qt
 
 from .recipe_editor_panel.recipe_editor_panel import RecipeEditorPanel
 from .coating_preview_panel.coating_preview_panel import CoatingPreviewPanel
+
+from app.utils.cursor_guard import busy_cursor  # Cursor-Guard für Busy-Cursor
 
 _LOG = logging.getLogger("app.tabs.recipe")
 
@@ -51,7 +53,7 @@ class RecipeTab(QWidget):
 
         # --- Wiring: Recipe → Preview (Render anstoßen) --------------------
         self.recipePanel.updatePreviewRequested.connect(
-            lambda payload: self._on_update_preview(payload.get("model"), payload.get("sides")),
+            self._on_update_preview,
             Qt.ConnectionType.QueuedConnection
         )
 
@@ -69,25 +71,36 @@ class RecipeTab(QWidget):
             _LOG.exception("connect pathReady failed")
 
     # ---------- Slots ----------
-    def _on_update_preview(self, model_or_payload: object, sides: Optional[list] = None) -> None:
-        """Nur Übergabe: Param-Cache setzen (für Info-Berechnung) + SceneManager rendern lassen."""
+    def _on_update_preview(self, payload: dict | object) -> None:
+        """
+        Übergibt das Rendern vollständig an den SceneManager.
+        Setzt zuvor den Param-Cache (für Info-Berechnung) und zeigt währenddessen den Busy-Cursor.
+        """
         try:
-            model = model_or_payload
-            if isinstance(model_or_payload, dict):
-                model = model_or_payload.get("model", model_or_payload)
-                sides = model_or_payload.get("sides", sides)
+            # Robust entpacken
+            if isinstance(payload, dict):
+                model = payload.get("model")
+                sides: Optional[List[str]] = payload.get("sides")
+            else:
+                model = payload
+                sides = None
 
-            # Param-Cache für Info-Berechnung (ETA/Medium) – bleibt hier
+            if model is None:
+                return
+
+            # Param-Cache für Info-Berechnung (ETA/Medium)
+            params = {}
             try:
                 params = dict(getattr(model, "parameters", {}) or {})
             except Exception:
-                params = {}
-            import math
-            def _f(x, default=np.nan):
+                pass
+
+            def _f(x, default=np.nan) -> float:
                 try:
                     return float(x)
                 except Exception:
                     return float(default)
+
             self._info_base = {
                 "speed_mm_s":      _f(params.get("speed_mm_s")),
                 "flow_ml_min":     _f(params.get("flow_ml_min")),
@@ -95,8 +108,13 @@ class RecipeTab(QWidget):
                 "post_dispense_s": _f(params.get("post_dispense_s"), 0.0),
             }
 
-            # Orchestrierung vollständig im SceneManager
-            self.previewPanel.scene.render_recipe_preview(panel=self.previewPanel, model=model, sides=sides)
+            # Busy-Cursor während Preview-Update
+            with busy_cursor(self):
+                self.previewPanel.scene.render_recipe_preview(
+                    panel=self.previewPanel,
+                    model=model,
+                    sides=sides
+                )
         except Exception:
             _LOG.exception("_on_update_preview failed")
 

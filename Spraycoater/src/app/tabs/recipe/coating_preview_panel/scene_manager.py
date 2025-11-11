@@ -491,7 +491,7 @@ class SceneManager:
           - Kamera/Refresh
         Erwartete Panel-API:
           panel.[add_mesh|clear|set_bounds_from_mesh|set_runtime_info|snapshot_camera|restore_camera|refresh_current_view]
-          panel.grpOverlays.[render_compiled|apply_visibility]
+          panel.grpOverlays.[render_compiled]
           panel.is_3d_active()
         """
         try:
@@ -606,7 +606,7 @@ class SceneManager:
             if mesh_tris is not None:
                 panel.set_runtime_info({"mesh_tris": mesh_tris})
 
-            # Sichtbarkeit
+            # Sichtbarkeit (CheckBox-Zustand lesen)
             gb = getattr(panel, "grpOverlays", None)
             def _b(chk):
                 try:
@@ -657,8 +657,8 @@ class SceneManager:
                         default_stand_off_mm=stand_off_from_recipe,
                         ray_len_mm=1000.0,
                         sides=sides,
+                        only_selected=True,  # ⬅️ nur aktivierte Overlays zeichnen
                     )
-                panel.grpOverlays.apply_visibility(vis)
             except Exception:
                 _LOG.exception("Overlays (render) failed")
 
