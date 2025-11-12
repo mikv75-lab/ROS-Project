@@ -4,7 +4,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
-    QDoubleSpinBox, QSpinBox, QCheckBox, QComboBox, QStackedWidget, QLineEdit
+    QDoubleSpinBox, QSpinBox, QCheckBox, QComboBox, QStackedWidget, QLineEdit,
+    QSizePolicy
 )
 
 from app.model.recipe.recipe_store import RecipeStore
@@ -13,7 +14,7 @@ from app.model.recipe.recipe_store import RecipeStore
 # -------------------- Vec2 Widget --------------------
 
 class Vec2Edit(QWidget):
-    def __init__(self, step: float = 0.1, unit: str = "", parent: Optional[Widget] = None):
+    def __init__(self, step: float = 0.1, unit: str = "", parent: Optional[QWidget] = None):
         super().__init__(parent)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -26,6 +27,12 @@ class Vec2Edit(QWidget):
         lay.addWidget(QLabel("x:")); lay.addWidget(self.x)
         lay.addSpacing(6)
         lay.addWidget(QLabel("y:")); lay.addWidget(self.y)
+
+        # kompakte Höhe
+        sp = self.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Policy.Maximum)
+        self.setSizePolicy(sp)
 
     def set(self, v: Sequence[float]):
         self.x.setValue(float(v[0] if v else 0.0))
@@ -41,8 +48,8 @@ def _compact_form(f: QFormLayout) -> None:
     f.setContentsMargins(4, 4, 4, 4)
     f.setHorizontalSpacing(6)
     f.setVerticalSpacing(4)
-    f.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-    f.setRowWrapPolicy(QFormLayout.DontWrapRows)
+    f.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+    f.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
 
 def _intish(*vals) -> bool:
     try:
@@ -51,47 +58,47 @@ def _intish(*vals) -> bool:
         return False
 
 
-# -------------------- Haupteditor (rein rezeptgetrieben) --------------------
+# -------------------- Haupteditor --------------------
 
 class SidePathEditor(QWidget):
     """
-    Dynamischer Editor für genau EINE Side.
-    ALLES wird aus der Side-Konfiguration des Rezepts gezogen:
-      - allowed_path_types: [ptype, ...]
-      - default_path: {type: ptype, ...}
-      - schemas: ptype -> { <param_key>: spec }
-        spec: { type: number|boolean|string|enum|vec2, [min|max|step|unit|values|default|visible_if|help] }
-
-    WICHTIG:
-    - Angle-Felder wie 'predispense.angle_mode' / 'predispense.angle_deg' / 'retreat.angle_*'
-      sind **Meta** (PathBuilder zeichnet keine Zusatzpunkte).
+    Vertikal minimal, keine Spacer/Stretchs.
+    Höhe wird auf die aktuelle Page im Stack begrenzt.
     """
     def __init__(self, *, side_name: str, store: RecipeStore, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.side_name = side_name
         self.store = store
 
-        # aktuell gebundene Side-Config (nur aus Rezept)
         self._side_cfg: Dict[str, Any] = {}
-
-        # pro Typ: (page_widget, fields_map, schema_params)
-        # fields_map: key -> (widget, kind, spec)
         self._type_pages: Dict[str, Tuple[QWidget, Dict[str, Tuple[QWidget, str, Dict[str, Any]]], Dict[str, Any]]] = {}
 
-        # UI
+        # Root-Layout extrem kompakt halten
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(6)
+        root.setSizeConstraint(QVBoxLayout.SizeConstraint.SetMinAndMaxSize)
 
+        # Form (nur eine Zeile "type")
         form = QFormLayout()
         _compact_form(form)
-        root.addLayout(form)
-
         self.type_combo = QComboBox()
         form.addRow(f"type ({self.side_name})", self.type_combo)
+        root.addLayout(form)
 
+        # Stack mit Pages; Höhe später dynamisch gekappt
         self.stack = QStackedWidget()
+        sp_stack = self.stack.sizePolicy()
+        sp_stack.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+        sp_stack.setVerticalPolicy(QSizePolicy.Policy.Maximum)
+        self.stack.setSizePolicy(sp_stack)
         root.addWidget(self.stack)
+
+        # Gesamt-SizePolicy: Breite darf wachsen, Höhe minimal
+        sp_self = self.sizePolicy()
+        sp_self.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp_self.setVerticalPolicy(QSizePolicy.Policy.Maximum)
+        self.setSizePolicy(sp_self)
 
         # Verhalten
         self.type_combo.currentIndexChanged.connect(self._on_type_changed)
@@ -106,10 +113,6 @@ class SidePathEditor(QWidget):
             w.deleteLater()
 
     def set_allowed_types(self, types: List[str]) -> None:
-        """
-        Erwartet, dass zuvor _side_cfg gesetzt wurde (mit 'schemas').
-        Baut die Pages anhand _side_cfg['schemas'][ptype].
-        """
         allowed = list(types or [])
         self.type_combo.blockSignals(True)
         self.type_combo.clear()
@@ -132,11 +135,15 @@ class SidePathEditor(QWidget):
         f = QFormLayout(page)
         _compact_form(f)
 
+        # Seite kompakt halten
+        sp_page = page.sizePolicy()
+        sp_page.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+        sp_page.setVerticalPolicy(QSizePolicy.Policy.Maximum)
+        page.setSizePolicy(sp_page)
+
         fields: Dict[str, Tuple[QWidget, str, Dict[str, Any]]] = {}
 
-        # Reihenfolge stabil
         keys = list(params.keys())
-        # (Heuristik: "*shape" zuerst)
         keys.sort(key=lambda k: (0 if k.endswith("shape") else 1, k))
 
         for key in keys:
@@ -144,23 +151,21 @@ class SidePathEditor(QWidget):
             t = str(spec.get("type", "")).strip().lower()
             w: Optional[QWidget] = None
             kind = ""
+            row_label = key
 
             if t == "boolean":
                 w = QCheckBox(key); kind = "check"
-                row_label = ""  # Checkbox hat Text im Widget
+                row_label = ""  # Text in Checkbox selbst
             elif t == "string":
                 w = QLineEdit(); kind = "string"
-                row_label = key
             elif t == "enum":
                 w = QComboBox(); kind = "combo"
                 vals = spec.get("values") or []
                 w.addItems([str(v) for v in vals])
-                row_label = key
             elif t == "vec2":
                 step = float(spec.get("step", [0.1, 0.1])[0] if isinstance(spec.get("step"), (list, tuple)) else spec.get("step", 0.1))
                 unit = str(spec.get("unit", "") or "")
                 w = Vec2Edit(step=step, unit=unit); kind = "vec2"
-                row_label = key
             elif t == "number":
                 step = float(spec.get("step", 1.0))
                 minv = float(spec.get("min", 0.0))
@@ -177,13 +182,15 @@ class SidePathEditor(QWidget):
                     sb.setDecimals(decimals)
                     w = sb; kind = "double"
                 if unit:
-                    if not unit.startswith(" "):
-                        unit = " " + unit
+                    if not unit.startswith(" "): unit = " " + unit
                     w.setSuffix(unit)
-                row_label = key
             else:
-                # unbekannter Typ → überspringen
                 continue
+
+            # Alle Felder: vertikal maximal kompakt
+            sp = w.sizePolicy()
+            sp.setVerticalPolicy(QSizePolicy.Policy.Maximum)
+            w.setSizePolicy(sp)
 
             fields[key] = (w, kind, spec)
             f.addRow(row_label, w)
@@ -191,9 +198,7 @@ class SidePathEditor(QWidget):
             if spec.get("help") and hasattr(w, "setToolTip"):
                 w.setToolTip(str(spec["help"]))
 
-        # Sichtbarkeitsregeln
         self._wire_visibility(fields, form=f)
-
         return page, fields
 
     # ---------- Sichtbarkeit (visible_if) ----------
@@ -260,20 +265,17 @@ class SidePathEditor(QWidget):
                 ww = it.widget()
                 if ww is None:
                     continue
-                if ww is w or ww == w:
-                    return row
-                if ww is not None and (ww.isAncestorOf(w) or w.isAncestorOf(ww)):
+                if ww is w or ww == w or ww.isAncestorOf(w) or w.isAncestorOf(ww):
                     return row
         return -1
 
-    # ---------- Default/Values anwenden ----------
-
+    # ---------- Default/Values ----------
     def apply_default_path(
         self,
         path: Dict[str, Any],
         *,
-        helix_enums: Optional[Dict[str, Any]] = None,  # ignoriert
-        plane_enums: Optional[Dict[str, Any]] = None,  # ignoriert
+        helix_enums: Optional[Dict[str, Any]] = None,
+        plane_enums: Optional[Dict[str, Any]] = None,
     ) -> None:
         if isinstance(path, dict) and "_side_cfg" in path:
             self._side_cfg = dict(path["_side_cfg"] or {})
@@ -311,17 +313,15 @@ class SidePathEditor(QWidget):
         self._lock_stack_height()
 
     # ---------- Werte sammeln ----------
-
     def collect_path(self) -> Dict[str, Any]:
         t = self.type_combo.currentText().strip()
         out: Dict[str, Any] = {"type": t} if t else {}
         page, fields_map, _params = self._type_pages.get(t, (None, {}, {}))
         for key, (w, kind, _spec) in fields_map.items():
             out[key] = self._get_widget_value(w, kind)
-        return out  # enthält ggf. angle-Felder als Meta (kein Zeichnen)
+        return out
 
-    # ---------- Auto-Reset ausschließlich aus Rezept ----------
-
+    # ---------- Auto-Reset aus Rezept ----------
     def enable_auto_reset(self, rec_def: Dict[str, Any], side_name: str) -> None:
         self._side_cfg = self.store.build_side_runtime_cfg_strict(rec_def, side_name)
 
@@ -335,7 +335,6 @@ class SidePathEditor(QWidget):
         self.type_combo.currentTextChanged.connect(lambda _t: _reload_defaults())
 
     # ---------- intern ----------
-
     def _on_type_changed(self, _idx: int) -> None:
         idx = max(0, self.type_combo.currentIndex())
         if 0 <= idx < self.stack.count():
@@ -358,5 +357,11 @@ class SidePathEditor(QWidget):
         return None
 
     def _lock_stack_height(self) -> None:
+        """Begrenzt die Stack-Höhe auf die sichtbare Page + kleinste nötige Höhe."""
+        w = self.stack.currentWidget()
+        if w is not None:
+            h = w.sizeHint().height()
+            self.stack.setMaximumHeight(h)
+        # Gesamtes Widget auf minimale sinnvolle Höhe drücken
         self.stack.adjustSize()
         self.adjustSize()

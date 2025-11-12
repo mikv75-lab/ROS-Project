@@ -37,6 +37,7 @@ class CoatingPreviewPanel(QWidget):
         root.setSpacing(6)
 
         self._stack = QStackedWidget(self)
+        self._stack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         # 3D-Seite
         self._page3d = QWidget(self)
@@ -114,9 +115,6 @@ class CoatingPreviewPanel(QWidget):
         # Planner kompakt
         self.plannerBox = PlannerGroupBox(store=self.store, parent=self)
         self.plannerBox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
-        self.plannerBox.setMaximumHeight(220)
-        if self.plannerBox.layout() is not None:
-            self.plannerBox.layout().setContentsMargins(6, 6, 6, 6)
         root.addWidget(self.plannerBox, 0)
 
         # Buttons

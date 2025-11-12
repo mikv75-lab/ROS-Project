@@ -4,14 +4,13 @@ import os
 import re
 from typing import Optional, Dict, Any, List, Callable
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QPushButton, QLineEdit, QLabel, QFileDialog, QMessageBox, QSizePolicy, QFormLayout
 )
 
-from app.model.recipe.recipe import Recipe
-    # Achtung: Recipe hat from_dict/load_yaml/save_yaml etc.
+from app.model.recipe.recipe import Recipe  # Achtung: Recipe hat from_dict/load_yaml/save_yaml etc.
 from app.model.recipe.recipe_store import RecipeStore
 from .recipe_editor_content import RecipeEditorContent  # erwartet collect_* / apply_* Shims
 
@@ -110,6 +109,9 @@ class RecipeEditorPanel(QWidget):
         def _emit_update():
             self.updatePreviewRequested.emit(self.current_model())
         self.btnUpdatePreview.clicked.connect(_emit_update)
+
+        # Layout-Policies anwenden (verhindert „gestreckte“ Kopfsektionen)
+        self._apply_layout_policies(vroot)
 
         # Erstes Rezept initialisieren
         combo = getattr(self.content, "sel_recipe", None)
@@ -302,7 +304,45 @@ class RecipeEditorPanel(QWidget):
         # Nur Sides, die im Rezept definiert sind
         return [s for s in checked if s in defined]
 
+    # --------------------------- Layout-Policies ---------------------------
+
+    def _apply_layout_policies(self, vroot: QVBoxLayout) -> None:
+        """
+        Hält 'Commands' und 'Name & Description' vertikal so klein wie möglich
+        und gibt die Resthöhe an den mittleren Inhalt (self.content).
+        """
+        # --- Commands & Meta: minimal in der Höhe ---
+        for gb in (self.gbCommands, self.gbMeta):
+            sp = gb.sizePolicy()
+            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+            sp.setVerticalPolicy(QSizePolicy.Maximum)  # so klein wie möglich
+            gb.setSizePolicy(sp)
+            # Margins kompakt
+            if gb.layout() is not None:
+                gb.layout().setContentsMargins(8, 4, 8, 4)
+                gb.layout().setSpacing(6)
+                gb.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        # --- Content: fängt Resthöhe ab ---
+        sp = self.content.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Policy.Expanding)
+        self.content.setSizePolicy(sp)
+
+        # --- Update-Button: klein halten ---
+        sp = self.btnUpdatePreview.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Maximum)
+        self.btnUpdatePreview.setSizePolicy(sp)
+
+        # --- Stretch-Faktoren im Hauptlayout ---
+        vroot.setStretchFactor(self.gbCommands, 0)
+        vroot.setStretchFactor(self.gbMeta,     0)
+        vroot.setStretchFactor(self.content,    1)  # Resthöhe hierhin
+        vroot.setStretchFactor(self.btnUpdatePreview, 0)
+
     # --------------------------- Helpers ---------------------------
+
     @staticmethod
     def _safe_call(fn, default=None):
         try:

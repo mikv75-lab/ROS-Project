@@ -6,7 +6,7 @@ from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QFormLayout,
     QDoubleSpinBox, QSpinBox, QCheckBox, QComboBox, QFrame,
-    QTabWidget, QLineEdit, QLabel, QHBoxLayout, QTabBar
+    QTabWidget, QLineEdit, QLabel, QHBoxLayout, QTabBar, QSizePolicy
 )
 
 from app.model.recipe.recipe import Recipe
@@ -60,6 +60,22 @@ def _coalesce_sides_from_rec_def(rec_def: Dict[str, Any]) -> Dict[str, Any]:
     return dict(sides) if isinstance(sides, dict) else {}
 
 
+def _compact_form(form: QFormLayout) -> None:
+    form.setContentsMargins(6, 6, 6, 6)
+    form.setHorizontalSpacing(6)
+    form.setVerticalSpacing(4)
+    form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+    form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+    form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
+
+
+def _set_compact_policy(w: QWidget, *, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Maximum) -> None:
+    sp = w.sizePolicy()
+    sp.setHorizontalPolicy(h)
+    sp.setVerticalPolicy(v)
+    w.setSizePolicy(sp)
+
+
 class CheckableTabWidget(QTabWidget):
     checkedChanged = pyqtSignal(str, bool)
 
@@ -69,8 +85,15 @@ class CheckableTabWidget(QTabWidget):
         self._side_checkboxes: Dict[int, QCheckBox] = {}
 
         tb = self.tabBar()
+        # Schlanker TabBar
+        tb.setExpanding(False)
+        tb.setDocumentMode(True)
+        _set_compact_policy(tb, h=QSizePolicy.Policy.Preferred, v=QSizePolicy.Policy.Maximum)
+
         if hasattr(tb, "tabMoved"):
             tb.tabMoved.connect(self._on_tab_moved)  # type: ignore[attr-defined]
+
+        _set_compact_policy(self, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Maximum)
 
     def add_checkable_tab(self, widget: QWidget, side_name: str, checked: bool = True) -> None:
         idx = self.addTab(widget, side_name)
@@ -78,13 +101,14 @@ class CheckableTabWidget(QTabWidget):
         cb = QCheckBox()
         cb.setChecked(checked)
         cb.setToolTip(f"Aktiviert: {side_name}")
+        _set_compact_policy(cb, h=QSizePolicy.Policy.Preferred, v=QSizePolicy.Policy.Maximum)
 
         container = QWidget()
         lay = QHBoxLayout(container)
-        lay.setContentsMargins(6, 0, 0, 0)
+        lay.setContentsMargins(4, 0, 0, 0)   # kein Stretch, alles eng
         lay.setSpacing(4)
         lay.addWidget(cb)
-        lay.addStretch(1)
+        _set_compact_policy(container, h=QSizePolicy.Policy.Preferred, v=QSizePolicy.Policy.Maximum)
 
         self.tabBar().setTabButton(idx, QTabBar.ButtonPosition.LeftSide, container)
         self._side_checkboxes[idx] = cb
@@ -127,13 +151,13 @@ class CheckableTabWidget(QTabWidget):
 
 class RecipeEditorContent(QWidget):
     """
-    Layout:
+    Vertikal kompakter Editor:
       VBox
-        ├─ GroupBox "Globals" (aus recipe_params.globals dynamisch gebaut)
-        ├─ GroupBox "Selectors" (recipe/tool/substrate/mount)
-        └─ CheckableTabWidget (jede Side = eigener Tab; direkt SidePathEditor als Inhalt)
+        ├─ GroupBox "Globals"  (links ausgerichtete Labels)
+        ├─ GroupBox "Selectors" (links ausgerichtete Labels)
+        └─ CheckableTabWidget  (Tabs mit Checkbox, ohne Stretch-Gap)
 
-    WICHTIG: Angles (predispense/retreat) sind rein Meta – die Punkte werden NICHT gezeichnet.
+    Angles (predispense/retreat) sind Meta – kein Zeichnen.
     """
     def __init__(self, *, ctx=None, store: RecipeStore, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -160,24 +184,35 @@ class RecipeEditorContent(QWidget):
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(10)
+        root.setSpacing(8)
+        root.setSizeConstraint(QVBoxLayout.SizeConstraint.SetMinAndMaxSize)
+        _set_compact_policy(self, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Maximum)
 
+        # Globals
         self.gb_globals = QGroupBox("Globals")
+        _set_compact_policy(self.gb_globals, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Maximum)
         self.globals_form = QFormLayout(self.gb_globals)
+        _compact_form(self.globals_form)
         root.addWidget(self.gb_globals)
 
+        # Selectors
         sel_gb = QGroupBox("Selectors")
+        _set_compact_policy(sel_gb, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Maximum)
         sf = QFormLayout(sel_gb)
+        _compact_form(sf)
         self.sel_recipe = QComboBox()
         self.sel_tool = QComboBox()
         self.sel_substrate = QComboBox()
         self.sel_mount = QComboBox()
+        for c in (self.sel_recipe, self.sel_tool, self.sel_substrate, self.sel_mount):
+            _set_compact_policy(c, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Maximum)
         sf.addRow("recipe", self.sel_recipe)
         sf.addRow("tool", self.sel_tool)
         sf.addRow("substrate", self.sel_substrate)
         sf.addRow("mount", self.sel_mount)
         root.addWidget(sel_gb)
 
+        # Side tabs
         self.sideTabs = CheckableTabWidget(self)
         self.sideTabs.checkedChanged.connect(self._on_side_checked_changed)
         root.addWidget(self.sideTabs)
@@ -189,7 +224,6 @@ class RecipeEditorContent(QWidget):
 
         schema = self.store.globals_schema()
 
-        # Reihenfolge; Angles sind meta-only (kein Zeichnen)
         priority = [
             "max_points",
             "sample_step_mm",
@@ -212,12 +246,15 @@ class RecipeEditorContent(QWidget):
 
             if t == "boolean":
                 w = QCheckBox(label)
+                _set_compact_policy(w)
                 self.globals_form.addRow("", w)
             elif t == "string":
                 w = QLineEdit()
+                _set_compact_policy(w)
                 self.globals_form.addRow(label, w)
             elif t == "enum":
                 w = QComboBox()
+                _set_compact_policy(w)
                 w.addItems([str(v) for v in (spec.get("values") or [])])
                 self.globals_form.addRow(label, w)
             elif t == "number":
@@ -247,9 +284,11 @@ class RecipeEditorContent(QWidget):
                     if not unit.startswith(" "):
                         unit = " " + unit
                     w.setSuffix(unit)
+                _set_compact_policy(w)
                 self.globals_form.addRow(label, w)
             else:
                 w = QLabel(f"(unsupported type: {t})")
+                _set_compact_policy(w, h=QSizePolicy.Policy.Preferred)
                 self.globals_form.addRow(label, w)
 
             if "default" in spec:
@@ -386,7 +425,7 @@ class RecipeEditorContent(QWidget):
                 out[key] = int(w.value())
             elif isinstance(w, QDoubleSpinBox):
                 out[key] = float(w.value())
-        return out  # Keys mit Punkten bleiben unverändert (z.B. "predispense.angle_deg")
+        return out
 
     def collect_paths_by_side(self) -> Dict[str, Any]:
         out: Dict[str, Dict[str, Any]] = {}
