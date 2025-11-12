@@ -4,7 +4,7 @@ import logging
 from typing import Optional, Callable
 
 from PyQt6.QtWidgets import QWidget, QHBoxLayout
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer  # ← QTimer importieren
 
 from .recipe_editor_panel.recipe_editor_panel import RecipeEditorPanel
 from .coating_preview_panel.coating_preview_panel import CoatingPreviewPanel
@@ -44,7 +44,6 @@ class RecipeTab(QWidget):
         hroot.setStretch(1, 1)
 
         # Optional: externen Host (den echten PyVista-Interactor) anhängen
-        # WICHTIG: wir geben NICHT das ganze Panel, sondern den dedizierten Host weiter
         if callable(self._attach_preview_widget):
             try:
                 self._attach_preview_widget(self.previewPanel.get_pv_host())
@@ -52,8 +51,18 @@ class RecipeTab(QWidget):
                 _LOG.exception("attach_preview_widget failed")
 
         # ---------- Direkte Signal-Verdrahtung ----------
-        # Editor -> Preview: immer das Recipe-Objekt senden
         self.recipePanel.updatePreviewRequested.connect(
             self.previewPanel.handle_update_preview,
             Qt.ConnectionType.QueuedConnection,
         )
+
+        # ---------- Initiales Preview nach dem Aufbau ----------
+        # Wartet bis Eventloop läuft & Interactor (falls extern) angehängt ist.
+        QTimer.singleShot(0, self._emit_initial_preview)
+
+    def _emit_initial_preview(self) -> None:
+        try:
+            model = self.recipePanel.current_model()
+            self.recipePanel.updatePreviewRequested.emit(model)
+        except Exception:
+            _LOG.exception("initial preview emit failed")

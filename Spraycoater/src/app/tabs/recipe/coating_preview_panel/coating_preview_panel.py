@@ -12,7 +12,8 @@ from .views_3d.scene_manager import SceneManager
 from .views_2d.matplot2d import Matplot2DView
 from .overlays_groupbox import OverlaysGroupBox
 from .info_groupbox import InfoGroupBox
-from .views_groupbox import Views2DBox, Views3DBox
+from .views_2d_box import Views2DBox
+from .views_3d_box import Views3DBox
 
 _LOG = logging.getLogger("app.tabs.recipe.preview.panel")
 
@@ -88,10 +89,12 @@ class CoatingPreviewPanel(QWidget):
             interactor_getter=lambda: self._find_interactor_in_host(),
             render_callable=self.render,
             bounds_getter=self.get_bounds,
-            cam_pad=1.8,
+            substrate_bounds_getter=lambda: self.scene.get_layer_bounds("substrate"),
+            cam_pad=1.0,
+            iso_extra_zoom=3.0,
             parent=self,
         )
-        _set_policy(self.views3d, h=QSizePolicy.Expanding, v=QSizePolicy.Preferred)
+        _set_policy(self.views3d, h=QSizePolicy.Expanding, v=QSizePolicy.Policy.Preferred)
         vright.addWidget(self.views3d, 0)
 
         self.grpOverlays = OverlaysGroupBox(

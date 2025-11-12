@@ -1,0 +1,50 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+from typing import Callable, Optional, Tuple
+import logging
+
+_LOG = logging.getLogger("app.tabs.recipe.preview.views.controller2d")
+
+Bounds = Tuple[float, float, float, float, float, float]
+
+class ViewController2D:
+    """
+    Schlanker 2D-Controller für die Matplotlib-Ansicht.
+    Übernimmt nur das Umschalten der Ebene und optionales Fitten.
+    """
+
+    def __init__(
+        self,
+        set_plane: Callable[[str], None],
+        refresh: Callable[[], None],
+        *,
+        get_bounds: Optional[Callable[[], Bounds]] = None,
+        set_bounds: Optional[Callable[[Bounds], None]] = None,
+    ):
+        self._set_plane = set_plane
+        self._refresh = refresh
+        self._get_bounds = get_bounds
+        self._set_bounds = set_bounds
+
+    # --- public: Ebene schalten ---
+    def plane_top(self):   self._switch("top")
+    def plane_front(self): self._switch("front")
+    def plane_back(self):  self._switch("back")
+    def plane_left(self):  self._switch("left")
+    def plane_right(self): self._switch("right")
+
+    # --- intern ---
+    def _switch(self, plane: str):
+        try:
+            self._set_plane(plane)
+            # Optional: Bounds erneut setzen, wenn verfügbar
+            if self._get_bounds and self._set_bounds:
+                b = self._get_bounds()
+                if b:
+                    self._set_bounds(b)
+        except Exception:
+            _LOG.exception("2D plane switch failed: %s", plane)
+        try:
+            self._refresh()
+        except Exception:
+            _LOG.exception("2D refresh failed after switch")
