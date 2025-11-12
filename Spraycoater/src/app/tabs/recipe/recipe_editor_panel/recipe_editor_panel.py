@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any, List, Callable
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
-    QPushButton, QLineEdit, QFileDialog, QMessageBox, QSizePolicy
+    QPushButton, QLineEdit, QFileDialog, QMessageBox, QSizePolicy, QFrame
 )
 
 from app.model.recipe.recipe import Recipe
@@ -23,11 +23,17 @@ def _slugify(s: str) -> str:
     return s
 
 
+def _hline() -> QFrame:
+    f = QFrame()
+    f.setFrameShape(QFrame.HLine)
+    f.setFrameShadow(QFrame.Sunken)
+    return f
+
+
 class RecipeEditorPanel(QWidget):
     """
-    Header: nur Commands (Meta ist jetzt im Content)
-    Content: links (Meta oben + Selectors unten) | rechts (Globals) | unten (Paths + Planner)
-    Footer-Buttons sitzen im Content und werden hier nur relayed.
+    Header: Commands + darunter Linie + (Update Preview | Validate | Optimize)
+    Content: zweispaltig (Meta/Context | Globals), Tabs direkt darunter, dann Planner.
     """
     updatePreviewRequested = pyqtSignal(object)  # model: Recipe
     validateRequested = pyqtSignal()
@@ -46,22 +52,23 @@ class RecipeEditorPanel(QWidget):
         vroot.setContentsMargins(8, 8, 8, 8)
         vroot.setSpacing(8)
 
-        # ---------- Header ----------
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(8)
-
-        # Commands links
+        # ---------- Header (Commands) ----------
         self.gbCommands = QGroupBox("Commands", self)
-        hButtons = QHBoxLayout(self.gbCommands)
-        hButtons.setContentsMargins(8, 6, 8, 6)
+
+        # Ein einziges Layout für die GroupBox:
+        cmd_layout = QVBoxLayout(self.gbCommands)
+        cmd_layout.setContentsMargins(8, 6, 8, 6)
+        cmd_layout.setSpacing(6)
+
+        # Zeile: New | Load | Save | Delete
+        hButtons = QHBoxLayout()  # KEIN Parent hier -> wird in cmd_layout eingehängt
+        hButtons.setContentsMargins(0, 0, 0, 0)
         hButtons.setSpacing(6)
 
         self.btnNew    = QPushButton("New", self.gbCommands)
         self.btnLoad   = QPushButton("Load", self.gbCommands)
         self.btnSave   = QPushButton("Save", self.gbCommands)
         self.btnDelete = QPushButton("Delete", self.gbCommands)
-
         for b in (self.btnNew, self.btnLoad, self.btnSave, self.btnDelete):
             sp = b.sizePolicy()
             sp.setVerticalPolicy(QSizePolicy.Preferred)
@@ -69,8 +76,28 @@ class RecipeEditorPanel(QWidget):
             b.setSizePolicy(sp)
             hButtons.addWidget(b, 1)
 
-        header.addWidget(self.gbCommands, 1)
-        vroot.addLayout(header)
+        # unter Commands: Linie + Footer-Buttons
+        footer_box = QWidget(self.gbCommands)
+        fb = QHBoxLayout(footer_box)
+        fb.setContentsMargins(0, 8, 0, 0)
+        fb.setSpacing(8)
+
+        self.btnUpdatePreview = QPushButton("Update Preview", footer_box)
+        self.btnValidate = QPushButton("Validate", footer_box)
+        self.btnOptimize = QPushButton("Optimize", footer_box)
+        for b in (self.btnUpdatePreview, self.btnValidate, self.btnOptimize):
+            sp = b.sizePolicy()
+            sp.setHorizontalPolicy(QSizePolicy.Expanding)
+            sp.setVerticalPolicy(QSizePolicy.Preferred)
+            b.setSizePolicy(sp)
+            fb.addWidget(b, 1)
+
+        # Commands zusammenbauen
+        cmd_layout.addLayout(hButtons)
+        cmd_layout.addWidget(_hline())
+        cmd_layout.addWidget(footer_box)
+
+        vroot.addWidget(self.gbCommands, 0)
 
         # ---------- Content ----------
         self.content = RecipeEditorContent(ctx=self.ctx, store=self.store, parent=self)
@@ -90,10 +117,10 @@ class RecipeEditorPanel(QWidget):
         self.btnSave.clicked.connect(self._on_save_clicked)
         self.btnDelete.clicked.connect(self._on_delete_clicked)
 
-        # Footer-Buttons aus Content weiterreichen
-        self.content.updatePreviewRequested.connect(self._relay_update_preview)
-        self.content.validateRequested.connect(self.validateRequested.emit)
-        self.content.optimizeRequested.connect(self.optimizeRequested.emit)
+        # Footer-Buttons (unter Commands) weiterreichen
+        self.btnValidate.clicked.connect(self.validateRequested.emit)
+        self.btnOptimize.clicked.connect(self.optimizeRequested.emit)
+        self.btnUpdatePreview.clicked.connect(self._relay_update_preview)
 
         # Erstes Rezept initialisieren
         combo = getattr(self.content, "sel_recipe", None)
@@ -131,12 +158,12 @@ class RecipeEditorPanel(QWidget):
         planner = self._safe_call(self.store.collect_planner_defaults, default={})
         pbs     = self.store.build_default_paths_for_recipe(rec_def)
 
-        subs  = rec_def.get("substrates") or []
-        sub   = subs[0] if subs else None
-        mounts= rec_def.get("substrate_mounts") or []
-        mnt   = mounts[0] if mounts else None
-        tools = rec_def.get("tools") or []
-        tool  = tools[0] if tools else None
+        subs   = rec_def.get("substrates") or []
+        sub    = subs[0] if subs else None
+        mounts = rec_def.get("substrate_mounts") or []
+        mnt    = mounts[0] if mounts else None
+        tools  = rec_def.get("tools") or []
+        tool   = tools[0] if tools else None
 
         model = Recipe.from_dict({
             "id": "",
@@ -159,7 +186,6 @@ class RecipeEditorPanel(QWidget):
         self._active_model = model
         self._active_rec_def = rec_def
 
-        # Meta ins Content setzen
         try:
             self.content.set_meta(name=getattr(model, "id", "") or "",
                                   desc=getattr(model, "description", "") or "")
@@ -168,7 +194,6 @@ class RecipeEditorPanel(QWidget):
 
         self.content.apply_recipe_model(model, rec_def)
 
-        # Planner-Einstellungen ins PlannerWidget
         try:
             self.content.apply_planner_model(model.planner or {})
         except Exception:
@@ -210,7 +235,6 @@ class RecipeEditorPanel(QWidget):
     def _on_save_clicked(self) -> None:
         try:
             model = self.current_model()
-            # Name aus Content.Meta
             name_inp, _desc_inp = self.content.meta_values()
             name = _slugify((name_inp or "").strip())
             if not name:

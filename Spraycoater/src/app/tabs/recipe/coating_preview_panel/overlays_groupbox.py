@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QWidget, QHBoxLayout, QCheckBox, QLabel, QSizePolicy
 )
 
-from .overlays import OverlayRenderer  # Renderer lebt in der GroupBox
+from .views_3d.overlays import OverlayRenderer  # Renderer lebt in der GroupBox
 
 
 class OverlaysGroupBox(QGroupBox):

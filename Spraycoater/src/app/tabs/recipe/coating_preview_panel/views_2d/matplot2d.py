@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
 # app/tabs/recipe/coating_preview_panel/matplot2d.py
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 import logging
 from typing import Optional, Tuple, Dict, Any, List
@@ -8,8 +8,10 @@ import numpy as np
 import matplotlib
 matplotlib.use("QtAgg")
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavToolbar
 from matplotlib.figure import Figure
 from matplotlib.collections import PolyCollection
+from matplotlib.lines import Line2D
 
 _LOG = logging.getLogger("app.tabs.recipe.preview.matplot2d")
 
@@ -18,19 +20,15 @@ PLANES = ("top", "front", "back", "left", "right")
 
 def _project_xyz_to_plane(P: np.ndarray, plane: str) -> np.ndarray:
     if plane == "top":
-        return P[:, [0, 1]]
+        return P[:, [0, 1]]          # X,Y
     if plane in ("front", "back"):
-        return P[:, [0, 2]]
+        return P[:, [0, 2]]          # X,Z
     if plane in ("left", "right"):
-        return P[:, [1, 2]]
+        return P[:, [1, 2]]          # Y,Z
     raise ValueError(f"Unknown plane '{plane}'")
 
 
 def _vtk_faces_to_tris(faces: np.ndarray) -> np.ndarray:
-    """
-    Decode a VTK faces array into a (M, 3) triangle index array.
-    faces format: [n, i0, i1, i2, n, j0, j1, j2, ...]
-    """
     faces = np.asarray(faces, dtype=np.int64).ravel()
     tris: List[List[int]] = []
     i = 0
@@ -44,7 +42,10 @@ def _vtk_faces_to_tris(faces: np.ndarray) -> np.ndarray:
 
 
 class Matplot2DView(FigureCanvas):
-    """2D-Renderer mit Substrat-Fill, Pfad, Maskenlinie, Pan/Zoom."""
+    """
+    2D-Renderer: Substrat (grau) + Pfad (grün) + Start/End-Marker + Legende.
+    KEINE Maske mehr.
+    """
     def __init__(self, parent=None):
         self._fig: Figure = Figure(figsize=(6, 6), dpi=100)
         super().__init__(self._fig)
@@ -56,45 +57,40 @@ class Matplot2DView(FigureCanvas):
 
         # Scene caches
         self._path_xyz: Optional[np.ndarray] = None
-        self._mask_xyz: Optional[np.ndarray] = None
-        self._mesh_pts: Optional[np.ndarray] = None      # (N, 3)
-        self._mesh_tris: Optional[np.ndarray] = None     # (M, 3)
+        self._mesh_pts: Optional[np.ndarray] = None
+        self._mesh_tris: Optional[np.ndarray] = None
 
         # Pre-projected caches by plane
         self._path2d: Dict[str, Optional[np.ndarray]] = {p: None for p in PLANES}
-        self._mask2d: Dict[str, Optional[np.ndarray]] = {p: None for p in PLANES}
         self._mesh2d: Dict[str, Optional[Tuple[np.ndarray, np.ndarray]]] = {p: None for p in PLANES}
-        # -> mesh2d[plane] = (V2, Tris) where V2 is (N,2), Tris is (M,3) over V2
 
-        # UI state (manual pan/zoom)
+        # UI state
         self._user_limits: Optional[Tuple[float, float, float, float]] = None
-        self._panning: bool = False
-        self._pan_start_xy: Optional[Tuple[float, float]] = None
-        self._pan_lim0: Optional[Tuple[float, float, float, float]] = None
 
         # style
         self._style = {
-            "grid_alpha": 0.4,
+            "grid_alpha": 0.35,
             "grid_ls": ":",
             "substrate_face": "#d0d6dd",
             "substrate_edge": "#aaaaaa",
-            "substrate_alpha": 0.6,
+            "substrate_alpha": 0.65,
             "path_color": "#2ecc71",
             "path_lw": 1.8,
-            "marker_size": 20.0,
-            "marker_edge": "#1e824c",
-            "marker_face": "#2ecc71",
-            "mask_color": "#4b7bec",
-            "mask_lw": 1.2,
+            "start_face": "#5dade2",  # hellblau
+            "start_edge": "#2e86c1",
+            "end_face":   "#1b4f72",  # dunkelblau
+            "end_edge":   "#154360",
+            "marker_size": 28.0,
         }
 
-        # mouse interactions
-        self.mpl_connect("scroll_event", self._on_scroll_zoom)
-        self.mpl_connect("button_press_event", self._on_button_press)
-        self.mpl_connect("button_release_event", self._on_button_release)
-        self.mpl_connect("motion_notify_event", self._on_mouse_move)
-
         self._fig.tight_layout()
+
+    # ---------- Toolbar (optional für Einbau im Panel) ----------
+    def make_toolbar(self, parent=None):
+        try:
+            return NavToolbar(self, parent)
+        except Exception:
+            return None
 
     # ---------- Public API ----------
     def set_plane(self, plane: str):
@@ -102,15 +98,11 @@ class Matplot2DView(FigureCanvas):
             _LOG.warning("Unknown plane '%s'", plane)
             return
         self._plane = plane
-        # plane change: drop user limits (different axes)
         self._user_limits = None
         self._redraw()
 
     def get_plane(self) -> str:
         return self._plane
-
-    def redraw(self):
-        self._redraw(keep_limits=True)
 
     def refresh(self):
         self._redraw(keep_limits=True)
@@ -125,13 +117,7 @@ class Matplot2DView(FigureCanvas):
             self._path2d[p] = None if self._path_xyz is None else _project_xyz_to_plane(self._path_xyz, p)
         self._redraw(keep_limits=True)
 
-    def _set_mask_xyz(self, mask_xyz: np.ndarray | None):
-        self._mask_xyz = None if mask_xyz is None else np.asarray(mask_xyz, float).reshape(-1, 3)
-        for p in PLANES:
-            self._mask2d[p] = None if self._mask_xyz is None else _project_xyz_to_plane(self._mask_xyz, p)
-
     def _set_mesh(self, mesh: Any | None):
-        """Accepts a pyvista.PolyData-like object with .points and .faces."""
         if mesh is None or not hasattr(mesh, "points"):
             self._mesh_pts = None
             self._mesh_tris = None
@@ -148,7 +134,6 @@ class Matplot2DView(FigureCanvas):
                 self._mesh_pts = None
                 self._mesh_tris = None
 
-        # refresh 2D caches
         for p in PLANES:
             if self._mesh_pts is None or self._mesh_tris is None:
                 self._mesh2d[p] = None
@@ -156,41 +141,11 @@ class Matplot2DView(FigureCanvas):
                 V2 = _project_xyz_to_plane(self._mesh_pts, p)
                 self._mesh2d[p] = (V2, self._mesh_tris)
 
-    def set_scene(self, *, substrate_mesh=None, path_xyz=None, bounds=None, mask_poly=None, **_kwargs):
+    def set_scene(self, *, substrate_mesh=None, path_xyz=None, bounds=None, **_kwargs):
         if bounds is not None:
             self._bounds = tuple(map(float, bounds))
-
-        # path
         self.set_path_xyz(path_xyz)
-
-        # substrate (mesh)
         self._set_mesh(substrate_mesh)
-
-        # optional mask polyline → turn vtk poly lines into coordinates
-        if mask_poly is not None and hasattr(mask_poly, "points") and hasattr(mask_poly, "lines"):
-            try:
-                pts = np.asarray(mask_poly.points, dtype=float).reshape(-1, 3)
-                lines = np.asarray(mask_poly.lines, dtype=np.int64).ravel()
-                # lines are encoded [n, i0, i1, n, j0, j1, ...] (n should be 2 for segments)
-                segs = []
-                i = 0
-                N = lines.size
-                while i < N:
-                    n = int(lines[i]); i += 1
-                    if n >= 2 and i + n <= N:
-                        idx = lines[i:i+n]; i += n
-                        # draw as contiguous polyline
-                        segs.append(pts[idx])
-                if segs:
-                    self._set_mask_xyz(np.vstack(segs))
-                else:
-                    self._set_mask_xyz(None)
-            except Exception:
-                _LOG.exception("Failed to decode mask_poly for 2D")
-                self._set_mask_xyz(None)
-        else:
-            self._set_mask_xyz(None)
-
         self._redraw(keep_limits=True)
 
     def show_top(self):   self.set_plane("top")
@@ -211,13 +166,38 @@ class Matplot2DView(FigureCanvas):
             self._ax.set_title(f"{self._plane.capitalize()} (X in depth)")
             self._ax.set_xlabel("Y (mm)"); self._ax.set_ylabel("Z (mm)")
 
-    def _default_limits_from_bounds(self) -> Tuple[float, float, float, float]:
+    def _extents_from_data(self) -> Tuple[float, float, float, float]:
+        """
+        Limits aus Mesh+Pfad (projiziert) – damit ist der Pfad auch sichtbar,
+        wenn er z.B. auf Z=10 liegt, das Mesh aber nur 50..52 abdeckt.
+        """
         xmin, xmax, ymin, ymax, zmin, zmax = self._bounds
         if self._plane == "top":
-            return xmin, xmax, ymin, ymax
-        if self._plane in ("front", "back"):
-            return xmin, xmax, zmin, zmax
-        return ymin, ymax, zmin, zmax
+            lo = np.array([xmin, ymin], dtype=float)
+            hi = np.array([xmax, ymax], dtype=float)
+        elif self._plane in ("front", "back"):
+            lo = np.array([xmin, zmin], dtype=float)
+            hi = np.array([xmax, zmax], dtype=float)
+        else:
+            lo = np.array([ymin, zmin], dtype=float)
+            hi = np.array([ymax, zmax], dtype=float)
+
+        item = self._mesh2d.get(self._plane)
+        if item:
+            V2, _ = item
+            if V2 is not None and len(V2) > 0:
+                lo = np.minimum(lo, np.min(V2, axis=0))
+                hi = np.maximum(hi, np.max(V2, axis=0))
+
+        U = self._path2d.get(self._plane)
+        if U is not None and len(U) > 0:
+            lo = np.minimum(lo, np.min(U, axis=0))
+            hi = np.maximum(hi, np.max(U, axis=0))
+
+        span = np.maximum(hi - lo, 1e-6)
+        pad = 0.05 * span
+        lo -= pad; hi += pad
+        return float(lo[0]), float(hi[0]), float(lo[1]), float(hi[1])
 
     def _configure_grid(self):
         self._ax.grid(True, linestyle=self._style["grid_ls"],
@@ -230,7 +210,6 @@ class Matplot2DView(FigureCanvas):
         V2, tris = item
         if V2 is None or tris is None or len(tris) == 0:
             return
-        # build polygons per triangle
         polys = [V2[idx] for idx in tris]
         pc = PolyCollection(
             polys,
@@ -250,22 +229,30 @@ class Matplot2DView(FigureCanvas):
                       color=self._style["path_color"],
                       linewidth=self._style["path_lw"],
                       zorder=2)
-        # Start/End markers
-        self._ax.scatter([U[0, 0], U[-1, 0]],
-                         [U[0, 1], U[-1, 1]],
+        # Start/End
+        self._ax.scatter([U[0, 0]], [U[0, 1]],
                          s=self._style["marker_size"],
-                         edgecolors=self._style["marker_edge"],
-                         facecolors=self._style["marker_face"],
+                         edgecolors=self._style["start_edge"],
+                         facecolors=self._style["start_face"],
+                         zorder=3)
+        self._ax.scatter([U[-1, 0]], [U[-1, 1]],
+                         s=self._style["marker_size"],
+                         edgecolors=self._style["end_edge"],
+                         facecolors=self._style["end_face"],
                          zorder=3)
 
-    def _draw_mask(self):
-        M = self._mask2d.get(self._plane)
-        if M is None or len(M) == 0:
-            return
-        self._ax.plot(M[:, 0], M[:, 1],
-                      color=self._style["mask_color"],
-                      linewidth=self._style["mask_lw"],
-                      zorder=1)
+    def _add_legend(self):
+        handles = [
+            Line2D([0], [0], marker='s', linestyle='None',
+                   markersize=10, markerfacecolor=self._style["substrate_face"],
+                   markeredgecolor=self._style["substrate_edge"], label="Substrate"),
+            Line2D([0], [0], color=self._style["path_color"], lw=self._style["path_lw"], label="Path"),
+            Line2D([0], [0], marker='o', linestyle='None', markersize=8,
+                   markerfacecolor=self._style["start_face"], markeredgecolor=self._style["start_edge"], label="Start"),
+            Line2D([0], [0], marker='o', linestyle='None', markersize=8,
+                   markerfacecolor=self._style["end_face"], markeredgecolor=self._style["end_edge"], label="End"),
+        ]
+        self._ax.legend(handles=handles, loc="upper right", frameon=True)
 
     def _redraw(self, *, keep_limits: bool = False):
         try:
@@ -276,16 +263,15 @@ class Matplot2DView(FigureCanvas):
             self._set_labels()
 
             if saved is None:
-                x0, x1, y0, y1 = self._default_limits_from_bounds()
+                x0, x1, y0, y1 = self._extents_from_data()
                 self._ax.set_xlim(x0, x1); self._ax.set_ylim(y0, y1)
             else:
                 self._ax.set_xlim(saved[0], saved[1]); self._ax.set_ylim(saved[2], saved[3])
 
             self._configure_grid()
-            # draw order: substrate (zorder 0) → mask (1) → path (2/3)
             self._draw_substrate()
-            self._draw_mask()
             self._draw_path()
+            self._add_legend()
 
             if saved is None:
                 x0, x1 = self._ax.get_xlim(); y0, y1 = self._ax.get_ylim()
@@ -295,48 +281,3 @@ class Matplot2DView(FigureCanvas):
             self.draw_idle()
         except Exception:
             _LOG.exception("Matplot2DView redraw failed")
-
-    # ---------- mouse interactions ----------
-    def _on_scroll_zoom(self, ev):
-        try:
-            if ev.inaxes != self._ax:
-                return
-            # zoom towards cursor
-            scale = 0.9 if ev.button == "up" else 1.1
-            x0, x1 = self._ax.get_xlim(); y0, y1 = self._ax.get_ylim()
-            cx, cy = ev.xdata, ev.ydata
-            nx0 = cx + (x0 - cx) * scale; nx1 = cx + (x1 - cx) * scale
-            ny0 = cy + (y0 - cy) * scale; ny1 = cy + (y1 - cy) * scale
-            self._ax.set_xlim(nx0, nx1); self._ax.set_ylim(ny0, ny1)
-            self._user_limits = (nx0, nx1, ny0, ny1)
-            self.draw_idle()
-        except Exception:
-            _LOG.exception("scroll zoom failed")
-
-    def _on_button_press(self, ev):
-        # right button drag = pan
-        if ev.inaxes == self._ax and ev.button == 3:
-            self._panning = True
-            self._pan_start_xy = (ev.xdata, ev.ydata)
-            x0, x1 = self._ax.get_xlim(); y0, y1 = self._ax.get_ylim()
-            self._pan_lim0 = (x0, x1, y0, y1)
-
-    def _on_button_release(self, _ev):
-        self._panning = False
-        self._pan_start_xy = None
-        self._pan_lim0 = None
-
-    def _on_mouse_move(self, ev):
-        if not self._panning or ev.inaxes != self._ax or self._pan_start_xy is None or self._pan_lim0 is None:
-            return
-        try:
-            sx, sy = self._pan_start_xy
-            dx = ev.xdata - sx
-            dy = ev.ydata - sy
-            x0, x1, y0, y1 = self._pan_lim0
-            self._ax.set_xlim(x0 - dx, x1 - dx)
-            self._ax.set_ylim(y0 - dy, y1 - dy)
-            self._user_limits = (x0 - dx, x1 - dx, y0 - dy, y1 - dy)
-            self.draw_idle()
-        except Exception:
-            _LOG.exception("pan move failed")

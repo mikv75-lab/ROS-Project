@@ -1,156 +1,8 @@
-# -*- coding: utf-8 -*-
-from __future__ import annotations
-from typing import Optional, Dict, Any, Tuple, List
-
-from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
-    QDoubleSpinBox, QSpinBox, QCheckBox, QComboBox, QFrame,
-    QTabWidget, QLineEdit, QLabel, QTabBar, QSizePolicy, QPushButton
-)
-
-from app.model.recipe.recipe import Recipe
-    # type: ignore
-from app.model.recipe.recipe_store import RecipeStore
-from app.widgets.planner_groupbox import PlannerGroupBox
-from .side_path_editor import SidePathEditor
-
-
-def _hline() -> QFrame:
-    f = QFrame()
-    f.setFrameShape(QFrame.HLine)
-    f.setFrameShadow(QFrame.Sunken)
-    return f
-
-
-def _unique_str_list(items) -> List[str]:
-    seen = set()
-    out: List[str] = []
-    for x in (items or []):
-        s = str(x)
-        if s not in seen:
-            seen.add(s)
-            out.append(s)
-    return out
-
-
-def _coalesce_options(
-    model: Recipe,
-    *,
-    single: str,
-    plurals: List[str],
-    rec_def: Optional[Dict[str, Any]] = None,
-) -> List[str]:
-    opts: List[str] = []
-    for attr in plurals:
-        vals = getattr(model, attr, None)
-        if vals:
-            opts.extend(vals)
-    if isinstance(rec_def, dict):
-        for attr in plurals:
-            vals = rec_def.get(attr)
-            if vals:
-                opts.extend(vals)
-    single_val = getattr(model, single, None)
-    if single_val and not opts:
-        opts = [single_val]
-    return _unique_str_list(opts)
-
-
-def _coalesce_sides_from_rec_def(rec_def: Dict[str, Any]) -> Dict[str, Any]:
-    sides = rec_def.get("sides") or {}
-    return dict(sides) if isinstance(sides, dict) else {}
-
-
-def _compact_form(form: QFormLayout) -> None:
-    form.setContentsMargins(6, 6, 6, 6)
-    form.setHorizontalSpacing(6)
-    form.setVerticalSpacing(4)
-    form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-    form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-    form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
-
-
-def _set_policy(w: QWidget, *, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred) -> None:
-    sp = w.sizePolicy()
-    sp.setHorizontalPolicy(h)
-    sp.setVerticalPolicy(v)
-    w.setSizePolicy(sp)
-
-
-class CheckableTabWidget(QTabWidget):
-    checkedChanged = pyqtSignal(str, bool)
-
-    def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.setMovable(True)
-        self._side_checkboxes: Dict[int, QCheckBox] = {}
-
-        tb = self.tabBar()
-        tb.setExpanding(False)
-        self.setDocumentMode(False)  # Pane-Rand sichtbar
-        tb.setDrawBase(True)
-        _set_policy(tb, h=QSizePolicy.Policy.Preferred, v=QSizePolicy.Policy.Preferred)
-        _set_policy(self, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
-
-        self.setStyleSheet("""
-            QTabWidget::pane { border: 1px solid palette(mid); top: -1px; }
-            QTabBar::tab { margin: 1px; padding: 3px 8px; }
-        """)
-
-        if hasattr(tb, "tabMoved"):
-            tb.tabMoved.connect(self._on_tab_moved)  # type: ignore[attr-defined]
-
-    def add_checkable_tab(self, widget: QWidget, side_name: str, checked: bool = True) -> None:
-        idx = self.addTab(widget, side_name)
-
-        cb = QCheckBox()
-        cb.setChecked(checked)
-        cb.setToolTip(f"Aktiviert: {side_name}")
-        _set_policy(cb, h=QSizePolicy.Policy.Preferred, v=QSizePolicy.Policy.Preferred)
-
-        container = QWidget()
-        lay = QHBoxLayout(container)
-        lay.setContentsMargins(4, 0, 0, 0)
-        lay.setSpacing(4)
-        lay.addWidget(cb)
-        _set_policy(container, h=QSizePolicy.Policy.Preferred, v=QSizePolicy.Policy.Preferred)
-
-        self.tabBar().setTabButton(idx, QTabBar.ButtonPosition.LeftSide, container)
-        self._side_checkboxes[idx] = cb
-
-        cb.toggled.connect(lambda state, s=side_name: self.checkedChanged.emit(s, state))
-
-    def _on_tab_moved(self, _from_idx: int, _to_idx: int) -> None:
-        new_map: Dict[int, QCheckBox] = {}
-        for i in range(self.count()):
-            btn = self.tabBar().tabButton(i, QTabBar.ButtonPosition.LeftSide)
-            if btn:
-                cb = btn.findChild(QCheckBox)
-                if cb:
-                    new_map[i] = cb
-        self._side_checkboxes = new_map
-
-    def is_checked(self, side_name: str) -> bool:
-        for i in range(self.count()):
-            if self.tabText(i) == side_name:
-                cb = self._side_checkboxes.get(i)
-                return bool(cb.isChecked()) if cb else True
-        return False
-
-    def checked_sides(self) -> List[str]:
-        out: List[str] = []
-        for i in range(self.count()):
-            cb = self._side_checkboxes.get(i)
-            if not cb or cb.isChecked():
-                out.append(self.tabText(i))
-        return out
-
-
 class RecipeEditorContent(QWidget):
     """
     Kopf wird extern (Panel) gebaut.
-    Hier: zweispaltig — links (Meta oben + Selectors unten), rechts (Globals) + unten Paths + Planner + Footer.
+    Hier: zweispaltig — links (Meta oben + Context unten), rechts (Globals).
+    Darunter direkt die Side-Tabs (ohne Paths-GroupBox) und danach der Planner.
     """
     validateRequested = pyqtSignal()
     optimizeRequested = pyqtSignal()
@@ -178,7 +30,7 @@ class RecipeEditorContent(QWidget):
         self._rec_def: Optional[Dict[str, Any]] = None
         self._last_ctx_key: Optional[str] = None
 
-        # Planner unten im Content
+        # Planner unten, separat
         self.plannerBox: Optional[PlannerGroupBox] = None
 
         self._build_ui()
@@ -191,12 +43,12 @@ class RecipeEditorContent(QWidget):
         root.setSpacing(8)
         _set_policy(self, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Expanding)
 
-        # ============ obere Zeile: links VBox(Meta, Selectors) | rechts Globals ============
+        # ============ obere Zeile: links VBox(Meta, Context) | rechts Globals ============
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
         top.setSpacing(8)
 
-        # -- linke VBox: Meta oben, Selectors unten --
+        # -- linke VBox: Meta oben, Context unten --
         left_col = QVBoxLayout()
         left_col.setContentsMargins(0, 0, 0, 0)
         left_col.setSpacing(8)
@@ -213,8 +65,8 @@ class RecipeEditorContent(QWidget):
         metaForm.addRow(QLabel("Name:", self.gb_meta), self.e_name)
         metaForm.addRow(QLabel("Description:", self.gb_meta), self.e_desc)
 
-        # Selectors
-        sel_gb = QGroupBox("Selectors")
+        # Context (ehem. Selectors)
+        sel_gb = QGroupBox("Context")
         _set_policy(sel_gb, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
         sf = QFormLayout(sel_gb)
         _compact_form(sf)
@@ -225,6 +77,8 @@ class RecipeEditorContent(QWidget):
         for c in (self.sel_recipe, self.sel_tool, self.sel_substrate, self.sel_mount):
             _set_policy(c, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
         sf.addRow("recipe", self.sel_recipe)
+        # HLine direkt unter recipe
+        sf.addRow(_hline())
         sf.addRow("tool", self.sel_tool)
         sf.addRow("substrate", self.sel_substrate)
         sf.addRow("mount", self.sel_mount)
@@ -240,29 +94,20 @@ class RecipeEditorContent(QWidget):
 
         top.addLayout(left_col, 1)
         top.addWidget(self.gb_globals, 1)
-
         root.addLayout(top)
 
-        # --- unten: Paths (Checkable Tabs im sichtbaren Pane) ---
-        self.gb_paths = QGroupBox("Paths", self)
-        paths_v = QVBoxLayout(self.gb_paths)
-        paths_v.setContentsMargins(8, 6, 8, 8)
-        paths_v.setSpacing(6)
-
+        # --- direkt: Side-Tabs (ohne Paths-GroupBox) ---
         self.sideTabs = CheckableTabWidget(self)
         self.sideTabs.checkedChanged.connect(self._on_side_checked_changed)
-        for w in (self.gb_paths, self.sideTabs):
-            _set_policy(w, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Expanding)
-        paths_v.addWidget(self.sideTabs)
+        _set_policy(self.sideTabs, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Expanding)
+        root.addWidget(self.sideTabs, 1)
 
-        # Planner unter den Side-Tabs
+        # --- darunter: Planner (separate GroupBox) ---
         self.plannerBox = PlannerGroupBox(store=self.store, parent=self)
         _set_policy(self.plannerBox, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Maximum)
-        paths_v.addWidget(self.plannerBox)
+        root.addWidget(self.plannerBox, 0)
 
-        root.addWidget(self.gb_paths, 1)
-
-        # --- Footer-Buttons (3 Stück): Update Preview, Validate, Optimize ---
+        # --- Footer-Buttons (3 Stück): Update Preview, Validate, Optimize) ---
         foot = QHBoxLayout()
         foot.setContentsMargins(0, 0, 0, 0)
         foot.setSpacing(8)
