@@ -1,8 +1,7 @@
-# app/tabs/recipe/coating_preview_panel/matplot2d.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import logging
-from typing import Optional, Tuple, Dict, Any, List
+from typing import Optional, Tuple, Dict, Any, List, Callable
 
 import numpy as np
 import matplotlib
@@ -12,6 +11,7 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavToolbar
 from matplotlib.figure import Figure
 from matplotlib.collections import PolyCollection
 from matplotlib.lines import Line2D
+from matplotlib.ticker import MultipleLocator
 
 _LOG = logging.getLogger("app.tabs.recipe.preview.matplot2d")
 
@@ -43,16 +43,34 @@ def _vtk_faces_to_tris(faces: np.ndarray) -> np.ndarray:
 
 class Matplot2DView(FigureCanvas):
     """
-    2D-Renderer: Substrat (grau) + Pfad (grün) + Start/End-Marker + Legende.
-    KEINE Maske mehr.
+    2D-Renderer: Substrat (grau) + Pfad (grün) + Start/End-Marker.
+    Interaktiv:
+      - Linksklick+Drag: Pan
+      - Rechtsklick+Drag (vertikal): Zoom
+      - Scrollrad: Zoom um Cursor
+    Fixes Koordinatensystem (Default):
+      X: -120..+120, Y: -120..+120, Z: 0..200  (Ursprung = Substratmitte unten)
     """
     def __init__(self, parent=None):
         self._fig: Figure = Figure(figsize=(6, 6), dpi=100)
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
         self._ax.set_aspect("equal", adjustable="box")
+        self._ax.set_navigate(True)
 
-        self._bounds: Tuple[float, float, float, float, float, float] = (-120, 120, -120, 120, 0, 240)
+        # Standard-"Welt"-Ranges (mm)
+        self._world = {
+            "x": (-120.0, 120.0),
+            "y": (-120.0, 120.0),
+            "z": (0.0, 200.0),
+        }
+
+        # Für eventuelle Bounds-Übergaben (werden nur als Startwerte benutzt)
+        self._bounds: Tuple[float, float, float, float, float, float] = (
+            self._world["x"][0], self._world["x"][1],
+            self._world["y"][0], self._world["y"][1],
+            self._world["z"][0], self._world["z"][1]
+        )
         self._plane: str = "top"
 
         # Scene caches
@@ -67,10 +85,16 @@ class Matplot2DView(FigureCanvas):
         # UI state
         self._user_limits: Optional[Tuple[float, float, float, float]] = None
 
+        # Interaktion
+        self._press_btn: Optional[int] = None  # 1=links, 3=rechts
+        self._press_xy: Optional[Tuple[float, float]] = None
+        self._press_xlim: Optional[Tuple[float, float]] = None
+        self._press_ylim: Optional[Tuple[float, float]] = None
+
         # style
         self._style = {
-            "grid_alpha": 0.35,
-            "grid_ls": ":",
+            "grid_alpha_major": 0.35,
+            "grid_alpha_minor": 0.15,
             "substrate_face": "#d0d6dd",
             "substrate_edge": "#aaaaaa",
             "substrate_alpha": 0.65,
@@ -83,9 +107,16 @@ class Matplot2DView(FigureCanvas):
             "marker_size": 28.0,
         }
 
+        # Events
+        cid = self.mpl_connect
+        cid("button_press_event",  self._on_press)
+        cid("button_release_event",self._on_release)
+        cid("motion_notify_event", self._on_motion)
+        cid("scroll_event",        self._on_scroll)
+
         self._fig.tight_layout()
 
-    # ---------- Toolbar (optional für Einbau im Panel) ----------
+    # ---------- Toolbar (optional) ----------
     def make_toolbar(self, parent=None):
         try:
             return NavToolbar(self, parent)
@@ -98,8 +129,8 @@ class Matplot2DView(FigureCanvas):
             _LOG.warning("Unknown plane '%s'", plane)
             return
         self._plane = plane
-        self._user_limits = None
-        self._redraw()
+        keep = self._user_limits is not None
+        self._redraw(keep_limits=keep)
 
     def get_plane(self) -> str:
         return self._plane
@@ -108,6 +139,7 @@ class Matplot2DView(FigureCanvas):
         self._redraw(keep_limits=True)
 
     def set_bounds(self, bounds: Tuple[float, float, float, float, float, float]):
+        # wird als Startwert verwendet; Default-Welt bleibt maßgeblich
         self._bounds = tuple(map(float, bounds))
         self._redraw(keep_limits=self._user_limits is not None)
 
@@ -166,42 +198,30 @@ class Matplot2DView(FigureCanvas):
             self._ax.set_title(f"{self._plane.capitalize()} (X in depth)")
             self._ax.set_xlabel("Y (mm)"); self._ax.set_ylabel("Z (mm)")
 
-    def _extents_from_data(self) -> Tuple[float, float, float, float]:
-        """
-        Limits aus Mesh+Pfad (projiziert) – damit ist der Pfad auch sichtbar,
-        wenn er z.B. auf Z=10 liegt, das Mesh aber nur 50..52 abdeckt.
-        """
-        xmin, xmax, ymin, ymax, zmin, zmax = self._bounds
+    def _fixed_plane_extents(self) -> Tuple[float, float, float, float]:
+        """Feste Standard-Ranges je Ebene (Weltkoords, Ursprung in Mitte-unten)."""
+        X = self._world["x"]; Y = self._world["y"]; Z = self._world["z"]
         if self._plane == "top":
-            lo = np.array([xmin, ymin], dtype=float)
-            hi = np.array([xmax, ymax], dtype=float)
-        elif self._plane in ("front", "back"):
-            lo = np.array([xmin, zmin], dtype=float)
-            hi = np.array([xmax, zmax], dtype=float)
-        else:
-            lo = np.array([ymin, zmin], dtype=float)
-            hi = np.array([ymax, zmax], dtype=float)
+            return X[0], X[1], Y[0], Y[1]
+        if self._plane in ("front", "back"):
+            return X[0], X[1], Z[0], Z[1]
+        # left/right
+        return Y[0], Y[1], Z[0], Z[1]
 
-        item = self._mesh2d.get(self._plane)
-        if item:
-            V2, _ = item
-            if V2 is not None and len(V2) > 0:
-                lo = np.minimum(lo, np.min(V2, axis=0))
-                hi = np.maximum(hi, np.max(V2, axis=0))
-
-        U = self._path2d.get(self._plane)
-        if U is not None and len(U) > 0:
-            lo = np.minimum(lo, np.min(U, axis=0))
-            hi = np.maximum(hi, np.max(U, axis=0))
-
-        span = np.maximum(hi - lo, 1e-6)
-        pad = 0.05 * span
-        lo -= pad; hi += pad
-        return float(lo[0]), float(hi[0]), float(lo[1]), float(hi[1])
+    def _extents_from_data(self) -> Tuple[float, float, float, float]:
+        # Verwende IMMER die festen Welt-Extents als Start.
+        return self._fixed_plane_extents()
 
     def _configure_grid(self):
-        self._ax.grid(True, linestyle=self._style["grid_ls"],
-                      alpha=self._style["grid_alpha"], linewidth=0.5)
+        # Major=10 mm, Minor=1 mm
+        self._ax.xaxis.set_major_locator(MultipleLocator(10.0))
+        self._ax.yaxis.set_major_locator(MultipleLocator(10.0))
+        self._ax.xaxis.set_minor_locator(MultipleLocator(1.0))
+        self._ax.yaxis.set_minor_locator(MultipleLocator(1.0))
+
+        # getrennte Styles für Major/Minor
+        self._ax.grid(True, which="major", alpha=self._style["grid_alpha_major"], linestyle=":", linewidth=0.8)
+        self._ax.grid(True, which="minor", alpha=self._style["grid_alpha_minor"], linestyle=":", linewidth=0.5)
 
     def _draw_substrate(self):
         item = self._mesh2d.get(self._plane)
@@ -252,7 +272,11 @@ class Matplot2DView(FigureCanvas):
             Line2D([0], [0], marker='o', linestyle='None', markersize=8,
                    markerfacecolor=self._style["end_face"], markeredgecolor=self._style["end_edge"], label="End"),
         ]
-        self._ax.legend(handles=handles, loc="upper right", frameon=True)
+        self._ax.legend(handles=handles,
+                        loc="upper center",
+                        bbox_to_anchor=(0.5, 1.02),
+                        ncol=4,
+                        frameon=True)
 
     def _redraw(self, *, keep_limits: bool = False):
         try:
@@ -281,3 +305,64 @@ class Matplot2DView(FigureCanvas):
             self.draw_idle()
         except Exception:
             _LOG.exception("Matplot2DView redraw failed")
+
+    # ---------- Interaktion ----------
+    def _on_press(self, event):
+        if event.inaxes != self._ax:
+            return
+        self._press_btn = event.button  # 1=links, 3=rechts
+        self._press_xy = (event.xdata, event.ydata)
+        self._press_xlim = self._ax.get_xlim()
+        self._press_ylim = self._ax.get_ylim()
+
+    def _on_release(self, _event):
+        self._press_btn = None
+        self._press_xy = None
+        x0, x1 = self._ax.get_xlim(); y0, y1 = self._ax.get_ylim()
+        self._user_limits = (x0, x1, y0, y1)
+
+    def _on_motion(self, event):
+        if self._press_btn is None or event.inaxes != self._ax or self._press_xy is None:
+            return
+        x0, y0 = self._press_xy
+        x1, y1 = event.xdata, event.ydata
+        if x1 is None or y1 is None:
+            return
+
+        if self._press_btn == 1:
+            # PAN
+            dx = x1 - x0
+            dy = y1 - y0
+            xlim0 = self._press_xlim or self._ax.get_xlim()
+            ylim0 = self._press_ylim or self._ax.get_ylim()
+            self._ax.set_xlim(xlim0[0] - dx, xlim0[1] - dx)
+            self._ax.set_ylim(ylim0[0] - dy, ylim0[1] - dy)
+            self.draw_idle()
+        elif self._press_btn == 3:
+            # ZOOM (vertikal)
+            dy = (y1 - y0)
+            factor = 1.0 / (1.0 + 0.01 * dy)
+            self._zoom_about_point((x0, y0), factor)
+
+    def _on_scroll(self, event):
+        if event.inaxes != self._ax:
+            return
+        step = 1.15
+        factor = step if event.button == "up" else (1.0 / step)
+        self._zoom_about_point((event.xdata, event.ydata), factor)
+
+    def _zoom_about_point(self, center: Tuple[float, float], factor: float):
+        cx, cy = center
+        if cx is None or cy is None:
+            return
+        x0, x1 = self._ax.get_xlim()
+        y0, y1 = self._ax.get_ylim()
+        lx0, lx1 = cx - x0, x1 - cx
+        ly0, ly1 = cy - y0, y1 - cy
+        lx0 /= factor; lx1 /= factor
+        ly0 /= factor; ly1 /= factor
+        self._ax.set_xlim(cx - lx0, cx + lx1)
+        self._ax.set_ylim(cy - ly0, cy + ly1)
+        self.draw_idle()
+        xx0, xx1 = self._ax.get_xlim(); yy0, yy1 = self._ax.get_ylim()
+        self._user_limits = (xx0, xx1, yy0, yy1)
