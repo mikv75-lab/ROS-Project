@@ -6,11 +6,13 @@ from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
     QDoubleSpinBox, QSpinBox, QCheckBox, QComboBox, QFrame,
-    QTabWidget, QLineEdit, QLabel, QTabBar, QSizePolicy
+    QTabWidget, QLineEdit, QLabel, QTabBar, QSizePolicy, QPushButton
 )
 
 from app.model.recipe.recipe import Recipe
+    # type: ignore
 from app.model.recipe.recipe_store import RecipeStore
+from app.widgets.planner_groupbox import PlannerGroupBox
 from .side_path_editor import SidePathEditor
 
 
@@ -148,8 +150,12 @@ class CheckableTabWidget(QTabWidget):
 class RecipeEditorContent(QWidget):
     """
     Kopf wird extern (Panel) gebaut.
-    Hier: zweispaltig (Globals | Selectors) + Paths unten.
+    Hier: zweispaltig — links (Meta oben + Selectors unten), rechts (Globals) + unten Paths + Planner + Footer.
     """
+    validateRequested = pyqtSignal()
+    optimizeRequested = pyqtSignal()
+    updatePreviewRequested = pyqtSignal(object)  # model: Recipe
+
     def __init__(self, *, ctx=None, store: RecipeStore, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
@@ -162,11 +168,18 @@ class RecipeEditorContent(QWidget):
         self.sel_substrate: Optional[QComboBox] = None
         self.sel_mount: Optional[QComboBox] = None
 
+        # Meta-Felder (verschoben aus Panel)
+        self.e_name: Optional[QLineEdit] = None
+        self.e_desc: Optional[QLineEdit] = None
+
         self._globals_widgets: Dict[str, QWidget] = {}
 
         self._model: Optional[Recipe] = None
         self._rec_def: Optional[Dict[str, Any]] = None
         self._last_ctx_key: Optional[str] = None
+
+        # Planner unten im Content
+        self.plannerBox: Optional[PlannerGroupBox] = None
 
         self._build_ui()
         self._rebuild_globals_from_schema()
@@ -178,16 +191,29 @@ class RecipeEditorContent(QWidget):
         root.setSpacing(8)
         _set_policy(self, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Expanding)
 
-        # --- obere Zeile: Globals (links) + Selectors (rechts) ---
+        # ============ obere Zeile: links VBox(Meta, Selectors) | rechts Globals ============
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
         top.setSpacing(8)
 
-        self.gb_globals = QGroupBox("Globals")
-        _set_policy(self.gb_globals, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
-        self.globals_form = QFormLayout(self.gb_globals)
-        _compact_form(self.globals_form)
+        # -- linke VBox: Meta oben, Selectors unten --
+        left_col = QVBoxLayout()
+        left_col.setContentsMargins(0, 0, 0, 0)
+        left_col.setSpacing(8)
 
+        # Meta
+        self.gb_meta = QGroupBox("Meta")
+        _set_policy(self.gb_meta, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
+        metaForm = QFormLayout(self.gb_meta)
+        _compact_form(metaForm)
+        self.e_name = QLineEdit(self.gb_meta)
+        self.e_name.setPlaceholderText("recipe_name (YAML id / Dateiname)")
+        self.e_desc = QLineEdit(self.gb_meta)
+        self.e_desc.setPlaceholderText("Short description ...")
+        metaForm.addRow(QLabel("Name:", self.gb_meta), self.e_name)
+        metaForm.addRow(QLabel("Description:", self.gb_meta), self.e_desc)
+
+        # Selectors
         sel_gb = QGroupBox("Selectors")
         _set_policy(sel_gb, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
         sf = QFormLayout(sel_gb)
@@ -203,24 +229,85 @@ class RecipeEditorContent(QWidget):
         sf.addRow("substrate", self.sel_substrate)
         sf.addRow("mount", self.sel_mount)
 
+        left_col.addWidget(self.gb_meta, 0)
+        left_col.addWidget(sel_gb, 1)
+
+        # Globals (rechts)
+        self.gb_globals = QGroupBox("Globals")
+        _set_policy(self.gb_globals, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
+        self.globals_form = QFormLayout(self.gb_globals)
+        _compact_form(self.globals_form)
+
+        top.addLayout(left_col, 1)
         top.addWidget(self.gb_globals, 1)
-        top.addWidget(sel_gb, 1)
+
         root.addLayout(top)
 
         # --- unten: Paths (Checkable Tabs im sichtbaren Pane) ---
-        self.sideTabs = CheckableTabWidget(self)
-        self.sideTabs.checkedChanged.connect(self._on_side_checked_changed)
-
         self.gb_paths = QGroupBox("Paths", self)
         paths_v = QVBoxLayout(self.gb_paths)
         paths_v.setContentsMargins(8, 6, 8, 8)
         paths_v.setSpacing(6)
-        paths_v.addWidget(self.sideTabs)
 
+        self.sideTabs = CheckableTabWidget(self)
+        self.sideTabs.checkedChanged.connect(self._on_side_checked_changed)
         for w in (self.gb_paths, self.sideTabs):
             _set_policy(w, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Expanding)
+        paths_v.addWidget(self.sideTabs)
+
+        # Planner unter den Side-Tabs
+        self.plannerBox = PlannerGroupBox(store=self.store, parent=self)
+        _set_policy(self.plannerBox, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Maximum)
+        paths_v.addWidget(self.plannerBox)
 
         root.addWidget(self.gb_paths, 1)
+
+        # --- Footer-Buttons (3 Stück): Update Preview, Validate, Optimize ---
+        foot = QHBoxLayout()
+        foot.setContentsMargins(0, 0, 0, 0)
+        foot.setSpacing(8)
+        self.btnUpdatePreview = QPushButton("Update Preview", self)
+        self.btnValidate = QPushButton("Validate", self)
+        self.btnOptimize = QPushButton("Optimize", self)
+        for b in (self.btnUpdatePreview, self.btnValidate, self.btnOptimize):
+            sp = b.sizePolicy()
+            sp.setHorizontalPolicy(QSizePolicy.Expanding)
+            sp.setVerticalPolicy(QSizePolicy.Preferred)
+            b.setSizePolicy(sp)
+            foot.addWidget(b, 1)
+        root.addLayout(foot)
+
+        # Wiring Footer
+        self.btnValidate.clicked.connect(self.validateRequested.emit)
+        self.btnOptimize.clicked.connect(self.optimizeRequested.emit)
+        self.btnUpdatePreview.clicked.connect(self._emit_update_preview)
+
+    # --- Helpers für Footer ---
+    def _emit_update_preview(self):
+        model = self._model or self._new_fallback_model()
+        if model is not None:
+            self.updatePreviewRequested.emit(model)
+
+    def _new_fallback_model(self) -> Optional[Recipe]:
+        try:
+            if self._rec_def:
+                params = self.store.collect_global_defaults()
+                planner = self.store.collect_planner_defaults()
+                pbs = self.store.build_default_paths_for_recipe(self._rec_def)
+                return Recipe.from_dict({
+                    "id": "",
+                    "description": self._rec_def.get("description") or "",
+                    "tool": None,
+                    "substrate": None,
+                    "substrates": [],
+                    "substrate_mount": None,
+                    "parameters": params,
+                    "planner": planner,
+                    "paths_by_side": pbs,
+                })
+        except Exception:
+            pass
+        return None
 
     def _rebuild_globals_from_schema(self) -> None:
         while self.globals_form.rowCount() > 0:
@@ -345,6 +432,12 @@ class RecipeEditorContent(QWidget):
         self._model = model
         self._rec_def = rec_def
 
+        # Meta setzen
+        if self.e_name is not None:
+            self.e_name.setText(getattr(model, "id", "") or "")
+        if self.e_desc is not None:
+            self.e_desc.setText(getattr(model, "description", "") or "")
+
         while self.sideTabs.count() > 0:
             w = self.sideTabs.widget(0)
             self.sideTabs.removeTab(0)
@@ -417,6 +510,12 @@ class RecipeEditorContent(QWidget):
             self._model.substrates = [sub] if sub else []
             self._model.substrate_mount = mnt
 
+        # Planner initial
+        try:
+            self.apply_planner_model(getattr(model, "planner", {}) or {})
+        except Exception:
+            pass
+
     def collect_globals(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
         for key, w in self._globals_widgets.items():
@@ -443,6 +542,17 @@ class RecipeEditorContent(QWidget):
         sub = (self.sel_substrate.currentText().strip() if self.sel_substrate and self.sel_substrate.currentIndex() >= 0 else None)
         mnt = (self.sel_mount.currentText().strip() if self.sel_mount and self.sel_mount.currentIndex() >= 0 else None)
         return tool or None, sub or None, mnt or None
+
+    def meta_values(self) -> Tuple[str, str]:
+        name = (self.e_name.text().strip() if self.e_name else "")
+        desc = (self.e_desc.text().strip() if self.e_desc else "")
+        return name, desc
+
+    def set_meta(self, *, name: str = "", desc: str = "") -> None:
+        if self.e_name is not None:
+            self.e_name.setText(name or "")
+        if self.e_desc is not None:
+            self.e_desc.setText(desc or "")
 
     def _current_ctx_key(self) -> str:
         tool = self.sel_tool.currentText().strip() if self.sel_tool and self.sel_tool.currentIndex() >= 0 else ""
@@ -471,3 +581,19 @@ class RecipeEditorContent(QWidget):
 
     def checked_sides(self) -> List[str]:
         return self.sideTabs.checked_sides()
+
+    # ---- Planner-API nach außen (vom Panel genutzt) ----
+    def apply_planner_model(self, model: Dict[str, Any]) -> None:
+        if self.plannerBox and hasattr(self.plannerBox, "apply_model"):
+            try:
+                self.plannerBox.apply_model(model)
+            except Exception:
+                pass
+
+    def collect_planner(self) -> Dict[str, Any]:
+        if self.plannerBox and hasattr(self.plannerBox, "collect"):
+            try:
+                return dict(self.plannerBox.collect() or {})
+            except Exception:
+                return {}
+        return {}

@@ -7,13 +7,16 @@ from typing import Callable, Dict, List, Optional, Any, Tuple
 import numpy as np
 import pyvista as pv
 
+try:
+    from pyvistaqt import QtInteractor  # type: ignore
+except Exception:
+    QtInteractor = None  # type: ignore
+
 from .mesh_utils import (
     load_mount_mesh_from_key,
     load_substrate_mesh_from_key,
     place_substrate_on_mount,
 )
-from .interactor_host import InteractorHost
-
 from app.model.recipe.recipe import Recipe
 
 _LOG = logging.getLogger("app.tabs.recipe.scene")
@@ -33,40 +36,22 @@ class PreviewScene:
 class SceneManager:
     """
     Dünne Schicht über dem PyVista-Interactor mit Layer-Verwaltung + Helpers.
-    Keine UI-/Panel-Aufrufe. Orchestrierung geschieht im Panel.
+    Kein Host-Container, kein eigener Interactor – der Interactor kommt extern.
     """
 
-    def __init__(
-        self,
-        *,
-        parent_widget: Any,
-        container_widget: Any,
-        init_scene_builder: Callable[[], None] | None = None,
-    ):
-        self._host = InteractorHost(parent_widget, container_widget)
-        self._init_scene_builder = init_scene_builder
+    def __init__(self, *, interactor_getter: Callable[[], Any]):
+        self._get_ia = interactor_getter
         self._layers: Dict[str, List[Any]] = {}
 
     # --- Interactor ---------------------------------------------------------
-    def ensure_interactor(self) -> bool:
-        try:
-            ok = bool(self._host.ensure())
-            if not ok or getattr(self._host, "ia", None) is None:
-                _LOG.warning("SceneManager.ensure_interactor(): Interactor not available")
-                return False
-            return True
-        except Exception:
-            _LOG.exception("SceneManager.ensure_interactor() failed")
-            return False
-
-    @property
-    def ia(self):
-        return getattr(self._host, "ia", None)
-
     def _ia(self):
-        ia = self.ia
+        ia = None
+        try:
+            ia = self._get_ia()
+        except Exception:
+            pass
         if ia is None:
-            _LOG.warning("SceneManager: Interactor not available")
+            _LOG.warning("SceneManager: Interactor not available (external getter returned None)")
         return ia
 
     # --- Layer mgmt ----------------------------------------------------------
@@ -333,6 +318,7 @@ class SceneManager:
         except Exception:
             _LOG.exception("refresh_floor: reset/render failed")
 
+    # --- Szene ---------------------------------------------------------------
     def build_scene(self, ctx, model: Recipe) -> PreviewScene:
         mount_key = model.substrate_mount
         substrate_key = model.substrate

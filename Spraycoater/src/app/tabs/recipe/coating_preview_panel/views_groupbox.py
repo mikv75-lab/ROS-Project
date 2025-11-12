@@ -11,116 +11,11 @@ from PyQt6.QtWidgets import (
 
 _LOG = logging.getLogger("app.tabs.recipe.preview.views")
 
-
-class ViewsGroupBox(QGroupBox):
-    """
-    3D-/2D-View-Steuerung im kompakten Formlayout (Labels linksbündig).
-      3D: [Iso] [Top] [Front] [Back] [Left] [Right]
-      2D: [Top] [Front] [Back] [Left] [Right]
-    Host liefert:
-      - activate_3d():  Stack auf 3D schalten
-      - switch_2d(plane): "top|front|back|left|right" -> 2D-Seite
-    """
-
-    def __init__(
-        self,
-        parent: Optional[QWidget] = None,
-        *,
-        interactor_getter: Callable[[], object],
-        render_callable: Callable[..., None],
-        bounds_getter: Optional[Callable[[], Tuple[float, float, float, float, float, float]]] = None,
-        cam_pad: float = 1.6,
-        activate_3d: Callable[[], None],
-        switch_2d: Callable[[str], None],
-    ):
-        super().__init__("Views", parent)
-
-        # SizePolicy: Maximum x, Minimum y
-        self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
-
-        self._activate_3d = activate_3d
-        self._switch_2d = switch_2d
-
-        self.views = ViewController(
-            interactor_getter=interactor_getter,
-            render_callable=render_callable,
-            bounds_getter=bounds_getter,
-            cam_pad=cam_pad,
-        )
-
-        self._build_ui()
-        self._wire_buttons()
-
-    # ---------- UI ----------
-    def _build_ui(self) -> None:
-        form = QFormLayout(self)
-        form.setContentsMargins(8, 8, 8, 8)
-        form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(4)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-
-        # --- 3D-Buttons ---
-        row3d = QWidget(self)
-        lay3d = QHBoxLayout(row3d)
-        lay3d.setContentsMargins(0, 0, 0, 0)
-        lay3d.setSpacing(6)
-
-        self.btnCamIso   = QPushButton("Iso", self)
-        self.btnCamTop   = QPushButton("Top", self)
-        self.btnCamFront = QPushButton("Front", self)
-        self.btnCamBack  = QPushButton("Back", self)
-        self.btnCamLeft  = QPushButton("Left", self)
-        self.btnCamRight = QPushButton("Right", self)
-
-        for b in (self.btnCamIso, self.btnCamTop, self.btnCamFront, self.btnCamBack, self.btnCamLeft, self.btnCamRight):
-            b.setAutoDefault(False)
-            lay3d.addWidget(b)
-
-        form.addRow(QLabel("3D", self), row3d)
-
-        # --- 2D-Buttons ---
-        row2d = QWidget(self)
-        lay2d = QHBoxLayout(row2d)
-        lay2d.setContentsMargins(0, 0, 0, 0)
-        lay2d.setSpacing(6)
-
-        self.btn2DTop   = QPushButton("Top", self)
-        self.btn2DFront = QPushButton("Front", self)
-        self.btn2DBack  = QPushButton("Back", self)
-        self.btn2DLeft  = QPushButton("Left", self)
-        self.btn2DRight = QPushButton("Right", self)
-
-        for b in (self.btn2DTop, self.btn2DFront, self.btn2DBack, self.btn2DLeft, self.btn2DRight):
-            b.setAutoDefault(False)
-            lay2d.addWidget(b)
-
-        form.addRow(QLabel("2D", self), row2d)
-
-    def _wire_buttons(self) -> None:
-        def on_3d():
-            try:
-                self._activate_3d()
-            except Exception:
-                pass
-
-        self.btnCamIso.clicked.connect(  lambda: (on_3d(), self.views.view_isometric()))
-        self.btnCamTop.clicked.connect(  lambda: (on_3d(), self.views.view_top()))
-        self.btnCamFront.clicked.connect(lambda: (on_3d(), self.views.view_front()))
-        self.btnCamBack.clicked.connect( lambda: (on_3d(), self.views.view_back()))
-        self.btnCamLeft.clicked.connect( lambda: (on_3d(), self.views.view_left()))
-        self.btnCamRight.clicked.connect(lambda: (on_3d(), self.views.view_right()))
-
-        self.btn2DTop.clicked.connect(  lambda: self._switch_2d("top"))
-        self.btn2DFront.clicked.connect(lambda: self._switch_2d("front"))
-        self.btn2DBack.clicked.connect( lambda: self._switch_2d("back"))
-        self.btn2DLeft.clicked.connect( lambda: self._switch_2d("left"))
-        self.btn2DRight.clicked.connect(lambda: self._switch_2d("right"))
-
-
-class ViewController:
-    """Kamera-Views + Low-level Kamera-Calls mit robustem Camera-Snap."""
+# ---------------------------------------------------------------------------
+# Gemeinsamer Kamera-Controller nur für die 3D-Ansicht (PyVista)
+# ---------------------------------------------------------------------------
+class ViewController3D:
+    """Kamera-Views + Low-level Kamera-Calls für PyVista mit robustem Snap."""
 
     def __init__(
         self,
@@ -152,6 +47,7 @@ class ViewController:
         except Exception:
             _LOG.exception("_camera_snap failed")
 
+    # --- Orientierungen ---
     def view_isometric(self):
         ia = self._get_ia()
         if ia is None:
@@ -219,3 +115,119 @@ class ViewController:
         except Exception:
             _LOG.exception("view_back failed")
         self._camera_snap(reset_cam=False)
+
+
+def _set_policy(w: QWidget,
+                *,
+                h: QSizePolicy.Policy = QSizePolicy.Policy.Expanding,
+                v: QSizePolicy.Policy = QSizePolicy.Policy.Preferred) -> None:
+    sp = w.sizePolicy()
+    sp.setHorizontalPolicy(h)
+    sp.setVerticalPolicy(v)
+    w.setSizePolicy(sp)
+
+
+# ---------------------------------------------------------------------------
+# 2D-View-Box (nur Matplotlib-Ebene schalten)
+# ---------------------------------------------------------------------------
+class Views2DBox(QGroupBox):
+    """
+    2D-Controls (Matplotlib): Top / Front / Back / Left / Right
+    Ruft ausschließlich switch_2d(plane).
+    """
+    def __init__(self, *, switch_2d: Callable[[str], None], parent: Optional[QWidget] = None):
+        super().__init__("2D View", parent)
+        self._switch_2d = switch_2d
+
+        form = QFormLayout(self)
+        form.setContentsMargins(8, 8, 8, 8)
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(4)
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFormAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+        row = QWidget(self)
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+
+        self.btnTop   = QPushButton("Top", self)
+        self.btnFront = QPushButton("Front", self)
+        self.btnBack  = QPushButton("Back", self)
+        self.btnLeft  = QPushButton("Left", self)
+        self.btnRight = QPushButton("Right", self)
+
+        for b in (self.btnTop, self.btnFront, self.btnBack, self.btnLeft, self.btnRight):
+            b.setAutoDefault(False)
+            lay.addWidget(b)
+
+        form.addRow(QLabel("Plane", self), row)
+
+        # Wiring
+        self.btnTop.clicked.connect(  lambda: self._switch_2d("top"))
+        self.btnFront.clicked.connect(lambda: self._switch_2d("front"))
+        self.btnBack.clicked.connect( lambda: self._switch_2d("back"))
+        self.btnLeft.clicked.connect( lambda: self._switch_2d("left"))
+        self.btnRight.clicked.connect(lambda: self._switch_2d("right"))
+
+
+# ---------------------------------------------------------------------------
+# 3D-View-Box (PyVista-Kamera steuern)
+# ---------------------------------------------------------------------------
+class Views3DBox(QGroupBox):
+    """
+    3D-Controls (PyVista): Iso / Top / Front / Back / Left / Right
+    Nutzt ViewController3D intern. Keine Panel-Logik.
+    """
+    def __init__(
+        self,
+        *,
+        interactor_getter: Callable[[], object],
+        render_callable: Callable[..., None],
+        bounds_getter: Optional[Callable[[], Tuple[float, float, float, float, float, float]]] = None,
+        cam_pad: float = 1.6,
+        parent: Optional[QWidget] = None,
+    ):
+        super().__init__("3D View", parent)
+
+        self.views = ViewController3D(
+            interactor_getter=interactor_getter,
+            render_callable=render_callable,
+            bounds_getter=bounds_getter,
+            cam_pad=cam_pad,
+        )
+
+        form = QFormLayout(self)
+        form.setContentsMargins(8, 8, 8, 8)
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(4)
+        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFormAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+        row = QWidget(self)
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+
+        self.btnIso   = QPushButton("Iso", self)
+        self.btnTop   = QPushButton("Top", self)
+        self.btnFront = QPushButton("Front", self)
+        self.btnBack  = QPushButton("Back", self)
+        self.btnLeft  = QPushButton("Left", self)
+        self.btnRight = QPushButton("Right", self)
+
+        for b in (self.btnIso, self.btnTop, self.btnFront, self.btnBack, self.btnLeft, self.btnRight):
+            b.setAutoDefault(False)
+            lay.addWidget(b)
+
+        form.addRow(QLabel("Camera", self), row)
+
+        # Wiring
+        self.btnIso.clicked.connect(  self.views.view_isometric)
+        self.btnTop.clicked.connect(  self.views.view_top)
+        self.btnFront.clicked.connect(self.views.view_front)
+        self.btnBack.clicked.connect( self.views.view_back)
+        self.btnLeft.clicked.connect( self.views.view_left)
+        self.btnRight.clicked.connect(self.views.view_right)

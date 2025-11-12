@@ -4,10 +4,10 @@ import os
 import re
 from typing import Optional, Dict, Any, List, Callable
 
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
-    QPushButton, QLineEdit, QLabel, QFileDialog, QMessageBox, QSizePolicy, QFormLayout
+    QPushButton, QLineEdit, QFileDialog, QMessageBox, QSizePolicy
 )
 
 from app.model.recipe.recipe import Recipe
@@ -25,11 +25,13 @@ def _slugify(s: str) -> str:
 
 class RecipeEditorPanel(QWidget):
     """
-    Header-Bar (links Commands | rechts Name/Description)
-    Content: zweispaltig (Globals | Selectors) + unten Paths
-    Footer: Update Preview Button
+    Header: nur Commands (Meta ist jetzt im Content)
+    Content: links (Meta oben + Selectors unten) | rechts (Globals) | unten (Paths + Planner)
+    Footer-Buttons sitzen im Content und werden hier nur relayed.
     """
-    updatePreviewRequested = pyqtSignal(object)
+    updatePreviewRequested = pyqtSignal(object)  # model: Recipe
+    validateRequested = pyqtSignal()
+    optimizeRequested = pyqtSignal()
 
     def __init__(self, *, ctx, store: RecipeStore, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -44,12 +46,12 @@ class RecipeEditorPanel(QWidget):
         vroot.setContentsMargins(8, 8, 8, 8)
         vroot.setSpacing(8)
 
-        # ---------- Header-Bar ----------
+        # ---------- Header ----------
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(8)
 
-        # Commands-Gruppe links
+        # Commands links
         self.gbCommands = QGroupBox("Commands", self)
         hButtons = QHBoxLayout(self.gbCommands)
         hButtons.setContentsMargins(8, 6, 8, 6)
@@ -67,20 +69,7 @@ class RecipeEditorPanel(QWidget):
             b.setSizePolicy(sp)
             hButtons.addWidget(b, 1)
 
-        # Meta (Name/Desc) rechts, kompakt in einem Form
-        self.gbMeta = QGroupBox("Meta", self)
-        metaForm = QFormLayout(self.gbMeta)
-        metaForm.setContentsMargins(8, 6, 8, 6)
-        metaForm.setSpacing(6)
-        self.e_name = QLineEdit(self.gbMeta)
-        self.e_name.setPlaceholderText("recipe_name (YAML id / Dateiname)")
-        self.e_desc = QLineEdit(self.gbMeta)
-        self.e_desc.setPlaceholderText("Short description ...")
-        metaForm.addRow(QLabel("Name:", self.gbMeta), self.e_name)
-        metaForm.addRow(QLabel("Description:", self.gbMeta), self.e_desc)
-
         header.addWidget(self.gbCommands, 1)
-        header.addWidget(self.gbMeta, 1)
         vroot.addLayout(header)
 
         # ---------- Content ----------
@@ -91,14 +80,6 @@ class RecipeEditorPanel(QWidget):
         self.content.setSizePolicy(sp)
         vroot.addWidget(self.content, 1)
 
-        # ---------- Footer ----------
-        self.btnUpdatePreview = QPushButton("Update Preview", self)
-        sp_upd = self.btnUpdatePreview.sizePolicy()
-        sp_upd.setHorizontalPolicy(QSizePolicy.Expanding)
-        sp_upd.setVerticalPolicy(QSizePolicy.Preferred)
-        self.btnUpdatePreview.setSizePolicy(sp_upd)
-        vroot.addWidget(self.btnUpdatePreview)
-
         # ---------- Wiring ----------
         self._fill_recipe_select()
         if self.content.sel_recipe is not None:
@@ -108,7 +89,11 @@ class RecipeEditorPanel(QWidget):
         self.btnLoad.clicked.connect(self._on_load_clicked)
         self.btnSave.clicked.connect(self._on_save_clicked)
         self.btnDelete.clicked.connect(self._on_delete_clicked)
-        self.btnUpdatePreview.clicked.connect(lambda: self.updatePreviewRequested.emit(self.current_model()))
+
+        # Footer-Buttons aus Content weiterreichen
+        self.content.updatePreviewRequested.connect(self._relay_update_preview)
+        self.content.validateRequested.connect(self.validateRequested.emit)
+        self.content.optimizeRequested.connect(self.optimizeRequested.emit)
 
         # Erstes Rezept initialisieren
         combo = getattr(self.content, "sel_recipe", None)
@@ -173,16 +158,21 @@ class RecipeEditorPanel(QWidget):
     def _apply_model(self, model: Recipe, rec_def: Dict[str, Any]) -> None:
         self._active_model = model
         self._active_rec_def = rec_def
-        self.e_name.setText(getattr(model, "id", "") or "")
-        self.e_desc.setText(getattr(model, "description", "") or "")
+
+        # Meta ins Content setzen
+        try:
+            self.content.set_meta(name=getattr(model, "id", "") or "",
+                                  desc=getattr(model, "description", "") or "")
+        except Exception:
+            pass
+
         self.content.apply_recipe_model(model, rec_def)
 
-        apply_planner = getattr(self.content, "apply_planner_model", None)
-        if callable(apply_planner):
-            try:
-                apply_planner(model.planner or {})
-            except Exception:
-                pass
+        # Planner-Einstellungen ins PlannerWidget
+        try:
+            self.content.apply_planner_model(model.planner or {})
+        except Exception:
+            pass
 
     def _on_recipe_select_changed(self, _index: int) -> None:
         rec_def = self._current_recipe_def()
@@ -202,8 +192,7 @@ class RecipeEditorPanel(QWidget):
             self.content.apply_defaults()
             self._active_model = None
             self._active_rec_def = None
-            self.e_name.setText("")
-            self.e_desc.setText("")
+            self.content.set_meta(name="", desc="")
 
     def _on_load_clicked(self) -> None:
         start_dir = getattr(getattr(self.ctx, "paths", None), "recipe_dir", os.getcwd())
@@ -212,8 +201,6 @@ class RecipeEditorPanel(QWidget):
             return
         try:
             model = Recipe.load_yaml(fname)
-            self.e_name.setText(model.id or "")
-            self.e_desc.setText(getattr(model, "description", "") or "")
             rec_def = self._recipes_by_id.get(model.id) or self._current_recipe_def() or {}
             self._apply_model(model, rec_def)
             QMessageBox.information(self, "Geladen", os.path.basename(fname))
@@ -223,7 +210,9 @@ class RecipeEditorPanel(QWidget):
     def _on_save_clicked(self) -> None:
         try:
             model = self.current_model()
-            name = _slugify((self.e_name.text() or "").strip())
+            # Name aus Content.Meta
+            name_inp, _desc_inp = self.content.meta_values()
+            name = _slugify((name_inp or "").strip())
             if not name:
                 QMessageBox.warning(self, "Name fehlt", "Bitte zuerst einen Recipe-Namen eingeben.")
                 return
@@ -249,8 +238,7 @@ class RecipeEditorPanel(QWidget):
             self.content.apply_defaults()
             self._active_model = None
             self._active_rec_def = None
-            self.e_name.setText("")
-            self.e_desc.setText("")
+            self.content.set_meta(name="", desc="")
 
     # ============================ Export/Trigger ========================
 
@@ -260,14 +248,15 @@ class RecipeEditorPanel(QWidget):
         paths_by_side  = self.content.collect_paths_by_side()
         planner        = collect_planner()
         tool, sub, mnt = self.content.active_selectors_values()
-        desc           = self.e_desc.text().strip()
+        name, desc     = self.content.meta_values()
 
         model = self._active_model
         if model is None:
             rec_def = self._current_recipe_def() or {}
             model = self._new_model_from_rec_def(rec_def)
 
-        model.description = desc
+        model.id = name.strip()
+        model.description = (desc or "").strip()
         model.tool = tool
         model.substrate = sub
         model.substrates = [sub] if sub else []
@@ -278,6 +267,9 @@ class RecipeEditorPanel(QWidget):
 
         self._active_model = model
         return model
+
+    def _relay_update_preview(self, _model_obj: object) -> None:
+        self.updatePreviewRequested.emit(self.current_model())
 
     @staticmethod
     def _safe_call(fn, default=None):

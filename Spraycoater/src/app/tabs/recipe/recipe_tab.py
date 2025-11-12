@@ -43,23 +43,17 @@ class RecipeTab(QWidget):
         hroot.setStretch(0, 0)
         hroot.setStretch(1, 1)
 
-        # Optional: externen Host informieren (Backwards-Compat)
-        if self._attach_preview_widget is not None:
-            self._attach_preview_widget(self.previewPanel)
+        # Optional: externen Host (den echten PyVista-Interactor) anhängen
+        # WICHTIG: wir geben NICHT das ganze Panel, sondern den dedizierten Host weiter
+        if callable(self._attach_preview_widget):
+            try:
+                self._attach_preview_widget(self.previewPanel.get_pv_host())
+            except Exception:
+                _LOG.exception("attach_preview_widget failed")
 
-        # ---------- Direkte Signal-Verdrahtung (ohne Fallbacks) ----------
+        # ---------- Direkte Signal-Verdrahtung ----------
         # Editor -> Preview: immer das Recipe-Objekt senden
-        # Erwartete Signatur:
-        #   RecipeEditorPanel.updatePreviewRequested: pyqtSignal(object)  # model: Recipe
-        #   CoatingPreviewPanel.handle_update_preview(model: object) -> None
         self.recipePanel.updatePreviewRequested.connect(
             self.previewPanel.handle_update_preview,
             Qt.ConnectionType.QueuedConnection,
         )
-
-        # (Optional) Wenn du später RViz koppeln willst, nimm EINEN festen Hook,
-        # z.B. Bridge.spraypath.publish_preview(marker_array) und hier verbinden:
-        # self.previewPanel.sprayPathSetRequested.connect(
-        #     self.bridge.spraypath.publish_preview,
-        #     Qt.ConnectionType.QueuedConnection,
-        # )
