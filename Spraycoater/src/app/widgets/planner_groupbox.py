@@ -6,7 +6,6 @@ from app.model.recipe.recipe_store import RecipeStore
 
 
 def _get(cfg: Dict[str, Any], dotted: str, default=None):
-    """Liest sowohl 'a.b' (dotted Key) als auch verschachtelte Dicts tolerant."""
     if dotted in cfg:
         return cfg[dotted]
     cur = cfg
@@ -17,8 +16,24 @@ def _get(cfg: Dict[str, Any], dotted: str, default=None):
     return cur
 
 
+def _hexp_vmin(widget: QtWidgets.QWidget):
+    """Horizontal Expanding (breit wie es will), Vertikal Minimum (so flach wie möglich)."""
+    sp = widget.sizePolicy()
+    sp.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding)
+    sp.setVerticalPolicy(QtWidgets.QSizePolicy.Policy.Minimum)
+    widget.setSizePolicy(sp)
+
+
+def _hmin_vmin(widget: QtWidgets.QWidget):
+    """Für einzelne Feld-Widgets: Horizontal minimal, Vertikal minimal (drückt Höhe)."""
+    sp = widget.sizePolicy()
+    sp.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Minimum)
+    sp.setVerticalPolicy(QtWidgets.QSizePolicy.Policy.Minimum)
+    widget.setSizePolicy(sp)
+
+
 class PlannerGroupBox(QtWidgets.QGroupBox):
-    """Kompaktes Formlayout ohne Wrapper/Container – wie Selectors linksbündig."""
+    """Horizontal breit (Expanding), vertikal flach (Minimum)."""
 
     def __init__(self, parent: QtWidgets.QWidget | None = None,
                  title: str = "Planner",
@@ -30,9 +45,9 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
 
         self.setTitle(title)
         self.setFlat(False)
-        # so breit wie nötig, vertikal minimal
-        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Maximum,
-                           QtWidgets.QSizePolicy.Policy.Minimum)
+
+        # 👉 Kernanforderung
+        _hexp_vmin(self)
 
         self._stack_map = {"ompl": 0, "chomp": 1, "stomp": 2, "pilz": 3, "servo": 4}
 
@@ -42,13 +57,13 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
     # ---------- UI ----------
     def _build_ui(self):
         form = QtWidgets.QFormLayout(self)
-        # wie Selectors: linksbündige Labels, Felder wachsen
+        # Felder dürfen in der **Breite** wachsen, aber keine unnötige Höhe fordern
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         form.setFormAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        form.setContentsMargins(6, 6, 6, 6)
+        form.setContentsMargins(6, 4, 6, 4)
         form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(4)
+        form.setVerticalSpacing(3)
 
         # --- COMMON ---
         self.spinPlanningTime = QtWidgets.QDoubleSpinBox(self); self.spinPlanningTime.setRange(0.10, 120.0); self.spinPlanningTime.setSingleStep(0.10)
@@ -57,6 +72,10 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
         self.spinAcc          = QtWidgets.QDoubleSpinBox(self); self.spinAcc.setRange(0.0, 1.0); self.spinAcc.setSingleStep(0.01)
         self.checkCartesian   = QtWidgets.QCheckBox(self)
         self.checkReplan      = QtWidgets.QCheckBox(self)
+
+        for w in (self.spinPlanningTime, self.spinAttempts, self.spinVel, self.spinAcc,
+                  self.checkCartesian, self.checkReplan):
+            _hmin_vmin(w)
 
         form.addRow("Planning time (s)", self.spinPlanningTime)
         form.addRow("Attempts", self.spinAttempts)
@@ -68,11 +87,15 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
         # --- Pipeline + Planner ID ---
         self.pipelineCombo = QtWidgets.QComboBox(self)
         self.pipelineCombo.addItems(["ompl", "chomp", "stomp", "pilz", "servo"])
+        self.pipelineCombo.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+        _hmin_vmin(self.pipelineCombo)
         self.pipelineCombo.currentTextChanged.connect(self._on_pipeline_changed)
         form.addRow("Pipeline", self.pipelineCombo)
 
         self._lblPlannerId = QtWidgets.QLabel("Planner ID", self)
         self._lblPlannerId.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        _hmin_vmin(self._lblPlannerId)
+
         self.plannerIdCombo = QtWidgets.QComboBox(self)
         self.plannerIdCombo.addItems([
             "RRTConnectkConfigDefault",
@@ -81,32 +104,33 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
             "KPIECEkConfigDefault",
             "BKPIECEkConfigDefault",
         ])
+        self.plannerIdCombo.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+        _hmin_vmin(self.plannerIdCombo)
         form.addRow(self._lblPlannerId, self.plannerIdCombo)
 
-        # --- Per-pipeline params (Stack) direkt im Formlayout ---
+        # --- Per-pipeline params (Stack) ---
         self.paramsStack = QtWidgets.QStackedWidget(self)
-        self.paramsStack.setSizePolicy(QtWidgets.QSizePolicy.Maximum,
-                                       QtWidgets.QSizePolicy.Minimum)
+        _hexp_vmin(self.paramsStack)  # breit darf wachsen, Höhe klein halten
         form.addRow("Parameters", self.paramsStack)
 
         # OMPL
         self.pageOmpl = QtWidgets.QWidget(self)
-        self.formOmpl = QtWidgets.QFormLayout(self.pageOmpl)
-        self._leftify(self.formOmpl)
+        self.formOmpl = QtWidgets.QFormLayout(self.pageOmpl); self._leftify(self.formOmpl)
         self.spinOmplRange = QtWidgets.QDoubleSpinBox(self.pageOmpl); self.spinOmplRange.setRange(0.0, 1.0); self.spinOmplRange.setSingleStep(0.01)
         self.spinOmplGoalBias = QtWidgets.QDoubleSpinBox(self.pageOmpl); self.spinOmplGoalBias.setRange(0.0, 1.0); self.spinOmplGoalBias.setSingleStep(0.01)
+        for w in (self.spinOmplRange, self.spinOmplGoalBias): _hmin_vmin(w)
         self.formOmpl.addRow("Range (m)", self.spinOmplRange)
         self.formOmpl.addRow("Goal bias", self.spinOmplGoalBias)
         self.paramsStack.addWidget(self.pageOmpl)
 
         # CHOMP
         self.pageChomp = QtWidgets.QWidget(self)
-        self.formChomp = QtWidgets.QFormLayout(self.pageChomp)
-        self._leftify(self.formChomp)
+        self.formChomp = QtWidgets.QFormLayout(self.pageChomp); self._leftify(self.formChomp)
         self.spinChompTime   = QtWidgets.QDoubleSpinBox(self.pageChomp); self.spinChompTime.setRange(0.10, 120.0); self.spinChompTime.setSingleStep(0.10)
         self.spinChompLR     = QtWidgets.QDoubleSpinBox(self.pageChomp); self.spinChompLR.setDecimals(4); self.spinChompLR.setRange(0.0001, 1.0); self.spinChompLR.setSingleStep(0.0010)
         self.spinChompSmooth = QtWidgets.QDoubleSpinBox(self.pageChomp); self.spinChompSmooth.setRange(0.0, 100.0)
         self.spinChompObs    = QtWidgets.QDoubleSpinBox(self.pageChomp); self.spinChompObs.setRange(0.0, 100.0)
+        for w in (self.spinChompTime, self.spinChompLR, self.spinChompSmooth, self.spinChompObs): _hmin_vmin(w)
         self.formChomp.addRow("Time limit (s)", self.spinChompTime)
         self.formChomp.addRow("Learning rate", self.spinChompLR)
         self.formChomp.addRow("Smoothness weight", self.spinChompSmooth)
@@ -115,11 +139,11 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
 
         # STOMP
         self.pageStomp = QtWidgets.QWidget(self)
-        self.formStomp = QtWidgets.QFormLayout(self.pageStomp)
-        self._leftify(self.formStomp)
+        self.formStomp = QtWidgets.QFormLayout(self.pageStomp); self._leftify(self.formStomp)
         self.spinStompIter = QtWidgets.QSpinBox(self.pageStomp); self.spinStompIter.setRange(1, 10000)
         self.spinStompRoll = QtWidgets.QSpinBox(self.pageStomp); self.spinStompRoll.setRange(1, 1000)
         self.spinStompStd  = QtWidgets.QDoubleSpinBox(self.pageStomp); self.spinStompStd.setRange(0.000, 1.000); self.spinStompStd.setSingleStep(0.001)
+        for w in (self.spinStompIter, self.spinStompRoll, self.spinStompStd): _hmin_vmin(w)
         self.formStomp.addRow("Iterations", self.spinStompIter)
         self.formStomp.addRow("Rollouts", self.spinStompRoll)
         self.formStomp.addRow("Noise stddev", self.spinStompStd)
@@ -127,29 +151,28 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
 
         # Pilz
         self.pagePilz = QtWidgets.QWidget(self)
-        self.formPilz = QtWidgets.QFormLayout(self.pagePilz)
-        self._leftify(self.formPilz)
+        self.formPilz = QtWidgets.QFormLayout(self.pagePilz); self._leftify(self.formPilz)
         self.spinPilzVel = QtWidgets.QDoubleSpinBox(self.pagePilz); self.spinPilzVel.setRange(0.0, 1.0)
         self.spinPilzAcc = QtWidgets.QDoubleSpinBox(self.pagePilz); self.spinPilzAcc.setRange(0.0, 1.0)
+        for w in (self.spinPilzVel, self.spinPilzAcc): _hmin_vmin(w)
         self.formPilz.addRow("Max vel. scaling", self.spinPilzVel)
         self.formPilz.addRow("Max acc. scaling", self.spinPilzAcc)
         self.paramsStack.addWidget(self.pagePilz)
 
         # Servo
         self.pageServo = QtWidgets.QWidget(self)
-        self.formServo = QtWidgets.QFormLayout(self.pageServo)
-        self._leftify(self.formServo)
+        self.formServo = QtWidgets.QFormLayout(self.pageServo); self._leftify(self.formServo)
         self.spinServoPeriod = QtWidgets.QDoubleSpinBox(self.pageServo); self.spinServoPeriod.setDecimals(4); self.spinServoPeriod.setRange(0.0010, 0.1000); self.spinServoPeriod.setSingleStep(0.0010)
         self.spinServoLP     = QtWidgets.QDoubleSpinBox(self.pageServo); self.spinServoLP.setRange(0.1, 10.0)
+        for w in (self.spinServoPeriod, self.spinServoLP): _hmin_vmin(w)
         self.formServo.addRow("Publish period (s)", self.spinServoPeriod)
         self.formServo.addRow("Low-pass coeff", self.spinServoLP)
         self.paramsStack.addWidget(self.pageServo)
 
-        # --- Reset-Button ohne Wrapper direkt als Form-Zeile ---
+        # Reset
         self.btnDefaults = QtWidgets.QPushButton("Reset from YAML", self)
+        _hmin_vmin(self.btnDefaults)
         self.btnDefaults.clicked.connect(self.apply_store_defaults)
-        self.btnDefaults.setSizePolicy(QtWidgets.QSizePolicy.Maximum,
-                                       QtWidgets.QSizePolicy.Minimum)
         form.addRow("", self.btnDefaults)
 
         self._on_pipeline_changed(self.pipelineCombo.currentText())
@@ -292,6 +315,8 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
         if isinstance(sv, dict):
             if "publish_period_s" in sv: self.spinServoPeriod.setValue(float(sv["publish_period_s"]))
             if "low_pass_filter_coeff" in sv: self.spinServoLP.setValue(float(sv["low_pass_filter_coeff"]))
+
+        # Dotted keys optional:
         v = _get(cfg, "servo.publish_period_s")
         if v is not None: self.spinServoPeriod.setValue(float(v))
         v = _get(cfg, "servo.low_pass_filter_coeff")

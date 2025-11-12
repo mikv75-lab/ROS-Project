@@ -10,9 +10,9 @@ from PyQt6.QtWidgets import (
     QPushButton, QLineEdit, QLabel, QFileDialog, QMessageBox, QSizePolicy, QFormLayout
 )
 
-from app.model.recipe.recipe import Recipe  # Achtung: Recipe hat from_dict/load_yaml/save_yaml etc.
+from app.model.recipe.recipe import Recipe
 from app.model.recipe.recipe_store import RecipeStore
-from .recipe_editor_content import RecipeEditorContent  # erwartet collect_* / apply_* Shims
+from .recipe_editor_content import RecipeEditorContent
 
 
 def _slugify(s: str) -> str:
@@ -24,14 +24,10 @@ def _slugify(s: str) -> str:
 
 
 class RecipeEditorPanel(QWidget):
-    """Layout:
-        [ Commands ]                 -> New | Load | Save | Delete
-        [ Name & Description ]       -> Name(LineEdit) + Description(LineEdit)
-        [ Content ]                  -> Globals / Selectors / Planner / SideTabs
-        [ Update Preview ]
-
-    Hinweis: Update Preview übergibt nur die **gecheckten Sides** an die Preview –
-    und zwar in der **aktuellen Tab-Reihenfolge**.
+    """
+    Header-Bar (links Commands | rechts Name/Description)
+    Content: zweispaltig (Globals | Selectors) + unten Paths
+    Footer: Update Preview Button
     """
     updatePreviewRequested = pyqtSignal(object)
 
@@ -48,9 +44,13 @@ class RecipeEditorPanel(QWidget):
         vroot.setContentsMargins(8, 8, 8, 8)
         vroot.setSpacing(8)
 
-        # ---------- [1] Commands ----------
+        # ---------- Header-Bar ----------
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+
+        # Commands-Gruppe links
         self.gbCommands = QGroupBox("Commands", self)
-        vroot.addWidget(self.gbCommands)
         hButtons = QHBoxLayout(self.gbCommands)
         hButtons.setContentsMargins(8, 6, 8, 6)
         hButtons.setSpacing(6)
@@ -62,37 +62,40 @@ class RecipeEditorPanel(QWidget):
 
         for b in (self.btnNew, self.btnLoad, self.btnSave, self.btnDelete):
             sp = b.sizePolicy()
-            sp.setVerticalPolicy(QSizePolicy.Maximum)
+            sp.setVerticalPolicy(QSizePolicy.Preferred)
             sp.setHorizontalPolicy(QSizePolicy.Expanding)
             b.setSizePolicy(sp)
             hButtons.addWidget(b, 1)
 
-        # ---------- [2] Name & Description ----------
-        self.gbMeta = QGroupBox("Name & Description", self)
-        vroot.addWidget(self.gbMeta)
+        # Meta (Name/Desc) rechts, kompakt in einem Form
+        self.gbMeta = QGroupBox("Meta", self)
         metaForm = QFormLayout(self.gbMeta)
         metaForm.setContentsMargins(8, 6, 8, 6)
         metaForm.setSpacing(6)
-
         self.e_name = QLineEdit(self.gbMeta)
-        self.e_name.setPlaceholderText("recipe_name (Dateiname & YAML id – wird nur beim Save verwendet)")
+        self.e_name.setPlaceholderText("recipe_name (YAML id / Dateiname)")
         self.e_desc = QLineEdit(self.gbMeta)
-        self.e_desc.setPlaceholderText("Short description of the recipe ...")
-
+        self.e_desc.setPlaceholderText("Short description ...")
         metaForm.addRow(QLabel("Name:", self.gbMeta), self.e_name)
         metaForm.addRow(QLabel("Description:", self.gbMeta), self.e_desc)
 
-        # ---------- [3] Content ----------
-        self.content = RecipeEditorContent(ctx=self.ctx, store=self.store, parent=self)
-        vroot.addWidget(self.content)
-        # Defaults in UI setzen
-        self.content.apply_defaults()
+        header.addWidget(self.gbCommands, 1)
+        header.addWidget(self.gbMeta, 1)
+        vroot.addLayout(header)
 
-        # ---------- [4] Update Preview ----------
+        # ---------- Content ----------
+        self.content = RecipeEditorContent(ctx=self.ctx, store=self.store, parent=self)
+        sp = self.content.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Policy.Expanding)
+        self.content.setSizePolicy(sp)
+        vroot.addWidget(self.content, 1)
+
+        # ---------- Footer ----------
         self.btnUpdatePreview = QPushButton("Update Preview", self)
         sp_upd = self.btnUpdatePreview.sizePolicy()
         sp_upd.setHorizontalPolicy(QSizePolicy.Expanding)
-        sp_upd.setVerticalPolicy(QSizePolicy.Maximum)
+        sp_upd.setVerticalPolicy(QSizePolicy.Preferred)
         self.btnUpdatePreview.setSizePolicy(sp_upd)
         vroot.addWidget(self.btnUpdatePreview)
 
@@ -105,13 +108,7 @@ class RecipeEditorPanel(QWidget):
         self.btnLoad.clicked.connect(self._on_load_clicked)
         self.btnSave.clicked.connect(self._on_save_clicked)
         self.btnDelete.clicked.connect(self._on_delete_clicked)
-
-        def _emit_update():
-            self.updatePreviewRequested.emit(self.current_model())
-        self.btnUpdatePreview.clicked.connect(_emit_update)
-
-        # Layout-Policies anwenden (verhindert „gestreckte“ Kopfsektionen)
-        self._apply_layout_policies(vroot)
+        self.btnUpdatePreview.clicked.connect(lambda: self.updatePreviewRequested.emit(self.current_model()))
 
         # Erstes Rezept initialisieren
         combo = getattr(self.content, "sel_recipe", None)
@@ -168,7 +165,6 @@ class RecipeEditorPanel(QWidget):
             "paths_by_side": pbs,
         })
 
-        # Optional (nur für UI-Komfort):
         model.tools = tools                     # type: ignore[attr-defined]
         model.substrates = subs                 # type: ignore[assignment]
         model.substrate_mounts = mounts         # type: ignore[attr-defined]
@@ -181,7 +177,6 @@ class RecipeEditorPanel(QWidget):
         self.e_desc.setText(getattr(model, "description", "") or "")
         self.content.apply_recipe_model(model, rec_def)
 
-        # Planner optional anwenden
         apply_planner = getattr(self.content, "apply_planner_model", None)
         if callable(apply_planner):
             try:
@@ -260,10 +255,6 @@ class RecipeEditorPanel(QWidget):
     # ============================ Export/Trigger ========================
 
     def current_model(self) -> Recipe:
-        """
-        Sammelt UI -> Model, fasst 'id' NICHT an (id wird nur beim Save gesetzt).
-        """
-        # Planner ist optional
         collect_planner: Callable[[], Dict[str, Any]] = getattr(self.content, "collect_planner", lambda: {})
         params         = self.content.collect_globals()
         paths_by_side  = self.content.collect_paths_by_side()
@@ -287,61 +278,6 @@ class RecipeEditorPanel(QWidget):
 
         self._active_model = model
         return model
-
-    # ---- Sides: gecheckt & in Tab-Reihenfolge ----
-    def _selected_existing_sides_ordered(self) -> List[str]:
-        rec_def = self._current_recipe_def() or {}
-        defined = set(((rec_def.get("sides") or {}).keys()))
-        # Neuer Name in RecipeEditorContent: checked_sides_ordered(); Fallback: checked_sides()
-        try:
-            get_checked = getattr(self.content, "checked_sides_ordered", None)
-            if callable(get_checked):
-                checked = list(get_checked())
-            else:
-                checked = list(getattr(self.content, "checked_sides", lambda: [])())
-        except Exception:
-            checked = []
-        # Nur Sides, die im Rezept definiert sind
-        return [s for s in checked if s in defined]
-
-    # --------------------------- Layout-Policies ---------------------------
-
-    def _apply_layout_policies(self, vroot: QVBoxLayout) -> None:
-        """
-        Hält 'Commands' und 'Name & Description' vertikal so klein wie möglich
-        und gibt die Resthöhe an den mittleren Inhalt (self.content).
-        """
-        # --- Commands & Meta: minimal in der Höhe ---
-        for gb in (self.gbCommands, self.gbMeta):
-            sp = gb.sizePolicy()
-            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-            sp.setVerticalPolicy(QSizePolicy.Maximum)  # so klein wie möglich
-            gb.setSizePolicy(sp)
-            # Margins kompakt
-            if gb.layout() is not None:
-                gb.layout().setContentsMargins(8, 4, 8, 4)
-                gb.layout().setSpacing(6)
-                gb.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        # --- Content: fängt Resthöhe ab ---
-        sp = self.content.sizePolicy()
-        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        sp.setVerticalPolicy(QSizePolicy.Policy.Expanding)
-        self.content.setSizePolicy(sp)
-
-        # --- Update-Button: klein halten ---
-        sp = self.btnUpdatePreview.sizePolicy()
-        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        sp.setVerticalPolicy(QSizePolicy.Maximum)
-        self.btnUpdatePreview.setSizePolicy(sp)
-
-        # --- Stretch-Faktoren im Hauptlayout ---
-        vroot.setStretchFactor(self.gbCommands, 0)
-        vroot.setStretchFactor(self.gbMeta,     0)
-        vroot.setStretchFactor(self.content,    1)  # Resthöhe hierhin
-        vroot.setStretchFactor(self.btnUpdatePreview, 0)
-
-    # --------------------------- Helpers ---------------------------
 
     @staticmethod
     def _safe_call(fn, default=None):

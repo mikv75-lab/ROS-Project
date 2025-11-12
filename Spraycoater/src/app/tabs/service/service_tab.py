@@ -4,8 +4,7 @@ import logging
 from typing import Optional, Dict, Any
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
-    QSpacerItem, QSizePolicy
+    QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QSizePolicy
 )
 
 # RecipeStore für planner- und defaultsgetriebene Widgets
@@ -98,9 +97,6 @@ class ServiceTab(QWidget):
             sp.setHorizontalPolicy(QSizePolicy.Expanding)
             sp.setVerticalPolicy(QSizePolicy.Preferred)
             w.setSizePolicy(sp)
-
-        # --- [3] EIN Expanding Spacer am Ende -------------------------------
-        root.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
     # ------------ Forwarder (optional) ---------------------------------------
     # Planner (aus Motion-Subtab)

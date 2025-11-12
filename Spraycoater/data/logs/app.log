@@ -1902,3 +1902,39 @@ TypeError: BaseBridge.__init__() got an unexpected keyword argument 'parent'
 2025-11-12 00:12:26 INFO [16168] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
 2025-11-12 00:12:26 INFO [16168] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
 2025-11-12 00:12:26 INFO [16168] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-12 00:24:03 INFO [23877] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-12 00:24:03 INFO [23877] app.startup:143 - logging configured
+2025-11-12 00:24:03 INFO [23877] app.startup:148 - warnings enabled
+2025-11-12 00:24:03 INFO [23877] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-12 00:24:03 INFO [23877] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-12 00:24:03 INFO [23877] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-12 00:24:52 INFO [24706] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-12 00:24:52 INFO [24706] app.startup:143 - logging configured
+2025-11-12 00:24:52 INFO [24706] app.startup:148 - warnings enabled
+2025-11-12 00:24:52 INFO [24706] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-12 00:24:52 INFO [24706] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-12 00:24:52 INFO [24706] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-12 00:27:26 INFO [27198] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-12 00:27:26 INFO [27198] app.startup:143 - logging configured
+2025-11-12 00:27:27 INFO [27198] app.startup:148 - warnings enabled
+2025-11-12 00:27:27 INFO [27198] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-12 00:27:27 INFO [27198] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-12 00:27:27 INFO [27198] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-12 00:44:28 INFO [38349] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-12 00:44:28 INFO [38349] app.startup:143 - logging configured
+2025-11-12 00:44:28 INFO [38349] app.startup:148 - warnings enabled
+2025-11-12 00:44:28 INFO [38349] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-12 00:44:28 INFO [38349] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-12 00:44:28 INFO [38349] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-12 00:47:29 INFO [40273] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-12 00:47:29 INFO [40273] app.startup:143 - logging configured
+2025-11-12 00:47:29 INFO [40273] app.startup:148 - warnings enabled
+2025-11-12 00:47:29 INFO [40273] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-12 00:47:29 INFO [40273] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-12 00:47:29 INFO [40273] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-12 00:56:19 INFO [46401] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-12 00:56:19 INFO [46401] app.startup:143 - logging configured
+2025-11-12 00:56:19 INFO [46401] app.startup:148 - warnings enabled
+2025-11-12 00:56:19 INFO [46401] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-12 00:56:19 INFO [46401] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-12 00:56:19 INFO [46401] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)

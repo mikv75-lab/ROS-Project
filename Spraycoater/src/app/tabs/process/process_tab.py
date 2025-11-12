@@ -3,7 +3,7 @@
 from __future__ import annotations
 from typing import Optional
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy, QSpacerItem
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
 
 from widgets.robot_command_status_box import RobotCommandStatusWidget
 from .process_control_widget import ProcessControlWidget
@@ -41,6 +41,4 @@ class ProcessTab(QWidget):
         sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
         self.procCtrl.setSizePolicy(sp)
         root.addWidget(self.procCtrl)
-
-        # [2] Spacer
-        root.addItem(QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
+        
