@@ -91,7 +91,7 @@ class CoatingPreviewPanel(QWidget):
             bounds_getter=self.get_bounds,
             substrate_bounds_getter=lambda: self.scene.get_layer_bounds("substrate"),
             cam_pad=1.0,
-            iso_extra_zoom=3.0,
+            iso_extra_zoom=3.0,   # Iso stärker reinzoomen
             parent=self,
         )
         _set_policy(self.views3d, h=QSizePolicy.Expanding, v=QSizePolicy.Policy.Preferred)
@@ -104,7 +104,7 @@ class CoatingPreviewPanel(QWidget):
             add_path_polyline_fn=self.add_path_polyline,
             show_poly_fn=self.show_poly,
             show_frames_at_fn=self.show_frames_at,
-            set_layer_visible_fn=lambda layer, vis, render=True: self.scene.set_layer_visible(layer, vis, render=render),
+            set_layer_visible_fn=lambda layer, vis, render=True: self.scene.set_layer_visible(layer, vis),
             update_2d_scene_fn=lambda mesh, path_xyz, _mask_poly: self.update_2d_scene(
                 substrate_mesh=mesh, path_xyz=path_xyz
             ),
@@ -120,7 +120,7 @@ class CoatingPreviewPanel(QWidget):
                 "frames_x": "frames_x",
                 "frames_y": "frames_y",
                 "frames_z": "frames_z",
-                "frames_labels": "frames_labels",
+                # "frames_labels": "frames_labels",  # keine Labels mehr
             },
             get_bounds=self.get_bounds,
         )
@@ -157,6 +157,14 @@ class CoatingPreviewPanel(QWidget):
 
     # =================== API vom RecipeTab ===================
     def handle_update_preview(self, model: Recipe) -> None:
+        """
+        Neuer Ablauf:
+          1) build_scene(ctx, model)
+          2) compile_poses -> path_xyz extrahieren
+          3) build_overlays(path_xyz=...)
+          4) toggle_overlays(checkbox-state)
+          5) einmaliger Update beider Views (3D + 2D)
+        """
         ia = self._find_interactor_in_host()
         if ia is None:
             _LOG.error("handle_update_preview: no interactor in pvHost")
@@ -164,25 +172,19 @@ class CoatingPreviewPanel(QWidget):
             return
 
         cam_snap = self.snapshot_camera()
-        self.clear()
 
-        # Szene bauen
+        # --- 1) Szene aufbauen (Floor, Mount, Grid ohne Labels, Substrate)
         try:
-            scene = self.scene.build_scene(self.ctx, model)
+            scene = self.scene.build_scene(self.ctx, model, grid_step_mm=10.0)
         except Exception:
             _LOG.exception("build_scene failed")
             self._set_info_defaults()
             return
 
+        # Bounds für 2D setzen
         self.set_bounds(scene.bounds)
 
-        # 3D zeichnen
-        try:
-            self.scene.draw_scene(scene, visibility=None)
-        except Exception:
-            _LOG.exception("draw_scene failed")
-
-        # Pfade kompilieren
+        # --- 2) Pfade kompilieren und path_xyz extrahieren
         stand_off = 10.0
         try:
             p = getattr(model, "parameters", {}) or {}
@@ -198,22 +200,48 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("compile_poses failed")
 
-        if compiled:
+        path_xyz = None
+        if isinstance(compiled, dict):
             try:
-                self.grpOverlays.render_compiled(
-                    substrate_mesh=scene.substrate_mesh or scene.ground_mesh,
-                    compiled=compiled,
-                    visibility=self._visibility_from_ui(),
-                    mask_lift_mm=50.0,
-                    default_stand_off_mm=stand_off,
-                    ray_len_mm=1000.0,
-                    sides=None,
-                    only_selected=True,
-                )
+                # erste vorhandene Side nehmen
+                for _side, data in (compiled.get("sides", {}) or {}).items():
+                    poses = (data or {}).get("poses_quat", []) or []
+                    if poses:
+                        path_xyz = np.array([[p["x"], p["y"], p["z"]] for p in poses], dtype=float)
+                        break
             except Exception:
-                _LOG.exception("Overlays render failed")
+                _LOG.exception("extract path from compiled failed")
 
-        # Info inkl. Mesh-Bounds
+        # 2D-Vorschau vorbereiten
+        try:
+            self.update_2d_scene(
+                substrate_mesh=scene.substrate_mesh or scene.ground_mesh,
+                path_xyz=path_xyz
+            )
+        except Exception:
+            _LOG.exception("update_2d_scene in handle_update_preview failed")
+
+        # --- 3) Overlays bauen (ohne Sichtbarkeitslogik)
+        try:
+            self.scene.build_overlays(
+                path_xyz=path_xyz,
+                normals_xyz=None,
+                frames_at=None,
+                rays_hit=None,
+                rays_miss=None,
+                as_tube=True,
+                tube_radius=0.8,
+            )
+        except Exception:
+            _LOG.exception("build_overlays failed")
+
+        # --- 4) Sichtbarkeit je nach UI-Checkboxen
+        try:
+            self.scene.toggle_overlays(self._visibility_from_ui())
+        except Exception:
+            _LOG.exception("toggle_overlays failed")
+
+        # --- Info-Panel aktualisieren
         try:
             info = self._calc_info(scene=scene, model=model, compiled=compiled)
             self.grpInfo.set_values(info)
@@ -221,12 +249,14 @@ class CoatingPreviewPanel(QWidget):
             _LOG.exception("set info failed")
             self._set_info_defaults()
 
+        # --- Kamera und Views EINMALIG aktualisieren
         try:
             if cam_snap:
                 self.restore_camera(cam_snap)
-            self.refresh_all_views()
         except Exception:
-            _LOG.exception("finalize view failed")
+            _LOG.exception("restore_camera (optional) failed")
+
+        self.scene.update_current_views_once(refresh_2d=self._mat2d.refresh)
 
     # =================== Info helpers ===================
     def _set_info_defaults(self) -> None:
@@ -290,8 +320,10 @@ class CoatingPreviewPanel(QWidget):
         }
 
     def _push_initial_visibility(self) -> None:
+        """Beim ersten Rendern die aktuelle Checkbox-Sichtbarkeit anwenden."""
         try:
-            self.grpOverlays.overlays.apply_visibility(self._visibility_from_ui())
+            self.scene.toggle_overlays(self._visibility_from_ui())
+            self.scene.update_current_views_once(refresh_2d=self._mat2d.refresh)
         except Exception:
             _LOG.exception("Initial visibility push failed")
 
@@ -339,6 +371,7 @@ class CoatingPreviewPanel(QWidget):
             _LOG.exception("restore_camera failed")
 
     def refresh_all_views(self) -> None:
+        """(Legacy) – nicht mehr genutzt; belasse für Kompatibilität."""
         ia = self._ia()
         try:
             if ia is not None and hasattr(ia, "reset_camera_clipping_range"):
@@ -369,7 +402,7 @@ class CoatingPreviewPanel(QWidget):
             _LOG.exception("2D plane switch failed: %s", plane)
 
     def update_2d_scene(self, *, substrate_mesh=None, path_xyz: np.ndarray | None):
-        """Maske ist komplett entfernt."""
+        """Maske ist komplett entfernt; 2D zeigt Substrat + optional Pfad."""
         try:
             self._mat2d.set_scene(
                 substrate_mesh=substrate_mesh,
@@ -380,7 +413,7 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("update_2d_scene failed")
 
-    # Scene passthrough
+    # -------- Passthroughs zum SceneManager (lösen Abhängigkeit zur UI) -----
     def clear(self) -> None:
         self.scene.clear()
 
@@ -396,19 +429,10 @@ class CoatingPreviewPanel(QWidget):
     def show_poly(self, poly, *, layer: str, color: str = "royalblue", line_width: float = 2.0, lighting: bool = False):
         try:
             self.clear_layer(layer)
-            self.add_mesh(poly, color=color, render=False, reset_camera=False,
-                          line_width=float(line_width), lighting=lighting, layer=layer)
+            self.add_mesh(poly, color=color, line_width=float(line_width), lighting=lighting, layer=layer)
         except Exception:
             _LOG.exception("show_poly() failed")
 
     def show_frames_at(self, **kwargs) -> None:
-        layer = kwargs.pop("layer", None)
-        layer_prefix = layer if layer else "frames"
-        for lyr in (f"{layer_prefix}_x", f"{layer_prefix}_y", f"{layer_prefix}_z", f"{layer_prefix}_labels"):
-            try:
-                self.scene.clear_layer(lyr)
-            except Exception:
-                pass
-        add_frames = getattr(self.scene, "add_frames", None)
-        if callable(add_frames):
-            add_frames(layer_prefix=layer_prefix, **kwargs)
+        # Labels explizit entfernt; Frames via SceneManager-Overlays.
+        pass
