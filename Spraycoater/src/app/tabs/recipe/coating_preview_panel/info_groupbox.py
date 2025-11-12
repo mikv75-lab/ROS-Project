@@ -1,18 +1,21 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
 from PyQt6.QtWidgets import (
     QGroupBox, QWidget, QHBoxLayout, QLabel, QSizePolicy
 )
 
+Number = float | int
+Dims = Tuple[Number, Number, Number]
+
 
 class InfoGroupBox(QGroupBox):
     """
-    Compact, single-row info panel, styled like OverlaysGroupBox.
+    Kompakte Infozeile.
 
-    Shows:
-      Points | Path length (mm) | ETA (s) | Medium (ml) | Mesh tris
+    Zeigt:
+      Points | Path length (mm) | ETA (s) | Medium (ml) | Mesh tris | Mesh L×B×H (mm)
     """
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__("Info", parent)
@@ -23,19 +26,19 @@ class InfoGroupBox(QGroupBox):
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(14)
 
-        def add(k: str):
-            lab = QLabel(k + ":", self)
-            lab.setStyleSheet("font-weight:600;")
-            val = QLabel("-", self)
-            lay.addWidget(lab)
-            lay.addWidget(val)
-            return val
+        def add(label: str):
+            k = QLabel(label + ":", self)
+            k.setStyleSheet("font-weight:600;")
+            v = QLabel("-", self)
+            lay.addWidget(k); lay.addWidget(v)
+            return v
 
         self._v_points     = add("Points")
         self._v_len_mm     = add("Path length (mm)")
         self._v_eta_s      = add("ETA (s)")
         self._v_medium_ml  = add("Medium (ml)")
         self._v_mesh_tris  = add("Mesh tris")
+        self._v_mesh_dims  = add("Mesh L×B×H (mm)")
 
         lay.addStretch(1)
 
@@ -44,20 +47,37 @@ class InfoGroupBox(QGroupBox):
         sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
         self.setSizePolicy(sp)
 
-    # ---- Public API ----
+    # ---- formatting helpers ----
     @staticmethod
-    def _fmt(v: Any, unit: str | None = None, nd: int = 3) -> str:
+    def _fmt_num(v: Any, nd: int = 3) -> str:
         if v is None:
             return "-"
         if isinstance(v, float):
-            s = f"{v:.{nd}f}"
-        else:
-            s = str(v)
+            return f"{v:.{nd}f}"
+        if isinstance(v, int):
+            # Tausendertrennzeichen als schmales Leerzeichen
+            return f"{v:,}".replace(",", " ")
+        return str(v)
+
+    @staticmethod
+    def _fmt_with_unit(v: Any, unit: str | None = None, nd: int = 3) -> str:
+        s = InfoGroupBox._fmt_num(v, nd)
         return f"{s} {unit}".strip() if unit else s
 
+    @staticmethod
+    def _fmt_dims(dims: Any, nd: int = 1) -> str:
+        """Erwartet (L, B, H) in mm."""
+        try:
+            L, B, H = [float(x) for x in (dims or ())]
+        except Exception:
+            return "-"
+        return f"{L:.{nd}f} × {B:.{nd}f} × {H:.{nd}f}"
+
+    # ---- Public API ----
     def set_values(self, info: Dict[str, Any]) -> None:
-        self._v_points.setText(self._fmt(info.get("points"), None, 0))
-        self._v_len_mm.setText(self._fmt(info.get("length_mm"), "mm"))
-        self._v_eta_s.setText(self._fmt(info.get("eta_s"), "s"))
-        self._v_medium_ml.setText(self._fmt(info.get("medium_ml"), "ml"))
-        self._v_mesh_tris.setText(self._fmt(info.get("mesh_tris"), None, 0))
+        self._v_points.setText(self._fmt_num(info.get("points"), nd=0))
+        self._v_len_mm.setText(self._fmt_with_unit(info.get("length_mm"), "mm", nd=3))
+        self._v_eta_s.setText(self._fmt_with_unit(info.get("eta_s"), "s", nd=3))
+        self._v_medium_ml.setText(self._fmt_with_unit(info.get("medium_ml"), "ml", nd=3))
+        self._v_mesh_tris.setText(self._fmt_num(info.get("mesh_tris"), nd=0))
+        self._v_mesh_dims.setText(self._fmt_dims(info.get("mesh_bounds"), nd=1))

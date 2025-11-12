@@ -12,10 +12,9 @@ try:
 except Exception:
     QtInteractor = None  # type: ignore
 
-# VTK: CubeAxesActor für das (Substrat ∪ Pfad)-Gitter
 try:
     from vtkmodules.vtkRenderingAnnotation import vtkCubeAxesActor
-except Exception:  # pragma: no cover
+except Exception:
     vtkCubeAxesActor = None  # type: ignore
 
 from .mesh_utils import (
@@ -29,6 +28,24 @@ _LOG = logging.getLogger("app.tabs.recipe.scene")
 
 Bounds = Tuple[float, float, float, float, float, float]
 
+# ------------------------------------------------------------
+# Skalen-Parameter
+# ------------------------------------------------------------
+MIN_STEP_MM: float = 1.0
+MAX_STEP_MM: float = 10.0
+PREFERRED_STEPS = (1.0, 2.0, 5.0, 10.0)
+
+MAX_LABELS_PER_AXIS = 60     # Sicherheitskappe (gegen Label-Spam)
+TARGET_LABELS_PER_AXIS = 20  # Wunschdichte
+
+AXIS_LINE_COLOR = "#000000"  # Achsen/Gitter
+TITLE_COLOR     = "#000000"  # Titelfarbe
+LABEL_COLOR     = "#000000"  # Zahlen
+TITLE_SIZE_PX   = 14
+LABEL_SIZE_PX   = 14
+
+
+# ============================ Data ============================
 
 @dataclass
 class PreviewScene:
@@ -41,11 +58,13 @@ class PreviewScene:
     mesh_tris: Optional[int]
 
 
+# ============================ Manager ============================
+
 class SceneManager:
     """
     3-Schritt:
-      1) build_scene(...)    -> Boden @ z=0, Mount, Substrat, Grid (nur um Substrat, falls vorhanden)
-      2) build_overlays(...) -> Overlays erzeugen und Grid ggf. auf (Substrat ∪ Pfad) ausdehnen
+      1) build_scene(...)    -> Boden @ z=0, Mount, Substrat, Grid (CubeAxes) um Substrat
+      2) build_overlays(...) -> Overlays erzeugen; Grid ggf. auf Union(Substrat, Pfad) ausdehnen
       3) toggle_overlays(...) -> Sichtbarkeit
     """
 
@@ -68,12 +87,11 @@ class SceneManager:
     def __init__(self, *, interactor_getter: Callable[[], Any]):
         self._get_ia = interactor_getter
         self._layers: Dict[str, List[Any]] = {}
-        # Merker für Grid-Logik
-        self._scene_bounds: Optional[Bounds] = None          # Bounds aus build_scene (Substrat oder Mount oder Default)
-        self._substrate_bounds: Optional[Bounds] = None      # Nur Substrat-Bounds (falls vorhanden)
-        self._last_grid_bounds: Optional[Bounds] = None      # Zuletzt gesetzte Grid-Bounds
+        self._last_grid_bounds: Optional[Bounds] = None
+        self._substrate_bounds: Optional[Bounds] = None
 
-    # ------------------------------------------------------------------ helpers
+    # ------------------- Interactor / Layer mgmt -------------------
+
     def _ia(self):
         try:
             return self._get_ia()
@@ -103,6 +121,8 @@ class SceneManager:
     def clear(self) -> None:
         for lyr in list(self._layers.keys()):
             self._remove_layer_actors(lyr)
+        self._last_grid_bounds = None
+        self._substrate_bounds = None
 
     def set_layer_visible(self, layer: str, visible: bool) -> None:
         ia = self._ia()
@@ -139,6 +159,8 @@ class SceneManager:
         return (float(mins[0]), float(maxs[0]),
                 float(mins[1]), float(maxs[1]),
                 float(mins[2]), float(maxs[2]))
+
+    # ------------------- Zeichen-Helfer -------------------
 
     def add_mesh(self, mesh, *, layer: str, **kwargs) -> Optional[Any]:
         ia = self._ia()
@@ -196,34 +218,8 @@ class SceneManager:
             _LOG.exception("add_path_polyline failed")
             return None
 
-    # ------------------------------------------------------ bounds utilities
-    @staticmethod
-    def _bounds_from_points(P: np.ndarray) -> Optional[Bounds]:
-        try:
-            A = np.asarray(P, float).reshape(-1, 3)
-            if A.size == 0:
-                return None
-            lo = np.min(A, axis=0); hi = np.max(A, axis=0)
-            return (float(lo[0]), float(hi[0]),
-                    float(lo[1]), float(hi[1]),
-                    float(lo[2]), float(hi[2]))
-        except Exception:
-            return None
+    # ------------------- Floor / Grid utils -------------------
 
-    @staticmethod
-    def _union_bounds(b1: Optional[Bounds], b2: Optional[Bounds]) -> Optional[Bounds]:
-        if b1 is None and b2 is None:
-            return None
-        if b1 is None:
-            return b2
-        if b2 is None:
-            return b1
-        xmin = min(b1[0], b2[0]); xmax = max(b1[1], b2[1])
-        ymin = min(b1[2], b2[2]); ymax = max(b1[3], b2[3])
-        zmin = min(b1[4], b2[4]); zmax = max(b1[5], b2[5])
-        return (xmin, xmax, ymin, ymax, zmin, zmax)
-
-    # ------------------------------------------------------ floor / grid utils
     def _make_floor_plane_at_z0(self, bounds: Bounds) -> pv.PolyData:
         xmin, xmax, ymin, ymax, _, _ = bounds
         cx, cy = 0.5 * (xmin + xmax), 0.5 * (ymin + ymax)
@@ -231,118 +227,196 @@ class SceneManager:
                         i_size=500.0, j_size=500.0, i_resolution=1, j_resolution=1)
 
     @staticmethod
-    def _pad_bounds(b: Bounds, k: float = 1.02) -> Bounds:
-        xmin, xmax, ymin, ymax, zmin, zmax = map(float, b)
-        cx, cy, cz = (0.5*(xmin+xmax), 0.5*(ymin+ymax), 0.5*(zmin+zmax))
-        sx, sy, sz = (max(xmax-xmin, 1e-6), max(ymax-ymin, 1e-6), max(zmax-zmin, 1e-6))
-        return (cx-0.5*sx*k, cx+0.5*sx*k,
-                cy-0.5*sy*k, cy+0.5*sy*k,
-                cz-0.5*sz*k, cz+0.5*sz*k)
+    def _hex_to_rgb01(hex_color: str) -> Tuple[float, float, float]:
+        s = hex_color.strip().lstrip("#")
+        if len(s) == 3:
+            s = "".join(ch*2 for ch in s)
+        try:
+            r = int(s[0:2], 16) / 255.0
+            g = int(s[2:4], 16) / 255.0
+            b = int(s[4:6], 16) / 255.0
+        except Exception:
+            r, g, b = (0.0, 0.0, 0.0)
+        return (r, g, b)
+
+    # ------------------- Dynamische Stepwahl -------------------
 
     @staticmethod
-    def _hex_to_rgb01(hex_color: str) -> Tuple[float, float, float]:
-        h = hex_color.lstrip("#")
-        r, g, b = tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
-        return (r/255.0, g/255.0, b/255.0)
+    def _pick_step(span: float,
+                   *,
+                   min_step: float = MIN_STEP_MM,
+                   max_step: float = MAX_STEP_MM,
+                   preferred: Tuple[float, ...] = PREFERRED_STEPS,
+                   target_labels: int = TARGET_LABELS_PER_AXIS,
+                   max_labels: int = MAX_LABELS_PER_AXIS) -> float:
+        """
+        Wählt einen 'schönen' Schritt (1,2,5,10) zwischen min_step..max_step,
+        sodass span/step ~ target_labels (und <= max_labels) bleibt.
+        """
+        if not np.isfinite(span) or span <= 0:
+            return min_step
+        # erste grobe Schätzung
+        rough = span / max(1, target_labels)
+        # auf preferred snappen
+        # suche den kleinsten preferred >= rough
+        cand = None
+        for s in preferred:
+            if s >= rough:
+                cand = s
+                break
+        if cand is None:
+            cand = preferred[-1]
+        # clamp 1..10
+        cand = float(min(max(cand, min_step), max_step))
+        # falls zu viele Labels -> nächstgrößeres preferred nehmen
+        while (span / cand) > max_labels:
+            # erhöhe auf nächstes preferred (falls möglich)
+            idx = max(0, list(preferred).index(cand))
+            if idx < len(preferred) - 1:
+                cand = preferred[idx + 1]
+            else:
+                break
+        # falls extrem wenige Labels und wir dürfen kleiner
+        while (span / cand) < max(4, target_labels * 0.35) and cand > min_step:
+            idx = max(0, list(preferred).index(cand))
+            if idx > 0:
+                cand = preferred[idx - 1]
+            else:
+                break
+        return float(min(max(cand, min_step), max_step))
 
-    def _add_cube_axes_around_bounds(self, *, bounds: Bounds, color: str = "#cfcfcf") -> Optional[Any]:
+    @staticmethod
+    def _snap_range(min_v: float, max_v: float, step: float, *, force_min: Optional[float] = None) -> Tuple[float, float, int]:
         """
-        Erzeugt einen vtkCubeAxesActor nur um 'bounds'.
-        Kompatibel mit älteren VTKs: MinorTicks per Achse abschalten.
+        Snappt [min_v,max_v] auf Vielfache von 'step'.
+        force_min: wenn gesetzt, wird das Minimum auf diesen Wert fixiert (z.B. Z=0).
+        Rückgabe: (snapped_min, snapped_max, label_count)
         """
+        if not np.isfinite(min_v) or not np.isfinite(max_v):
+            return (0.0, 1.0, 2)
+        if max_v < min_v:
+            min_v, max_v = max_v, min_v
+
+        smin = float(force_min) if force_min is not None else np.floor(min_v / step) * step
+        smax = np.ceil(max_v / step) * step
+        n = int(round((smax - smin) / step)) + 1
+        n = max(2, min(MAX_LABELS_PER_AXIS, n))
+        return (float(smin), float(smax), n)
+
+    def _snap_bounds_dynamic(self, b: Bounds) -> Tuple[Bounds, Tuple[int, int, int]]:
+        xmin, xmax, ymin, ymax, zmin, zmax = map(float, b)
+
+        x_step = self._pick_step(xmax - xmin)
+        y_step = self._pick_step(ymax - ymin)
+        z_step = self._pick_step(zmax - zmin)
+
+        sxmin, sxmax, nx = self._snap_range(xmin, xmax, x_step)
+        symin, symax, ny = self._snap_range(ymin, ymax, y_step)
+        # Z unten auf 0 erzwingen
+        szmin, szmax, nz = self._snap_range(zmin, zmax, z_step, force_min=0.0)
+
+        return (sxmin, sxmax, symin, symax, szmin, szmax), (nx, ny, nz)
+
+    # ------------------- CubeAxes -------------------
+
+    def _add_cube_axes_around_bounds(self, *, bounds: Bounds) -> Optional[Any]:
         ia = self._ia()
         if ia is None or vtkCubeAxesActor is None:
             return None
         try:
-            b = self._pad_bounds(bounds, 1.02)
+            snapped_bounds, (nx, ny, nz) = self._snap_bounds_dynamic(bounds)
 
             axes = vtkCubeAxesActor()
-            axes.SetBounds(b)
+            axes.SetBounds(snapped_bounds)
             try:
                 axes.SetCamera(ia.camera)
             except Exception:
                 pass
 
-            axes.SetXTitle("X (mm)")
-            axes.SetYTitle("Y (mm)")
-            axes.SetZTitle("Z (mm)")
+            # Ticks / Gridlines
             axes.SetTickLocationToOutside()
             axes.DrawXGridlinesOn()
             axes.DrawYGridlinesOn()
             axes.DrawZGridlinesOn()
 
-            # Minor Ticks (versionssicher) abschalten
+            # Minor Ticks aus
             for fn in ("SetXAxisMinorTickVisibility",
                        "SetYAxisMinorTickVisibility",
                        "SetZAxisMinorTickVisibility"):
                 if hasattr(axes, fn):
                     getattr(axes, fn)(0)
 
-            r, g, bl = self._hex_to_rgb01(color)
+            # Anzahl Labels entsprechend Snap
+            if hasattr(axes, "SetXAxisNumberOfLabels"): axes.SetXAxisNumberOfLabels(int(nx))
+            if hasattr(axes, "SetYAxisNumberOfLabels"): axes.SetYAxisNumberOfLabels(int(ny))
+            if hasattr(axes, "SetZAxisNumberOfLabels"): axes.SetZAxisNumberOfLabels(int(nz))
+
+            # Titel
+            if hasattr(axes, "SetXTitle"):
+                axes.SetXTitle("X (mm)")
+                axes.SetYTitle("Y (mm)")
+                axes.SetZTitle("Z (mm)")
+
+            # Text-Properties
+            title_rgb = self._hex_to_rgb01(TITLE_COLOR)
+            label_rgb = self._hex_to_rgb01(LABEL_COLOR)
+            for i in (0, 1, 2):
+                try:
+                    tp = axes.GetTitleTextProperty(i)
+                    if tp:
+                        if hasattr(tp, "SetBold"):     tp.SetBold(1)
+                        if hasattr(tp, "SetFontSize"): tp.SetFontSize(TITLE_SIZE_PX)
+                        if hasattr(tp, "SetColor"):    tp.SetColor(*title_rgb)
+                except Exception:
+                    pass
+                try:
+                    lp = axes.GetLabelTextProperty(i)
+                    if lp:
+                        if hasattr(lp, "SetBold"):     lp.SetBold(1)
+                        if hasattr(lp, "SetFontSize"): lp.SetFontSize(LABEL_SIZE_PX)
+                        if hasattr(lp, "SetColor"):    lp.SetColor(*label_rgb)
+                except Exception:
+                    pass
+
+            # Linienfarben schwarz
+            r, g, bl = self._hex_to_rgb01(AXIS_LINE_COLOR)
             try:
-                for i in (0, 1, 2):  # X,Y,Z
-                    axes.GetTitleTextProperty(i).SetColor(r, g, bl)
-                    axes.GetLabelTextProperty(i).SetColor(r, g, bl)
-                    axes.GetLabelTextProperty(i).SetFontSize(14)
+                p = axes.GetXAxesLinesProperty();          p and p.SetColor(r, g, bl)
+                p = axes.GetYAxesLinesProperty();          p and p.SetColor(r, g, bl)
+                p = axes.GetZAxesLinesProperty();          p and p.SetColor(r, g, bl)
+                p = axes.GetXAxesGridlinesProperty();      p and p.SetColor(r, g, bl)
+                p = axes.GetYAxesGridlinesProperty();      p and p.SetColor(r, g, bl)
+                p = axes.GetZAxesGridlinesProperty();      p and p.SetColor(r, g, bl)
+                p = axes.GetXAxesInnerGridlinesProperty(); p and p.SetColor(r, g, bl)
+                p = axes.GetYAxesInnerGridlinesProperty(); p and p.SetColor(r, g, bl)
+                p = axes.GetZAxesInnerGridlinesProperty(); p and p.SetColor(r, g, bl)
             except Exception:
                 pass
 
-            try:
-                prop = axes.GetXAxesLinesProperty()
-                if prop: prop.SetLineWidth(1.0)
-                prop = axes.GetYAxesLinesProperty()
-                if prop: prop.SetLineWidth(1.0)
-                prop = axes.GetZAxesLinesProperty()
-                if prop: prop.SetLineWidth(1.0)
-            except Exception:
-                pass
-
+            # Vorherige Grid-Actors ersetzen
+            self.clear_layer(self.L_GRID)
             ia.renderer.AddActor(axes)
             self._ensure_layer(self.L_GRID).append(axes)
-            self._last_grid_bounds = bounds
+            self._last_grid_bounds = snapped_bounds
             return axes
         except Exception:
             _LOG.exception("vtkCubeAxesActor creation failed")
             return None
 
-    def _add_plane_grid_fallback(self, bounds: Bounds, *, step: float = 10.0, color: str = "#cfcfcf"):
-        xmin, xmax, ymin, ymax, zmin, _ = bounds
-        width, height = xmax - xmin, ymax - ymin
-        i_res = max(1, int(round(width / max(1e-6, step))))
-        j_res = max(1, int(round(height / max(1e-6, step))))
-        center = (0.5*(xmin+xmax), 0.5*(ymin+ymax), zmin)
-        plane = pv.Plane(center=center, direction=(0, 0, 1),
-                         i_size=width, j_size=height,
-                         i_resolution=i_res, j_resolution=j_res)
-        act = self.add_mesh(plane, layer=self.L_GRID, style="wireframe",
-                            color=color, line_width=1.0, lighting=False)
-        if act is not None:
-            self._last_grid_bounds = bounds
-        return act
+    # ===================== 1) build_scene =====================
 
-    def _set_grid_around(self, bounds: Bounds, *, color: str = "#cfcfcf", step: float = 10.0) -> None:
-        """
-        Layer L_GRID auf neue Bounds setzen (löscht vorherige Grid-Actors).
-        """
-        self.clear_layer(self.L_GRID)
-        ok = self._add_cube_axes_around_bounds(bounds=bounds, color=color)
-        if ok is None:
-            self._add_plane_grid_fallback(bounds, step=step, color=color)
-
-    # ============================================================ 1) build_scene
     def build_scene(
         self,
         ctx,
         model: Recipe,
         *,
-        grid_step_mm: float = 10.0,
+        grid_step_mm: float = 10.0,  # Signatur-kompatibel, aktuell ungenutzt
     ) -> PreviewScene:
 
         for lyr in (self.L_GROUND, self.L_GRID, self.L_MOUNT, self.L_SUBSTRATE):
             self.clear_layer(lyr)
-
-        self._substrate_bounds = None
         self._last_grid_bounds = None
+        self._substrate_bounds = None
 
         mount_key = model.substrate_mount
         substrate_key = model.substrate
@@ -369,16 +443,13 @@ class SceneManager:
             except Exception as e:
                 _LOG.error("Substrat-Mesh Fehler: %s", e, exc_info=True)
 
-        # Bounds ableiten
+        # Bounds ableiten (für Floor/Sicht)
         if smesh is not None:
             bounds: Bounds = smesh.bounds  # type: ignore[assignment]
-            self._substrate_bounds = bounds
         elif mmesh is not None:
             bounds = mmesh.bounds  # type: ignore[assignment]
         else:
             bounds = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
-
-        self._scene_bounds = bounds
 
         xmin, xmax, ymin, ymax, zmin, zmax = bounds
         cx, cy = 0.5*(xmin+xmax), 0.5*(ymin+ymax)
@@ -391,14 +462,15 @@ class SceneManager:
         if mmesh is not None:
             self.add_mesh(mmesh, layer=self.L_MOUNT, color="#5d5d5d", opacity=0.95, lighting=False)
 
-        # Substrat
+        # Substrat + Grid
         if smesh is not None:
             self.add_mesh(smesh, layer=self.L_SUBSTRATE, color="#d0d6dd", opacity=1.0, lighting=False)
-            # Erstes Grid nur um Substrat
-            self._set_grid_around(smesh.bounds, color="#cfcfcf", step=grid_step_mm)
+            self._substrate_bounds = smesh.bounds  # merken
+            self._add_cube_axes_around_bounds(bounds=self._substrate_bounds)
         else:
-            # kein Substrat -> Fallback-Grid um Szene
-            self._set_grid_around(bounds, color="#cfcfcf", step=grid_step_mm)
+            self.clear_layer(self.L_GRID)
+            self._substrate_bounds = None
+            self._last_grid_bounds = None
 
         mesh_tris = None
         if smesh is not None:
@@ -417,7 +489,8 @@ class SceneManager:
             mesh_tris=mesh_tris,
         )
 
-    # ======================================================= 2) build_overlays
+    # ===================== 2) build_overlays =====================
+
     def build_overlays(
         self,
         *,
@@ -430,29 +503,20 @@ class SceneManager:
         tube_radius: float = 0.8,
     ) -> None:
 
+        # Overlays zurücksetzen
         for lyr in (self.L_PATH, self.L_PATH_MRK, self.L_RAYS_HIT, self.L_RAYS_MISS,
                     self.L_NORMALS, self.L_FR_X, self.L_FR_Y, self.L_FR_Z):
             self.clear_layer(lyr)
 
-        path_bounds = None
+        # Pfad
         if path_xyz is not None:
             try:
                 self.add_path_polyline(path_xyz, layer=self.L_PATH, color="#2ecc71",
                                        as_tube=as_tube, tube_radius=tube_radius, lighting=False)
             except Exception:
                 _LOG.exception("build_overlays: path failed")
-            # Bounds des Pfades bestimmen
-            path_bounds = self._bounds_from_points(path_xyz)
 
-        # Grid nun ggf. auf (Substrat ∪ Pfad) ausdehnen:
-        union_b = self._union_bounds(self._substrate_bounds, path_bounds)
-        if union_b is None:
-            union_b = self._scene_bounds
-        # Nur neu setzen, wenn sich die Bounds merklich geändert haben
-        if union_b is not None:
-            if (self._last_grid_bounds is None) or any(abs(a - b) > 1e-9 for a, b in zip(union_b, self._last_grid_bounds)):
-                self._set_grid_around(union_b, color="#cfcfcf", step=10.0)
-
+        # Rays: Punkte
         def _add_pts(pts: Optional[np.ndarray], layer: str, color: str):
             if pts is None:
                 return
@@ -466,6 +530,7 @@ class SceneManager:
         _add_pts(rays_hit,  self.L_RAYS_HIT,  "#3498db")
         _add_pts(rays_miss, self.L_RAYS_MISS, "#e74c3c")
 
+        # Normals
         if normals_xyz is not None:
             try:
                 P = np.asarray(normals_xyz, float).reshape(-1, 6)  # [x,y,z,nx,ny,nz]
@@ -482,6 +547,7 @@ class SceneManager:
             except Exception:
                 _LOG.exception("build_overlays: normals failed")
 
+        # Frames (x/y/z)
         if frames_at is not None:
             try:
                 P = np.asarray(frames_at, float).reshape(-1, 6)  # [x,y,z, sx,sy,sz]
@@ -506,7 +572,26 @@ class SceneManager:
             except Exception:
                 _LOG.exception("build_overlays: frames failed")
 
-    # ======================================================= 3) toggle_overlays
+        # Grid an Pfad ausdehnen (mit dynamischem Snap)
+        if self._substrate_bounds is not None and path_xyz is not None and len(np.asarray(path_xyz).reshape(-1, 3)) > 0:
+            try:
+                P = np.asarray(path_xyz, float).reshape(-1, 3)
+                pxmin, pymin, pzmin = np.min(P, axis=0)
+                pxmax, pymax, pzmax = np.max(P, axis=0)
+                pb: Bounds = (float(pxmin), float(pxmax),
+                              float(pymin), float(pymax),
+                              float(pzmin), float(pzmax))
+                sb = self._substrate_bounds
+                merged: Bounds = (min(sb[0], pb[0]), max(sb[1], pb[1]),
+                                  min(sb[2], pb[2]), max(sb[3], pb[3]),
+                                  min(sb[4], pb[4]), max(sb[5], pb[5]))
+                if self._last_grid_bounds is None or any(abs(a - b) > 1e-9 for a, b in zip(self._last_grid_bounds, merged)):
+                    self._add_cube_axes_around_bounds(bounds=merged)
+            except Exception:
+                _LOG.exception("build_overlays: extend grid to path failed")
+
+    # ===================== 3) toggle_overlays =====================
+
     def toggle_overlays(self, visibility: Dict[str, bool]) -> None:
         show_path   = bool(visibility.get("path", True))
         show_hits   = bool(visibility.get("hits", True))
@@ -523,7 +608,8 @@ class SceneManager:
         self.set_layer_visible(self.L_FR_Y,      show_frames)
         self.set_layer_visible(self.L_FR_Z,      show_frames)
 
-    # --------------------------------------------------------------- view update
+    # ===================== View Update =====================
+
     def update_current_views_once(self, *, refresh_2d: Callable[[], None] | None = None) -> None:
         ia = self._ia()
         try:

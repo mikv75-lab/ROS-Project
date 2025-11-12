@@ -2652,3 +2652,190 @@ AttributeError: 'vtkmodules.vtkRenderingAnnotation.vtkCubeAxesActor' object has 
 2025-11-12 05:33:20 INFO [31725] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
 2025-11-12 05:33:20 DEBUG [31725] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
 2025-11-12 05:33:20 DEBUG [31725] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 05:41:22 INFO [38200] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 05:41:22 DEBUG [38200] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 05:41:22 DEBUG [38200] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 05:44:25 INFO [40216] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 05:44:25 DEBUG [40216] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 05:44:25 DEBUG [40216] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 05:44:37 INFO [40216] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 05:44:37 DEBUG [40216] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 05:44:37 DEBUG [40216] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 05:44:40 WARNING [40216] app.tabs.recipe.scene:84 - SceneManager: no interactor
+2025-11-12 05:44:40 WARNING [40216] app.tabs.recipe.scene:84 - SceneManager: no interactor
+2025-11-12 05:44:40 WARNING [40216] app.tabs.recipe.scene:84 - SceneManager: no interactor
+2025-11-12 05:44:40 WARNING [40216] app.tabs.recipe.scene:84 - SceneManager: no interactor
+2025-11-12 05:44:40 WARNING [40216] app.tabs.recipe.scene:84 - SceneManager: no interactor
+2025-11-12 05:44:40 WARNING [40216] app.tabs.recipe.scene:84 - SceneManager: no interactor
+2025-11-12 05:44:40 WARNING [40216] app.tabs.recipe.scene:84 - SceneManager: no interactor
+2025-11-12 05:44:40 WARNING [40216] app.tabs.recipe.scene:84 - SceneManager: no interactor
+2025-11-12 05:44:40 WARNING [40216] app.tabs.recipe.scene:84 - SceneManager: no interactor
+2025-11-12 05:44:40 WARNING [40216] app.tabs.recipe.scene:84 - SceneManager: no interactor
+2025-11-12 05:44:40 ERROR [40216] app.tabs.recipe.preview.panel:242 - toggle_overlays failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 240, in handle_update_preview
+    self.scene.toggle_overlays(self._visibility_from_ui())
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 315, in _visibility_from_ui
+    "path":   gb.chkShowPath.isChecked(),
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: wrapped C/C++ object of type QCheckBox has been deleted
+2025-11-12 05:44:40 ERROR [40216] app.tabs.recipe.preview.panel:249 - set info failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 247, in handle_update_preview
+    self.grpInfo.set_values(info)
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/info_groupbox.py", line 59, in set_values
+    self._v_points.setText(self._fmt(info.get("points"), None, 0))
+RuntimeError: wrapped C/C++ object of type QLabel has been deleted
+2025-11-12 05:44:40 ERROR [40216] app.tabs.recipe.preview.panel:257 - restore_camera (optional) failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 255, in handle_update_preview
+    self.restore_camera(cam_snap)
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 359, in restore_camera
+    ia = self._ia()
+         ^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 331, in _ia
+    return self._find_interactor_in_host()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 152, in _find_interactor_in_host
+    for ch in self._pvHost.findChildren(QtInteractor):
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: wrapped C/C++ object of type QWidget has been deleted
+2025-11-12 05:44:40 WARNING [40216] app.tabs.recipe.scene:84 - SceneManager: no interactor
+2025-11-12 05:54:16 WARNING [47244] app.tabs.recipe.preview.panel:190 - handle_update_preview: no interactor (skip)
+2025-11-12 05:54:42 WARNING [47864] app.tabs.recipe.preview.panel:190 - handle_update_preview: no interactor (skip)
+2025-11-12 05:54:57 WARNING [47864] app.tabs.recipe.preview.panel:190 - handle_update_preview: no interactor (skip)
+2025-11-12 05:55:04 WARNING [47864] app.tabs.recipe.preview.panel:190 - handle_update_preview: no interactor (skip)
+2025-11-12 05:55:04 WARNING [47864] app.tabs.recipe.preview.panel:190 - handle_update_preview: no interactor (skip)
+2025-11-12 05:55:04 WARNING [47864] app.tabs.recipe.preview.panel:190 - handle_update_preview: no interactor (skip)
+2025-11-12 05:55:04 WARNING [47864] app.tabs.recipe.preview.panel:190 - handle_update_preview: no interactor (skip)
+2025-11-12 05:55:04 WARNING [47864] app.tabs.recipe.preview.panel:190 - handle_update_preview: no interactor (skip)
+2025-11-12 05:55:05 WARNING [47864] app.tabs.recipe.preview.panel:190 - handle_update_preview: no interactor (skip)
+2025-11-12 05:58:44 WARNING [50869] app.tabs.recipe.preview.panel:190 - handle_update_preview: no interactor (skip)
+2025-11-12 05:59:30 WARNING [50869] app.tabs.recipe.preview.panel:190 - handle_update_preview: no interactor (skip)
+2025-11-12 06:04:28 ERROR [55026] app.tabs.recipe:51 - attach_preview_widget failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 49, in __init__
+    self._attach_preview_widget(self.previewPanel.get_pv_host())
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'CoatingPreviewPanel' object has no attribute 'get_pv_host'
+2025-11-12 06:04:29 WARNING [55026] app.tabs.recipe.preview.panel:187 - handle_update_preview: no interactor (skip)
+2025-11-12 06:04:37 ERROR [55330] app.tabs.recipe:51 - attach_preview_widget failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/recipe_tab.py", line 49, in __init__
+    self._attach_preview_widget(self.previewPanel.get_pv_host())
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'CoatingPreviewPanel' object has no attribute 'get_pv_host'
+2025-11-12 06:04:38 WARNING [55330] app.tabs.recipe.preview.panel:187 - handle_update_preview: no interactor (skip)
+2025-11-12 06:10:28 INFO [59759] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:10:28 DEBUG [59759] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:10:28 DEBUG [59759] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 06:10:31 ERROR [59759] app.tabs.recipe.preview.panel:275 - toggle_overlays failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 272, in handle_update_preview
+    vis = self._visibility_from_ui() if hasattr(self, "_visibility_from_ui") else getattr(self, "_vis", {})
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: wrapped C/C++ object of type CoatingPreviewPanel has been deleted
+2025-11-12 06:10:31 ERROR [59759] app.tabs.recipe.preview.panel:283 - set info failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 281, in handle_update_preview
+    self.grpInfo.set_values(info)
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/info_groupbox.py", line 59, in set_values
+    self._v_points.setText(self._fmt(info.get("points"), None, 0))
+RuntimeError: wrapped C/C++ object of type QLabel has been deleted
+2025-11-12 06:10:44 INFO [60175] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:10:44 DEBUG [60175] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:10:44 DEBUG [60175] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 06:10:46 ERROR [60175] app.tabs.recipe.preview.panel:275 - toggle_overlays failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 272, in handle_update_preview
+    vis = self._visibility_from_ui() if hasattr(self, "_visibility_from_ui") else getattr(self, "_vis", {})
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: wrapped C/C++ object of type CoatingPreviewPanel has been deleted
+2025-11-12 06:10:46 ERROR [60175] app.tabs.recipe.preview.panel:283 - set info failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 281, in handle_update_preview
+    self.grpInfo.set_values(info)
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/info_groupbox.py", line 59, in set_values
+    self._v_points.setText(self._fmt(info.get("points"), None, 0))
+RuntimeError: wrapped C/C++ object of type QLabel has been deleted
+2025-11-12 06:13:47 INFO [62402] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:13:47 DEBUG [62402] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:13:47 DEBUG [62402] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 06:16:34 INFO [64629] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:16:34 DEBUG [64629] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:16:34 DEBUG [64629] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 06:22:51 WARNING [69443] app.tabs.recipe.preview.panel:188 - handle_update_preview: no interactor (retry once)
+2025-11-12 06:22:51 ERROR [69443] app.tabs.recipe.preview.panel:192 - handle_update_preview: no interactor (give up)
+2025-11-12 06:22:58 ERROR [69443] app.tabs.recipe.preview.panel:192 - handle_update_preview: no interactor (give up)
+2025-11-12 06:22:59 ERROR [69443] app.tabs.recipe.preview.panel:192 - handle_update_preview: no interactor (give up)
+2025-11-12 06:23:28 WARNING [70265] app.tabs.recipe.preview.panel:188 - handle_update_preview: no interactor (retry once)
+2025-11-12 06:23:28 ERROR [70265] app.tabs.recipe.preview.panel:192 - handle_update_preview: no interactor (give up)
+2025-11-12 06:23:39 ERROR [70265] app.tabs.recipe.preview.panel:192 - handle_update_preview: no interactor (give up)
+2025-11-12 06:29:51 INFO [75324] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:29:51 DEBUG [75324] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:29:51 DEBUG [75324] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 06:35:50 INFO [75324] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:35:50 DEBUG [75324] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:35:50 DEBUG [75324] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 06:42:58 INFO [83191] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:42:58 DEBUG [83191] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:42:58 DEBUG [83191] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 06:47:03 INFO [83191] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:47:03 DEBUG [83191] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:47:03 DEBUG [83191] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 06:50:50 INFO [88805] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:50:50 DEBUG [88805] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:50:50 DEBUG [88805] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 06:52:03 INFO [89827] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:52:03 DEBUG [89827] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:52:03 DEBUG [89827] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 06:57:03 INFO [93061] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:57:03 DEBUG [93061] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:57:03 DEBUG [93061] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 06:57:34 INFO [93770] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:57:34 DEBUG [93770] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 06:57:34 DEBUG [93770] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 07:31:01 ERROR [13001] app.tabs.recipe.preview.views2d_tabs:98 - initial plane switch to 'top' failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/views_2d_box.py", line 96, in __init__
+    self._set_bounds(self._get_bounds())
+                     ^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 423, in get_bounds
+    return self._bounds
+           ^^^^^^^^^^^^
+AttributeError: 'CoatingPreviewPanel' object has no attribute '_bounds'. Did you mean: 'get_bounds'?
+2025-11-12 07:31:02 INFO [13001] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:31:02 DEBUG [13001] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:31:02 DEBUG [13001] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 07:31:29 DEBUG [13001] app.tabs.recipe.preview.overlays:414 - rebuild_layers: no cache yet; nothing to rebuild
+2025-11-12 07:31:57 ERROR [13824] app.tabs.recipe.preview.views2d_tabs:98 - initial plane switch to 'top' failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/views_2d_box.py", line 96, in __init__
+    self._set_bounds(self._get_bounds())
+                     ^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 423, in get_bounds
+    return self._bounds
+           ^^^^^^^^^^^^
+AttributeError: 'CoatingPreviewPanel' object has no attribute '_bounds'. Did you mean: 'get_bounds'?
+2025-11-12 07:31:58 INFO [13824] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:31:58 DEBUG [13824] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:31:58 DEBUG [13824] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 07:32:09 INFO [14153] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:32:09 DEBUG [14153] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:32:09 DEBUG [14153] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 07:33:02 INFO [14829] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:33:02 DEBUG [14829] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:33:02 DEBUG [14829] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 07:38:04 INFO [17876] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:38:04 DEBUG [17876] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:38:04 DEBUG [17876] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 07:41:59 INFO [20902] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:41:59 DEBUG [20902] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:41:59 DEBUG [20902] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 07:43:27 INFO [22373] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:43:27 DEBUG [22373] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:43:27 DEBUG [22373] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-12 07:44:11 INFO [23192] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:44:11 DEBUG [23192] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-12 07:44:11 DEBUG [23192] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import logging
-from typing import Optional, Tuple, Dict, Any, List, Callable
+from typing import Optional, Tuple, Dict, Any, List
 
 import numpy as np
 import matplotlib
@@ -44,19 +44,21 @@ def _vtk_faces_to_tris(faces: np.ndarray) -> np.ndarray:
 class Matplot2DView(FigureCanvas):
     """
     2D-Renderer: Substrat (grau) + Pfad (grün) + Start/End-Marker.
-    Interaktiv:
-      - Linksklick+Drag: Pan
-      - Rechtsklick+Drag (vertikal): Zoom
-      - Scrollrad: Zoom um Cursor
-    Fixes Koordinatensystem (Default):
-      X: -120..+120, Y: -120..+120, Z: 0..200  (Ursprung = Substratmitte unten)
+    - Plotfläche maximal groß (constrained_layout + subplots_adjust)
+    - Legende direkt UNTER der x-Achse
     """
+
     def __init__(self, parent=None):
-        self._fig: Figure = Figure(figsize=(6, 6), dpi=100)
+        # constrained_layout maximiert automatisch die Zeichenfläche,
+        # wir feintunen später die Ränder (v.a. unten für die Legende).
+        self._fig: Figure = Figure(figsize=(6, 6), dpi=100, constrained_layout=True)
         super().__init__(self._fig)
         self._ax = self._fig.add_subplot(111)
         self._ax.set_aspect("equal", adjustable="box")
         self._ax.set_navigate(True)
+
+        # Wie viel „Höhe“ wir unterhalb der x-Achse für die Legende reservieren (relativ)
+        self._legend_pad_frac = 0.18  # 18% der Achsenhöhe – passt gut für 4 Items
 
         # Standard-"Welt"-Ranges (mm)
         self._world = {
@@ -65,7 +67,6 @@ class Matplot2DView(FigureCanvas):
             "z": (0.0, 200.0),
         }
 
-        # Für eventuelle Bounds-Übergaben (werden nur als Startwerte benutzt)
         self._bounds: Tuple[float, float, float, float, float, float] = (
             self._world["x"][0], self._world["x"][1],
             self._world["y"][0], self._world["y"][1],
@@ -114,7 +115,8 @@ class Matplot2DView(FigureCanvas):
         cid("motion_notify_event", self._on_motion)
         cid("scroll_event",        self._on_scroll)
 
-        self._fig.tight_layout()
+        # Erstlayout
+        self._apply_layout_margins()
 
     # ---------- Toolbar (optional) ----------
     def make_toolbar(self, parent=None):
@@ -139,7 +141,6 @@ class Matplot2DView(FigureCanvas):
         self._redraw(keep_limits=True)
 
     def set_bounds(self, bounds: Tuple[float, float, float, float, float, float]):
-        # wird als Startwert verwendet; Default-Welt bleibt maßgeblich
         self._bounds = tuple(map(float, bounds))
         self._redraw(keep_limits=self._user_limits is not None)
 
@@ -186,7 +187,15 @@ class Matplot2DView(FigureCanvas):
     def show_left(self):  self.set_plane("left")
     def show_right(self): self.set_plane("right")
 
-    # ---------- drawing ----------
+    # ---------- layout & labels ----------
+    def _apply_layout_margins(self):
+        """
+        Maximiert die Plotfläche und reserviert unten Platz für die Legende
+        (unterhalb der x-Achse).
+        """
+        # enge Ränder links/rechts/oben, unten etwas mehr für xlabel + Legende:
+        self._fig.subplots_adjust(left=0.08, right=0.99, top=0.94, bottom=0.10 + self._legend_pad_frac)
+
     def _set_labels(self):
         if self._plane == "top":
             self._ax.set_title("Top (Z in depth)")
@@ -199,27 +208,23 @@ class Matplot2DView(FigureCanvas):
             self._ax.set_xlabel("Y (mm)"); self._ax.set_ylabel("Z (mm)")
 
     def _fixed_plane_extents(self) -> Tuple[float, float, float, float]:
-        """Feste Standard-Ranges je Ebene (Weltkoords, Ursprung in Mitte-unten)."""
         X = self._world["x"]; Y = self._world["y"]; Z = self._world["z"]
         if self._plane == "top":
             return X[0], X[1], Y[0], Y[1]
         if self._plane in ("front", "back"):
             return X[0], X[1], Z[0], Z[1]
-        # left/right
         return Y[0], Y[1], Z[0], Z[1]
 
     def _extents_from_data(self) -> Tuple[float, float, float, float]:
-        # Verwende IMMER die festen Welt-Extents als Start.
         return self._fixed_plane_extents()
 
+    # ---------- drawing ----------
     def _configure_grid(self):
         # Major=10 mm, Minor=1 mm
         self._ax.xaxis.set_major_locator(MultipleLocator(10.0))
         self._ax.yaxis.set_major_locator(MultipleLocator(10.0))
         self._ax.xaxis.set_minor_locator(MultipleLocator(1.0))
         self._ax.yaxis.set_minor_locator(MultipleLocator(1.0))
-
-        # getrennte Styles für Major/Minor
         self._ax.grid(True, which="major", alpha=self._style["grid_alpha_major"], linestyle=":", linewidth=0.8)
         self._ax.grid(True, which="minor", alpha=self._style["grid_alpha_minor"], linestyle=":", linewidth=0.5)
 
@@ -272,11 +277,17 @@ class Matplot2DView(FigureCanvas):
             Line2D([0], [0], marker='o', linestyle='None', markersize=8,
                    markerfacecolor=self._style["end_face"], markeredgecolor=self._style["end_edge"], label="End"),
         ]
-        self._ax.legend(handles=handles,
-                        loc="upper center",
-                        bbox_to_anchor=(0.5, 1.02),
-                        ncol=4,
-                        frameon=True)
+        # Legende UNTER der x-Achse (unterhalb "X (mm)")
+        self._ax.legend(
+            handles=handles,
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.02 - self._legend_pad_frac),  # direkt unter der xlabel
+            ncol=4,
+            frameon=True,
+            borderaxespad=0.0,
+            handlelength=2.0,
+            columnspacing=1.2,
+        )
 
     def _redraw(self, *, keep_limits: bool = False):
         try:
@@ -284,6 +295,7 @@ class Matplot2DView(FigureCanvas):
 
             self._ax.clear()
             self._ax.set_aspect("equal", adjustable="box")
+            self._apply_layout_margins()
             self._set_labels()
 
             if saved is None:
@@ -301,7 +313,6 @@ class Matplot2DView(FigureCanvas):
                 x0, x1 = self._ax.get_xlim(); y0, y1 = self._ax.get_ylim()
                 self._user_limits = (x0, x1, y0, y1)
 
-            self._fig.tight_layout()
             self.draw_idle()
         except Exception:
             _LOG.exception("Matplot2DView redraw failed")

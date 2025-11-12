@@ -4,7 +4,7 @@ import logging
 from typing import Optional, Callable
 
 from PyQt6.QtWidgets import QWidget, QHBoxLayout
-from PyQt6.QtCore import Qt, QTimer  # ← QTimer importieren
+from PyQt6.QtCore import Qt, QTimer
 
 from .recipe_editor_panel.recipe_editor_panel import RecipeEditorPanel
 from .coating_preview_panel.coating_preview_panel import CoatingPreviewPanel
@@ -56,13 +56,21 @@ class RecipeTab(QWidget):
             Qt.ConnectionType.QueuedConnection,
         )
 
-        # ---------- Initiales Preview nach dem Aufbau ----------
-        # Wartet bis Eventloop läuft & Interactor (falls extern) angehängt ist.
-        QTimer.singleShot(0, self._emit_initial_preview)
+        # ---------- Initiales Preview NACH Interactor ----------
+        try:
+            self.previewPanel.interactorReady.connect(self._emit_initial_preview)
+        except Exception:
+            pass
+
+        # Sanfter Fallback, falls Signal wider Erwarten nicht kommt
+        QTimer.singleShot(500, self._emit_initial_preview)
 
     def _emit_initial_preview(self) -> None:
         try:
             model = self.recipePanel.current_model()
+            if model is None:
+                _LOG.info("initial preview: no model yet")
+                return
             self.recipePanel.updatePreviewRequested.emit(model)
         except Exception:
             _LOG.exception("initial preview emit failed")

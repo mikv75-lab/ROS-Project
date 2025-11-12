@@ -5,7 +5,10 @@ from typing import Optional, Any, Dict, Tuple, List
 
 import numpy as np
 from PyQt6.QtCore import pyqtSignal, QTimer
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QSpacerItem  # <-- Spacer import
+)
+from PyQt6.sip import isdeleted  # Guard gegen zerstörte Qt-Objekte
 
 from app.model.recipe.recipe import Recipe
 from .views_3d.scene_manager import SceneManager
@@ -33,15 +36,30 @@ class CoatingPreviewPanel(QWidget):
     Layout:
       Info
       HBox:
-        - Left VBox:  Views2D + Matplotlib(Expanding)
+        - Left VBox:  Views2D + Matplotlib(Expanding) + (Spacer)
         - Right VBox: Views3D + Overlays + PyVistaHost(Expanding)
     """
     sprayPathSetRequested = pyqtSignal(object)
+    interactorReady = pyqtSignal()  # signalisiert, dass der Interactor verfügbar ist
 
     def __init__(self, *, ctx, store=None, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
         self.store = store
+
+        # Lifecycle-Guards
+        self._dying: bool = False
+        self.destroyed.connect(lambda *_: setattr(self, "_dying", True))
+
+        # Fester Interactor: wird von außen gesetzt
+        self._interactor: Any = None
+        self._retry_left: int = 10
+        self._retry_delay_ms: int = 50
+
+        # Sichtbarkeits-State unabhängig von UI-Objekten
+        self._vis: Dict[str, bool] = {
+            "path": True, "hits": True, "misses": True, "normals": False, "frames": False
+        }
 
         # Root
         root = QVBoxLayout(self)
@@ -65,11 +83,8 @@ class CoatingPreviewPanel(QWidget):
         vleft.setSpacing(6)
         split.addLayout(vleft, 1)
 
-        self.views2d = Views2DBox(switch_2d=self._switch_2d_plane, parent=self)
-        _set_policy(self.views2d, h=QSizePolicy.Expanding, v=QSizePolicy.Preferred)
-        vleft.addWidget(self.views2d, 0)
-
-        self._mat2d = Matplot2DView(parent=None)
+        # >>> Matplotlib zuerst erzeugen (wichtig!)
+        self._mat2d = Matplot2DView(parent=self)
         _set_policy(self._mat2d, h=QSizePolicy.Expanding, v=QSizePolicy.Expanding)
         try:
             tb = self._mat2d.make_toolbar(self)
@@ -79,6 +94,24 @@ class CoatingPreviewPanel(QWidget):
             pass
         vleft.addWidget(self._mat2d, 1)
 
+        # ⬇️ Vertikaler Spacer NACH dem Plot (drückt nach unten, füllt Rest)
+        vleft.addSpacerItem(QSpacerItem(
+            0, 0,
+            QSizePolicy.Policy.Minimum,
+            QSizePolicy.Policy.Minimum
+        ))
+
+        # Danach die 2D-Controls, die _mat2d.refresh nutzen
+        self.views2d = Views2DBox(
+            switch_2d=self._switch_2d_plane,
+            refresh_callable=self._mat2d.refresh,
+            get_bounds=self.get_bounds,
+            set_bounds=self.set_bounds,
+            parent=self
+        )
+        _set_policy(self.views2d, h=QSizePolicy.Expanding, v=QSizePolicy.Preferred)
+        vleft.insertWidget(0, self.views2d, 0)
+
         # Right
         vright = QVBoxLayout()
         vright.setContentsMargins(0, 0, 0, 0)
@@ -86,12 +119,12 @@ class CoatingPreviewPanel(QWidget):
         split.addLayout(vright, 1)
 
         self.views3d = Views3DBox(
-            interactor_getter=lambda: self._find_interactor_in_host(),
+            interactor_getter=lambda: self._interactor,
             render_callable=self.render,
             bounds_getter=self.get_bounds,
             substrate_bounds_getter=lambda: self.scene.get_layer_bounds("substrate"),
             cam_pad=1.0,
-            iso_extra_zoom=3.0,   # Iso stärker reinzoomen
+            iso_extra_zoom=3.0,
             parent=self,
         )
         _set_policy(self.views3d, h=QSizePolicy.Expanding, v=QSizePolicy.Policy.Preferred)
@@ -120,60 +153,76 @@ class CoatingPreviewPanel(QWidget):
                 "frames_x": "frames_x",
                 "frames_y": "frames_y",
                 "frames_z": "frames_z",
-                # "frames_labels": "frames_labels",  # keine Labels mehr
             },
             get_bounds=self.get_bounds,
         )
         _set_policy(self.grpOverlays, h=QSizePolicy.Expanding, v=QSizePolicy.Preferred)
         vright.addWidget(self.grpOverlays, 0)
 
+        # UI-Checkboxen aktualisieren nur den State – kein direkter Zugriff später
+        try:
+            gb = self.grpOverlays
+            gb.chkShowPath.toggled.connect(lambda v: self._vis.__setitem__("path", bool(v)))
+            gb.chkShowHits.toggled.connect(lambda v: self._vis.__setitem__("hits", bool(v)))
+            gb.chkShowMisses.toggled.connect(lambda v: self._vis.__setitem__("misses", bool(v)))
+            gb.chkShowNormals.toggled.connect(lambda v: self._vis.__setitem__("normals", bool(v)))
+            gb.chkShowLocalFrames.toggled.connect(lambda v: self._vis.__setitem__("frames", bool(v)))
+            self._vis.update({
+                "path": gb.chkShowPath.isChecked(),
+                "hits": gb.chkShowHits.isChecked(),
+                "misses": gb.chkShowMisses.isChecked(),
+                "normals": gb.chkShowNormals.isChecked(),
+                "frames": gb.chkShowLocalFrames.isChecked(),
+            })
+        except Exception:
+            pass
+
         self._pvHost = QWidget(self)
         self._pvHost.setObjectName("pvHost")
         _set_policy(self._pvHost, h=QSizePolicy.Expanding, v=QSizePolicy.Expanding)
         vright.addWidget(self._pvHost, 1)
 
-        # Scene
-        self.scene = SceneManager(interactor_getter=self._find_interactor_in_host)
+        # Scene (nutzt nur den injizierten Interactor)
+        self.scene = SceneManager(interactor_getter=lambda: self._interactor)
 
-        # Bounds
+        # Default-Bounds
         self._bounds: Tuple[float, float, float, float, float, float] = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
 
         QTimer.singleShot(0, self._push_initial_visibility)
 
-    # Host
+    # ---------- Public API ----------
     def get_pv_host(self) -> QWidget:
         return self._pvHost
 
-    def _find_interactor_in_host(self):
+    def set_interactor(self, ia) -> None:
+        self._interactor = ia
         try:
-            from pyvistaqt import QtInteractor  # type: ignore
+            if self._interactor is not None and hasattr(self._interactor, "render"):
+                self._interactor.render()  # init Camera/Renderer
         except Exception:
-            return None
-        for ch in self._pvHost.findChildren(QtInteractor):
-            return ch
-        for ch in self.findChildren(QtInteractor):
-            return ch
-        return None
+            pass
+        self.interactorReady.emit()
 
-    # =================== API vom RecipeTab ===================
+    # ---------- Preview Pipeline ----------
     def handle_update_preview(self, model: Recipe) -> None:
-        """
-        Neuer Ablauf:
-          1) build_scene(ctx, model)
-          2) compile_poses -> path_xyz extrahieren
-          3) build_overlays(path_xyz=...)
-          4) toggle_overlays(checkbox-state)
-          5) einmaliger Update beider Views (3D + 2D)
-        """
-        ia = self._find_interactor_in_host()
-        if ia is None:
-            _LOG.error("handle_update_preview: no interactor in pvHost")
-            self._set_info_defaults()
+        if self._dying or isdeleted(self):
             return
+
+        ia = self._interactor
+        if ia is None:
+            if self._retry_left > 0:
+                self._retry_left -= 1
+                _LOG.warning("handle_update_preview: no interactor -> retry (%d left)", self._retry_left)
+                QTimer.singleShot(self._retry_delay_ms, lambda m=model: self.handle_update_preview(m))
+            else:
+                _LOG.error("handle_update_preview: no interactor (give up)")
+                self._set_info_defaults()
+            return
+        self._retry_left = 10
 
         cam_snap = self.snapshot_camera()
 
-        # --- 1) Szene aufbauen (Floor, Mount, Grid ohne Labels, Substrate)
+        # 1) Szene
         try:
             scene = self.scene.build_scene(self.ctx, model, grid_step_mm=10.0)
         except Exception:
@@ -181,10 +230,10 @@ class CoatingPreviewPanel(QWidget):
             self._set_info_defaults()
             return
 
-        # Bounds für 2D setzen
+        # 2) Bounds für 2D
         self.set_bounds(scene.bounds)
 
-        # --- 2) Pfade kompilieren und path_xyz extrahieren
+        # 3) compile_poses → path_xyz
         stand_off = 10.0
         try:
             p = getattr(model, "parameters", {}) or {}
@@ -203,7 +252,6 @@ class CoatingPreviewPanel(QWidget):
         path_xyz = None
         if isinstance(compiled, dict):
             try:
-                # erste vorhandene Side nehmen
                 for _side, data in (compiled.get("sides", {}) or {}).items():
                     poses = (data or {}).get("poses_quat", []) or []
                     if poses:
@@ -212,7 +260,7 @@ class CoatingPreviewPanel(QWidget):
             except Exception:
                 _LOG.exception("extract path from compiled failed")
 
-        # 2D-Vorschau vorbereiten
+        # 4) 2D-View
         try:
             self.update_2d_scene(
                 substrate_mesh=scene.substrate_mesh or scene.ground_mesh,
@@ -221,7 +269,7 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("update_2d_scene in handle_update_preview failed")
 
-        # --- 3) Overlays bauen (ohne Sichtbarkeitslogik)
+        # 5) Overlays
         try:
             self.scene.build_overlays(
                 path_xyz=path_xyz,
@@ -235,21 +283,22 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("build_overlays failed")
 
-        # --- 4) Sichtbarkeit je nach UI-Checkboxen
+        # 6) Sichtbarkeit
         try:
-            self.scene.toggle_overlays(self._visibility_from_ui())
+            self.scene.toggle_overlays(dict(self._vis))
         except Exception:
             _LOG.exception("toggle_overlays failed")
 
-        # --- Info-Panel aktualisieren
+        # 7) Info
         try:
             info = self._calc_info(scene=scene, model=model, compiled=compiled)
-            self.grpInfo.set_values(info)
+            if not self._dying and not isdeleted(self.grpInfo) and self.grpInfo is not None:
+                self.grpInfo.set_values(info)
         except Exception:
             _LOG.exception("set info failed")
             self._set_info_defaults()
 
-        # --- Kamera und Views EINMALIG aktualisieren
+        # 8) Kamera & Render
         try:
             if cam_snap:
                 self.restore_camera(cam_snap)
@@ -258,13 +307,14 @@ class CoatingPreviewPanel(QWidget):
 
         self.scene.update_current_views_once(refresh_2d=self._mat2d.refresh)
 
-    # =================== Info helpers ===================
+    # ---------- Info helpers ----------
     def _set_info_defaults(self) -> None:
         try:
-            self.grpInfo.set_values({
-                "points": None, "length_mm": None, "eta_s": None, "medium_ml": None,
-                "mesh_tris": None, "mesh_bounds": None
-            })
+            if not self._dying and not isdeleted(self.grpInfo) and self.grpInfo is not None:
+                self.grpInfo.set_values({
+                    "points": None, "length_mm": None, "eta_s": None, "medium_ml": None,
+                    "mesh_tris": None, "mesh_bounds": None
+                })
         except Exception:
             pass
 
@@ -308,27 +358,16 @@ class CoatingPreviewPanel(QWidget):
             "mesh_bounds": mesh_bounds,  # (L, B, H) mm
         }
 
-    # =================== Helpers ===================
-    def _visibility_from_ui(self) -> dict:
-        gb = self.grpOverlays
-        return {
-            "path":   gb.chkShowPath.isChecked(),
-            "hits":   gb.chkShowHits.isChecked(),
-            "misses": gb.chkShowMisses.isChecked(),
-            "normals":gb.chkShowNormals.isChecked(),
-            "frames": gb.chkShowLocalFrames.isChecked(),
-        }
-
+    # ---------- Helpers ----------
     def _push_initial_visibility(self) -> None:
-        """Beim ersten Rendern die aktuelle Checkbox-Sichtbarkeit anwenden."""
         try:
-            self.scene.toggle_overlays(self._visibility_from_ui())
+            self.scene.toggle_overlays(dict(self._vis))
             self.scene.update_current_views_once(refresh_2d=self._mat2d.refresh)
         except Exception:
             _LOG.exception("Initial visibility push failed")
 
     def _ia(self):
-        return self._find_interactor_in_host()
+        return self._interactor
 
     def render(self) -> None:
         ia = self._ia()
@@ -371,7 +410,6 @@ class CoatingPreviewPanel(QWidget):
             _LOG.exception("restore_camera failed")
 
     def refresh_all_views(self) -> None:
-        """(Legacy) – nicht mehr genutzt; belasse für Kompatibilität."""
         ia = self._ia()
         try:
             if ia is not None and hasattr(ia, "reset_camera_clipping_range"):
@@ -402,7 +440,7 @@ class CoatingPreviewPanel(QWidget):
             _LOG.exception("2D plane switch failed: %s", plane)
 
     def update_2d_scene(self, *, substrate_mesh=None, path_xyz: np.ndarray | None):
-        """Maske ist komplett entfernt; 2D zeigt Substrat + optional Pfad."""
+        """2D zeigt Substrat + optional Pfad (ohne Maske)."""
         try:
             self._mat2d.set_scene(
                 substrate_mesh=substrate_mesh,
@@ -413,7 +451,7 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("update_2d_scene failed")
 
-    # -------- Passthroughs zum SceneManager (lösen Abhängigkeit zur UI) -----
+    # -------- Passthroughs zum SceneManager ---------------------------------
     def clear(self) -> None:
         self.scene.clear()
 
@@ -434,5 +472,4 @@ class CoatingPreviewPanel(QWidget):
             _LOG.exception("show_poly() failed")
 
     def show_frames_at(self, **kwargs) -> None:
-        # Labels explizit entfernt; Frames via SceneManager-Overlays.
         pass
