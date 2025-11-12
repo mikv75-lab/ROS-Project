@@ -5,9 +5,7 @@ from typing import Optional, Any, Dict, Tuple, List
 
 import numpy as np
 from PyQt6.QtCore import pyqtSignal, QTimer
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QSpacerItem  # <-- Spacer import
-)
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QSpacerItem
 from PyQt6.sip import isdeleted  # Guard gegen zerstörte Qt-Objekte
 
 from app.model.recipe.recipe import Recipe
@@ -36,7 +34,7 @@ class CoatingPreviewPanel(QWidget):
     Layout:
       Info
       HBox:
-        - Left VBox:  Views2D + Matplotlib(Expanding) + (Spacer)
+        - Left VBox:  Views2D + Matplotlib(Expanding) + Spacer
         - Right VBox: Views3D + Overlays + PyVistaHost(Expanding)
     """
     sprayPathSetRequested = pyqtSignal(object)
@@ -83,23 +81,23 @@ class CoatingPreviewPanel(QWidget):
         vleft.setSpacing(6)
         split.addLayout(vleft, 1)
 
-        # >>> Matplotlib zuerst erzeugen (wichtig!)
+        # Matplotlib zuerst erzeugen
         self._mat2d = Matplot2DView(parent=self)
         _set_policy(self._mat2d, h=QSizePolicy.Expanding, v=QSizePolicy.Expanding)
         try:
             tb = self._mat2d.make_toolbar(self)
             if tb is not None:
+                self._mat2d_toolbar = tb  # Referenz halten (optional)
                 vleft.addWidget(tb, 0)
         except Exception:
             pass
         vleft.addWidget(self._mat2d, 1)
 
-        # ⬇️ Vertikaler Spacer NACH dem Plot (drückt nach unten, füllt Rest)
-        vleft.addSpacerItem(QSpacerItem(
-            0, 0,
-            QSizePolicy.Policy.Minimum,
-            QSizePolicy.Policy.Minimum
-        ))
+        # Spacer unter dem Plot: hält Platz frei, damit der Plot maximal wachsen kann
+        vleft.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
+
+        # Beim Zerstören: Canvas sauber entsorgen
+        self.destroyed.connect(lambda *_: getattr(self._mat2d, "dispose", lambda: None)())
 
         # Danach die 2D-Controls, die _mat2d.refresh nutzen
         self.views2d = Views2DBox(
@@ -110,6 +108,7 @@ class CoatingPreviewPanel(QWidget):
             parent=self
         )
         _set_policy(self.views2d, h=QSizePolicy.Expanding, v=QSizePolicy.Preferred)
+        # Controls vor den Plot schieben (oberhalb des Plots)
         vleft.insertWidget(0, self.views2d, 0)
 
         # Right
@@ -158,24 +157,6 @@ class CoatingPreviewPanel(QWidget):
         )
         _set_policy(self.grpOverlays, h=QSizePolicy.Expanding, v=QSizePolicy.Preferred)
         vright.addWidget(self.grpOverlays, 0)
-
-        # UI-Checkboxen aktualisieren nur den State – kein direkter Zugriff später
-        try:
-            gb = self.grpOverlays
-            gb.chkShowPath.toggled.connect(lambda v: self._vis.__setitem__("path", bool(v)))
-            gb.chkShowHits.toggled.connect(lambda v: self._vis.__setitem__("hits", bool(v)))
-            gb.chkShowMisses.toggled.connect(lambda v: self._vis.__setitem__("misses", bool(v)))
-            gb.chkShowNormals.toggled.connect(lambda v: self._vis.__setitem__("normals", bool(v)))
-            gb.chkShowLocalFrames.toggled.connect(lambda v: self._vis.__setitem__("frames", bool(v)))
-            self._vis.update({
-                "path": gb.chkShowPath.isChecked(),
-                "hits": gb.chkShowHits.isChecked(),
-                "misses": gb.chkShowMisses.isChecked(),
-                "normals": gb.chkShowNormals.isChecked(),
-                "frames": gb.chkShowLocalFrames.isChecked(),
-            })
-        except Exception:
-            pass
 
         self._pvHost = QWidget(self)
         self._pvHost.setObjectName("pvHost")
@@ -471,5 +452,5 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("show_poly() failed")
 
-    def show_frames_at(self, **kwargs) -> None:
+    def show_frames_at(self, **_kwargs) -> None:
         pass

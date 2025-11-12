@@ -44,21 +44,22 @@ def _vtk_faces_to_tris(faces: np.ndarray) -> np.ndarray:
 class Matplot2DView(FigureCanvas):
     """
     2D-Renderer: Substrat (grau) + Pfad (grün) + Start/End-Marker.
-    - Plotfläche maximal groß (constrained_layout + subplots_adjust)
+    - Plotfläche maximal groß (constrained_layout)
     - Legende direkt UNTER der x-Achse
     """
 
     def __init__(self, parent=None):
-        # constrained_layout maximiert automatisch die Zeichenfläche,
-        # wir feintunen später die Ränder (v.a. unten für die Legende).
+        # Maximiert automatisch die Zeichenfläche; Pads justieren wir unten.
         self._fig: Figure = Figure(figsize=(6, 6), dpi=100, constrained_layout=True)
         super().__init__(self._fig)
+        self.setParent(parent)
+
         self._ax = self._fig.add_subplot(111)
         self._ax.set_aspect("equal", adjustable="box")
         self._ax.set_navigate(True)
 
-        # Wie viel „Höhe“ wir unterhalb der x-Achse für die Legende reservieren (relativ)
-        self._legend_pad_frac = 0.18  # 18% der Achsenhöhe – passt gut für 4 Items
+        # Wieviel Höhe wir unterhalb der x-Achse für die Legende reservieren (relativ)
+        self._legend_pad_frac = 0.18  # ~18% der Achsenhöhe – passt gut für 4 Items
 
         # Standard-"Welt"-Ranges (mm)
         self._world = {
@@ -108,12 +109,13 @@ class Matplot2DView(FigureCanvas):
             "marker_size": 28.0,
         }
 
-        # Events
-        cid = self.mpl_connect
-        cid("button_press_event",  self._on_press)
-        cid("button_release_event",self._on_release)
-        cid("motion_notify_event", self._on_motion)
-        cid("scroll_event",        self._on_scroll)
+        # Matplotlib Event-IDs speichern, damit wir sie beim Dispose trennen können
+        self._mpl_cids: List[int] = []
+        _cid = self.mpl_connect
+        self._mpl_cids.append(_cid("button_press_event",   self._on_press))
+        self._mpl_cids.append(_cid("button_release_event", self._on_release))
+        self._mpl_cids.append(_cid("motion_notify_event",  self._on_motion))
+        self._mpl_cids.append(_cid("scroll_event",         self._on_scroll))
 
         # Erstlayout
         self._apply_layout_margins()
@@ -121,11 +123,66 @@ class Matplot2DView(FigureCanvas):
     # ---------- Toolbar (optional) ----------
     def make_toolbar(self, parent=None):
         try:
-            return NavToolbar(self, parent)
+            tb = NavToolbar(self, parent)
+            # Canvas-Backref: hilft dem Backend, Cursor zu setzen – wird in dispose genullt.
+            self.toolbar = tb
+            return tb
         except Exception:
             return None
 
     # ---------- Public API ----------
+    def dispose(self):
+        """Canvas/Toolbar/Events sauber abbauen, um späte Draw-/Cursor-Calls zu vermeiden."""
+        try:
+            # Events trennen
+            for c in self._mpl_cids or []:
+                try:
+                    self.mpl_disconnect(c)
+                except Exception:
+                    pass
+            self._mpl_cids = []
+
+            # Toolbar lösen
+            tb = getattr(self, "toolbar", None)
+            if tb is not None:
+                try:
+                    tb.setParent(None)
+                    tb.deleteLater()
+                except Exception:
+                    pass
+                try:
+                    self.toolbar = None  # Backend weiß dann: kein Wait-Cursor / keine Draw-Aktionen mehr
+                except Exception:
+                    pass
+
+            # Zeichnung/Eventloop stoppen
+            try:
+                self.stop_event_loop()
+            except Exception:
+                pass
+
+            # Figure entkoppeln
+            try:
+                self._fig.clf()
+            except Exception:
+                pass
+            try:
+                self._fig.set_canvas(None)
+            except Exception:
+                pass
+
+            # Qt-Widget lösen
+            try:
+                self.setParent(None)
+            except Exception:
+                pass
+            try:
+                self.deleteLater()
+            except Exception:
+                pass
+        except Exception:
+            _LOG.exception("Matplot2DView.dispose() failed")
+
     def set_plane(self, plane: str):
         if plane not in PLANES:
             _LOG.warning("Unknown plane '%s'", plane)
@@ -190,11 +247,14 @@ class Matplot2DView(FigureCanvas):
     # ---------- layout & labels ----------
     def _apply_layout_margins(self):
         """
-        Maximiert die Plotfläche und reserviert unten Platz für die Legende
-        (unterhalb der x-Achse).
+        Maximiert die Plotfläche. Für die Legende unter der x-Achse nutzen wir
+        constrained_layout-Pads (keine subplots_adjust-Aufrufe, um Warnungen zu vermeiden).
         """
-        # enge Ränder links/rechts/oben, unten etwas mehr für xlabel + Legende:
-        self._fig.subplots_adjust(left=0.08, right=0.99, top=0.94, bottom=0.10 + self._legend_pad_frac)
+        try:
+            self._fig.set_constrained_layout(True)
+            self._fig.set_constrained_layout_pads(w_pad=0.02, h_pad=0.08, hspace=0.02, wspace=0.02)
+        except Exception:
+            pass
 
     def _set_labels(self):
         if self._plane == "top":
@@ -281,7 +341,7 @@ class Matplot2DView(FigureCanvas):
         self._ax.legend(
             handles=handles,
             loc="upper center",
-            bbox_to_anchor=(0.5, -0.02 - self._legend_pad_frac),  # direkt unter der xlabel
+            bbox_to_anchor=(0.5, -0.02 - self._legend_pad_frac),
             ncol=4,
             frameon=True,
             borderaxespad=0.0,

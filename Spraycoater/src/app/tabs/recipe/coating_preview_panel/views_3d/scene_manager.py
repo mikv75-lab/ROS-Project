@@ -35,12 +35,12 @@ MIN_STEP_MM: float = 1.0
 MAX_STEP_MM: float = 10.0
 PREFERRED_STEPS = (1.0, 2.0, 5.0, 10.0)
 
-MAX_LABELS_PER_AXIS = 60     # Sicherheitskappe (gegen Label-Spam)
-TARGET_LABELS_PER_AXIS = 20  # Wunschdichte
+MAX_LABELS_PER_AXIS = 60
+TARGET_LABELS_PER_AXIS = 20
 
-AXIS_LINE_COLOR = "#000000"  # Achsen/Gitter
-TITLE_COLOR     = "#000000"  # Titelfarbe
-LABEL_COLOR     = "#000000"  # Zahlen
+AXIS_LINE_COLOR = "#000000"
+TITLE_COLOR     = "#000000"
+LABEL_COLOR     = "#000000"
 TITLE_SIZE_PX   = 14
 LABEL_SIZE_PX   = 14
 
@@ -249,16 +249,9 @@ class SceneManager:
                    preferred: Tuple[float, ...] = PREFERRED_STEPS,
                    target_labels: int = TARGET_LABELS_PER_AXIS,
                    max_labels: int = MAX_LABELS_PER_AXIS) -> float:
-        """
-        Wählt einen 'schönen' Schritt (1,2,5,10) zwischen min_step..max_step,
-        sodass span/step ~ target_labels (und <= max_labels) bleibt.
-        """
         if not np.isfinite(span) or span <= 0:
             return min_step
-        # erste grobe Schätzung
         rough = span / max(1, target_labels)
-        # auf preferred snappen
-        # suche den kleinsten preferred >= rough
         cand = None
         for s in preferred:
             if s >= rough:
@@ -266,17 +259,13 @@ class SceneManager:
                 break
         if cand is None:
             cand = preferred[-1]
-        # clamp 1..10
         cand = float(min(max(cand, min_step), max_step))
-        # falls zu viele Labels -> nächstgrößeres preferred nehmen
         while (span / cand) > max_labels:
-            # erhöhe auf nächstes preferred (falls möglich)
             idx = max(0, list(preferred).index(cand))
             if idx < len(preferred) - 1:
                 cand = preferred[idx + 1]
             else:
                 break
-        # falls extrem wenige Labels und wir dürfen kleiner
         while (span / cand) < max(4, target_labels * 0.35) and cand > min_step:
             idx = max(0, list(preferred).index(cand))
             if idx > 0:
@@ -287,11 +276,6 @@ class SceneManager:
 
     @staticmethod
     def _snap_range(min_v: float, max_v: float, step: float, *, force_min: Optional[float] = None) -> Tuple[float, float, int]:
-        """
-        Snappt [min_v,max_v] auf Vielfache von 'step'.
-        force_min: wenn gesetzt, wird das Minimum auf diesen Wert fixiert (z.B. Z=0).
-        Rückgabe: (snapped_min, snapped_max, label_count)
-        """
         if not np.isfinite(min_v) or not np.isfinite(max_v):
             return (0.0, 1.0, 2)
         if max_v < min_v:
@@ -324,8 +308,10 @@ class SceneManager:
         if ia is None or vtkCubeAxesActor is None:
             return None
         try:
+            # --- Bounds dynamisch snappen (1/2/5/10 mm; Z unten auf 0) ---
             snapped_bounds, (nx, ny, nz) = self._snap_bounds_dynamic(bounds)
 
+            # --- CubeAxesActor (schwarzes Grid + Achsen) ---
             axes = vtkCubeAxesActor()
             axes.SetBounds(snapped_bounds)
             try:
@@ -333,31 +319,30 @@ class SceneManager:
             except Exception:
                 pass
 
-            # Ticks / Gridlines
             axes.SetTickLocationToOutside()
             axes.DrawXGridlinesOn()
             axes.DrawYGridlinesOn()
             axes.DrawZGridlinesOn()
 
-            # Minor Ticks aus
+            # Minor-Ticks aus
             for fn in ("SetXAxisMinorTickVisibility",
-                       "SetYAxisMinorTickVisibility",
-                       "SetZAxisMinorTickVisibility"):
+                    "SetYAxisMinorTickVisibility",
+                    "SetZAxisMinorTickVisibility"):
                 if hasattr(axes, fn):
                     getattr(axes, fn)(0)
 
-            # Anzahl Labels entsprechend Snap
+            # Anzahl Label je Achse aus Snap ableiten
             if hasattr(axes, "SetXAxisNumberOfLabels"): axes.SetXAxisNumberOfLabels(int(nx))
             if hasattr(axes, "SetYAxisNumberOfLabels"): axes.SetYAxisNumberOfLabels(int(ny))
             if hasattr(axes, "SetZAxisNumberOfLabels"): axes.SetZAxisNumberOfLabels(int(nz))
 
-            # Titel
+            # Achsentitel
             if hasattr(axes, "SetXTitle"):
                 axes.SetXTitle("X (mm)")
                 axes.SetYTitle("Y (mm)")
                 axes.SetZTitle("Z (mm)")
 
-            # Text-Properties
+            # Text-Styles
             title_rgb = self._hex_to_rgb01(TITLE_COLOR)
             label_rgb = self._hex_to_rgb01(LABEL_COLOR)
             for i in (0, 1, 2):
@@ -378,7 +363,7 @@ class SceneManager:
                 except Exception:
                     pass
 
-            # Linienfarben schwarz
+            # Linien/Grid-Farbe schwarz
             r, g, bl = self._hex_to_rgb01(AXIS_LINE_COLOR)
             try:
                 p = axes.GetXAxesLinesProperty();          p and p.SetColor(r, g, bl)
@@ -393,15 +378,41 @@ class SceneManager:
             except Exception:
                 pass
 
-            # Vorherige Grid-Actors ersetzen
+            # --- Vorherige Grid-Actors ersetzen ---
             self.clear_layer(self.L_GRID)
             ia.renderer.AddActor(axes)
             self._ensure_layer(self.L_GRID).append(axes)
             self._last_grid_bounds = snapped_bounds
+
+            # --- 🔶 Orange, transparente Box exakt über dem Grid-Volumen (unten auf Z=0) ---
+            try:
+                bx = list(snapped_bounds)
+                # zmin auf 0.0 klemmen (Mount/Substrat-Ebene); zmax unverändert (>= 0)
+                bx[4] = 0.0
+                bx[5] = max(0.0, bx[5])
+
+                # Sehr dünne Z-Spanne leicht verdicken, damit sichtbar
+                if (bx[5] - bx[4]) < 1e-3:
+                    mid = 0.5 * (bx[4] + bx[5])
+                    eps = 0.5  # 0.5 mm Sichtbarkeit
+                    bx[4], bx[5] = mid - eps, mid + eps
+
+                box = pv.Box(bounds=tuple(bx))  # type: ignore[arg-type]
+                self.add_mesh(
+                    box,
+                    layer=self.L_GRID,
+                    color="#e67e22",   # orange
+                    opacity=0.18,      # transparent
+                    lighting=False
+                )
+            except Exception:
+                _LOG.exception("grid box creation failed")
+
             return axes
         except Exception:
             _LOG.exception("vtkCubeAxesActor creation failed")
             return None
+
 
     # ===================== 1) build_scene =====================
 
@@ -410,7 +421,7 @@ class SceneManager:
         ctx,
         model: Recipe,
         *,
-        grid_step_mm: float = 10.0,  # Signatur-kompatibel, aktuell ungenutzt
+        grid_step_mm: float = 10.0,
     ) -> PreviewScene:
 
         for lyr in (self.L_GROUND, self.L_GRID, self.L_MOUNT, self.L_SUBSTRATE):
@@ -443,7 +454,6 @@ class SceneManager:
             except Exception as e:
                 _LOG.error("Substrat-Mesh Fehler: %s", e, exc_info=True)
 
-        # Bounds ableiten (für Floor/Sicht)
         if smesh is not None:
             bounds: Bounds = smesh.bounds  # type: ignore[assignment]
         elif mmesh is not None:
@@ -454,18 +464,15 @@ class SceneManager:
         xmin, xmax, ymin, ymax, zmin, zmax = bounds
         cx, cy = 0.5*(xmin+xmax), 0.5*(ymin+ymax)
 
-        # Boden @ z=0
         ground = self._make_floor_plane_at_z0(bounds)
         self.add_mesh(ground, layer=self.L_GROUND, color="#3a3a3a", opacity=1.0, lighting=False)
 
-        # Mount
         if mmesh is not None:
             self.add_mesh(mmesh, layer=self.L_MOUNT, color="#5d5d5d", opacity=0.95, lighting=False)
 
-        # Substrat + Grid
         if smesh is not None:
             self.add_mesh(smesh, layer=self.L_SUBSTRATE, color="#d0d6dd", opacity=1.0, lighting=False)
-            self._substrate_bounds = smesh.bounds  # merken
+            self._substrate_bounds = smesh.bounds
             self._add_cube_axes_around_bounds(bounds=self._substrate_bounds)
         else:
             self.clear_layer(self.L_GRID)
@@ -503,12 +510,10 @@ class SceneManager:
         tube_radius: float = 0.8,
     ) -> None:
 
-        # Overlays zurücksetzen
         for lyr in (self.L_PATH, self.L_PATH_MRK, self.L_RAYS_HIT, self.L_RAYS_MISS,
                     self.L_NORMALS, self.L_FR_X, self.L_FR_Y, self.L_FR_Z):
             self.clear_layer(lyr)
 
-        # Pfad
         if path_xyz is not None:
             try:
                 self.add_path_polyline(path_xyz, layer=self.L_PATH, color="#2ecc71",
@@ -516,7 +521,6 @@ class SceneManager:
             except Exception:
                 _LOG.exception("build_overlays: path failed")
 
-        # Rays: Punkte
         def _add_pts(pts: Optional[np.ndarray], layer: str, color: str):
             if pts is None:
                 return
@@ -530,7 +534,6 @@ class SceneManager:
         _add_pts(rays_hit,  self.L_RAYS_HIT,  "#3498db")
         _add_pts(rays_miss, self.L_RAYS_MISS, "#e74c3c")
 
-        # Normals
         if normals_xyz is not None:
             try:
                 P = np.asarray(normals_xyz, float).reshape(-1, 6)  # [x,y,z,nx,ny,nz]
@@ -547,7 +550,6 @@ class SceneManager:
             except Exception:
                 _LOG.exception("build_overlays: normals failed")
 
-        # Frames (x/y/z)
         if frames_at is not None:
             try:
                 P = np.asarray(frames_at, float).reshape(-1, 6)  # [x,y,z, sx,sy,sz]
