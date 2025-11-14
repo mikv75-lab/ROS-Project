@@ -1,0 +1,193 @@
+version: 1
+
+topics:
+  servo:
+    subscribe:
+      - id: cartesian_mm
+        name: /servo/cartesian_mm
+        type: geometry_msgs/msg/TwistStamped
+        qos: sensor_data        # BEST_EFFORT
+      - id: joint_jog
+        name: /servo/joint_jog
+        type: control_msgs/msg/JointJog
+        qos: sensor_data
+      - id: set_mode
+        name: /servo/set_mode
+        type: std_msgs/msg/String
+        qos: default            # RELIABLE
+      - id: set_frame
+        name: /servo/set_frame
+        type: std_msgs/msg/String
+        qos: default
+
+    publish:
+      - id: twist_out
+        name: /servo/delta_twist_cmds
+        type: geometry_msgs/msg/TwistStamped
+        qos: sensor_data
+      - id: joint_out
+        name: /servo/delta_joint_cmds
+        type: control_msgs/msg/JointJog
+        qos: sensor_data
+
+  tool:
+    subscribe:
+      - id: tool_select
+        name: /spraycoater/tool/select
+        type: std_msgs/msg/String
+        qos: default
+    publish:
+      - id: tool_state
+        name: /spraycoater/tool/state
+        type: std_msgs/msg/String
+        qos: latched
+      - id: tool_list 
+        name: /spraycoater/tool/list 
+        type: std_msgs/msg/String 
+        qos: latched
+        
+  motion:
+    subscribe:
+      - id: plan_waypoints
+        name: /spraycoater/motion/plan/waypoints
+        type: geometry_msgs/msg/PoseArray
+        qos: default
+      - id: plan_named
+        name: /spraycoater/motion/plan/named
+        type: std_msgs/msg/String
+        qos: default
+      - id: execute
+        name: /spraycoater/motion/execute
+        type: std_msgs/msg/Bool
+        qos: default
+      - id: stop
+        name: /spraycoater/motion/stop
+        type: std_msgs/msg/Empty
+        qos: default
+
+      # optional
+      - id: cmd
+        name: /spraycoater/motion/cmd
+        type: std_msgs/msg/String
+        qos: default
+      - id: target_pose
+        name: /spraycoater/motion/target_pose
+        type: geometry_msgs/msg/PoseStamped
+        qos: default
+
+    publish:
+      - id: trajectory
+        name: /spraycoater/motion/trajectory
+        type: trajectory_msgs/msg/JointTrajectory
+        qos: default
+
+      - id: planned_trajectory_rt
+        name: /spraycoater/motion/trajectory_planned
+        type: moveit_msgs/msg/RobotTrajectory
+        qos: latched
+      - id: executed_trajectory_rt
+        name: /spraycoater/motion/trajectory_executed
+        type: moveit_msgs/msg/RobotTrajectory
+        qos: latched
+
+      - id: preview_markers
+        name: /spraycoater/motion/preview/markers
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
+      - id: motion_result
+        name: /spraycoater/motion/result
+        type: std_msgs/msg/String
+        qos: default
+
+  scene:
+    publish:
+      - id: cage_list
+        name: /spraycoater/scene/cage/list
+        type: std_msgs/msg/String
+        qos: latched
+      - id: mount_list
+        name: /spraycoater/scene/mount/list
+        type: std_msgs/msg/String
+        qos: latched
+      - id: tool_list 
+        name: /spraycoater/tool/list 
+        type: std_msgs/msg/String 
+        qos: latched
+
+      - id: cage_current
+        name: /spraycoater/scene/cage/current
+        type: std_msgs/msg/String
+        qos: latched
+      - id: mount_current
+        name: /spraycoater/scene/mount/current
+        type: std_msgs/msg/String
+        qos: latched
+      - id: substrate_current
+        name: /spraycoater/scene/substrate/current
+        type: std_msgs/msg/String
+        qos: latched
+
+    subscribe:
+      - id: cage_set
+        name: /spraycoater/scene/cage/set
+        type: std_msgs/msg/String
+        qos: default
+      - id: mount_set
+        name: /spraycoater/scene/mount/set
+        type: std_msgs/msg/String
+        qos: default
+      - id: substrate_set
+        name: /spraycoater/scene/substrate/set
+        type: std_msgs/msg/String
+        qos: default
+
+  poses:
+    subscribe:
+      - id: set_home
+        name: /spraycoater/poses/set_home
+        type: std_msgs/msg/Empty
+        qos: default
+      - id: set_service
+        name: /spraycoater/poses/set_service
+        type: std_msgs/msg/Empty
+        qos: default
+    publish:
+      - id: home_pose
+        name: /spraycoater/poses/home
+        type: geometry_msgs/msg/PoseStamped
+        qos: latched
+      - id: service_pose
+        name: /spraycoater/poses/service
+        type: geometry_msgs/msg/PoseStamped
+        qos: latched
+
+  spray_path:
+    subscribe:
+      - id: set
+        name: /spraycoater/spray_path/set
+        type: std_msgs/msg/String
+        qos: default
+    publish:
+      - id: current
+        name: /spraycoater/spray_path/current
+        type: std_msgs/msg/String
+        qos: latched
+      - id: poses
+        name: /spraycoater/spray_path/poses
+        type: geometry_msgs/msg/PoseArray
+        qos: default
+      - id: markers
+        name: /spraycoater/spray_path/markers
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
+
+  status:
+    publish:
+      - id: heartbeat
+        name: /spraycoater/status/heartbeat
+        type: std_msgs/msg/UInt32
+        qos: default
+      - id: diagnostics
+        name: /spraycoater/status/diagnostics
+        type: diagnostic_msgs/msg/DiagnosticArray
+        qos: default

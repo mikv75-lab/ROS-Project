@@ -1,0 +1,9 @@
+planning_pipelines:
+  pipeline_names: ["ompl"]
+  default_planning_pipeline: "ompl"
+
+  ompl:
+    planning_plugin: "ompl_interface/OMPLPlanner"
+    request_adapters: "default_planner_request_adapters/AddTimeOptimalParameterization"
+    start_state_max_bounds_error: 0.1
+    parameter_namespace: "ompl_planning"

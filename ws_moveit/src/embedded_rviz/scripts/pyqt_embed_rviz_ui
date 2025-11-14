@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+# scripts/pyqt_embed_rviz_ui
+import os, sys, argparse, traceback
+from PyQt5 import QtWidgets
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+from embedded_rviz_py import create, destroy, qwidget_ptr
+import sip
+
+class Main(QtWidgets.QWidget):
+    def __init__(self, node_name, rviz_config):
+        super().__init__()
+        self._node_name = node_name
+        self._rviz_config = rviz_config
+        self._rid = None
+        self._rviz_widget = None
+
+        self.setWindowTitle("Embedded RViz – Click to Start")
+        lay = QtWidgets.QVBoxLayout(self)
+        self.btn = QtWidgets.QPushButton("Start RViz")
+        self.btn.clicked.connect(self.on_start)
+        lay.addWidget(self.btn)
+        self.container = QtWidgets.QWidget()
+        lay.addWidget(self.container)
+        if self.container.layout() is None:
+            cl = QtWidgets.QVBoxLayout(self.container)
+            cl.setContentsMargins(0,0,0,0)
+
+    def on_start(self):
+        print("\n[pyqt] === on_start() pressed ===")
+        print_env = ["DISPLAY","QT_OPENGL","LIBGL_ALWAYS_SOFTWARE","OGRE_RTT_MODE","XDG_RUNTIME_DIR"]
+        for k in print_env:
+            print(f"[pyqt] ENV {k}=", os.environ.get(k))
+        try:
+            print("[pyqt] calling create(...)")
+            self._rid, _ = create(self._node_name, self._rviz_config)
+            print("[pyqt] create() returned rid=", self._rid)
+            if self._rid < 0:
+                raise RuntimeError(f"create() failed with {self._rid}")
+
+            ptr = qwidget_ptr(self._rid)
+            print("[pyqt] qwidget_ptr=", hex(ptr))
+            if not ptr:
+                raise RuntimeError("qwidget_ptr == 0")
+
+            self._rviz_widget = sip.wrapinstance(int(ptr), QtWidgets.QWidget)
+            self.container.layout().addWidget(self._rviz_widget)
+            self._rviz_widget.show()
+            print("[pyqt] widget added & shown")
+
+        except Exception as e:
+            print("[pyqt][EXC]", e)
+            traceback.print_exc()
+
+    def closeEvent(self, ev):
+        try:
+            if self._rid is not None:
+                destroy(self._rid)
+        finally:
+            super().closeEvent(ev)
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rviz-config", default="", help="pfad zu .rviz (optional)")
+    ap.add_argument("--node-name", default="embedded_rviz_panel", help="ros2 node name")
+    args = ap.parse_args()
+
+    app = QtWidgets.QApplication(sys.argv)
+    w = Main(args.node_name, args.rviz_config)
+    w.resize(1000, 700)
+    w.show()
+    sys.exit(app.exec_())
+
+if __name__ == "__main__":
+    main()

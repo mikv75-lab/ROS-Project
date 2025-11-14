@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="meca_500_r3">
+  <xacro:arg name="initial_positions_file" default="$(find mecademic_moveit_config)/config/initial_positions.yaml" />
+
+  <!-- Include core geometry and visual URDF -->
+  <xacro:include filename="$(find mecademic_description)/urdf/meca_500_r3.urdf.xacro"/>
+
+  <!-- ros2_control (FakeSystem / real system later) -->
+  <xacro:include filename="$(find mecademic_moveit_config)/config/meca_500_r3.ros2_control.xacro"/>
+  <xacro:meca_500_r3_ros2_control name="FakeSystem" initial_positions_file="$(arg initial_positions_file)"/>
+</robot>
