@@ -3,17 +3,17 @@
 from __future__ import annotations
 from typing import Optional, List, Tuple, Dict, Any, Sequence
 
+import math
+
 from PyQt6 import QtCore
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
     QLabel, QPushButton, QSlider, QDoubleSpinBox, QRadioButton,
-    QSizePolicy, QSpacerItem
+    QSizePolicy, QSpacerItem, QFrame,
 )
 
-# =============================================================================
-# JointJogWidget (QWidget)
-# =============================================================================
+
 class JointJogWidget(QWidget):
     """
     Joint-Jogging:
@@ -22,8 +22,12 @@ class JointJogWidget(QWidget):
       - Vertical Spacer am Ende
 
     Signals:
-      - paramsChanged(dict)                     -> {"joint_step_deg","joint_speed_pct"}
-      - jointJogRequested(str, float, float)    -> (joint_name, delta_deg, speed_pct)
+      - paramsChanged(dict)                  -> {"joint_step_deg","joint_speed_pct"}
+      - jointJogRequested(str, float, float)-> (joint_name, delta_deg, speed_pct)
+
+    Zusätzlich:
+      - joint-Slider werden automatisch aus RobotBridge.jointsChanged(JointState)
+        befüllt (rad -> °), mit echten Limits und ohne Flackern während drag.
     """
     paramsChanged = QtCore.pyqtSignal(dict)
     jointJogRequested = QtCore.pyqtSignal(str, float, float)
@@ -37,6 +41,11 @@ class JointJogWidget(QWidget):
         # pro Joint-Reihe: (btn-, slider, btn+, lblValue)
         self._rows: List[Tuple[QPushButton, QSlider, QPushButton, QLabel]] = []
 
+        # Mapping: joint_name -> Index im JointState
+        self._joint_index_by_name: Dict[str, int] = {}
+        # Merken, welche Slider gerade per Maus gezogen werden -> nicht überschreiben
+        self._slider_pressed: Dict[int, bool] = {}
+
         self._build_ui()
         self._wire_signals()
         self._try_bind_to_bridge()
@@ -44,8 +53,23 @@ class JointJogWidget(QWidget):
         # Defaults
         self.set_params({"joint_step_deg": 2.0, "joint_speed_pct": 40.0})
 
-        # Sofort nutzbar: 6 Joints ±180° & Startwerte 0°
-        self.set_joint_model([f"J{i}" for i in range(1, 7)], [(-180.0, 180.0)] * 6)
+        # Echte Joint-Limits in Grad (aus ros2_control / URDF):
+        # joint_1: [-2.96706, 2.96706] rad ≈ [-170°, 170°]
+        # joint_2: [-3.31613, 0.7854] rad ≈ [-190°, 45°]
+        # joint_3: [-0.50615, 4.46805] rad ≈ [-29°, 256°]
+        # joint_4: [-3.31613, 3.31613] rad ≈ [-190°, 190°]
+        # joint_5: [-2.0944, 2.0944] rad ≈ [-120°, 120°]
+        # joint_6: [-3.14159, 3.14159] rad ≈ [-180°, 180°]
+        joint_names = [f"joint_{i}" for i in range(1, 7)]
+        limits_deg: List[Tuple[float, float]] = [
+            (-170.0, 170.0),   # joint_1
+            (-190.0, 45.0),    # joint_2
+            (-29.0, 256.0),    # joint_3
+            (-190.0, 190.0),   # joint_4
+            (-120.0, 120.0),   # joint_5
+            (-180.0, 180.0),   # joint_6
+        ]
+        self.set_joint_model(joint_names, limits_deg)
         self.set_joint_positions_deg([0.0] * 6)
 
         # Policies: vertikal überall Maximum
@@ -100,19 +124,30 @@ class JointJogWidget(QWidget):
         self.spinSpeedPct.valueChanged.connect(lambda _: self._emit_params())
 
     def _try_bind_to_bridge(self):
-        # optionales Forward der Outbound-Signale an Bridge-Signale
-        target = None
-        for attr in ("_servo", "_motion"):
+        """
+        Verbindet:
+          - paramsChanged / jointJogRequested -> ServoBridge (falls vorhanden)
+          - jointsChanged (RobotBridge) -> Slider-Update
+        """
+        target_servo = None
+        for attr in ("_servo", "_motion"):   # wie bisher
             obj = getattr(self.bridge, attr, None) if self.bridge else None
             if obj and getattr(obj, "signals", None):
-                target = obj.signals
+                target_servo = obj.signals
                 break
-        if not target:
-            return
-        if hasattr(target, "paramsChanged"):
-            self.paramsChanged.connect(target.paramsChanged.emit)
-        if hasattr(target, "jointJogRequested"):
-            self.jointJogRequested.connect(target.jointJogRequested.emit)
+
+        if target_servo:
+            if hasattr(target_servo, "paramsChanged"):
+                self.paramsChanged.connect(target_servo.paramsChanged.emit)
+            if hasattr(target_servo, "jointJogRequested"):
+                self.jointJogRequested.connect(target_servo.jointJogRequested.emit)
+
+        # NEU: RobotBridge für JointStates
+        target_robot = getattr(self.bridge, "_robot", None) if self.bridge else None
+        if target_robot and getattr(target_robot, "signals", None):
+            sigs = target_robot.signals
+            if hasattr(sigs, "jointsChanged"):
+                sigs.jointsChanged.connect(self._on_robot_joints)
 
     # ---------- Public API ----------
     def set_params(self, cfg: Dict[str, Any]):
@@ -133,6 +168,7 @@ class JointJogWidget(QWidget):
         for (btnm, sld, btnp, lbl) in self._rows:
             btnm.deleteLater(); sld.deleteLater(); btnp.deleteLater(); lbl.deleteLater()
         self._rows.clear()
+        self._slider_pressed.clear()
 
         # Grid leeren & Header neu setzen
         while self.grid.count():
@@ -187,17 +223,28 @@ class JointJogWidget(QWidget):
             btnm.clicked.connect(lambda _, i=idx: self._emit_joint_step(i, negative=True))
             btnp.clicked.connect(lambda _, i=idx: self._emit_joint_step(i, negative=False))
             sld.valueChanged.connect(lambda _, i=idx: self._on_slider_changed(i))
+            sld.sliderPressed.connect(lambda i=idx: self._set_slider_pressed(i, True))
+            sld.sliderReleased.connect(lambda i=idx: self._set_slider_pressed(i, False))
 
             self._rows.append((btnm, sld, btnp, lblVal))
 
         self.grid.setColumnStretch(2, 1)
 
     def set_joint_positions_deg(self, positions_deg: Sequence[float]):
+        """
+        Direkte API in ° – wird z.B. intern von _on_robot_joints benutzt.
+        """
         for i, v in enumerate(positions_deg):
             if i >= len(self._rows):
                 break
+            if self._slider_pressed.get(i, False):
+                # gerade manuell bewegt -> nicht überschreiben
+                continue
             _, sld, _, lbl = self._rows[i]
-            val10 = int(float(v) * 10.0)
+            val10 = int(round(float(v) * 10.0))
+            cur_deg = sld.value() / 10.0
+            if abs(cur_deg - float(v)) < 0.05:
+                continue  # vermeidet unnötige Updates/Flackern
             sld.blockSignals(True)
             sld.setValue(val10)
             sld.blockSignals(False)
@@ -220,6 +267,46 @@ class JointJogWidget(QWidget):
         _, sld, _, lbl = self._rows[idx]
         lbl.setText(f"{float(sld.value())/10.0:.2f}")
 
+    def _set_slider_pressed(self, idx: int, pressed: bool):
+        self._slider_pressed[idx] = pressed
+
+    # ---------- Robot-Joint-State -> Slider ----------
+    @QtCore.pyqtSlot(object)
+    def _on_robot_joints(self, msg: Any):
+        """
+        Bekommt JointState (rad) von RobotBridge.signals.jointsChanged
+        und mapped auf unsere Joints in °.
+        """
+        from sensor_msgs.msg import JointState as JS  # lazy import für Typcheck
+
+        if not isinstance(msg, JS):
+            return
+        if not msg.name or not msg.position:
+            return
+
+        # Mapping joint_name -> index im JointState anlegen/refreshen
+        self._joint_index_by_name = {name: i for i, name in enumerate(msg.name)}
+
+        positions_deg: List[float] = []
+        for gui_idx, jname in enumerate(self._joint_names):
+            src_idx = self._joint_index_by_name.get(jname)
+            if src_idx is None or src_idx >= len(msg.position):
+                positions_deg.append(0.0)
+                continue
+            rad = float(msg.position[src_idx])
+            deg = math.degrees(rad)
+
+            # auf Limits clampen
+            mn, mx = self._joint_lims_deg[gui_idx]
+            if deg < mn:
+                deg = mn
+            elif deg > mx:
+                deg = mx
+
+            positions_deg.append(deg)
+
+        self.set_joint_positions_deg(positions_deg)
+
     # ---------- Sizing Helper ----------
     def _apply_vertical_max(self):
         widgets = [self] + self.findChildren(QWidget)
@@ -229,6 +316,7 @@ class JointJogWidget(QWidget):
             if sp.horizontalPolicy() != QSizePolicy.Policy.Expanding:
                 sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
             w.setSizePolicy(sp)
+
 
 
 # =============================================================================
@@ -388,11 +476,12 @@ class CartesianJogWidget(QWidget):
 
     def _try_bind_to_bridge(self):
         target = None
-        for attr in ("_servo", "_motion"):
-            obj = getattr(self.bridge, attr, None) if self.bridge else None
-            if obj and getattr(obj, "signals", None):
-                target = obj.signals
-                break
+        if self.bridge:
+            for attr in ("_servo", "_motion"):
+                obj = getattr(self.bridge, attr, None)
+                if obj and getattr(obj, "signals", None):
+                    target = obj.signals
+                    break
         if not target:
             return
         if hasattr(target, "frameChanged"):

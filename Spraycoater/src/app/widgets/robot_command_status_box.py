@@ -3,7 +3,7 @@
 from __future__ import annotations
 from typing import Optional, Iterable, Tuple, Dict, Any, Sequence
 
-from math import atan2, asin
+from math import atan2, asin, degrees
 
 from PyQt6 import QtCore
 from PyQt6.QtCore import Qt
@@ -29,7 +29,7 @@ class RobotStatusInfoBox(QGroupBox):
       - jede Zeile: [Bold Label]  [Wert-Label]
       - Connection, Mode, Initialized, Moving, Servo, Power, E-Stop
       - TCP Pose (6D)
-      - Joints (kompakt)
+      - Joints (Grad)
       - Errors (einfacher String, word-wrapped)
     """
     def __init__(self, parent: Optional[QWidget] = None, title: str = "Robot Status"):
@@ -67,7 +67,7 @@ class RobotStatusInfoBox(QGroupBox):
         self.lblEstop  = row("E-Stop")
 
         self.lblPose   = row("TCP Pose (X Y Z RX RY RZ)")
-        self.lblJoints = row("Joints (rad)")
+        self.lblJoints = row("Joints (°)")
 
         # Errors: eigener Block (multi-line)
         hb_err = QHBoxLayout()
@@ -131,10 +131,13 @@ class RobotStatusInfoBox(QGroupBox):
         self.lblPose.setText(self._fmt_pose6(self._pose_stamped_to_pose6(ps)))
 
     def set_joints(self, joints: Sequence[float] | None):
+        """
+        Erwartet Joint-Werte in RAD und zeigt sie in GRAD an.
+        """
         if not joints:
             self.lblJoints.setText("-")
             return
-        self.lblJoints.setText("  ".join(f"{float(j):.3f}" for j in joints))
+        self.lblJoints.setText("  ".join(f"{degrees(float(j)):.1f}" for j in joints))
 
     def set_status_dict(self, st: Dict[str, Any]):
         if "connected" in st: self.set_connection(st.get("connected"))
@@ -199,10 +202,6 @@ class RobotCommandButtonsBox(QGroupBox):
     """
     Vertikale Aktions-Buttons:
       Initialize | Stop | Clear Error | Power ON/OFF | Servo ENABLE/DISABLE
-
-    Signals (Widget -> außen/Bridge):
-      initRequested, stopRequested, clearErrorRequested,
-      powerOnRequested, powerOffRequested, servoEnableRequested, servoDisableRequested
     """
     initRequested         = QtCore.pyqtSignal()
     stopRequested         = QtCore.pyqtSignal()
@@ -260,15 +259,8 @@ class RobotCommandStatusWidget(QWidget):
     """
     Zusammengesetztes Widget:
       [ RobotCommandButtonsBox (links) ] | [ RobotStatusInfoBox (rechts) ]
-
-    - Verdrahtet inbound Status-Signale der RobotBridge in die rechte Box
-    - Verdrahtet outbound Button-Signale der linken Box zu RobotBridge.signals
-      (kein Fallback, identisch zum Pattern von PosesGroupBox).
     """
     def __init__(self, bridge, parent: Optional[QWidget] = None):
-        """
-        bridge: UIBridge-Instanz (wie bei PosesGroupBox).
-        """
         super().__init__(parent)
         self.bridge = bridge
 
@@ -309,10 +301,6 @@ class RobotCommandStatusWidget(QWidget):
             self.statusBox.set_joints(list(js.position or []))
 
     def _wire_bridge_inbound(self) -> None:
-        """
-        Holt RobotBridge aus UIBridge (bridge._rb) und
-        verbindet deren Signals mit den Setter-Methoden der StatusBox.
-        """
         if not self._sig or self._inbound_connected:
             return
 
@@ -344,9 +332,6 @@ class RobotCommandStatusWidget(QWidget):
 
     # ---------- Bridge: outbound (UI -> ROS) ----------
     def _wire_outbound(self) -> None:
-        """
-        Buttons -> RobotBridge.signals, ohne Fallback, analog zu PosesGroupBox.
-        """
         if not self._sig or self._outbound_connected:
             return
 
@@ -364,7 +349,6 @@ class RobotCommandStatusWidget(QWidget):
         self._outbound_connected = True
 
     # ---------- Disconnect-Helfer ----------
-
     def _disconnect_inbound(self) -> None:
         if not self._sig or not self._inbound_connected:
             return
@@ -423,7 +407,6 @@ class RobotCommandStatusWidget(QWidget):
         safe_disc(cb.servoDisableRequested, sig.servoDisableRequested.emit)
 
         self._outbound_connected = False
-
 
     # ---------- Convenience ----------
     def set_status_dict(self, st: Dict[str, Any]) -> None:

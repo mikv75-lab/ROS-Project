@@ -381,3 +381,128 @@
 2025-11-15 22:15:00 DEBUG [60372] ros.kill_all_ros:112 -  -> KILL pid=54956
 2025-11-15 22:15:09 INFO [60372] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
 2025-11-15 22:15:09 INFO [60372] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 22:16:22 INFO [62638] ros.kill_all_ros:89 - [kill] stopping 1 ROS-related processes…
+2025-11-15 22:16:22 DEBUG [62638] ros.kill_all_ros:91 -  -> TERM pid=60529 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 22:16:35 INFO [62638] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 22:16:35 INFO [62638] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 22:17:03 INFO [62638] ros.ui_bridge:399 - UIBridge disconnect()
+2025-11-15 22:18:05 INFO [1099] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-15 22:18:06 INFO [1099] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 22:18:06 INFO [1099] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 22:37:16 INFO [1099] ros.ui_bridge:399 - UIBridge disconnect()
+2025-11-15 22:37:26 INFO [12216] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-15 22:37:28 INFO [12216] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 22:37:28 INFO [12216] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 22:46:14 INFO [18577] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 22:46:14 DEBUG [18577] ros.kill_all_ros:91 -  -> TERM pid=12325 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 22:46:14 DEBUG [18577] ros.kill_all_ros:91 -  -> TERM pid=12341 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_jl5bsw5w
+2025-11-15 22:46:43 INFO [19285] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 22:46:43 DEBUG [19285] ros.kill_all_ros:91 -  -> TERM pid=18668 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 22:46:43 DEBUG [19285] ros.kill_all_ros:91 -  -> TERM pid=18695 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_x_csgmx4
+2025-11-15 22:46:45 DEBUG [19285] ros.kill_all_ros:112 -  -> KILL pid=18695
+2025-11-15 22:47:20 INFO [20125] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 22:47:20 DEBUG [20125] ros.kill_all_ros:91 -  -> TERM pid=19373 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 22:47:20 DEBUG [20125] ros.kill_all_ros:91 -  -> TERM pid=19407 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_6a_i1oot
+2025-11-15 22:47:22 DEBUG [20125] ros.kill_all_ros:112 -  -> KILL pid=19407
+2025-11-15 22:49:42 INFO [22828] ros.kill_all_ros:89 - [kill] stopping 1 ROS-related processes…
+2025-11-15 22:49:42 DEBUG [22828] ros.kill_all_ros:91 -  -> TERM pid=20270 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_bq_q3kpy
+2025-11-15 22:50:22 INFO [23725] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 22:50:22 DEBUG [23725] ros.kill_all_ros:91 -  -> TERM pid=22923 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 22:50:22 DEBUG [23725] ros.kill_all_ros:91 -  -> TERM pid=22939 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_mlf3h7pu
+2025-11-15 22:50:24 DEBUG [23725] ros.kill_all_ros:112 -  -> KILL pid=22939
+2025-11-15 22:50:25 INFO [23725] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 22:50:25 INFO [23725] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 22:50:46 INFO [24422] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 22:50:46 DEBUG [24422] ros.kill_all_ros:91 -  -> TERM pid=23827 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 22:50:46 DEBUG [24422] ros.kill_all_ros:91 -  -> TERM pid=23854 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_k2ywr7w6
+2025-11-15 22:50:48 DEBUG [24422] ros.kill_all_ros:112 -  -> KILL pid=23854
+2025-11-15 22:51:15 INFO [25175] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 22:51:15 DEBUG [25175] ros.kill_all_ros:91 -  -> TERM pid=24582 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 22:51:15 DEBUG [25175] ros.kill_all_ros:91 -  -> TERM pid=24602 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_q2zmnnxx
+2025-11-15 22:51:17 DEBUG [25175] ros.kill_all_ros:112 -  -> KILL pid=24602
+2025-11-15 22:51:46 INFO [25897] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 22:51:46 DEBUG [25897] ros.kill_all_ros:91 -  -> TERM pid=25281 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 22:51:46 DEBUG [25897] ros.kill_all_ros:91 -  -> TERM pid=25301 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_mpn660fe
+2025-11-15 22:51:48 DEBUG [25897] ros.kill_all_ros:112 -  -> KILL pid=25301
+2025-11-15 22:53:16 INFO [1142] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-15 22:53:17 INFO [1142] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 22:53:17 INFO [1142] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:00:23 INFO [6512] ros.kill_all_ros:89 - [kill] stopping 1 ROS-related processes…
+2025-11-15 23:00:23 DEBUG [6512] ros.kill_all_ros:91 -  -> TERM pid=1268 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 23:00:24 INFO [6512] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:00:24 INFO [6512] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:00:45 INFO [7356] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 23:00:45 DEBUG [7356] ros.kill_all_ros:91 -  -> TERM pid=6593 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 23:00:45 DEBUG [7356] ros.kill_all_ros:91 -  -> TERM pid=6606 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_ca7874lx
+2025-11-15 23:00:47 INFO [7356] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:00:47 INFO [7356] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:01:11 INFO [7356] ros.ui_bridge:399 - UIBridge disconnect()
+2025-11-15 23:12:07 INFO [15180] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 23:12:07 DEBUG [15180] ros.kill_all_ros:91 -  -> TERM pid=8862 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py
+2025-11-15 23:12:07 DEBUG [15180] ros.kill_all_ros:91 -  -> TERM pid=8879 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_drhqeys4
+2025-11-15 23:12:09 INFO [15180] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:12:09 INFO [15180] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:24:11 INFO [23354] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 23:24:11 DEBUG [23354] ros.kill_all_ros:91 -  -> TERM pid=15300 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 23:24:11 DEBUG [23354] ros.kill_all_ros:91 -  -> TERM pid=15327 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_rvhwyhqm
+2025-11-15 23:24:15 INFO [23354] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:24:15 INFO [23354] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:24:42 INFO [24319] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 23:24:42 DEBUG [24319] ros.kill_all_ros:91 -  -> TERM pid=23440 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 23:24:42 DEBUG [24319] ros.kill_all_ros:91 -  -> TERM pid=23463 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_4wuy1ix9
+2025-11-15 23:24:44 INFO [24319] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:24:44 INFO [24319] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:25:13 INFO [25283] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 23:25:13 DEBUG [25283] ros.kill_all_ros:91 -  -> TERM pid=24428 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 23:25:13 DEBUG [25283] ros.kill_all_ros:91 -  -> TERM pid=24444 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_py_uxlhi
+2025-11-15 23:25:15 INFO [25283] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:25:15 INFO [25283] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:27:33 INFO [28551] ros.kill_all_ros:89 - [kill] stopping 1 ROS-related processes…
+2025-11-15 23:27:33 DEBUG [28551] ros.kill_all_ros:91 -  -> TERM pid=25401 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 23:27:38 INFO [28551] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:27:38 INFO [28551] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:31:35 INFO [31439] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 23:31:35 DEBUG [31439] ros.kill_all_ros:91 -  -> TERM pid=28641 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 23:31:35 DEBUG [31439] ros.kill_all_ros:91 -  -> TERM pid=28664 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_eeba6it2
+2025-11-15 23:31:37 DEBUG [31439] ros.kill_all_ros:112 -  -> KILL pid=28664
+2025-11-15 23:31:42 INFO [31439] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:31:42 INFO [31439] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:32:02 INFO [32407] ros.kill_all_ros:89 - [kill] stopping 1 ROS-related processes…
+2025-11-15 23:32:02 DEBUG [32407] ros.kill_all_ros:91 -  -> TERM pid=31602 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 23:32:09 INFO [32407] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:32:09 INFO [32407] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:41:55 INFO [40261] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 23:41:55 DEBUG [40261] ros.kill_all_ros:91 -  -> TERM pid=32507 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 23:41:55 DEBUG [40261] ros.kill_all_ros:91 -  -> TERM pid=32530 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_ixzidnr1
+2025-11-15 23:42:02 INFO [40261] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:42:02 INFO [40261] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:42:43 INFO [41642] ros.kill_all_ros:89 - [kill] stopping 1 ROS-related processes…
+2025-11-15 23:42:43 DEBUG [41642] ros.kill_all_ros:91 -  -> TERM pid=40385 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 23:42:57 INFO [41642] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:42:57 INFO [41642] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:43:36 INFO [43037] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 23:43:36 DEBUG [43037] ros.kill_all_ros:91 -  -> TERM pid=41720 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 23:43:36 DEBUG [43037] ros.kill_all_ros:91 -  -> TERM pid=41740 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_1mm35h58
+2025-11-15 23:43:59 INFO [43037] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:43:59 INFO [43037] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:46:53 INFO [45931] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-15 23:47:00 INFO [45931] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:47:00 INFO [45931] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:50:40 INFO [49107] ros.kill_all_ros:89 - [kill] stopping 1 ROS-related processes…
+2025-11-15 23:50:40 DEBUG [49107] ros.kill_all_ros:91 -  -> TERM pid=46008 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 23:50:42 DEBUG [49107] ros.kill_all_ros:112 -  -> KILL pid=46008
+2025-11-15 23:51:01 INFO [49107] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:51:01 INFO [49107] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:53:38 INFO [52003] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-15 23:53:50 INFO [52003] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:53:50 INFO [52003] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:54:07 INFO [52003] ros.ui_bridge:399 - UIBridge disconnect()
+2025-11-15 23:56:42 INFO [55091] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-15 23:56:50 INFO [55091] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:56:50 INFO [55091] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 23:57:37 INFO [56424] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 23:57:37 DEBUG [56424] ros.kill_all_ros:91 -  -> TERM pid=55165 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 23:57:37 DEBUG [56424] ros.kill_all_ros:91 -  -> TERM pid=55185 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_ecdv4dz8
+2025-11-15 23:57:39 DEBUG [56424] ros.kill_all_ros:112 -  -> KILL pid=55185
+2025-11-15 23:57:50 INFO [56424] ros.ui_bridge:337 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot states ready
+2025-11-15 23:57:50 INFO [56424] ros:186 - UIBridge verbunden (node=scene_bridge).
