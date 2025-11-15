@@ -5,9 +5,9 @@ moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControll
 
 moveit_simple_controller_manager:
   controller_names:
-    - omron_arm_group_controller
+    - omron_arm_controller
 
-  omron_arm_group_controller:
+  omron_arm_controller:
     type: FollowJointTrajectory
     action_ns: follow_joint_trajectory
     default: true

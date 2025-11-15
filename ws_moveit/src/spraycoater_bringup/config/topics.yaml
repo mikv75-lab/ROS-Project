@@ -110,6 +110,12 @@ topics:
         name: /spraycoater/scene/mount/list
         type: std_msgs/msg/String
         qos: latched
+
+      - id: substrate_list
+        name: /spraycoater/scene/substrate/list
+        type: std_msgs/msg/String
+        qos: latched
+
       - id: tool_list 
         name: /spraycoater/tool/list 
         type: std_msgs/msg/String 
