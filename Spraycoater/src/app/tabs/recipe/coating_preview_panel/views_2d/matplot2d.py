@@ -44,13 +44,13 @@ def _vtk_faces_to_tris(faces: np.ndarray) -> np.ndarray:
 class Matplot2DView(FigureCanvas):
     """
     2D-Renderer: Substrat (grau) + Pfad (grün) + Start/End-Marker.
-    - Plotfläche maximal groß (constrained_layout)
+    - Plotfläche maximal groß (constrained layout engine)
     - Legende direkt UNTER der x-Achse
     """
 
     def __init__(self, parent=None):
-        # Maximiert automatisch die Zeichenfläche; Pads justieren wir unten.
-        self._fig: Figure = Figure(figsize=(6, 6), dpi=100, constrained_layout=True)
+        # Moderne Layout-Engine (ersetzt set_constrained_layout / set_constrained_layout_pads)
+        self._fig: Figure = Figure(figsize=(6, 6), dpi=100, layout="constrained")
         super().__init__(self._fig)
         self.setParent(parent)
 
@@ -111,77 +111,46 @@ class Matplot2DView(FigureCanvas):
 
         # Matplotlib Event-IDs speichern, damit wir sie beim Dispose trennen können
         self._mpl_cids: List[int] = []
-        _cid = self.mpl_connect
-        self._mpl_cids.append(_cid("button_press_event",   self._on_press))
-        self._mpl_cids.append(_cid("button_release_event", self._on_release))
-        self._mpl_cids.append(_cid("motion_notify_event",  self._on_motion))
-        self._mpl_cids.append(_cid("scroll_event",         self._on_scroll))
+        self._mpl_cids.append(self.mpl_connect("button_press_event",   self._on_press))
+        self._mpl_cids.append(self.mpl_connect("button_release_event", self._on_release))
+        self._mpl_cids.append(self.mpl_connect("motion_notify_event",  self._on_motion))
+        self._mpl_cids.append(self.mpl_connect("scroll_event",         self._on_scroll))
 
         # Erstlayout
         self._apply_layout_margins()
 
     # ---------- Toolbar (optional) ----------
     def make_toolbar(self, parent=None):
-        try:
-            tb = NavToolbar(self, parent)
-            # Canvas-Backref: hilft dem Backend, Cursor zu setzen – wird in dispose genullt.
-            self.toolbar = tb
-            return tb
-        except Exception:
-            return None
+        tb = NavToolbar(self, parent)
+        # Canvas-Backref (standardmäßig vorhanden, hier nur explizit)
+        self.toolbar = tb
+        return tb
 
     # ---------- Public API ----------
     def dispose(self):
-        """Canvas/Toolbar/Events sauber abbauen, um späte Draw-/Cursor-Calls zu vermeiden."""
-        try:
-            # Events trennen
-            for c in self._mpl_cids or []:
-                try:
-                    self.mpl_disconnect(c)
-                except Exception:
-                    pass
-            self._mpl_cids = []
+        """
+        Canvas/Toolbar/Events sauber abbauen, ohne Fehler zu verstecken.
+        Diese Methode sollte explizit aufgerufen werden, bevor das Widget
+        endgültig zerstört wird.
+        """
+        # Events trennen
+        for c in self._mpl_cids:
+            self.mpl_disconnect(c)
+        self._mpl_cids.clear()
 
-            # Toolbar lösen
-            tb = getattr(self, "toolbar", None)
-            if tb is not None:
-                try:
-                    tb.setParent(None)
-                    tb.deleteLater()
-                except Exception:
-                    pass
-                try:
-                    self.toolbar = None  # Backend weiß dann: kein Wait-Cursor / keine Draw-Aktionen mehr
-                except Exception:
-                    pass
+        # Toolbar lösen
+        tb = getattr(self, "toolbar", None)
+        if tb is not None:
+            tb.setParent(None)
+            tb.deleteLater()
+            self.toolbar = None  # type: ignore[assignment]
 
-            # Zeichnung/Eventloop stoppen
-            try:
-                self.stop_event_loop()
-            except Exception:
-                pass
+        # Figure leeren (damit keine alten Artists mehr referenziert werden)
+        self._fig.clf()
 
-            # Figure entkoppeln
-            try:
-                self._fig.clf()
-            except Exception:
-                pass
-            try:
-                self._fig.set_canvas(None)
-            except Exception:
-                pass
-
-            # Qt-Widget lösen
-            try:
-                self.setParent(None)
-            except Exception:
-                pass
-            try:
-                self.deleteLater()
-            except Exception:
-                pass
-        except Exception:
-            _LOG.exception("Matplot2DView.dispose() failed")
+        # Qt-Widget lösen
+        self.setParent(None)
+        self.deleteLater()
 
     def set_plane(self, plane: str):
         if plane not in PLANES:
@@ -248,27 +217,30 @@ class Matplot2DView(FigureCanvas):
     def _apply_layout_margins(self):
         """
         Maximiert die Plotfläche. Für die Legende unter der x-Achse nutzen wir
-        constrained_layout-Pads (keine subplots_adjust-Aufrufe, um Warnungen zu vermeiden).
+        die neue LayoutEngine (ersetzt set_constrained_layout_pads).
         """
-        try:
-            self._fig.set_constrained_layout(True)
-            self._fig.set_constrained_layout_pads(w_pad=0.02, h_pad=0.08, hspace=0.02, wspace=0.02)
-        except Exception:
-            pass
+        engine = self._fig.get_layout_engine()
+        if engine is not None:
+            engine.set(w_pad=0.02, h_pad=0.08, hspace=0.02, wspace=0.02)
 
     def _set_labels(self):
         if self._plane == "top":
             self._ax.set_title("Top (Z in depth)")
-            self._ax.set_xlabel("X (mm)"); self._ax.set_ylabel("Y (mm)")
+            self._ax.set_xlabel("X (mm)")
+            self._ax.set_ylabel("Y (mm)")
         elif self._plane in ("front", "back"):
             self._ax.set_title(f"{self._plane.capitalize()} (Y in depth)")
-            self._ax.set_xlabel("X (mm)"); self._ax.set_ylabel("Z (mm)")
+            self._ax.set_xlabel("X (mm)")
+            self._ax.set_ylabel("Z (mm)")
         else:
             self._ax.set_title(f"{self._plane.capitalize()} (X in depth)")
-            self._ax.set_xlabel("Y (mm)"); self._ax.set_ylabel("Z (mm)")
+            self._ax.set_xlabel("Y (mm)")
+            self._ax.set_ylabel("Z (mm)")
 
     def _fixed_plane_extents(self) -> Tuple[float, float, float, float]:
-        X = self._world["x"]; Y = self._world["y"]; Z = self._world["z"]
+        X = self._world["x"]
+        Y = self._world["y"]
+        Z = self._world["z"]
         if self._plane == "top":
             return X[0], X[1], Y[0], Y[1]
         if self._plane in ("front", "back"):
@@ -276,6 +248,7 @@ class Matplot2DView(FigureCanvas):
         return Y[0], Y[1], Z[0], Z[1]
 
     def _extents_from_data(self) -> Tuple[float, float, float, float]:
+        # Aktuell: feste Welt-Extents, später ggf. data-driven
         return self._fixed_plane_extents()
 
     # ---------- drawing ----------
@@ -285,8 +258,12 @@ class Matplot2DView(FigureCanvas):
         self._ax.yaxis.set_major_locator(MultipleLocator(10.0))
         self._ax.xaxis.set_minor_locator(MultipleLocator(1.0))
         self._ax.yaxis.set_minor_locator(MultipleLocator(1.0))
-        self._ax.grid(True, which="major", alpha=self._style["grid_alpha_major"], linestyle=":", linewidth=0.8)
-        self._ax.grid(True, which="minor", alpha=self._style["grid_alpha_minor"], linestyle=":", linewidth=0.5)
+        self._ax.grid(True, which="major",
+                      alpha=self._style["grid_alpha_major"],
+                      linestyle=":", linewidth=0.8)
+        self._ax.grid(True, which="minor",
+                      alpha=self._style["grid_alpha_minor"],
+                      linestyle=":", linewidth=0.5)
 
     def _draw_substrate(self):
         item = self._mesh2d.get(self._plane)
@@ -329,13 +306,22 @@ class Matplot2DView(FigureCanvas):
     def _add_legend(self):
         handles = [
             Line2D([0], [0], marker='s', linestyle='None',
-                   markersize=10, markerfacecolor=self._style["substrate_face"],
-                   markeredgecolor=self._style["substrate_edge"], label="Substrate"),
-            Line2D([0], [0], color=self._style["path_color"], lw=self._style["path_lw"], label="Path"),
+                   markersize=10,
+                   markerfacecolor=self._style["substrate_face"],
+                   markeredgecolor=self._style["substrate_edge"],
+                   label="Substrate"),
+            Line2D([0], [0],
+                   color=self._style["path_color"],
+                   lw=self._style["path_lw"],
+                   label="Path"),
             Line2D([0], [0], marker='o', linestyle='None', markersize=8,
-                   markerfacecolor=self._style["start_face"], markeredgecolor=self._style["start_edge"], label="Start"),
+                   markerfacecolor=self._style["start_face"],
+                   markeredgecolor=self._style["start_edge"],
+                   label="Start"),
             Line2D([0], [0], marker='o', linestyle='None', markersize=8,
-                   markerfacecolor=self._style["end_face"], markeredgecolor=self._style["end_edge"], label="End"),
+                   markerfacecolor=self._style["end_face"],
+                   markeredgecolor=self._style["end_edge"],
+                   label="End"),
         ]
         # Legende UNTER der x-Achse (unterhalb "X (mm)")
         self._ax.legend(
@@ -350,32 +336,34 @@ class Matplot2DView(FigureCanvas):
         )
 
     def _redraw(self, *, keep_limits: bool = False):
-        try:
-            saved = self._user_limits if keep_limits and (self._user_limits is not None) else None
+        # Keine Fallbacks, keine swallowed Exceptions: wenn hier was schiefgeht,
+        # soll es sichtbar krachen.
+        saved = self._user_limits if keep_limits and (self._user_limits is not None) else None
 
-            self._ax.clear()
-            self._ax.set_aspect("equal", adjustable="box")
-            self._apply_layout_margins()
-            self._set_labels()
+        self._ax.clear()
+        self._ax.set_aspect("equal", adjustable="box")
+        self._apply_layout_margins()
+        self._set_labels()
 
-            if saved is None:
-                x0, x1, y0, y1 = self._extents_from_data()
-                self._ax.set_xlim(x0, x1); self._ax.set_ylim(y0, y1)
-            else:
-                self._ax.set_xlim(saved[0], saved[1]); self._ax.set_ylim(saved[2], saved[3])
+        if saved is None:
+            x0, x1, y0, y1 = self._extents_from_data()
+            self._ax.set_xlim(x0, x1)
+            self._ax.set_ylim(y0, y1)
+        else:
+            self._ax.set_xlim(saved[0], saved[1])
+            self._ax.set_ylim(saved[2], saved[3])
 
-            self._configure_grid()
-            self._draw_substrate()
-            self._draw_path()
-            self._add_legend()
+        self._configure_grid()
+        self._draw_substrate()
+        self._draw_path()
+        self._add_legend()
 
-            if saved is None:
-                x0, x1 = self._ax.get_xlim(); y0, y1 = self._ax.get_ylim()
-                self._user_limits = (x0, x1, y0, y1)
+        if saved is None:
+            x0, x1 = self._ax.get_xlim()
+            y0, y1 = self._ax.get_ylim()
+            self._user_limits = (x0, x1, y0, y1)
 
-            self.draw_idle()
-        except Exception:
-            _LOG.exception("Matplot2DView redraw failed")
+        self.draw_idle()
 
     # ---------- Interaktion ----------
     def _on_press(self, event):
@@ -389,7 +377,8 @@ class Matplot2DView(FigureCanvas):
     def _on_release(self, _event):
         self._press_btn = None
         self._press_xy = None
-        x0, x1 = self._ax.get_xlim(); y0, y1 = self._ax.get_ylim()
+        x0, x1 = self._ax.get_xlim()
+        y0, y1 = self._ax.get_ylim()
         self._user_limits = (x0, x1, y0, y1)
 
     def _on_motion(self, event):
@@ -430,10 +419,13 @@ class Matplot2DView(FigureCanvas):
         y0, y1 = self._ax.get_ylim()
         lx0, lx1 = cx - x0, x1 - cx
         ly0, ly1 = cy - y0, y1 - cy
-        lx0 /= factor; lx1 /= factor
-        ly0 /= factor; ly1 /= factor
+        lx0 /= factor
+        lx1 /= factor
+        ly0 /= factor
+        ly1 /= factor
         self._ax.set_xlim(cx - lx0, cx + lx1)
         self._ax.set_ylim(cy - ly0, cy + ly1)
         self.draw_idle()
-        xx0, xx1 = self._ax.get_xlim(); yy0, yy1 = self._ax.get_ylim()
+        xx0, xx1 = self._ax.get_xlim()
+        yy0, yy1 = self._ax.get_ylim()
         self._user_limits = (xx0, xx1, yy0, yy1)

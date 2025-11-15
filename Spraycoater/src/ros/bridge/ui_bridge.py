@@ -9,9 +9,11 @@ from .runner import RosBridge
 from .scene_bridge import SceneBridge
 from .poses_bridge import PosesBridge
 from .spray_path_bridge import SprayPathBridge
-from .servo_bridge import ServoBridge  # ⬅️ neu
+from .servo_bridge import ServoBridge
+from .robot_bridge import RobotBridge  # ⬅️ neu
 
 from geometry_msgs.msg import PoseStamped, PoseArray
+from sensor_msgs.msg import JointState          # ⬅️ neu
 from visualization_msgs.msg import MarkerArray
 
 _LOG = logging.getLogger("ros.ui_bridge")
@@ -149,15 +151,122 @@ class SprayPathState:
             return self._poses
 
 
+# ------------------------------ State: Robot ------------------------------
+
+class RobotState:
+    """
+    Signal-freier State-Container für Robot-Zustände:
+      - connection/mode/initialized/moving/servo_enabled/power/estop/errors
+      - tcp_pose (PoseStamped|None) im world-Frame (tool_mount in world)
+      - joints (JointState|None)
+      - alles thread-sicher per RLock
+    """
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._connection: bool = False
+        self._mode: str = "DISCONNECTED"
+        self._initialized: bool = False
+        self._moving: bool = False
+        self._servo_enabled: bool = False
+        self._power: bool = False
+        self._estop: bool = False
+        self._errors: str = ""
+        self._tcp_pose: Optional[PoseStamped] = None
+        self._joints: Optional[JointState] = None
+
+    # Setter
+    def _set_connection(self, v: bool) -> None:
+        with self._lock:
+            self._connection = bool(v)
+
+    def _set_mode(self, v: str) -> None:
+        with self._lock:
+            self._mode = (v or "").strip() or "DISCONNECTED"
+
+    def _set_initialized(self, v: bool) -> None:
+        with self._lock:
+            self._initialized = bool(v)
+
+    def _set_moving(self, v: bool) -> None:
+        with self._lock:
+            self._moving = bool(v)
+
+    def _set_servo_enabled(self, v: bool) -> None:
+        with self._lock:
+            self._servo_enabled = bool(v)
+
+    def _set_power(self, v: bool) -> None:
+        with self._lock:
+            self._power = bool(v)
+
+    def _set_estop(self, v: bool) -> None:
+        with self._lock:
+            self._estop = bool(v)
+
+    def _set_errors(self, v: str) -> None:
+        with self._lock:
+            self._errors = (v or "").strip()
+
+    def _set_tcp_pose(self, msg: Optional[PoseStamped]) -> None:
+        with self._lock:
+            self._tcp_pose = msg
+
+    def _set_joints(self, msg: Optional[JointState]) -> None:
+        with self._lock:
+            self._joints = msg
+
+    # Getter
+    def connection(self) -> bool:
+        with self._lock:
+            return self._connection
+
+    def mode(self) -> str:
+        with self._lock:
+            return self._mode
+
+    def initialized(self) -> bool:
+        with self._lock:
+            return self._initialized
+
+    def moving(self) -> bool:
+        with self._lock:
+            return self._moving
+
+    def servo_enabled(self) -> bool:
+        with self._lock:
+            return self._servo_enabled
+
+    def power(self) -> bool:
+        with self._lock:
+            return self._power
+
+    def estop(self) -> bool:
+        with self._lock:
+            return self._estop
+
+    def errors(self) -> str:
+        with self._lock:
+            return self._errors
+
+    def tcp_pose(self) -> Optional[PoseStamped]:
+        with self._lock:
+            return self._tcp_pose
+
+    def joints(self) -> Optional[JointState]:
+        with self._lock:
+            return self._joints
+
+
 # ============================== UIBridge ==============================
 
 class UIBridge:
     """
     Dünne UI-Bridge:
       - Start/Stop RosBridge
-      - Cacht Zustände in `scene`, `poses`, `spraypath` (signal-frei)
+      - Cacht Zustände in `scene`, `poses`, `spraypath`, `robot` (signal-frei)
       - Stellt Set-APIs bereit (UI -> ROS) via Bridge-Knoten
       - hält zusätzlich ServoBridge in self._servo für den ServiceTab
+      - hält zusätzlich RobotBridge in self._robot für Service/Status-UI
     """
 
     def __init__(self, startup_yaml_path: Optional[str] = None):
@@ -168,13 +277,16 @@ class UIBridge:
         self.scene = SceneState()
         self.poses = PosesState()
         self.spraypath = SprayPathState()
+        self.robot = RobotState()  # ⬅️ neu
 
         # gehaltene Bridge-Referenzen
         self._sb: Optional[SceneBridge] = None
         self._pb: Optional[PosesBridge] = None
         self._spb: Optional[SprayPathBridge] = None
         self._sev: Optional[ServoBridge] = None   # intern
-        self._servo: Optional[ServoBridge] = None # ⬅️ öffentliches Attribut für Widgets (_servo)
+        self._servo: Optional[ServoBridge] = None # öffentliches Attribut für Widgets (_servo)
+        self._rb: Optional[RobotBridge] = None    # intern ⬅️ neu
+        self._robot: Optional[RobotBridge] = None # öffentliches Attribut für Widgets (_robot) ⬅️ neu
 
     # ---------- Lifecycle ----------
 
@@ -186,6 +298,7 @@ class UIBridge:
             and self._pb is not None
             and self._spb is not None
             and self._sev is not None
+            and self._rb is not None        # ⬅️ neu
         )
 
     @property
@@ -221,7 +334,10 @@ class UIBridge:
         # Optional: gecachte Werte re-emittieren (falls vorhanden)
         self._try_reemit_cached()
 
-        _LOG.info("UIBridge connected (node=%s) – scene/poses/spraypath/servo states ready", self.node_name)
+        _LOG.info(
+            "UIBridge connected (node=%s) – scene/poses/spraypath/servo/robot states ready",
+            self.node_name,
+        )
 
     def _ensure_subnodes_and_wiring(self) -> None:
         if self._bridge is None:
@@ -260,9 +376,19 @@ class UIBridge:
             # wichtig: öffentliches Attribut, damit servo_widgets.py es findet
             self._servo = sev
 
+        # Robot
+        if self._rb is None:
+            rb = self._bridge.get_node(RobotBridge)
+            if rb is None:
+                raise RuntimeError("RobotBridge nicht gefunden – wurde sie gestartet?")
+            self._rb = rb
+            self._wire_robot_into_state(rb)
+            # öffentliches Attribut, falls Widgets direkten Zugriff brauchen
+            self._robot = rb
+
     def _try_reemit_cached(self) -> None:
         # Falls die Bridges eine reemit_cached()-Hilfsfunktion besitzen, nutzen wir sie.
-        for b in (self._sb, self._pb, self._spb):
+        for b in (self._sb, self._pb, self._spb, self._rb):
             try:
                 if b is not None and hasattr(b, "signals") and hasattr(b.signals, "reemit_cached"):
                     b.signals.reemit_cached()
@@ -276,6 +402,8 @@ class UIBridge:
         self._spb = None
         self._sev = None
         self._servo = None
+        self._rb = None
+        self._robot = None
         if self._bridge is None:
             return
         try:
@@ -344,6 +472,71 @@ class UIBridge:
         except Exception as e:
             _LOG.error("set_spraypath failed: %s", e)
 
+    # ---------- Robot: Set-API (UI -> ROS) ----------
+    def robot_init(self) -> None:
+        """Sendet ein INIT-Kommando an den Robot-Node."""
+        if not self._rb:
+            _LOG.error("robot_init: RobotBridge nicht verfügbar.")
+            return
+        try:
+            self._rb.do_init()
+        except Exception as e:
+            _LOG.error("robot_init failed: %s", e)
+
+    def robot_stop(self) -> None:
+        if not self._rb:
+            _LOG.error("robot_stop: RobotBridge nicht verfügbar.")
+            return
+        try:
+            self._rb.do_stop()
+        except Exception as e:
+            _LOG.error("robot_stop failed: %s", e)
+
+    def robot_clear_error(self) -> None:
+        if not self._rb:
+            _LOG.error("robot_clear_error: RobotBridge nicht verfügbar.")
+            return
+        try:
+            self._rb.do_clear_error()
+        except Exception as e:
+            _LOG.error("robot_clear_error failed: %s", e)
+
+    def robot_power_on(self) -> None:
+        if not self._rb:
+            _LOG.error("robot_power_on: RobotBridge nicht verfügbar.")
+            return
+        try:
+            self._rb.do_power_on()
+        except Exception as e:
+            _LOG.error("robot_power_on failed: %s", e)
+
+    def robot_power_off(self) -> None:
+        if not self._rb:
+            _LOG.error("robot_power_off: RobotBridge nicht verfügbar.")
+            return
+        try:
+            self._rb.do_power_off()
+        except Exception as e:
+            _LOG.error("robot_power_off failed: %s", e)
+
+    def robot_servo_on(self) -> None:
+        if not self._rb:
+            _LOG.error("robot_servo_on: RobotBridge nicht verfügbar.")
+            return
+        try:
+            self._rb.do_servo_on()
+        except Exception as e:
+            _LOG.error("robot_servo_on failed: %s", e)
+
+    def robot_servo_off(self) -> None:
+        if not self._rb:
+            _LOG.error("robot_servo_off: RobotBridge nicht verfügbar.")
+            return
+        try:
+            self._rb.do_servo_off()
+        except Exception as e:
+            _LOG.error("robot_servo_off failed: %s", e)
+
     # ---------- Intern: Wiring von Qt-Signalen -> States ----------
     def _wire_scene_into_state(self, sb: SceneBridge) -> None:
         """Verbindet die Qt-Signale der SceneBridge mit unserem SceneState-Cache."""
@@ -368,6 +561,20 @@ class UIBridge:
         sig = spb.signals
         sig.currentNameChanged.connect(lambda name: self.spraypath._set_current_name(name))
         sig.posesChanged.connect(lambda pa: self.spraypath._set_poses(pa))
+
+    def _wire_robot_into_state(self, rb: RobotBridge) -> None:
+        """Verbindet die Qt-Signale der RobotBridge mit unserem RobotState-Cache."""
+        sig = rb.signals
+        sig.connectionChanged.connect(lambda v: self.robot._set_connection(v))
+        sig.modeChanged.connect(lambda v: self.robot._set_mode(v))
+        sig.initializedChanged.connect(lambda v: self.robot._set_initialized(v))
+        sig.movingChanged.connect(lambda v: self.robot._set_moving(v))
+        sig.servoEnabledChanged.connect(lambda v: self.robot._set_servo_enabled(v))
+        sig.powerChanged.connect(lambda v: self.robot._set_power(v))
+        sig.estopChanged.connect(lambda v: self.robot._set_estop(v))
+        sig.errorsChanged.connect(lambda v: self.robot._set_errors(v))
+        sig.tcpPoseChanged.connect(lambda msg: self.robot._set_tcp_pose(msg))
+        sig.jointsChanged.connect(lambda msg: self.robot._set_joints(msg))
 
 
 def get_ui_bridge(_ctx) -> UIBridge:

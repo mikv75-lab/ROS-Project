@@ -13,6 +13,7 @@ from launch.actions import (
     SetEnvironmentVariable,
 )
 from launch.substitutions import LaunchConfiguration
+    # noqa
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -161,17 +162,27 @@ def generate_launch_description():
         )
         spray_after_robot = TimerAction(period=5.0, actions=[spray_node])
 
-        # 🔧 Servo-Node (param-los; Bridge UI ↔ moveit_servo)
+        # Servo-Node (param-los; Bridge UI ↔ moveit_servo)
         servo_node = Node(
             package="spraycoater_nodes_py",
             executable="servo",
             name="servo",
             output="log",
             emulate_tty=False,
-            # hier ruhig etwas gesprächiger, sonst siehst du nix
             arguments=["--ros-args", "--log-level", "info"],
         )
         servo_after_robot = TimerAction(period=5.0, actions=[servo_node])
+
+        # Robot-Node (Status/Kommandos ↔ realer Adapter / Sim)
+        robot_node = Node(
+            package="spraycoater_nodes_py",
+            executable="robot",
+            name="robot",
+            output="log",
+            emulate_tty=False,
+            arguments=["--ros-args", "--log-level", "info"],
+        )
+        robot_after_robot = TimerAction(period=5.0, actions=[robot_node])
 
         # Rückgabe der Sequenz
         return [
@@ -180,6 +191,7 @@ def generate_launch_description():
             poses_after_robot,
             spray_after_robot,
             servo_after_robot,
+            robot_after_robot,
         ]
 
     return LaunchDescription([quiet_env, sim_arg, OpaqueFunction(function=_setup)])

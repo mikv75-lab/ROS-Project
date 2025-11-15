@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-# File: widgets/robot_status_box.py
+# File: widgets/robot_command_status_box.py
 from __future__ import annotations
 from typing import Optional, Iterable, Tuple, Dict, Any, Sequence
+
 from math import atan2, asin
 
 from PyQt6 import QtCore
@@ -11,11 +12,12 @@ from PyQt6.QtWidgets import (
     QGroupBox, QLabel, QPushButton, QSizePolicy
 )
 
-# Optional: nur wenn in deiner Umgebung verfügbar
 try:
     from geometry_msgs.msg import PoseStamped
+    from sensor_msgs.msg import JointState
 except Exception:  # pragma: no cover
     PoseStamped = None  # type: ignore[assignment]
+    JointState = None   # type: ignore[assignment]
 
 
 # =============================================================================
@@ -29,8 +31,6 @@ class RobotStatusInfoBox(QGroupBox):
       - TCP Pose (6D)
       - Joints (kompakt)
       - Errors (einfacher String, word-wrapped)
-
-    Öffentliche Setter: set_* und set_status_dict(...)
     """
     def __init__(self, parent: Optional[QWidget] = None, title: str = "Robot Status"):
         super().__init__(title, parent)
@@ -69,7 +69,7 @@ class RobotStatusInfoBox(QGroupBox):
         self.lblPose   = row("TCP Pose (X Y Z RX RY RZ)")
         self.lblJoints = row("Joints (rad)")
 
-        # Errors: eigener Block (multi-line, aber weiterhin im VerticalLayout)
+        # Errors: eigener Block (multi-line)
         hb_err = QHBoxLayout()
         hb_err.setSpacing(8)
         lbl_err_bold = QLabel("Errors", self)
@@ -230,13 +230,14 @@ class RobotCommandButtonsBox(QGroupBox):
         self.btnSrvOn  = QPushButton("Servo ENABLE", self)
         self.btnSrvOff = QPushButton("Servo DISABLE", self)
 
-        for b in (self.btnInit, self.btnStop, self.btnClrErr, self.btnPwrOn, self.btnPwrOff, self.btnSrvOn, self.btnSrvOff):
+        for b in (self.btnInit, self.btnStop, self.btnClrErr,
+                  self.btnPwrOn, self.btnPwrOff, self.btnSrvOn, self.btnSrvOff):
             b.setMinimumHeight(28)
             v.addWidget(b)
 
         v.addStretch(1)
 
-        # Buttons -> Signals
+        # Buttons -> Widget-Signale
         self.btnInit.clicked.connect(self.initRequested.emit)
         self.btnStop.clicked.connect(self.stopRequested.emit)
         self.btnClrErr.clicked.connect(self.clearErrorRequested.emit)
@@ -260,12 +261,22 @@ class RobotCommandStatusWidget(QWidget):
     Zusammengesetztes Widget:
       [ RobotCommandButtonsBox (links) ] | [ RobotStatusInfoBox (rechts) ]
 
-    - Verdrahtet inbound Status-Signale der Bridge in die rechte Box
-    - Verdrahtet outbound Button-Signale der linken Box zur Bridge (falls vorhanden)
+    - Verdrahtet inbound Status-Signale der RobotBridge in die rechte Box
+    - Verdrahtet outbound Button-Signale der linken Box zu RobotBridge.signals
+      (kein Fallback, identisch zum Pattern von PosesGroupBox).
     """
     def __init__(self, bridge, parent: Optional[QWidget] = None):
+        """
+        bridge: UIBridge-Instanz (wie bei PosesGroupBox).
+        """
         super().__init__(parent)
         self.bridge = bridge
+
+        # Referenzen auf RobotBridge + Signals merken
+        self._rb = getattr(self.bridge, "_rb", None)
+        self._sig = getattr(self._rb, "signals", None) if self._rb else None
+        self._inbound_connected = False
+        self._outbound_connected = False
 
         # UI
         h = QHBoxLayout(self)
@@ -278,7 +289,6 @@ class RobotCommandStatusWidget(QWidget):
         h.addWidget(self.commandBox, 1)
         h.addWidget(self.statusBox, 2)
 
-        # Policies
         for w in (self.statusBox, self.commandBox):
             sp = w.sizePolicy()
             sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
@@ -287,22 +297,27 @@ class RobotCommandStatusWidget(QWidget):
 
         # Wiring
         self._wire_bridge_inbound()
-        self._wire_outbound_to_bridge_if_present()
+        self._wire_outbound()
 
-    # ---------- Bridge: inbound ----------
+    # ---------- Bridge: inbound (ROS -> UI) ----------
+    @QtCore.pyqtSlot(object)
+    def _on_joints(self, js):
+        """Slot für jointsChanged (JointState oder kompatibel)."""
+        if js is None or not hasattr(js, "position"):
+            self.statusBox.set_joints(None)
+        else:
+            self.statusBox.set_joints(list(js.position or []))
+
     def _wire_bridge_inbound(self) -> None:
-        cand = [getattr(self.bridge, "_rb", None),
-                getattr(self.bridge, "_status", None),
-                getattr(self.bridge, "_pb", None)]
-        br = next((c for c in cand if c is not None), None)
-        sig = getattr(br, "signals", None) if br else None
-        if not sig:
+        """
+        Holt RobotBridge aus UIBridge (bridge._rb) und
+        verbindet deren Signals mit den Setter-Methoden der StatusBox.
+        """
+        if not self._sig or self._inbound_connected:
             return
 
+        sig = self._sig
         sb = self.statusBox
-
-        if hasattr(sig, "statusChanged"):
-            sig.statusChanged.connect(sb.set_status_dict)
 
         if hasattr(sig, "connectionChanged"):
             sig.connectionChanged.connect(sb.set_connection)
@@ -318,35 +333,97 @@ class RobotCommandStatusWidget(QWidget):
             sig.servoEnabledChanged.connect(sb.set_servo_enabled)
         if hasattr(sig, "estopChanged"):
             sig.estopChanged.connect(sb.set_estop)
-        if hasattr(sig, "errorTextChanged"):
-            sig.errorTextChanged.connect(sb.set_errors)
+        if hasattr(sig, "errorsChanged"):
+            sig.errorsChanged.connect(sb.set_errors)
         if hasattr(sig, "tcpPoseChanged"):
             sig.tcpPoseChanged.connect(sb.set_tcp_from_ps)
         if hasattr(sig, "jointsChanged"):
-            sig.jointsChanged.connect(sb.set_joints)
+            sig.jointsChanged.connect(self._on_joints)
 
-    # ---------- Bridge: outbound ----------
-    def _wire_outbound_to_bridge_if_present(self) -> None:
-        br = getattr(self.bridge, "_rb", None) or getattr(self.bridge, "_status", None)
-        bsig = getattr(br, "signals", None) if br else None
-        if not bsig:
+        self._inbound_connected = True
+
+    # ---------- Bridge: outbound (UI -> ROS) ----------
+    def _wire_outbound(self) -> None:
+        """
+        Buttons -> RobotBridge.signals, ohne Fallback, analog zu PosesGroupBox.
+        """
+        if not self._sig or self._outbound_connected:
             return
 
+        sig = self._sig
         cb = self.commandBox
-        if hasattr(bsig, "initRequested"):
-            cb.initRequested.connect(bsig.initRequested.emit)
-        if hasattr(bsig, "stopRequested"):
-            cb.stopRequested.connect(bsig.stopRequested.emit)
-        if hasattr(bsig, "clearErrorRequested"):
-            cb.clearErrorRequested.connect(bsig.clearErrorRequested.emit)
-        if hasattr(bsig, "powerOnRequested"):
-            cb.powerOnRequested.connect(bsig.powerOnRequested.emit)
-        if hasattr(bsig, "powerOffRequested"):
-            cb.powerOffRequested.connect(bsig.powerOffRequested.emit)
-        if hasattr(bsig, "servoEnableRequested"):
-            cb.servoEnableRequested.connect(bsig.servoEnableRequested.emit)
-        if hasattr(bsig, "servoDisableRequested"):
-            cb.servoDisableRequested.connect(bsig.servoDisableRequested.emit)
+
+        cb.initRequested.connect(sig.initRequested.emit)
+        cb.stopRequested.connect(sig.stopRequested.emit)
+        cb.clearErrorRequested.connect(sig.clearErrorRequested.emit)
+        cb.powerOnRequested.connect(sig.powerOnRequested.emit)
+        cb.powerOffRequested.connect(sig.powerOffRequested.emit)
+        cb.servoEnableRequested.connect(sig.servoEnableRequested.emit)
+        cb.servoDisableRequested.connect(sig.servoDisableRequested.emit)
+
+        self._outbound_connected = True
+
+    # ---------- Disconnect-Helfer ----------
+
+    def _disconnect_inbound(self) -> None:
+        if not self._sig or not self._inbound_connected:
+            return
+
+        sig = self._sig
+        sb = self.statusBox
+
+        def safe_disc(signal, slot):
+            try:
+                signal.disconnect(slot)
+            except TypeError:
+                pass
+
+        if hasattr(sig, "connectionChanged"):
+            safe_disc(sig.connectionChanged, sb.set_connection)
+        if hasattr(sig, "modeChanged"):
+            safe_disc(sig.modeChanged, sb.set_mode)
+        if hasattr(sig, "initializedChanged"):
+            safe_disc(sig.initializedChanged, sb.set_initialized)
+        if hasattr(sig, "movingChanged"):
+            safe_disc(sig.movingChanged, sb.set_moving)
+        if hasattr(sig, "powerChanged"):
+            safe_disc(sig.powerChanged, sb.set_power)
+        if hasattr(sig, "servoEnabledChanged"):
+            safe_disc(sig.servoEnabledChanged, sb.set_servo_enabled)
+        if hasattr(sig, "estopChanged"):
+            safe_disc(sig.estopChanged, sb.set_estop)
+        if hasattr(sig, "errorsChanged"):
+            safe_disc(sig.errorsChanged, sb.set_errors)
+        if hasattr(sig, "tcpPoseChanged"):
+            safe_disc(sig.tcpPoseChanged, sb.set_tcp_from_ps)
+        if hasattr(sig, "jointsChanged"):
+            safe_disc(sig.jointsChanged, self._on_joints)
+
+        self._inbound_connected = False
+
+    def _disconnect_outbound(self) -> None:
+        if not self._sig or not self._outbound_connected:
+            return
+
+        sig = self._sig
+        cb = self.commandBox
+
+        def safe_disc(signal, slot):
+            try:
+                signal.disconnect(slot)
+            except TypeError:
+                pass
+
+        safe_disc(cb.initRequested, sig.initRequested.emit)
+        safe_disc(cb.stopRequested, sig.stopRequested.emit)
+        safe_disc(cb.clearErrorRequested, sig.clearErrorRequested.emit)
+        safe_disc(cb.powerOnRequested, sig.powerOnRequested.emit)
+        safe_disc(cb.powerOffRequested, sig.powerOffRequested.emit)
+        safe_disc(cb.servoEnableRequested, sig.servoEnableRequested.emit)
+        safe_disc(cb.servoDisableRequested, sig.servoDisableRequested.emit)
+
+        self._outbound_connected = False
+
 
     # ---------- Convenience ----------
     def set_status_dict(self, st: Dict[str, Any]) -> None:

@@ -7,7 +7,7 @@
   <!-- ros2_control-Xacro aus diesem Paket -->
   <xacro:include filename="omron_viper_s650.ros2_control.xacro" />
 
-  <!-- FakeSystem für Simulation -->
-  <xacro:omron_viper_s650_ros2_control name="FakeSystem"/>
+  <!-- ros2_control-System ohne Parameter -->
+  <xacro:omron_viper_s650_ros2_control/>
 
 </robot>

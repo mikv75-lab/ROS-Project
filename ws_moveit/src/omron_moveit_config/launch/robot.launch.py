@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # omron_moveit_config/launch/robot.launch.py
+
 import os
 
 from launch import LaunchDescription
-from launch.actions import SetEnvironmentVariable
+from launch.actions import SetEnvironmentVariable, DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
@@ -18,13 +20,46 @@ def generate_launch_description():
     urdf_xacro = os.path.join(cfg_pkg, "config", "omron_viper_s650.urdf.xacro")
     rviz_cfg = os.path.join(cfg_pkg, "config", "moveit.rviz")
     ros2_controllers_path = os.path.join(cfg_pkg, "config", "ros2_controllers.yaml")
-    initial_positions_path = os.path.join(cfg_pkg, "config", "initial_positions.yaml")
 
-    # MoveIt-Konfiguration
+    # ---------- Launch-Argumente (werden vom bringup gesetzt) ----------
+    mount_parent_arg = DeclareLaunchArgument(
+        "mount_parent", default_value="world"
+    )
+    mount_child_arg = DeclareLaunchArgument(
+        "mount_child", default_value="robot_mount"
+    )
+    mount_x_arg = DeclareLaunchArgument("mount_x", default_value="0.0")
+    mount_y_arg = DeclareLaunchArgument("mount_y", default_value="0.0")
+    mount_z_arg = DeclareLaunchArgument("mount_z", default_value="0.0")
+    mount_qx_arg = DeclareLaunchArgument("mount_qx", default_value="0.0")
+    mount_qy_arg = DeclareLaunchArgument("mount_qy", default_value="0.0")
+    mount_qz_arg = DeclareLaunchArgument("mount_qz", default_value="0.0")
+    mount_qw_arg = DeclareLaunchArgument("mount_qw", default_value="1.0")
+
+    sim_arg = DeclareLaunchArgument(
+        "sim",
+        default_value="true",
+        description="Simulationsmodus (true|false) – aktuell nur für später vorgesehen",
+    )
+
+    mount_parent = LaunchConfiguration("mount_parent")
+    mount_child = LaunchConfiguration("mount_child")
+    mount_x = LaunchConfiguration("mount_x")
+    mount_y = LaunchConfiguration("mount_y")
+    mount_z = LaunchConfiguration("mount_z")
+    mount_qx = LaunchConfiguration("mount_qx")
+    mount_qy = LaunchConfiguration("mount_qy")
+    mount_qz = LaunchConfiguration("mount_qz")
+    mount_qw = LaunchConfiguration("mount_qw")
+    sim = LaunchConfiguration("sim")
+
+    # ---------- MoveIt-Konfiguration ----------
     moveit_config = (
         MoveItConfigsBuilder("omron_viper_s650", package_name="omron_moveit_config")
         .robot_description(
             file_path=urdf_xacro,
+            # TODO: später sim/real umschalten:
+            # mappings={"hardware_type": "FakeSystem" if sim == "true" else "RealSystem"}
             mappings={"hardware_type": "FakeSystem"}
         )
         .robot_description_semantic(file_path="config/omron_viper_s650.srdf")
@@ -42,21 +77,21 @@ def generate_launch_description():
         value="1",
     )
 
-    # Static TF: world -> robot_mount
+    # ---------- Static TF: (mount_parent) -> (mount_child) ----------
     static_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
         name="tf_world_to_omron_mount",
         arguments=[
-            "--x",  "0.0",
-            "--y",  "0.0",
-            "--z",  "0.0",
-            "--qx", "0.0",
-            "--qy", "0.0",
-            "--qz", "0.7071",   # 90° um Z
-            "--qw", "0.7071",
-            "--frame-id",      "world",
-            "--child-frame-id","robot_mount",
+            "--x",  mount_x,
+            "--y",  mount_y,
+            "--z",  mount_z,
+            "--qx", mount_qx,
+            "--qy", mount_qy,
+            "--qz", mount_qz,
+            "--qw", mount_qw,
+            "--frame-id",      mount_parent,
+            "--child-frame-id", mount_child,
         ],
         output="screen",
     )
@@ -77,7 +112,6 @@ def generate_launch_description():
         parameters=[
             moveit_config.robot_description,
             ros2_controllers_path,
-            initial_positions_path,   # <- hier kommt dein initial_positions.yaml rein
         ],
         output="screen",
     )
@@ -106,7 +140,7 @@ def generate_launch_description():
         output="screen",
     )
 
-    # --- MoveIt Servo Node ---
+        # --- MoveIt Servo Node ---
     servo_node = Node(
         package="moveit_servo",
         executable="servo_node",
@@ -132,7 +166,9 @@ def generate_launch_description():
 
                     "publish_period": 0.01,
                     "incoming_command_timeout": 0.2,
-                    "use_servo_services": True,
+
+                    # ⬇️ WICHTIG: Services aus -> Servo sofort aktiv
+                    "use_servo_services": False,
                     "check_collisions": False,
 
                     "publish_joint_positions": True,
@@ -175,6 +211,16 @@ def generate_launch_description():
     return LaunchDescription(
         [
             rt_env,
+            sim_arg,
+            mount_parent_arg,
+            mount_child_arg,
+            mount_x_arg,
+            mount_y_arg,
+            mount_z_arg,
+            mount_qx_arg,
+            mount_qy_arg,
+            mount_qz_arg,
+            mount_qw_arg,
             static_tf,
             robot_state_publisher,
             ros2_control_node,

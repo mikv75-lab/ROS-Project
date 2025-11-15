@@ -4,59 +4,59 @@
   <!--
     ros2_control-Konfiguration für Omron Viper S650
     - Fake-Hardware mit mock_components/GenericSystem
-    - fake_sensor_commands=true => States folgen den Commands
-    - KEINE initial_positions mehr (erstmal alles 0.0)
+    - fake_sensor_commands=true -> Joint-States folgen den Kommandos
+    - KEINE Macro-Parameter, alles fest verdrahtet
   -->
 
-  <xacro:macro name="omron_viper_s650_ros2_control" params="name">
+  <xacro:macro name="omron_viper_s650_ros2_control">
 
-    <ros2_control name="${name}" type="system">
+    <ros2_control name="omron_viper_s650_system" type="system">
       <hardware>
         <plugin>mock_components/GenericSystem</plugin>
-        <!-- wichtig: Joint-States folgen den Kommandos -->
+        <!-- States folgen direkt den Kommandos -->
         <param name="fake_sensor_commands">true</param>
       </hardware>
 
       <!-- Joint 1 -->
       <joint name="joint_1">
         <command_interface name="position"/>
-        <state_interface name="position"/>
-        <state_interface name="velocity"/>
+        <state_interface   name="position"/>
+        <state_interface   name="velocity"/>
       </joint>
 
       <!-- Joint 2 -->
       <joint name="joint_2">
         <command_interface name="position"/>
-        <state_interface name="position"/>
-        <state_interface name="velocity"/>
+        <state_interface   name="position"/>
+        <state_interface   name="velocity"/>
       </joint>
 
       <!-- Joint 3 -->
       <joint name="joint_3">
         <command_interface name="position"/>
-        <state_interface name="position"/>
-        <state_interface name="velocity"/>
+        <state_interface   name="position"/>
+        <state_interface   name="velocity"/>
       </joint>
 
       <!-- Joint 4 -->
       <joint name="joint_4">
         <command_interface name="position"/>
-        <state_interface name="position"/>
-        <state_interface name="velocity"/>
+        <state_interface   name="position"/>
+        <state_interface   name="velocity"/>
       </joint>
 
       <!-- Joint 5 -->
       <joint name="joint_5">
         <command_interface name="position"/>
-        <state_interface name="position"/>
-        <state_interface name="velocity"/>
+        <state_interface   name="position"/>
+        <state_interface   name="velocity"/>
       </joint>
 
       <!-- Joint 6 -->
       <joint name="joint_6">
         <command_interface name="position"/>
-        <state_interface name="position"/>
-        <state_interface name="velocity"/>
+        <state_interface   name="position"/>
+        <state_interface   name="velocity"/>
       </joint>
 
     </ros2_control>

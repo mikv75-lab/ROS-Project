@@ -41,4 +41,6 @@ class ProcessTab(QWidget):
         sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
         self.procCtrl.setSizePolicy(sp)
         root.addWidget(self.procCtrl)
-        
+
+        # [2] Spacer
+        root.addStretch(1)

@@ -2,7 +2,8 @@
 <package format="3">
   <name>spraycoater_nodes_py</name>
   <version>0.0.0</version>
-  <description>Spraycoater Python nodes (scene, poses, servo, spraypath, ...)</description>
+  <description>Spraycoater Python nodes (scene, poses, servo, spraypath, robot, ...)</description>
+
   <maintainer email="miklv75@googlemail.com">Vincent Mikl</maintainer>
   <license>Apache-2.0</license>
 
@@ -26,6 +27,7 @@
   <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>trajectory_msgs</exec_depend>
   <exec_depend>diagnostic_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend> <!-- JointState für Robot-Node -->
 
   <!-- Laufzeit: Mesh-Laden in scene.py -->
   <exec_depend>python3-trimesh</exec_depend>
