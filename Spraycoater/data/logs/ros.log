@@ -272,3 +272,24 @@
 2025-11-08 15:23:04 DEBUG [26674] ros.kill_all_ros:91 -  -> TERM pid=24703 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args --params-file /tmp/launch_params_8u95mo56 --params-file /tmp/launch_params_yegeli8d --params-file /tmp/launch_params_fvipq159
 2025-11-08 15:23:07 INFO [26674] ros.ui_bridge:219 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath states ready
 2025-11-08 15:23:07 INFO [26674] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 19:10:07 INFO [224578] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 19:10:07 DEBUG [224578] ros.kill_all_ros:91 -  -> TERM pid=136107 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_dmk7db0m --params-file /tmp/launch_params_3tdzuhd5
+2025-11-15 19:10:07 DEBUG [224578] ros.kill_all_ros:91 -  -> TERM pid=137117 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 topic echo /joint_states
+2025-11-15 19:10:09 DEBUG [224578] ros.kill_all_ros:112 -  -> KILL pid=137117
+2025-11-15 19:10:10 INFO [224578] ros.ui_bridge:224 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo states ready
+2025-11-15 19:10:10 INFO [224578] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 19:14:37 INFO [227613] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-15 19:14:38 INFO [227613] ros.ui_bridge:224 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo states ready
+2025-11-15 19:14:38 INFO [227613] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 19:15:24 INFO [229115] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-15 19:15:25 INFO [229115] ros.ui_bridge:224 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo states ready
+2025-11-15 19:15:25 INFO [229115] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 19:18:17 INFO [231381] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-15 19:18:18 INFO [231381] ros.ui_bridge:224 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo states ready
+2025-11-15 19:18:18 INFO [231381] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 19:18:46 INFO [232492] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-15 19:18:47 INFO [232492] ros.ui_bridge:224 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo states ready
+2025-11-15 19:18:47 INFO [232492] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 19:19:11 INFO [233046] ros.kill_all_ros:86 - [kill] nothing to stop.
+2025-11-15 19:19:12 INFO [233046] ros.ui_bridge:224 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo states ready
+2025-11-15 19:19:12 INFO [233046] ros:186 - UIBridge verbunden (node=scene_bridge).

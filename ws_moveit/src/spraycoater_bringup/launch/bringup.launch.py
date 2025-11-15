@@ -18,15 +18,20 @@ from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from moveit_configs_utils import MoveItConfigsBuilder  # bleibt
 
+
 def _rpy_rad_to_quat(roll, pitch, yaw):
-    cr = cos(roll * 0.5); sr = sin(roll * 0.5)
-    cp = cos(pitch * 0.5); sp = sin(pitch * 0.5)
-    cy = cos(yaw * 0.5);   sy = sin(yaw * 0.5)
+    cr = cos(roll * 0.5)
+    sr = sin(roll * 0.5)
+    cp = cos(pitch * 0.5)
+    sp = sin(pitch * 0.5)
+    cy = cos(yaw * 0.5)
+    sy = sin(yaw * 0.5)
     qx = sr * cp * cy - cr * sp * sy
     qy = cr * sp * cy + sr * sp * sy
     qz = cr * cp * sy - sr * sp * cy
     qw = cr * cp * cy + sr * sp * sy
     return qx, qy, qz, qw
+
 
 def generate_launch_description():
     # global: logs leiser
@@ -156,7 +161,25 @@ def generate_launch_description():
         )
         spray_after_robot = TimerAction(period=5.0, actions=[spray_node])
 
+        # 🔧 Servo-Node (param-los; Bridge UI ↔ moveit_servo)
+        servo_node = Node(
+            package="spraycoater_nodes_py",
+            executable="servo",
+            name="servo",
+            output="log",
+            emulate_tty=False,
+            # hier ruhig etwas gesprächiger, sonst siehst du nix
+            arguments=["--ros-args", "--log-level", "info"],
+        )
+        servo_after_robot = TimerAction(period=5.0, actions=[servo_node])
+
         # Rückgabe der Sequenz
-        return [include_robot, scene_after_robot, poses_after_robot, spray_after_robot]
+        return [
+            include_robot,
+            scene_after_robot,
+            poses_after_robot,
+            spray_after_robot,
+            servo_after_robot,
+        ]
 
     return LaunchDescription([quiet_env, sim_arg, OpaqueFunction(function=_setup)])

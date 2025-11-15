@@ -2,8 +2,8 @@
 
 initial_positions:
   joint_1: 0
-  joint_2: 0
-  joint_3: 0
+  joint_2: -1.57079632679      # -90°
+  joint_3: 3.14159265359       # 180°
   joint_4: 0
   joint_5: 0
   joint_6: 0

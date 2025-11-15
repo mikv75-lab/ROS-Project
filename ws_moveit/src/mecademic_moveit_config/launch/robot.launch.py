@@ -35,7 +35,7 @@ def generate_launch_description():
             arguments=[
                 "--x", str(xyz[0]), "--y", str(xyz[1]), "--z", str(xyz[2]),
                 "--qx", str(qx), "--qy", str(qy), "--qz", str(qz), "--qw", str(qw),
-                "--frame-id", world_frame,
+                "--frame-id", "world",
                 "--child-frame-id", "meca_mount",
             ],
             output="screen",

@@ -36,6 +36,7 @@ setup(
             "poses = spraycoater_nodes_py.poses:main",
             "spray_path = spraycoater_nodes_py.spray_path:main",
             "motion = spraycoater_nodes_py.motion:main",
+            "servo = spraycoater_nodes_py.servo:main",
         ],
     },
 )

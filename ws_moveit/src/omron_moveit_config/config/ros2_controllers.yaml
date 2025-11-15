@@ -1,18 +1,19 @@
 # omron_moveit_config/config/ros2_controllers.yaml
-# Wird vom ros2_control_node geladen
 
 controller_manager:
   ros__parameters:
     update_rate: 100  # Hz
 
-    omron_arm_group_controller:
+    # Standard-Controller für MoveIt & Servo
+    omron_arm_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
+    # JointState-Broadcaster für /joint_states
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
 
 
-omron_arm_group_controller:
+omron_arm_controller:
   ros__parameters:
     joints:
       - joint_1
@@ -29,4 +30,9 @@ omron_arm_group_controller:
       - position
       - velocity
 
-    allow_nonzero_velocity_at_trajectory_end: true
+    state_publish_rate: 100.0   # Hz
+    action_monitor_rate: 20.0   # Hz
+
+    # einfache Trajectory-Interpolation
+    allow_partial_joints_goal: false
+    open_loop_control: false

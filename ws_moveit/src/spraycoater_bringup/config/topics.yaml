@@ -3,32 +3,33 @@ version: 1
 topics:
   servo:
     subscribe:
-      - id: cartesian_mm
-        name: /servo/cartesian_mm
+      - id: twist_out          # UI → ServoNode (delta-Twist)
+        name: /servo/delta_twist_cmds
         type: geometry_msgs/msg/TwistStamped
-        qos: sensor_data        # BEST_EFFORT
-      - id: joint_jog
-        name: /servo/joint_jog
+        qos: sensor_data
+      - id: joint_out          # UI → ServoNode (delta-Joint)
+        name: /servo/delta_joint_cmds
         type: control_msgs/msg/JointJog
         qos: sensor_data
-      - id: set_mode
+      - id: set_mode           # UI → ServoNode (JOINT_JOG / TWIST / POSE)
         name: /servo/set_mode
         type: std_msgs/msg/String
-        qos: default            # RELIABLE
-      - id: set_frame
+        qos: default
+      - id: set_frame          # UI → ServoNode (world / tcp / ...)
         name: /servo/set_frame
         type: std_msgs/msg/String
         qos: default
 
     publish:
-      - id: twist_out
-        name: /servo/delta_twist_cmds
+      - id: cartesian_mm       # ServoNode → moveit_servo
+        name: /servo/cartesian_mm
         type: geometry_msgs/msg/TwistStamped
         qos: sensor_data
-      - id: joint_out
-        name: /servo/delta_joint_cmds
+      - id: joint_jog          # ServoNode → moveit_servo
+        name: /servo/joint_jog
         type: control_msgs/msg/JointJog
         qos: sensor_data
+
 
   tool:
     subscribe:

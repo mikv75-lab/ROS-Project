@@ -9,6 +9,7 @@ from .runner import RosBridge
 from .scene_bridge import SceneBridge
 from .poses_bridge import PosesBridge
 from .spray_path_bridge import SprayPathBridge
+from .servo_bridge import ServoBridge  # ⬅️ neu
 
 from geometry_msgs.msg import PoseStamped, PoseArray
 from visualization_msgs.msg import MarkerArray
@@ -156,6 +157,7 @@ class UIBridge:
       - Start/Stop RosBridge
       - Cacht Zustände in `scene`, `poses`, `spraypath` (signal-frei)
       - Stellt Set-APIs bereit (UI -> ROS) via Bridge-Knoten
+      - hält zusätzlich ServoBridge in self._servo für den ServiceTab
     """
 
     def __init__(self, startup_yaml_path: Optional[str] = None):
@@ -171,6 +173,8 @@ class UIBridge:
         self._sb: Optional[SceneBridge] = None
         self._pb: Optional[PosesBridge] = None
         self._spb: Optional[SprayPathBridge] = None
+        self._sev: Optional[ServoBridge] = None   # intern
+        self._servo: Optional[ServoBridge] = None # ⬅️ öffentliches Attribut für Widgets (_servo)
 
     # ---------- Lifecycle ----------
 
@@ -181,6 +185,7 @@ class UIBridge:
             and self._sb is not None
             and self._pb is not None
             and self._spb is not None
+            and self._sev is not None
         )
 
     @property
@@ -216,7 +221,7 @@ class UIBridge:
         # Optional: gecachte Werte re-emittieren (falls vorhanden)
         self._try_reemit_cached()
 
-        _LOG.info("UIBridge connected (node=%s) – scene/poses/spraypath states ready", self.node_name)
+        _LOG.info("UIBridge connected (node=%s) – scene/poses/spraypath/servo states ready", self.node_name)
 
     def _ensure_subnodes_and_wiring(self) -> None:
         if self._bridge is None:
@@ -246,6 +251,15 @@ class UIBridge:
             self._spb = spb
             self._wire_spraypath_into_state(spb)
 
+        # Servo
+        if self._sev is None:
+            sev = self._bridge.get_node(ServoBridge)
+            if sev is None:
+                raise RuntimeError("ServoBridge nicht gefunden – wurde sie gestartet?")
+            self._sev = sev
+            # wichtig: öffentliches Attribut, damit servo_widgets.py es findet
+            self._servo = sev
+
     def _try_reemit_cached(self) -> None:
         # Falls die Bridges eine reemit_cached()-Hilfsfunktion besitzen, nutzen wir sie.
         for b in (self._sb, self._pb, self._spb):
@@ -260,6 +274,8 @@ class UIBridge:
         self._sb = None
         self._pb = None
         self._spb = None
+        self._sev = None
+        self._servo = None
         if self._bridge is None:
             return
         try:

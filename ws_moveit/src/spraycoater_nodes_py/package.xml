@@ -1,7 +1,8 @@
+<?xml version="1.0"?>
 <package format="3">
   <name>spraycoater_nodes_py</name>
   <version>0.0.0</version>
-  <description>Spraycoater Python nodes (scene, poses, ...)</description>
+  <description>Spraycoater Python nodes (scene, poses, servo, spraypath, ...)</description>
   <maintainer email="miklv75@googlemail.com">Vincent Mikl</maintainer>
   <license>Apache-2.0</license>
 
@@ -10,11 +11,14 @@
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
 
+  <!-- Servo / JointJog -->
+  <exec_depend>control_msgs</exec_depend>
+
   <!-- Laufzeit: TF, YAML -->
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
 
-  <!-- Laufzeit: MoveItPy + Messages -->
+  <!-- Laufzeit: MoveIt / Messages -->
   <exec_depend>moveit_msgs</exec_depend>
 
   <!-- Laufzeit: weitere Msgs, die du publishst/subscribest -->
@@ -29,6 +33,7 @@
   <!-- Optional: falls wirklich genutzt -->
   <exec_depend>tf_transformations</exec_depend>
 
+  <!-- Test-Dependencies -->
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

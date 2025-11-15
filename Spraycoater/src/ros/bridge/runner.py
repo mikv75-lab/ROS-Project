@@ -10,13 +10,14 @@ from config.startup import AppContent
 from .scene_bridge import SceneBridge
 from .poses_bridge import PosesBridge
 from .spray_path_bridge import SprayPathBridge
+from .servo_bridge import ServoBridge  # ⬅️ neu
 
 T = TypeVar("T")
 
 
 class RosBridge:
     """
-    Betreibt alle Bridge-Nodes (SceneBridge, PosesBridge, SprayPathBridge)
+    Betreibt alle Bridge-Nodes (SceneBridge, PosesBridge, SprayPathBridge, ServoBridge)
     in einem eigenen Executor-Thread.
 
     - Executor wird NACH rclpy.init() erzeugt (Crash-Vermeidung).
@@ -70,8 +71,9 @@ class RosBridge:
             scene = SceneBridge(self._content)
             poses = PosesBridge(self._content)
             spray = SprayPathBridge(self._content)
+            servo = ServoBridge(self._content)  # ⬅️ neu
 
-            self._nodes.extend([scene, poses, spray])
+            self._nodes.extend([scene, poses, spray, servo])
 
             # dem Executor hinzufügen
             for n in self._nodes:
