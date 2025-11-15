@@ -301,3 +301,14 @@
 2025-11-15 19:30:57 DEBUG [243743] ros.kill_all_ros:91 -  -> TERM pid=239469 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_9yadmali --params-file /tmp/launch_params_g4570u8b
 2025-11-15 19:30:58 INFO [243743] ros.ui_bridge:224 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo states ready
 2025-11-15 19:30:58 INFO [243743] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 19:53:27 INFO [268282] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 19:53:27 DEBUG [268282] ros.kill_all_ros:91 -  -> TERM pid=263246 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py
+2025-11-15 19:53:27 DEBUG [268282] ros.kill_all_ros:91 -  -> TERM pid=263265 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_sm_5a3cz
+2025-11-15 19:53:29 INFO [268282] ros.ui_bridge:224 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo states ready
+2025-11-15 19:53:29 INFO [268282] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 19:53:58 INFO [269281] ros.kill_all_ros:89 - [kill] stopping 2 ROS-related processes…
+2025-11-15 19:53:58 DEBUG [269281] ros.kill_all_ros:91 -  -> TERM pid=268392 name=ros2 cmd=/usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 19:53:58 DEBUG [269281] ros.kill_all_ros:91 -  -> TERM pid=268412 name=rviz2 cmd=/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_3ks_0apd
+2025-11-15 19:54:00 INFO [269281] ros.ui_bridge:224 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo states ready
+2025-11-15 19:54:00 INFO [269281] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-15 19:54:12 INFO [269281] ros.ui_bridge:273 - UIBridge disconnect()

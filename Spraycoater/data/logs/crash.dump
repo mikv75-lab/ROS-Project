@@ -1,0 +1,49 @@
+Fatal Python error: Segmentation fault
+
+Thread 0x00007f8a264e36c0 (most recent call first):
+  File "/usr/lib/python3.12/threading.py", line 359 in wait
+  File "/usr/lib/python3.12/threading.py", line 655 in wait
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/pydevd.py", line 325 in _on_run
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_daemon_thread.py", line 53 in run
+  File "/usr/lib/python3.12/threading.py", line 1073 in _bootstrap_inner
+  File "/usr/lib/python3.12/threading.py", line 1030 in _bootstrap
+
+Thread 0x00007f8a26ce46c0 (most recent call first):
+  File "/usr/lib/python3.12/threading.py", line 359 in wait
+  File "/usr/lib/python3.12/threading.py", line 655 in wait
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/pydevd.py", line 279 in _on_run
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_daemon_thread.py", line 53 in run
+  File "/usr/lib/python3.12/threading.py", line 1073 in _bootstrap_inner
+  File "/usr/lib/python3.12/threading.py", line 1030 in _bootstrap
+
+Thread 0x00007f8a274e56c0 (most recent call first):
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_comm.py", line 227 in _read_line
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_comm.py", line 245 in _on_run
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_daemon_thread.py", line 53 in run
+  File "/usr/lib/python3.12/threading.py", line 1073 in _bootstrap_inner
+  File "/usr/lib/python3.12/threading.py", line 1030 in _bootstrap
+
+Thread 0x00007f8a27ce66c0 (most recent call first):
+  File "/usr/lib/python3.12/threading.py", line 359 in wait
+  File "/usr/lib/python3.12/queue.py", line 180 in get
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_comm.py", line 390 in _on_run
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_daemon_thread.py", line 53 in run
+  File "/usr/lib/python3.12/threading.py", line 1073 in _bootstrap_inner
+  File "/usr/lib/python3.12/threading.py", line 1030 in _bootstrap
+
+Current thread 0x00007f8a293afb80 (most recent call first):
+  File "/root/Spraycoater/.venv/lib/python3.12/site-packages/pyvista/plotting/plotter.py", line 2157 in render
+  File "/root/Spraycoater/.venv/lib/python3.12/site-packages/pyvistaqt/plotting.py", line 320 in _render
+  File "/root/Spraycoater/.venv/lib/python3.12/site-packages/pyvistaqt/plotting.py", line 327 in render
+  File "/root/Spraycoater/src/app/main_gui.py", line 158 in main
+  File "/root/Spraycoater/src/app/main_gui.py", line 169 in <module>
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_runpy.py", line 118 in _run_code
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_runpy.py", line 127 in _run_module_code
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_runpy.py", line 310 in run_path
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/adapter/../../debugpy/launcher/../../debugpy/../debugpy/server/cli.py", line 358 in run_file
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/adapter/../../debugpy/launcher/../../debugpy/../debugpy/server/cli.py", line 508 in main
+  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/adapter/../../debugpy/launcher/../../debugpy/__main__.py", line 71 in <module>
+  File "/usr/lib/python3.12/runpy.py", line 88 in _run_code
+  File "/usr/lib/python3.12/runpy.py", line 198 in _run_module_as_main
+
+Extension modules: _pydevd_bundle.pydevd_cython, _pydevd_sys_monitoring_cython, _pydevd_sys_monitoring._pydevd_sys_monitoring_cython, numpy._core._multiarray_umath, numpy.linalg._umath_linalg, PIL._imaging, kiwisolver._cext, vtkmodules.vtkCommonCore, vtkmodules.vtkWebCore, vtkmodules.vtkCommonMath, vtkmodules.vtkCommonTransforms, vtkmodules.vtkParallelCore, vtkmodules.vtkCommonDataModel, vtkmodules.vtkCommonExecutionModel, vtkmodules.vtkIOCore, vtkmodules.vtkImagingCore, vtkmodules.vtkIOImage, vtkmodules.vtkIOXMLParser, vtkmodules.vtkIOXML, vtkmodules.vtkCommonMisc, vtkmodules.vtkFiltersCore, vtkmodules.vtkRenderingCore, vtkmodules.vtkRenderingContext2D, vtkmodules.vtkRenderingFreeType, vtkmodules.vtkRenderingSceneGraph, vtkmodules.vtkRenderingVtkJS, vtkmodules.vtkIOExport, vtkmodules.vtkWebGLExporter, vtkmodules.vtkInteractionStyle, vtkmodules.vtkFiltersGeneral, vtkmodules.vtkFiltersSources, vtkmodules.vtkInteractionWidgets, vtkmodules.vtkViewsCore, vtkmodules.vtkViewsInfovis, vtkmodules.vtkCommonComputationalGeometry, vtkmodules.vtkCommonSystem, vtkmodules.vtkFiltersCellGrid, vtkmodules.vtkIOCellGrid, vtkmodules.vtkIOLegacy, vtkmodules.vtkDomainsChemistry, vtkmodules.vtkRenderingHyperTreeGrid, vtkmodules.vtkRenderingUI, vtkmodules.vtkRenderingOpenGL2, vtkmodules.vtkRenderingContextOpenGL2, vtkmodules.vtkRenderingVolume, vtkmodules.vtkImagingMath, vtkmodules.vtkRenderingVolumeOpenGL2, vtkmodules.vtkViewsContext2D, vtkmodules.vtkSerializationManager, vtkmodules.vtkTestingSerialization, vtkmodules.vtkImagingColor, vtkmodules.vtkTestingRendering, vtkmodules.vtkRenderingVolumeAMR, vtkmodules.vtkPythonContext2D, vtkmodules.vtkRenderingParallel, vtkmodules.vtkRenderingVRModels, vtkmodules.vtkRenderingVR, vtkmodules.vtkRenderingMatplotlib, vtkmodules.vtkRenderingLabel, vtkmodules.vtkRenderingLOD, vtkmodules.vtkRenderingLICOpenGL2, vtkmodules.vtkRenderingImage, vtkmodules.vtkChartsCore, vtkmodules.vtkRenderingGridAxes, vtkmodules.vtkRenderingExternal, vtkmodules.vtkRenderingCellGrid, vtkmodules.vtkIOXdmf2, vtkmodules.vtkIOVeraOut, vtkmodules.vtkIOVPIC, vtkmodules.vtkIOTecplotTable, vtkmodules.vtkIOTRUCHAS, vtkmodules.vtkIOSegY, vtkmodules.vtkIOParallelXML, vtkmodules.vtkIOLSDyna, vtkmodules.vtkIOParallelLSDyna, vtkmodules.vtkIOExodus, vtkmodules.vtkIOParallelExodus, vtkmodules.vtkIOPLY, vtkmodules.vtkIOPIO, vtkmodules.vtkIOMovie, vtkmodules.vtkIOOggTheora, vtkmodules.vtkIOOMF, vtkmodules.vtkIONetCDF, vtkmodules.vtkIOMotionFX, vtkmodules.vtkIOGeometry, vtkmodules.vtkIOParallel, vtkmodules.vtkIOMINC, vtkmodules.vtkIOLANLX3D, vtkmodules.vtkIOImport, vtkmodules.vtkIOIOSS, vtkmodules.vtkIOHDF, vtkmodules.vtkIOH5part, vtkmodules.vtkIOH5Rage, vtkmodules.vtkIOGeoJSON, vtkmodules.vtkIOFLUENTCFF, vtkmodules.vtkIOVideo, vtkmodules.vtkIOFDS, vtkmodules.vtkIOInfovis, vtkmodules.vtkIOExportPDF, vtkmodules.vtkRenderingGL2PSOpenGL2, vtkmodules.vtkIOExportGL2PS, vtkmodules.vtkIOEngys, vtkmodules.vtkIOEnSight, vtkmodules.vtkIOERF, vtkmodules.vtkIOCityGML, vtkmodules.vtkIOChemistry, vtkmodules.vtkIOCesium3DTiles, vtkmodules.vtkIOCONVERGECFD, vtkmodules.vtkIOCGNSReader, vtkmodules.vtkIOAvmesh, vtkmodules.vtkIOAsynchronous, vtkmodules.vtkIOAMR, vtkmodules.vtkInteractionImage, vtkmodules.vtkInfovisLayout, vtkmodules.vtkImagingStencil, vtkmodules.vtkImagingStatistics, vtkmodules.vtkImagingGeneral, vtkmodules.vtkImagingOpenGL2, vtkmodules.vtkImagingMorphological, vtkmodules.vtkImagingFourier, vtkmodules.vtkIOSQL, vtkmodules.vtkRenderingAnnotation, vtkmodules.vtkImagingHybrid, vtkmodules.vtkGeovisCore, vtkmodules.vtkFiltersTopology, vtkmodules.vtkFiltersTensor, vtkmodules.vtkFiltersSelection, vtkmodules.vtkFiltersSMP, vtkmodules.vtkFiltersPython, vtkmodules.vtkFiltersProgrammable, vtkmodules.vtkFiltersModeling, vtkmodules.vtkFiltersPoints, vtkmodules.vtkFiltersStatistics, vtkmodules.vtkFiltersParallelStatistics, vtkmodules.vtkFiltersImaging, vtkmodules.vtkFiltersExtraction, vtkmodules.vtkFiltersGeometry, vtkmodules.vtkFiltersHybrid, vtkmodules.vtkFiltersHyperTree, vtkmodules.vtkFiltersTexture, vtkmodules.vtkFiltersParallel, vtkmodules.vtkFiltersParallelImaging, vtkmodules.vtkFiltersParallelDIY2, vtkmodules.vtkFiltersTemporal, vtkmodules.vtkFiltersGeometryPreview, vtkmodules.vtkFiltersGeneric, vtkmodules.vtkFiltersFlowPaths, vtkmodules.vtkFiltersAMR, vtkmodules.vtkDomainsChemistryOpenGL2, vtkmodules.vtkCommonPython, vtkmodules.vtkCommonColor, vtkmodules.vtkImagingSources, vtkmodules.vtkInfovisCore, vtkmodules.vtkAcceleratorsVTKmCore, vtkmodules.vtkAcceleratorsVTKmDataModel, vtkmodules.vtkAcceleratorsVTKmFilters, vtkmodules.vtkFiltersVerdict, vtkmodules.vtkFiltersReduction, PyQt6.QtCore, PyQt6.QtGui, PyQt6.QtWidgets, PyQt6.QtStateMachine, yaml._yaml, psutil._psutil_linux, PyQt6.QtOpenGL, PyQt6.QtOpenGLWidgets, rcl_interfaces.rcl_interfaces_s__rosidl_typesupport_c, builtin_interfaces.builtin_interfaces_s__rosidl_typesupport_c, service_msgs.service_msgs_s__rosidl_typesupport_c, type_description_interfaces.type_description_interfaces_s__rosidl_typesupport_c, std_msgs.std_msgs_s__rosidl_typesupport_c, geometry_msgs.geometry_msgs_s__rosidl_typesupport_c, visualization_msgs.visualization_msgs_s__rosidl_typesupport_c, sensor_msgs.sensor_msgs_s__rosidl_typesupport_c, control_msgs.control_msgs_s__rosidl_typesupport_c (total: 175)

@@ -18,6 +18,7 @@ def generate_launch_description():
     urdf_xacro = os.path.join(cfg_pkg, "config", "omron_viper_s650.urdf.xacro")
     rviz_cfg = os.path.join(cfg_pkg, "config", "moveit.rviz")
     ros2_controllers_path = os.path.join(cfg_pkg, "config", "ros2_controllers.yaml")
+    initial_positions_path = os.path.join(cfg_pkg, "config", "initial_positions.yaml")
 
     # MoveIt-Konfiguration
     moveit_config = (
@@ -41,7 +42,7 @@ def generate_launch_description():
         value="1",
     )
 
-    # Static TF: world -> robot_mount (90° um Z gedreht)
+    # Static TF: world -> robot_mount
     static_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -54,8 +55,8 @@ def generate_launch_description():
             "--qy", "0.0",
             "--qz", "0.7071",   # 90° um Z
             "--qw", "0.7071",
-            "--frame-id",       "world",
-            "--child-frame-id", "robot_mount",
+            "--frame-id",      "world",
+            "--child-frame-id","robot_mount",
         ],
         output="screen",
     )
@@ -73,7 +74,11 @@ def generate_launch_description():
     ros2_control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        parameters=[moveit_config.robot_description, ros2_controllers_path],
+        parameters=[
+            moveit_config.robot_description,
+            ros2_controllers_path,
+            initial_positions_path,   # <- hier kommt dein initial_positions.yaml rein
+        ],
         output="screen",
     )
 
@@ -94,7 +99,7 @@ def generate_launch_description():
         package="controller_manager",
         executable="spawner",
         arguments=[
-            "omron_arm_controller",          # passt zu deinem ros2_controllers.yaml
+            "omron_arm_controller",
             "--controller-manager",
             "/controller_manager",
         ],
