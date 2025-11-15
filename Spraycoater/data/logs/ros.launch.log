@@ -1872,3 +1872,301 @@
 2025-11-15 19:19:12 INFO [233046] ros.launch:48 - [bringup.log] === bringup started pid=231509 ===
 2025-11-15 19:19:12 INFO [233046] ros.launch:48 - [bringup.log] === bringup started pid=232606 ===
 2025-11-15 19:19:12 INFO [233046] ros.launch:48 - [bringup.log] === bringup started pid=233172 ===
+2025-11-15 19:22:09 INFO [235762] ros.launch:155 - starting bringup: ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 19:22:09 INFO [235762] ros.launch:98 - === roslaunch stream START === pid=235840
+2025-11-15 19:22:10 INFO [235762] ros.launch:105 - [INFO] [launch]: All log files can be found below /root/.ros/log/2025-11-15-19-22-10-300924-a7c312aa7d2f-235840
+2025-11-15 19:22:10 INFO [235762] ros.launch:105 - [INFO] [launch]: Default logging verbosity is set to INFO
+2025-11-15 19:22:10 INFO [235762] ros.launch:105 - [ERROR] [launch]: Caught exception in launch (see debug for traceback): [bringup] MoveIt robot.launch.py fehlt: /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/launch/robot.launch.py
+2025-11-15 19:22:10 INFO [235762] ros.launch:114 - === roslaunch stream END ===
+2025-11-15 19:22:10 ERROR [235762] ros.launch:195 - bringup exited immediately (code=1)
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=72218 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=74858 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=79731 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=89708 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=19341 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=26183 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=27498 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=29992 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=33182 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=34664 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=37134 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=40398 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=47674 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=62987 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=73629 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=78486 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=91898 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=96752 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=6704 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=12000 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=13151 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=14659 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=15633 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=17298 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=19139 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=20550 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=24928 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=5825 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=21754 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=23688 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=27270 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=33152 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=35698 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=37155 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=42865 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=45449 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=48297 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=49879 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=51233 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=57492 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=59278 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=63524 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=67609 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=69736 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=75776 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=18246 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=32566 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=33811 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=32612 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=98701 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=99795 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=2494 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=5972 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=6674 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=10351 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=11298 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=16946 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=18161 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=18960 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=24509 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=76250 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=78713 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=79675 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=90134 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=96950 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=5295 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=6182 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=12787 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=14484 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=22503 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=23832 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=24689 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=26785 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=224804 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=227739 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=229249 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=231509 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=232606 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=233172 ===
+2025-11-15 19:22:10 INFO [235762] ros.launch:48 - [bringup.log] === bringup started pid=235840 ===
+2025-11-15 19:30:57 INFO [243743] ros.launch:155 - starting bringup: ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-15 19:30:57 INFO [243743] ros.launch:98 - === roslaunch stream START === pid=243855
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [INFO] [launch]: All log files can be found below /root/.ros/log/2025-11-15-19-30-58-009895-a7c312aa7d2f-243855
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [INFO] [launch]: Default logging verbosity is set to INFO
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [INFO] [static_transform_publisher-1]: process started with pid [243886]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [INFO] [robot_state_publisher-2]: process started with pid [243887]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [INFO] [ros2_control_node-3]: process started with pid [243888]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [INFO] [spawner-4]: process started with pid [243889]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [INFO] [spawner-5]: process started with pid [243890]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [INFO] [servo_node-6]: process started with pid [243891]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [INFO] [rviz2-7]: process started with pid [243892]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [static_transform_publisher-1] [INFO] [1763235058.244707037] [tf_world_to_omron_mount]: Spinning until stopped - publishing transform
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [static_transform_publisher-1] translation: ('0.000000', '0.000000', '0.000000')
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [static_transform_publisher-1] rotation: ('0.000000', '0.000000', '0.000000', '1.000000')
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [static_transform_publisher-1] from 'world' to 'robot_mount'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [robot_state_publisher-2] [INFO] [1763235058.249286408] [robot_state_publisher]: Robot initialized
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.260671133] [controller_manager]: Using Steady (Monotonic) clock for triggering controller manager cycles.
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.265234807] [controller_manager]: Subscribing to '/robot_description' topic for robot description.
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.267541490] [controller_manager]: Enforcing command limits is enabled...
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.277729779] [controller_manager]: update rate is 100 Hz
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.277787656] [controller_manager]: Spawning controller_manager RT thread with scheduler priority: 50
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [WARN] [1763235058.277890601] [controller_manager]: Could not enable FIFO RT scheduling policy: with error number <1>(Operation not permitted). See [https://control.ros.org/master/doc/ros2_control/controller_manager/doc/userdoc.html] for details on how to enable realtime scheduling.
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [WARN] [1763235058.288348820] [rcl.logging_rosout]: Publisher already registered for node name: 'omron_servo_node'. If this is due to multiple nodes with the same name then all logs for the logger named 'omron_servo_node' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [WARN] [1763235058.295816817] [omron_servo_node]: Could not enable FIFO RT scheduling policy. Continuing with the default.
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [WARN] [1763235058.295920340] [omron_servo_node]: Realtime kernel is recommended for better performance.
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.299798067] [omron_servo_node.omron_servo_node.moveit.ros.rdf_loader]: Loaded robot model in 0 seconds
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.299924798] [omron_servo_node.omron_servo_node.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.311947128] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.312006834] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.312040250] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.312047184] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.312050458] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.312053154] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.312055273] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.352837128] [omron_servo_node.omron_servo_node.moveit.ros.current_state_monitor]: Listening to joint states on topic '/joint_states'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.362261948] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Listening to '/attached_collision_object' for attached collision objects
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.362311447] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.363958568] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Listening to '/planning_scene'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.363988999] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Starting world geometry update monitor for collision objects, attached objects, octomap updates.
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.364663391] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Listening to 'collision_object'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.365372450] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Listening to 'planning_scene_world' for planning scene world geometry
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235058.367884060] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on '/omron_servo_node/publish_planning_scene'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.384400054] [controller_manager]: Received robot description from topic.
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.386806600] [controller_manager]: Using JointLimiter for joint 'joint_5' in hardware 'FakeSystem' : '  has position limits: true [-2.0944, 2.0944]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [6.54498]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.386873721] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_5' in hardware 'FakeSystem'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.386894233] [controller_manager]: Using JointLimiter for joint 'joint_4' in hardware 'FakeSystem' : '  has position limits: true [-3.31613, 3.31613]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [6.54498]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.386901552] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_4' in hardware 'FakeSystem'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.386911471] [controller_manager]: Using JointLimiter for joint 'joint_6' in hardware 'FakeSystem' : '  has position limits: true [-3.14159, 3.14159]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [10.472]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.386917056] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_6' in hardware 'FakeSystem'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.386925338] [controller_manager]: Using JointLimiter for joint 'joint_3' in hardware 'FakeSystem' : '  has position limits: true [-0.50615, 4.46805]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [6.54498]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.386931405] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_3' in hardware 'FakeSystem'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.386939590] [controller_manager]: Using JointLimiter for joint 'joint_2' in hardware 'FakeSystem' : '  has position limits: true [-3.31613, 0.7854]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [5.23599]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.386945176] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_2' in hardware 'FakeSystem'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.386952784] [controller_manager]: Using JointLimiter for joint 'joint_1' in hardware 'FakeSystem' : '  has position limits: true [-2.96706, 2.96706]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [5.72468]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.386958176] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_1' in hardware 'FakeSystem'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.388194384] [controller_manager]: Loading hardware 'FakeSystem'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.388773438] [controller_manager]: Loaded hardware 'FakeSystem' from plugin 'mock_components/GenericSystem'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.388872339] [controller_manager]: Initialize hardware 'FakeSystem'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.399747346] [controller_manager]: Successful initialization of hardware 'FakeSystem'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.399982800] [resource_manager]: 'configure' hardware 'FakeSystem'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.399994260] [resource_manager]: Successful 'configure' of hardware 'FakeSystem'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.400000134] [resource_manager]: 'activate' hardware 'FakeSystem'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.400006201] [resource_manager]: Successful 'activate' of hardware 'FakeSystem'
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.400080160] [controller_manager]: Resource Manager has been successfully initialized. Starting Controller Manager services...
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235058.449440740] [controller_manager]: Received robot description from topic.
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [ros2_control_node-3] [WARN] [1763235058.449484750] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [spawner-4] [INFO] [1763235058.501161257] [spawner_joint_state_broadcaster]: waiting for service /controller_manager/list_controllers to become available...
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235058.589733323] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235058.589882589] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235058.617415247] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [rviz2-7] Warning: class_loader.impl: SEVERE WARNING!!! A namespace collision has occurred with plugin factory for class rviz_default_plugins::displays::InteractiveMarkerDisplay. New factory will OVERWRITE existing one. This situation occurs when libraries containing plugins are directly linked against an executable (the one running right now generating this message). Please separate plugins out into their own library or just don't link against the library and use either class_loader::ClassLoader/MultiLibraryClassLoader to open.
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [rviz2-7]          at line 321 in /opt/ros/rolling/include/class_loader/class_loader/class_loader_core.hpp
+2025-11-15 19:30:58 INFO [243743] ros.launch:105 - [rviz2-7] [WARN] [1763235058.740248286] [rcl.logging_rosout]: Publisher already registered for node name: 'rviz2'. If this is due to multiple nodes with the same name then all logs for the logger named 'rviz2' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235060.825756377] [controller_manager]: Loading controller : 'joint_state_broadcaster' of type 'joint_state_broadcaster/JointStateBroadcaster'
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235060.825805875] [controller_manager]: Loading controller 'joint_state_broadcaster'
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235060.828740822] [controller_manager]: Controller 'joint_state_broadcaster' node arguments: --ros-args --params-file /tmp/launch_params_myyau3or --params-file /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/ros2_controllers.yaml
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [spawner-4] [INFO] [1763235060.849177877] [spawner_joint_state_broadcaster]: [94mLoaded [1mjoint_state_broadcaster[0m
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235060.851592512] [controller_manager]: Configuring controller: 'joint_state_broadcaster'
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235060.851744474] [joint_state_broadcaster]: 'joints' or 'interfaces' parameter is empty. All available state interfaces will be published
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235060.871337746] [controller_manager]: Activating controllers: [ joint_state_broadcaster ]
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235060.878204251] [controller_manager]: Successfully switched controllers!
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [spawner-4] [INFO] [1763235060.889264251] [spawner_joint_state_broadcaster]: [92mConfigured and activated [1mjoint_state_broadcaster[0m
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235060.923287843] [omron_servo_node.omron_servo_node.moveit.ros.move_group.collision_monitor]: Collision monitor started
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [servo_node-6] Warning: class_loader.ClassLoader: SEVERE WARNING!!! Attempting to unload library while objects created by this loader exist in the heap! You should delete your objects before attempting to unload the library or destroying the ClassLoader. The library will NOT be unloaded.
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [servo_node-6]          at line 127 in ./src/class_loader.cpp
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [servo_node-6] [INFO] [1763235060.925480314] [omron_servo_node.omron_servo_node.moveit.ros.servo]: Servo initialized successfully
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [servo_node-6] terminate called after throwing an instance of 'std::runtime_error'
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [servo_node-6]   what():  cannot store a negative time point in rclcpp::Time
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [servo_node-6] Stack trace (most recent call last) in thread 244256:
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [servo_node-6] #14   Object "", at 0xffffffffffffffff, in
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [servo_node-6] #13   Source "../sysdeps/unix/sysv/linux/x86_64/clone3.S", line 78, in clone3 [0x7fa4864f0c6b]
+2025-11-15 19:31:00 INFO [243743] ros.launch:105 - [servo_node-6] #12   Source "./nptl/pthread_create.c", line 447, in start_thread [0x7fa486463aa3]
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6] #11   Source "../../../../../src/libstdc++-v3/src/c++11/thread.cc", line 104, in execute_native_thread_routine [0x7fa4866f5db3]
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6] #10   Object "/opt/ros/rolling/lib/libmoveit_servo_lib_ros.so.2.14.1", at 0x7fa482b5d40d, in moveit_servo::ServoNode::servoLoop()
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6] #9    Object "/opt/ros/rolling/lib/libmoveit_servo_lib_cpp.so.2.14.1", at 0x7fa482a7f95f, in moveit_servo::updateSlidingWindow(moveit_servo::KinematicState&, std::deque<moveit_servo::KinematicState, std::allocator<moveit_servo::KinematicState> >&, double, rclcpp::Time const&)
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6] #8    Object "/opt/ros/rolling/lib/librclcpp.so", at 0x7fa486a3b618, in rclcpp::Time::operator-(rclcpp::Duration const&) const
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6] #7    Object "/opt/ros/rolling/lib/librclcpp.so", at 0x7fa48696d960, in
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [INFO] [spawner-4]: process has finished cleanly [pid 243889]
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6] #6    Source "../../../../src/libstdc++-v3/libsupc++/eh_throw.cc", line 98, in __cxa_throw [0x7fa4866c4390]
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6] #5    Source "../../../../src/libstdc++-v3/libsupc++/eh_terminate.cc", line 58, in terminate [0x7fa4866aea54]
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6] #4    Source "../../../../src/libstdc++-v3/libsupc++/eh_terminate.cc", line 48, in __terminate [0x7fa4866c40d9]
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6] #3    Source "../../../../src/libstdc++-v3/libsupc++/vterminate.cc", line 95, in __verbose_terminate_handler [0x7fa4866aeff4]
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6] #2    Source "./stdlib/abort.c", line 79, in abort [0x7fa4863ef8fe]
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6] #1    Source "../sysdeps/posix/raise.c", line 26, in raise [0x7fa48640c27d]
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6] #0  | Source "./nptl/pthread_kill.c", line 89, in __pthread_kill_internal
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6]     | Source "./nptl/pthread_kill.c", line 78, in __pthread_kill_implementation
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6]       Source "./nptl/pthread_kill.c", line 44, in __pthread_kill [0x7fa486465b2c]
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [servo_node-6] Aborted (Signal sent by tkill() 243891 0)
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235061.188668626] [controller_manager]: Loading controller : 'omron_arm_controller' of type 'joint_trajectory_controller/JointTrajectoryController'
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235061.188728043] [controller_manager]: Loading controller 'omron_arm_controller'
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235061.190961826] [controller_manager]: Controller 'omron_arm_controller' node arguments: --ros-args --params-file /tmp/launch_params_myyau3or --params-file /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/ros2_controllers.yaml
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [spawner-5] [INFO] [1763235061.233742107] [spawner_omron_arm_controller]: [94mLoaded [1momron_arm_controller[0m
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235061.235810542] [controller_manager]: Configuring controller: 'omron_arm_controller'
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235061.236058323] [omron_arm_controller]: No specific joint names are used for command interfaces. Using 'joints' parameter.
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235061.236115237] [omron_arm_controller]: Command interfaces are [position] and state interfaces are [position velocity].
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235061.236148364] [omron_arm_controller]: Using 'splines' interpolation method.
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235061.239514736] [omron_arm_controller]: Action status changes will be monitored at 20.00 Hz.
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235061.258027614] [omron_arm_controller]: Setting initial scaling factor to 1.000000
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235061.258078845] [omron_arm_controller]: No scaling interface set. This controller will not read speed scaling from the hardware.
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235061.270604922] [controller_manager]: Activating controllers: [ omron_arm_controller ]
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [ros2_control_node-3] [INFO] [1763235061.278394274] [controller_manager]: Successfully switched controllers!
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [spawner-5] [INFO] [1763235061.289598243] [spawner_omron_arm_controller]: [92mConfigured and activated [1momron_arm_controller[0m
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [INFO] [spawner-5]: process has finished cleanly [pid 243890]
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [rviz2-7] [ERROR] [1763235061.802187063] [rviz2.moveit.ros.motion_planning_frame]: Action server: /recognize_objects not available
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235061.823919936] [rviz2.moveit.ros.motion_planning_frame]: MoveGroup namespace changed: / -> . Reloading params.
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235061.880152414] [rviz2.moveit.ros.rdf_loader]: Loaded robot model in 0 seconds
+2025-11-15 19:31:01 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235061.880245633] [rviz2.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-15 19:31:02 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235062.444713912] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-15 19:31:02 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235062.444778241] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-15 19:31:02 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235062.444785849] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-15 19:31:02 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235062.444789893] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-15 19:31:02 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235062.444794131] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-15 19:31:02 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235062.444797790] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-15 19:31:02 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235062.444800583] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-15 19:31:03 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235063.103308396] [rviz2.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-11-15 19:31:03 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235063.169710634] [rviz2.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-15 19:31:03 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235063.171202714] [rviz2.moveit.ros.planning_scene_monitor]: Listening to '/monitored_planning_scene'
+2025-11-15 19:31:03 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235063.330899090] [interactive_marker_display_94463919177968]: Connected on namespace: /rviz_moveit_motion_planning_display/robot_interaction_interactive_marker_topic
+2025-11-15 19:31:03 INFO [243743] ros.launch:105 - [ERROR] [servo_node-6]: process has died [pid 243891, exit code -6, cmd '/opt/ros/rolling/lib/moveit_servo/servo_node --ros-args --disable-external-lib-logs --ros-args -r __node:=omron_servo_node --params-file /tmp/launch_params_c_8seqb3 --params-file /tmp/launch_params_639g_4aj --params-file /tmp/launch_params_n92jiz1m --params-file /tmp/launch_params_hzt39pxy --params-file /tmp/launch_params_ntsga6bo --params-file /tmp/launch_params_znwgqnnm'].
+2025-11-15 19:31:03 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235063.398280925] [interactive_marker_display_94463919177968]: Sending request for interactive markers
+2025-11-15 19:31:03 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235063.431358436] [interactive_marker_display_94463919177968]: Service response received for initialization
+2025-11-15 19:31:04 INFO [243743] ros.launch:105 - [INFO] [scene-8]: process started with pid [244296]
+2025-11-15 19:31:04 INFO [243743] ros.launch:105 - [INFO] [poses-9]: process started with pid [244297]
+2025-11-15 19:31:04 INFO [243743] ros.launch:105 - [INFO] [spray_path-10]: process started with pid [244298]
+2025-11-15 19:31:04 INFO [243743] ros.launch:105 - [INFO] [servo-11]: process started with pid [244299]
+2025-11-15 19:31:04 INFO [243743] ros.launch:105 - [servo-11] [INFO] [1763235064.736283440] [servo]: ServoBridge: Initial frame = 'world'
+2025-11-15 19:31:04 INFO [243743] ros.launch:105 - [servo-11] [INFO] [1763235064.789117279] [servo]: ✅ ServoBridge aktiv – Publiziert auf '/servo/cartesian_mm' und '/servo/joint_jog'
+2025-11-15 19:31:04 INFO [243743] ros.launch:105 - [servo-11] [INFO] [1763235064.791069522] [servo]: === JOINT_JOG-Test ===
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8] Traceback (most recent call last):
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8]   File "/root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/scene", line 33, in <module>
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8]     sys.exit(load_entry_point('spraycoater-nodes-py', 'console_scripts', 'scene')())
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/scene.py", line 535, in main
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8]     rclpy.spin(Scene())
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8]                ^^^^^^^
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/scene.py", line 171, in __init__
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8]     self.loader.publish_topic(node_key, "substrate_list"),
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8]     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/utils/config_hub.py", line 163, in publish_topic
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8]     spec = self._must_find(self._pubs_by_id, node_key, id_, "publish")
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/utils/config_hub.py", line 217, in _must_find
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8]     raise RuntimeError(f"topic id '{id_}' not found for node '{node_key}' ({dir_label})")
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [scene-8] RuntimeError: topic id 'substrate_list' not found for node 'scene' (publish)
+2025-11-15 19:31:05 INFO [243743] ros.launch:105 - [ERROR] [scene-8]: process has died [pid 244296, exit code 1, cmd '/root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/scene --ros-args --log-level error --ros-args -r __node:=scene'].
+2025-11-15 19:31:08 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235068.359163044] [rviz2.moveit.ros.planning_scene_monitor]: GetPlanningScene service call to get_planning_scene timed out. at /root/ws_moveit/src/moveit2/moveit_ros/planning/planning_scene_monitor/src/planning_scene_monitor.cpp:645
+2025-11-15 19:31:08 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235068.359289210] [rviz2.moveit.ros.motion_planning_frame]: group omron_arm_group
+2025-11-15 19:31:08 INFO [243743] ros.launch:105 - [rviz2-7] [INFO] [1763235068.359298284] [rviz2.moveit.ros.motion_planning_frame]: Constructing new MoveGroup connection for group 'omron_arm_group' in namespace ''
+2025-11-15 19:31:09 INFO [243743] ros.launch:105 - [servo-11] [WARN] [1763235069.794523654] [servo]: Service /omron_servo_node/switch_command_type nicht verfügbar.
+2025-11-15 19:31:10 INFO [243743] ros.launch:105 - [servo-11] [INFO] [1763235070.799629403] [servo]: === TWIST-Test ===
+2025-11-15 19:31:15 INFO [243743] ros.launch:105 - [servo-11] [WARN] [1763235075.802942484] [servo]: Service /omron_servo_node/switch_command_type nicht verfügbar.
+2025-11-15 19:31:16 INFO [243743] ros.launch:105 - [rviz2-7] [ERROR] [1763235076.560009215] [rviz2.rclcpp_action]: Error in destruction of rcl action client handle: action client implementation is invalid, at ./src/rcl_action/action_client.c:495
+2025-11-15 19:31:16 INFO [243743] ros.launch:105 - [rviz2-7] Failed to publish log message to rosout: action client implementation is invalid, at ./src/rcl_action/action_client.c:495
+2025-11-15 19:31:16 INFO [243743] ros.launch:105 - [rviz2-7] terminate called without an active exception
+2025-11-15 19:31:17 INFO [243743] ros.launch:105 - [servo-11] [INFO] [1763235077.313700173] [servo]: === POSE-Test ===
