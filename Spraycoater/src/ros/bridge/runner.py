@@ -75,7 +75,7 @@ class RosBridge:
             spray = SprayPathBridge(self._content)
             servo = ServoBridge(self._content)
             robot = RobotBridge(self._content)
-            motion = MotionBridge(self._content)  # ⬅️ MotionBridge
+            motion = MotionBridge(self._content)
 
             self._nodes.extend([scene, poses, spray, servo, robot, motion])
 
@@ -84,7 +84,11 @@ class RosBridge:
                 self._exec.add_node(n)
 
             self._running = True
-            self._thread = threading.Thread(target=self._spin, name="ros-bridge", daemon=True)
+            self._thread = threading.Thread(
+                target=self._spin,
+                name="ros-bridge",
+                daemon=True,
+            )
             self._thread.start()
 
     def _spin(self) -> None:
@@ -92,6 +96,7 @@ class RosBridge:
             if self._exec is not None:
                 self._exec.spin()
         except Exception:
+            # Logging kannst du hier nach Bedarf ergänzen
             pass
         finally:
             with self._lock:

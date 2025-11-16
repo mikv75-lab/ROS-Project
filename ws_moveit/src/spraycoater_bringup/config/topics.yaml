@@ -170,19 +170,27 @@ topics:
 
   spray_path:
     subscribe:
+      # UI → spray_path_bridge → SprayPath-Node:
+      # Rezeptpfad als MarkerArray (für RViz + weitere Verarbeitung)
       - id: set
         name: /spraycoater/spray_path/set
-        type: std_msgs/msg/String
+        type: visualization_msgs/msg/MarkerArray
         qos: default
+
     publish:
+      # SprayPath-Node → UI: "welcher Pfad ist aktiv"
       - id: current
         name: /spraycoater/spray_path/current
         type: std_msgs/msg/String
         qos: latched
+
+      # SprayPath-Node → UI/RViz: Pfad als PoseArray (optional weiter nutzen)
       - id: poses
         name: /spraycoater/spray_path/poses
         type: geometry_msgs/msg/PoseArray
         qos: default
+
+      # SprayPath-Node → UI/RViz: fertige Marker (falls Node selbst Marker erzeugt)
       - id: markers
         name: /spraycoater/spray_path/markers
         type: visualization_msgs/msg/MarkerArray

@@ -292,7 +292,11 @@ class RecipeEditorPanel(QWidget):
         self._active_model = model
         return model
 
-    def _relay_update_preview(self, _model_obj: object) -> None:
+    def _relay_update_preview(self) -> None:
+        """
+        Slot für den Update-Button.
+        Baut immer das aktuelle Recipe-Modell und feuert updatePreviewRequested(model).
+        """
         self.updatePreviewRequested.emit(self.current_model())
 
     @staticmethod

@@ -11,7 +11,7 @@ from .poses_bridge import PosesBridge
 from .spray_path_bridge import SprayPathBridge
 from .servo_bridge import ServoBridge
 from .robot_bridge import RobotBridge
-from .motion_bridge import MotionBridge  # ⬅️ MotionBridge
+from .motion_bridge import MotionBridge
 
 from geometry_msgs.msg import PoseStamped, PoseArray
 from sensor_msgs.msg import JointState
@@ -125,7 +125,9 @@ class PosesState:
 class SprayPathState:
     """
     Signal-freier State-Container für SprayPath:
-      - current_name (str), poses (PoseArray|None), marker wird im Bridge-Node gehalten
+      - current_name (str)
+      - poses (PoseArray|None)
+      - marker-Visualisierung passiert ausschließlich im RViz/Preview
       - thread-sicher per RLock
     """
     def __init__(self) -> None:
@@ -479,7 +481,10 @@ class UIBridge:
 
     # ---------- SprayPath: Set-API (UI -> ROS) ----------
     def set_spraypath(self, marker_array: MarkerArray) -> None:
-        """Publisht ein MarkerArray unverändert auf spraypath.set."""
+        """
+        Publisht ein MarkerArray unverändert auf spray_path.set.
+        Wird typischerweise aus dem Recipe-Tab (Update Preview) aufgerufen.
+        """
         if not self._spb:
             _LOG.error("set_spraypath: SprayPathBridge nicht verfügbar.")
             return
