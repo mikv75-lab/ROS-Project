@@ -141,6 +141,34 @@ class Recipe:
     def paths(self) -> Dict[str, np.ndarray]:
         return self._paths_cache
 
+    # ------- kompilierten Pfad als Punktwolke (mm) holen -------
+    def compiled_points_mm_for_side(self, side: str) -> Optional[np.ndarray]:
+        """
+        Liefert die bereits COMPILIERTEN Punkte (x,y,z in mm) für eine Side,
+        falls `compile_poses(...)` vorher aufgerufen wurde.
+
+        Rückgabe:
+          - np.ndarray (N,3) in mm
+          - oder None, wenn nichts compiliert ist.
+        """
+        pc = self.paths_compiled or {}
+        sides = pc.get("sides") or {}
+        sdata = sides.get(side)
+        if not isinstance(sdata, dict):
+            return None
+
+        poses = sdata.get("poses_quat") or []
+        if not poses:
+            return None
+
+        P = np.array(
+            [[float(p.get("x", 0.0)),
+              float(p.get("y", 0.0)),
+              float(p.get("z", 0.0))] for p in poses],
+            dtype=float,
+        ).reshape(-1, 3)
+        return P
+
     # ------- Quaternion-Posen (ohne Pre-/Retreat-Zeichnen) -------
     def compile_poses(
         self,

@@ -94,12 +94,32 @@ def build_marker_array_for_recipe_side(
     side: str,
     frame_id: str,
 ) -> MarkerArray:
-    # Geometrie sicherstellen
-    if side not in (recipe.paths or {}):
-        recipe.rebuild_paths(sides=[side])
+    """
+    MarkerArray für GENAU EINE Side.
 
-    paths = recipe.paths or {}
-    pts_mm = paths.get(side)
+    Priorität:
+      1) Wenn paths_compiled vorhanden ist:
+           -> fertig eingebettete Posen (inkl. Z + Stand-off) verwenden
+      2) Sonst:
+           -> rohe Pfade aus recipe.paths (rebuild_paths) verwenden
+    """
+    pts_mm = None
+
+    # 1) Erstmal versuchen, die fertigen Posen aus paths_compiled zu nehmen
+    try:
+        pts_mm = recipe.compiled_points_mm_for_side(side)
+    except Exception:
+        pts_mm = None
+
+    # 2) Fallback: rohe Geometriepfade (Local-Koordinaten, z.B. z=0 für Planes)
+    if pts_mm is None or pts_mm.size == 0:
+        # Geometrie sicherstellen
+        if side not in (recipe.paths or {}):
+            recipe.rebuild_paths(sides=[side])
+
+        paths = recipe.paths or {}
+        pts_mm = paths.get(side)
+
     if pts_mm is None or pts_mm.size == 0:
         return MarkerArray()
 

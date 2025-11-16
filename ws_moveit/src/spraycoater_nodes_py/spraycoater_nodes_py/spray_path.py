@@ -29,7 +29,7 @@ class SprayPath(Node):
 
     Verhalten:
       - Frame = header.frame_id des ersten Markers; wenn leer, bleibt letzter Wert bestehen
-      - Re-Publish PoseArray per Timer, damit RViz die Posen stabil hält
+      - PoseArray wird nur EINMAL pro set-Aufruf publiziert.
     """
 
     GROUP = "spray_path"
@@ -68,20 +68,12 @@ class SprayPath(Node):
         self._last_name: str = ""
         self._last_pa: PoseArray | None = None
 
-        # Re-Publisher (nur PoseArray, damit RViz die Posen behält)
-        self.create_timer(1.0, self._republish_if_any)
-
-        self.get_logger().info("✅ SprayPathManager bereit (Topics: set/current/poses)")
+        # KEIN Re-Publisher mehr – nur One-Shot-Publish
+        self.get_logger().info("✅ SprayPathManager bereit (Topics: set/current/poses, one-shot publish)")
 
     # ----------------------------- helpers -----------------------------
     @staticmethod
     def _extract_name(ma: MarkerArray) -> str:
-        """
-        Name aus MarkerArray extrahieren:
-          1) TEXT_VIEW_FACING.text (getrimmt)
-          2) erstes non-empty ns
-          3) sonst exakt leer
-        """
         from visualization_msgs.msg import Marker  # local import, um Kreisabhängigkeit zu vermeiden
 
         # 1) TEXT_VIEW_FACING.text
@@ -102,11 +94,6 @@ class SprayPath(Node):
 
     @staticmethod
     def _prefer_linestrip(ma: MarkerArray):
-        """
-        Wähle den besten Pfad-Marker:
-          - bevorzugt einen LINE_STRIP mit >= 2 Punkten
-          - sonst den ersten Marker mit >= 2 Punkten
-        """
         from visualization_msgs.msg import Marker  # local import
 
         best = None
@@ -120,14 +107,6 @@ class SprayPath(Node):
 
     def _publish_current_name(self, name: str) -> None:
         self.pub_current.publish(String(data=name))
-
-    def _republish_if_any(self) -> None:
-        """
-        Hält das letzte PoseArray “lebendig”, damit RViz bei Re-Subscribe
-        sofort wieder etwas sieht (kein echtes latched, aber nah dran).
-        """
-        if self._last_pa is not None:
-            self.pub_poses.publish(self._last_pa)
 
     # ----------------------------- handler -----------------------------
     def _on_set_spraypath(self, msg: MarkerArray) -> None:
@@ -163,7 +142,7 @@ class SprayPath(Node):
             p.orientation.w = 1.0  # neutral (kein Drehen)
             pa.poses.append(p)
 
-        # Publish + Merken (für Re-Publish)
+        # EINMAL Publish + Merken
         self.pub_poses.publish(pa)
         self._last_pa = pa
 

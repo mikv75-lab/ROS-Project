@@ -287,21 +287,40 @@ class Matplot2DView(FigureCanvas):
         U = self._path2d.get(self._plane)
         if U is None or len(U) == 0:
             return
-        self._ax.plot(U[:, 0], U[:, 1],
-                      color=self._style["path_color"],
-                      linewidth=self._style["path_lw"],
-                      zorder=2)
-        # Start/End
-        self._ax.scatter([U[0, 0]], [U[0, 1]],
-                         s=self._style["marker_size"],
-                         edgecolors=self._style["start_edge"],
-                         facecolors=self._style["start_face"],
-                         zorder=3)
-        self._ax.scatter([U[-1, 0]], [U[-1, 1]],
-                         s=self._style["marker_size"],
-                         edgecolors=self._style["end_edge"],
-                         facecolors=self._style["end_face"],
-                         zorder=3)
+
+        # Pfadlinie
+        self._ax.plot(
+            U[:, 0], U[:, 1],
+            color=self._style["path_color"],
+            linewidth=self._style["path_lw"],
+            zorder=2,
+        )
+
+        # Start/End als Line2D mit Marker (statt scatter/PathCollection)
+        # marker_size ist in "Punkten²" gedacht – für markersize (Punkte) grob die Wurzel nehmen
+        ms = (self._style["marker_size"] ** 0.5) * 1.2
+
+        # Startpunkt
+        self._ax.plot(
+            [U[0, 0]], [U[0, 1]],
+            marker="o",
+            linestyle="None",
+            markersize=ms,
+            markerfacecolor=self._style["start_face"],
+            markeredgecolor=self._style["start_edge"],
+            zorder=3,
+        )
+
+        # Endpunkt
+        self._ax.plot(
+            [U[-1, 0]], [U[-1, 1]],
+            marker="o",
+            linestyle="None",
+            markersize=ms,
+            markerfacecolor=self._style["end_face"],
+            markeredgecolor=self._style["end_edge"],
+            zorder=3,
+        )
 
     def _add_legend(self):
         handles = [
