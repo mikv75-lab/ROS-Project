@@ -468,7 +468,7 @@ class SceneManager:
         self.add_mesh(ground, layer=self.L_GROUND, color="#3a3a3a", opacity=1.0, lighting=False)
 
         if mmesh is not None:
-            self.add_mesh(mmesh, layer=self.L_MOUNT, color="#5d5d5d", opacity=0.95, lighting=False)
+            self.add_mesh(mmesh, layer=self.L_MOUNT, color="#5d5d5d", opacity=1.0, lighting=False)
 
         if smesh is not None:
             self.add_mesh(smesh, layer=self.L_SUBSTRATE, color="#d0d6dd", opacity=1.0, lighting=False)

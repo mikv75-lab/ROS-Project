@@ -17,6 +17,12 @@ def _points_mm_to_markerarray(
     name: str,
     ns: Optional[str] = None,
 ) -> MarkerArray:
+    """
+    Baut aus mm-Punkten ein MarkerArray:
+      - LINE_STRIP (grün)
+      - Punkte (rot)
+      - Text (Rezeptname) am Startpunkt
+    """
     ma = MarkerArray()
     if points_mm is None or points_mm.size == 0:
         return ma
@@ -34,7 +40,7 @@ def _points_mm_to_markerarray(
     line.id = 0
     line.type = Marker.LINE_STRIP
     line.action = Marker.ADD
-    line.scale.x = 0.002
+    line.scale.x = 0.002  # 2 mm
     line.color.r = 0.0
     line.color.g = 1.0
     line.color.b = 0.0
@@ -46,14 +52,14 @@ def _points_mm_to_markerarray(
         line.points.append(p)
     ma.markers.append(line)
 
-    # Punkte
+    # Punkte (SPHERE_LIST)
     dots = Marker()
     dots.header.frame_id = frame_id
     dots.ns = ns
     dots.id = 1
     dots.type = Marker.SPHERE_LIST
     dots.action = Marker.ADD
-    dots.scale.x = 0.004
+    dots.scale.x = 0.004  # 4 mm
     dots.scale.y = 0.004
     dots.scale.z = 0.004
     dots.color.r = 1.0
@@ -67,7 +73,7 @@ def _points_mm_to_markerarray(
         dots.points.append(p)
     ma.markers.append(dots)
 
-    # Text (Rezeptname)
+    # Text (Rezeptname) am Startpunkt
     if name:
         txt = Marker()
         txt.header.frame_id = frame_id
@@ -76,16 +82,44 @@ def _points_mm_to_markerarray(
         txt.type = Marker.TEXT_VIEW_FACING
         txt.action = Marker.ADD
         txt.text = name
-        txt.scale.z = 0.02
+        txt.scale.z = 0.02  # 20 mm
         txt.color.r = txt.color.g = txt.color.b = txt.color.a = 1.0
         txt.pose.orientation.w = 1.0
         x0, y0, z0 = Pm[0]
         txt.pose.position.x = float(x0)
         txt.pose.position.y = float(y0)
-        txt.pose.position.z = float(z0) + 0.01
+        txt.pose.position.z = float(z0) + 0.01  # 10 mm drüber
         ma.markers.append(txt)
 
     return ma
+
+
+def _compiled_points_mm_for_side(recipe: Recipe, side: str) -> np.ndarray:
+    """
+    Liest die kompilierten Weltpunkte (mm) für eine Side aus recipe.paths_compiled.
+
+    Kein Fallback:
+      - wenn paths_compiled oder die Side fehlen -> (0,3)-Array
+      - wenn keine poses_quat da sind -> (0,3)-Array
+    """
+    pc = recipe.paths_compiled or {}
+    sides = pc.get("sides") or {}
+    sdata = sides.get(str(side))
+    if not isinstance(sdata, dict):
+        return np.zeros((0, 3), dtype=float)
+
+    poses = sdata.get("poses_quat") or []
+    if not poses:
+        return np.zeros((0, 3), dtype=float)
+
+    P = np.array(
+        [[float(p.get("x", 0.0)),
+          float(p.get("y", 0.0)),
+          float(p.get("z", 0.0))]
+         for p in poses],
+        dtype=float,
+    ).reshape(-1, 3)
+    return P
 
 
 def build_marker_array_for_recipe_side(
@@ -95,31 +129,14 @@ def build_marker_array_for_recipe_side(
     frame_id: str,
 ) -> MarkerArray:
     """
-    MarkerArray für GENAU EINE Side.
+    Baut Marker für GENAU EINE Side.
 
-    Priorität:
-      1) Wenn paths_compiled vorhanden ist:
-           -> fertig eingebettete Posen (inkl. Z + Stand-off) verwenden
-      2) Sonst:
-           -> rohe Pfade aus recipe.paths (rebuild_paths) verwenden
+    STRICT:
+      - verwendet ausschließlich recipe.paths_compiled["sides"][side]["poses_quat"]
+      - keine rebuild_paths, keine Verwendung von recipe.paths, keine Defaults
+      - wenn nichts kompiliert ist -> leeres MarkerArray
     """
-    pts_mm = None
-
-    # 1) Erstmal versuchen, die fertigen Posen aus paths_compiled zu nehmen
-    try:
-        pts_mm = recipe.compiled_points_mm_for_side(side)
-    except Exception:
-        pts_mm = None
-
-    # 2) Fallback: rohe Geometriepfade (Local-Koordinaten, z.B. z=0 für Planes)
-    if pts_mm is None or pts_mm.size == 0:
-        # Geometrie sicherstellen
-        if side not in (recipe.paths or {}):
-            recipe.rebuild_paths(sides=[side])
-
-        paths = recipe.paths or {}
-        pts_mm = paths.get(side)
-
+    pts_mm = _compiled_points_mm_for_side(recipe, side)
     if pts_mm is None or pts_mm.size == 0:
         return MarkerArray()
 
@@ -133,28 +150,27 @@ def build_marker_array_from_recipe(
     recipe: Recipe,
     *,
     sides: Optional[Iterable[str]] = None,
-    frame_id: str = "scene",   # 👈 Standard-Frame ist jetzt 'scene'
+    frame_id: str = "scene",   # Standard-Frame ist 'scene'
 ) -> MarkerArray:
     """
     Baut ein gemeinsames MarkerArray für alle angegebenen Seiten.
 
-    - nutzt build_marker_array_for_recipe_side(...) je Seite
-    - sorgt für eindeutige Marker-IDs innerhalb des Arrays
-    - Frame wird über frame_id vorgegeben (Default: "scene")
+    STRICT:
+      - wenn `sides` None: verwendet ausschließlich Keys aus recipe.paths_compiled["sides"]
+      - keine Fallbacks auf recipe.paths oder recipe.paths_by_side
+      - wenn nichts kompiliert ist -> leeres MarkerArray
     """
     ma = MarkerArray()
 
-    # Wenn keine Seiten angegeben: alles nehmen, was da ist
-    side_list: List[str] = []
+    # Seitenauswahl STRICT aus paths_compiled
     if sides is not None:
-        side_list = [str(s) for s in sides]
+        side_list: List[str] = [str(s) for s in sides]
     else:
-        # Versuche zuerst recipe.paths (numerische Punkte)
-        if isinstance(recipe.paths, dict) and recipe.paths:
-            side_list = list(recipe.paths.keys())
-        # Fallback: Seiten-Keys aus paths_by_side
-        elif isinstance(getattr(recipe, "paths_by_side", None), dict) and recipe.paths_by_side:
-            side_list = list(recipe.paths_by_side.keys())
+        pc = recipe.paths_compiled or {}
+        sdata = pc.get("sides") or {}
+        if not isinstance(sdata, dict) or not sdata:
+            return ma
+        side_list = list(sdata.keys())
 
     if not side_list:
         return ma

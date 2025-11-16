@@ -8,11 +8,11 @@ Panels:
         - /MotionPlanning1/Planned Path1
         - /TF1
         - /TF1/Frames1
-        - /Marker1
-        - /MarkerArray1
         - /PoseArray1
+        - /MarkerArray1
+        - /MarkerArray1/Topic1
       Splitter Ratio: 0.5
-    Tree Height: 233
+    Tree Height: 364
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -277,17 +277,26 @@ Visualization Manager:
                 {}
       Update Interval: 0
       Value: true
-    - Class: rviz_default_plugins/Marker
+    - Alpha: 1
+      Arrow Length: 0.009999999776482582
+      Axes Length: 0.0010000000474974513
+      Axes Radius: 0.0010000000474974513
+      Class: rviz_default_plugins/PoseArray
+      Color: 0; 255; 0
       Enabled: true
-      Name: Marker
-      Namespaces: true
+      Head Length: 0.009999999776482582
+      Head Radius: 0.009999999776482582
+      Name: PoseArray
+      Shaft Length: 0.009999999776482582
+      Shaft Radius: 0.009999999776482582
+      Shape: Axes
       Topic:
         Depth: 5
         Durability Policy: Volatile
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /spraycoater/spray_path/markers
+        Value: /spraycoater/spray_path/poses
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
@@ -298,28 +307,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /spraycoater/spray_path/markers_array
-      Value: true
-    - Alpha: 1
-      Arrow Length: 0.30000001192092896
-      Axes Length: 0.30000001192092896
-      Axes Radius: 0.009999999776482582
-      Class: rviz_default_plugins/PoseArray
-      Color: 255; 25; 0
-      Enabled: true
-      Head Length: 0.07000000029802322
-      Head Radius: 0.029999999329447746
-      Name: PoseArray
-      Shaft Length: 0.23000000417232513
-      Shaft Radius: 0.009999999776482582
-      Shape: Arrow (Flat)
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /spraycoater/spray_path/poses
+        Value: /spraycoater/spray_path/markers
       Value: true
   Enabled: true
   Global Options:
@@ -339,30 +327,30 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.9658677577972412
+      Distance: 0.17424768209457397
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.10000000149011612
-        Y: 0.25
-        Z: 0.30000001192092896
-      Focal Shape Fixed Size: true
+        X: 0
+        Y: 0
+        Z: 0
+      Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.16000011563301086
-      Target Frame: robot_mount
+      Pitch: 1.1703981161117554
+      Target Frame: scene
       Value: Orbit (rviz_default_plugins)
-      Yaw: 5.890185356140137
+      Yaw: 0.6503981947898865
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 975
+  Height: 1369
   Help:
     collapsed: false
   Hide Left Dock: false
@@ -371,9 +359,9 @@ Window Geometry:
     collapsed: false
   MotionPlanning - Trajectory Slider:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000379fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb000000100044006900730070006c006100790073010000003b00000124000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e00670100000165000001930000016900fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a0056006900650077007301000002fe000000b6000000a000ffffff000003700000037900000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000503fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb000000100044006900730070006c006100790073010000003b000001a7000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e006701000001e8000002480000016900fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a00560069006500770073010000043600000108000000a000ffffff000007460000050300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
-  Width: 1578
-  X: 2829
-  Y: 286
+  Width: 2560
+  X: 1928
+  Y: 31
