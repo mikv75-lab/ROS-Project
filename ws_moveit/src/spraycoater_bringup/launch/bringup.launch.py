@@ -13,11 +13,10 @@ from launch.actions import (
     SetEnvironmentVariable,
 )
 from launch.substitutions import LaunchConfiguration
-    # noqa
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
-from moveit_configs_utils import MoveItConfigsBuilder  # bleibt
+from moveit_configs_utils import MoveItConfigsBuilder
 
 
 def _rpy_rad_to_quat(roll, pitch, yaw):
@@ -89,17 +88,11 @@ def generate_launch_description():
         roll, pitch, yaw = map(lambda d: radians(float(d)), rpydeg)
         qx, qy, qz, qw = _rpy_rad_to_quat(roll, pitch, yaw)
 
-        # MoveIt robot.launch.py einbinden
+        # MoveIt robot.launch.py einbinden (ROS2-Control, Servo, move_group, RViz)
         moveit_share = FindPackageShare(moveit_pkg).perform(context)
         robot_launch = os.path.join(moveit_share, "launch", "robot.launch.py")
         if not os.path.exists(robot_launch):
             raise FileNotFoundError(f"[bringup] MoveIt robot.launch.py fehlt: {robot_launch}")
-
-        # MoveIt-Konfig (falls motion sie später braucht)
-        _ = (
-            MoveItConfigsBuilder("omron_viper_s650", package_name=moveit_pkg)
-            .to_moveit_configs()
-        )
 
         include_robot = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(robot_launch),
@@ -117,6 +110,61 @@ def generate_launch_description():
             }.items(),
         )
 
+        # MoveIt-Konfig für Motion-Node (MoveItPy)
+        # aktuell hart auf omron_viper_s650, passt aber zu deinem Setup
+        moveit_config = (
+            MoveItConfigsBuilder("omron_viper_s650", package_name=moveit_pkg)
+            .to_moveit_configs()
+        )
+        moveit_cfg_dict = moveit_config.to_dict()
+
+        # --- Planungspipelines: exakt wie im funktionierenden Beispiel ---
+        moveit_cfg_dict["planning_pipelines"] = {
+            "pipeline_names": ["ompl", "pilz_industrial_motion_planner", "chomp", "stomp"],
+            "default_planning_pipeline": "ompl",
+            "ompl": {
+                "planning_plugin": "ompl_interface/OMPLPlanner",
+                "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization",
+                "start_state_max_bounds_error": 0.1,
+                "parameter_namespace": "ompl_planning",
+            },
+            "pilz_industrial_motion_planner": {
+                "planning_plugin": "pilz_industrial_motion_planner/CommandPlanner",
+                "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization",
+                "start_state_max_bounds_error": 0.1,
+                "parameter_namespace": "pilz_industrial_motion_planner_planning",
+            },
+            "chomp": {
+                "planning_plugin": "chomp_interface/CHOMPPlanner",
+                "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization",
+                "start_state_max_bounds_error": 0.1,
+                "parameter_namespace": "chomp_planning",
+            },
+            "stomp": {
+                "planning_plugin": "stomp_moveit/StompPlanner",
+                "request_adapters": "default_planning_request_adapters/AddTimeOptimalParameterization",
+                "start_state_max_bounds_error": 0.1,
+                "parameter_namespace": "stomp_planning",
+            },
+        }
+
+        moveit_cfg_dict["moveit_cpp"] = {
+            "default_planning_pipeline": "ompl",
+            "planning_pipelines": {
+                "pipeline_names": ["ompl", "pilz_industrial_motion_planner", "chomp", "stomp"],
+                "default_planning_pipeline": "ompl",
+            },
+        }
+
+        # 🔧 Plan-Request-Parameter, die dein MotionNode abfragt
+        moveit_cfg_dict["plan_request_params"] = {
+            "planning_pipeline": "ompl",
+            "planner_id": "",
+            "planning_time": 5.0,
+            "planning_attempts": 1,
+            "max_velocity_scaling_factor": 1.0,
+            "max_acceleration_scaling_factor": 1.0,
+        }
         # Optional: Existenzprüfungen der zentralen Configs (werden von config_hub genutzt)
         must_exist = [
             os.path.join(bringup_share, "config", "frames.yaml"),
@@ -129,7 +177,7 @@ def generate_launch_description():
             if not os.path.exists(p):
                 raise FileNotFoundError(f"[bringup] fehlt: {p}")
 
-        # Scene-Node (param-los; config_hub zieht alles aus bringup/config)
+        # Scene-Node
         scene_node = Node(
             package="spraycoater_nodes_py",
             executable="scene",
@@ -140,7 +188,7 @@ def generate_launch_description():
         )
         scene_after_robot = TimerAction(period=5.0, actions=[scene_node])
 
-        # Poses-Node (param-los)
+        # Poses-Node
         poses_node = Node(
             package="spraycoater_nodes_py",
             executable="poses",
@@ -151,7 +199,7 @@ def generate_launch_description():
         )
         poses_after_robot = TimerAction(period=5.0, actions=[poses_node])
 
-        # Spray-Path-Node (param-los)
+        # Spray-Path-Node
         spray_node = Node(
             package="spraycoater_nodes_py",
             executable="spray_path",
@@ -162,7 +210,7 @@ def generate_launch_description():
         )
         spray_after_robot = TimerAction(period=5.0, actions=[spray_node])
 
-        # Servo-Node (param-los; Bridge UI ↔ moveit_servo)
+        # Servo-Node (Bridge UI ↔ moveit_servo)
         servo_node = Node(
             package="spraycoater_nodes_py",
             executable="servo",
@@ -173,6 +221,18 @@ def generate_launch_description():
         )
         servo_after_robot = TimerAction(period=5.0, actions=[servo_node])
 
+        # Motion-Node (MoveItPy: plan_named home/service/recipe)
+        motion_node = Node(
+            package="spraycoater_nodes_py",
+            executable="motion",
+            name="motion",
+            output="log",
+            emulate_tty=False,
+            arguments=["--ros-args", "--log-level", "info"],
+            parameters=[moveit_cfg_dict],
+        )
+        motion_after_robot = TimerAction(period=7.0, actions=[motion_node])
+
         # Robot-Node (Status/Kommandos ↔ realer Adapter / Sim)
         robot_node = Node(
             package="spraycoater_nodes_py",
@@ -182,7 +242,7 @@ def generate_launch_description():
             emulate_tty=False,
             arguments=["--ros-args", "--log-level", "info"],
         )
-        robot_after_robot = TimerAction(period=5.0, actions=[robot_node])
+        robot_after_robot = TimerAction(period=10.0, actions=[robot_node])
 
         # Rückgabe der Sequenz
         return [
@@ -191,6 +251,7 @@ def generate_launch_description():
             poses_after_robot,
             spray_after_robot,
             servo_after_robot,
+            motion_after_robot,
             robot_after_robot,
         ]
 

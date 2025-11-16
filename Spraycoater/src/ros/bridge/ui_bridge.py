@@ -10,7 +10,8 @@ from .scene_bridge import SceneBridge
 from .poses_bridge import PosesBridge
 from .spray_path_bridge import SprayPathBridge
 from .servo_bridge import ServoBridge
-from .robot_bridge import RobotBridge  # ⬅️ RobotBridge
+from .robot_bridge import RobotBridge
+from .motion_bridge import MotionBridge  # ⬅️ MotionBridge
 
 from geometry_msgs.msg import PoseStamped, PoseArray
 from sensor_msgs.msg import JointState
@@ -267,6 +268,7 @@ class UIBridge:
       - Stellt Set-APIs bereit (UI -> ROS) via Bridge-Knoten
       - hält zusätzlich ServoBridge in self._servo für den ServiceTab
       - hält zusätzlich RobotBridge in self._robot für Service/Status-UI
+      - hält zusätzlich MotionBridge in self._motion für MotionWidget
     """
 
     def __init__(self, startup_yaml_path: Optional[str] = None):
@@ -287,6 +289,8 @@ class UIBridge:
         self._servo: Optional[ServoBridge] = None # öffentliches Attribut für Widgets (_servo)
         self._rb: Optional[RobotBridge] = None    # intern
         self._robot: Optional[RobotBridge] = None # öffentliches Attribut für Widgets (_robot)
+        self._mb: Optional[MotionBridge] = None   # intern
+        self._motion: Optional[MotionBridge] = None  # öffentliches Attribut für Widgets (_motion)
 
     # ---------- Lifecycle ----------
 
@@ -299,6 +303,7 @@ class UIBridge:
             and self._spb is not None
             and self._sev is not None
             and self._rb is not None
+            and self._mb is not None
         )
 
     @property
@@ -335,7 +340,7 @@ class UIBridge:
         self._try_reemit_cached()
 
         _LOG.info(
-            "UIBridge connected (node=%s) – scene/poses/spraypath/servo/robot states ready",
+            "UIBridge connected (node=%s) – scene/poses/spraypath/servo/robot/motion states ready",
             self.node_name,
         )
 
@@ -386,9 +391,18 @@ class UIBridge:
             # öffentliches Attribut, falls Widgets direkten Zugriff brauchen
             self._robot = rb
 
+        # Motion
+        if self._mb is None:
+            mb = self._bridge.get_node(MotionBridge)
+            if mb is None:
+                raise RuntimeError("MotionBridge nicht gefunden – wurde sie gestartet?")
+            self._mb = mb
+            # aktuell kein eigener State-Cache nötig, wir reichen nur die Bridge durch
+            self._motion = mb  # wichtig: für Widgets als `bridge._motion`
+
     def _try_reemit_cached(self) -> None:
         # Falls die Bridges eine reemit_cached()-Hilfsfunktion besitzen, nutzen wir sie.
-        for b in (self._sb, self._pb, self._spb, self._rb):
+        for b in (self._sb, self._pb, self._spb, self._rb, self._mb):
             try:
                 if b is not None and hasattr(b, "signals") and hasattr(b.signals, "reemit_cached"):
                     b.signals.reemit_cached()
@@ -404,6 +418,8 @@ class UIBridge:
         self._servo = None
         self._rb = None
         self._robot = None
+        self._mb = None
+        self._motion = None
         if self._bridge is None:
             return
         try:

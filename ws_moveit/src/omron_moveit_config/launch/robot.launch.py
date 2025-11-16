@@ -5,7 +5,11 @@
 import os
 
 from launch import LaunchDescription
-from launch.actions import SetEnvironmentVariable, DeclareLaunchArgument, RegisterEventHandler
+from launch.actions import (
+    SetEnvironmentVariable,
+    DeclareLaunchArgument,
+    RegisterEventHandler,
+)
 from launch.substitutions import LaunchConfiguration
 from launch.event_handlers import OnProcessStart
 
@@ -57,7 +61,8 @@ def generate_launch_description():
         MoveItConfigsBuilder("omron_viper_s650", package_name="omron_moveit_config")
         .robot_description(
             file_path=urdf_xacro,
-            mappings={"hardware_type": "FakeSystem"}  # später: FakeSystem/RealSystem umschalten
+            # später: FakeSystem/RealSystem umschalten
+            mappings={"hardware_type": "FakeSystem"},
         )
         .robot_description_semantic(file_path="config/omron_viper_s650.srdf")
         .robot_description_kinematics(file_path="config/kinematics.yaml")
@@ -65,6 +70,7 @@ def generate_launch_description():
         .planning_pipelines(
             pipelines=["ompl", "chomp", "pilz_industrial_motion_planner"]
         )
+        .pilz_cartesian_limits(file_path="config/pilz_cartesian_limits.yaml")
         .to_moveit_configs()
     )
 
@@ -80,15 +86,24 @@ def generate_launch_description():
         executable="static_transform_publisher",
         name="tf_world_to_omron_mount",
         arguments=[
-            "--x", mount_x,
-            "--y", mount_y,
-            "--z", mount_z,
-            "--qx", mount_qx,
-            "--qy", mount_qy,
-            "--qz", mount_qz,
-            "--qw", mount_qw,
-            "--frame-id", mount_parent,
-            "--child-frame-id", mount_child,
+            "--x",
+            mount_x,
+            "--y",
+            mount_y,
+            "--z",
+            mount_z,
+            "--qx",
+            mount_qx,
+            "--qy",
+            mount_qy,
+            "--qz",
+            mount_qz,
+            "--qw",
+            mount_qw,
+            "--frame-id",
+            mount_parent,
+            "--child-frame-id",
+            mount_child,
         ],
         output="screen",
     )
@@ -106,10 +121,10 @@ def generate_launch_description():
     ros2_control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        name="controller_manager",          # 🔑 explizit
+        name="controller_manager",  # 🔑 explizit
         parameters=[
             moveit_config.robot_description,
-            ros2_controllers_path,
+            ros2_controllers_path,  # YAML-File-Pfad ist hier ok
         ],
         output="screen",
     )
@@ -120,7 +135,8 @@ def generate_launch_description():
         executable="spawner",
         arguments=[
             "joint_state_broadcaster",
-            "--controller-manager", "/controller_manager",
+            "--controller-manager",
+            "/controller_manager",
         ],
         output="screen",
     )
@@ -131,7 +147,8 @@ def generate_launch_description():
         executable="spawner",
         arguments=[
             "omron_arm_controller",
-            "--controller-manager", "/controller_manager",
+            "--controller-manager",
+            "/controller_manager",
         ],
         output="screen",
     )

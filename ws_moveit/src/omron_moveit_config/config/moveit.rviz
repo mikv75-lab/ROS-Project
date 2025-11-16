@@ -1,13 +1,15 @@
 Panels:
   - Class: rviz_common/Displays
-    Help Height: 70
+    Help Height: 0
     Name: Displays
     Property Tree Widget:
       Expanded:
         - /MotionPlanning1
         - /MotionPlanning1/Planned Path1
+        - /TF1
+        - /TF1/Frames1
       Splitter Ratio: 0.5
-    Tree Height: 163
+    Tree Height: 233
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -204,6 +206,74 @@ Visualization Manager:
         Show Robot Visual: true
       Value: true
       Velocity_Scaling_Factor: 0.1
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Filter (blacklist): ""
+      Filter (whitelist): ""
+      Frame Timeout: 15
+      Frames:
+        Adept_Viper_650_Interface_Plate:
+          Value: false
+        Adept_Viper_s650_Link1:
+          Value: false
+        Adept_Viper_s650_Link2:
+          Value: false
+        Adept_Viper_s650_Link3:
+          Value: false
+        Adept_Viper_s650_Link4:
+          Value: false
+        Adept_Viper_s650_Link5:
+          Value: false
+        Adept_Viper_s650_Link6:
+          Value: false
+        All Enabled: false
+        cage:
+          Value: false
+        home:
+          Value: true
+        robot_mount:
+          Value: false
+        scene:
+          Value: true
+        service:
+          Value: true
+        substrate:
+          Value: false
+        substrate_mount:
+          Value: false
+        tool_mount:
+          Value: true
+        world:
+          Value: true
+      Marker Scale: 0.5
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Tree:
+        world:
+          cage:
+            {}
+          home:
+            {}
+          robot_mount:
+            Adept_Viper_s650_Link1:
+              Adept_Viper_s650_Link2:
+                Adept_Viper_s650_Link3:
+                  Adept_Viper_s650_Link4:
+                    Adept_Viper_s650_Link5:
+                      Adept_Viper_s650_Link6:
+                        Adept_Viper_650_Interface_Plate:
+                          tool_mount:
+                            {}
+          service:
+            {}
+          substrate_mount:
+            scene:
+              substrate:
+                {}
+      Update Interval: 0
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -222,7 +292,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.8872644901275635
+      Distance: 1.9658677577972412
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -237,10 +307,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.38000014424324036
+      Pitch: 0.3250001072883606
       Target Frame: robot_mount
       Value: Orbit (rviz_default_plugins)
-      Yaw: 5.810184001922607
+      Yaw: 5.965186595916748
     Saved: ~
 Window Geometry:
   Displays:
@@ -254,9 +324,9 @@ Window Geometry:
     collapsed: false
   MotionPlanning - Trajectory Slider:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000379fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb000000100044006900730070006c006100790073010000003b00000124000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e00670100000165000001930000016a00fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a0056006900650077007301000002fe000000b6000000a000ffffff000003700000037900000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000379fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb000000100044006900730070006c006100790073010000003b00000124000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e00670100000165000001930000016900fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a0056006900650077007301000002fe000000b6000000a000ffffff000003700000037900000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
   Width: 1578
-  X: 2387
-  Y: 212
+  X: 2829
+  Y: 286

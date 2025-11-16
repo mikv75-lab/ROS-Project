@@ -6,6 +6,7 @@ from __future__ import annotations
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
+from rclpy.duration import Duration
 
 from std_msgs.msg import Empty, Bool, String
 from geometry_msgs.msg import PoseStamped
@@ -98,7 +99,6 @@ class Robot(Node):
         # ------------------------
         # Joint-State Quelle: /joint_states vom joint_state_broadcaster
         # ------------------------
-        # Eine Quelle – MoveIt & Servo verwenden dieses Topic sowieso.
         self.sub_joint_states = self.create_subscription(
             JointState,
             "/joint_states",
@@ -112,7 +112,10 @@ class Robot(Node):
         # 10 Hz für GUI reicht völlig
         self.state_timer = self.create_timer(0.1, self._publish_state)
 
-        self._tf_warned = False  # nur einmal warnen wenn TF fehlt
+        # TF-Warnung nur EINMAL und erst nach einer kleinen "Grace Time"
+        self._tf_warned = False
+        self._startup_time = self.get_clock().now()
+        self._tf_grace_duration = Duration(seconds=5.0)  # 5 s: währenddessen keine Warnung
 
         self.get_logger().info(
             f"🤖 Robot-Node gestartet: tcp_pose = Pose({self.tool_frame} in {self.world_frame}), "
@@ -184,7 +187,6 @@ class Robot(Node):
         /joint_states vom joint_state_broadcaster.
         Wird 1:1 gespeichert und später mit 10 Hz an die GUI gespiegelt.
         """
-        # Einfach letzten State merken – Publish passiert im Timer.
         self._joints = msg
 
     # ------------------------------------------------------------------
@@ -259,23 +261,39 @@ class Robot(Node):
     def _update_tcp_pose_from_tf(self):
         """
         Holt Transform world -> tool_mount aus TF und schreibt ihn in self._tcp_pose.
+
+        - Nutzt Time() == "latest" Transform.
+        - Wartet kurz (Timeout), bevor es aufgibt.
+        - Warnung erst NACH einer Grace-Time, damit kein falscher Alarm
+          beim Startup kommt.
         """
         try:
             tf = self.tf_buffer.lookup_transform(
                 self.world_frame,
                 self.tool_frame,
                 Time(),  # "latest" Transform
-                timeout=rclpy.duration.Duration(seconds=0.05),
+                timeout=Duration(seconds=0.2),
             )
-        except (LookupException, ConnectivityException, ExtrapolationException):
-            if not self._tf_warned:
+        except (LookupException, ConnectivityException, ExtrapolationException) as ex:
+            # Während der Startup-Grace kein Warn-Spam, weil TF-Tree sich erst aufbaut
+            now = self.get_clock().now()
+            if (
+                not self._tf_warned
+                and (now - self._startup_time) > self._tf_grace_duration
+            ):
                 self.get_logger().warning(
-                    f"⚠️ Kein TF {self.world_frame} -> {self.tool_frame} verfügbar – tcp_pose bleibt 0."
+                    f"⚠️ Kein TF {self.world_frame} -> {self.tool_frame} verfügbar – "
+                    f"tcp_pose bleibt 0. ({ex})"
                 )
                 self._tf_warned = True
             return
 
-        self._tf_warned = False
+        # Ab hier ist TF stabil verfügbar
+        if self._tf_warned:
+            self.get_logger().info(
+                f"✅ TF {self.world_frame} -> {self.tool_frame} jetzt verfügbar."
+            )
+            self._tf_warned = False
 
         self._tcp_pose.header.stamp = tf.header.stamp
         self._tcp_pose.header.frame_id = self.world_frame
@@ -295,7 +313,7 @@ class Robot(Node):
         TCP-Pose: aus TF (world -> tool_mount)
         JointState: letztes /joint_states (falls vorhanden)
         """
-        now = self.get_clock().now().to_msg()
+        now_msg = self.get_clock().now().to_msg()
 
         # States
         self.pub_connection.publish(Bool(data=self._connected))
@@ -313,7 +331,7 @@ class Robot(Node):
 
         # JointState: nur senden, wenn wir sinnvolle Daten haben
         if self._joints.name and self._joints.position:
-            self._joints.header.stamp = now
+            self._joints.header.stamp = now_msg
             self.pub_joints.publish(self._joints)
 
 
