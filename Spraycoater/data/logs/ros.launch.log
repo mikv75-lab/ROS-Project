@@ -4651,3 +4651,1101 @@
 2025-11-16 00:21:08 INFO [75900] ros.launch:105 - [servo_node-7] [WARN] [1763252468.208780646] [omron_servo_node]: Command type has not been set, cannot accept input
 2025-11-16 00:21:08 INFO [75900] ros.launch:105 - [servo_node-7] [WARN] [1763252468.418796973] [omron_servo_node]: Command type has not been set, cannot accept input
 2025-11-16 00:21:08 INFO [75900] ros.launch:105 - [servo_node-7] [WARN] [1763252468.678787656] [omron_servo_node]: Command type has not been set, cannot accept input
+2025-11-16 00:40:08 INFO [88369] ros.launch:155 - starting bringup: ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-16 00:40:08 INFO [88369] ros.launch:98 - === roslaunch stream START === pid=88479
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [INFO] [launch]: All log files can be found below /root/.ros/log/2025-11-16-00-40-09-037682-a7c312aa7d2f-88479
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [INFO] [launch]: Default logging verbosity is set to INFO
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [INFO] [static_transform_publisher-1]: process started with pid [88502]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [INFO] [robot_state_publisher-2]: process started with pid [88503]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [INFO] [ros2_control_node-3]: process started with pid [88504]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [INFO] [spawner-4]: process started with pid [88505]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [INFO] [spawner-5]: process started with pid [88506]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [INFO] [move_group-6]: process started with pid [88507]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [INFO] [servo_node-7]: process started with pid [88508]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [INFO] [rviz2-8]: process started with pid [88509]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [static_transform_publisher-1] [INFO] [1763253609.326994269] [tf_world_to_omron_mount]: Spinning until stopped - publishing transform
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [static_transform_publisher-1] translation: ('0.000000', '0.000000', '0.000000')
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [static_transform_publisher-1] rotation: ('0.000000', '0.000000', '0.707107', '0.707107')
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [static_transform_publisher-1] from 'world' to 'robot_mount'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [robot_state_publisher-2] [INFO] [1763253609.331702211] [robot_state_publisher]: Robot initialized
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.334943973] [controller_manager]: Using Steady (Monotonic) clock for triggering controller manager cycles.
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.339071540] [controller_manager]: Subscribing to '/robot_description' topic for robot description.
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.340719954] [controller_manager]: Enforcing command limits is enabled...
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.350879962] [controller_manager]: update rate is 100 Hz
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.350940061] [controller_manager]: Spawning controller_manager RT thread with scheduler priority: 50
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [WARN] [1763253609.352939101] [controller_manager]: Could not enable FIFO RT scheduling policy: with error number <1>(Operation not permitted). See [https://control.ros.org/master/doc/ros2_control/controller_manager/doc/userdoc.html] for details on how to enable realtime scheduling.
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [WARN] [1763253609.362722838] [rcl.logging_rosout]: Publisher already registered for node name: 'omron_servo_node'. If this is due to multiple nodes with the same name then all logs for the logger named 'omron_servo_node' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [WARN] [1763253609.370138523] [omron_servo_node]: Could not enable FIFO RT scheduling policy. Continuing with the default.
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [WARN] [1763253609.370253011] [omron_servo_node]: Realtime kernel is recommended for better performance.
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.374149376] [omron_servo_node.omron_servo_node.moveit.ros.rdf_loader]: Loaded robot model in 0.00297572 seconds
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.374257089] [omron_servo_node.omron_servo_node.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.389467440] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.389510023] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.389517087] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.389520668] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.389523765] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.389526572] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.389528507] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [WARN] [1763253609.396065354] [rcl.logging_rosout]: Publisher already registered for node name: 'move_group'. If this is due to multiple nodes with the same name then all logs for the logger named 'move_group' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.408587802] [move_group.move_group.moveit.ros.rdf_loader]: Loaded robot model in 0.00325821 seconds
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.408758421] [move_group.move_group.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.438914146] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.438962148] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.438969406] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.438973761] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.438977729] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.438981310] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.438984019] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.440464621] [omron_servo_node.omron_servo_node.moveit.ros.current_state_monitor]: Listening to joint states on topic '/joint_states'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.452219525] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Listening to '/attached_collision_object' for attached collision objects
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.452778900] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.465778269] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Listening to '/planning_scene'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.465840013] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Starting world geometry update monitor for collision objects, attached objects, octomap updates.
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.467591495] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Listening to 'collision_object'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.468301940] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Listening to 'planning_scene_world' for planning scene world geometry
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253609.470174684] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on '/omron_servo_node/publish_planning_scene'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.528994886] [move_group.move_group.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.529225895] [move_group.move_group.moveit.ros.moveit_cpp]: Listening to 'joint_states' for joint states
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.532060899] [move_group.move_group.moveit.ros.current_state_monitor]: Listening to joint states on topic 'joint_states'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.534496309] [move_group.move_group.moveit.ros.planning_scene_monitor]: Listening to '/attached_collision_object' for attached collision objects
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.534570441] [move_group.move_group.moveit.ros.planning_scene_monitor]: Stopping existing planning scene publisher.
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.534774448] [move_group.move_group.moveit.ros.planning_scene_monitor]: Stopped publishing maintained planning scene.
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.535865616] [move_group.move_group.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.536048042] [move_group.move_group.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.537480739] [move_group.move_group.moveit.ros.planning_scene_monitor]: Listening to '/planning_scene'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.537519934] [move_group.move_group.moveit.ros.planning_scene_monitor]: Starting world geometry update monitor for collision objects, attached objects, octomap updates.
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.539095764] [move_group.move_group.moveit.ros.planning_scene_monitor]: Listening to 'collision_object'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.541617500] [move_group.move_group.moveit.ros.planning_scene_monitor]: Listening to 'planning_scene_world' for planning scene world geometry
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [WARN] [1763253609.541944124] [move_group.move_group.moveit.ros.occupancy_map_monitor]: Resolution not specified for Octomap. Assuming resolution = 0.1 instead
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [ERROR] [1763253609.541965706] [move_group.move_group.moveit.ros.occupancy_map_monitor]: No 3D sensor plugin(s) defined for octomap updates
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.591138530] [move_group.move_group.moveit.ros.planning_pipeline]: Successfully loaded planner 'OMPL'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.592872012] [controller_manager]: Received robot description from topic.
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.593921953] [move_group]: Try loading adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.595410683] [move_group]: Loaded adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.595470492] [move_group]: Try loading adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.595720759] [move_group]: Loaded adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.595738856] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.595770793] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.595778148] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.595792471] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.597410206] [controller_manager]: Using JointLimiter for joint 'joint_5' in hardware 'omron_viper_s650_system' : '  has position limits: true [-2.0944, 2.0944]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [6.54498]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.597462853] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_5' in hardware 'omron_viper_s650_system'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.597485403] [controller_manager]: Using JointLimiter for joint 'joint_4' in hardware 'omron_viper_s650_system' : '  has position limits: true [-3.31613, 3.31613]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [6.54498]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.597495661] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_4' in hardware 'omron_viper_s650_system'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.597505726] [controller_manager]: Using JointLimiter for joint 'joint_6' in hardware 'omron_viper_s650_system' : '  has position limits: true [-3.14159, 3.14159]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [10.472]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.597512888] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_6' in hardware 'omron_viper_s650_system'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.597521404] [controller_manager]: Using JointLimiter for joint 'joint_3' in hardware 'omron_viper_s650_system' : '  has position limits: true [-0.50615, 4.46805]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [6.54498]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.597528953] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_3' in hardware 'omron_viper_s650_system'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.597539017] [controller_manager]: Using JointLimiter for joint 'joint_2' in hardware 'omron_viper_s650_system' : '  has position limits: true [-3.31613, 0.7854]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [5.23599]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.597545502] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_2' in hardware 'omron_viper_s650_system'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.597553341] [controller_manager]: Using JointLimiter for joint 'joint_1' in hardware 'omron_viper_s650_system' : '  has position limits: true [-2.96706, 2.96706]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [5.72468]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.597560018] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_1' in hardware 'omron_viper_s650_system'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.598759868] [controller_manager]: Loading hardware 'omron_viper_s650_system'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.599442247] [controller_manager]: Loaded hardware 'omron_viper_s650_system' from plugin 'mock_components/GenericSystem'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.599515991] [controller_manager]: Initialize hardware 'omron_viper_s650_system'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.597763735] [move_group]: Try loading adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.601394833] [move_group]: Loaded adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.601449899] [move_group]: Try loading adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.606488822] [move_group]: Loaded adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.606525597] [move_group]: Try loading adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.607828902] [move_group]: Loaded adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.613657820] [controller_manager]: Successful initialization of hardware 'omron_viper_s650_system'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.614272165] [resource_manager]: 'configure' hardware 'omron_viper_s650_system'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.614305456] [resource_manager]: Successful 'configure' of hardware 'omron_viper_s650_system'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.614313586] [resource_manager]: 'activate' hardware 'omron_viper_s650_system'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.614320650] [resource_manager]: Successful 'activate' of hardware 'omron_viper_s650_system'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253609.614397105] [controller_manager]: Resource Manager has been successfully initialized. Starting Controller Manager services...
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.615810736] [move_group.move_group.moveit.ros.planning_pipeline]: Successfully loaded planner 'CHOMP'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.617690739] [move_group]: Try loading adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.619557193] [move_group]: Loaded adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.619624260] [move_group]: Try loading adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.620461677] [move_group]: Loaded adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.620492646] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.620537647] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.620549067] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.620567455] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.622934733] [move_group]: Try loading adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.623592531] [move_group]: Loaded adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.623633758] [move_group]: Try loading adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.624543468] [move_group]: Loaded adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.624588663] [move_group]: Try loading adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.626286627] [move_group]: Loaded adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.632682953] [move_group.move_group.moveit.planners.pilz.joint_limits_aggregator]: Reading limits from namespace robot_description_planning
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.637072110] [move_group.move_group.moveit.planners.pilz.command_planner]: Available plugins: pilz_industrial_motion_planner/PlanningContextLoaderCIRC pilz_industrial_motion_planner/PlanningContextLoaderLIN pilz_industrial_motion_planner/PlanningContextLoaderPTP
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.637125822] [move_group.move_group.moveit.planners.pilz.command_planner]: About to load: pilz_industrial_motion_planner/PlanningContextLoaderCIRC
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.639276802] [move_group.move_group.moveit.planners.pilz.command_planner]: Registered Algorithm [CIRC]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.639351030] [move_group.move_group.moveit.planners.pilz.command_planner]: About to load: pilz_industrial_motion_planner/PlanningContextLoaderLIN
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.641665662] [move_group.move_group.moveit.planners.pilz.command_planner]: Registered Algorithm [LIN]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.641799505] [move_group.move_group.moveit.planners.pilz.command_planner]: About to load: pilz_industrial_motion_planner/PlanningContextLoaderPTP
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.643446080] [move_group.move_group.moveit.planners.pilz.command_planner]: Registered Algorithm [PTP]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.643530277] [move_group.move_group.moveit.ros.planning_pipeline]: Successfully loaded planner 'Pilz Industrial Motion Planner'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.649864955] [move_group]: Try loading adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.650077285] [move_group]: Loaded adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.650097221] [move_group]: Try loading adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.650584110] [move_group]: Loaded adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.650604433] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.650638596] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.650646628] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.650669952] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.653370629] [move_group]: Try loading adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.655219276] [move_group]: Loaded adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.655248793] [move_group]: Try loading adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.656295153] [move_group]: Loaded adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [WARN] [1763253609.659232065] [rcl.logging_rosout]: Publisher already registered for node name: 'move_group'. If this is due to multiple nodes with the same name then all logs for the logger named 'move_group' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [spawner-4] [INFO] [1763253609.696215453] [spawner_joint_state_broadcaster]: waiting for service /controller_manager/list_controllers to become available...
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.713362131] [move_group.move_group.moveit.plugins.simple_controller_manager]: Added FollowJointTrajectory controller for omron_arm_controller
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.713637367] [move_group.move_group.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.713684304] [move_group.move_group.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.716766382] [move_group.move_group.moveit.ros.trajectory_execution_manager]: Trajectory execution is managing controllers
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.716816900] [move_group]: MoveGroup debug mode is ON
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253609.735543280] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253609.735735384] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253609.768361552] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.819082045] [move_group.move_group.moveit.planners.pilz.move_group_sequence_action]: initialize move group sequence action
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.825034935] [move_group.move_group.moveit.planners.pilz.joint_limits_aggregator]: Reading limits from namespace robot_description_planning
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.825416820] [move_group.move_group.moveit.planners.pilz.joint_limits_aggregator]: Reading limits from namespace robot_description_planning
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.833240809] [move_group.move_group.moveit.ros.move_group.executable]:
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] ********************************************************
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] * MoveGroup using:
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - apply_planning_scene_service
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - clear_octomap_service
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - get_group_urdf
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - load_geometry_from_file
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - CartesianPathService
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - execute_trajectory_action
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - get_planning_scene_service
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - kinematics_service
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - move_action
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - motion_plan_service
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - query_planners_service
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - state_validation_service
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - save_geometry_to_file
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - SequenceAction
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] *     - SequenceService
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] ********************************************************
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.833462237] [move_group.move_group.moveit.ros.move_group.context]: MoveGroup context using pipeline ompl
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253609.833493302] [move_group.move_group.moveit.ros.move_group.context]: MoveGroup context initialization complete
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'move_group/ApplyPlanningSceneService'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'move_group/ClearOctomapService'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'move_group/GetUrdfService'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'move_group/LoadGeometryFromFileService'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupCartesianPathService'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupExecuteTrajectoryAction'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupGetPlanningSceneService'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupKinematicsService'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupMoveAction'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupPlanService'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupQueryPlannersService'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupStateValidationService'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'move_group/SaveGeometryToFileService'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'pilz_industrial_motion_planner/MoveGroupSequenceAction'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [96mLoading 'pilz_industrial_motion_planner/MoveGroupSequenceService'...[0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6] [92mYou can start planning now![0m
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [move_group-6]
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [rviz2-8] Warning: class_loader.impl: SEVERE WARNING!!! A namespace collision has occurred with plugin factory for class rviz_default_plugins::displays::InteractiveMarkerDisplay. New factory will OVERWRITE existing one. This situation occurs when libraries containing plugins are directly linked against an executable (the one running right now generating this message). Please separate plugins out into their own library or just don't link against the library and use either class_loader::ClassLoader/MultiLibraryClassLoader to open.
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [rviz2-8]          at line 321 in /opt/ros/rolling/include/class_loader/class_loader/class_loader_core.hpp
+2025-11-16 00:40:09 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253609.903633490] [rcl.logging_rosout]: Publisher already registered for node name: 'rviz2'. If this is due to multiple nodes with the same name then all logs for the logger named 'rviz2' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253610.034304910] [controller_manager]: Loading controller : 'joint_state_broadcaster' of type 'joint_state_broadcaster/JointStateBroadcaster'
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253610.034389494] [controller_manager]: Loading controller 'joint_state_broadcaster'
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253610.043525692] [controller_manager]: Controller 'joint_state_broadcaster' node arguments: --ros-args --params-file /tmp/launch_params_3ad0yvkr --params-file /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/ros2_controllers.yaml
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [spawner-4] [INFO] [1763253610.085111825] [spawner_joint_state_broadcaster]: [94mLoaded [1mjoint_state_broadcaster[0m
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253610.087487717] [controller_manager]: Configuring controller: 'joint_state_broadcaster'
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253610.087645561] [joint_state_broadcaster]: 'joints' or 'interfaces' parameter is empty. All available state interfaces will be published
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253610.105918151] [controller_manager]: Activating controllers: [ joint_state_broadcaster ]
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253610.113458969] [controller_manager]: Successfully switched controllers!
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [spawner-4] [INFO] [1763253610.124396102] [spawner_joint_state_broadcaster]: [92mConfigured and activated [1mjoint_state_broadcaster[0m
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253610.172446113] [omron_servo_node.omron_servo_node.moveit.ros.move_group.collision_monitor]: Collision monitor started
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [servo_node-7] Warning: class_loader.ClassLoader: SEVERE WARNING!!! Attempting to unload library while objects created by this loader exist in the heap! You should delete your objects before attempting to unload the library or destroying the ClassLoader. The library will NOT be unloaded.
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [servo_node-7]          at line 127 in ./src/class_loader.cpp
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253610.174455023] [omron_servo_node.omron_servo_node.moveit.ros.servo]: Servo initialized successfully
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253610.190242072] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [spawner-5] [INFO] [1763253610.272561438] [spawner_omron_arm_controller]: waiting for service /controller_manager/list_controllers to become available...
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [INFO] [spawner-4]: process has finished cleanly [pid 88505]
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253610.393277050] [controller_manager]: Received robot description from topic.
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [ros2_control_node-3] [WARN] [1763253610.393321955] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253610.714488193] [controller_manager]: Received robot description from topic.
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [ros2_control_node-3] [WARN] [1763253610.714542195] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253610.912923522] [controller_manager]: Received robot description from topic.
+2025-11-16 00:40:10 INFO [88369] ros.launch:105 - [ros2_control_node-3] [WARN] [1763253610.912977717] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253611.276279206] [controller_manager]: Loading controller : 'omron_arm_controller' of type 'joint_trajectory_controller/JointTrajectoryController'
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253611.276337369] [controller_manager]: Loading controller 'omron_arm_controller'
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253611.279961886] [controller_manager]: Controller 'omron_arm_controller' node arguments: --ros-args --params-file /tmp/launch_params_3ad0yvkr --params-file /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/ros2_controllers.yaml
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253611.283396719] [controller_manager]: Received robot description from topic.
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [WARN] [1763253611.283436397] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [spawner-5] [INFO] [1763253611.324753876] [spawner_omron_arm_controller]: [94mLoaded [1momron_arm_controller[0m
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253611.329277167] [controller_manager]: Configuring controller: 'omron_arm_controller'
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253611.329456980] [omron_arm_controller]: No specific joint names are used for command interfaces. Using 'joints' parameter.
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253611.329498788] [omron_arm_controller]: Command interfaces are [position] and state interfaces are [position velocity].
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253611.329522596] [omron_arm_controller]: Using 'splines' interpolation method.
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253611.333157468] [omron_arm_controller]: Action status changes will be monitored at 20.00 Hz.
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253611.353665040] [omron_arm_controller]: Setting initial scaling factor to 1.000000
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253611.353719333] [omron_arm_controller]: No scaling interface set. This controller will not read speed scaling from the hardware.
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253611.366974872] [controller_manager]: Activating controllers: [ omron_arm_controller ]
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253611.373574237] [controller_manager]: Successfully switched controllers!
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [spawner-5] [INFO] [1763253611.384836156] [spawner_omron_arm_controller]: [92mConfigured and activated [1momron_arm_controller[0m
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [INFO] [spawner-5]: process has finished cleanly [pid 88506]
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253611.856759436] [controller_manager]: Received robot description from topic.
+2025-11-16 00:40:11 INFO [88369] ros.launch:105 - [ros2_control_node-3] [WARN] [1763253611.856808115] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-16 00:40:12 INFO [88369] ros.launch:105 - [rviz2-8] [ERROR] [1763253612.985644587] [rviz2.moveit.ros.motion_planning_frame]: Action server: /recognize_objects not available
+2025-11-16 00:40:13 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253613.027601670] [rviz2.moveit.ros.motion_planning_frame]: MoveGroup namespace changed: / -> . Reloading params.
+2025-11-16 00:40:13 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253613.108464435] [rviz2.moveit.ros.rdf_loader]: Loaded robot model in 0.00356451 seconds
+2025-11-16 00:40:13 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253613.108560729] [rviz2.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-16 00:40:13 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253613.129618192] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-16 00:40:13 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253613.129662516] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-16 00:40:13 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253613.129667452] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-16 00:40:13 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253613.129670646] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-16 00:40:13 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253613.129674517] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-16 00:40:13 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253613.129678001] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-16 00:40:13 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253613.129680807] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-16 00:40:13 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253613.215610464] [rviz2.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-11-16 00:40:13 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253613.262253327] [rviz2.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-16 00:40:13 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253613.264885873] [rviz2.moveit.ros.planning_scene_monitor]: Listening to '/monitored_planning_scene'
+2025-11-16 00:40:13 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253613.462225485] [interactive_marker_display_94474673691872]: Connected on namespace: /rviz_moveit_motion_planning_display/robot_interaction_interactive_marker_topic
+2025-11-16 00:40:14 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253614.522092029] [rviz2.moveit.ros.motion_planning_frame]: group omron_arm_group
+2025-11-16 00:40:14 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253614.522140515] [rviz2.moveit.ros.motion_planning_frame]: Constructing new MoveGroup connection for group 'omron_arm_group' in namespace ''
+2025-11-16 00:40:14 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253614.561831549] [interactive_marker_display_94474673691872]: Sending request for interactive markers
+2025-11-16 00:40:14 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253614.601144182] [interactive_marker_display_94474673691872]: Service response received for initialization
+2025-11-16 00:40:15 INFO [88369] ros.launch:105 - [INFO] [scene-9]: process started with pid [88955]
+2025-11-16 00:40:15 INFO [88369] ros.launch:105 - [INFO] [poses-10]: process started with pid [88956]
+2025-11-16 00:40:15 INFO [88369] ros.launch:105 - [INFO] [spray_path-11]: process started with pid [88957]
+2025-11-16 00:40:15 INFO [88369] ros.launch:105 - [INFO] [servo-12]: process started with pid [88958]
+2025-11-16 00:40:15 INFO [88369] ros.launch:105 - [INFO] [robot-13]: process started with pid [88959]
+2025-11-16 00:40:15 INFO [88369] ros.launch:105 - [servo-12] [INFO] [1763253615.744420640] [servo]: ServoBridge: Initial frame = 'world'
+2025-11-16 00:40:16 INFO [88369] ros.launch:105 - [robot-13] [INFO] [1763253616.092234821] [robot]: 🤖 Robot-Node gestartet: tcp_pose = Pose(tool_mount in world), Joints aus /joint_states
+2025-11-16 00:40:16 INFO [88369] ros.launch:105 - [servo-12] [INFO] [1763253616.094490241] [servo]: ✅ ServoBridge aktiv – Publiziert auf '/servo/cartesian_mm' und '/servo/joint_jog'
+2025-11-16 00:40:16 INFO [88369] ros.launch:105 - [robot-13] [WARN] [1763253616.236938746] [robot]: ⚠️ Kein TF world -> tool_mount verfügbar – tcp_pose bleibt 0.
+2025-11-16 00:40:20 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253620.233196082] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-16 00:40:20 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253620.233572422] [move_group.move_group.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-16 00:40:20 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253620.236085139] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-16 00:40:20 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253620.236124432] [move_group.move_group.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-16 00:40:20 INFO [88369] ros.launch:105 - [servo_node-7] [INFO] [1763253620.242712855] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-16 00:40:20 INFO [88369] ros.launch:105 - [move_group-6] [INFO] [1763253620.242904857] [move_group.move_group.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [INFO] [1763253676.592693216] [rviz2.moveit.ros.move_group_interface]: Ready to take commands for planning group omron_arm_group.
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.599266394] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 101
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.599404630] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 102
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.599535412] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 103
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.599661451] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 104
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.599757771] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 105
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.599818370] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 106
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.599849735] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 107
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.599905203] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 108
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.599935890] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 109
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.599963479] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 110
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.599987583] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 111
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600040825] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 112
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600072287] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 113
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600094455] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 114
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600116042] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 115
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600168510] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 116
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600201423] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 117
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600232691] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 118
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600286126] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 119
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600324558] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 120
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600350114] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 121
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600374121] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 122
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600508388] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 123
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600540721] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 124
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600573344] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 125
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600604999] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 126
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600705771] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 127
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.600935874] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 128
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.601135677] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 129
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.601345161] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 130
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.601564035] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 131
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.601724923] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 132
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.601774293] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 133
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.601839345] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 134
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.601965771] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 135
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602031017] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 136
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602065285] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 137
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602094714] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 138
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602130337] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 139
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602155700] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 140
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602182128] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 141
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602237887] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 142
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602277770] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 143
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602336530] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 144
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602374574] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 145
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602409133] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 146
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602464892] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 147
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602521619] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 148
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602549305] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 149
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602581637] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 150
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602635654] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 151
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602664792] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 152
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602702352] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 153
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602753077] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 154
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602806125] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 155
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602849687] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 156
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602903897] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 157
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.602943684] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 158
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603045037] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 159
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603072433] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 160
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603094117] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 161
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603152296] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 162
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603185209] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 163
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603237193] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 164
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603267493] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 165
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603294501] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 166
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603379688] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 167
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603409117] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 168
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603465747] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 169
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603497208] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 170
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603547740] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 171
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603580460] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 172
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603615600] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 173
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603672520] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 174
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603700787] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 175
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603827987] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 176
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.603957511] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 177
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604054412] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 178
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604117431] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 179
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604154120] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 180
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604226142] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 181
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604262250] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 182
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604301746] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 183
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604331561] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 184
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604382286] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 185
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604439981] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 186
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604497967] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 187
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604580347] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 188
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604615293] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 189
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604676957] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 190
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604714033] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 191
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.604900962] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 192
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605086825] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 193
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605159331] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 194
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605241905] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 195
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605348583] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 196
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605380334] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 197
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605407924] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 198
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605442773] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 199
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605472976] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 200
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605497370] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 201
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605523120] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 202
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605554678] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 203
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605574813] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 204
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605593013] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 205
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605614213] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 206
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605678490] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 207
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605781974] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 208
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605820599] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 209
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605881779] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 210
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605924760] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 211
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605953801] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 212
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.605988166] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 213
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606030760] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 214
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606191357] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 215
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606228821] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 216
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606257087] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 217
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606330174] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 218
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606360377] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 219
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606387385] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 220
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606410521] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 221
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606440337] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 222
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606468991] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 223
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606503647] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 224
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606528332] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 225
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606560084] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 226
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606586608] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 227
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606608873] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 228
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606635978] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 229
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606662599] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 230
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606687284] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 231
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606711485] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 232
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606736363] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 233
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606756305] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 234
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606780119] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 235
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606801125] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 236
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606834426] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 237
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606860660] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 238
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606881569] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 239
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606902576] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 240
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606929487] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 241
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.606970242] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 242
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.607007027] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 243
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.607035971] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 244
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.607060656] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 245
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.607077016] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 246
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.607136163] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 247
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.607185049] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 248
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.607220964] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 249
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.607246810] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 250
+2025-11-16 00:41:16 INFO [88369] ros.launch:105 - [rviz2-8] [WARN] [1763253676.607270818] [interactive_marker_display_94474673691872]: Update queue too large. Erasing message with sequence number 251
+2025-11-16 00:41:20 INFO [88369] ros.launch:105 - [ERROR] [rviz2-8]: process has died [pid 88509, exit code -11, cmd '/opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_z_es_fmn'].
+2025-11-16 00:41:48 INFO [90215] ros.launch:155 - starting bringup: ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-16 00:41:48 INFO [90215] ros.launch:98 - === roslaunch stream START === pid=90321
+2025-11-16 00:41:48 INFO [90215] ros.launch:105 - [INFO] [launch]: All log files can be found below /root/.ros/log/2025-11-16-00-41-48-916833-a7c312aa7d2f-90321
+2025-11-16 00:41:48 INFO [90215] ros.launch:105 - [INFO] [launch]: Default logging verbosity is set to INFO
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [INFO] [static_transform_publisher-1]: process started with pid [90327]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [INFO] [robot_state_publisher-2]: process started with pid [90328]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [INFO] [ros2_control_node-3]: process started with pid [90329]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [INFO] [spawner-4]: process started with pid [90330]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [INFO] [spawner-5]: process started with pid [90331]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [INFO] [move_group-6]: process started with pid [90332]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [INFO] [servo_node-7]: process started with pid [90333]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [INFO] [rviz2-8]: process started with pid [90334]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [static_transform_publisher-1] [INFO] [1763253709.195082484] [tf_world_to_omron_mount]: Spinning until stopped - publishing transform
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [static_transform_publisher-1] translation: ('0.000000', '0.000000', '0.000000')
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [static_transform_publisher-1] rotation: ('0.000000', '0.000000', '0.707107', '0.707107')
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [static_transform_publisher-1] from 'world' to 'robot_mount'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [robot_state_publisher-2] [INFO] [1763253709.200803243] [robot_state_publisher]: Robot initialized
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.208846850] [controller_manager]: Using Steady (Monotonic) clock for triggering controller manager cycles.
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.213524012] [controller_manager]: Subscribing to '/robot_description' topic for robot description.
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.215168168] [controller_manager]: Enforcing command limits is enabled...
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.225303132] [controller_manager]: update rate is 100 Hz
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.225349024] [controller_manager]: Spawning controller_manager RT thread with scheduler priority: 50
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [WARN] [1763253709.226001672] [controller_manager]: Could not enable FIFO RT scheduling policy: with error number <1>(Operation not permitted). See [https://control.ros.org/master/doc/ros2_control/controller_manager/doc/userdoc.html] for details on how to enable realtime scheduling.
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [WARN] [1763253709.237139375] [rcl.logging_rosout]: Publisher already registered for node name: 'omron_servo_node'. If this is due to multiple nodes with the same name then all logs for the logger named 'omron_servo_node' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [WARN] [1763253709.245411666] [omron_servo_node]: Could not enable FIFO RT scheduling policy. Continuing with the default.
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [WARN] [1763253709.245539949] [omron_servo_node]: Realtime kernel is recommended for better performance.
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.249269266] [omron_servo_node.omron_servo_node.moveit.ros.rdf_loader]: Loaded robot model in 0.00308858 seconds
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.249366278] [omron_servo_node.omron_servo_node.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.269856659] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.269891030] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.269897420] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.269901002] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.269904003] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.269906811] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.269908941] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [WARN] [1763253709.271481162] [rcl.logging_rosout]: Publisher already registered for node name: 'move_group'. If this is due to multiple nodes with the same name then all logs for the logger named 'move_group' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.310482005] [move_group.move_group.moveit.ros.rdf_loader]: Loaded robot model in 0.0260128 seconds
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.310619486] [move_group.move_group.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.317585320] [omron_servo_node.omron_servo_node.moveit.ros.current_state_monitor]: Listening to joint states on topic '/joint_states'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.324994868] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.325036112] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.325041050] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.325043470] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.325045988] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.325048118] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.325049764] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.325631250] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Listening to '/attached_collision_object' for attached collision objects
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.325663006] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.328867960] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Listening to '/planning_scene'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.328916562] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Starting world geometry update monitor for collision objects, attached objects, octomap updates.
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.329786565] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Listening to 'collision_object'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.330464385] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Listening to 'planning_scene_world' for planning scene world geometry
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253709.332751798] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on '/omron_servo_node/publish_planning_scene'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.393245666] [move_group.move_group.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.393688219] [move_group.move_group.moveit.ros.moveit_cpp]: Listening to 'joint_states' for joint states
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.398096519] [move_group.move_group.moveit.ros.current_state_monitor]: Listening to joint states on topic 'joint_states'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.399198497] [move_group.move_group.moveit.ros.planning_scene_monitor]: Listening to '/attached_collision_object' for attached collision objects
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.399229866] [move_group.move_group.moveit.ros.planning_scene_monitor]: Stopping existing planning scene publisher.
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.399477138] [move_group.move_group.moveit.ros.planning_scene_monitor]: Stopped publishing maintained planning scene.
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.401044809] [move_group.move_group.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.401228568] [move_group.move_group.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.402099636] [move_group.move_group.moveit.ros.planning_scene_monitor]: Listening to '/planning_scene'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.402143301] [move_group.move_group.moveit.ros.planning_scene_monitor]: Starting world geometry update monitor for collision objects, attached objects, octomap updates.
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.403448887] [move_group.move_group.moveit.ros.planning_scene_monitor]: Listening to 'collision_object'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.404467311] [move_group.move_group.moveit.ros.planning_scene_monitor]: Listening to 'planning_scene_world' for planning scene world geometry
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [WARN] [1763253709.404797846] [move_group.move_group.moveit.ros.occupancy_map_monitor]: Resolution not specified for Octomap. Assuming resolution = 0.1 instead
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [ERROR] [1763253709.404847707] [move_group.move_group.moveit.ros.occupancy_map_monitor]: No 3D sensor plugin(s) defined for octomap updates
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.444569067] [move_group.move_group.moveit.ros.planning_pipeline]: Successfully loaded planner 'OMPL'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.448977076] [move_group]: Try loading adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.452333646] [move_group]: Loaded adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.452372857] [move_group]: Try loading adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.452709589] [move_group]: Loaded adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.452751220] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.453599246] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.453773614] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.453853779] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.456838569] [move_group]: Try loading adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.460477556] [move_group]: Loaded adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.460527804] [move_group]: Try loading adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.464756701] [move_group]: Loaded adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.464813726] [move_group]: Try loading adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.466219324] [move_group]: Loaded adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.476937614] [move_group.move_group.moveit.ros.planning_pipeline]: Successfully loaded planner 'CHOMP'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.479215152] [move_group]: Try loading adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.479397459] [move_group]: Loaded adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.479417791] [move_group]: Try loading adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.480853112] [move_group]: Loaded adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.480900940] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.480945863] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.480956997] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.480973747] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.483323123] [move_group]: Try loading adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.484660271] [move_group]: Loaded adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.484732593] [move_group]: Try loading adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.486319821] [move_group]: Loaded adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.486362808] [move_group]: Try loading adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.489061212] [move_group]: Loaded adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.495406251] [move_group.move_group.moveit.planners.pilz.joint_limits_aggregator]: Reading limits from namespace robot_description_planning
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.502205267] [move_group.move_group.moveit.planners.pilz.command_planner]: Available plugins: pilz_industrial_motion_planner/PlanningContextLoaderCIRC pilz_industrial_motion_planner/PlanningContextLoaderLIN pilz_industrial_motion_planner/PlanningContextLoaderPTP
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.502267134] [move_group.move_group.moveit.planners.pilz.command_planner]: About to load: pilz_industrial_motion_planner/PlanningContextLoaderCIRC
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.503785040] [move_group.move_group.moveit.planners.pilz.command_planner]: Registered Algorithm [CIRC]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.503843324] [move_group.move_group.moveit.planners.pilz.command_planner]: About to load: pilz_industrial_motion_planner/PlanningContextLoaderLIN
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.504911223] [move_group.move_group.moveit.planners.pilz.command_planner]: Registered Algorithm [LIN]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.504944141] [move_group.move_group.moveit.planners.pilz.command_planner]: About to load: pilz_industrial_motion_planner/PlanningContextLoaderPTP
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.506122701] [move_group.move_group.moveit.planners.pilz.command_planner]: Registered Algorithm [PTP]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.506162590] [move_group.move_group.moveit.ros.planning_pipeline]: Successfully loaded planner 'Pilz Industrial Motion Planner'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.508153644] [move_group]: Try loading adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.508378745] [move_group]: Loaded adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.508401981] [move_group]: Try loading adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.508742198] [move_group]: Loaded adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.508759142] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.508790801] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.508799127] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.508816748] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.510971327] [move_group]: Try loading adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.518587194] [move_group]: Loaded adapter 'default_planning_response_adapters/ValidateSolution'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.518624469] [move_group]: Try loading adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.520753100] [move_group]: Loaded adapter 'default_planning_response_adapters/DisplayMotionPath'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [WARN] [1763253709.526773607] [rcl.logging_rosout]: Publisher already registered for node name: 'move_group'. If this is due to multiple nodes with the same name then all logs for the logger named 'move_group' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.562193360] [controller_manager]: Received robot description from topic.
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.566644840] [controller_manager]: Using JointLimiter for joint 'joint_5' in hardware 'omron_viper_s650_system' : '  has position limits: true [-2.0944, 2.0944]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [6.54498]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.567149357] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_5' in hardware 'omron_viper_s650_system'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.567173368] [controller_manager]: Using JointLimiter for joint 'joint_4' in hardware 'omron_viper_s650_system' : '  has position limits: true [-3.31613, 3.31613]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [6.54498]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.567183243] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_4' in hardware 'omron_viper_s650_system'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.567193602] [controller_manager]: Using JointLimiter for joint 'joint_6' in hardware 'omron_viper_s650_system' : '  has position limits: true [-3.14159, 3.14159]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [10.472]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.567200186] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_6' in hardware 'omron_viper_s650_system'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.567208900] [controller_manager]: Using JointLimiter for joint 'joint_3' in hardware 'omron_viper_s650_system' : '  has position limits: true [-0.50615, 4.46805]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [6.54498]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.567215774] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_3' in hardware 'omron_viper_s650_system'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.567224875] [controller_manager]: Using JointLimiter for joint 'joint_2' in hardware 'omron_viper_s650_system' : '  has position limits: true [-3.31613, 0.7854]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [5.23599]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.567231168] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_2' in hardware 'omron_viper_s650_system'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.567280545] [controller_manager]: Using JointLimiter for joint 'joint_1' in hardware 'omron_viper_s650_system' : '  has position limits: true [-2.96706, 2.96706]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [5.72468]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.567292647] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_1' in hardware 'omron_viper_s650_system'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.568603170] [controller_manager]: Loading hardware 'omron_viper_s650_system'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.569374613] [controller_manager]: Loaded hardware 'omron_viper_s650_system' from plugin 'mock_components/GenericSystem'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.569440546] [controller_manager]: Initialize hardware 'omron_viper_s650_system'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.602791307] [controller_manager]: Successful initialization of hardware 'omron_viper_s650_system'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.603646110] [resource_manager]: 'configure' hardware 'omron_viper_s650_system'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.604374178] [resource_manager]: Successful 'configure' of hardware 'omron_viper_s650_system'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.604876758] [resource_manager]: 'activate' hardware 'omron_viper_s650_system'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.605696803] [resource_manager]: Successful 'activate' of hardware 'omron_viper_s650_system'
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253709.606320502] [controller_manager]: Resource Manager has been successfully initialized. Starting Controller Manager services...
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253709.617597914] [spawner_omron_arm_controller]: waiting for service /controller_manager/list_controllers to become available...
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253709.634965541] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253709.635185510] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.637871521] [move_group.move_group.moveit.plugins.simple_controller_manager]: Added FollowJointTrajectory controller for omron_arm_controller
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.638133122] [move_group.move_group.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.638188018] [move_group.move_group.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.641584670] [move_group.move_group.moveit.ros.trajectory_execution_manager]: Trajectory execution is managing controllers
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.641643729] [move_group]: MoveGroup debug mode is ON
+2025-11-16 00:41:49 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253709.680091357] [rviz2]: Stereo is NOT SUPPORTED
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.724975225] [move_group.move_group.moveit.planners.pilz.move_group_sequence_action]: initialize move group sequence action
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.737897858] [move_group.move_group.moveit.planners.pilz.joint_limits_aggregator]: Reading limits from namespace robot_description_planning
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.738096625] [move_group.move_group.moveit.planners.pilz.joint_limits_aggregator]: Reading limits from namespace robot_description_planning
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.740751267] [move_group.move_group.moveit.ros.move_group.executable]:
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6]
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] ********************************************************
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] * MoveGroup using:
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - apply_planning_scene_service
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - clear_octomap_service
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - get_group_urdf
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - load_geometry_from_file
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - CartesianPathService
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - execute_trajectory_action
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - get_planning_scene_service
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - kinematics_service
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - move_action
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - motion_plan_service
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - query_planners_service
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - state_validation_service
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - save_geometry_to_file
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - SequenceAction
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] *     - SequenceService
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] ********************************************************
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6]
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.740867158] [move_group.move_group.moveit.ros.move_group.context]: MoveGroup context using pipeline ompl
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253709.740883713] [move_group.move_group.moveit.ros.move_group.context]: MoveGroup context initialization complete
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'move_group/ApplyPlanningSceneService'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'move_group/ClearOctomapService'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'move_group/GetUrdfService'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'move_group/LoadGeometryFromFileService'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupCartesianPathService'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupExecuteTrajectoryAction'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupGetPlanningSceneService'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupKinematicsService'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupMoveAction'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupPlanService'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupQueryPlannersService'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupStateValidationService'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'move_group/SaveGeometryToFileService'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'pilz_industrial_motion_planner/MoveGroupSequenceAction'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [96mLoading 'pilz_industrial_motion_planner/MoveGroupSequenceService'...[0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6]
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6] [92mYou can start planning now![0m
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [move_group-6]
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [rviz2-8] Warning: class_loader.impl: SEVERE WARNING!!! A namespace collision has occurred with plugin factory for class rviz_default_plugins::displays::InteractiveMarkerDisplay. New factory will OVERWRITE existing one. This situation occurs when libraries containing plugins are directly linked against an executable (the one running right now generating this message). Please separate plugins out into their own library or just don't link against the library and use either class_loader::ClassLoader/MultiLibraryClassLoader to open.
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [rviz2-8]          at line 321 in /opt/ros/rolling/include/class_loader/class_loader/class_loader_core.hpp
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [rviz2-8] [WARN] [1763253709.791195952] [rcl.logging_rosout]: Publisher already registered for node name: 'rviz2'. If this is due to multiple nodes with the same name then all logs for the logger named 'rviz2' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253710.285322041] [controller_manager]: Received robot description from topic.
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [ros2_control_node-3] [WARN] [1763253710.285363673] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253710.338834876] [controller_manager]: Received robot description from topic.
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [ros2_control_node-3] [WARN] [1763253710.338890836] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253710.372790070] [controller_manager]: Received robot description from topic.
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [ros2_control_node-3] [WARN] [1763253710.372831411] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253710.401742988] [controller_manager]: Received robot description from topic.
+2025-11-16 00:41:50 INFO [90215] ros.launch:105 - [ros2_control_node-3] [WARN] [1763253710.401814246] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-16 00:41:51 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253711.268286526] [controller_manager]: Received robot description from topic.
+2025-11-16 00:41:51 INFO [90215] ros.launch:105 - [ros2_control_node-3] [WARN] [1763253711.268359237] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-16 00:41:51 INFO [90215] ros.launch:105 - [ros2_control_node-3] [INFO] [1763253711.846339056] [controller_manager]: Received robot description from topic.
+2025-11-16 00:41:51 INFO [90215] ros.launch:105 - [ros2_control_node-3] [WARN] [1763253711.846413606] [controller_manager]: ResourceManager has already loaded a urdf. Ignoring attempt to reload a robot description.
+2025-11-16 00:41:52 INFO [90215] ros.launch:105 - [rviz2-8] [ERROR] [1763253712.839097998] [rviz2.moveit.ros.motion_planning_frame]: Action server: /recognize_objects not available
+2025-11-16 00:41:52 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253712.882286494] [rviz2.moveit.ros.motion_planning_frame]: MoveGroup namespace changed: / -> . Reloading params.
+2025-11-16 00:41:52 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253712.986231814] [rviz2.moveit.ros.rdf_loader]: Loaded robot model in 0.00403875 seconds
+2025-11-16 00:41:52 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253712.986351577] [rviz2.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.008611398] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.008671715] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.008680041] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.008684785] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.008689336] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.008693402] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.008696597] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.096596335] [rviz2.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.111222474] [rviz2.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.113440953] [rviz2.moveit.ros.planning_scene_monitor]: Listening to '/monitored_planning_scene'
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.317963503] [interactive_marker_display_94260922639712]: Connected on namespace: /rviz_moveit_motion_planning_display/robot_interaction_interactive_marker_topic
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.379287582] [rviz2.moveit.ros.motion_planning_frame]: group omron_arm_group
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.379333377] [rviz2.moveit.ros.motion_planning_frame]: Constructing new MoveGroup connection for group 'omron_arm_group' in namespace ''
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.433469039] [rviz2.moveit.ros.move_group_interface]: Ready to take commands for planning group omron_arm_group.
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.478520402] [interactive_marker_display_94260922639712]: Sending request for interactive markers
+2025-11-16 00:41:53 INFO [90215] ros.launch:105 - [rviz2-8] [INFO] [1763253713.522186305] [interactive_marker_display_94260922639712]: Service response received for initialization
+2025-11-16 00:41:54 INFO [90215] ros.launch:105 - [INFO] [scene-9]: process started with pid [90748]
+2025-11-16 00:41:54 INFO [90215] ros.launch:105 - [INFO] [poses-10]: process started with pid [90749]
+2025-11-16 00:41:54 INFO [90215] ros.launch:105 - [INFO] [spray_path-11]: process started with pid [90750]
+2025-11-16 00:41:54 INFO [90215] ros.launch:105 - [INFO] [servo-12]: process started with pid [90751]
+2025-11-16 00:41:54 INFO [90215] ros.launch:105 - [INFO] [robot-13]: process started with pid [90752]
+2025-11-16 00:41:54 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253714.391537845] [omron_servo_node.omron_servo_node.moveit.ros.move_group.collision_monitor]: Collision monitor started
+2025-11-16 00:41:54 INFO [90215] ros.launch:105 - [servo_node-7] Warning: class_loader.ClassLoader: SEVERE WARNING!!! Attempting to unload library while objects created by this loader exist in the heap! You should delete your objects before attempting to unload the library or destroying the ClassLoader. The library will NOT be unloaded.
+2025-11-16 00:41:54 INFO [90215] ros.launch:105 - [servo_node-7]          at line 127 in ./src/class_loader.cpp
+2025-11-16 00:41:54 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253714.396735155] [omron_servo_node.omron_servo_node.moveit.ros.servo]: Servo initialized successfully
+2025-11-16 00:41:54 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253714.428436026] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:41:55 INFO [90215] ros.launch:105 - [servo-12] [INFO] [1763253715.017706210] [servo]: ServoBridge: Initial frame = 'world'
+2025-11-16 00:41:55 INFO [90215] ros.launch:105 - [servo-12] [INFO] [1763253715.077815899] [servo]: ✅ ServoBridge aktiv – Publiziert auf '/servo/cartesian_mm' und '/servo/joint_jog'
+2025-11-16 00:41:55 INFO [90215] ros.launch:105 - [ros2_control_node-3] [WARN] [1763253715.093489126] [controller_manager]: Overrun detected! The controller manager missed its desired rate of 100 Hz. The loop took 17.310472 ms (missed cycles : 2).
+2025-11-16 00:41:55 INFO [90215] ros.launch:105 - [robot-13] [INFO] [1763253715.155331220] [robot]: 🤖 Robot-Node gestartet: tcp_pose = Pose(tool_mount in world), Joints aus /joint_states
+2025-11-16 00:41:55 INFO [90215] ros.launch:105 - [robot-13] [WARN] [1763253715.288684933] [robot]: ⚠️ Kein TF world -> tool_mount verfügbar – tcp_pose bleibt 0.
+2025-11-16 00:41:55 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253715.428552390] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:41:56 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253716.428674465] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:41:57 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253717.428848802] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:41:58 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253718.429060981] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:41:59 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253719.429169119] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:41:59 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253719.636972862] [spawner_omron_arm_controller]: Could not contact service /controller_manager/list_controllers
+2025-11-16 00:41:59 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253719.637373734] [spawner_omron_arm_controller]: waiting for service /controller_manager/list_controllers to become available...
+2025-11-16 00:42:00 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253720.429288677] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:01 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253721.429430979] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:02 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253722.429553576] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:03 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253723.429725475] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:04 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253724.429869899] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:05 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253725.430021869] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:06 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253726.430155264] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:07 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253727.430270569] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:08 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253728.430380166] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:09 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253729.430501469] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:09 INFO [90215] ros.launch:105 - [spawner-4] [WARN] [1763253729.482160776] [ros2_control_controller_spawner_joint_state_broadcaster]: [93mAttempt 1 failed. Retrying in 3 seconds...[0m
+2025-11-16 00:42:09 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253729.654055373] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:42:10 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253730.430657952] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:11 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253731.430841500] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:12 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253732.431033564] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:13 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253733.431190205] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:14 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253734.431340750] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:15 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253735.431510167] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:16 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253736.431651518] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:17 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253737.431837968] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:19 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253739.436262811] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:20 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253740.436396528] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:20 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253740.669146967] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:42:20 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253740.669614415] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:42:21 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253741.436554388] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:22 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253742.436707012] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:23 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253743.436876410] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:24 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253744.437029421] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:25 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253745.437180785] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:25 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253745.451402408] [move_group.move_group.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-16 00:42:25 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253745.453143921] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-16 00:42:25 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253745.454207677] [move_group.move_group.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-16 00:42:25 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253745.454428360] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-16 00:42:25 INFO [90215] ros.launch:105 - [move_group-6] [INFO] [1763253745.461415740] [move_group.move_group.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-16 00:42:25 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253745.461538299] [omron_servo_node.omron_servo_node.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-11-16 00:42:26 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253746.437358522] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:27 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253747.437501574] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:28 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253748.438967691] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:29 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253749.439110470] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:30 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253750.439251800] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:30 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253750.679253869] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:42:30 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253750.679830427] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:42:31 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253751.439399023] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:32 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253752.439612036] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:33 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253753.439802925] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:33 INFO [90215] ros.launch:105 - [spawner-4] [WARN] [1763253753.505803002] [ros2_control_controller_spawner_joint_state_broadcaster]: [93mAttempt 2 failed. Retrying in 3 seconds...[0m
+2025-11-16 00:42:34 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253754.439935271] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:35 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253755.440068789] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:36 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253756.440226615] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:37 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253757.440381640] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:38 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253758.440509146] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:39 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253759.440658860] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:40 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253760.440836481] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:40 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253760.691130569] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:42:40 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253760.691820113] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:42:41 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253761.440977119] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:42 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253762.441097575] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:43 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253763.441243513] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:44 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253764.441400787] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:45 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253765.441543244] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:46 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253766.441697031] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:47 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253767.441846073] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:48 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253768.441986787] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:50 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253770.454435111] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:51 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253771.454558490] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:51 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253771.714006391] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:42:51 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253771.714606518] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:42:52 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253772.454722604] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:53 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253773.454851806] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:54 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253774.454991281] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:55 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253775.455151104] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:56 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253776.455277981] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:57 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253777.455383539] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:57 INFO [90215] ros.launch:105 - [spawner-4] [WARN] [1763253777.537911512] [ros2_control_controller_spawner_joint_state_broadcaster]: [93mAttempt 3 failed. Retrying in 3 seconds...[0m
+2025-11-16 00:42:58 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253778.455489194] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:42:59 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253779.455649018] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:00 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253780.455821017] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:01 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253781.456004555] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:01 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253781.723498004] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:43:01 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253781.723958886] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:43:02 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253782.456151881] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:03 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253783.456327286] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:04 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253784.456489135] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:05 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253785.456657568] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:06 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253786.456818159] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:07 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253787.456978169] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:08 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253788.457071489] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:09 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253789.457202040] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:10 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253790.457339462] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:11 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253791.457545505] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:11 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253791.732668257] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:43:11 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253791.733284006] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:43:12 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253792.457678379] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:13 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253793.457858096] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:14 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253794.457990679] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:15 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253795.458139135] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:16 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253796.458250654] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:17 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253797.458400919] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:18 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253798.458574714] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:19 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253799.458715491] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:21 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253801.435174112] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:21 INFO [90215] ros.launch:105 - [spawner-4] [WARN] [1763253801.538803740] [ros2_control_controller_spawner_joint_state_broadcaster]: [93mAttempt 4 failed. Retrying in 3 seconds...[0m
+2025-11-16 00:43:22 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253802.436161155] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:22 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253802.720142847] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:43:22 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253802.720684496] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:43:23 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253803.436321297] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:24 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253804.436431670] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:25 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253805.436590213] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:26 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253806.436785925] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:27 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253807.436912902] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:28 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253808.437025842] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:29 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253809.437228621] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:30 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253810.437377186] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:31 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253811.437519556] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:32 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253812.437658151] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:32 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253812.729851218] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:43:32 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253812.730504104] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:43:33 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253813.437785435] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:34 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253814.437933682] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:35 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253815.438098964] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:36 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253816.438252631] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:37 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253817.438394006] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:38 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253818.438541575] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:39 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253819.438711890] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:40 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253820.438826550] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:41 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253821.438979326] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:42 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253822.439160541] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:42 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253822.739327416] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:43:42 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253822.739932652] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:43:43 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253823.439316009] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:44 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253824.439457153] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:44 INFO [90215] ros.launch:105 - [spawner-4] [WARN] [1763253824.557931336] [ros2_control_controller_spawner_joint_state_broadcaster]: [93mAttempt 5 failed. Retrying in 3 seconds...[0m
+2025-11-16 00:43:45 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253825.439598683] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:46 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253826.439729954] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:47 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253827.439829768] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:47 INFO [90215] ros.launch:105 - [spawner-4] [ERROR] [1763253827.558773099] [ros2_control_controller_spawner_joint_state_broadcaster]: [91mFailed to acquire lock after multiple attempts.[0m
+2025-11-16 00:43:47 INFO [90215] ros.launch:105 - [ERROR] [spawner-4]: process has died [pid 90330, exit code 1, cmd '/opt/ros/rolling/lib/controller_manager/spawner joint_state_broadcaster --controller-manager /controller_manager --ros-args'].
+2025-11-16 00:43:48 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253828.439971492] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253829.440149218] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:50 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253830.440299644] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:52 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253832.430003961] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:53 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253833.430140250] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:53 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253833.744722110] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:43:53 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253833.745636052] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:43:54 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253834.430290579] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:55 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253835.430438197] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:56 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253836.430551632] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:57 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253837.430696249] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:58 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253838.430856570] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:43:59 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253839.431087958] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:00 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253840.431204072] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:01 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253841.431314862] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:02 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253842.431470949] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:03 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253843.431588902] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:03 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253843.755108372] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:44:03 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253843.755683289] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:44:04 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253844.431755926] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:05 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253845.431926241] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:06 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253846.432073558] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:07 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253847.432193977] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:08 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253848.432354355] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:09 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253849.432511250] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:10 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253850.432687980] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:11 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253851.432797465] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:12 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253852.432952425] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:13 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253853.433048751] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:13 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253853.765880330] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:44:13 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253853.766518431] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:44:14 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253854.433158811] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:15 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253855.433328164] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:16 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253856.433498099] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:17 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253857.433612574] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:18 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253858.433777863] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:19 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253859.433883918] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:20 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253860.434030817] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:21 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253861.434145971] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:23 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253863.430879077] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:24 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253864.431010116] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:24 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253864.772790218] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:44:24 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253864.773425509] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:44:25 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253865.431157544] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:26 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253866.431314281] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:27 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253867.431467042] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:28 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253868.431609427] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:29 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253869.431764613] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:30 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253870.431939582] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:31 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253871.432116308] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:32 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253872.432249638] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:33 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253873.432413023] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:34 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253874.432506054] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:34 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253874.782090559] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:44:34 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253874.782675816] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:44:35 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253875.432640930] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:36 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253876.432742465] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:37 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253877.432882077] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:38 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253878.432972885] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:39 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253879.433139533] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:40 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253880.433291339] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:41 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253881.433426240] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:42 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253882.433583842] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:43 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253883.433772259] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:44 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253884.433973139] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:44 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253884.791150865] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:44:44 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253884.791625369] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:44:45 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253885.434135668] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:46 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253886.434256948] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:47 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253887.434415712] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:48 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253888.434539473] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253889.434735973] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:50 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253890.434833196] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:51 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253891.434972163] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:52 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253892.435140478] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:54 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253894.442528718] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:55 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253895.442700422] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:55 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253895.807528292] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:44:55 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253895.808056153] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:44:56 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253896.442857303] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:57 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253897.443079695] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:58 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253898.443235513] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:44:59 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253899.443327373] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:00 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253900.443500634] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:01 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253901.443664301] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:02 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253902.443809750] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:03 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253903.443949385] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:04 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253904.444080875] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:05 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253905.444226481] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:05 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253905.818880677] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:45:05 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253905.819243433] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:45:06 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253906.444343147] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:07 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253907.444472106] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:08 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253908.444608710] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:09 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253909.444805419] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:10 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253910.444964575] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:11 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253911.445066143] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:12 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253912.445177514] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:13 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253913.445309180] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:14 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253914.445409304] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:15 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253915.445576284] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:15 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253915.830135897] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:45:15 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253915.830681871] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:45:16 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253916.445696727] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:17 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253917.445852580] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:18 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253918.445955220] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:19 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253919.447254301] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:20 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253920.447412018] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:21 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253921.447523972] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:22 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253922.447662070] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:23 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253923.447812173] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:25 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253925.431189840] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:26 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253926.431349336] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:26 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253926.823586720] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:45:26 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253926.824124200] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:45:27 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253927.431496051] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:28 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253928.431653900] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:29 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253929.431809380] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:30 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253930.431975495] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:31 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253931.432130380] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:32 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253932.432273164] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:33 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253933.432433664] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:34 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253934.432605007] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:35 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253935.432764636] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:36 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253936.432922232] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:36 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253936.835496436] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:45:36 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253936.836124842] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:45:37 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253937.433056392] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:38 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253938.433200248] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:39 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253939.433373916] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:40 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253940.433543712] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:41 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253941.433714090] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:42 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253942.433854751] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:43 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253943.434001607] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:44 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253944.434158336] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:45 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253945.434303898] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:46 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253946.434476424] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:46 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253946.845183023] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:45:46 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253946.845584045] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:45:47 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253947.434629011] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:48 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253948.434779952] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253949.434954996] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:50 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253950.435102356] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:51 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253951.435230260] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:52 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253952.435346936] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:53 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253953.435482404] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:54 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253954.435622515] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:56 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253956.424118662] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:57 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253957.424251994] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:57 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253957.843919992] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:45:57 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253957.844396412] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:45:58 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253958.424393267] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:45:59 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253959.424586054] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:00 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253960.424736526] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:01 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253961.424876249] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:02 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253962.425015045] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:03 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253963.425151434] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:04 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253964.425294019] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:05 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253965.425422084] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:06 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253966.425534664] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:07 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253967.425649856] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:07 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253967.853954243] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:46:07 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253967.854299884] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:46:08 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253968.425748013] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:09 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253969.425898825] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:10 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253970.425979397] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:11 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253971.426092887] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:12 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253972.426229409] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:13 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253973.426357705] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:14 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253974.426486968] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:15 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253975.426612555] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:16 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253976.426760108] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:17 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253977.426861018] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:17 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253977.863029432] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:46:17 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253977.863552757] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:46:18 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253978.426953863] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:19 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253979.427049354] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:20 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253980.427151330] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:21 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253981.427291247] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:22 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253982.427421679] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:23 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253983.427547465] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:24 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253984.427709451] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:25 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253985.427812297] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:27 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253987.421628094] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:28 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253988.421787028] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:28 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253988.866666627] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:46:28 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253988.867594912] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:46:29 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253989.421916879] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:30 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253990.422064567] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:31 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253991.422203143] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:32 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253992.422326109] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:33 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253993.422476319] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:34 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253994.422623232] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:35 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253995.422805050] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:36 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253996.422943270] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:37 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253997.423075883] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:38 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253998.423214394] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:38 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763253998.877021695] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:46:38 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763253998.877664739] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:46:39 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763253999.423374175] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:40 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763254000.423510558] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:41 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763254001.423640367] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:42 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763254002.426179921] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:43 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763254003.426328771] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:44 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763254004.426475055] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:45 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763254005.426610516] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:46 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763254006.427419109] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:47 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763254007.427567809] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:48 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763254008.427853918] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:48 INFO [90215] ros.launch:105 - [spawner-5] [WARN] [1763254008.889252287] [spawner_omron_arm_controller]: Could not contact service /controller_manager/load_controller
+2025-11-16 00:46:48 INFO [90215] ros.launch:105 - [spawner-5] [INFO] [1763254008.889827628] [spawner_omron_arm_controller]: waiting for service /controller_manager/load_controller to become available...
+2025-11-16 00:46:49 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763254009.428074898] [omron_servo_node]: Waiting to receive robot state update.
+2025-11-16 00:46:50 INFO [90215] ros.launch:105 - [servo_node-7] [INFO] [1763254010.428242537] [omron_servo_node]: Waiting to receive robot state update.

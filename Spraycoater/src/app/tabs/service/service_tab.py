@@ -124,14 +124,15 @@ class ServiceTab(QWidget):
             _LOG.error("robot_servo_on() failed: %s", e)
 
         # Command-Type je nach Tab
+        # Achtung: ServoBridge erwartet Strings wie "joint" / "cart" / "twist"
         mode: Optional[str] = None
         if page is self.jointJogWidget:
-            mode = "JOINT_JOG"
+            mode = "joint"      # -> JOINT_JOG
         elif page is self.cartJogWidget:
-            mode = "TWIST"
+            mode = "cart"       # -> TWIST
         else:
             # Motion-Tab: definieren wir als Default ebenfalls JOINT_JOG
-            mode = "JOINT_JOG"
+            mode = "joint"
 
         if mode and hasattr(self.bridge, "servo_set_command_type"):
             try:
