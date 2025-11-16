@@ -8,6 +8,9 @@ Panels:
         - /MotionPlanning1/Planned Path1
         - /TF1
         - /TF1/Frames1
+        - /Marker1
+        - /MarkerArray1
+        - /PoseArray1
       Splitter Ratio: 0.5
     Tree Height: 233
   - Class: rviz_common/Help
@@ -274,6 +277,50 @@ Visualization Manager:
                 {}
       Update Interval: 0
       Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Marker
+      Namespaces: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /spraycoater/spray_path/markers
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /spraycoater/spray_path/markers_array
+      Value: true
+    - Alpha: 1
+      Arrow Length: 0.30000001192092896
+      Axes Length: 0.30000001192092896
+      Axes Radius: 0.009999999776482582
+      Class: rviz_default_plugins/PoseArray
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.07000000029802322
+      Head Radius: 0.029999999329447746
+      Name: PoseArray
+      Shaft Length: 0.23000000417232513
+      Shaft Radius: 0.009999999776482582
+      Shape: Arrow (Flat)
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /spraycoater/spray_path/poses
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -307,10 +354,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.3250001072883606
+      Pitch: 0.16000011563301086
       Target Frame: robot_mount
       Value: Orbit (rviz_default_plugins)
-      Yaw: 5.965186595916748
+      Yaw: 5.890185356140137
     Saved: ~
 Window Geometry:
   Displays:
