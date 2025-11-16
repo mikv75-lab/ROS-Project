@@ -2,18 +2,32 @@
 # File: tabs/service/servo_widgets.py
 from __future__ import annotations
 from typing import Optional, List, Tuple, Dict, Any, Sequence
-
 import math
 
 from PyQt6 import QtCore
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
-    QLabel, QPushButton, QSlider, QDoubleSpinBox, QRadioButton,
-    QSizePolicy, QSpacerItem, QFrame,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGroupBox,
+    QPushButton,
+    QToolButton,
+    QLabel,
+    QGridLayout,
+    QFrame,
+    QSizePolicy,
+    QFormLayout,
+    QDoubleSpinBox,
+    QSlider,
+    QSpacerItem,
+    QRadioButton,
 )
 
 
+# =============================================================================
+# JointJogWidget – Joint-Jogging in Grad mit Auto-Repeat
+# =============================================================================
 class JointJogWidget(QWidget):
     """
     Joint-Jogging:
@@ -22,12 +36,8 @@ class JointJogWidget(QWidget):
       - Vertical Spacer am Ende
 
     Signals:
-      - paramsChanged(dict)                  -> {"joint_step_deg","joint_speed_pct"}
-      - jointJogRequested(str, float, float)-> (joint_name, delta_deg, speed_pct)
-
-    Zusätzlich:
-      - joint-Slider werden automatisch aus RobotBridge.jointsChanged(JointState)
-        befüllt (rad -> °), mit echten Limits und ohne Flackern während drag.
+      - paramsChanged(dict)                     -> {"joint_step_deg","joint_speed_pct"}
+      - jointJogRequested(str, float, float)    -> (joint_name, delta_deg, speed_pct)
     """
     paramsChanged = QtCore.pyqtSignal(dict)
     jointJogRequested = QtCore.pyqtSignal(str, float, float)
@@ -40,11 +50,6 @@ class JointJogWidget(QWidget):
         self._joint_lims_deg: List[Tuple[float, float]] = []
         # pro Joint-Reihe: (btn-, slider, btn+, lblValue)
         self._rows: List[Tuple[QPushButton, QSlider, QPushButton, QLabel]] = []
-
-        # Mapping: joint_name -> Index im JointState
-        self._joint_index_by_name: Dict[str, int] = {}
-        # Merken, welche Slider gerade per Maus gezogen werden -> nicht überschreiben
-        self._slider_pressed: Dict[int, bool] = {}
 
         self._build_ui()
         self._wire_signals()
@@ -124,30 +129,19 @@ class JointJogWidget(QWidget):
         self.spinSpeedPct.valueChanged.connect(lambda _: self._emit_params())
 
     def _try_bind_to_bridge(self):
-        """
-        Verbindet:
-          - paramsChanged / jointJogRequested -> ServoBridge (falls vorhanden)
-          - jointsChanged (RobotBridge) -> Slider-Update
-        """
-        target_servo = None
-        for attr in ("_servo", "_motion"):   # wie bisher
+        # optionales Forward der Outbound-Signale an Bridge-Signale
+        target = None
+        for attr in ("_servo", "_motion"):
             obj = getattr(self.bridge, attr, None) if self.bridge else None
             if obj and getattr(obj, "signals", None):
-                target_servo = obj.signals
+                target = obj.signals
                 break
-
-        if target_servo:
-            if hasattr(target_servo, "paramsChanged"):
-                self.paramsChanged.connect(target_servo.paramsChanged.emit)
-            if hasattr(target_servo, "jointJogRequested"):
-                self.jointJogRequested.connect(target_servo.jointJogRequested.emit)
-
-        # NEU: RobotBridge für JointStates
-        target_robot = getattr(self.bridge, "_robot", None) if self.bridge else None
-        if target_robot and getattr(target_robot, "signals", None):
-            sigs = target_robot.signals
-            if hasattr(sigs, "jointsChanged"):
-                sigs.jointsChanged.connect(self._on_robot_joints)
+        if not target:
+            return
+        if hasattr(target, "paramsChanged"):
+            self.paramsChanged.connect(target.paramsChanged.emit)
+        if hasattr(target, "jointJogRequested"):
+            self.jointJogRequested.connect(target.jointJogRequested.emit)
 
     # ---------- Public API ----------
     def set_params(self, cfg: Dict[str, Any]):
@@ -168,7 +162,6 @@ class JointJogWidget(QWidget):
         for (btnm, sld, btnp, lbl) in self._rows:
             btnm.deleteLater(); sld.deleteLater(); btnp.deleteLater(); lbl.deleteLater()
         self._rows.clear()
-        self._slider_pressed.clear()
 
         # Grid leeren & Header neu setzen
         while self.grid.count():
@@ -218,13 +211,17 @@ class JointJogWidget(QWidget):
             lblVal.setMinimumWidth(70)
             self.grid.addWidget(lblVal, row_idx, 4)
 
+            # 🔁 Auto-Repeat für die Jog-Buttons
+            for b in (btnm, btnp):
+                b.setAutoRepeat(True)
+                b.setAutoRepeatDelay(300)      # ms bis zum ersten Wiederholen
+                b.setAutoRepeatInterval(80)    # ms zwischen den Schritten
+
             # Wiring
             idx = row_idx - 1
             btnm.clicked.connect(lambda _, i=idx: self._emit_joint_step(i, negative=True))
             btnp.clicked.connect(lambda _, i=idx: self._emit_joint_step(i, negative=False))
             sld.valueChanged.connect(lambda _, i=idx: self._on_slider_changed(i))
-            sld.sliderPressed.connect(lambda i=idx: self._set_slider_pressed(i, True))
-            sld.sliderReleased.connect(lambda i=idx: self._set_slider_pressed(i, False))
 
             self._rows.append((btnm, sld, btnp, lblVal))
 
@@ -232,23 +229,49 @@ class JointJogWidget(QWidget):
 
     def set_joint_positions_deg(self, positions_deg: Sequence[float]):
         """
-        Direkte API in ° – wird z.B. intern von _on_robot_joints benutzt.
+        Setzt Slider + Label aus einer Liste von Grad-Werten.
+        Erwartet gleiche Reihenfolge wie self._joint_names.
         """
         for i, v in enumerate(positions_deg):
             if i >= len(self._rows):
                 break
-            if self._slider_pressed.get(i, False):
-                # gerade manuell bewegt -> nicht überschreiben
-                continue
             _, sld, _, lbl = self._rows[i]
-            val10 = int(round(float(v) * 10.0))
-            cur_deg = sld.value() / 10.0
-            if abs(cur_deg - float(v)) < 0.05:
-                continue  # vermeidet unnötige Updates/Flackern
+            val10 = int(float(v) * 10.0)
             sld.blockSignals(True)
             sld.setValue(val10)
             sld.blockSignals(False)
             lbl.setText(f"{float(v):.2f}")
+
+    @QtCore.pyqtSlot(object)
+    def update_from_joint_state(self, msg: Any) -> None:
+        """
+        Aktualisiert Slider + Labels anhand eines sensor_msgs/JointState.
+
+        Erwartet:
+          - msg.name:  Liste der Joint-Namen (z.B. ["joint_1", ..., "joint_6"])
+          - msg.position: Liste der Positionen in RAD
+
+        Es werden nur die Joints verwendet, die in self._joint_names vorkommen.
+        """
+        if msg is None:
+            return
+        names = getattr(msg, "name", None)
+        positions = getattr(msg, "position", None)
+        if not names or not positions:
+            return
+
+        name_to_pos = {str(n): float(p) for n, p in zip(names, positions)}
+
+        deg_list: List[float] = []
+        for jname in self._joint_names:
+            rad = name_to_pos.get(jname)
+            if rad is None:
+                # falls der Joint im JointState fehlt: 0.0 als Fallback
+                deg_list.append(0.0)
+            else:
+                deg_list.append(math.degrees(rad))
+
+        self.set_joint_positions_deg(deg_list)
 
     # ---------- intern ----------
     def _emit_params(self):
@@ -267,46 +290,6 @@ class JointJogWidget(QWidget):
         _, sld, _, lbl = self._rows[idx]
         lbl.setText(f"{float(sld.value())/10.0:.2f}")
 
-    def _set_slider_pressed(self, idx: int, pressed: bool):
-        self._slider_pressed[idx] = pressed
-
-    # ---------- Robot-Joint-State -> Slider ----------
-    @QtCore.pyqtSlot(object)
-    def _on_robot_joints(self, msg: Any):
-        """
-        Bekommt JointState (rad) von RobotBridge.signals.jointsChanged
-        und mapped auf unsere Joints in °.
-        """
-        from sensor_msgs.msg import JointState as JS  # lazy import für Typcheck
-
-        if not isinstance(msg, JS):
-            return
-        if not msg.name or not msg.position:
-            return
-
-        # Mapping joint_name -> index im JointState anlegen/refreshen
-        self._joint_index_by_name = {name: i for i, name in enumerate(msg.name)}
-
-        positions_deg: List[float] = []
-        for gui_idx, jname in enumerate(self._joint_names):
-            src_idx = self._joint_index_by_name.get(jname)
-            if src_idx is None or src_idx >= len(msg.position):
-                positions_deg.append(0.0)
-                continue
-            rad = float(msg.position[src_idx])
-            deg = math.degrees(rad)
-
-            # auf Limits clampen
-            mn, mx = self._joint_lims_deg[gui_idx]
-            if deg < mn:
-                deg = mn
-            elif deg > mx:
-                deg = mx
-
-            positions_deg.append(deg)
-
-        self.set_joint_positions_deg(positions_deg)
-
     # ---------- Sizing Helper ----------
     def _apply_vertical_max(self):
         widgets = [self] + self.findChildren(QWidget)
@@ -318,9 +301,8 @@ class JointJogWidget(QWidget):
             w.setSizePolicy(sp)
 
 
-
 # =============================================================================
-# CartesianJogWidget (QWidget) – linear + rotational
+# CartesianJogWidget (QWidget) – linear + rotational mit Auto-Repeat
 # =============================================================================
 class CartesianJogWidget(QWidget):
     """
@@ -441,6 +423,19 @@ class CartesianJogWidget(QWidget):
         grid_rot.addWidget(self.btnRzm, 3, 0)
         grid_rot.addWidget(self.btnRzp, 3, 1)
         root.addLayout(grid_rot)
+
+        # 🔁 Auto-Repeat für alle Jogging-Buttons
+        for b in (
+            self.btnXm, self.btnXp,
+            self.btnYm, self.btnYp,
+            self.btnZm, self.btnZp,
+            self.btnRxm, self.btnRxp,
+            self.btnRym, self.btnRyp,
+            self.btnRzm, self.btnRzp,
+        ):
+            b.setAutoRepeat(True)
+            b.setAutoRepeatDelay(300)
+            b.setAutoRepeatInterval(80)
 
         # Spacer
         root.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))

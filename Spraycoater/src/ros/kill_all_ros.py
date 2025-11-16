@@ -15,34 +15,43 @@ try:
 except Exception:
     psutil = None
 
-# Prozesse, die wir typischerweise beenden möchten
-SAFE_NAME_MATCHES = {
+
+# Alles was ROS ist
+ROS_NAME_MATCHES = {
     "rviz2",
+    "move_group",
+    "ros2daemon",
     "gzserver",
     "gzclient",
-    "ros2daemon",
+    "controller_manager",
 }
 
-# Kommandozeilen-Muster, die eindeutig ROS-CLIs/Launches kennzeichnen
-CLI_SUBSTRINGS = [
-    "ros2 launch",
-    "ros2 topic echo",
-    "ros2 topic pub",
-    "ros2 bag play",
-    "ros2 bag record",
-    "-m launch_ros",
+# Deine Nodes (Python)
+PYTHON_NODE_MATCHES = [
+    "spraycoater_nodes_py",
+    "scene --ros-args",
+    "poses --ros-args",
+    "spray_path --ros-args",
+    "robot --ros-args",
 ]
 
-# Dinge, die wir NIEMALS killen wollen (UI/Debugger etc.)
+# ROS-CLI Muster
+CLI_MATCHES = [
+    "ros2 launch",
+    "ros2 run",
+    "ros2 node",
+    "ros2 topic",
+    "ros2 service",
+    "ros2 bag",
+]
+
+# NIEMALS killen
 EXCLUDE_SUBSTRINGS = [
     "main_gui.py",
     "debugpy",
     "Spraycoater/src/app/main_gui.py",
 ]
 
-def _matches_cli(cmd: List[str]) -> bool:
-    s = " ".join(cmd)
-    return any(sub in s for sub in CLI_SUBSTRINGS)
 
 def _should_exclude(pid: int, cmd: List[str]) -> bool:
     if pid == os.getpid():
@@ -50,35 +59,52 @@ def _should_exclude(pid: int, cmd: List[str]) -> bool:
     s = " ".join(cmd)
     return any(ex in s for ex in EXCLUDE_SUBSTRINGS)
 
+
+def _matches_ros(cmd: List[str], name: str) -> bool:
+    s = " ".join(cmd)
+    if name.lower() in ROS_NAME_MATCHES:
+        return True
+    if any(sub in s for sub in CLI_MATCHES):
+        return True
+    if any(sub in s for sub in PYTHON_NODE_MATCHES):
+        return True
+    return False
+
+
 def _kill_pid(pid: int, sig=signal.SIGTERM) -> None:
     try:
         os.kill(pid, sig)
     except ProcessLookupError:
         pass
     except Exception as e:
-        _LOG.debug("kill(%s, %s) failed: %s", pid, sig, e)
+        _LOG.debug(f"kill({pid}, {sig}) failed: {e}")
+
 
 def kill_all_ros(timeout: float = 2.0) -> None:
     """
-    Beendet typische ROS-/RViz-/Gazebo-CLI-Prozesse, ohne die UI selbst zu treffen.
-    Erst TERM, dann (falls nötig) KILL nach kurzer Wartezeit.
+    Killt *ALLE* ROS-relevanten Prozesse außer deiner UI.
     """
     if psutil is None:
         _kill_fallback(timeout)
         return
 
     victims = []
+
     for p in psutil.process_iter(attrs=["pid", "name", "cmdline"]):
         try:
+            cmd = p.info.get("cmdline") or []
             name = (p.info.get("name") or "").lower()
-            cmd  = p.info.get("cmdline") or []
             if not cmd:
                 continue
+
+            # UI nicht killen
             if _should_exclude(p.pid, cmd):
                 continue
 
-            if name in SAFE_NAME_MATCHES or _matches_cli(cmd):
+            # ROS-Prozess?
+            if _matches_ros(cmd, name):
                 victims.append(p)
+
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
 
@@ -86,54 +112,50 @@ def kill_all_ros(timeout: float = 2.0) -> None:
         _LOG.info("[kill] nothing to stop.")
         return
 
-    _LOG.info("[kill] stopping %d ROS-related processes…", len(victims))
+    _LOG.info(f"[kill] stopping {len(victims)} ROS-related processes…")
+
+    # TERM
     for p in victims:
-        _LOG.debug(" -> TERM pid=%s name=%s cmd=%s", p.pid, p.info.get("name"), " ".join(p.info.get("cmdline") or []))
+        _LOG.debug(f" -> TERM pid={p.pid}: {' '.join(p.info.get('cmdline') or [])}")
         _kill_pid(p.pid, signal.SIGTERM)
 
+    # Kurz warten
     t0 = time.time()
     while time.time() - t0 < timeout:
-        all_gone = True
-        for p in victims:
-            try:
-                if p.is_running():
-                    all_gone = False
-                    break
-            except psutil.NoSuchProcess:
-                continue
-        if all_gone:
+        alive = [p for p in victims if p.is_running()]
+        if not alive:
             break
         time.sleep(0.1)
 
-    # Eskalation
+    # KILL falls nötig
     for p in victims:
-        try:
-            if p.is_running():
-                _LOG.debug(" -> KILL pid=%s", p.pid)
-                _kill_pid(p.pid, signal.SIGKILL)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
+        if p.is_running():
+            _LOG.debug(f" -> KILL pid={p.pid}")
+            _kill_pid(p.pid, signal.SIGKILL)
+
 
 def _kill_fallback(timeout: float) -> None:
     """
-    Fallback ohne psutil: vorsichtige pkill-Aufrufe (exakte Namen + schmale -f Muster).
+    Ohne psutil – vorsichtige pkill-Muster.
     """
     import subprocess
-    _LOG.info("[kill] psutil nicht verfügbar – fallback pkill wird verwendet.")
-    cmds = [
-        ["pkill", "-x", "rviz2"],
-        ["pkill", "-x", "gzserver"],
-        ["pkill", "-x", "gzclient"],
-        ["pkill", "-x", "ros2daemon"],
-        # vorsichtige CLI-Kills (keine UI/Debug-Muster):
-        ["pkill", "-f", "ros2 launch "],
-        ["pkill", "-f", "ros2 topic echo"],
-        ["pkill", "-f", "ros2 topic pub"],
-        ["pkill", "-f", "-m launch_ros"],
+
+    patterns = [
+        "rviz2",
+        "move_group",
+        "ros2 launch",
+        "spraycoater_nodes_py",
+        "scene --ros-args",
+        "poses --ros-args",
+        "spray_path --ros-args",
+        "robot --ros-args",
+        "controller_manager",
     ]
-    for c in cmds:
+
+    for p in patterns:
         try:
-            subprocess.run(c, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["pkill", "-f", p], check=False)
         except Exception:
             pass
+
     time.sleep(timeout)

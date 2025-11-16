@@ -32,9 +32,16 @@ class ServiceTab(QWidget):
             └── Cartesian Jog
       [2] Row(HBox): PosesGroupBox | ToolGroupBox | SceneGroupBox
       [3] Spacer (Expanding)
+
+    Zusätzlich:
+      - Beim Tab-Wechsel wird der Servo eingeschaltet.
+      - Beim Tab-Wechsel wird der Servo-Command-Type gesetzt:
+          Motion      -> JOINT_JOG (Default)
+          Joint Jog   -> JOINT_JOG
+          Cartesian   -> TWIST
     """
 
-    def __init__(self, *, ctx, store: RecipeStore, bridge, parent: Optional[Widget] = None):
+    def __init__(self, *, ctx, store: RecipeStore, bridge, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
         self.store = store
@@ -97,6 +104,40 @@ class ServiceTab(QWidget):
             sp.setHorizontalPolicy(QSizePolicy.Expanding)
             sp.setVerticalPolicy(QSizePolicy.Preferred)
             w.setSizePolicy(sp)
+
+        # --- Tab-Change -> Servo / CommandType ------------------------------
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+        # Initial einmal passend setzen
+        self._on_tab_changed(self.tabs.currentIndex())
+
+    # ------------------------------------------------------------------ #
+    #  Tab-Change: Servo immer an + command_type pro Tab
+    # ------------------------------------------------------------------ #
+    def _on_tab_changed(self, idx: int) -> None:
+        page = self.tabs.widget(idx)
+
+        # Servo immer an – ist idempotent, falls er schon an ist.
+        try:
+            if hasattr(self.bridge, "robot_servo_on"):
+                self.bridge.robot_servo_on()
+        except Exception as e:
+            _LOG.error("robot_servo_on() failed: %s", e)
+
+        # Command-Type je nach Tab
+        mode: Optional[str] = None
+        if page is self.jointJogWidget:
+            mode = "JOINT_JOG"
+        elif page is self.cartJogWidget:
+            mode = "TWIST"
+        else:
+            # Motion-Tab: definieren wir als Default ebenfalls JOINT_JOG
+            mode = "JOINT_JOG"
+
+        if mode and hasattr(self.bridge, "servo_set_command_type"):
+            try:
+                self.bridge.servo_set_command_type(mode)
+            except Exception as e:
+                _LOG.error("servo_set_command_type(%s) failed: %s", mode, e)
 
     # ------------ Forwarder (optional) ---------------------------------------
     # Planner (aus Motion-Subtab)

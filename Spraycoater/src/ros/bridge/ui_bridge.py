@@ -10,10 +10,10 @@ from .scene_bridge import SceneBridge
 from .poses_bridge import PosesBridge
 from .spray_path_bridge import SprayPathBridge
 from .servo_bridge import ServoBridge
-from .robot_bridge import RobotBridge  # ⬅️ neu
+from .robot_bridge import RobotBridge  # ⬅️ RobotBridge
 
 from geometry_msgs.msg import PoseStamped, PoseArray
-from sensor_msgs.msg import JointState          # ⬅️ neu
+from sensor_msgs.msg import JointState
 from visualization_msgs.msg import MarkerArray
 
 _LOG = logging.getLogger("ros.ui_bridge")
@@ -277,7 +277,7 @@ class UIBridge:
         self.scene = SceneState()
         self.poses = PosesState()
         self.spraypath = SprayPathState()
-        self.robot = RobotState()  # ⬅️ neu
+        self.robot = RobotState()
 
         # gehaltene Bridge-Referenzen
         self._sb: Optional[SceneBridge] = None
@@ -285,8 +285,8 @@ class UIBridge:
         self._spb: Optional[SprayPathBridge] = None
         self._sev: Optional[ServoBridge] = None   # intern
         self._servo: Optional[ServoBridge] = None # öffentliches Attribut für Widgets (_servo)
-        self._rb: Optional[RobotBridge] = None    # intern ⬅️ neu
-        self._robot: Optional[RobotBridge] = None # öffentliches Attribut für Widgets (_robot) ⬅️ neu
+        self._rb: Optional[RobotBridge] = None    # intern
+        self._robot: Optional[RobotBridge] = None # öffentliches Attribut für Widgets (_robot)
 
     # ---------- Lifecycle ----------
 
@@ -298,7 +298,7 @@ class UIBridge:
             and self._pb is not None
             and self._spb is not None
             and self._sev is not None
-            and self._rb is not None        # ⬅️ neu
+            and self._rb is not None
         )
 
     @property
@@ -536,6 +536,24 @@ class UIBridge:
             self._rb.do_servo_off()
         except Exception as e:
             _LOG.error("robot_servo_off failed: %s", e)
+
+    # ---------- Servo: CommandType-API (UI -> ROS) ----------
+    def servo_set_command_type(self, mode: str) -> None:
+        """
+        Dünner Forwarder auf ServoBridge.set_command_type(mode).
+
+        Beispiel-Aufruf aus ServiceTab:
+            bridge.servo_set_command_type("joint")   # JOINT_JOG
+            bridge.servo_set_command_type("cart")    # TWIST
+            bridge.servo_set_command_type("pose")    # POSE
+        """
+        if not self._sev:
+            _LOG.error("servo_set_command_type: ServoBridge nicht verfügbar.")
+            return
+        try:
+            self._sev.set_command_type(mode)
+        except Exception as e:
+            _LOG.error("servo_set_command_type failed: %s", e)
 
     # ---------- Intern: Wiring von Qt-Signalen -> States ----------
     def _wire_scene_into_state(self, sb: SceneBridge) -> None:

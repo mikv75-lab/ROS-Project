@@ -4,11 +4,13 @@ from __future__ import annotations
 from typing import Optional, Dict, Any
 
 import math
+import threading
 
 from PyQt6 import QtCore
 
 from geometry_msgs.msg import TwistStamped
 from control_msgs.msg import JointJog
+from moveit_msgs.srv import ServoCommandType  # ⬅️ Service für CommandType
 
 from config.startup import AppContent
 from .base_bridge import BaseBridge
@@ -49,11 +51,26 @@ class ServoBridge(BaseBridge):
         * publisht direkt auf:
             - /servo/joint_jog      (JointJog)
             - /servo/cartesian_mm   (TwistStamped)
+        * setzt zusätzlich den moveit_servo-CommandType über
+            - /omron_servo_node/switch_command_type (moveit_msgs/srv/ServoCommandType)
 
     Die Topic-Namen werden über AppContent / topics.yaml geholt.
     """
 
     GROUP = "servo"
+
+    # interne Mapping-Tabelle (siehe moveit_servo::CommandType)
+    _COMMAND_TYPE_MAP = {
+        "joint": 0,        # JOINT_JOG
+        "joint_jog": 0,
+        "jog": 0,
+        "joints": 0,
+        "twist": 1,        # TWIST
+        "cart": 1,
+        "cartesian": 1,
+        "tcp": 1,
+        "pose": 2,         # POSE
+    }
 
     def __init__(self, content: AppContent):
         # Qt-Signale
@@ -74,6 +91,11 @@ class ServoBridge(BaseBridge):
             self.tcp_frame = "tcp"
 
         self.current_frame: str = self.world_frame
+
+        # CommandType-Status
+        self._cmd_type_client = None
+        self._cmd_type_lock = threading.Lock()
+        self._current_command_type: Optional[int] = None  # 0=JOINT_JOG,1=TWIST,2=POSE
 
         super().__init__("servo_bridge", content)
 
@@ -105,6 +127,18 @@ class ServoBridge(BaseBridge):
             self.pub_joint = None
 
         # -----------------------------
+        # Service-Client: CommandType
+        # -----------------------------
+        try:
+            # Hardcoded Service-Name für omron_servo_node – bei Bedarf später konfigurierbar machen
+            self._cmd_type_client = self.create_client(
+                ServoCommandType, "/omron_servo_node/switch_command_type"
+            )
+        except Exception as e:
+            self.get_logger().error(f"[servo] CommandType client init failed: {e}")
+            self._cmd_type_client = None
+
+        # -----------------------------
         # Qt-Signale ↔ Methoden
         # -----------------------------
         self.signals.jointJogRequested.connect(self._on_joint_jog_requested)
@@ -113,8 +147,83 @@ class ServoBridge(BaseBridge):
         self.signals.paramsChanged.connect(self._on_params_changed)
 
         self.get_logger().info(
-            f"[servo] ServoBridge aktiv, world_frame='{self.world_frame}', tcp_frame='{self.tcp_frame}', current='{self.current_frame}'"
+            f"[servo] ServoBridge aktiv, world_frame='{self.world_frame}', "
+            f"tcp_frame='{self.tcp_frame}', current='{self.current_frame}'"
         )
+
+    # ======================================================
+    # CommandType (JOINT_JOG / TWIST / POSE)
+    # ======================================================
+
+    def set_command_type(self, mode: str) -> None:
+        """
+        Setzt den moveit_servo-CommandType über den Service /omron_servo_node/switch_command_type.
+
+        :param mode: z.B. "joint", "jog", "cart", "twist", "pose"
+        """
+        if self._cmd_type_client is None:
+            self.get_logger().error(
+                "[servo] set_command_type: Service-Client nicht initialisiert."
+            )
+            return
+
+        key = (mode or "").strip().lower()
+        if not key:
+            self.get_logger().warning("[servo] set_command_type: leerer mode")
+            return
+
+        cmd_val = self._COMMAND_TYPE_MAP.get(key)
+        if cmd_val is None:
+            self.get_logger().warning(
+                f"[servo] set_command_type: unbekannter mode '{mode}' – "
+                f"erwarte z.B. 'joint', 'cart', 'pose'"
+            )
+            return
+
+        with self._cmd_type_lock:
+            if self._current_command_type == cmd_val:
+                # Nichts tun, wenn bereits gesetzt – vermeidet Spam
+                self.get_logger().debug(
+                    f"[servo] set_command_type: bereits {cmd_val} (mode='{mode}') – übersprungen."
+                )
+                return
+            self._current_command_type = cmd_val
+
+        # Service-Verfügbarkeit kurz prüfen (non-blocking-ish)
+        if not self._cmd_type_client.service_is_ready():
+            # kurzer Versuch, aber nicht das ganze UI blockieren
+            self.get_logger().info(
+                "[servo] set_command_type: warte kurz auf Service /omron_servo_node/switch_command_type"
+            )
+            if not self._cmd_type_client.wait_for_service(timeout_sec=0.2):
+                self.get_logger().warning(
+                    "[servo] set_command_type: Service nicht verfügbar – CommandType nicht gesetzt."
+                )
+                return
+
+        req = ServoCommandType.Request()
+        req.command_type = cmd_val
+
+        future = self._cmd_type_client.call_async(req)
+
+        def _done(fut):
+            try:
+                resp = fut.result()
+            except Exception as e:
+                self.get_logger().error(
+                    f"[servo] set_command_type({mode}={cmd_val}) Service-Call Exception: {e}"
+                )
+                return
+            if not getattr(resp, "success", False):
+                self.get_logger().error(
+                    f"[servo] set_command_type({mode}={cmd_val}) -> success=False"
+                )
+            else:
+                self.get_logger().info(
+                    f"[servo] CommandType gesetzt: mode='{mode}', value={cmd_val}"
+                )
+
+        future.add_done_callback(_done)
 
     # ======================================================
     # UI → JointJog (JOINT_JOG)
