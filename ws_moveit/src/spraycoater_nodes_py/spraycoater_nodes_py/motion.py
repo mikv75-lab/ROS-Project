@@ -48,6 +48,36 @@ def _latched_qos() -> QoSProfile:
     )
 
 
+def _to_robot_traj_msg(core_traj) -> RobotTrajectory:
+    """
+    Konvertiert eine MoveIt-Core-Trajektorie (moveit.core.robot_trajectory.RobotTrajectory)
+    robust in eine ROS-Message moveit_msgs/RobotTrajectory.
+
+    Versucht zuerst binding-spezifische Hilfsfunktionen (to_msg / to_robot_trajectory_msg),
+    fällt dann auf ein einfaches Attribute-Kopieren zurück.
+    """
+    msg = RobotTrajectory()
+    if core_traj is None:
+        return msg
+
+    # 1) Moderne Python-Bindings: direct to_msg()
+    if hasattr(core_traj, "to_msg"):
+        return core_traj.to_msg()  # type: ignore[no-any-return]
+
+    # 2) Klassische API: to_robot_trajectory_msg(msg)
+    if hasattr(core_traj, "to_robot_trajectory_msg"):
+        core_traj.to_robot_trajectory_msg(msg)  # type: ignore[attr-defined]
+        return msg
+
+    # 3) Fallback: Versuche bekannte Attribute direkt zu übernehmen
+    if hasattr(core_traj, "joint_trajectory"):
+        msg.joint_trajectory = core_traj.joint_trajectory  # type: ignore[assignment]
+    if hasattr(core_traj, "multi_dof_joint_trajectory"):
+        msg.multi_dof_joint_trajectory = core_traj.multi_dof_joint_trajectory  # type: ignore[assignment]
+
+    return msg
+
+
 def _concat_robot_trajectories(chunks: List[RobotTrajectory]) -> Optional[RobotTrajectory]:
     """Hängt mehrere RobotTrajectory-Stücke zeitlich korrekt zusammen."""
     if not chunks:
@@ -119,7 +149,11 @@ class Motion(Node):
         self.pub_traj_plan = self.create_publisher(RobotTrajectory, topic_plan, _latched_qos())
         self.pub_traj_exec = self.create_publisher(RobotTrajectory, topic_exec, _latched_qos())
         self.pub_preview   = self.create_publisher(MarkerArray, topic_prev, _latched_qos())
-        self.pub_result    = self.create_publisher(MsgString, topic_res, self.loader.qos_by_id("publish", NODE_KEY, "motion_result"))
+        self.pub_result    = self.create_publisher(
+            MsgString,
+            topic_res,
+            self.loader.qos_by_id("publish", NODE_KEY, "motion_result"),
+        )
 
         # --- Subscribers
         sub_plan_wp    = self.loader.subscribe_topic(NODE_KEY, "plan_waypoints")
@@ -129,14 +163,45 @@ class Motion(Node):
         sub_cmd        = self.loader.subscribe_topic(NODE_KEY, "cmd")
         sub_pose       = self.loader.subscribe_topic(NODE_KEY, "target_pose")
 
-        self.create_subscription(PoseArray,    sub_plan_wp,    self._on_plan_waypoints, self.loader.qos_by_id("subscribe", NODE_KEY, "plan_waypoints"))
-        self.create_subscription(MsgString,    sub_plan_named, self._on_plan_named,     self.loader.qos_by_id("subscribe", NODE_KEY, "plan_named"))
-        self.create_subscription(MsgBool,      sub_execute,    self._on_execute,        self.loader.qos_by_id("subscribe", NODE_KEY, "execute"))
-        self.create_subscription(MsgEmpty,     sub_stop,       self._on_stop,           self.loader.qos_by_id("subscribe", NODE_KEY, "stop"))
-        self.create_subscription(MsgString,    sub_cmd,        self._on_cmd,            self.loader.qos_by_id("subscribe", NODE_KEY, "cmd"))
-        self.create_subscription(PoseStamped,  sub_pose,       self._on_target_pose,    self.loader.qos_by_id("subscribe", NODE_KEY, "target_pose"))
+        self.create_subscription(
+            PoseArray,
+            sub_plan_wp,
+            self._on_plan_waypoints,
+            self.loader.qos_by_id("subscribe", NODE_KEY, "plan_waypoints"),
+        )
+        self.create_subscription(
+            MsgString,
+            sub_plan_named,
+            self._on_plan_named,
+            self.loader.qos_by_id("subscribe", NODE_KEY, "plan_named"),
+        )
+        self.create_subscription(
+            MsgBool,
+            sub_execute,
+            self._on_execute,
+            self.loader.qos_by_id("subscribe", NODE_KEY, "execute"),
+        )
+        self.create_subscription(
+            MsgEmpty,
+            sub_stop,
+            self._on_stop,
+            self.loader.qos_by_id("subscribe", NODE_KEY, "stop"),
+        )
+        self.create_subscription(
+            MsgString,
+            sub_cmd,
+            self._on_cmd,
+            self.loader.qos_by_id("subscribe", NODE_KEY, "cmd"),
+        )
+        self.create_subscription(
+            PoseStamped,
+            sub_pose,
+            self._on_target_pose,
+            self.loader.qos_by_id("subscribe", NODE_KEY, "target_pose"),
+        )
 
         # --- State
+        # Wichtig: _planned ist immer eine moveit_msgs/RobotTrajectory-Message (kein Core-Objekt)
         self._planned: Optional[RobotTrajectory] = None
         self._busy: bool = False
         self._cancel: bool = False
@@ -157,11 +222,14 @@ class Motion(Node):
         frame = msg.header.frame_id or self.frame_world
 
         chunks: List[RobotTrajectory] = []
-        markers = []
+        markers: List[Marker] = []
         start_state = "current"
         try:
             for idx, p in enumerate(msg.poses):
-                self.arm.set_start_state_to_current_state() if start_state == "current" else self.arm.set_start_state(None)
+                if start_state == "current":
+                    self.arm.set_start_state_to_current_state()
+                else:
+                    self.arm.set_start_state(None)
 
                 goal = PoseStamped()
                 goal.header.frame_id = frame
@@ -170,7 +238,12 @@ class Motion(Node):
                 self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
                 result = self._plan()
                 if result and getattr(result, "trajectory", None):
-                    chunks.append(result.trajectory)
+                    # Core → Msg konvertieren
+                    traj_msg = _to_robot_traj_msg(result.trajectory)
+                    if not traj_msg.joint_trajectory.points:
+                        self._emit_result(f"ERROR:PLAN_EMPTY index={idx}")
+                        return
+                    chunks.append(traj_msg)
                     # für nächste Etappe: Start ist Ende der letzten
                     start_state = "planned"
                 else:
@@ -194,12 +267,8 @@ class Motion(Node):
                 self._emit_result("ERROR:MERGE_FAILED")
                 return
 
-            rt = RobotTrajectory()
-            rt.joint_trajectory = merged.joint_trajectory
-            rt.multi_dof_joint_trajectory = merged.multi_dof_joint_trajectory
-
-            self._planned = rt
-            self.pub_traj_plan.publish(rt)
+            self._planned = merged
+            self.pub_traj_plan.publish(merged)
             self.pub_preview.publish(MarkerArray(markers=markers))
             self._emit_result(f"PLANNED:OK steps={len(merged.joint_trajectory.points)}")
         except Exception as e:
@@ -234,8 +303,12 @@ class Motion(Node):
             self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
             result = self._plan()
             if result and getattr(result, "trajectory", None):
-                self._planned = result.trajectory
-                self.pub_traj_plan.publish(result.trajectory)
+                traj_msg = _to_robot_traj_msg(result.trajectory)
+                if not traj_msg.joint_trajectory.points:
+                    self._emit_result(f"ERROR:PLAN_EMPTY named='{name}'")
+                    return
+                self._planned = traj_msg
+                self.pub_traj_plan.publish(traj_msg)
                 self._publish_preview_point(goal)
                 self._emit_result(f"PLANNED:OK named='{name}'")
             else:
@@ -256,8 +329,12 @@ class Motion(Node):
             self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
             result = self._plan()
             if result and getattr(result, "trajectory", None):
-                self._planned = result.trajectory
-                self.pub_traj_plan.publish(result.trajectory)
+                traj_msg = _to_robot_traj_msg(result.trajectory)
+                if not traj_msg.joint_trajectory.points:
+                    self._emit_result("ERROR:PLAN_EMPTY pose")
+                    return
+                self._planned = traj_msg
+                self.pub_traj_plan.publish(traj_msg)
                 self._publish_preview_point(goal)
                 self._emit_result("PLANNED:OK pose")
             else:
@@ -282,6 +359,7 @@ class Motion(Node):
             # JointTrajectory sofort für UI/Logger ausgeben
             self.pub_traj_jt.publish(self._planned.joint_trajectory)
 
+            # MoveItPy erwartet eine moveit_msgs/RobotTrajectory-Message
             ok = self.robot.execute(self._planned, controllers=[])
 
             if self._cancel:
