@@ -82,13 +82,13 @@ class ServoBridge(BaseBridge):
             try:
                 # frames.yaml z.B.: world: base_link, tcp: tool0, ...
                 self.world_frame = frames_cfg.resolve(frames_cfg.get("world", "world"))
-                self.tcp_frame = frames_cfg.resolve(frames_cfg.get("tcp", "tcp"))
+                self.tcp_frame = frames_cfg.resolve(frames_cfg.get("tool_mount", "tool_mount"))
             except Exception:
                 self.world_frame = "world"
-                self.tcp_frame = "tcp"
+                self.tcp_frame = "tool_mount"
         else:
             self.world_frame = "world"
-            self.tcp_frame = "tcp"
+            self.tcp_frame = "tool_mount"
 
         self.current_frame: str = self.world_frame
 

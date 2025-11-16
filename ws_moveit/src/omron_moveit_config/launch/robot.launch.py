@@ -5,8 +5,10 @@
 import os
 
 from launch import LaunchDescription
-from launch.actions import SetEnvironmentVariable, DeclareLaunchArgument
+from launch.actions import SetEnvironmentVariable, DeclareLaunchArgument, RegisterEventHandler
 from launch.substitutions import LaunchConfiguration
+from launch.event_handlers import OnProcessStart
+
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
@@ -22,12 +24,9 @@ def generate_launch_description():
     ros2_controllers_path = os.path.join(cfg_pkg, "config", "ros2_controllers.yaml")
 
     # ---------- Launch-Argumente (werden vom bringup gesetzt) ----------
-    mount_parent_arg = DeclareLaunchArgument(
-        "mount_parent", default_value="world"
-    )
-    mount_child_arg = DeclareLaunchArgument(
-        "mount_child", default_value="robot_mount"
-    )
+    mount_parent_arg = DeclareLaunchArgument("mount_parent", default_value="world")
+    mount_child_arg = DeclareLaunchArgument("mount_child", default_value="robot_mount")
+
     mount_x_arg = DeclareLaunchArgument("mount_x", default_value="0.0")
     mount_y_arg = DeclareLaunchArgument("mount_y", default_value="0.0")
     mount_z_arg = DeclareLaunchArgument("mount_z", default_value="0.0")
@@ -58,9 +57,7 @@ def generate_launch_description():
         MoveItConfigsBuilder("omron_viper_s650", package_name="omron_moveit_config")
         .robot_description(
             file_path=urdf_xacro,
-            # TODO: später sim/real umschalten:
-            # mappings={"hardware_type": "FakeSystem" if sim == "true" else "RealSystem"}
-            mappings={"hardware_type": "FakeSystem"}
+            mappings={"hardware_type": "FakeSystem"}  # später: FakeSystem/RealSystem umschalten
         )
         .robot_description_semantic(file_path="config/omron_viper_s650.srdf")
         .robot_description_kinematics(file_path="config/kinematics.yaml")
@@ -83,14 +80,14 @@ def generate_launch_description():
         executable="static_transform_publisher",
         name="tf_world_to_omron_mount",
         arguments=[
-            "--x",  mount_x,
-            "--y",  mount_y,
-            "--z",  mount_z,
+            "--x", mount_x,
+            "--y", mount_y,
+            "--z", mount_z,
             "--qx", mount_qx,
             "--qy", mount_qy,
             "--qz", mount_qz,
             "--qw", mount_qw,
-            "--frame-id",      mount_parent,
+            "--frame-id", mount_parent,
             "--child-frame-id", mount_child,
         ],
         output="screen",
@@ -109,6 +106,7 @@ def generate_launch_description():
     ros2_control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
+        name="controller_manager",          # 🔑 explizit
         parameters=[
             moveit_config.robot_description,
             ros2_controllers_path,
@@ -116,14 +114,13 @@ def generate_launch_description():
         output="screen",
     )
 
-    # JointState-Broadcaster
+    # JointState-Broadcaster spawner
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
         executable="spawner",
         arguments=[
             "joint_state_broadcaster",
-            "--controller-manager",
-            "/controller_manager",
+            "--controller-manager", "/controller_manager",
         ],
         output="screen",
     )
@@ -134,13 +131,27 @@ def generate_launch_description():
         executable="spawner",
         arguments=[
             "omron_arm_controller",
-            "--controller-manager",
-            "/controller_manager",
+            "--controller-manager", "/controller_manager",
         ],
         output="screen",
     )
 
-        # --- MoveIt Servo Node ---
+    # 🔁 Spawner erst starten, wenn controller_manager läuft
+    load_joint_state_broadcaster = RegisterEventHandler(
+        OnProcessStart(
+            target_action=ros2_control_node,
+            on_start=[joint_state_broadcaster_spawner],
+        )
+    )
+
+    load_arm_controller = RegisterEventHandler(
+        OnProcessStart(
+            target_action=joint_state_broadcaster_spawner,
+            on_start=[arm_controller_spawner],
+        )
+    )
+
+    # --- MoveIt Servo Node ---
     servo_node = Node(
         package="moveit_servo",
         executable="servo_node",
@@ -167,15 +178,14 @@ def generate_launch_description():
                     "publish_period": 0.01,
                     "incoming_command_timeout": 0.2,
 
-                    # ⬇️ WICHTIG: Services aus -> Servo sofort aktiv
-                    "use_servo_services": False,
+                    # Services anlassen – du nutzt /switch_command_type
+                    "use_servo_services": True,
                     "check_collisions": False,
 
                     "publish_joint_positions": True,
                     "publish_joint_velocities": False,
                     "publish_joint_accelerations": False,
 
-                    # Singularity Avoidance
                     "use_singularity_avoidance": True,
                     "lower_singularity_threshold": 15.0,
                     "hard_stop_singularity_threshold": 30.0,
@@ -191,9 +201,7 @@ def generate_launch_description():
         executable="move_group",
         name="move_group",
         output="screen",
-        parameters=[
-            moveit_config.to_dict(),
-        ],
+        parameters=[moveit_config.to_dict()],
     )
 
     # --- RViz2 mit MoveIt-Config ---
@@ -202,9 +210,7 @@ def generate_launch_description():
         executable="rviz2",
         name="rviz2",
         output="screen",
-        parameters=[
-            moveit_config.to_dict(),
-        ],
+        parameters=[moveit_config.to_dict()],
         arguments=["-d", rviz_cfg],
     )
 
@@ -224,8 +230,8 @@ def generate_launch_description():
             static_tf,
             robot_state_publisher,
             ros2_control_node,
-            joint_state_broadcaster_spawner,
-            arm_controller_spawner,
+            load_joint_state_broadcaster,
+            load_arm_controller,
             move_group_node,
             servo_node,
             rviz_node,
