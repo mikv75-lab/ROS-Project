@@ -60,6 +60,37 @@ class Recipe:
             info=dict(d.get("info") or {}),
         )
 
+    @staticmethod
+    def _to_plain(obj: Any) -> Any:
+        """
+        Rekursive Normalisierung auf YAML-freundliche Python-Typen:
+        - numpy ints/floats -> Python int/float
+        - dict/list/tuple -> rekursiv
+        - sonst -> str(obj)
+        """
+        # numpy scalars
+        if isinstance(obj, (np.generic,)):
+            return obj.item()
+
+        # primitive
+        if isinstance(obj, (str, bool, int, float)) or obj is None:
+            return obj
+
+        # dict
+        if isinstance(obj, dict):
+            return {str(k): Recipe._to_plain(v) for k, v in obj.items()}
+
+        # list/tuple/set
+        if isinstance(obj, (list, tuple, set)):
+            return [Recipe._to_plain(x) for x in obj]
+
+        # numpy arrays -> Liste
+        if isinstance(obj, np.ndarray):
+            return [Recipe._to_plain(x) for x in obj.tolist()]
+
+        # Fallback: String-Repräsentation
+        return str(obj)
+
     def to_dict(self) -> Dict[str, Any]:
         out = {
             "id": self.id,
@@ -68,14 +99,17 @@ class Recipe:
             "substrate": self.substrate,
             "substrates": self.substrates if self.substrates else ([self.substrate] if self.substrate else []),
             "substrate_mount": self.substrate_mount,
-            "parameters": dict(self.parameters or {}),
-            "planner":    dict(self.planner or {}),
-            "paths_by_side": {s: dict(p or {}) for s, p in (self.paths_by_side or {}).items()},
+            # parameters / planner auch durch _to_plain jagen (falls da mal numpy drin landet)
+            "parameters": Recipe._to_plain(self.parameters or {}),
+            "planner":    Recipe._to_plain(self.planner or {}),
+            "paths_by_side": Recipe._to_plain(
+                {s: dict(p or {}) for s, p in (self.paths_by_side or {}).items()}
+            ),
         }
         if self.paths_compiled:
-            out["paths_compiled"] = self.paths_compiled
+            out["paths_compiled"] = Recipe._to_plain(self.paths_compiled)
         if self.info:
-            out["info"] = self.info
+            out["info"] = Recipe._to_plain(self.info)
         return out
 
     @staticmethod
@@ -84,9 +118,26 @@ class Recipe:
             return Recipe.from_dict(yaml.safe_load(f) | {})  # type: ignore
 
     def save_yaml(self, path: str) -> None:
+        """
+        Speichert das Rezept als YAML.
+
+        Vor dem Schreiben werden – falls kompilierten Pfade vorhanden sind –
+        die Info-Kennzahlen aus paths_compiled frisch in self.info
+        recomputed, damit im YAML immer konsistente Werte stehen.
+        """
+        # Info aus kompilierten Pfaden aktualisieren (falls vorhanden)
+        if self.paths_compiled:
+            try:
+                self._recompute_info_from_compiled()
+            except Exception:
+                # Wenn Info-Berechnung scheitert, lieber ohne Info speichern
+                self.info = {}
+
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        data = self.to_dict()
+        # Falls hier noch was schiefgeht, lieber explizit crashen
         with open(path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(self.to_dict(), f, allow_unicode=True, sort_keys=False)
+            yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
 
     # ------- Pflicht-Globals für PathBuilder (strict, kein Fallback) -------
     def _globals_params_strict(self) -> Dict[str, Any]:
@@ -155,10 +206,6 @@ class Recipe:
         """
         Liefert die bereits COMPILIERTEN Punkte (x,y,z in mm) für eine Side,
         falls `compile_poses(...)` vorher aufgerufen wurde.
-
-        Rückgabe:
-          - np.ndarray (N,3) in mm
-          - oder None, wenn nichts compiliert ist.
         """
         pc = self.paths_compiled or {}
         sides = pc.get("sides") or {}
@@ -180,17 +227,6 @@ class Recipe:
 
     # ------- interne Info-Berechnung aus paths_compiled -------
     def _recompute_info_from_compiled(self) -> None:
-        """
-        Berechnet einfache Kennzahlen aus paths_compiled und schreibt sie in
-        self.info, z.B.:
-          info:
-            total_points: N
-            total_length_mm: L
-            sides:
-              top:
-                num_points: ...
-                length_mm: ...
-        """
         pc = self.paths_compiled or {}
         sides = pc.get("sides") or {}
         if not isinstance(sides, dict) or not sides:
@@ -246,25 +282,6 @@ class Recipe:
         stand_off_mm: Optional[float] = None,
         tool_frame: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Ergebnisformat (Pre-/Retreat werden NICHT gezeichnet, nur Meta-Hints):
-        paths_compiled = {
-          "frame": "scene",
-          "tool_frame": "tool_mount",
-          "sides": {
-            "<side>": {
-              "meta": {
-                path_type, path_params, globals, sample_step_mm, stand_off_mm, tool_frame,
-                angle_hints: {
-                  "predispense": {angle_mode?, angle_deg?}
-                  "retreat":     {angle_mode?, angle_deg?}
-                }
-              },
-              "poses_quat": [ {x,y,z,qx,qy,qz,qw}, ... ]
-            }
-          }
-        }
-        """
         xmin, xmax, ymin, ymax, zmin, zmax = bounds
         cx, cy, cz = (0.5 * (xmin + xmax), 0.5 * (ymin + ymax), 0.5 * (zmin + zmax))
 
@@ -301,7 +318,7 @@ class Recipe:
             a0, a1 = P[:, 0], P[:, 1]
             mp = {"x": cx, "y": cy, "z": cz}
 
-            def place(axis, arr): 
+            def place(axis, arr):
                 return (mp[axis] + arr)
 
             axes = {"x": None, "y": None, "z": None}
@@ -425,7 +442,6 @@ class Recipe:
                 "sample_step_mm": step,
                 "stand_off_mm": float(stand_off_mm),
                 "tool_frame": tool_frame,
-                # Nur Hinweise, NICHT gemalt:
                 "angle_hints": _extract_angle_hints(pdef),
             }
 
@@ -433,19 +449,13 @@ class Recipe:
 
         self.paths_compiled = {"frame": "scene", "tool_frame": tool_frame, "sides": sides_out}
 
-        # <<< HIER: Info automatisch aktualisieren >>>
+        # Info automatisch aktualisieren
         self._recompute_info_from_compiled()
 
         return self.paths_compiled
 
-    # ---------- Schöne Text-Repräsentation (für Debug / ProcessTab) ----------
+    # ---------- Schöne Text-Repräsentation ----------
     def __str__(self) -> str:
-        """
-        YAML-ähnlicher Dump:
-          - oben Meta / parameters / planner / info
-          - darunter paths_by_side (ohne Punkte)
-          - ganz unten: kompiliert Posen, eine Pose pro Zeile.
-        """
         lines: List[str] = []
 
         # Meta
@@ -516,7 +526,7 @@ class Recipe:
                         continue
                     lines.append(f"    {pk}: {pv}")
 
-        # Kompilierte Posen (mit Quaternionen)
+        # Kompilierte Posen
         pc = self.paths_compiled or {}
         sides = pc.get("sides") or {}
         if isinstance(sides, dict) and sides:
@@ -554,12 +564,6 @@ class Recipe:
 
 
 def _extract_angle_hints(path_params: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    """
-    Extrahiert optionale Winkelhinweise aus dem Path (ohne irgendwas zu zeichnen).
-    Erwartete Keys (falls vorhanden):
-      - predispense.angle_mode / predispense.angle_deg
-      - retreat.angle_mode    / retreat.angle_deg
-    """
     def pick(prefix: str) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
         am = path_params.get(f"{prefix}.angle_mode")

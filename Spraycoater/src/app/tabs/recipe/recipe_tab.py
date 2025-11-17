@@ -33,6 +33,9 @@ class RecipeTab(QWidget):
         self.bridge = bridge
         self._attach_preview_widget = attach_preview_widget
 
+        # Flag: initiales Preview nur genau 1x
+        self._initial_preview_done: bool = False
+
         # ---------- Layout ----------
         hroot = QHBoxLayout(self)
         hroot.setContentsMargins(6, 6, 6, 6)
@@ -67,14 +70,15 @@ class RecipeTab(QWidget):
         except Exception:
             pass
 
-        # Sanfter Fallback, falls Signal wider Erwarten nicht kommt
+        # Sanfter Fallback, falls interactorReady nicht feuert
         QTimer.singleShot(500, self._emit_initial_preview)
 
     # ==================== Preview + RViz: gemeinsame Quelle ====================
 
     def _on_update_preview_requested(self, model: Recipe) -> None:
         """
-        Wird aufgerufen, wenn der Update-Button gedrückt wird.
+        Wird aufgerufen, wenn der Update-Button gedrückt wird ODER
+        beim initialen Preview.
 
         1) PyVista-Preview aktualisieren
         2) MarkerArray für SprayPath/RViz aus *derselben* Recipe-Quelle erzeugen
@@ -98,17 +102,18 @@ class RecipeTab(QWidget):
             ma: MarkerArray = recipe_markers.build_marker_array_from_recipe(
                 model,
                 sides=checked_sides,
-                frame_id="scene",  # 👈 hier jetzt 'scene'
+                frame_id="scene",
             )
 
             if ma and isinstance(ma, MarkerArray) and ma.markers:
                 try:
-                    self.bridge.set_spraypath(ma)
-                    _LOG.info(
-                        "RecipeTab: MarkerArray mit %d Markern an SprayPath gesendet (frame=scene, sides=%s)",
-                        len(ma.markers),
-                        ", ".join(checked_sides or []),
-                    )
+                    if self.bridge is not None:
+                        self.bridge.set_spraypath(ma)
+                        _LOG.info(
+                            "RecipeTab: MarkerArray mit %d Markern an SprayPath gesendet (frame=scene, sides=%s)",
+                            len(ma.markers),
+                            ", ".join(checked_sides or []),
+                        )
                 except Exception:
                     _LOG.exception("bridge.set_spraypath failed")
             else:
@@ -122,12 +127,19 @@ class RecipeTab(QWidget):
         """
         Initiales Preview nach Start:
         nutzt denselben Pfad wie der Update-Button, damit Preview & RViz identisch sind.
+        Läuft nur genau EINMAL.
         """
+        if self._initial_preview_done:
+            return
+
         try:
             model = self.recipePanel.current_model()
             if model is None:
                 _LOG.info("initial preview: no model yet")
                 return
+
+            self._initial_preview_done = True
             self._on_update_preview_requested(model)
+            _LOG.info("initial preview ausgeführt")
         except Exception:
             _LOG.exception("initial preview emit failed")

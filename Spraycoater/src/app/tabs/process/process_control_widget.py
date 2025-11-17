@@ -2,383 +2,473 @@
 # File: widgets/process_control_widget.py
 from __future__ import annotations
 import os
-from typing import Optional, Dict, Any, List
+from typing import Optional, List
 
-from PyQt6 import uic, QtCore
+from PyQt6 import QtCore
 from PyQt6.QtWidgets import (
-    QWidget,
-    QPushButton,
-    QLabel,
-    QVBoxLayout,
-    QGroupBox,
-    QPlainTextEdit,
-    QHBoxLayout,
-    QFileDialog,
-    QMessageBox,
+    QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout,
+    QGroupBox, QSizePolicy, QFileDialog, QMessageBox, QTextEdit
 )
-from PyQt6.QtGui import QFont
 
 from app.model.recipe.recipe import Recipe
-
-
-def _project_root() -> str:
-    here = os.path.abspath(os.path.dirname(__file__))  # .../src/app/widgets
-    return os.path.abspath(os.path.join(here, "..", "..", ".."))
-
-
-def _ui_path(filename: str) -> str:
-    # erwartet: resource/ui/tabs/process/process_control.ui
-    return os.path.join(_project_root(), "resource", "ui", "tabs", "process", filename)
+from .process_thread import ProcessThread
 
 
 class ProcessControlWidget(QWidget):
     """
-    Process-UI (Fallback ohne .ui-Datei):
+    Process-Control ohne .ui
 
-      Recipe-Box:
-        - lblRecipeName (Name des aktuellen Rezepts)
-        - links:  txtRecipeSummary  (Meta, parameters, planner, paths – YAML-ähnlich)
-        - rechts: txtRecipeCoords   (alle kompilierten Posen, eine Pose pro Zeile)
+    Layout:
 
-      Darunter:
-        Process Control: Init / Load Recipe / Start / Stop (Buttons nebeneinander)
-
-    Outbound-Signale:
-      initRequested, loadRecipeRequested, startRequested, stopRequested
-
-    Bridge-Auto-Wiring (falls vorhanden):
-      - _process.signals / _proc.signals:
-          initRequested, loadRecipeRequested, startRequested, stopRequested (emit)
-          recipeLoaded(name: str) ODER currentRecipeChanged(name: str) -> set_recipe_name
+      VBOX(
+        HBOX(
+          [GroupBox] Process Control (Buttons vertikal),
+          [GroupBox] Startbedingungen,
+          [GroupBox] Robot Status
+        ),
+        HBOX(
+          [GroupBox] Recipe (Text bis '# compiled poses'),
+          [GroupBox] Poses  (alles ab '# compiled poses')
+        )
+      )
     """
-    initRequested       = QtCore.pyqtSignal()
-    loadRecipeRequested = QtCore.pyqtSignal()
-    startRequested      = QtCore.pyqtSignal()
-    stopRequested       = QtCore.pyqtSignal()
 
     def __init__(self, *, ctx, bridge, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
         self.bridge = bridge
 
-        self._recipe: Optional[Recipe] = None
+        # -------- interner Zustand --------
+        self._robot_initialized: bool = False
+        self._robot_at_home: bool = False
 
-        self.lblRecipeName: Optional[QLabel] = None
-        self.txtRecipeSummary: Optional[QPlainTextEdit] = None
-        self.txtRecipeCoords: Optional[QPlainTextEdit] = None
-        self.btnInit: Optional[QPushButton] = None
-        self.btnLoadRecipe: Optional[QPushButton] = None
-        self.btnStart: Optional[QPushButton] = None
-        self.btnStop: Optional[QPushButton] = None
+        # aktuell geladenes Rezept (vollständiges Modell)
+        self._recipe_model: Optional[Recipe] = None
+        self._recipe_name: str | None = None
 
-        ui_file = _ui_path("process_control.ui")
-        if not os.path.exists(ui_file):
-            # ---------- Fallback: UI on-the-fly ----------
-            wrap = QVBoxLayout(self)
-            wrap.setContentsMargins(8, 8, 8, 8)
-            wrap.setSpacing(8)
+        # Config/Recipe-Matches
+        self._tool_ok: bool = True
+        self._substrate_ok: bool = False
+        self._mount_ok: bool = False
 
-            # Recipe-Box (soll vertikal gestreckt werden → Stretch-Faktor 1)
-            self.grpRecipe = QGroupBox("Recipe", self)
-            vrec = QVBoxLayout(self.grpRecipe)
-            vrec.setContentsMargins(8, 8, 8, 8)
-            vrec.setSpacing(6)
+        # Prozess-Status: Rezept/Prozess aktiv am Laufen?
+        self._process_active: bool = False
 
-            self.lblRecipeName = QLabel("-", self.grpRecipe)
-            font = self.lblRecipeName.font()
-            font.setBold(True)
-            self.lblRecipeName.setFont(font)
-            vrec.addWidget(self.lblRecipeName)
+        # ProcessThread-Instanz
+        self._process_thread: Optional[ProcessThread] = None
 
-            # Split: links Werte, rechts Coords
-            split = QHBoxLayout()
-            split.setContentsMargins(0, 0, 0, 0)
-            split.setSpacing(6)
+        # ==================================================================
+        # Layout
+        # ==================================================================
+        root = QVBoxLayout(self)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
 
-            self.txtRecipeSummary = QPlainTextEdit(self.grpRecipe)
-            self.txtRecipeSummary.setReadOnly(True)
-            mono = QFont("Monospace")
-            mono.setStyleHint(QFont.StyleHint.TypeWriter)
-            self.txtRecipeSummary.setFont(mono)
-            self.txtRecipeSummary.setMinimumHeight(220)
-            split.addWidget(self.txtRecipeSummary, 1)
+        # ---------- TOP ROW: Process-Control, Startbedingungen, RobotStatus ----------
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(8)
+        root.addLayout(top_row)  # ohne Stretch-Faktor
 
-            self.txtRecipeCoords = QPlainTextEdit(self.grpRecipe)
-            self.txtRecipeCoords.setReadOnly(True)
-            self.txtRecipeCoords.setFont(mono)
-            self.txtRecipeCoords.setMinimumHeight(220)
-            split.addWidget(self.txtRecipeCoords, 1)
+        # --- Process Control ---
+        self.grpProcess = QGroupBox("Process Control", self)
+        vproc_outer = QVBoxLayout(self.grpProcess)
+        vproc_outer.setContentsMargins(8, 8, 8, 8)
+        vproc_outer.setSpacing(6)
 
-            vrec.addLayout(split)
+        self.btnInit = QPushButton("Init", self.grpProcess)
+        self.btnLoadRecipe = QPushButton("Load Recipe", self.grpProcess)
+        self.btnStart = QPushButton("Start", self.grpProcess)
+        self.btnStop = QPushButton("Stop", self.grpProcess)
 
-            # Recipe bekommt den Haupt-Stretch
-            wrap.addWidget(self.grpRecipe, 1)
+        for b in (self.btnInit, self.btnLoadRecipe, self.btnStart, self.btnStop):
+            b.setMinimumHeight(28)
+            vproc_outer.addWidget(b)
 
-            # Process Control (Buttons nebeneinander)
-            self.grpProcess = QGroupBox("Process Control", self)
-            v = QVBoxLayout(self.grpProcess)
-            v.setContentsMargins(8, 8, 8, 8)
-            v.setSpacing(6)
+        vproc_outer.addStretch(1)
+        top_row.addWidget(self.grpProcess, 0)
 
-            btn_row = QHBoxLayout()
-            btn_row.setContentsMargins(0, 0, 0, 0)
-            btn_row.setSpacing(6)
+        # --- Startbedingungen ---
+        self.grpStatus = QGroupBox("Startbedingungen", self)
+        vstat = QVBoxLayout(self.grpStatus)
+        vstat.setContentsMargins(8, 8, 8, 8)
+        vstat.setSpacing(4)
 
-            self.btnInit = QPushButton("Init", self.grpProcess)
-            self.btnLoadRecipe = QPushButton("Load Recipe", self.grpProcess)
-            self.btnStart = QPushButton("Start", self.grpProcess)
-            self.btnStop = QPushButton("Stop", self.grpProcess)
+        self.lblStatus = QLabel("-", self.grpStatus)
+        self.lblStatus.setWordWrap(True)
+        vstat.addWidget(self.lblStatus)
 
-            for b in (self.btnInit, self.btnLoadRecipe, self.btnStart, self.btnStop):
-                b.setMinimumHeight(28)
-                btn_row.addWidget(b)
+        top_row.addWidget(self.grpStatus, 1)
 
-            v.addLayout(btn_row)
-            v.addStretch(1)
+        # --- Robot Status ---
+        self.grpRobotStatus = QGroupBox("Robot Status", self)
+        vrobot = QVBoxLayout(self.grpRobotStatus)
+        vrobot.setContentsMargins(8, 8, 8, 8)
+        vrobot.setSpacing(4)
 
-            # Process-Control bekommt wenig Höhe → Stretch-Faktor 0
-            wrap.addWidget(self.grpProcess, 0)
+        self.lblRobotInit = QLabel("Initialized: no", self.grpRobotStatus)
+        self.lblRobotHome = QLabel("Home: no", self.grpRobotStatus)
 
-        else:
-            # ---------- UI aus .ui-Datei ----------
-            uic.loadUi(ui_file, self)
-            self.lblRecipeName = self.findChild(QLabel, "lblRecipeName")
-            self.txtRecipeSummary = self.findChild(QPlainTextEdit, "txtRecipeSummary")
-            self.txtRecipeCoords = self.findChild(QPlainTextEdit, "txtRecipeCoords")
-            self.btnInit = self.findChild(QPushButton, "btnInit")
-            self.btnLoadRecipe = self.findChild(QPushButton, "btnLoadRecipe")
-            self.btnStart = self.findChild(QPushButton, "btnStart")
-            self.btnStop = self.findChild(QPushButton, "btnStop")
+        vrobot.addWidget(self.lblRobotInit)
+        vrobot.addWidget(self.lblRobotHome)
+        vrobot.addStretch(1)
 
-            mono = QFont("Monospace")
-            mono.setStyleHint(QFont.StyleHint.TypeWriter)
-            if self.txtRecipeSummary is not None:
-                self.txtRecipeSummary.setReadOnly(True)
-                self.txtRecipeSummary.setFont(mono)
-            if self.txtRecipeCoords is not None:
-                self.txtRecipeCoords.setReadOnly(True)
-                self.txtRecipeCoords.setFont(mono)
+        top_row.addWidget(self.grpRobotStatus, 1)
 
-        # ---------- Buttons -> Widget-Signale ----------
-        if self.btnInit is not None:
-            self.btnInit.clicked.connect(self.initRequested.emit)
+        # ---------- BOTTOM ROW: Recipe-Text & Poses ----------
+        bottom_row = QHBoxLayout()
+        bottom_row.setContentsMargins(0, 0, 0, 0)
+        bottom_row.setSpacing(8)
+        root.addLayout(bottom_row, 1)  # dieser Bereich soll maximal wachsen
 
-        if self.btnLoadRecipe is not None:
-            # 1) internes Laden
-            self.btnLoadRecipe.clicked.connect(self._on_load_recipe_clicked)
-            # 2) nach außen signalisieren
-            self.btnLoadRecipe.clicked.connect(self.loadRecipeRequested.emit)
+        # Recipe (Text bis '# compiled poses')
+        self.grpRecipe = QGroupBox("Recipe", self)
+        vrec = QVBoxLayout(self.grpRecipe)
+        vrec.setContentsMargins(8, 8, 8, 8)
+        vrec.setSpacing(4)
 
-        if self.btnStart is not None:
-            self.btnStart.clicked.connect(self.startRequested.emit)
-        if self.btnStop is not None:
-            self.btnStop.clicked.connect(self.stopRequested.emit)
+        # Kein extra Label mehr – der Name steht als `id:` im Text
+        self.txtRecipeSummary = QTextEdit(self.grpRecipe)
+        self.txtRecipeSummary.setReadOnly(True)
+        self.txtRecipeSummary.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        vrec.addWidget(self.txtRecipeSummary)
 
-        # ---------- Bridge-Durchleitung ----------
-        self._wire_outbound_to_bridge()
-        self._wire_inbound_from_bridge()
+        bottom_row.addWidget(self.grpRecipe, 1)
 
-    # ---------------- Public API ----------------
-    def set_recipe_name(self, name: str | None) -> None:
-        """Nur der Name (wenn von der Bridge per Signal kommt)."""
-        if not self.lblRecipeName:
+        # Poses (alles ab '# compiled poses')
+        self.grpRecipeInfo = QGroupBox("Poses", self)
+        vinfo = QVBoxLayout(self.grpRecipeInfo)
+        vinfo.setContentsMargins(8, 8, 8, 8)
+        vinfo.setSpacing(4)
+
+        self.txtRecipePoses = QTextEdit(self.grpRecipeInfo)
+        self.txtRecipePoses.setReadOnly(True)
+        self.txtRecipePoses.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        vinfo.addWidget(self.txtRecipePoses)
+
+        bottom_row.addWidget(self.grpRecipeInfo, 2)
+
+        # ---------- Size-Policies ----------
+        # Obere drei Boxen: vertikal möglichst klein
+        for gb in (self.grpProcess, self.grpStatus, self.grpRobotStatus):
+            sp = gb.sizePolicy()
+            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+            sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+            gb.setSizePolicy(sp)
+
+        # Untere beiden: dürfen vertikal wachsen
+        for gb in (self.grpRecipe, self.grpRecipeInfo):
+            sp = gb.sizePolicy()
+            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+            sp.setVerticalPolicy(QSizePolicy.Policy.Minimum)
+            gb.setSizePolicy(sp)
+
+        # ==================================================================
+        # Buttons -> Methoden
+        # ==================================================================
+        self.btnInit.clicked.connect(self._on_init_clicked)
+        self.btnLoadRecipe.clicked.connect(self._on_load_recipe_clicked)
+        self.btnStart.clicked.connect(self._on_start_clicked)
+        self.btnStop.clicked.connect(self._on_stop_clicked)
+
+        # Scene-Bridge für substrate/mount-Match
+        self._wire_scene_bridge()
+
+        # Startbedingungen initial berechnen & Start-Button sperren
+        self._update_start_conditions()
+
+        # Timer für Startbedingungen (Anzeige + Button-Enable)
+        self._condTimer = QtCore.QTimer(self)
+        self._condTimer.setInterval(500)  # ms
+        self._condTimer.timeout.connect(self._update_start_conditions)
+        self._update_timer_state()
+
+    # =====================================================================
+    # ProcessThread-Handling
+    # =====================================================================
+
+    def _cleanup_process_thread(self) -> None:
+        if self._process_thread is None:
             return
-        txt = (name or "").strip()
-        self.lblRecipeName.setText(txt if txt else "-")
+        thr = self._process_thread
+        if thr.isRunning():
+            thr.request_stop()
+            thr.wait(2000)
+        thr.deleteLater()
+        self._process_thread = None
 
-    def set_recipe(self, recipe: Optional[Recipe]) -> None:
-        """
-        Setzt das aktuelle Rezeptobjekt und aktualisiert:
-          - lblRecipeName
-          - txtRecipeSummary (ohne Coords)
-          - txtRecipeCoords  (nur kompilierten Posen)
-        """
-        self._recipe = recipe
+    def _setup_process_thread_for_recipe(self, recipe: Recipe) -> None:
+        self._cleanup_process_thread()
+        thr = ProcessThread(recipe=recipe, bridge=self.bridge, parent=self)
+        thr.notifyFinished.connect(self._on_process_finished_success)
+        thr.notifyError.connect(self._on_process_finished_error)
+        thr.finished.connect(self._on_process_thread_finished)
+        self._process_thread = thr
 
-        # Name
-        if self.lblRecipeName is not None:
-            if recipe is None:
-                self.lblRecipeName.setText("-")
-            else:
-                rid = (recipe.id or "").strip()
-                self.lblRecipeName.setText(rid if rid else "<unnamed>")
+    # =====================================================================
+    # Button-Slots
+    # =====================================================================
 
-        # Textfelder
-        if self.txtRecipeSummary is not None:
-            self.txtRecipeSummary.setPlainText(self._build_summary_text(recipe))
-            self.txtRecipeSummary.moveCursor(self.txtRecipeSummary.textCursor().Start)  # nach oben
-        if self.txtRecipeCoords is not None:
-            self.txtRecipeCoords.setPlainText(self._build_coords_text(recipe))
-            self.txtRecipeCoords.moveCursor(self.txtRecipeCoords.textCursor().Start)
+    def _on_init_clicked(self) -> None:
+        try:
+            robot = getattr(self.bridge, "_robot", None) or getattr(self.bridge, "robot", None)
+            if robot is not None:
+                if hasattr(robot, "init_robot"):
+                    robot.init_robot()
+                elif hasattr(robot, "init"):
+                    robot.init()
+        except Exception:
+            pass
 
-    def current_recipe(self) -> Optional[Recipe]:
-        """Für Prozess-Controller: liefert das aktuell geladene Recipe."""
-        return self._recipe
+        try:
+            robot = getattr(self.bridge, "_robot", None) or getattr(self.bridge, "robot", None)
+            if robot is not None:
+                if hasattr(robot, "move_home"):
+                    robot.move_home()
+                elif hasattr(robot, "go_home"):
+                    robot.go_home()
+        except Exception:
+            pass
 
-    # ---------------- Intern: Text-Building ----------------
-    def _build_summary_text(self, recipe: Optional[Recipe]) -> str:
-        if recipe is None:
-            return ""
+        self.set_robot_initialized(True)
+        self.set_robot_at_home(True)
 
-        lines: List[str] = []
-
-        # Meta
-        lines.append(f"id: {recipe.id or ''}")
-        if recipe.description:
-            lines.append(f"description: {recipe.description}")
-        if recipe.tool:
-            lines.append(f"tool: {recipe.tool}")
-        if recipe.substrate:
-            lines.append(f"substrate: {recipe.substrate}")
-        if recipe.substrate_mount:
-            lines.append(f"substrate_mount: {recipe.substrate_mount}")
-
-        subs = recipe.substrates if recipe.substrates else (
-            [recipe.substrate] if recipe.substrate else []
-        )
-        if subs and not (len(subs) == 1 and recipe.substrate and subs[0] == recipe.substrate):
-            lines.append("substrates:")
-            for s in subs:
-                lines.append(f"  - {s}")
-
-        # Parameters
-        if recipe.parameters:
-            lines.append("")
-            lines.append("parameters:")
-            for k in sorted(recipe.parameters.keys()):
-                v = recipe.parameters[k]
-                lines.append(f"  {k}: {v}")
-
-        # Planner
-        if recipe.planner:
-            lines.append("")
-            lines.append("planner:")
-            for k in sorted(recipe.planner.keys()):
-                v = recipe.planner[k]
-                lines.append(f"  {k}: {v}")
-
-        # Paths-Definitionen (ohne Punkte)
-        if recipe.paths_by_side:
-            lines.append("")
-            lines.append("paths_by_side:")
-            for side, p in recipe.paths_by_side.items():
-                lines.append(f"  {side}:")
-                for pk, pv in p.items():
-                    if pk in ("points_mm", "polyline_mm"):
-                        continue
-                    lines.append(f"    {pk}: {pv}")
-
-        return "\n".join(lines)
-
-    def _build_coords_text(self, recipe: Optional[Recipe]) -> str:
-        if recipe is None:
-            return ""
-
-        pc = recipe.paths_compiled or {}
-        sides = pc.get("sides") or {}
-        if not isinstance(sides, dict) or not sides:
-            return ""
-
-        lines: List[str] = []
-        frame = pc.get("frame")
-        tool_frame = pc.get("tool_frame")
-
-        if frame or tool_frame:
-            if frame:
-                lines.append(f"frame: {frame}")
-            if tool_frame:
-                lines.append(f"tool_frame: {tool_frame}")
-            lines.append("")
-
-        for side, sdata in sides.items():
-            lines.append(f"[side: {side}]")
-            poses = sdata.get("poses_quat") or []
-            if not poses:
-                lines.append("  (no poses)")
-                lines.append("")
-                continue
-
-            for i, p in enumerate(poses):
-                x = float(p.get("x", 0.0))
-                y = float(p.get("y", 0.0))
-                z = float(p.get("z", 0.0))
-                qx = float(p.get("qx", 0.0))
-                qy = float(p.get("qy", 0.0))
-                qz = float(p.get("qz", 0.0))
-                qw = float(p.get("qw", 1.0))
-                # Eine Zeile pro Pose
-                lines.append(
-                    f"  {i:04d}: "
-                    f"x={x:.3f}, y={y:.3f}, z={z:.3f}, "
-                    f"qx={qx:.4f}, qy={qy:.4f}, qz={qz:.4f}, qw={qw:.4f}"
-                )
-            lines.append("")
-
-        return "\n".join(lines)
-
-    # ---------------- Intern: Rezept laden ----------------
     def _on_load_recipe_clicked(self) -> None:
-        """
-        Öffnet einen File-Dialog, lädt ein Rezept aus YAML, setzt self._recipe
-        und aktualisiert die Recipe-GroupBox (links Werte, rechts Coords).
-        """
         start_dir = getattr(getattr(self.ctx, "paths", None), "recipe_dir", os.getcwd())
+
         fname, _ = QFileDialog.getOpenFileName(
             self,
-            "Rezept laden",
+            "Rezept laden (Process)",
             start_dir,
-            "YAML (*.yaml *.yml)",
+            "YAML (*.yaml *.yml)"
         )
         if not fname:
             return
 
         try:
-            recipe = Recipe.load_yaml(fname)
+            model = Recipe.load_yaml(fname)
         except Exception as e:
-            try:
-                QMessageBox.critical(self, "Ladefehler", f"Rezept konnte nicht geladen werden:\n{e}")
-            except RuntimeError:
-                QMessageBox.critical(None, "Ladefehler", f"Rezept konnte nicht geladen werden:\n{e}")
+            QMessageBox.critical(self, "Ladefehler", f"Rezept konnte nicht geladen werden:\n{e}")
             return
 
-        self.set_recipe(recipe)
+        self._recipe_model = model
 
-        base = os.path.basename(fname)
+        name = (model.id or "").strip() or os.path.basename(fname)
+        self.set_recipe_name(name)
+        self._update_recipe_info_text()
+
+        self._setup_process_thread_for_recipe(model)
+        self._evaluate_scene_match()
+
+    def _on_start_clicked(self) -> None:
+        if not self.btnStart.isEnabled():
+            return
+
+        if self._recipe_model is None or self._process_thread is None:
+            QMessageBox.warning(self, "Kein Rezept", "Es ist kein Rezept geladen.")
+            return
+
+        if self._process_thread.recipe is not self._recipe_model:
+            self._process_thread.set_recipe(self._recipe_model)
+
+        self.set_process_active(True)
+        self._process_thread.startSignal.emit()
+
+    def _on_stop_clicked(self) -> None:
+        if self._process_thread is not None and self._process_thread.isRunning():
+            self._process_thread.stopSignal.emit()
+
+    # ---------------------------------------------------------------------
+    # Callbacks vom ProcessThread
+    # ---------------------------------------------------------------------
+
+    def _on_process_finished_success(self) -> None:
+        # Optional: Logging oder Statusanzeige
+        pass
+
+    def _on_process_finished_error(self, msg: str) -> None:
+        QMessageBox.critical(self, "Prozessfehler", f"Prozess abgebrochen:\n{msg}")
+
+    def _on_process_thread_finished(self) -> None:
+        self.set_process_active(False)
+
+    # =====================================================================
+    # Public API – von außen setzbar
+    # =====================================================================
+
+    def set_recipe_name(self, name: str | None) -> None:
+        # Name nur für Startbedingungen relevant, Anzeige kommt aus dem Text
+        txt = (name or "").strip()
+        self._recipe_name = txt if txt else None
+        self._update_start_conditions()
+
+    def _update_recipe_info_text(self) -> None:
+        """
+        Splittet str(Recipe) in:
+          - txtRecipeSummary: alles vor '# compiled poses'
+          - txtRecipePoses:   ab '# compiled poses'
+        """
+        if not self._recipe_model:
+            self.txtRecipeSummary.setPlainText("")
+            self.txtRecipePoses.setPlainText("")
+            return
+
         try:
-            QMessageBox.information(self, "Rezept geladen", base)
-        except RuntimeError:
-            QMessageBox.information(None, "Rezept geladen", base)
+            full_text = str(self._recipe_model)
+        except Exception:
+            full_text = f"id: {self._recipe_model.id}\n(no detailed dump available)"
 
-    # ---------------- Bridge Wiring ----------------
-    def _wire_outbound_to_bridge(self) -> None:
-        br = getattr(self.bridge, "_process", None) or getattr(self.bridge, "_proc", None)
-        sig = getattr(br, "signals", None) if br else None
+        lines: List[str] = full_text.splitlines()
+        split_idx = None
+        for i, line in enumerate(lines):
+            if line.strip().startswith("# compiled poses"):
+                split_idx = i
+                break
+
+        if split_idx is None:
+            summary_lines = lines
+            poses_lines: List[str] = []
+        else:
+            summary_lines = lines[:split_idx]
+            poses_lines = lines[split_idx:]
+
+        self.txtRecipeSummary.setPlainText("\n".join(summary_lines).rstrip())
+        self.txtRecipeSummary.moveCursor(self.txtRecipeSummary.textCursor().Start)
+
+        self.txtRecipePoses.setPlainText("\n".join(poses_lines).rstrip())
+        self.txtRecipePoses.moveCursor(self.txtRecipePoses.textCursor().Start)
+
+    def set_robot_initialized(self, flag: bool) -> None:
+        self._robot_initialized = bool(flag)
+
+        if hasattr(self, "lblRobotInit") and self.lblRobotInit is not None:
+            self.lblRobotInit.setText(f"Initialized: {'yes' if self._robot_initialized else 'no'}")
+
+        self._update_start_conditions()
+
+    def set_robot_at_home(self, flag: bool) -> None:
+        self._robot_at_home = bool(flag)
+
+        if hasattr(self, "lblRobotHome") and self.lblRobotHome is not None:
+            self.lblRobotHome.setText(f"Home: {'yes' if self._robot_at_home else 'no'}")
+
+        self._update_start_conditions()
+
+    def set_tool_ok(self, flag: bool) -> None:
+        self._tool_ok = True
+        self._update_start_conditions()
+
+    def set_substrate_ok(self, flag: bool) -> None:
+        self._substrate_ok = bool(flag)
+        self._update_start_conditions()
+
+    def set_mount_ok(self, flag: bool) -> None:
+        self._mount_ok = bool(flag)
+        self._update_start_conditions()
+
+    def set_process_active(self, active: bool) -> None:
+        self._process_active = bool(active)
+        self._update_timer_state()
+
+        if self._process_active:
+            if hasattr(self, "lblStatus") and self.lblStatus is not None:
+                self.lblStatus.setText(
+                    "Prozess läuft.\nStartbedingungen werden während der Ausführung nicht geprüft."
+                )
+        else:
+            self._update_start_conditions()
+
+    # =====================================================================
+    # Startbedingungen + Timer
+    # =====================================================================
+
+    def _update_start_conditions(self) -> None:
+        missing: list[str] = []
+
+        if not self._robot_initialized:
+            missing.append("Roboter nicht initialisiert")
+
+        if not self._robot_at_home:
+            missing.append("Roboter nicht in Home-Position")
+
+        if not self._recipe_name:
+            missing.append("Kein Rezept geladen")
+
+        if not self._substrate_ok:
+            missing.append("Substrate-Konfiguration stimmt nicht mit dem Rezept überein")
+
+        if not self._mount_ok:
+            missing.append("Mount-Konfiguration stimmt nicht mit dem Rezept überein")
+
+        can_start = (len(missing) == 0)
+
+        if self.btnStart is not None:
+            self.btnStart.setEnabled(can_start and not self._process_active)
+
+        if not hasattr(self, "lblStatus") or self.lblStatus is None:
+            return
+
+        if self._process_active:
+            return
+
+        if can_start:
+            txt = "Startbereit.\nAlle Startbedingungen sind erfüllt."
+        else:
+            msg_lines = ["Start nicht möglich.", "Fehlende Bedingungen:"]
+            msg_lines += [f"- {m}" for m in missing]
+            txt = "\n".join(msg_lines)
+
+        self.lblStatus.setText(txt)
+
+    def _update_timer_state(self) -> None:
+        if not hasattr(self, "_condTimer") or self._condTimer is None:
+            return
+
+        if self._process_active:
+            if self._condTimer.isActive():
+                self._condTimer.stop()
+        else:
+            if not self._condTimer.isActive():
+                self._condTimer.start()
+
+    # =====================================================================
+    # Scene-Match (substrate/mount)
+    # =====================================================================
+
+    def _wire_scene_bridge(self) -> None:
+        scene_br = getattr(self.bridge, "_scene", None)
+        sig = getattr(scene_br, "signals", None) if scene_br else None
         if not sig:
             return
 
-        if hasattr(sig, "initRequested"):
-            self.initRequested.connect(sig.initRequested.emit)
-        if hasattr(sig, "loadRecipeRequested"):
-            self.loadRecipeRequested.connect(sig.loadRecipeRequested.emit)
-        if hasattr(sig, "startRequested"):
-            self.startRequested.connect(sig.startRequested.emit)
-        if hasattr(sig, "stopRequested"):
-            self.stopRequested.connect(sig.stopRequested.emit)
+        if hasattr(sig, "substrateCurrentChanged"):
+            sig.substrateCurrentChanged.connect(lambda _s: self._evaluate_scene_match())
+        if hasattr(sig, "mountCurrentChanged"):
+            sig.mountCurrentChanged.connect(lambda _m: self._evaluate_scene_match())
 
-    def _wire_inbound_from_bridge(self) -> None:
-        br = (
-            getattr(self.bridge, "_process", None)
-            or getattr(self.bridge, "_proc", None)
-            or getattr(self.bridge, "_recipe", None)
-        )
-        sig = getattr(br, "signals", None) if br else None
-        if not sig:
+        self._evaluate_scene_match()
+
+    def _evaluate_scene_match(self) -> None:
+        if not self._recipe_model:
+            self.set_substrate_ok(False)
+            self.set_mount_ok(False)
             return
 
-        # verschiedene mögliche Namensvarianten unterstützen
-        if hasattr(sig, "recipeLoaded"):
-            sig.recipeLoaded.connect(self.set_recipe_name)  # str
-        if hasattr(sig, "currentRecipeChanged"):
-            sig.currentRecipeChanged.connect(self.set_recipe_name)  # str
-        if hasattr(sig, "recipeNameChanged"):
-            sig.recipeNameChanged.connect(self.set_recipe_name)  # str
+        scene_br = getattr(self.bridge, "_scene", None)
+        sig = getattr(scene_br, "signals", None) if scene_br else None
+        if not sig:
+            self.set_substrate_ok(False)
+            self.set_mount_ok(False)
+            return
+
+        cur_sub = getattr(sig, "substrate_current", "") or ""
+        cur_mount = getattr(sig, "mount_current", "") or ""
+
+        rec_sub = (self._recipe_model.substrate or "").strip()
+        rec_mount = (self._recipe_model.substrate_mount or "").strip()
+
+        sub_ok = bool(rec_sub) and (cur_sub == rec_sub)
+        mount_ok = bool(rec_mount) and (cur_mount == rec_mount)
+
+        self.set_substrate_ok(sub_ok)
+        self.set_mount_ok(mount_ok)
