@@ -5429,3 +5429,33 @@
 2025-11-16 19:49:53 INFO [51038] ros.launch:105 - [spawner-7] [INFO] [1763322593.881792551] [spawner_joint_state_broadcaster]: [92mConfigured and activated [1mjoint_state_broadcaster[0m
 2025-11-16 19:49:54 INFO [51038] ros.launch:105 - [spawner-8] [INFO] [1763322593.997891659] [spawner_omron_arm_controller]: waiting for service /controller_manager/list_controllers to become available...
 2025-11-16 19:49:54 INFO [51038] ros.launch:105 - [INFO] [spawner-7]: process has finished cleanly [pid 51205]
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [ros2_control_node-3] [INFO] [1763322595.674289852] [controller_manager]: Loading controller : 'omron_arm_controller' of type 'joint_trajectory_controller/JointTrajectoryController'
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [ros2_control_node-3] [INFO] [1763322595.674357887] [controller_manager]: Loading controller 'omron_arm_controller'
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [ros2_control_node-3] [INFO] [1763322595.677527847] [controller_manager]: Controller 'omron_arm_controller' node arguments: --ros-args --params-file /tmp/launch_params_xn8gtpc3 --params-file /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/ros2_controllers.yaml
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [spawner-8] [INFO] [1763322595.711577360] [spawner_omron_arm_controller]: [94mLoaded [1momron_arm_controller[0m
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [ros2_control_node-3] [INFO] [1763322595.714468035] [controller_manager]: Configuring controller: 'omron_arm_controller'
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [ros2_control_node-3] [INFO] [1763322595.714741382] [omron_arm_controller]: No specific joint names are used for command interfaces. Using 'joints' parameter.
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [ros2_control_node-3] [INFO] [1763322595.714813342] [omron_arm_controller]: Command interfaces are [position] and state interfaces are [position velocity].
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [ros2_control_node-3] [INFO] [1763322595.714858530] [omron_arm_controller]: Using 'splines' interpolation method.
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [ros2_control_node-3] [INFO] [1763322595.718723633] [omron_arm_controller]: Action status changes will be monitored at 20.00 Hz.
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [ros2_control_node-3] [INFO] [1763322595.737607018] [omron_arm_controller]: Setting initial scaling factor to 1.000000
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [ros2_control_node-3] [INFO] [1763322595.737653616] [omron_arm_controller]: No scaling interface set. This controller will not read speed scaling from the hardware.
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [ros2_control_node-3] [INFO] [1763322595.743146823] [controller_manager]: Activating controllers: [ omron_arm_controller ]
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [ros2_control_node-3] [INFO] [1763322595.750390015] [controller_manager]: Successfully switched controllers!
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [spawner-8] [INFO] [1763322595.761680373] [spawner_omron_arm_controller]: [92mConfigured and activated [1momron_arm_controller[0m
+2025-11-16 19:49:55 INFO [51038] ros.launch:105 - [INFO] [spawner-8]: process has finished cleanly [pid 51206]
+2025-11-16 19:49:56 INFO [51038] ros.launch:105 - [rviz2-6] [ERROR] [1763322596.434667556] [rviz2.moveit.ros.motion_planning_frame]: Action server: /recognize_objects not available
+2025-11-16 19:49:56 INFO [51038] ros.launch:105 - [rviz2-6] [INFO] [1763322596.471058840] [rviz2.moveit.ros.motion_planning_frame]: MoveGroup namespace changed: / -> . Reloading params.
+2025-11-16 19:49:56 INFO [51038] ros.launch:105 - [rviz2-6] [INFO] [1763322596.573935743] [rviz2.moveit.ros.rdf_loader]: Loaded robot model in 0.00384836 seconds
+2025-11-16 19:49:56 INFO [51038] ros.launch:105 - [rviz2-6] [INFO] [1763322596.574046562] [rviz2.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-11-16 19:49:56 INFO [51038] ros.launch:105 - [rviz2-6] [INFO] [1763322596.592905205] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-11-16 19:49:56 INFO [51038] ros.launch:105 - [rviz2-6] [INFO] [1763322596.592949191] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-11-16 19:49:56 INFO [51038] ros.launch:105 - [rviz2-6] [INFO] [1763322596.592954123] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-11-16 19:49:56 INFO [51038] ros.launch:105 - [rviz2-6] [INFO] [1763322596.592956538] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-11-16 19:49:56 INFO [51038] ros.launch:105 - [rviz2-6] [INFO] [1763322596.592958954] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-11-16 19:49:56 INFO [51038] ros.launch:105 - [rviz2-6] [INFO] [1763322596.592961672] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-11-16 19:49:56 INFO [51038] ros.launch:105 - [rviz2-6] [INFO] [1763322596.592963483] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-11-16 19:49:56 INFO [51038] ros.launch:105 - [rviz2-6] [INFO] [1763322596.666833507] [rviz2.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-11-16 19:49:56 INFO [51038] ros.launch:105 - [rviz2-6] [INFO] [1763322596.997955625] [rviz2.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-11-16 19:49:57 INFO [51038] ros.launch:105 - [rviz2-6] [INFO] [1763322597.001343302] [rviz2.moveit.ros.planning_scene_monitor]: Listening to '/monitored_planning_scene'
+2025-11-16 19:49:57 INFO [51038] ros.launch:105 - [rviz2-6] [INFO] [1763322597.232348391] [interactive_marker_display_94595400496448]: Connected on namespace: /rviz_moveit_motion_planning_display/robot_interaction_interactive_marker_topic
