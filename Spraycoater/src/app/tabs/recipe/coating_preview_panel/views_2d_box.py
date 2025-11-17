@@ -12,14 +12,18 @@ from .views_2d.view_controller_2d import ViewController2D
 
 Bounds = Tuple[float, float, float, float, float, float]
 
-def _set_policy(w: QWidget,
-                *,
-                h: QSizePolicy.Policy = QSizePolicy.Policy.Expanding,
-                v: QSizePolicy.Policy = QSizePolicy.Policy.Preferred) -> None:
+
+def _set_policy(
+    w: QWidget,
+    *,
+    h: QSizePolicy.Policy = QSizePolicy.Policy.Expanding,
+    v: QSizePolicy.Policy = QSizePolicy.Policy.Preferred
+) -> None:
     sp = w.sizePolicy()
     sp.setHorizontalPolicy(h)
     sp.setVerticalPolicy(v)
     w.setSizePolicy(sp)
+
 
 class Views2DBox(QGroupBox):
     """
@@ -73,10 +77,10 @@ class Views2DBox(QGroupBox):
 
         # Wiring – wenn Controller existiert, nutze ihn; sonst direkt switch_2d
         if refresh_callable:
-            self.btnTop.clicked.connect(  self.controller.plane_top)
+            self.btnTop.clicked.connect(self.controller.plane_top)
             self.btnFront.clicked.connect(self.controller.plane_front)
-            self.btnBack.clicked.connect( self.controller.plane_back)
-            self.btnLeft.clicked.connect( self.controller.plane_left)
+            self.btnBack.clicked.connect(self.controller.plane_back)
+            self.btnLeft.clicked.connect(self.controller.plane_left)
             self.btnRight.clicked.connect(self.controller.plane_right)
         else:
             self.btnTop.clicked.connect(  lambda: self._switch_2d("top"))

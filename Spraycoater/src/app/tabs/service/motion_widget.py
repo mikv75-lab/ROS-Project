@@ -24,19 +24,11 @@ class MotionWidget(QWidget):
 
     Signals (Widget -> außen/Bridge):
       - motionSpeedChanged(float mm_s)
-      - moveHomeRequested()
-      - moveServiceRequested()
       - moveHomeRequestedWithSpeed(float mm_s)
       - moveServiceRequestedWithSpeed(float mm_s)
 
-    Öffentliche API:
-      - set_store(RecipeStore)
-      - apply_planner_model(dict|None)
-      - collect_planner() -> dict
-      - get_motion_speed_mm_s() / set_motion_speed_mm_s()
-      - get_planner() / set_planner(pipeline)
-      - set_params(dict) / get_params()
-      - reset_defaults()  # lädt Defaults strikt aus RecipeStore
+    Die "Legacy"-Signals ohne Speed (moveHomeRequested / moveServiceRequested)
+    werden vom Widget aktuell NICHT mehr verwendet.
     """
 
     motionSpeedChanged = QtCore.pyqtSignal(float)
@@ -80,7 +72,9 @@ class MotionWidget(QWidget):
         frm.addRow("Speed (mm/s)", self.spinSpeed)
         root.addLayout(frm)
 
-        self.spinSpeed.valueChanged.connect(lambda v: self.motionSpeedChanged.emit(float(v)))
+        self.spinSpeed.valueChanged.connect(
+            lambda v: self.motionSpeedChanged.emit(float(v))
+        )
 
         # --- 3) Buttons ---
         row = QHBoxLayout()
@@ -93,11 +87,14 @@ class MotionWidget(QWidget):
         row.addStretch(1)
         root.addLayout(row)
 
-        # Buttons -> Signals (ohne und mit Speed)
-        self.btnHome.clicked.connect(self.moveHomeRequested.emit)
-        self.btnService.clicked.connect(self.moveServiceRequested.emit)
-        self.btnHome.clicked.connect(lambda: self.moveHomeRequestedWithSpeed.emit(self.get_motion_speed_mm_s()))
-        self.btnService.clicked.connect(lambda: self.moveServiceRequestedWithSpeed.emit(self.get_motion_speed_mm_s()))
+        # Buttons -> nur noch Varianten MIT Speed
+        # (Keine Doppel-Ausführung mehr!)
+        self.btnHome.clicked.connect(
+            lambda: self.moveHomeRequestedWithSpeed.emit(self.get_motion_speed_mm_s())
+        )
+        self.btnService.clicked.connect(
+            lambda: self.moveServiceRequestedWithSpeed.emit(self.get_motion_speed_mm_s())
+        )
 
     def _wire_outbound_to_bridge_if_present(self):
         # bevorzugt dedizierte Motion-Bridge, sonst Poses-Bridge
@@ -114,11 +111,16 @@ class MotionWidget(QWidget):
 
             # Varianten MIT Speed
             if hasattr(t, "moveToHomeRequestedWithSpeed"):
-                self.moveHomeRequestedWithSpeed.connect(t.moveToHomeRequestedWithSpeed.emit)
+                self.moveHomeRequestedWithSpeed.connect(
+                    t.moveToHomeRequestedWithSpeed.emit
+                )
             if hasattr(t, "moveToServiceRequestedWithSpeed"):
-                self.moveServiceRequestedWithSpeed.connect(t.moveToServiceRequestedWithSpeed.emit)
+                self.moveServiceRequestedWithSpeed.connect(
+                    t.moveToServiceRequestedWithSpeed.emit
+                )
 
-            # Legacy-Varianten OHNE Speed
+            # Legacy-Varianten OHNE Speed: bleiben vorhanden,
+            # werden vom Widget aber aktuell nicht mehr emittiert.
             if hasattr(t, "moveToHomeRequested"):
                 self.moveHomeRequested.connect(t.moveToHomeRequested.emit)
             if hasattr(t, "moveToServiceRequested"):
@@ -135,9 +137,9 @@ class MotionWidget(QWidget):
 
     # ---------- Utilities ----------
     def set_busy(self, busy: bool):
-        self.btnHome.setEnabled(not busy)  # type: ignore[attr-defined]
-        self.btnService.setEnabled(not busy)  # type: ignore[attr-defined]
-        self.spinSpeed.setEnabled(not busy)  # type: ignore[attr-defined]
+        self.btnHome.setEnabled(not busy)      # type: ignore[attr-defined]
+        self.btnService.setEnabled(not busy)   # type: ignore[attr-defined]
+        self.spinSpeed.setEnabled(not busy)    # type: ignore[attr-defined]
 
     # ---------- Motion Speed API ----------
     def get_motion_speed_mm_s(self) -> float:

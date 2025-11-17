@@ -36,6 +36,13 @@ class CoatingPreviewPanel(QWidget):
       HBox:
         - Left VBox:  Views2D + Matplotlib(Expanding) + Spacer
         - Right VBox: Views3D + Overlays + PyVistaHost(Expanding)
+
+    Info-Quelle:
+      - Recipe.compile_poses(...) schreibt Basiswerte in recipe.info:
+          total_points, total_length_mm, sides{...}
+      - Dieses Panel ergänzt:
+          eta_s, medium_ml, mesh_tris, mesh_bounds
+      - InfoGroupBox bekommt immer recipe.info übergeben.
     """
     sprayPathSetRequested = pyqtSignal(object)
     interactorReady = pyqtSignal()  # signalisiert, dass der Interactor verfügbar ist
@@ -93,8 +100,12 @@ class CoatingPreviewPanel(QWidget):
             pass
         vleft.addWidget(self._mat2d, 1)
 
-        # Spacer unter dem Plot: hält Platz frei, damit der Plot maximal wachsen kann
-        vleft.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
+        # Spacer unter dem Plot
+        vleft.addSpacerItem(QSpacerItem(
+            0, 0,
+            QSizePolicy.Policy.Minimum,
+            QSizePolicy.Policy.Expanding
+        ))
 
         # Beim Zerstören: Canvas sauber entsorgen
         self.destroyed.connect(lambda *_: getattr(self._mat2d, "dispose", lambda: None)())
@@ -108,7 +119,7 @@ class CoatingPreviewPanel(QWidget):
             parent=self
         )
         _set_policy(self.views2d, h=QSizePolicy.Expanding, v=QSizePolicy.Preferred)
-        # Controls vor den Plot schieben (oberhalb des Plots)
+        # Controls vor den Plot (oberhalb)
         vleft.insertWidget(0, self.views2d, 0)
 
         # Right
@@ -167,7 +178,9 @@ class CoatingPreviewPanel(QWidget):
         self.scene = SceneManager(interactor_getter=lambda: self._interactor)
 
         # Default-Bounds
-        self._bounds: Tuple[float, float, float, float, float, float] = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
+        self._bounds: Tuple[float, float, float, float, float, float] = (
+            -120.0, 120.0, -120.0, 120.0, 0.0, 240.0
+        )
 
         QTimer.singleShot(0, self._push_initial_visibility)
 
@@ -214,7 +227,7 @@ class CoatingPreviewPanel(QWidget):
         # 2) Bounds für 2D
         self.set_bounds(scene.bounds)
 
-        # 3) compile_poses → path_xyz
+        # 3) compile_poses → path_xyz (und Basis-Info direkt in model.info)
         stand_off = 10.0
         try:
             p = getattr(model, "parameters", {}) or {}
@@ -226,7 +239,13 @@ class CoatingPreviewPanel(QWidget):
         try:
             if hasattr(model, "compile_poses") and callable(getattr(model, "compile_poses")):
                 b = scene.substrate_mesh.bounds if scene.substrate_mesh is not None else scene.bounds
-                compiled = model.compile_poses(bounds=b, sides=None, stand_off_mm=stand_off, tool_frame=None)
+                compiled = model.compile_poses(
+                    bounds=b,
+                    sides=None,
+                    stand_off_mm=stand_off,
+                    tool_frame=None
+                )
+                # Recipe.compile_poses aktualisiert bereits model.info mit Basiswerten
         except Exception:
             _LOG.exception("compile_poses failed")
 
@@ -236,7 +255,10 @@ class CoatingPreviewPanel(QWidget):
                 for _side, data in (compiled.get("sides", {}) or {}).items():
                     poses = (data or {}).get("poses_quat", []) or []
                     if poses:
-                        path_xyz = np.array([[p["x"], p["y"], p["z"]] for p in poses], dtype=float)
+                        path_xyz = np.array(
+                            [[p["x"], p["y"], p["z"]] for p in poses],
+                            dtype=float
+                        )
                         break
             except Exception:
                 _LOG.exception("extract path from compiled failed")
@@ -270,13 +292,13 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("toggle_overlays failed")
 
-        # 7) Info
+        # 7) Info in recipe.info ergänzen (ETA, Medium, Mesh) und an InfoBox geben
         try:
-            info = self._calc_info(scene=scene, model=model, compiled=compiled)
+            self._update_recipe_info_with_runtime(scene=scene, model=model, compiled=compiled)
             if not self._dying and not isdeleted(self.grpInfo) and self.grpInfo is not None:
-                self.grpInfo.set_values(info)
+                self.grpInfo.set_values(getattr(model, "info", None))
         except Exception:
-            _LOG.exception("set info failed")
+            _LOG.exception("update recipe.info / set info failed")
             self._set_info_defaults()
 
         # 8) Kamera & Render
@@ -292,52 +314,108 @@ class CoatingPreviewPanel(QWidget):
     def _set_info_defaults(self) -> None:
         try:
             if not self._dying and not isdeleted(self.grpInfo) and self.grpInfo is not None:
-                self.grpInfo.set_values({
-                    "points": None, "length_mm": None, "eta_s": None, "medium_ml": None,
-                    "mesh_tris": None, "mesh_bounds": None
-                })
+                self.grpInfo.set_values(None)
         except Exception:
             pass
 
-    def _calc_info(self, *, scene, model, compiled) -> Dict[str, Any]:
+    def _update_recipe_info_with_runtime(self, *, scene, model: Recipe, compiled: Any) -> None:
+        """
+        Ergänzt recipe.info um:
+          - points / total_points
+          - length_mm / total_length_mm
+          - eta_s
+          - medium_ml
+          - mesh_tris
+          - mesh_bounds (L,B,H in mm)
+
+        Basiswerte (total_points, total_length_mm, sides) kommen aus Recipe.compile_poses().
+        Falls diese fehlen, werden sie hier aus `compiled` nachgezogen.
+        """
+        info = getattr(model, "info", None) or {}
+        if not isinstance(info, dict):
+            info = {}
+
+        # --- Basis: Points / Length aus info oder compiled ---
+        total_points = info.get("total_points")
+        total_length_mm = info.get("total_length_mm")
+
+        # Falls nötig: aus compiled nachziehen
+        if (total_points is None or total_length_mm is None) and isinstance(compiled, dict):
+            points_total = 0
+            length_mm = 0.0
+            try:
+                for _side, data in (compiled.get("sides", {}) or {}).items():
+                    poses: List[Dict[str, float]] = (data or {}).get("poses_quat", []) or []
+                    n = len(poses)
+                    points_total += n
+                    if n >= 2:
+                        P = np.array(
+                            [[p["x"], p["y"], p["z"]] for p in poses],
+                            dtype=float
+                        ).reshape(-1, 3)
+                        length_mm += float(np.sum(np.linalg.norm(P[1:] - P[:-1], axis=1)))
+            except Exception:
+                _LOG.exception("fallback base-info from compiled failed")
+            if total_points is None:
+                total_points = points_total
+            if total_length_mm is None:
+                total_length_mm = length_mm
+
+        # In info schreiben (falls noch nicht drin)
+        if total_points is not None:
+            info.setdefault("total_points", total_points)
+            info.setdefault("points", total_points)
+        if total_length_mm is not None:
+            info.setdefault("total_length_mm", total_length_mm)
+            info.setdefault("length_mm", total_length_mm)
+
+        # --- ETA und Medium ---
         params = getattr(model, "parameters", {}) or {}
         speed = float(params.get("speed_mm_s", 0.0)) if isinstance(params, dict) else 0.0
         flow_ml_min = float(params.get("flow_ml_min", 0.0)) if isinstance(params, dict) else 0.0
 
-        points_total = 0
-        length_mm = 0.0
-        if isinstance(compiled, dict):
-            for _side, data in (compiled.get("sides", {}) or {}).items():
-                poses: List[Dict[str, float]] = (data or {}).get("poses_quat", []) or []
-                n = len(poses)
-                points_total += n
-                if n >= 2:
-                    P = np.array([[p["x"], p["y"], p["z"]] for p in poses], dtype=float).reshape(-1, 3)
-                    length_mm += float(np.sum(np.linalg.norm(P[1:] - P[:-1], axis=1)))
+        length_val = float(info.get("length_mm") or info.get("total_length_mm") or 0.0)
 
-        eta_s = (length_mm / speed) if speed > 1e-9 else 0.0
-        medium_ml = (flow_ml_min / 60.0) * eta_s if flow_ml_min > 0.0 else 0.0
+        if length_val > 0.0 and speed > 1e-9:
+            eta_s = length_val / speed
+        else:
+            eta_s = None
 
-        # Mesh bounds (L×B×H)
+        if eta_s is not None and flow_ml_min > 0.0:
+            medium_ml = (flow_ml_min / 60.0) * eta_s
+        else:
+            medium_ml = None
+
+        info["eta_s"] = eta_s
+        info["medium_ml"] = medium_ml
+
+        # --- Mesh-Infos ---
+        mesh_tris = getattr(scene, "mesh_tris", None)
         b = getattr(scene, "bounds", None)
         if getattr(scene, "substrate_mesh", None) is not None:
             try:
                 b = scene.substrate_mesh.bounds
             except Exception:
                 pass
+
         mesh_bounds = None
         if b is not None:
-            xmin, xmax, ymin, ymax, zmin, zmax = b
-            mesh_bounds = (float(xmax - xmin), float(ymax - ymin), float(zmax - zmin))
+            try:
+                xmin, xmax, ymin, ymax, zmin, zmax = b
+                mesh_bounds = (
+                    float(xmax - xmin),
+                    float(ymax - ymin),
+                    float(zmax - zmin),
+                )
+            except Exception:
+                mesh_bounds = None
 
-        return {
-            "points": points_total or None,
-            "length_mm": length_mm or None,
-            "eta_s": eta_s or None,
-            "medium_ml": medium_ml or None,
-            "mesh_tris": getattr(scene, "mesh_tris", None),
-            "mesh_bounds": mesh_bounds,  # (L, B, H) mm
-        }
+        info["mesh_tris"] = mesh_tris
+        if mesh_bounds is not None:
+            info["mesh_bounds"] = mesh_bounds
+
+        # Zurück in Recipe
+        model.info = info
 
     # ---------- Helpers ----------
     def _push_initial_visibility(self) -> None:
@@ -445,12 +523,17 @@ class CoatingPreviewPanel(QWidget):
     def add_path_polyline(self, *a, **kw):
         self.scene.add_path_polyline(*a, **kw)
 
-    def show_poly(self, poly, *, layer: str, color: str = "royalblue", line_width: float = 2.0, lighting: bool = False):
+    def show_poly(self, poly, *, layer: str,
+                  color: str = "royalblue",
+                  line_width: float = 2.0,
+                  lighting: bool = False):
         try:
             self.clear_layer(layer)
-            self.add_mesh(poly, color=color, line_width=float(line_width), lighting=lighting, layer=layer)
+            self.add_mesh(poly, color=color, line_width=float(line_width),
+                          lighting=lighting, layer=layer)
         except Exception:
             _LOG.exception("show_poly() failed")
 
     def show_frames_at(self, **_kwargs) -> None:
+        # Noch nicht implementiert
         pass

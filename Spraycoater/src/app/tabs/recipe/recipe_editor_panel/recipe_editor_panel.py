@@ -2,12 +2,12 @@
 from __future__ import annotations
 import os
 import re
-from typing import Optional, Dict, Any, List, Callable
+from typing import Optional, Dict, Any, Callable
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
-    QPushButton, QLineEdit, QFileDialog, QMessageBox, QSizePolicy, QFrame
+    QPushButton, QFileDialog, QMessageBox, QSizePolicy, QFrame
 )
 
 from app.model.recipe.recipe import Recipe
@@ -55,13 +55,12 @@ class RecipeEditorPanel(QWidget):
         # ---------- Header (Commands) ----------
         self.gbCommands = QGroupBox("Commands", self)
 
-        # Ein einziges Layout für die GroupBox:
         cmd_layout = QVBoxLayout(self.gbCommands)
         cmd_layout.setContentsMargins(8, 6, 8, 6)
         cmd_layout.setSpacing(6)
 
         # Zeile: New | Load | Save | Delete
-        hButtons = QHBoxLayout()  # KEIN Parent hier -> wird in cmd_layout eingehängt
+        hButtons = QHBoxLayout()
         hButtons.setContentsMargins(0, 0, 0, 0)
         hButtons.setSpacing(6)
 
@@ -83,8 +82,8 @@ class RecipeEditorPanel(QWidget):
         fb.setSpacing(8)
 
         self.btnUpdatePreview = QPushButton("Update Preview", footer_box)
-        self.btnValidate = QPushButton("Validate", footer_box)
-        self.btnOptimize = QPushButton("Optimize", footer_box)
+        self.btnValidate      = QPushButton("Validate", footer_box)
+        self.btnOptimize      = QPushButton("Optimize", footer_box)
         for b in (self.btnUpdatePreview, self.btnValidate, self.btnOptimize):
             sp = b.sizePolicy()
             sp.setHorizontalPolicy(QSizePolicy.Expanding)
@@ -92,7 +91,6 @@ class RecipeEditorPanel(QWidget):
             b.setSizePolicy(sp)
             fb.addWidget(b, 1)
 
-        # Commands zusammenbauen
         cmd_layout.addLayout(hButtons)
         cmd_layout.addWidget(_hline())
         cmd_layout.addWidget(footer_box)
@@ -117,7 +115,6 @@ class RecipeEditorPanel(QWidget):
         self.btnSave.clicked.connect(self._on_save_clicked)
         self.btnDelete.clicked.connect(self._on_delete_clicked)
 
-        # Footer-Buttons (unter Commands) weiterreichen
         self.btnValidate.clicked.connect(self.validateRequested.emit)
         self.btnOptimize.clicked.connect(self.optimizeRequested.emit)
         self.btnUpdatePreview.clicked.connect(self._relay_update_preview)
@@ -147,10 +144,17 @@ class RecipeEditorPanel(QWidget):
         combo.blockSignals(False)
 
     def _current_recipe_def(self) -> Optional[Dict[str, Any]]:
+        """
+        Liefert das aktuell im ComboBox ausgewählte Rezept-Definition-Dict.
+        Fängt RuntimeError ab, falls das ComboBox-Objekt bereits von Qt gelöscht wurde.
+        """
         combo = getattr(self.content, "sel_recipe", None)
         if combo is None:
             return None
-        rid = combo.currentText().strip()
+        try:
+            rid = combo.currentText().strip()
+        except RuntimeError:
+            return None
         return self._recipes_by_id.get(rid)
 
     def _new_model_from_rec_def(self, rec_def: Dict[str, Any]) -> Recipe:
@@ -186,14 +190,18 @@ class RecipeEditorPanel(QWidget):
         self._active_model = model
         self._active_rec_def = rec_def
 
+        # Meta-Felder oben im Panel setzen
         try:
-            self.content.set_meta(name=getattr(model, "id", "") or "",
-                                  desc=getattr(model, "description", "") or "")
+            name = getattr(model, "id", "") or ""
+            desc = getattr(model, "description", "") or ""
+            self.content.set_meta(name=name, desc=desc)
         except Exception:
             pass
 
+        # Content füllen
         self.content.apply_recipe_model(model, rec_def)
 
+        # Planner darunter
         try:
             self.content.apply_planner_model(model.planner or {})
         except Exception:
@@ -220,17 +228,63 @@ class RecipeEditorPanel(QWidget):
             self.content.set_meta(name="", desc="")
 
     def _on_load_clicked(self) -> None:
+        """
+        Rezept aus YAML laden, Modell vollständig füllen und dann UI synchronisieren.
+        """
         start_dir = getattr(getattr(self.ctx, "paths", None), "recipe_dir", os.getcwd())
         fname, _ = QFileDialog.getOpenFileName(self, "Rezept laden", start_dir, "YAML (*.yaml *.yml)")
         if not fname:
             return
+
         try:
+            # 1) Modell komplett aus YAML
             model = Recipe.load_yaml(fname)
-            rec_def = self._recipes_by_id.get(model.id) or self._current_recipe_def() or {}
-            self._apply_model(model, rec_def)
-            QMessageBox.information(self, "Geladen", os.path.basename(fname))
+
+            # 2) passende Rezept-Definition anhand model.id suchen
+            rec_def = self._recipes_by_id.get(model.id)
+            if not rec_def:
+                rec_def = self._current_recipe_def() or {}
+
+            # 2a) ComboBox "recipe" auf das geladene Rezept setzen (wenn vorhanden)
+            combo = getattr(self.content, "sel_recipe", None)
+            if combo is not None and model.id:
+                try:
+                    idx = combo.findText(str(model.id))
+                    if idx >= 0:
+                        combo.blockSignals(True)
+                        combo.setCurrentIndex(idx)
+                        combo.blockSignals(False)
+                except RuntimeError:
+                    # Combo ist evtl. schon zerstört
+                    pass
+
+            # 3) Modell in UI applizieren
+            try:
+                self._apply_model(model, rec_def)
+            except RuntimeError:
+                # Panel/Content bereits gelöscht – Ladevorgang abbrechen
+                return
+
+            # 4) Preview & RViz updaten
+            try:
+                self.updatePreviewRequested.emit(model)
+            except RuntimeError:
+                # Signal-Receiver existiert nicht mehr
+                return
+
+            # 5) Info-Dialog
+            basename = os.path.basename(fname)
+            try:
+                QMessageBox.information(self, "Geladen", basename)
+            except RuntimeError:
+                QMessageBox.information(None, "Geladen", basename)
+
         except Exception as e:
-            QMessageBox.critical(self, "Ladefehler", str(e))
+            # Fehlerdialog robust anzeigen
+            try:
+                QMessageBox.critical(self, "Ladefehler", str(e))
+            except RuntimeError:
+                QMessageBox.critical(None, "Ladefehler", str(e))
 
     def _on_save_clicked(self) -> None:
         try:
@@ -238,7 +292,10 @@ class RecipeEditorPanel(QWidget):
             name_inp, _desc_inp = self.content.meta_values()
             name = _slugify((name_inp or "").strip())
             if not name:
-                QMessageBox.warning(self, "Name fehlt", "Bitte zuerst einen Recipe-Namen eingeben.")
+                try:
+                    QMessageBox.warning(self, "Name fehlt", "Bitte zuerst einen Recipe-Namen eingeben.")
+                except RuntimeError:
+                    QMessageBox.warning(None, "Name fehlt", "Bitte zuerst einen Recipe-Namen eingeben.")
                 return
             model.id = name
 
@@ -249,9 +306,15 @@ class RecipeEditorPanel(QWidget):
             if not fname:
                 return
             model.save_yaml(fname)
-            QMessageBox.information(self, "Gespeichert", os.path.basename(fname))
+            try:
+                QMessageBox.information(self, "Gespeichert", os.path.basename(fname))
+            except RuntimeError:
+                QMessageBox.information(None, "Gespeichert", os.path.basename(fname))
         except Exception as e:
-            QMessageBox.critical(self, "Speicherfehler", str(e))
+            try:
+                QMessageBox.critical(self, "Speicherfehler", str(e))
+            except RuntimeError:
+                QMessageBox.critical(None, "Speicherfehler", str(e))
 
     def _on_delete_clicked(self) -> None:
         rec_def = self._current_recipe_def()
@@ -279,7 +342,7 @@ class RecipeEditorPanel(QWidget):
             rec_def = self._current_recipe_def() or {}
             model = self._new_model_from_rec_def(rec_def)
 
-        model.id = name.strip()
+        model.id = (name or "").strip()
         model.description = (desc or "").strip()
         model.tool = tool
         model.substrate = sub
@@ -297,7 +360,11 @@ class RecipeEditorPanel(QWidget):
         Slot für den Update-Button.
         Baut immer das aktuelle Recipe-Modell und feuert updatePreviewRequested(model).
         """
-        self.updatePreviewRequested.emit(self.current_model())
+        try:
+            self.updatePreviewRequested.emit(self.current_model())
+        except RuntimeError:
+            # Falls Panel schon zerstört wird – nichts tun
+            return
 
     @staticmethod
     def _safe_call(fn, default=None):

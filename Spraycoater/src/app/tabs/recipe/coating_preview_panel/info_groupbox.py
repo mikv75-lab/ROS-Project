@@ -16,6 +16,11 @@ class InfoGroupBox(QGroupBox):
 
     Zeigt:
       Points | Path length (mm) | ETA (s) | Medium (ml) | Mesh tris | Mesh L×B×H (mm)
+
+    Erwartet ein info-Dict – typischerweise recipe.info.
+    Unterstützt beide Varianten:
+      - total_points / total_length_mm  (aus Recipe)
+      - points / length_mm             (Panel-kompatibel)
     """
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__("Info", parent)
@@ -30,7 +35,8 @@ class InfoGroupBox(QGroupBox):
             k = QLabel(label + ":", self)
             k.setStyleSheet("font-weight:600;")
             v = QLabel("-", self)
-            lay.addWidget(k); lay.addWidget(v)
+            lay.addWidget(k)
+            lay.addWidget(v)
             return v
 
         self._v_points     = add("Points")
@@ -57,7 +63,13 @@ class InfoGroupBox(QGroupBox):
         if isinstance(v, int):
             # Tausendertrennzeichen als schmales Leerzeichen
             return f"{v:,}".replace(",", " ")
-        return str(v)
+        try:
+            # Things like np.int64 / np.float64
+            if float(v).is_integer():
+                return f"{int(v):,}".replace(",", " ")
+            return f"{float(v):.{nd}f}"
+        except Exception:
+            return str(v)
 
     @staticmethod
     def _fmt_with_unit(v: Any, unit: str | None = None, nd: int = 3) -> str:
@@ -74,10 +86,39 @@ class InfoGroupBox(QGroupBox):
         return f"{L:.{nd}f} × {B:.{nd}f} × {H:.{nd}f}"
 
     # ---- Public API ----
-    def set_values(self, info: Dict[str, Any]) -> None:
-        self._v_points.setText(self._fmt_num(info.get("points"), nd=0))
-        self._v_len_mm.setText(self._fmt_with_unit(info.get("length_mm"), "mm", nd=3))
-        self._v_eta_s.setText(self._fmt_with_unit(info.get("eta_s"), "s", nd=3))
-        self._v_medium_ml.setText(self._fmt_with_unit(info.get("medium_ml"), "ml", nd=3))
-        self._v_mesh_tris.setText(self._fmt_num(info.get("mesh_tris"), nd=0))
-        self._v_mesh_dims.setText(self._fmt_dims(info.get("mesh_bounds"), nd=1))
+    def set_values(self, info: Dict[str, Any] | None) -> None:
+        """
+        Erwartet recipe.info oder ein ähnliches Dict.
+
+        Unterstützte Keys:
+          - points          oder total_points
+          - length_mm       oder total_length_mm
+          - eta_s
+          - medium_ml
+          - mesh_tris
+          - mesh_bounds / mesh_bounds_mm (L,B,H in mm)
+        """
+        info = info or {}
+
+        points = info.get("points")
+        if points is None:
+            points = info.get("total_points")
+
+        length_mm = info.get("length_mm")
+        if length_mm is None:
+            length_mm = info.get("total_length_mm")
+
+        eta_s = info.get("eta_s")
+        medium_ml = info.get("medium_ml")
+        mesh_tris = info.get("mesh_tris")
+
+        mesh_bounds = info.get("mesh_bounds")
+        if mesh_bounds is None:
+            mesh_bounds = info.get("mesh_bounds_mm")
+
+        self._v_points.setText(self._fmt_num(points, nd=0))
+        self._v_len_mm.setText(self._fmt_with_unit(length_mm, "mm", nd=3))
+        self._v_eta_s.setText(self._fmt_with_unit(eta_s, "s", nd=3))
+        self._v_medium_ml.setText(self._fmt_with_unit(medium_ml, "ml", nd=3))
+        self._v_mesh_tris.setText(self._fmt_num(mesh_tris, nd=0))
+        self._v_mesh_dims.setText(self._fmt_dims(mesh_bounds, nd=1))

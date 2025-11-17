@@ -7,6 +7,7 @@ import time
 import yaml
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 
 from std_msgs.msg import String
 from geometry_msgs.msg import Pose, TransformStamped, Point
@@ -16,7 +17,6 @@ from moveit_msgs.msg import CollisionObject, PlanningSceneComponents
 from moveit_msgs.srv import GetPlanningScene
 
 from spraycoater_nodes_py.utils.utils import rpy_deg_to_quat
-# ZENTRALER HUB: topics/qos/frames + Pfade (scene.yaml/robot.yaml) + dir-Resolver
 from spraycoater_nodes_py.utils.config_hub import (
     topics, frames, config_path, load_yaml, resolve_resource_dirs
 )
@@ -35,8 +35,11 @@ OID_ALIAS = {
     "mount": "substrate_mount",
     "substrate": "substrate",
 }
+
+
 def _logical_to_oid(logical: str) -> str:
     return OID_ALIAS.get(logical, logical)
+
 
 # -------------
 # YAML-Helpers
@@ -49,6 +52,7 @@ def _require_vec3(node: dict, key: str):
         raise ValueError(f"YAML: '{key}' muss eine Liste mit 3 Zahlen sein, bekommen: {val!r}")
     return [float(val[0]), float(val[1]), float(val[2])]
 
+
 def _require_str(node: dict, key: str):
     if key not in node:
         raise KeyError(f"YAML: fehlendes Feld '{key}'")
@@ -56,6 +60,7 @@ def _require_str(node: dict, key: str):
     if not isinstance(val, str):
         raise ValueError(f"YAML: '{key}' muss String sein, bekommen: {type(val).__name__}")
     return val
+
 
 # -------------
 # Mathe-Helpers
@@ -65,41 +70,47 @@ def _quat_mul(a, b):
     ax, ay, az, aw = a
     bx, by, bz, bw = b
     return (
-        aw*bx + ax*bw + ay*bz - az*by,
-        aw*by - ax*bz + ay*bw + az*bx,
-        aw*bz + ax*by - ay*bx + az*bw,
-        aw*bw - ax*bx - ay*by - az*bz,
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz,
     )
+
 
 def _quat_from_rpy_deg(r, p, y):
     return rpy_deg_to_quat(float(r), float(p), float(y))
 
+
 def _rotmat_from_quat(q):
     x, y, z, w = q
-    xx, yy, zz = x*x, y*y, z*z
-    xy, xz, yz = x*y, x*z, y*z
-    wx, wy, wz = w*x, w*y, w*z
+    xx, yy, zz = x * x, y * y, z * z
+    xy, xz, yz = x * y, x * z, y * z
+    wx, wy, wz = w * x, w * y, w * z
     return [
-        [1 - 2*(yy+zz),     2*(xy - wz),     2*(xz + wy)],
-        [    2*(xy + wz), 1 - 2*(xx+zz),     2*(yz - wx)],
-        [    2*(xz - wy),     2*(yz + wx), 1 - 2*(xx+yy)],
+        [1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)],
+        [2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)],
+        [2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)],
     ]
+
 
 def _rot_apply(R, v):
     return [
-        R[0][0]*v[0] + R[0][1]*v[1] + R[0][2]*v[2],
-        R[1][0]*v[0] + R[1][1]*v[1] + R[1][2]*v[2],
-        R[2][0]*v[0] + R[2][1]*v[1] + R[2][2]*v[2],
+        R[0][0] * v[0] + R[0][1] * v[1] + R[0][2] * v[2],
+        R[1][0] * v[0] + R[1][1] * v[1] + R[1][2] * v[2],
+        R[2][0] * v[0] + R[2][1] * v[1] + R[2][2] * v[2],
     ]
 
 
 class Scene(Node):
     """
     Scene-Node (config_hub-only):
+
       - Liest scene.yaml / robot.yaml ausschließlich aus <share(spraycoater_bringup)>/config via config_hub
       - Keine Launch-Parameter.
-      - Publish der Listen + Current exakt EINMAL nach initialem Szenen-Publish.
-      - Spätere Änderungen nur über die Set-Handler.
+      - Szene (Static TFs + CollisionObjects) wird EINMAL initial gesendet,
+        und bei cage/mount/substrate-Wechsel aktualisiert.
+      - /collision_object hat TRANSIENT_LOCAL-QoS -> Late Joiner (RViz etc.)
+        bekommen immer den letzten Stand, ohne 1 Hz-Republish.
     """
 
     def __init__(self):
@@ -110,14 +121,14 @@ class Scene(Node):
         # ------------------------
         self.loader = topics()              # Topics/QoS (lazy)
         node_key = "scene"
-        self.frames  = frames()             # Frames-Resolver (lazy)
-        self._F      = self.frames.resolve  # Kurzform
+        self.frames = frames()             # Frames-Resolver (lazy)
+        self._F = self.frames.resolve      # Kurzform
 
         # ------------------------
         # Szene + Robot-Config laden (fixe Orte via Hub)
         # ------------------------
         scene_yaml = config_path("scene.yaml")
-        robot_cfg  = load_yaml("robot.yaml")
+        robot_cfg = load_yaml("robot.yaml")
 
         with open(scene_yaml, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
@@ -131,8 +142,8 @@ class Scene(Node):
         robots = robot_cfg.get("robots") or {}
         r = robots.get(sel, {}) if isinstance(robots.get(sel, {}), dict) else {}
 
-        self._roots_cage      = resolve_resource_dirs(r.get("cage_dirs", []))
-        self._roots_mount     = resolve_resource_dirs(r.get("mount_dirs", []))
+        self._roots_cage = resolve_resource_dirs(r.get("cage_dirs", []))
+        self._roots_mount = resolve_resource_dirs(r.get("mount_dirs", []))
         self._roots_substrate = resolve_resource_dirs(r.get("substrate_dirs", []))
 
         # ------------------------
@@ -193,8 +204,16 @@ class Scene(Node):
         )
 
         # MoveIt / TF
-        self.static_tf  = StaticTransformBroadcaster(self)
-        self.scene_pub  = self.create_publisher(CollisionObject, SCENE_TOPIC, 10)
+        self.static_tf = StaticTransformBroadcaster(self)
+
+        # 💡 WICHTIG: /collision_object jetzt mit TRANSIENT_LOCAL (latched)
+        scene_qos = QoSProfile(
+            depth=10,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self.scene_pub = self.create_publisher(CollisionObject, SCENE_TOPIC, scene_qos)
+
         self.mesh_cache = {}
         self.final_scene_sent = False
         self.initial_state_published = False
@@ -204,8 +223,10 @@ class Scene(Node):
         self.current_mount: str = self._initial_current_from_yaml("substrate_mount")
         self.current_substrate: str = self._initial_current_from_yaml("substrate")
 
-        # Kein sofortiges Publish — erst wenn MoveIt bereit & Szene gesendet
-        self.get_logger().info("⏳ Warte auf MoveIt – Szene später senden...")
+        self.get_logger().info(
+            "⏳ Warte auf MoveIt – Szene wird einmalig gesendet, "
+            "CollisionObjects sind latched (TRANSIENT_LOCAL)."
+        )
         self._start_scene_wait()
 
     # ------------------------
@@ -233,9 +254,9 @@ class Scene(Node):
         """Listen exakt einmal initial publizieren."""
         if self.initial_state_published:
             return
-        cages  = self._scan_assets(self._roots_cage)
+        cages = self._scan_assets(self._roots_cage)
         mounts = self._scan_assets(self._roots_mount)
-        subs   = self._scan_assets(self._roots_substrate)
+        subs = self._scan_assets(self._roots_substrate)
 
         self.pub_cage_list.publish(String(data=self._list_to_string(cages)))
         self.pub_mount_list.publish(String(data=self._list_to_string(mounts)))
@@ -331,18 +352,18 @@ class Scene(Node):
         qx, qy, qz, qw = _quat_from_rpy_deg(*rpy_deg)
         tf = TransformStamped()
         tf.header.frame_id = self._F(parent)
-        tf.child_frame_id  = self._F(child)
+        tf.child_frame_id = self._F(child)
         tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z = xyz
         tf.transform.rotation.x, tf.transform.rotation.y, tf.transform.rotation.z, tf.transform.rotation.w = qx, qy, qz, qw
         return tf
 
     def _make_co_from_obj_and_mesh(self, obj: dict, mesh_path: str) -> CollisionObject:
-        oid   = str(obj["id"])
+        oid = str(obj["id"])
         frame = self._F(obj.get("frame", "world"))
-        pos   = _require_vec3(obj, "position")
-        rpy   = _require_vec3(obj, "rpy_deg")
-        mpos  = _require_vec3(obj, "mesh_offset")
-        mrpy  = _require_vec3(obj, "mesh_rpy")
+        pos = _require_vec3(obj, "position")
+        rpy = _require_vec3(obj, "rpy_deg")
+        mpos = _require_vec3(obj, "mesh_offset")
+        mrpy = _require_vec3(obj, "mesh_rpy")
 
         mesh_msg = self._load_mesh_mm(mesh_path)
 
@@ -411,6 +432,7 @@ class Scene(Node):
         self._remove_object(oid)
         co = self._make_co_from_obj_and_mesh(obj, mesh_path)
         self.scene_pub.publish(co)
+
         setattr(self, state_attr, name)
         pub.publish(String(data=name))
         self.get_logger().info(f"🎯 {kind}: mesh gesetzt -> {name}")
@@ -488,7 +510,7 @@ class Scene(Node):
             co.operation = CollisionObject.ADD
             self.scene_pub.publish(co)
 
-        self.get_logger().info("🎯 Szene FINAL & EINMALIG an MoveIt gesendet.")
+        self.get_logger().info("🎯 Szene FINAL & EINMALIG an MoveIt gesendet (latched).")
 
         # >>> Jetzt EINMALIG die UI-States veröffentlichen (Listen + Currents)
         self._publish_lists_once()

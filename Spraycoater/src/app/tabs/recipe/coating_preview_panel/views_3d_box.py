@@ -5,22 +5,12 @@ from typing import Optional, Callable, Tuple
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QGroupBox, QWidget, QFormLayout, QHBoxLayout, QPushButton,
-    QSizePolicy, QLabel
+    QLabel
 )
 
 from .views_3d.view_controller_3d import ViewController3D
 
 Bounds = Tuple[float, float, float, float, float, float]
-
-
-def _set_policy(w: QWidget,
-                *,
-                h: QSizePolicy.Policy = QSizePolicy.Policy.Expanding,
-                v: QSizePolicy.Policy = QSizePolicy.Policy.Preferred) -> None:
-    sp = w.sizePolicy()
-    sp.setHorizontalPolicy(h)
-    sp.setVerticalPolicy(v)
-    w.setSizePolicy(sp)
 
 
 class Views3DBox(QGroupBox):

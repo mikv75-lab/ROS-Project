@@ -4,9 +4,6 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /MotionPlanning1
-        - /MotionPlanning1/Planned Path1
-        - /TF1
         - /TF1/Frames1
         - /PoseArray1
         - /MarkerArray1
@@ -278,17 +275,17 @@ Visualization Manager:
       Update Interval: 0
       Value: true
     - Alpha: 1
-      Arrow Length: 0.009999999776482582
-      Axes Length: 0.0010000000474974513
-      Axes Radius: 0.0010000000474974513
+      Arrow Length: 0
+      Axes Length: 0.001500000013038516
+      Axes Radius: 0.00019999999494757503
       Class: rviz_default_plugins/PoseArray
       Color: 0; 255; 0
       Enabled: true
-      Head Length: 0.009999999776482582
-      Head Radius: 0.009999999776482582
+      Head Length: 0
+      Head Radius: 0
       Name: PoseArray
-      Shaft Length: 0.009999999776482582
-      Shaft Radius: 0.009999999776482582
+      Shaft Length: 0
+      Shaft Radius: 0
       Shape: Axes
       Topic:
         Depth: 5
@@ -301,7 +298,9 @@ Visualization Manager:
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: MarkerArray
-      Namespaces: true
+      Namespaces:
+        Value: true
+        test: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -327,7 +326,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 0.17424768209457397
+      Distance: 0.28433147072792053
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -342,10 +341,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.1703981161117554
+      Pitch: 1.1653984785079956
       Target Frame: scene
       Value: Orbit (rviz_default_plugins)
-      Yaw: 0.6503981947898865
+      Yaw: 6.24858283996582
     Saved: ~
 Window Geometry:
   Displays:

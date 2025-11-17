@@ -7,6 +7,7 @@ _LOG = logging.getLogger("app.tabs.recipe.preview.views.controller2d")
 
 Bounds = Tuple[float, float, float, float, float, float]
 
+
 class ViewController2D:
     """Schlanker 2D-Controller für die Matplotlib-Ansicht."""
     def __init__(
@@ -29,15 +30,18 @@ class ViewController2D:
     def plane_right(self): self._switch("right")
 
     def _switch(self, plane: str):
+        # 1) Ebene umschalten
         try:
             self._set_plane(plane)
-            if self._get_bounds and self._set_bounds:
-                b = self._get_bounds()
-                if b:
-                    self._set_bounds(b)
         except Exception:
-            _LOG.exception("2D plane switch failed: %s", plane)
-        try:
-            self._refresh()
-        except Exception:
-            _LOG.exception("2D refresh failed after switch")
+            _LOG.exception("2D plane switch failed (set_plane): %s", plane)
+
+        # 2) Optional: Bounds einfach so lassen wie sie sind.
+        #    Falls du hier später wieder was mit get/set_bounds machen willst,
+        #    können wir das gezielt und vorsichtig einbauen.
+
+        # 3) Refresh
+        #try:
+        #    self._refresh()
+        #except Exception:
+        #    _LOG.exception("2D refresh failed after switch: %s", plane)

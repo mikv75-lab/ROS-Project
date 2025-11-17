@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 
 from std_msgs.msg import String
 from geometry_msgs.msg import Pose, PoseArray
@@ -21,14 +22,14 @@ class SprayPath(Node):
       - spray_path.set (MarkerArray)
         → Kommando vom PyQt-Editor (fertiger Pfad als MarkerArray)
 
-    PUB:
+    PUB (alle TRANSIENT_LOCAL / latched):
       - spray_path.poses   (PoseArray): Punkte des Pfads als neutrale Posen
-      - spray_path.markers (MarkerArray, latched): aktuelles MarkerArray für RViz
-      - spray_path.current (String, latched): aktueller Pfad-Name (optional für UI)
+      - spray_path.markers (MarkerArray): aktuelles MarkerArray für RViz
+      - spray_path.current (String): aktueller Pfad-Name (optional für UI)
 
     Semantik:
       - JEDER set-Aufruf ersetzt den aktuellen Pfad vollständig.
-      - Es wird NICHT auf /spraycoater/spray_path/set zurück publiziert.
+      - Kein Timer-Republish; Late Joiner bekommen letzten Stand über QoS.
     """
 
     GROUP = "spray_path"
@@ -41,23 +42,25 @@ class SprayPath(Node):
         self.frames = frames()
         self._F = self.frames.resolve
 
-        # Topics & QoS
-        topic_set     = self.loader.subscribe_topic(self.GROUP, "set")
-        qos_set       = self.loader.qos_by_id("subscribe", self.GROUP, "set")
+        # Topics & QoS aus config_hub für SUB
+        topic_set = self.loader.subscribe_topic(self.GROUP, "set")
+        qos_set = self.loader.qos_by_id("subscribe", self.GROUP, "set")
+
+        # Latched QoS für unsere Publisher (wie bei Scene)
+        latched_qos = QoSProfile(
+            depth=10,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
 
         topic_current = self.loader.publish_topic(self.GROUP, "current")
-        qos_current   = self.loader.qos_by_id("publish",   self.GROUP, "current")
-
-        topic_poses   = self.loader.publish_topic(self.GROUP, "poses")
-        qos_poses     = self.loader.qos_by_id("publish",   self.GROUP, "poses")
-
+        topic_poses = self.loader.publish_topic(self.GROUP, "poses")
         topic_markers = self.loader.publish_topic(self.GROUP, "markers")
-        qos_markers   = self.loader.qos_by_id("publish",   self.GROUP, "markers")
 
         # Publisher / Subscriber
-        self.pub_current = self.create_publisher(String,      topic_current, qos_current)
-        self.pub_poses   = self.create_publisher(PoseArray,   topic_poses,   qos_poses)
-        self.pub_markers = self.create_publisher(MarkerArray, topic_markers, qos_markers)
+        self.pub_current = self.create_publisher(String, topic_current, latched_qos)
+        self.pub_poses = self.create_publisher(PoseArray, topic_poses, latched_qos)
+        self.pub_markers = self.create_publisher(MarkerArray, topic_markers, latched_qos)
 
         self.sub_set = self.create_subscription(
             MarkerArray,
@@ -66,14 +69,15 @@ class SprayPath(Node):
             qos_set,
         )
 
-        # interner Zustand
+        # interner Zustand (für evtl. Debug/inspektieren)
         self._last_frame = self.frames.get("scene", "scene")
         self._last_name: str = ""
         self._last_pa: PoseArray | None = None
         self._last_markers: MarkerArray | None = None
 
         self.get_logger().info(
-            "✅ SprayPathManager bereit: /set → /poses + /markers (+ /current), kein Publish auf /set"
+            "✅ SprayPathManager bereit: /set → /poses + /markers (+ /current), "
+            "TRANSIENT_LOCAL (latched), kein 1 Hz-Republish."
         )
 
     # ----------------------------- helpers -----------------------------
@@ -174,12 +178,12 @@ class SprayPath(Node):
             m.mesh_use_embedded_materials = src.mesh_use_embedded_materials
             out_ma.markers.append(m)
 
-        # Zustand REPLAZEN
+        # Zustand merken
         self._last_pa = pa
         self._last_markers = out_ma
         self._last_name = name
 
-        # ONE SHOT Publish
+        # ONE SHOT Publish (latched)
         self.pub_poses.publish(pa)
         self.pub_markers.publish(out_ma)
         self._publish_current_name(name)

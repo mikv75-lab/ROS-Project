@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QWidget, QGridLayout, QLabel, QComboBox, QPushButton,
 )
 
+
 class ToolGroupBox(QGroupBox):
     """
     Tool-Auswahl.
@@ -35,37 +36,40 @@ class ToolGroupBox(QGroupBox):
 
     # ---------- UI ----------
     def _build_ui(self) -> None:
-        lay = QGridLayout(self)
-        lay.setContentsMargins(8, 8, 8, 8)
-        lay.setHorizontalSpacing(8)
-        lay.setVerticalSpacing(6)
+        g = QGridLayout(self)
 
-        # Row 0: Auswahl + Set/Clear
-        lay.addWidget(self._bold("Tool"), 0, 0, alignment=Qt.AlignmentFlag.AlignRight)
+        def _bold(txt: str) -> QLabel:
+            l = QLabel(txt, self)
+            l.setStyleSheet("font-weight: 600;")
+            return l
+
+        # Header – wie bei Scene
+        g.addWidget(_bold("Type"),    0, 0)
+        g.addWidget(_bold("Select"),  0, 1)
+        g.addWidget(_bold("Set"),     0, 2)
+        g.addWidget(_bold("Current"), 0, 3)
+        g.addWidget(_bold("Clear"),   0, 4)
+
+        # Einzige Datenzeile: Tool
+        g.addWidget(QLabel("Tool", self), 1, 0)
 
         self.cmbTool = QComboBox(self)
         self.cmbTool.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-        lay.addWidget(self.cmbTool, 0, 1)
+        g.addWidget(self.cmbTool, 1, 1)
 
         self.btnSet = QPushButton("Set", self)
-        self.btnClear = QPushButton("Clear", self)
-        lay.addWidget(self.btnSet, 0, 2)
-        lay.addWidget(self.btnClear, 0, 3)
+        g.addWidget(self.btnSet, 1, 2)
 
-        # Row 1: Current
-        lay.addWidget(self._bold("Current"), 1, 0, alignment=Qt.AlignmentFlag.AlignRight)
         self.lblCurrent = QLabel("-", self)
         self.lblCurrent.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        lay.addWidget(self.lblCurrent, 1, 1, 1, 3)
+        g.addWidget(self.lblCurrent, 1, 3)
 
-        # Wire buttons
+        self.btnClear = QPushButton("Clear", self)
+        g.addWidget(self.btnClear, 1, 4)
+
+        # Buttons
         self.btnSet.clicked.connect(self._on_set_clicked)
         self.btnClear.clicked.connect(lambda: self._emit_select_request(""))
-
-    def _bold(self, txt: str) -> QLabel:
-        l = QLabel(txt, self)
-        l.setStyleSheet("font-weight:600;")
-        return l
 
     # ---------- Bridge Verdrahtung ----------
     def _wire_bridge(self) -> None:

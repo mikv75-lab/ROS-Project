@@ -3050,3 +3050,195 @@ TypeError: BaseBridge.__init__() got an unexpected keyword argument 'parent'
 2025-11-16 19:49:51 INFO [51038] app.startup:143 - logging configured
 2025-11-16 19:49:51 INFO [51038] app.startup:148 - warnings enabled
 2025-11-16 19:49:53 INFO [51038] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-16 21:17:44 INFO [99045] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 21:17:44 INFO [99045] app.startup:143 - logging configured
+2025-11-16 21:17:45 INFO [99045] app.startup:148 - warnings enabled
+2025-11-16 21:17:47 INFO [99045] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-16 21:22:08 INFO [102597] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 21:22:08 INFO [102597] app.startup:143 - logging configured
+2025-11-16 21:22:08 INFO [102597] app.startup:148 - warnings enabled
+2025-11-16 21:22:11 INFO [102597] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-16 21:23:09 INFO [104527] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 21:23:09 INFO [104527] app.startup:143 - logging configured
+2025-11-16 21:23:09 INFO [104527] app.startup:148 - warnings enabled
+2025-11-16 21:23:11 INFO [104527] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-16 21:26:09 INFO [107264] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 21:26:09 INFO [107264] app.startup:143 - logging configured
+2025-11-16 21:26:09 INFO [107264] app.startup:148 - warnings enabled
+2025-11-16 21:26:11 INFO [107264] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-16 21:38:03 INFO [116343] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 21:38:03 INFO [116343] app.startup:143 - logging configured
+2025-11-16 21:38:03 INFO [116343] app.startup:148 - warnings enabled
+2025-11-16 21:38:05 INFO [116343] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-16 21:44:00 INFO [120254] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 21:44:00 INFO [120254] app.startup:143 - logging configured
+2025-11-16 21:44:00 INFO [120254] app.startup:148 - warnings enabled
+2025-11-16 21:44:02 INFO [120254] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-16 21:50:44 INFO [127402] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 21:50:44 INFO [127402] app.startup:143 - logging configured
+2025-11-16 21:50:44 INFO [127402] app.startup:148 - warnings enabled
+2025-11-16 21:50:46 INFO [127402] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-16 21:51:38 INFO [128847] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 21:51:38 INFO [128847] app.startup:143 - logging configured
+2025-11-16 21:51:38 INFO [128847] app.startup:148 - warnings enabled
+2025-11-16 21:51:40 INFO [128847] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-16 21:52:57 INFO [130850] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 21:52:57 INFO [130850] app.startup:143 - logging configured
+2025-11-16 21:52:57 INFO [130850] app.startup:148 - warnings enabled
+2025-11-16 21:52:58 INFO [130850] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-16 21:55:31 INFO [1409] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 21:55:31 INFO [1409] app.startup:143 - logging configured
+2025-11-16 21:55:31 INFO [1409] app.startup:148 - warnings enabled
+2025-11-16 21:55:32 INFO [1409] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-16 21:58:41 INFO [4907] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 21:58:41 INFO [4907] app.startup:143 - logging configured
+2025-11-16 21:58:41 INFO [4907] app.startup:148 - warnings enabled
+2025-11-16 21:58:43 INFO [4907] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-16 21:59:27 INFO [6295] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 21:59:27 INFO [6295] app.startup:143 - logging configured
+2025-11-16 21:59:27 INFO [6295] app.startup:148 - warnings enabled
+2025-11-16 21:59:27 INFO [6295] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-16 21:59:27 INFO [6295] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-16 21:59:27 INFO [6295] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-16 21:59:59 INFO [6931] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 21:59:59 INFO [6931] app.startup:143 - logging configured
+2025-11-16 21:59:59 INFO [6931] app.startup:148 - warnings enabled
+2025-11-16 22:00:01 INFO [6931] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-16 22:06:53 INFO [12081] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 22:06:53 INFO [12081] app.startup:143 - logging configured
+2025-11-16 22:06:53 INFO [12081] app.startup:148 - warnings enabled
+2025-11-16 22:06:55 INFO [12081] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-16 22:10:23 INFO [14956] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-16 22:10:23 INFO [14956] app.startup:143 - logging configured
+2025-11-16 22:10:23 INFO [14956] app.startup:148 - warnings enabled
+2025-11-16 22:10:24 INFO [14956] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-17 13:34:54 INFO [77939] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 13:34:54 INFO [77939] app.startup:143 - logging configured
+2025-11-17 13:34:54 INFO [77939] app.startup:148 - warnings enabled
+2025-11-17 13:34:57 INFO [77939] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-17 13:43:14 INFO [86401] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 13:43:14 INFO [86401] app.startup:143 - logging configured
+2025-11-17 13:43:14 INFO [86401] app.startup:148 - warnings enabled
+2025-11-17 13:43:18 INFO [86401] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-17 13:56:10 INFO [95356] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 13:56:10 INFO [95356] app.startup:143 - logging configured
+2025-11-17 13:56:10 INFO [95356] app.startup:148 - warnings enabled
+2025-11-17 13:56:12 INFO [95356] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-17 14:04:05 INFO [101259] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 14:04:05 INFO [101259] app.startup:143 - logging configured
+2025-11-17 14:04:05 INFO [101259] app.startup:148 - warnings enabled
+2025-11-17 14:04:07 INFO [101259] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-17 14:05:22 INFO [103226] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 14:05:22 INFO [103226] app.startup:143 - logging configured
+2025-11-17 14:05:22 INFO [103226] app.startup:148 - warnings enabled
+2025-11-17 14:05:22 INFO [103226] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 14:05:22 INFO [103226] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 14:05:22 INFO [103226] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 14:41:51 INFO [126105] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 14:41:51 INFO [126105] app.startup:143 - logging configured
+2025-11-17 14:41:51 INFO [126105] app.startup:148 - warnings enabled
+2025-11-17 14:41:51 INFO [126105] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 14:41:51 INFO [126105] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 14:41:51 INFO [126105] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 14:46:00 INFO [128627] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 14:46:00 INFO [128627] app.startup:143 - logging configured
+2025-11-17 14:46:00 INFO [128627] app.startup:148 - warnings enabled
+2025-11-17 14:46:00 INFO [128627] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 14:46:00 INFO [128627] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 14:46:00 INFO [128627] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 15:25:38 INFO [150559] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 15:25:38 INFO [150559] app.startup:143 - logging configured
+2025-11-17 15:25:38 INFO [150559] app.startup:148 - warnings enabled
+2025-11-17 15:25:38 INFO [150559] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 15:25:38 INFO [150559] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 15:25:38 INFO [150559] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 15:26:08 INFO [151093] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 15:26:08 INFO [151093] app.startup:143 - logging configured
+2025-11-17 15:26:08 INFO [151093] app.startup:148 - warnings enabled
+2025-11-17 15:26:08 INFO [151093] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 15:26:08 INFO [151093] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 15:26:08 INFO [151093] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 15:40:59 INFO [160573] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 15:40:59 INFO [160573] app.startup:143 - logging configured
+2025-11-17 15:40:59 INFO [160573] app.startup:148 - warnings enabled
+2025-11-17 15:40:59 INFO [160573] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 15:40:59 INFO [160573] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 15:40:59 INFO [160573] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 15:41:38 INFO [161268] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 15:41:38 INFO [161268] app.startup:143 - logging configured
+2025-11-17 15:41:38 INFO [161268] app.startup:148 - warnings enabled
+2025-11-17 15:41:38 INFO [161268] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 15:41:38 INFO [161268] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 15:41:38 INFO [161268] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 15:43:07 INFO [162740] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 15:43:07 INFO [162740] app.startup:143 - logging configured
+2025-11-17 15:43:07 INFO [162740] app.startup:148 - warnings enabled
+2025-11-17 15:43:07 INFO [162740] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 15:43:07 INFO [162740] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 15:43:07 INFO [162740] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 15:44:58 INFO [164585] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 15:44:58 INFO [164585] app.startup:143 - logging configured
+2025-11-17 15:44:58 INFO [164585] app.startup:148 - warnings enabled
+2025-11-17 15:44:58 INFO [164585] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 15:44:58 INFO [164585] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 15:44:58 INFO [164585] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 15:45:48 INFO [165459] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 15:45:48 INFO [165459] app.startup:143 - logging configured
+2025-11-17 15:45:48 INFO [165459] app.startup:148 - warnings enabled
+2025-11-17 15:45:48 INFO [165459] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 15:45:48 INFO [165459] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 15:45:48 INFO [165459] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 15:46:26 INFO [166159] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 15:46:26 INFO [166159] app.startup:143 - logging configured
+2025-11-17 15:46:26 INFO [166159] app.startup:148 - warnings enabled
+2025-11-17 15:46:26 INFO [166159] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 15:46:26 INFO [166159] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 15:46:26 INFO [166159] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 15:53:58 INFO [171741] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 15:53:58 INFO [171741] app.startup:143 - logging configured
+2025-11-17 15:53:58 INFO [171741] app.startup:148 - warnings enabled
+2025-11-17 15:53:58 INFO [171741] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 15:53:58 INFO [171741] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 15:53:58 INFO [171741] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 15:54:19 INFO [172156] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 15:54:19 INFO [172156] app.startup:143 - logging configured
+2025-11-17 15:54:19 INFO [172156] app.startup:148 - warnings enabled
+2025-11-17 15:54:19 INFO [172156] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 15:54:19 INFO [172156] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 15:54:19 INFO [172156] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 15:55:01 INFO [173743] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 15:55:01 INFO [173743] app.startup:143 - logging configured
+2025-11-17 15:55:01 INFO [173743] app.startup:148 - warnings enabled
+2025-11-17 15:55:01 INFO [173743] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 15:55:01 INFO [173743] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 15:55:01 INFO [173743] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 15:55:57 INFO [174575] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 15:55:57 INFO [174575] app.startup:143 - logging configured
+2025-11-17 15:55:57 INFO [174575] app.startup:148 - warnings enabled
+2025-11-17 15:55:57 INFO [174575] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 15:55:57 INFO [174575] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 15:55:57 INFO [174575] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 15:56:29 INFO [175276] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 15:56:29 INFO [175276] app.startup:143 - logging configured
+2025-11-17 15:56:29 INFO [175276] app.startup:148 - warnings enabled
+2025-11-17 15:56:29 INFO [175276] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 15:56:29 INFO [175276] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 15:56:29 INFO [175276] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 17:04:54 INFO [211967] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 17:04:54 INFO [211967] app.startup:143 - logging configured
+2025-11-17 17:04:54 INFO [211967] app.startup:148 - warnings enabled
+2025-11-17 17:04:54 INFO [211967] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 17:04:54 INFO [211967] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 17:04:54 INFO [211967] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 17:06:27 INFO [213364] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 17:06:27 INFO [213364] app.startup:143 - logging configured
+2025-11-17 17:06:27 INFO [213364] app.startup:148 - warnings enabled
+2025-11-17 17:06:27 INFO [213364] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 17:06:27 INFO [213364] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 17:06:27 INFO [213364] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)
+2025-11-17 17:08:17 INFO [214962] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-17 17:08:17 INFO [214962] app.startup:143 - logging configured
+2025-11-17 17:08:17 INFO [214962] app.startup:148 - warnings enabled
+2025-11-17 17:08:17 INFO [214962] app.startup:153 - ROS launch disabled in startup.yaml -> Bringup übersprungen
+2025-11-17 17:08:17 INFO [214962] app.startup:177 - ROS launch disabled -> Bridge-Verbindung übersprungen
+2025-11-17 17:08:17 INFO [214962] app.startup:199 - StartupMachine finished (ctx=True, bridge=False)

@@ -6,6 +6,7 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Iterable, Tuple
 
+
 @dataclass
 class Recipe:
     """
@@ -15,6 +16,8 @@ class Recipe:
       - paths_by_side:  pro Side genau EINE Path-Definition (dict)
       - _paths_cache:   rohe Geometriepunkte (N,3) je Side (nur RAM)
       - paths_compiled: gespeicherte Posen (Quaternionen) + Meta (für Export/Save)
+      - info:           abgeleitete Kennzahlen (Längen, Punkte etc.) – wird von
+                        Recipe selbst gepflegt und im YAML gespeichert.
     """
     # Meta / Auswahl
     id: str
@@ -37,6 +40,9 @@ class Recipe:
     # Ergebnis (wird gespeichert)
     paths_compiled: Dict[str, Any] = field(default_factory=dict)
 
+    # Abgeleitete Info (z.B. aus kompilierten Pfaden)
+    info: Dict[str, Any] = field(default_factory=dict)
+
     # ---------- YAML ----------
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "Recipe":
@@ -51,6 +57,7 @@ class Recipe:
             planner=dict(d.get("planner") or {}),
             paths_by_side=dict(d.get("paths_by_side") or d.get("paths") or {}),
             paths_compiled=dict(d.get("paths_compiled") or {}),
+            info=dict(d.get("info") or {}),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -67,6 +74,8 @@ class Recipe:
         }
         if self.paths_compiled:
             out["paths_compiled"] = self.paths_compiled
+        if self.info:
+            out["info"] = self.info
         return out
 
     @staticmethod
@@ -169,6 +178,65 @@ class Recipe:
         ).reshape(-1, 3)
         return P
 
+    # ------- interne Info-Berechnung aus paths_compiled -------
+    def _recompute_info_from_compiled(self) -> None:
+        """
+        Berechnet einfache Kennzahlen aus paths_compiled und schreibt sie in
+        self.info, z.B.:
+          info:
+            total_points: N
+            total_length_mm: L
+            sides:
+              top:
+                num_points: ...
+                length_mm: ...
+        """
+        pc = self.paths_compiled or {}
+        sides = pc.get("sides") or {}
+        if not isinstance(sides, dict) or not sides:
+            self.info = {}
+            return
+
+        total_points = 0
+        total_length = 0.0
+        sides_info: Dict[str, Any] = {}
+
+        for side, sdata in sides.items():
+            poses = sdata.get("poses_quat") or []
+            if not poses:
+                sides_info[str(side)] = {
+                    "num_points": 0,
+                    "length_mm": 0.0,
+                }
+                continue
+
+            P = np.array(
+                [[float(p.get("x", 0.0)),
+                  float(p.get("y", 0.0)),
+                  float(p.get("z", 0.0))] for p in poses],
+                dtype=float,
+            ).reshape(-1, 3)
+
+            num = int(P.shape[0])
+            if num < 2:
+                length = 0.0
+            else:
+                d = np.linalg.norm(P[1:] - P[:-1], axis=1)
+                length = float(d.sum())
+
+            sides_info[str(side)] = {
+                "num_points": num,
+                "length_mm": length,
+            }
+            total_points += num
+            total_length += length
+
+        self.info = {
+            "total_points": total_points,
+            "total_length_mm": total_length,
+            "sides": sides_info,
+        }
+
     # ------- Quaternion-Posen (ohne Pre-/Retreat-Zeichnen) -------
     def compile_poses(
         self,
@@ -188,7 +256,7 @@ class Recipe:
               "meta": {
                 path_type, path_params, globals, sample_step_mm, stand_off_mm, tool_frame,
                 angle_hints: {
-                  "predispense": {angle_mode?, angle_deg?},
+                  "predispense": {angle_mode?, angle_deg?}
                   "retreat":     {angle_mode?, angle_deg?}
                 }
               },
@@ -232,7 +300,10 @@ class Recipe:
             out = np.empty_like(P)
             a0, a1 = P[:, 0], P[:, 1]
             mp = {"x": cx, "y": cy, "z": cz}
-            def place(axis, arr): return (mp[axis] + arr)
+
+            def place(axis, arr): 
+                return (mp[axis] + arr)
+
             axes = {"x": None, "y": None, "z": None}
             axes[ax0] = place(ax0, a0)
             axes[ax1] = place(ax1, a1)
@@ -274,6 +345,8 @@ class Recipe:
         sides_out: Dict[str, Any] = {}
 
         for side in sides_in:
+            from app.model.recipe.path_builder import PathBuilder
+
             pdef = dict(self.paths_by_side.get(side, {}))
 
             # Schritt STRICT global
@@ -282,7 +355,6 @@ class Recipe:
             # Geometrie aus Cache (wenn vorhanden), sonst frisch generieren
             P_local = self._paths_cache.get(side)
             if P_local is None:
-                from app.model.recipe.path_builder import PathBuilder
                 pd = PathBuilder.from_side(
                     self,
                     side=side,
@@ -360,7 +432,125 @@ class Recipe:
             sides_out[side] = {"meta": meta, "poses_quat": poses}
 
         self.paths_compiled = {"frame": "scene", "tool_frame": tool_frame, "sides": sides_out}
+
+        # <<< HIER: Info automatisch aktualisieren >>>
+        self._recompute_info_from_compiled()
+
         return self.paths_compiled
+
+    # ---------- Schöne Text-Repräsentation (für Debug / ProcessTab) ----------
+    def __str__(self) -> str:
+        """
+        YAML-ähnlicher Dump:
+          - oben Meta / parameters / planner / info
+          - darunter paths_by_side (ohne Punkte)
+          - ganz unten: kompiliert Posen, eine Pose pro Zeile.
+        """
+        lines: List[str] = []
+
+        # Meta
+        lines.append(f"id: {self.id or ''}")
+        if self.description:
+            lines.append(f"description: {self.description}")
+        if self.tool:
+            lines.append(f"tool: {self.tool}")
+        if self.substrate:
+            lines.append(f"substrate: {self.substrate}")
+        if self.substrate_mount:
+            lines.append(f"substrate_mount: {self.substrate_mount}")
+
+        subs = self.substrates if self.substrates else (
+            [self.substrate] if self.substrate else []
+        )
+        if subs and not (len(subs) == 1 and self.substrate and subs[0] == self.substrate):
+            lines.append("substrates:")
+            for s in subs:
+                lines.append(f"  - {s}")
+
+        # Parameters
+        if self.parameters:
+            lines.append("")
+            lines.append("parameters:")
+            for k in sorted(self.parameters.keys()):
+                v = self.parameters[k]
+                lines.append(f"  {k}: {v}")
+
+        # Planner
+        if self.planner:
+            lines.append("")
+            lines.append("planner:")
+            for k in sorted(self.planner.keys()):
+                v = self.planner[k]
+                lines.append(f"  {k}: {v}")
+
+        # Info
+        if self.info:
+            lines.append("")
+            lines.append("info:")
+            total_pts = self.info.get("total_points")
+            total_len = self.info.get("total_length_mm")
+            if total_pts is not None:
+                lines.append(f"  total_points: {total_pts}")
+            if total_len is not None:
+                lines.append(f"  total_length_mm: {total_len}")
+            sides = self.info.get("sides") or {}
+            if isinstance(sides, dict) and sides:
+                lines.append("  sides:")
+                for s, d in sides.items():
+                    lines.append(f"    {s}:")
+                    n = d.get("num_points")
+                    L = d.get("length_mm")
+                    if n is not None:
+                        lines.append(f"      num_points: {n}")
+                    if L is not None:
+                        lines.append(f"      length_mm: {L}")
+
+        # Paths-Definitionen (ohne Punkte)
+        if self.paths_by_side:
+            lines.append("")
+            lines.append("paths_by_side:")
+            for side, p in self.paths_by_side.items():
+                lines.append(f"  {side}:")
+                for pk, pv in p.items():
+                    if pk in ("points_mm", "polyline_mm"):
+                        continue
+                    lines.append(f"    {pk}: {pv}")
+
+        # Kompilierte Posen (mit Quaternionen)
+        pc = self.paths_compiled or {}
+        sides = pc.get("sides") or {}
+        if isinstance(sides, dict) and sides:
+            frame = pc.get("frame")
+            tool_frame = pc.get("tool_frame")
+
+            lines.append("")
+            lines.append("# compiled poses")
+            if frame:
+                lines.append(f"frame: {frame}")
+            if tool_frame:
+                lines.append(f"tool_frame: {tool_frame}")
+
+            for side, sdata in sides.items():
+                lines.append(f"[side: {side}]")
+                poses = sdata.get("poses_quat") or []
+                if not poses:
+                    lines.append("  (no poses)")
+                    continue
+                for i, p in enumerate(poses):
+                    x = float(p.get("x", 0.0))
+                    y = float(p.get("y", 0.0))
+                    z = float(p.get("z", 0.0))
+                    qx = float(p.get("qx", 0.0))
+                    qy = float(p.get("qy", 0.0))
+                    qz = float(p.get("qz", 0.0))
+                    qw = float(p.get("qw", 1.0))
+                    lines.append(
+                        f"  {i:04d}: "
+                        f"x={x:.3f}, y={y:.3f}, z={z:.3f}, "
+                        f"qx={qx:.4f}, qy={qy:.4f}, qz={qz:.4f}, qw={qw:.4f}"
+                    )
+
+        return "\n".join(lines)
 
 
 def _extract_angle_hints(path_params: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:

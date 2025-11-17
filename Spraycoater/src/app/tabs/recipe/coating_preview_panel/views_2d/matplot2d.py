@@ -49,7 +49,7 @@ class Matplot2DView(FigureCanvas):
     """
 
     def __init__(self, parent=None):
-        # Moderne Layout-Engine (ersetzt set_constrained_layout / set_constrained_layout_pads)
+        # Moderne Layout-Engine
         self._fig: Figure = Figure(figsize=(6, 6), dpi=100, layout="constrained")
         super().__init__(self._fig)
         self.setParent(parent)
@@ -109,7 +109,7 @@ class Matplot2DView(FigureCanvas):
             "marker_size": 28.0,
         }
 
-        # Matplotlib Event-IDs speichern, damit wir sie beim Dispose trennen können
+        # Matplotlib Event-IDs speichern
         self._mpl_cids: List[int] = []
         self._mpl_cids.append(self.mpl_connect("button_press_event",   self._on_press))
         self._mpl_cids.append(self.mpl_connect("button_release_event", self._on_release))
@@ -122,17 +122,12 @@ class Matplot2DView(FigureCanvas):
     # ---------- Toolbar (optional) ----------
     def make_toolbar(self, parent=None):
         tb = NavToolbar(self, parent)
-        # Canvas-Backref (standardmäßig vorhanden, hier nur explizit)
         self.toolbar = tb
         return tb
 
     # ---------- Public API ----------
     def dispose(self):
-        """
-        Canvas/Toolbar/Events sauber abbauen, ohne Fehler zu verstecken.
-        Diese Methode sollte explizit aufgerufen werden, bevor das Widget
-        endgültig zerstört wird.
-        """
+        """Canvas/Toolbar/Events sauber abbauen."""
         # Events trennen
         for c in self._mpl_cids:
             self.mpl_disconnect(c)
@@ -145,7 +140,7 @@ class Matplot2DView(FigureCanvas):
             tb.deleteLater()
             self.toolbar = None  # type: ignore[assignment]
 
-        # Figure leeren (damit keine alten Artists mehr referenziert werden)
+        # Figure leeren
         self._fig.clf()
 
         # Qt-Widget lösen
@@ -215,10 +210,6 @@ class Matplot2DView(FigureCanvas):
 
     # ---------- layout & labels ----------
     def _apply_layout_margins(self):
-        """
-        Maximiert die Plotfläche. Für die Legende unter der x-Achse nutzen wir
-        die neue LayoutEngine (ersetzt set_constrained_layout_pads).
-        """
         engine = self._fig.get_layout_engine()
         if engine is not None:
             engine.set(w_pad=0.02, h_pad=0.08, hspace=0.02, wspace=0.02)
@@ -296,8 +287,7 @@ class Matplot2DView(FigureCanvas):
             zorder=2,
         )
 
-        # Start/End als Line2D mit Marker (statt scatter/PathCollection)
-        # marker_size ist in "Punkten²" gedacht – für markersize (Punkte) grob die Wurzel nehmen
+        # Start/End als Line2D mit Marker
         ms = (self._style["marker_size"] ** 0.5) * 1.2
 
         # Startpunkt
@@ -342,7 +332,6 @@ class Matplot2DView(FigureCanvas):
                    markeredgecolor=self._style["end_edge"],
                    label="End"),
         ]
-        # Legende UNTER der x-Achse (unterhalb "X (mm)")
         self._ax.legend(
             handles=handles,
             loc="upper center",
@@ -355,96 +344,133 @@ class Matplot2DView(FigureCanvas):
         )
 
     def _redraw(self, *, keep_limits: bool = False):
-        # Keine Fallbacks, keine swallowed Exceptions: wenn hier was schiefgeht,
-        # soll es sichtbar krachen.
-        saved = self._user_limits if keep_limits and (self._user_limits is not None) else None
+        """
+        Defensiver Redraw: alle Fehler werden geloggt, aber nicht mehr
+        nach außen geworfen (sonst killt dir ein Plot-Fehler die ganze GUI).
+        """
+        try:
+            saved = self._user_limits if keep_limits and (self._user_limits is not None) else None
 
-        self._ax.clear()
-        self._ax.set_aspect("equal", adjustable="box")
-        self._apply_layout_margins()
-        self._set_labels()
+            self._ax.clear()
+            self._ax.set_aspect("equal", adjustable="box")
+            self._apply_layout_margins()
+            self._set_labels()
 
-        if saved is None:
-            x0, x1, y0, y1 = self._extents_from_data()
-            self._ax.set_xlim(x0, x1)
-            self._ax.set_ylim(y0, y1)
-        else:
-            self._ax.set_xlim(saved[0], saved[1])
-            self._ax.set_ylim(saved[2], saved[3])
+            if saved is None:
+                x0, x1, y0, y1 = self._extents_from_data()
+                self._ax.set_xlim(x0, x1)
+                self._ax.set_ylim(y0, y1)
+            else:
+                self._ax.set_xlim(saved[0], saved[1])
+                self._ax.set_ylim(saved[2], saved[3])
 
-        self._configure_grid()
-        self._draw_substrate()
-        self._draw_path()
-        self._add_legend()
+            self._configure_grid()
+            self._draw_substrate()
+            self._draw_path()
+            self._add_legend()
 
-        if saved is None:
-            x0, x1 = self._ax.get_xlim()
-            y0, y1 = self._ax.get_ylim()
-            self._user_limits = (x0, x1, y0, y1)
-
-        self.draw_idle()
+            if saved is None:
+                x0, x1 = self._ax.get_xlim()
+                y0, y1 = self._ax.get_ylim()
+                self._user_limits = (x0, x1, y0, y1)
+        except Exception:
+            _LOG.exception("Matplot2DView._redraw failed")
+        finally:
+            self.draw_idle()
 
     # ---------- Interaktion ----------
     def _on_press(self, event):
-        if event.inaxes != self._ax:
-            return
-        self._press_btn = event.button  # 1=links, 3=rechts
-        self._press_xy = (event.xdata, event.ydata)
-        self._press_xlim = self._ax.get_xlim()
-        self._press_ylim = self._ax.get_ylim()
+        try:
+            if event.inaxes != self._ax:
+                return
+            self._press_btn = event.button  # 1=links, 3=rechts
+            self._press_xy = (event.xdata, event.ydata)
+            self._press_xlim = self._ax.get_xlim()
+            self._press_ylim = self._ax.get_ylim()
+        except Exception:
+            _LOG.exception("_on_press failed")
 
     def _on_release(self, _event):
-        self._press_btn = None
-        self._press_xy = None
-        x0, x1 = self._ax.get_xlim()
-        y0, y1 = self._ax.get_ylim()
-        self._user_limits = (x0, x1, y0, y1)
+        try:
+            self._press_btn = None
+            self._press_xy = None
+            x0, x1 = self._ax.get_xlim()
+            y0, y1 = self._ax.get_ylim()
+            self._user_limits = (x0, x1, y0, y1)
+        except Exception:
+            _LOG.exception("_on_release failed")
 
     def _on_motion(self, event):
-        if self._press_btn is None or event.inaxes != self._ax or self._press_xy is None:
-            return
-        x0, y0 = self._press_xy
-        x1, y1 = event.xdata, event.ydata
-        if x1 is None or y1 is None:
-            return
+        """
+        Mausbewegung während einer gedrückten Taste:
+        - Linke Taste: Pan
+        - Rechte Taste: vertikaler Zoom
+        """
+        try:
+            if self._press_btn is None or self._press_xy is None:
+                return
+            if event.inaxes != self._ax:
+                return
 
-        if self._press_btn == 1:
-            # PAN
-            dx = x1 - x0
-            dy = y1 - y0
-            xlim0 = self._press_xlim or self._ax.get_xlim()
-            ylim0 = self._press_ylim or self._ax.get_ylim()
-            self._ax.set_xlim(xlim0[0] - dx, xlim0[1] - dx)
-            self._ax.set_ylim(ylim0[0] - dy, ylim0[1] - dy)
-            self.draw_idle()
-        elif self._press_btn == 3:
-            # ZOOM (vertikal)
-            dy = (y1 - y0)
-            factor = 1.0 / (1.0 + 0.01 * dy)
-            self._zoom_about_point((x0, y0), factor)
+            x0, y0 = self._press_xy
+            x1, y1 = event.xdata, event.ydata
+            if x1 is None or y1 is None:
+                return
+
+            if self._press_btn == 1:
+                # PAN
+                dx = x1 - x0
+                dy = y1 - y0
+                xlim0 = self._press_xlim or self._ax.get_xlim()
+                ylim0 = self._press_ylim or self._ax.get_ylim()
+                self._ax.set_xlim(xlim0[0] - dx, xlim0[1] - dx)
+                self._ax.set_ylim(ylim0[0] - dy, ylim0[1] - dy)
+                self.draw_idle()
+            elif self._press_btn == 3:
+                # ZOOM (vertikal gesteuert)
+                dy = (y1 - y0)
+                base = 1.0 + 0.01 * dy
+                if abs(base) < 1e-6:
+                    return
+                factor = 1.0 / base
+                self._zoom_about_point((x0, y0), factor)
+        except Exception:
+            _LOG.exception("_on_motion failed")
 
     def _on_scroll(self, event):
-        if event.inaxes != self._ax:
-            return
-        step = 1.15
-        factor = step if event.button == "up" else (1.0 / step)
-        self._zoom_about_point((event.xdata, event.ydata), factor)
+        try:
+            if event.inaxes != self._ax:
+                return
+            step = 1.15
+            factor = step if event.button == "up" else (1.0 / step)
+            self._zoom_about_point((event.xdata, event.ydata), factor)
+        except Exception:
+            _LOG.exception("_on_scroll failed")
 
     def _zoom_about_point(self, center: Tuple[float, float], factor: float):
-        cx, cy = center
-        if cx is None or cy is None:
-            return
-        x0, x1 = self._ax.get_xlim()
-        y0, y1 = self._ax.get_ylim()
-        lx0, lx1 = cx - x0, x1 - cx
-        ly0, ly1 = cy - y0, y1 - cy
-        lx0 /= factor
-        lx1 /= factor
-        ly0 /= factor
-        ly1 /= factor
-        self._ax.set_xlim(cx - lx0, cx + lx1)
-        self._ax.set_ylim(cy - ly0, cy + ly1)
-        self.draw_idle()
-        xx0, xx1 = self._ax.get_xlim()
-        yy0, yy1 = self._ax.get_ylim()
-        self._user_limits = (xx0, xx1, yy0, yy1)
+        try:
+            cx, cy = center
+            if cx is None or cy is None:
+                return
+            # Faktor clampen, damit nichts explodiert
+            factor = float(factor)
+            if factor <= 0.0:
+                return
+            factor = max(min(factor, 50.0), 0.02)
+
+            x0, x1 = self._ax.get_xlim()
+            y0, y1 = self._ax.get_ylim()
+            lx0, lx1 = cx - x0, x1 - cx
+            ly0, ly1 = cy - y0, y1 - cy
+            lx0 /= factor
+            lx1 /= factor
+            ly0 /= factor
+            ly1 /= factor
+            self._ax.set_xlim(cx - lx0, cx + lx1)
+            self._ax.set_ylim(cy - ly0, cy + ly1)
+            self.draw_idle()
+            xx0, xx1 = self._ax.get_xlim()
+            yy0, yy1 = self._ax.get_ylim()
+            self._user_limits = (xx0, xx1, yy0, yy1)
+        except Exception:
+            _LOG.exception("_zoom_about_point failed")
