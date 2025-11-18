@@ -3965,3 +3965,31 @@ AttributeError: 'NoneType' object has no attribute 'set_spraypath'
 2025-11-18 13:42:48 DEBUG [635126] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
 2025-11-18 13:42:48 DEBUG [635126] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
 2025-11-18 13:42:49 INFO [635126] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-18 14:17:41 INFO [656184] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-18 14:17:41 DEBUG [656184] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-18 14:17:41 DEBUG [656184] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-18 14:17:42 INFO [656184] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-18 14:36:26 INFO [670205] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-18 14:36:26 DEBUG [670205] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-18 14:36:26 DEBUG [670205] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-18 14:36:25 INFO [670205] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-18 15:02:13 INFO [685322] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-18 15:02:13 DEBUG [685322] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-18 15:02:13 DEBUG [685322] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-18 15:02:13 INFO [685322] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-18 15:24:42 INFO [701827] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-18 15:24:42 DEBUG [701827] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-18 15:24:42 DEBUG [701827] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-18 15:24:42 INFO [701827] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-18 16:12:43 INFO [729414] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-18 16:12:43 DEBUG [729414] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-18 16:12:43 DEBUG [729414] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-18 16:12:43 INFO [729414] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-18 16:15:53 INFO [731465] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-18 16:15:53 DEBUG [731465] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-18 16:15:53 DEBUG [731465] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-18 16:15:53 INFO [731465] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-18 16:16:13 INFO [731902] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-18 16:16:13 DEBUG [731902] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-18 16:16:13 DEBUG [731902] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-18 16:16:14 INFO [731902] app.tabs.recipe:143 - initial preview ausgeführt
