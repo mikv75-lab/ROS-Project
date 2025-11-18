@@ -2,43 +2,27 @@
 # File: tabs/process/robot_init_thread.py
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 from PyQt6 import QtCore
+from geometry_msgs.msg import PoseStamped
 
 
 class RobotInitThread(QtCore.QThread):
     """
-    Thread für Robot-Initialisierung + Home-Fahrt basierend auf RobotBridge-Status.
+    Thread für die Robot-Initialisierung:
 
-    Status kommt aus RobotBridge:
-      - mode:  INIT / HOMED / READY / BUSY / ERROR / ...
-      - initialized: Bool
-      - moving: Bool
+      1. Prüfen, ob Robot schon initialisiert ist (RobotBridge.initialized).
+         - Falls nein: INIT-Kommando senden und auf initialized=True warten.
+      2. Prüfen, ob TCP-Pose bereits auf Home-Pose liegt (Pose-Vergleich).
+         - Falls nein: Home-Fahrt anfordern (MotionBridge) und warten,
+           bis TCP≈Home ist.
 
-    Ablauf:
-
-      1. Wenn Robot bereits initialized und mode in {HOMED, READY} -> fertig.
-      2. Sonst:
-         - initRequested senden (oder do_init)
-         - warten bis initialized=True ODER mode in {INIT, HOMED, READY, BUSY}
-      3. Home:
-         - wenn mode != HOMED:
-             - MoveToHome auslösen (MotionBridge bevorzugt)
-             - warten bis mode == HOMED
-
-      Erfolg -> notifyFinished()
-      Fehler/Timeout/Abbruch -> notifyError(msg)
-
-    Signale (UI <-> Thread):
-
-      - startSignal()            : von außen zum Starten
-      - stopSignal()             : von außen für Abbruch
-      - notifyFinished()         : Init+Home erfolgreich
-      - notifyError(str message) : Fehler / Timeout / Abbruch
+    Abbruch bei Timeout oder Stop-Request.
     """
 
-    # Steuer-Signale von außen
+    # Von außen: Start/Stop
     startSignal = QtCore.pyqtSignal()
     stopSignal = QtCore.pyqtSignal()
 
@@ -53,237 +37,263 @@ class RobotInitThread(QtCore.QThread):
         parent: Optional[QtCore.QObject] = None,
         init_timeout_s: float = 10.0,
         home_timeout_s: float = 60.0,
-    ):
+        pos_tol_mm: float = 1.0,
+    ) -> None:
         super().__init__(parent)
-
         self._bridge = bridge
-        # RobotBridge
-        self._rb = getattr(bridge, "_rb", None) or getattr(bridge, "robot", None)
-        self._sig_rb = getattr(self._rb, "signals", None) if self._rb is not None else None
-        # MotionBridge (für MoveToHome)
-        self._motion = getattr(bridge, "_motion", None)
 
-        self._stop_requested = False
-        self._error_msg: Optional[str] = None
+        # einzelne Bridges holen
+        self._rb = getattr(self._bridge, "_rb", None)        # RobotBridge
+        self._motion = getattr(self._bridge, "_motion", None)  # MotionBridge
+        self._poses = getattr(self._bridge, "_poses", None)    # PosesBridge
 
         self._init_timeout_s = float(init_timeout_s)
         self._home_timeout_s = float(home_timeout_s)
+        self._pos_tol_mm = float(pos_tol_mm)
 
-        # Außen-Signale verbinden
+        self._stop_requested: bool = False
+        self._error_msg: Optional[str] = None
+
+        # Signale verdrahten
         self.startSignal.connect(self._on_start_signal)
         self.stopSignal.connect(self.request_stop)
 
-    # ------------------------------------------------------------------ #
-    # Steuerung von außen
-    # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------------
+    # Public API (Slots)
+    # ------------------------------------------------------------------
 
     def _on_start_signal(self) -> None:
+        """Slot für startSignal – startet den Thread, falls er nicht läuft."""
         if not self.isRunning():
             self.start()
 
     def request_stop(self) -> None:
+        """Von außen aufgerufen, um einen Abbruch anzufordern."""
         self._stop_requested = True
 
     def _should_stop(self) -> bool:
         return self._stop_requested
 
-    # ------------------------------------------------------------------ #
-    # Status-Getter aus RobotBridge
-    # ------------------------------------------------------------------ #
-
-    def _get_mode(self) -> str:
-        """
-        Liefert aktuellen Robot-Mode aus RobotBridge/RobotSignals.
-        Erwartete Werte (Case-insensitiv):
-          INIT, HOMED, READY, BUSY, ERROR, ...
-        """
-        m = ""
-        if self._sig_rb is not None and hasattr(self._sig_rb, "mode"):
-            m = getattr(self._sig_rb, "mode", "") or ""
-        elif self._rb is not None and hasattr(self._rb, "mode"):
-            m = getattr(self._rb, "mode", "") or ""
-        return (m or "").strip()
-
-    def _get_initialized(self) -> bool:
-        """
-        True, wenn:
-          - RobotSignals.initialized == True ODER
-          - Mode etwas "Sinnvolles" ist (INIT/HOMED/READY/BUSY).
-        """
-        val = False
-        if self._sig_rb is not None and hasattr(self._sig_rb, "initialized"):
-            val = bool(getattr(self._sig_rb, "initialized", False))
-        elif self._rb is not None and hasattr(self._rb, "initialized"):
-            val = bool(getattr(self._rb, "initialized", False))
-
-        if val:
-            return True
-
-        mode = self._get_mode().lower()
-        return mode in {"init", "homed", "ready", "busy"}
-
-    def _get_moving(self) -> bool:
-        if self._sig_rb is not None and hasattr(self._sig_rb, "moving"):
-            return bool(getattr(self._sig_rb, "moving", False))
-        if self._rb is not None and hasattr(self._rb, "moving"):
-            return bool(getattr(self._rb, "moving", False))
-        return False
-
-    def _is_home_state(self) -> bool:
-        """
-        Liefert True, wenn der Mode "HOMED" ist.
-        (Case-insensitiv, 'ready' könnte man optional auch als ok werten.)
-        """
-        mode = self._get_mode().lower()
-        return mode == "homed"
-
-    # ------------------------------------------------------------------ #
-    # generischer Wait-Helper
-    # ------------------------------------------------------------------ #
-
-    def _wait_for(self, predicate, timeout_s: float, label: str) -> bool:
-        """
-        Pollt predicate() bis True oder Timeout.
-
-        Rückgabe:
-          - True  -> Bedingung erfüllt
-          - False -> Timeout oder Stop; _error_msg wird gesetzt
-        """
-        ms_total = max(0, int(float(timeout_s) * 1000.0))
-        elapsed = 0
-        step = 50  # ms
-
-        while elapsed < ms_total:
-            if self._should_stop():
-                self._error_msg = f"RobotInit abgebrochen während: {label}"
-                return False
-            try:
-                if predicate():
-                    return True
-            except Exception:
-                # Fehler im Predicate ignorieren, weiter pollen
-                pass
-            self.msleep(step)
-            elapsed += step
-
-        self._error_msg = f"Timeout beim Warten auf: {label}"
-        return False
-
-    # ------------------------------------------------------------------ #
-    # MoveToHome-Kommando
-    # ------------------------------------------------------------------ #
-
-    def _request_move_home(self) -> bool:
-        """
-        Versucht, eine Home-Fahrt auszulösen.
-
-        Preferiert:
-          - MotionBridge.signals.moveToHomeRequested
-        Fallback:
-          - RobotBridge.move_home() oder go_home()
-
-        Rückgabe:
-          - True  -> Befehl konnte ausgelöst werden
-          - False -> kein Interface vorhanden / Fehler
-        """
-        moved = False
-        try:
-            # 1) MotionBridge
-            if self._motion is not None:
-                sig_m = getattr(self._motion, "signals", None)
-                if sig_m is not None and hasattr(sig_m, "moveToHomeRequested"):
-                    sig_m.moveToHomeRequested.emit()
-                    moved = True
-
-            # 2) Fallback direkt auf RobotBridge
-            if not moved and self._rb is not None:
-                if hasattr(self._rb, "move_home"):
-                    self._rb.move_home()
-                    moved = True
-                elif hasattr(self._rb, "go_home"):
-                    self._rb.go_home()
-                    moved = True
-        except Exception as e:
-            self._error_msg = f"Home-Kommando fehlgeschlagen: {e}"
-            return False
-
-        if not moved:
-            self._error_msg = "Kein Interface für Move-to-Home vorhanden."
-            return False
-
-        return True
-
-    # ------------------------------------------------------------------ #
-    # Kernlogik
-    # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------------
+    # QThread.run – Ablauf Init + Home
+    # ------------------------------------------------------------------
 
     def run(self) -> None:
         self._stop_requested = False
         self._error_msg = None
 
-        if self._rb is None:
-            self._error_msg = "RobotBridge nicht verfügbar."
-            self.notifyError.emit(self._error_msg)
-            return
+        try:
+            # 1. INIT falls nötig
+            if self._should_stop():
+                return
 
-        # --- 0) Bereits fertig? ---
-        if self._get_initialized() and self._is_home_state():
-            # nix zu tun
-            self.notifyFinished.emit()
-            return
-
-        # --- 1) INIT anfordern (falls nötig) ---
-        if not self._get_initialized():
-            try:
-                if self._sig_rb is not None and hasattr(self._sig_rb, "initRequested"):
-                    self._sig_rb.initRequested.emit()
-                elif hasattr(self._rb, "do_init"):
-                    self._rb.do_init()
-                else:
-                    self._error_msg = "RobotBridge hat kein init-Interface."
-                    self.notifyError.emit(self._error_msg)
+            if not self._is_initialized():
+                self._send_init()
+                if not self._wait_for_initialized(self._init_timeout_s):
+                    self._error_msg = (
+                        f"Robot-Init: Timeout nach {self._init_timeout_s:.1f} s "
+                        "beim Warten auf 'initialized'."
+                    )
                     return
-            except Exception as e:
-                self._error_msg = f"Init-Kommando fehlgeschlagen: {e}"
-                self.notifyError.emit(self._error_msg)
+
+            if self._should_stop():
                 return
 
-            # Warten, bis "initialized" oder Mode einer der erwarteten ist
-            def _init_ok():
-                if self._get_initialized():
-                    return True
-                mode = self._get_mode().lower()
-                return mode in {"init", "homed", "ready", "busy"}
+            # 2. Home-Pose checken (Pose-Vergleich)
+            if not self._is_at_home():
+                if not self._send_home():
+                    self._error_msg = "Robot-Init: MotionBridge für Home-Fahrt nicht verfügbar."
+                    return
 
-            ok_init = self._wait_for(_init_ok, self._init_timeout_s, "Robot initialisiert")
-            if not ok_init:
-                self.notifyError.emit(self._error_msg or "Init fehlgeschlagen.")
-                return
+                if not self._wait_for_home(self._home_timeout_s):
+                    self._error_msg = (
+                        f"Robot-Init: Timeout nach {self._home_timeout_s:.1f} s "
+                        "beim Anfahren der Home-Pose (TCP ≉ Home-Pose)."
+                    )
+                    return
 
-        if self._should_stop():
-            self._error_msg = "RobotInit abgebrochen."
-            self.notifyError.emit(self._error_msg)
+        except Exception as e:
+            self._error_msg = str(e)
+        finally:
+            # Ergebnis signalisieren
+            if self._error_msg or self._should_stop():
+                if not self._error_msg and self._should_stop():
+                    self._error_msg = "Robot-Init abgebrochen."
+                self.notifyError.emit(self._error_msg or "Unbekannter Fehler.")
+            else:
+                self.notifyFinished.emit()
+
+    # ------------------------------------------------------------------
+    # Schritt 1: Init
+    # ------------------------------------------------------------------
+
+    def _is_initialized(self) -> bool:
+        """
+        Prüft initialized-Flag aus RobotBridge.
+        """
+        try:
+            if self._rb is not None and hasattr(self._rb, "initialized"):
+                return bool(getattr(self._rb, "initialized", False))
+            sig = getattr(self._rb, "signals", None) if self._rb is not None else None
+            if sig is not None and hasattr(sig, "initialized"):
+                return bool(getattr(sig, "initialized", False))
+        except Exception:
+            pass
+        return False
+
+    def _send_init(self) -> None:
+        """
+        INIT-Kommando über RobotBridge auslösen.
+        Bevorzugt RobotSignals.initRequested, sonst RobotBridge.do_init().
+        """
+        if self._rb is None:
             return
 
-        # --- 2) Home-Fahrt (falls nötig) ---
-        if not self._is_home_state():
-            if not self._request_move_home():
-                self.notifyError.emit(self._error_msg or "Move-to-Home nicht möglich.")
+        try:
+            sig = getattr(self._rb, "signals", None)
+            if sig is not None and hasattr(sig, "initRequested"):
+                # Qt-Signal benutzen (UI-like)
+                sig.initRequested.emit()
                 return
 
-            # Warten bis Mode = HOMED (und optional: nicht moving)
-            def _home_ok():
-                return self._is_home_state() and not self._get_moving()
+            # Fallback: direkte Methode, falls vorhanden
+            if hasattr(self._rb, "do_init"):
+                self._rb.do_init()
+        except Exception:
+            # Fehler hier sind nicht kritisch, der Timeout fängt das ab
+            pass
 
-            ok_home = self._wait_for(_home_ok, self._home_timeout_s, "Home-Fahrt")
-            if not ok_home:
-                self.notifyError.emit(self._error_msg or "Home-Fahrt fehlgeschlagen.")
-                return
+    def _wait_for_initialized(self, timeout_s: float) -> bool:
+        """
+        Wartet bis initialized=True oder Timeout.
+        """
+        if timeout_s <= 0.0:
+            return self._is_initialized()
 
-        if self._should_stop():
-            self._error_msg = "RobotInit abgebrochen."
-            self.notifyError.emit(self._error_msg or "RobotInit abgebrochen.")
-            return
+        elapsed_ms = 0
+        step_ms = 50
+        max_ms = int(timeout_s * 1000.0)
 
-        # --- 3) Fertig ---
-        self.notifyFinished.emit()
+        while elapsed_ms < max_ms:
+            if self._should_stop():
+                return False
+            if self._is_initialized():
+                return True
+            self.msleep(step_ms)
+            elapsed_ms += step_ms
+
+        # letzter Check nach Timeout
+        return self._is_initialized()
+
+    # ------------------------------------------------------------------
+    # Schritt 2: Home-Fahrt (Pose-basierter Check)
+    # ------------------------------------------------------------------
+
+    def _get_tcp_pose(self) -> Optional[PoseStamped]:
+        """
+        Holt die aktuelle TCP-Pose aus RobotBridge (oder RobotSignals).
+        """
+        rb = self._rb
+        if rb is None:
+            return None
+
+        try:
+            if hasattr(rb, "tcp_pose") and getattr(rb, "tcp_pose", None) is not None:
+                return rb.tcp_pose  # type: ignore[no-any-return]
+
+            sig = getattr(rb, "signals", None)
+            if sig is not None and hasattr(sig, "tcp_pose") and getattr(sig, "tcp_pose", None) is not None:
+                return sig.tcp_pose  # type: ignore[no-any-return]
+        except Exception:
+            pass
+        return None
+
+    def _get_home_pose(self) -> Optional[PoseStamped]:
+        """
+        Holt die Home-Pose aus PosesBridge.
+        Falls du stattdessen die Home-Pose aus der Scene verwenden willst,
+        kannst du diese Methode anpassen.
+        """
+        pb = self._poses
+        if pb is None:
+            return None
+
+        try:
+            if hasattr(pb, "home_pose") and getattr(pb, "home_pose", None) is not None:
+                return pb.home_pose  # type: ignore[no-any-return]
+
+            sigp = getattr(pb, "signals", None)
+            if sigp is not None and hasattr(sigp, "home_pose") and getattr(sigp, "home_pose", None) is not None:
+                return sigp.home_pose  # type: ignore[no-any-return]
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _poses_close(a: PoseStamped, b: PoseStamped, pos_tol_mm: float) -> bool:
+        try:
+            dx = float(a.pose.position.x) - float(b.pose.position.x)
+            dy = float(a.pose.position.y) - float(b.pose.position.y)
+            dz = float(a.pose.position.z) - float(b.pose.position.z)
+        except Exception:
+            return False
+
+        dist_m = math.sqrt(dx * dx + dy * dy + dz * dz)
+        dist_mm = dist_m * 1000.0
+        return dist_mm <= pos_tol_mm
+
+    def _is_at_home(self) -> bool:
+        """
+        Prüft, ob TCP-Pose und Home-Pose innerhalb pos_tol_mm liegen.
+        """
+        cur = self._get_tcp_pose()
+        home = self._get_home_pose()
+        if cur is None or home is None:
+            return False
+        return self._poses_close(cur, home, self._pos_tol_mm)
+
+    def _send_home(self) -> bool:
+        """
+        Triggert eine Home-Fahrt über MotionBridge.
+        Bevorzugt MotionSignals.moveToHomeRequested, sonst internen Helper.
+        """
+        m = self._motion
+        if m is None:
+            return False
+
+        try:
+            sig = getattr(m, "signals", None)
+            if sig is not None and hasattr(sig, "moveToHomeRequested"):
+                sig.moveToHomeRequested.emit()
+                return True
+
+            # Fallback: interne Methode, falls du z.B. _do_named("home") public machst
+            if hasattr(m, "_do_named"):
+                m._do_named("home")  # type: ignore[attr-defined]
+                return True
+        except Exception:
+            return False
+
+        return False
+
+    def _wait_for_home(self, timeout_s: float) -> bool:
+        """
+        Wartet bis TCP≈Home-Pose oder Timeout.
+        """
+        if timeout_s <= 0.0:
+            return self._is_at_home()
+
+        elapsed_ms = 0
+        step_ms = 50
+        max_ms = int(timeout_s * 1000.0)
+
+        while elapsed_ms < max_ms:
+            if self._should_stop():
+                return False
+            if self._is_at_home():
+                return True
+            self.msleep(step_ms)
+            elapsed_ms += step_ms
+
+        # letzter Check nach Timeout
+        return self._is_at_home()

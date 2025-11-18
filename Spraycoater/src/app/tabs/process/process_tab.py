@@ -2,6 +2,7 @@
 # File: tabs/process/process_tab.py
 from __future__ import annotations
 import os
+import math
 from typing import Optional, List
 
 from PyQt6 import QtCore
@@ -10,6 +11,8 @@ from PyQt6.QtWidgets import (
     QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout,
     QGroupBox, QSizePolicy, QFileDialog, QMessageBox, QTextEdit
 )
+
+from geometry_msgs.msg import PoseStamped
 
 from app.model.recipe.recipe import Recipe
 from app.widgets.robot_status_box import RobotStatusInfoBox
@@ -41,9 +44,11 @@ class ProcessTab(QWidget):
         self.ctx = ctx
         self.bridge = bridge
 
-        # RobotBridge + Signals für Statusbox
+        # Bridges
         self._rb = getattr(self.bridge, "_rb", None)
         self._sig = getattr(self._rb, "signals", None) if self._rb else None
+        # Pose-Konfiguration (Home/Service) – hier holen wir die Home-Pose her
+        self._pb = getattr(self.bridge, "_poses", None)
 
         # -------- interner Zustand --------
         self._robot_initialized: bool = False
@@ -174,6 +179,7 @@ class ProcessTab(QWidget):
                 parent=self,
                 init_timeout_s=10.0,
                 home_timeout_s=60.0,
+                pos_tol_mm=1.0,
             )
             self._robot_init_thread.notifyFinished.connect(self._on_robot_init_finished)
             self._robot_init_thread.notifyError.connect(self._on_robot_init_error)
@@ -186,8 +192,10 @@ class ProcessTab(QWidget):
         self.btnStart.clicked.connect(self._on_start_clicked)
         self.btnStop.clicked.connect(self._on_stop_clicked)
 
+        # Wiring
         self._wire_scene_bridge()
         self._wire_robot_status()
+        self._wire_poses_bridge()
 
         self.infoBox.set_values(None)
 
@@ -220,11 +228,7 @@ class ProcessTab(QWidget):
             sig.connectionChanged.connect(sb.set_connection)
         if hasattr(sig, "modeChanged"):
             sig.modeChanged.connect(sb.set_mode)
-            # Home-Flag aus Mode ableiten (HOMED)
-            def _on_mode(mode: str):
-                m = (mode or "").strip().lower()
-                self.set_robot_at_home(m == "homed")
-            sig.modeChanged.connect(_on_mode)
+            # Mode nur noch für Anzeige, Home-Check läuft über Pose
         if hasattr(sig, "initializedChanged"):
             sig.initializedChanged.connect(sb.set_initialized)
             sig.initializedChanged.connect(self.set_robot_initialized)
@@ -240,8 +244,84 @@ class ProcessTab(QWidget):
             sig.errorsChanged.connect(sb.set_errors)
         if hasattr(sig, "tcpPoseChanged"):
             sig.tcpPoseChanged.connect(sb.set_tcp_from_ps)
+            sig.tcpPoseChanged.connect(self._on_tcp_pose_changed)
         if hasattr(sig, "jointsChanged"):
             sig.jointsChanged.connect(self._on_joints)
+
+    # =====================================================================
+    # Poses-Bridge: Home-Pose beobachten
+    # =====================================================================
+
+    def _wire_poses_bridge(self) -> None:
+        """
+        Home-Pose aus PosesBridge; wenn sich diese ändert,
+        Robot-at-home neu auswerten.
+        """
+        if not self._pb:
+            return
+        sigp = getattr(self._pb, "signals", None)
+        if not sigp:
+            return
+
+        if hasattr(sigp, "homePoseChanged"):
+            sigp.homePoseChanged.connect(self._on_home_pose_changed)
+
+    @QtCore.pyqtSlot(object)
+    def _on_tcp_pose_changed(self, _msg: object) -> None:
+        self._recompute_robot_at_home()
+
+    @QtCore.pyqtSlot(object)
+    def _on_home_pose_changed(self, _msg: object) -> None:
+        self._recompute_robot_at_home()
+
+    # =====================================================================
+    # Pose-basierter Home-Check (gleich wie im RobotInitThread)
+    # =====================================================================
+
+    def _get_tcp_pose(self) -> Optional[PoseStamped]:
+        if self._rb is not None and hasattr(self._rb, "tcp_pose"):
+            pose = getattr(self._rb, "tcp_pose", None)
+            if pose is not None:
+                return pose
+        if self._sig is not None and hasattr(self._sig, "tcp_pose"):
+            return getattr(self._sig, "tcp_pose", None)
+        return None
+
+    def _get_home_pose(self) -> Optional[PoseStamped]:
+        """
+        Bevorzugt Home-Pose aus PosesBridge.
+        Falls du die Home-Pose stattdessen aus Scene holen willst,
+        kannst du hier zusätzlich aus _sb/_scene lesen.
+        """
+        if self._pb is not None and hasattr(self._pb, "home_pose"):
+            return getattr(self._pb, "home_pose", None)
+        sigp = getattr(self._pb, "signals", None) if self._pb is not None else None
+        if sigp is not None and hasattr(sigp, "home_pose"):
+            return getattr(sigp, "home_pose", None)
+        return None
+
+    @staticmethod
+    def _poses_close(a: PoseStamped, b: PoseStamped, pos_tol_mm: float = 1.0) -> bool:
+        try:
+            dx = float(a.pose.position.x) - float(b.pose.position.x)
+            dy = float(a.pose.position.y) - float(b.pose.position.y)
+            dz = float(a.pose.position.z) - float(b.pose.position.z)
+        except Exception:
+            return False
+
+        dist_m = math.sqrt(dx * dx + dy * dy + dz * dz)
+        dist_mm = dist_m * 1000.0
+        return dist_mm <= pos_tol_mm
+
+    def _recompute_robot_at_home(self) -> None:
+        cur = self._get_tcp_pose()
+        home = self._get_home_pose()
+        if cur is None or home is None:
+            self.set_robot_at_home(False)
+            return
+
+        at_home = self._poses_close(cur, home, pos_tol_mm=1.0)
+        self.set_robot_at_home(at_home)
 
     # =====================================================================
     # ProcessThread-Handling
@@ -271,11 +351,11 @@ class ProcessTab(QWidget):
 
     def _on_init_clicked(self) -> None:
         """
-        Startet die Init-StateMachine:
+        Startet die Init-StateMachine (RobotInitThread):
 
-          - Robot init (RobotBridge-Status)
+          - Robot init (über RobotBridge)
           - MoveToHome (MotionBridge/RobotBridge)
-          - Warten bis Mode = HOMED
+          - Warten bis TCP-Pose ≈ Home-Pose
         """
         if self._robot_init_thread is None:
             QMessageBox.warning(self, "Robot Init", "RobotInitThread nicht verfügbar.")
@@ -287,7 +367,7 @@ class ProcessTab(QWidget):
         if not isdeleted(self.btnInit):
             self.btnInit.setEnabled(False)
 
-        self.infoBox.set_values({"process": "Robot-Init läuft (Init + Home über RobotBridge-Status)..."})
+        self.infoBox.set_values({"process": "Robot-Init läuft (Init + Home via Pose-Vergleich)..."})
 
         self._robot_init_thread.startSignal.emit()
 
@@ -345,14 +425,15 @@ class ProcessTab(QWidget):
     # ---------------------------------------------------------------------
 
     def _on_robot_init_finished(self) -> None:
+        # Init-Thread meldet Erfolg -> init=True, Home via Pose checken
         self.set_robot_initialized(True)
-        self.set_robot_at_home(True)
+        self._recompute_robot_at_home()
         if not isdeleted(self.btnInit):
             self.btnInit.setEnabled(True)
 
         cur = self.infoBox.get_values() if hasattr(self.infoBox, "get_values") else {}
         cur = dict(cur or {})
-        cur["robot_init"] = "Roboter initialisiert (Status HOMED/READY)."
+        cur["robot_init"] = "Roboter initialisiert und Home-Pose erreicht (TCP≈Home)."
         self.infoBox.set_values(cur)
 
     def _on_robot_init_error(self, msg: str) -> None:
@@ -464,7 +545,7 @@ class ProcessTab(QWidget):
             missing.append("Roboter nicht initialisiert")
 
         if not self._robot_at_home:
-            missing.append("Roboter nicht in Home-Position")
+            missing.append("Roboter nicht in Home-Position (TCP ≉ Home-Pose)")
 
         if not self._recipe_name:
             missing.append("Kein Rezept geladen")
