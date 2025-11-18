@@ -46,6 +46,7 @@ class Matplot2DView(FigureCanvas):
     2D-Renderer: Substrat (grau) + Pfad (grün) + Start/End-Marker.
     - Plotfläche maximal groß (constrained layout engine)
     - Legende direkt UNTER der x-Achse
+    - Keine Maus-Interaktion (kein Pan/Zoom)
     """
 
     def __init__(self, parent=None):
@@ -84,14 +85,8 @@ class Matplot2DView(FigureCanvas):
         self._path2d: Dict[str, Optional[np.ndarray]] = {p: None for p in PLANES}
         self._mesh2d: Dict[str, Optional[Tuple[np.ndarray, np.ndarray]]] = {p: None for p in PLANES}
 
-        # UI state
+        # UI state: nur für "keep_limits" beim Redraw (keine Maussteuerung)
         self._user_limits: Optional[Tuple[float, float, float, float]] = None
-
-        # Interaktion
-        self._press_btn: Optional[int] = None  # 1=links, 3=rechts
-        self._press_xy: Optional[Tuple[float, float]] = None
-        self._press_xlim: Optional[Tuple[float, float]] = None
-        self._press_ylim: Optional[Tuple[float, float]] = None
 
         # style
         self._style = {
@@ -109,13 +104,6 @@ class Matplot2DView(FigureCanvas):
             "marker_size": 28.0,
         }
 
-        # Matplotlib Event-IDs speichern
-        self._mpl_cids: List[int] = []
-        self._mpl_cids.append(self.mpl_connect("button_press_event",   self._on_press))
-        self._mpl_cids.append(self.mpl_connect("button_release_event", self._on_release))
-        self._mpl_cids.append(self.mpl_connect("motion_notify_event",  self._on_motion))
-        self._mpl_cids.append(self.mpl_connect("scroll_event",         self._on_scroll))
-
         # Erstlayout
         self._apply_layout_margins()
 
@@ -127,12 +115,7 @@ class Matplot2DView(FigureCanvas):
 
     # ---------- Public API ----------
     def dispose(self):
-        """Canvas/Toolbar/Events sauber abbauen."""
-        # Events trennen
-        for c in self._mpl_cids:
-            self.mpl_disconnect(c)
-        self._mpl_cids.clear()
-
+        """Canvas/Toolbar/Events sauber abbauen (keine Events registriert)."""
         # Toolbar lösen
         tb = getattr(self, "toolbar", None)
         if tb is not None:
@@ -377,100 +360,3 @@ class Matplot2DView(FigureCanvas):
             _LOG.exception("Matplot2DView._redraw failed")
         finally:
             self.draw_idle()
-
-    # ---------- Interaktion ----------
-    def _on_press(self, event):
-        try:
-            if event.inaxes != self._ax:
-                return
-            self._press_btn = event.button  # 1=links, 3=rechts
-            self._press_xy = (event.xdata, event.ydata)
-            self._press_xlim = self._ax.get_xlim()
-            self._press_ylim = self._ax.get_ylim()
-        except Exception:
-            _LOG.exception("_on_press failed")
-
-    def _on_release(self, _event):
-        try:
-            self._press_btn = None
-            self._press_xy = None
-            x0, x1 = self._ax.get_xlim()
-            y0, y1 = self._ax.get_ylim()
-            self._user_limits = (x0, x1, y0, y1)
-        except Exception:
-            _LOG.exception("_on_release failed")
-
-    def _on_motion(self, event):
-        """
-        Mausbewegung während einer gedrückten Taste:
-        - Linke Taste: Pan
-        - Rechte Taste: vertikaler Zoom
-        """
-        try:
-            if self._press_btn is None or self._press_xy is None:
-                return
-            if event.inaxes != self._ax:
-                return
-
-            x0, y0 = self._press_xy
-            x1, y1 = event.xdata, event.ydata
-            if x1 is None or y1 is None:
-                return
-
-            if self._press_btn == 1:
-                # PAN
-                dx = x1 - x0
-                dy = y1 - y0
-                xlim0 = self._press_xlim or self._ax.get_xlim()
-                ylim0 = self._press_ylim or self._ax.get_ylim()
-                self._ax.set_xlim(xlim0[0] - dx, xlim0[1] - dx)
-                self._ax.set_ylim(ylim0[0] - dy, ylim0[1] - dy)
-                self.draw_idle()
-            elif self._press_btn == 3:
-                # ZOOM (vertikal gesteuert)
-                dy = (y1 - y0)
-                base = 1.0 + 0.01 * dy
-                if abs(base) < 1e-6:
-                    return
-                factor = 1.0 / base
-                self._zoom_about_point((x0, y0), factor)
-        except Exception:
-            _LOG.exception("_on_motion failed")
-
-    def _on_scroll(self, event):
-        try:
-            if event.inaxes != self._ax:
-                return
-            step = 1.15
-            factor = step if event.button == "up" else (1.0 / step)
-            self._zoom_about_point((event.xdata, event.ydata), factor)
-        except Exception:
-            _LOG.exception("_on_scroll failed")
-
-    def _zoom_about_point(self, center: Tuple[float, float], factor: float):
-        try:
-            cx, cy = center
-            if cx is None or cy is None:
-                return
-            # Faktor clampen, damit nichts explodiert
-            factor = float(factor)
-            if factor <= 0.0:
-                return
-            factor = max(min(factor, 50.0), 0.02)
-
-            x0, x1 = self._ax.get_xlim()
-            y0, y1 = self._ax.get_ylim()
-            lx0, lx1 = cx - x0, x1 - cx
-            ly0, ly1 = cy - y0, y1 - cy
-            lx0 /= factor
-            lx1 /= factor
-            ly0 /= factor
-            ly1 /= factor
-            self._ax.set_xlim(cx - lx0, cx + lx1)
-            self._ax.set_ylim(cy - ly0, cy + ly1)
-            self.draw_idle()
-            xx0, xx1 = self._ax.get_xlim()
-            yy0, yy1 = self._ax.get_ylim()
-            self._user_limits = (xx0, xx1, yy0, yy1)
-        except Exception:
-            _LOG.exception("_zoom_about_point failed")

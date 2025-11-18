@@ -158,9 +158,10 @@ class CheckableTabWidget(QTabBar):
 
 class RecipeEditorContent(QWidget):
     """
-    Zweispaltig oben (Meta+Context | Globals), darunter:
-    - Checkable Side-Tabbar mit SidePathEditor-Pages
-    - Planner (eigene GroupBox) unter den Tabs
+    Layout:
+      Zeile 1:  Meta (Recipe + Name + Description) | Setup (tool/substrate/mount)
+      Zeile 2:  Globals | Planner
+      darunter: Side-Tabs + Pages
     """
     validateRequested = pyqtSignal()
     optimizeRequested = pyqtSignal()
@@ -199,56 +200,71 @@ class RecipeEditorContent(QWidget):
         root.setSpacing(8)
         _set_policy(self, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Expanding)
 
-        top = QHBoxLayout()
-        top.setContentsMargins(0, 0, 0, 0)
-        top.setSpacing(8)
+        # ===== Zeile 1: Meta | Setup =====
+        row1 = QHBoxLayout()
+        row1.setContentsMargins(0, 0, 0, 0)
+        row1.setSpacing(8)
 
-        # Meta + Context links
-        left_col = QVBoxLayout()
-        left_col.setContentsMargins(0, 0, 0, 0)
-        left_col.setSpacing(8)
-
+        # --- Meta: Recipe + Name + Description ---
         self.gb_meta = QGroupBox("Meta")
         _set_policy(self.gb_meta, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
         metaForm = QFormLayout(self.gb_meta)
         _compact_form(metaForm)
+
+        self.sel_recipe = QComboBox(self.gb_meta)
         self.e_name = QLineEdit(self.gb_meta)
         self.e_name.setPlaceholderText("recipe_name (YAML id / Dateiname)")
         self.e_desc = QLineEdit(self.gb_meta)
         self.e_desc.setPlaceholderText("Short description ...")
+
+        _set_policy(self.sel_recipe)
+        _set_policy(self.e_name)
+        _set_policy(self.e_desc)
+
+        metaForm.addRow(QLabel("Recipe:", self.gb_meta), self.sel_recipe)
         metaForm.addRow(QLabel("Name:", self.gb_meta), self.e_name)
         metaForm.addRow(QLabel("Description:", self.gb_meta), self.e_desc)
 
-        ctx_gb = QGroupBox("Context")
+        # --- Setup (früher Context): tool/substrate/mount ---
+        ctx_gb = QGroupBox("Setup")
         _set_policy(ctx_gb, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
         sf = QFormLayout(ctx_gb)
         _compact_form(sf)
-        self.sel_recipe = QComboBox()
+
         self.sel_tool = QComboBox()
         self.sel_substrate = QComboBox()
         self.sel_mount = QComboBox()
-        for c in (self.sel_recipe, self.sel_tool, self.sel_substrate, self.sel_mount):
+        for c in (self.sel_tool, self.sel_substrate, self.sel_mount):
             _set_policy(c, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
-        sf.addRow("recipe", self.sel_recipe)
-        sf.addRow(_hline())
+
         sf.addRow("tool", self.sel_tool)
         sf.addRow("substrate", self.sel_substrate)
         sf.addRow("mount", self.sel_mount)
 
-        left_col.addWidget(self.gb_meta, 0)
-        left_col.addWidget(ctx_gb, 1)
+        row1.addWidget(self.gb_meta, 1)
+        row1.addWidget(ctx_gb, 1)
+        root.addLayout(row1)
 
-        # Globals rechts
+        # ===== Zeile 2: Globals | Planner =====
+        row2 = QHBoxLayout()
+        row2.setContentsMargins(0, 0, 0, 0)
+        row2.setSpacing(8)
+
+        # Globals
         self.gb_globals = QGroupBox("Globals")
         _set_policy(self.gb_globals, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
         self.globals_form = QFormLayout(self.gb_globals)
         _compact_form(self.globals_form)
 
-        top.addLayout(left_col, 1)
-        top.addWidget(self.gb_globals, 1)
-        root.addLayout(top)
+        # Planner
+        self.plannerWidget = PlannerGroupBox(store=self.store, parent=self)
+        _set_policy(self.plannerWidget, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
 
-        # Side tabs
+        row2.addWidget(self.gb_globals, 1)
+        row2.addWidget(self.plannerWidget, 1)
+        root.addLayout(row2)
+
+        # ===== darunter: Sides =====
         self.sideTabsBar = CheckableTabWidget(self)
         _set_policy(self.sideTabsBar, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
         root.addWidget(self.sideTabsBar)
@@ -260,10 +276,7 @@ class RecipeEditorContent(QWidget):
         self.sideTabsBar.currentChanged.connect(self.sidePages.setCurrentIndex)
         self.sideTabsBar.checkedChanged.connect(self._on_side_checked_changed)
 
-        # Planner
-        self.plannerWidget = PlannerGroupBox(store=self.store, parent=self)
-        root.addWidget(self.plannerWidget)
-
+    # ------------------------------------------------------------------    
     def _rebuild_globals_from_schema(self) -> None:
         while self.globals_form.rowCount() > 0:
             self.globals_form.removeRow(0)
@@ -372,7 +385,7 @@ class RecipeEditorContent(QWidget):
 
     def apply_recipe_model(self, model: Recipe, rec_def: Dict[str, Any]) -> None:
         """
-        Füllt Context, Globals und Side-Editoren anhand des Recipe-Modells.
+        Füllt Setup, Globals und Side-Editoren anhand des Recipe-Modells.
         Meta (Name/Description) wird NUR über set_meta() vom Panel gesetzt,
         um Doppelzugriffe auf QLineEdit zu vermeiden.
         """

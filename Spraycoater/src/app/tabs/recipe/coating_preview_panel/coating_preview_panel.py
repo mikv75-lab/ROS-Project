@@ -12,7 +12,7 @@ from app.model.recipe.recipe import Recipe
 from .views_3d.scene_manager import SceneManager
 from .views_2d.matplot2d import Matplot2DView
 from .overlays_groupbox import OverlaysGroupBox
-from .info_groupbox import InfoGroupBox
+from app.widgets.info_groupbox import InfoGroupBox
 from .views_2d_box import Views2DBox
 from .views_3d_box import Views3DBox
 

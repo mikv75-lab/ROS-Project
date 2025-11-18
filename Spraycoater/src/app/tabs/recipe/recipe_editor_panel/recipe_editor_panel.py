@@ -32,8 +32,13 @@ def _hline() -> QFrame:
 
 class RecipeEditorPanel(QWidget):
     """
-    Header: Commands + darunter Linie + (Update Preview | Validate | Optimize)
-    Content: zweispaltig (Meta/Context | Globals), Tabs direkt darunter, dann Planner.
+    Header: Commands
+        - Zeile 1: New | Load | Save | Delete   (HBox)
+        - Zeile 2: HLine
+        - Zeile 3: Update Preview | Validate | Optimize (HBox)
+      -> alles in einem VBoxLayout innerhalb der GroupBox.
+
+    Content: RecipeEditorContent (Meta/Context | Globals/Planner | Sides)
     """
     updatePreviewRequested = pyqtSignal(object)  # model: Recipe
     validateRequested = pyqtSignal()
@@ -59,7 +64,7 @@ class RecipeEditorPanel(QWidget):
         cmd_layout.setContentsMargins(8, 6, 8, 6)
         cmd_layout.setSpacing(6)
 
-        # Zeile: New | Load | Save | Delete
+        # Zeile 1: New | Load | Save | Delete
         hButtons = QHBoxLayout()
         hButtons.setContentsMargins(0, 0, 0, 0)
         hButtons.setSpacing(6)
@@ -68,6 +73,7 @@ class RecipeEditorPanel(QWidget):
         self.btnLoad   = QPushButton("Load", self.gbCommands)
         self.btnSave   = QPushButton("Save", self.gbCommands)
         self.btnDelete = QPushButton("Delete", self.gbCommands)
+
         for b in (self.btnNew, self.btnLoad, self.btnSave, self.btnDelete):
             sp = b.sizePolicy()
             sp.setVerticalPolicy(QSizePolicy.Preferred)
@@ -75,25 +81,26 @@ class RecipeEditorPanel(QWidget):
             b.setSizePolicy(sp)
             hButtons.addWidget(b, 1)
 
-        # unter Commands: Linie + Footer-Buttons
-        footer_box = QWidget(self.gbCommands)
-        fb = QHBoxLayout(footer_box)
-        fb.setContentsMargins(0, 8, 0, 0)
-        fb.setSpacing(8)
+        # Zeile 3: Footer-Buttons in eigener HBox
+        hFooter = QHBoxLayout()
+        hFooter.setContentsMargins(0, 0, 0, 0)
+        hFooter.setSpacing(8)
 
-        self.btnUpdatePreview = QPushButton("Update Preview", footer_box)
-        self.btnValidate      = QPushButton("Validate", footer_box)
-        self.btnOptimize      = QPushButton("Optimize", footer_box)
+        self.btnUpdatePreview = QPushButton("Update Preview", self.gbCommands)
+        self.btnValidate      = QPushButton("Validate", self.gbCommands)
+        self.btnOptimize      = QPushButton("Optimize", self.gbCommands)
+
         for b in (self.btnUpdatePreview, self.btnValidate, self.btnOptimize):
             sp = b.sizePolicy()
             sp.setHorizontalPolicy(QSizePolicy.Expanding)
             sp.setVerticalPolicy(QSizePolicy.Preferred)
             b.setSizePolicy(sp)
-            fb.addWidget(b, 1)
+            hFooter.addWidget(b, 1)
 
+        # alles in VBox: HBox (oben) -> HLine -> HBox (unten)
         cmd_layout.addLayout(hButtons)
         cmd_layout.addWidget(_hline())
-        cmd_layout.addWidget(footer_box)
+        cmd_layout.addLayout(hFooter)
 
         vroot.addWidget(self.gbCommands, 0)
 
@@ -198,10 +205,10 @@ class RecipeEditorPanel(QWidget):
         except Exception:
             pass
 
-        # Content füllen
+        # Content füllen (Context, Globals, Planner, Sides)
         self.content.apply_recipe_model(model, rec_def)
 
-        # Planner darunter
+        # Planner darunter (zur Sicherheit nochmal)
         try:
             self.content.apply_planner_model(model.planner or {})
         except Exception:

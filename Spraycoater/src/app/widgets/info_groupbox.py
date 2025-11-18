@@ -15,7 +15,7 @@ class InfoGroupBox(QGroupBox):
     Kompakte Infozeile.
 
     Zeigt:
-      Points | Path length (mm) | ETA (s) | Medium (ml) | Mesh tris | Mesh L×B×H (mm)
+      Valid | Points | Path length (mm) | ETA (s) | Medium (ml) | Mesh tris | Mesh L×B×H (mm)
 
     Erwartet ein info-Dict – typischerweise recipe.info.
     Unterstützt beide Varianten:
@@ -39,12 +39,13 @@ class InfoGroupBox(QGroupBox):
             lay.addWidget(v)
             return v
 
-        self._v_points     = add("Points")
-        self._v_len_mm     = add("Path length (mm)")
-        self._v_eta_s      = add("ETA (s)")
-        self._v_medium_ml  = add("Medium (ml)")
-        self._v_mesh_tris  = add("Mesh tris")
-        self._v_mesh_dims  = add("Mesh L×B×H (mm)")
+        self._v_valid     = add("Valid")
+        self._v_points    = add("Points")
+        self._v_len_mm    = add("Path length (mm)")
+        self._v_eta_s     = add("ETA (s)")
+        self._v_medium_ml = add("Medium (ml)")
+        self._v_mesh_tris = add("Mesh tris")
+        self._v_mesh_dims = add("Mesh L×B×H (mm)")
 
         lay.addStretch(1)
 
@@ -85,12 +86,19 @@ class InfoGroupBox(QGroupBox):
             return "-"
         return f"{L:.{nd}f} × {B:.{nd}f} × {H:.{nd}f}"
 
+    @staticmethod
+    def _fmt_bool(v: Any) -> str:
+        if v is None:
+            return "-"
+        return "yes" if bool(v) else "no"
+
     # ---- Public API ----
     def set_values(self, info: Dict[str, Any] | None) -> None:
         """
         Erwartet recipe.info oder ein ähnliches Dict.
 
         Unterstützte Keys:
+          - valid
           - points          oder total_points
           - length_mm       oder total_length_mm
           - eta_s
@@ -99,6 +107,8 @@ class InfoGroupBox(QGroupBox):
           - mesh_bounds / mesh_bounds_mm (L,B,H in mm)
         """
         info = info or {}
+
+        valid = info.get("valid")
 
         points = info.get("points")
         if points is None:
@@ -116,6 +126,7 @@ class InfoGroupBox(QGroupBox):
         if mesh_bounds is None:
             mesh_bounds = info.get("mesh_bounds_mm")
 
+        self._v_valid.setText(self._fmt_bool(valid))
         self._v_points.setText(self._fmt_num(points, nd=0))
         self._v_len_mm.setText(self._fmt_with_unit(length_mm, "mm", nd=3))
         self._v_eta_s.setText(self._fmt_with_unit(eta_s, "s", nd=3))
