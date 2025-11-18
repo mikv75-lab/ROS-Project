@@ -136,7 +136,7 @@ def generate_launch_description():
         arguments=[
             "joint_state_broadcaster",
             "--controller-manager",
-            "/controller_manager",
+            "controller_manager",
         ],
         output="screen",
     )
@@ -148,7 +148,7 @@ def generate_launch_description():
         arguments=[
             "omron_arm_controller",
             "--controller-manager",
-            "/controller_manager",
+            "controller_manager",
         ],
         output="screen",
     )

@@ -9,7 +9,7 @@ paths:
   bringup_log:  "../../data/logs/bringup.log"
 
 ros:
-  launch_ros: false
+  launch_ros: true
   sim_robot:  true
   
 configs:
