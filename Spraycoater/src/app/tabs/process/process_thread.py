@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-# File: widgets/process_thread.py
+# File: tabs/process/process_thread.py
 from __future__ import annotations
 
 from typing import Optional
 
 from PyQt6 import QtCore
+from PyQt6.QtStateMachine import QStateMachine, QState, QFinalState
 
 from app.model.recipe.recipe import Recipe
 
@@ -46,13 +47,19 @@ class ProcessThread(QtCore.QThread):
     _sig_retreat_move_done = QtCore.pyqtSignal()
     _sig_move_home_done = QtCore.pyqtSignal()
 
-    def __init__(self, *, recipe: Recipe, bridge, parent: Optional[QtCore.QObject] = None):
+    def __init__(
+        self,
+        *,
+        recipe: Recipe,
+        bridge,
+        parent: Optional[QtCore.QObject] = None,
+    ):
         super().__init__(parent)
         self._recipe = recipe
         self._bridge = bridge
         self._stop_requested = False
         self._error_msg: str | None = None
-        self._machine: QtCore.QStateMachine | None = None
+        self._machine: QStateMachine | None = None
 
         # Signale von außen auf Slots verdrahten
         self.startSignal.connect(self._on_start_signal)
@@ -120,17 +127,17 @@ class ProcessThread(QtCore.QThread):
         self._stop_requested = False
         self._error_msg = None
 
-        machine = QtCore.QStateMachine()
+        machine = QStateMachine()
         self._machine = machine  # für _abort_if_needed()
 
         # States
-        s_move_predisp = QtCore.QState()
-        s_wait_predisp = QtCore.QState()
-        s_move_recipe = QtCore.QState()
-        s_wait_postdisp = QtCore.QState()
-        s_move_retreat = QtCore.QState()
-        s_move_home = QtCore.QState()
-        s_finished = QtCore.QFinalState()
+        s_move_predisp = QState()
+        s_wait_predisp = QState()
+        s_move_recipe = QState()
+        s_wait_postdisp = QState()
+        s_move_retreat = QState()
+        s_move_home = QState()
+        s_finished = QFinalState()
 
         # StateMachine strukturieren
         machine.addState(s_move_predisp)
@@ -184,9 +191,6 @@ class ProcessThread(QtCore.QThread):
     def _on_state_move_predispense(self) -> None:
         """
         State: Predispense-/erste Rezeptposition anfahren.
-
-        Hier später:
-          - z.B. self._bridge.robot.move_to_predispense(self._recipe, self._should_stop)
         """
         if self._should_stop():
             self._abort_if_needed()
@@ -228,7 +232,6 @@ class ProcessThread(QtCore.QThread):
         try:
             g = getattr(self._recipe, "globals", None)
             if g is not None:
-                # Feld ggf. an deine Struktur anpassen
                 pre_t = float(getattr(g, "predispense_time", 0.0) or 0.0)
         except Exception:
             pre_t = 0.0
@@ -253,17 +256,14 @@ class ProcessThread(QtCore.QThread):
     def _on_state_move_recipe(self) -> None:
         """
         State: kompletten Rezeptpfad fahren.
-
-        Hier später:
-          - Motion-Node aufrufen
-          - SPS / Trajektorie senden
         """
         if self._should_stop():
             self._abort_if_needed()
             return
 
         try:
-            # Platzhalter/Dummy
+            # TODO: Hier später echte Motion-API / MotionBridge aufrufen:
+            # z.B.: robot.execute_recipe(self._recipe, self._should_stop)
             for _ in range(200):
                 if self._should_stop():
                     self._abort_if_needed()
