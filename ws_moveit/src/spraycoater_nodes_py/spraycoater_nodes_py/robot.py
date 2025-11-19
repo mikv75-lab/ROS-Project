@@ -138,15 +138,13 @@ class Robot(Node):
 
     def _detect_tool_frame(self) -> str:
         """Bestimmt den Tool-Frame aus frames.yaml, bevorzugt 'tool_mount'."""
-        for cand in ("tool_mount", "tcp", "tool0", "ee_link"):
+        for cand in ("tcp",""):
             try:
                 fid = self._F(cand)
                 if fid:
                     return fid
             except Exception:
                 continue
-        # Im Worst Case zeigen wir einfach 'world' auf sich selbst
-        return self.world_frame
 
     def _make_pub(self, msg_type, topic_id: str):
         return self.create_publisher(

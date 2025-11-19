@@ -438,7 +438,8 @@ class ProcessTab(QWidget):
         thr.notifyFinished.connect(self._on_process_finished_success)
         thr.notifyError.connect(self._on_process_finished_error)
         thr.finished.connect(self._on_process_thread_finished)
-        thr.stateChanged.connect(self._on_process_state_changed)
+        # WICHTIG: Verbindung über Lambda, um Qt-Slot-Signatur-Probleme zu vermeiden
+        thr.stateChanged.connect(lambda s, self=self: self._on_process_state_changed(s))
         thr.logMessage.connect(self._on_process_log_message)
         self._process_thread = thr
 
@@ -887,7 +888,3 @@ class ProcessTab(QWidget):
         rec_mount_norm = self._norm_mesh_name(self._recipe_model.substrate_mount or "")
 
         sub_ok = bool(rec_sub_norm) and (cur_sub_norm == rec_sub_norm)
-        mount_ok = bool(rec_mount_norm) and (cur_mount_norm == rec_mount_norm)
-
-        self.set_substrate_ok(sub_ok)
-        self.set_mount_ok(mount_ok)

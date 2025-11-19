@@ -134,3 +134,7 @@
 2025-11-19 01:18:05 ERROR [1240365] app.tabs.process.thread:400 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:EXECUTE_FAILED
 2025-11-19 01:18:05 INFO [1240365] app.tabs.process.thread:493 - ProcessThread.run: beendet, _error_msg='ERROR:EXECUTE_FAILED', stop_requested=False
 2025-11-19 01:18:05 ERROR [1240365] app.tabs.process.thread:508 - ProcessThread: notifyError(ERROR:EXECUTE_FAILED)
+2025-11-19 21:14:35 INFO [358386] app.tabs.process.thread:127 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-19 21:14:35 INFO [358386] app.tabs.process.thread:145 - ProcessThread init: recipe=test, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-19 21:41:48 INFO [377432] app.tabs.process.thread:127 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-19 21:41:48 INFO [377432] app.tabs.process.thread:145 - ProcessThread init: recipe=test, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s

@@ -29,7 +29,7 @@ from spraycoater_nodes_py.utils.config_hub import topics, frames
 
 NODE_KEY = "motion"
 GROUP_NAME = "omron_arm_group"
-EE_LINK = "tool_mount"
+EE_LINK = "tcp"
 WORLD_FRAME = "world"
 
 

@@ -45,16 +45,12 @@ class MotionBridge(BaseBridge):
       - nutzt plan_named + execute:
           plan_named: "home" oder "service"
           execute: Bool(True)
-      → Motion-Node macht TF-Lookup world<-home / world<-service
-        und plant dorthin.
+      → ABER: execute wird jetzt erst nach "PLANNED:OK named='...'" geschickt,
+        um Rennbedingungen zu vermeiden.
 
     Recipe / freie Posen:
       - Hilfsfunktion move_to_pose(pose: PoseStamped)
         → target_pose + execute
-
-    Zusätzlich:
-      - setzt Speed via cmd: "speed:<mm/s>"
-      - hört auf motion_result für Text-Feedback
     """
 
     GROUP = "motion"
@@ -65,6 +61,9 @@ class MotionBridge(BaseBridge):
 
         # Zuletzt gesetzte Motion-Geschwindigkeit (mm/s)
         self._last_speed_mm_s: float = 100.0
+
+        # pending named-move (home/service) für Auto-Execute
+        self._pending_named: Optional[str] = None
 
         super().__init__("motion_bridge", content)
 
@@ -78,7 +77,7 @@ class MotionBridge(BaseBridge):
         s.moveToHomeRequestedWithSpeed.connect(self._on_move_home_with_speed)
         s.moveToServiceRequestedWithSpeed.connect(self._on_move_service_with_speed)
 
-        self.get_logger().info("[motion] MotionBridge initialisiert (named home/service via TF).")
+        self.get_logger().info("[motion] MotionBridge initialisiert (named home/service via TF + Auto-Execute).")
 
     # ------------------------------------------------------------------
     # Inbound vom Motion-Node (publish in topics.yaml)
@@ -88,6 +87,20 @@ class MotionBridge(BaseBridge):
     def _on_motion_result(self, msg: MsgString):
         text = (getattr(msg, "data", "") or "").strip()
         self.get_logger().info(f"[motion] result: {text or '-'}")
+
+        # --- Auto-Execute-Logik für named (home/service) ---
+        if self._pending_named:
+            name = self._pending_named
+            if text.startswith("PLANNED:OK") and f"named='{name}'" in text:
+                # Plan für das erwartete named-Fame ist fertig -> jetzt execute(True)
+                self.get_logger().info(f"[motion] auto-execute for named '{name}'")
+                self._pending_named = None
+                self._publish_execute(True, label=name)
+            elif text.startswith("ERROR:"):
+                # Fehler beim Planen -> pending zurücksetzen
+                self.get_logger().warning(f"[motion] planning for named '{name}' failed: {text}")
+                self._pending_named = None
+
         self.signals.motionResultChanged.emit(text)
 
     # ------------------------------------------------------------------
@@ -140,10 +153,8 @@ class MotionBridge(BaseBridge):
         """
         Schickt:
           - plan_named (String: 'home'/'service')
-          - execute (Bool=True)
-        zum Motion-Node.
-
-        Der Motion-Node macht dann TF-Lookup world<-name und plant dorthin.
+        Execute(True) wird AUTOMATISCH ausgelöst,
+        sobald der Motion-Node "PLANNED:OK named='<name>'" meldet.
         """
         name = (name or "").strip()
         if not name:
@@ -151,6 +162,9 @@ class MotionBridge(BaseBridge):
             return
 
         try:
+            # Merken, dass wir für dieses named einen Auto-Execute wollen
+            self._pending_named = name
+
             # 1) plan_named publizieren
             spec_named = self.spec("subscribe", "plan_named")
             MsgNamed = spec_named.resolve_type()
@@ -160,11 +174,11 @@ class MotionBridge(BaseBridge):
             if hasattr(msg_named, "data"):
                 msg_named.data = name
             pub_named.publish(msg_named)
-            self.get_logger().info(f"[motion] plan_named -> '{name}' published.")
+            self.get_logger().info(f"[motion] plan_named -> '{name}' published (auto-exec pending).")
 
-            # 2) execute=True publizieren
-            self._publish_execute(True, label=name)
+            # KEIN direktes execute mehr hier!
         except Exception as e:
+            self._pending_named = None
             self.get_logger().error(f"[motion] move_named('{name}') failed: {e}")
 
     # ------------------------------------------------------------------

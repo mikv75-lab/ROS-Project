@@ -81,7 +81,7 @@ class Poses(Node):
 
     Verhalten:
       - set_home/set_service:
-          * world->tool_mount per TF lesen
+          * world->tcp per TF lesen
           * Pose (im world-Frame) mit EXAKTEM Quaternion (quat_xyzw) in YAML schreiben
           * ALLE Posen als /tf_static neu aussenden (inkl. home/service)
           * passende Pose gelatched publizieren
@@ -100,7 +100,8 @@ class Poses(Node):
         self.frames = frames()
         self._F = self.frames.resolve
         self.frame_world = self._F(self.frames.get("world", "world"))
-        self.frame_tool_mount = self._F(self.frames.get("tool_mount", "tool_mount"))
+        # Home/Service beziehen sich jetzt auf das TCP-Frame
+        self.frame_tcp = self._F(self.frames.get("tcp", "tcp"))
 
         # YAML laden
         poses_yaml = config_path("poses.yaml")
@@ -144,7 +145,7 @@ class Poses(Node):
         self._publish_named_pose_if_exists("service")
 
         self.get_logger().info(
-            f"✅ PosesManager aktiv – {len(self.poses)} Posen (world='{self.frame_world}', tool_mount='{self.frame_tool_mount}') – nur /tf_static"
+            f"✅ PosesManager aktiv – {len(self.poses)} Posen (world='{self.frame_world}', tcp='{self.frame_tcp}') – nur /tf_static"
         )
 
     # ---------- TF/Publish Utilities ----------
@@ -180,12 +181,16 @@ class Poses(Node):
 
         # Nur statisch senden (einzeln zusätzlich ok)
         self.tf_static.sendTransform([tf])
-        self.get_logger().info(f"🧭 /tf_static aktualisiert für '{name}' (parent={tf.header.frame_id}) + Pose gepublished")
+        self.get_logger().info(
+            f"🧭 /tf_static aktualisiert für '{name}' (parent={tf.header.frame_id}) + Pose gepublished"
+        )
 
     def _compose_pose_and_tf(
         self, name: str, pose: dict, *, force_parent_world: bool = True
     ) -> tuple[PoseStamped, TransformStamped]:
-        parent_frame = self.frame_world if force_parent_world else self._F(pose.get("frame", self.frame_world))
+        parent_frame = self.frame_world if force_parent_world else self._F(
+            pose.get("frame", self.frame_world)
+        )
         x, y, z = pose.get("xyz", [0.0, 0.0, 0.0])
 
         if "quat_xyzw" in pose:
@@ -219,11 +224,11 @@ class Poses(Node):
         tf.transform.rotation.w = qw
         return msg, tf
 
-    # ---------- Core: tool_mount → world speichern (EXAKT) ----------
+    # ---------- Core: tcp → world speichern (EXAKT) ----------
 
-    def _lookup_tool_mount_in_world(self) -> dict | None:
+    def _lookup_tcp_in_world(self) -> dict | None:
         target = self.frame_world
-        source = self.frame_tool_mount
+        source = self.frame_tcp
         timeout = Duration(seconds=1.0)
 
         if not self.tf_buffer.can_transform(target, source, Time(), timeout):
@@ -235,7 +240,7 @@ class Poses(Node):
         try:
             tf = self.tf_buffer.lookup_transform(target, source, Time())
         except (LookupException, ConnectivityException, ExtrapolationException) as e:
-            self.get_logger().warning(f"TF lookup fehlgeschlagen (world→tool_mount): {e}")
+            self.get_logger().warning(f"TF lookup fehlgeschlagen (world→tcp): {e}")
             return None
 
         t = tf.transform.translation
@@ -251,9 +256,11 @@ class Poses(Node):
         }
 
     def _save_pose_and_publish(self, name: str) -> None:
-        pose_dict = self._lookup_tool_mount_in_world()
+        pose_dict = self._lookup_tcp_in_world()
         if pose_dict is None:
-            self.get_logger().warning(f"{name}: Abbruch – kein world→tool_mount TF vorhanden.")
+            self.get_logger().warning(
+                f"{name}: Abbruch – kein world→tcp TF vorhanden."
+            )
             return
 
         # YAML persistieren (immer frame='world', mit exaktem quat_xyzw)
@@ -261,7 +268,9 @@ class Poses(Node):
         try:
             with open(self.yaml_path, "w", encoding="utf-8") as f:
                 yaml.dump(self.poses, f, sort_keys=False)
-            self.get_logger().info(f"💾 {name}: YAML aktualisiert (frame=world, quat_xyzw) aus TF world→tool_mount")
+            self.get_logger().info(
+                f"💾 {name}: YAML aktualisiert (frame=world, quat_xyzw) aus TF world→tcp"
+            )
         except Exception as e:
             self.get_logger().error(f"{name}: YAML schreiben fehlgeschlagen: {e}")
             return

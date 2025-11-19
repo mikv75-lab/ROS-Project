@@ -56,7 +56,7 @@ class ServoBridge(Node):
         self._F = self.frames_cfg.resolve
 
         # Default-Frame (world aus frames.yaml, sonst "world")
-        self.current_frame = self._F(self.frames_cfg.get("world", "world"))
+        self.current_frame = self._F(self.frames_cfg.get("tcp", "world"))
         self.get_logger().info(f"ServoBridge: Initial frame = '{self.current_frame}'")
 
         # ---- Topics aus config_hub laden ----

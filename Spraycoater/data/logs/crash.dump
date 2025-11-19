@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/process/process_tab.py", line 534, in _on_load_recipe_clicked
+    self._setup_process_thread_for_recipe(model)
+  File "/root/Spraycoater/src/app/tabs/process/process_tab.py", line 443, in _setup_process_thread_for_recipe
+    thr.logMessage.connect(self._on_process_log_message)
+TypeError: connect() failed between ProcessThread.logMessage[str] and _on_process_log_message()
