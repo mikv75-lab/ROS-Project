@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 # File: tabs/process/process_tab.py
 from __future__ import annotations
+
 import os
 import math
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from PyQt6 import QtCore
-from PyQt6.sip import isdeleted
 from PyQt6.QtWidgets import (
     QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout,
     QGroupBox, QSizePolicy, QFileDialog, QMessageBox, QTextEdit
@@ -49,14 +49,13 @@ class ProcessTab(QWidget):
         self.ctx = ctx
         self.bridge = bridge
 
-        # Bridges
-        self._rb = getattr(self.bridge, "_rb", None)
-        self._sig = getattr(self._rb, "signals", None) if self._rb else None
-        # Pose-Konfiguration (Home/Service):
-        #   - PosesBridge: bridge._pb
-        #   - PosesState:  bridge.poses  (signal-freier Cache)
-        self._pb = getattr(self.bridge, "_pb", None)
-        self._poses_state = getattr(self.bridge, "poses", None)
+        # Bridges (fest gecacht, keine getattrs mehr im restlichen Code)
+        self._rb = bridge._rb if bridge is not None else None
+        self._pb = bridge._pb if bridge is not None else None
+        self._poses_state = bridge.poses if bridge is not None else None
+        self._sb = bridge._sb if bridge is not None else None  # SceneBridge
+
+        self._sig = self._rb.signals if self._rb is not None else None
 
         # -------- interner Zustand --------
         self._robot_initialized: bool = False
@@ -72,6 +71,9 @@ class ProcessTab(QWidget):
         self._process_active: bool = False
         self._process_thread: Optional[ProcessThread] = None
         self._robot_init_thread: Optional[RobotInitThread] = None
+
+        # Info-Box interner Cache (InfoGroupBox selbst hat kein get_values())
+        self._info_values: Dict[str, Any] = {}
 
         # Reentrancy-Guard für _update_start_conditions
         self._in_update_start_conditions: bool = False
@@ -208,6 +210,7 @@ class ProcessTab(QWidget):
         self._wire_robot_status()
         self._wire_poses_bridge()
 
+        self._info_values.clear()
         self.infoBox.set_values(None)
 
         self._condTimer = QtCore.QTimer(self)
@@ -218,18 +221,54 @@ class ProcessTab(QWidget):
         self._update_timer_state()
 
     # =====================================================================
+    # Hilfsfunktionen für InfoBox
+    # =====================================================================
+
+    def _info_set_all(self, values: Optional[Dict[str, Any]]) -> None:
+        """Gesamten Info-Cache ersetzen und InfoBox updaten."""
+        self._info_values = dict(values or {})
+        try:
+            if self._info_values:
+                self.infoBox.set_values(dict(self._info_values))
+            else:
+                self.infoBox.set_values(None)
+        except RuntimeError:
+            # UI schon zerstört
+            pass
+
+    def _info_update(self, key: str, value: Any | None) -> None:
+        """Einzelnen Key im Info-Cache setzen/löschen und InfoBox updaten."""
+        if value is None:
+            self._info_values.pop(key, None)
+        else:
+            self._info_values[key] = value
+
+        try:
+            if self._info_values:
+                self.infoBox.set_values(dict(self._info_values))
+            else:
+                self.infoBox.set_values(None)
+        except RuntimeError:
+            # UI schon zerstört
+            pass
+
+    # =====================================================================
     # Robot-Status Wiring
     # =====================================================================
 
     @QtCore.pyqtSlot(object)
     def _on_joints(self, js):
-        if js is None or not hasattr(js, "position"):
-            self.robotStatusBox.set_joints(None)
-        else:
-            self.robotStatusBox.set_joints(list(js.position or []))
+        try:
+            if js is None or not hasattr(js, "position"):
+                self.robotStatusBox.set_joints(None)
+            else:
+                self.robotStatusBox.set_joints(list(js.position or []))
+        except RuntimeError:
+            # Widget zerstört
+            pass
 
     def _wire_robot_status(self) -> None:
-        if not self._sig:
+        if self._sig is None:
             return
 
         sig = self._sig
@@ -239,7 +278,6 @@ class ProcessTab(QWidget):
             sig.connectionChanged.connect(sb.set_connection)
         if hasattr(sig, "modeChanged"):
             sig.modeChanged.connect(sb.set_mode)
-            # Mode nur noch für Anzeige, Home-Check läuft über Pose
         if hasattr(sig, "initializedChanged"):
             sig.initializedChanged.connect(sb.set_initialized)
             sig.initializedChanged.connect(self.set_robot_initialized)
@@ -264,16 +302,11 @@ class ProcessTab(QWidget):
     # =====================================================================
 
     def _wire_poses_bridge(self) -> None:
-        """
-        Home-Pose aus PosesBridge; wenn sich diese ändert,
-        Robot-at-home neu auswerten.
-        """
-        if not self._pb:
+        if self._pb is None:
             return
         sigp = getattr(self._pb, "signals", None)
-        if not sigp:
+        if sigp is None:
             return
-
         if hasattr(sigp, "homePoseChanged"):
             sigp.homePoseChanged.connect(self._on_home_pose_changed)
 
@@ -290,25 +323,14 @@ class ProcessTab(QWidget):
     # =====================================================================
 
     def _get_tcp_pose(self) -> Optional[PoseStamped]:
-        """
-        TCP-Pose direkt aus der RobotBridge.
-        (RobotStatusBox wird ohnehin per Signal gefüttert.)
-        """
-        rb = self._rb
-        if rb is None:
+        if self._rb is None:
             return None
-        pose = getattr(rb, "tcp_pose", None)
+        pose = getattr(self._rb, "tcp_pose", None)
         if isinstance(pose, PoseStamped) or pose is None:
             return pose
         return None
 
     def _get_home_pose(self) -> Optional[PoseStamped]:
-        """
-        Holt die Home-Pose:
-          1. bevorzugt aus der PosesBridge (get_last_home_pose)
-          2. Fallback: aus dem PosesState (bridge.poses.home())
-        """
-        # 1) PosesBridge
         if self._pb is not None:
             try:
                 pose = self._pb.get_last_home_pose()
@@ -317,7 +339,6 @@ class ProcessTab(QWidget):
             except Exception:
                 pass
 
-        # 2) PosesState der UIBridge
         if self._poses_state is not None:
             try:
                 pose2 = self._poses_state.home()
@@ -356,53 +377,41 @@ class ProcessTab(QWidget):
     # =====================================================================
 
     def _cleanup_process_thread(self) -> None:
-        """
-        Vorhandenen ProcessThread stoppen/aufräumen, ohne auf bereits
-        gelöschte Qt-Objekte zuzugreifen.
-        """
         thr = self._process_thread
         self._process_thread = None
 
-        if thr is None or isdeleted(thr):
+        if thr is None:
             return
 
-        if thr.isRunning():
-            thr.request_stop()
-            thr.wait(2000)
-
-        thr.deleteLater()
+        try:
+            if thr.isRunning():
+                thr.request_stop()
+                thr.wait(2000)
+            thr.deleteLater()
+        except RuntimeError:
+            # Thread-Objekt bereits von Qt zerstört
+            pass
 
     def _setup_process_thread_for_recipe(self, recipe: Recipe) -> None:
-        """
-        Neuen ProcessThread für das übergebene Rezept anlegen.
-        Wird NICHT ausgeführt, wenn der ProcessTab bereits zerstört ist.
-        """
-        if isdeleted(self):
-            _LOG.warning("ProcessTab already deleted, skip _setup_process_thread_for_recipe()")
-            return
-
         self._cleanup_process_thread()
 
         thr = ProcessThread(recipe=recipe, bridge=self.bridge, parent=self)
         thr.notifyFinished.connect(self._on_process_finished_success)
         thr.notifyError.connect(self._on_process_finished_error)
         thr.finished.connect(self._on_process_thread_finished)
+        # stateChanged kommt aus ProcessThread (pyqtSignal(str))
+        thr.stateChanged.connect(self._on_process_state_changed)
         self._process_thread = thr
 
     # =====================================================================
-    # SprayPath-Ansteuerung aus ProcessTab
+    # SprayPath-Ansteuerung
     # =====================================================================
 
     def _send_recipe_to_spraypath(self, recipe: Recipe) -> None:
-        """
-        Baut ein MarkerArray aus dem geladenen Rezept und schickt es
-        über die UIBridge an spray_path.set – analog zum RecipeTab.
-        """
         if self.bridge is None or recipe is None:
             return
 
         try:
-            # Hier keine UI-Sides, d.h. kompletter Pfad laut Rezept
             ma: MarkerArray = recipe_markers.build_marker_array_from_recipe(
                 recipe,
                 sides=None,
@@ -432,13 +441,6 @@ class ProcessTab(QWidget):
     # =====================================================================
 
     def _on_init_clicked(self) -> None:
-        """
-        Startet die Init-StateMachine (RobotInitThread):
-
-          - Robot init (über RobotBridge)
-          - MoveToHome (MotionBridge/RobotBridge)
-          - Warten bis TCP-Pose ≈ Home-Pose
-        """
         if self._robot_init_thread is None:
             QMessageBox.warning(self, "Robot Init", "RobotInitThread nicht verfügbar.")
             return
@@ -446,18 +448,16 @@ class ProcessTab(QWidget):
         self.set_robot_initialized(False)
         self.set_robot_at_home(False)
 
-        if not isdeleted(self.btnInit):
+        try:
             self.btnInit.setEnabled(False)
+        except RuntimeError:
+            pass
 
-        self.infoBox.set_values({"process": "Robot-Init läuft (Init + Home via Pose-Vergleich)..."})
+        self._info_update("process", "Robot-Init läuft (Init + Home via Pose-Vergleich)...")
 
         self._robot_init_thread.startSignal.emit()
 
     def _on_load_recipe_clicked(self) -> None:
-        if isdeleted(self):
-            _LOG.warning("ProcessTab already deleted, skip _on_load_recipe_clicked()")
-            return
-
         start_dir = getattr(getattr(self.ctx, "paths", None), "recipe_dir", os.getcwd())
 
         fname, _ = QFileDialog.getOpenFileName(
@@ -480,21 +480,25 @@ class ProcessTab(QWidget):
         name = (model.id or "").strip() or os.path.basename(fname)
         self.set_recipe_name(name)
 
-        self._update_recipe_info_text()
-        self._setup_process_thread_for_recipe(model)
+        # UI-Zugriffe in try/except, falls Tab währenddessen zerstört wird
+        try:
+            self._update_recipe_info_text()
+        except RuntimeError:
+            # TextEdits sind bereits zerstört
+            return
 
-        # Rezept auch an SprayPath schicken (wie im RecipeTab)
+        self._setup_process_thread_for_recipe(model)
         self._send_recipe_to_spraypath(model)
 
-        # einmal initial; danach hält der Timer es aktuell
         self._update_setup_from_scene()
         self._evaluate_scene_match()
 
     def _on_start_clicked(self) -> None:
-        if isdeleted(self) or isdeleted(self.btnStart):
-            return
-
-        if not self.btnStart.isEnabled():
+        try:
+            if not self.btnStart.isEnabled():
+                return
+        except RuntimeError:
+            # Button bereits zerstört
             return
 
         if self._recipe_model is None or self._process_thread is None:
@@ -508,16 +512,9 @@ class ProcessTab(QWidget):
         self._process_thread.startSignal.emit()
 
     def _on_stop_clicked(self) -> None:
-        """
-        Stop-Button:
-          - stoppt die Prozess-StateMachine (ProcessThread)
-          - stoppt die Robot-Init-StateMachine (RobotInitThread)
-        """
-        # Prozess-StateMachine stoppen
         if self._process_thread is not None and self._process_thread.isRunning():
             self._process_thread.stopSignal.emit()
 
-        # Robot-Init-StateMachine stoppen
         if self._robot_init_thread is not None and self._robot_init_thread.isRunning():
             self._robot_init_thread.stopSignal.emit()
 
@@ -526,22 +523,28 @@ class ProcessTab(QWidget):
     # ---------------------------------------------------------------------
 
     def _on_robot_init_finished(self) -> None:
-        # Init-Thread meldet Erfolg -> init=True, Home via Pose checken
         self.set_robot_initialized(True)
         self._recompute_robot_at_home()
-        if not isdeleted(self.btnInit):
-            self.btnInit.setEnabled(True)
 
-        cur = self.infoBox.get_values() if hasattr(self.infoBox, "get_values") else {}
-        cur = dict(cur or {})
-        cur["robot_init"] = "Roboter initialisiert und Home-Pose erreicht (TCP≈Home)."
-        self.infoBox.set_values(cur)
+        try:
+            self.btnInit.setEnabled(True)
+        except RuntimeError:
+            pass
+
+        text = "Roboter initialisiert und Home-Pose erreicht (TCP≈Home)."
+        self._info_update("robot_init", text)
+        if self._recipe_name:
+            self._info_update("recipe", self._recipe_name)
 
     def _on_robot_init_error(self, msg: str) -> None:
         self.set_robot_initialized(False)
         self.set_robot_at_home(False)
-        if not isdeleted(self.btnInit):
+
+        try:
             self.btnInit.setEnabled(True)
+        except RuntimeError:
+            pass
+
         QMessageBox.warning(self, "Robot Init fehlgeschlagen", msg or "Unbekannter Fehler.")
 
     # ---------------------------------------------------------------------
@@ -549,13 +552,57 @@ class ProcessTab(QWidget):
     # ---------------------------------------------------------------------
 
     def _on_process_finished_success(self) -> None:
-        pass
+        """
+        Erfolgreich abgeschlossen: Prozess-Flag zurücksetzen und Info aktualisieren.
+        (finished-Signal vom Thread kommt zusätzlich noch, ist aber idempotent.)
+        """
+        self.set_process_active(False)
+        self._info_update("process", "Prozess erfolgreich abgeschlossen.")
 
     def _on_process_finished_error(self, msg: str) -> None:
-        QMessageBox.critical(self, "Prozessfehler", f"Prozess abgebrochen:\n{msg}")
+        """
+        Fehler-Fall: Prozess-Flag zurücksetzen, Info-Text setzen und Dialog anzeigen.
+        """
+        self.set_process_active(False)
+        self._info_update("process", f"Fehler: {msg}")
+        try:
+            QMessageBox.critical(self, "Prozessfehler", f"Prozess abgebrochen:\n{msg}")
+        except RuntimeError:
+            # UI schon zerstört
+            pass
 
     def _on_process_thread_finished(self) -> None:
+        """
+        QThread.finished – zur Sicherheit nochmal Prozess-Flag zurücksetzen.
+        (Kann nach notifyFinished/notifyError kommen, ist idempotent.)
+        """
         self.set_process_active(False)
+
+    @QtCore.pyqtSlot(str)
+    def _on_process_state_changed(self, state: str) -> None:
+        """
+        Wird vom ProcessThread bei jedem State-Wechsel aufgerufen.
+        """
+        pretty = {
+            "MOVE_PREDISPENSE": "Predispense-Position anfahren",
+            "WAIT_PREDISPENSE": "Predispense-Zeit warten",
+            "MOVE_RECIPE": "Rezeptpfad fahren",
+            "WAIT_POSTDISPENSE": "Postdispense-Zeit warten",
+            "MOVE_RETREAT": "Retreat-Position anfahren",
+            "MOVE_HOME": "Home-Position anfahren",
+            "ERROR": "Fehler – Prozess abgebrochen",
+        }.get(state, state)
+
+        try:
+            prefix = "Prozess läuft.\n" if self._process_active else ""
+            self.lblStatus.setText(f"{prefix}Aktueller Schritt: {pretty}")
+        except RuntimeError:
+            # Label schon zerstört
+            pass
+
+        self._info_update("process_state", pretty)
+        if self._recipe_name:
+            self._info_update("recipe", self._recipe_name)
 
     # =====================================================================
     # Public API
@@ -567,26 +614,18 @@ class ProcessTab(QWidget):
         self._update_start_conditions()
 
     def _update_recipe_info_text(self) -> None:
-        if isdeleted(self):
-            return
-
-        txt_summary = getattr(self, "txtRecipeSummary", None)
-        txt_poses = getattr(self, "txtRecipePoses", None)
-        info_box = getattr(self, "infoBox", None)
-
-        if (
-            txt_summary is None
-            or txt_poses is None
-            or isdeleted(txt_summary)
-            or isdeleted(txt_poses)
-        ):
-            return
-
+        """
+        Aktualisiert Summary- und Poses-Textfelder + InfoBox aus dem Rezept.
+        Muss RuntimeError abfangen, falls TextEdits bereits von Qt zerstört wurden.
+        """
         if not self._recipe_model:
-            txt_summary.setPlainText("")
-            txt_poses.setPlainText("")
-            if info_box is not None and not isdeleted(info_box):
-                info_box.set_values(None)
+            try:
+                self.txtRecipeSummary.setPlainText("")
+                self.txtRecipePoses.setPlainText("")
+            except RuntimeError:
+                # TextEdits zerstört
+                return
+            self._info_set_all(None)
             return
 
         try:
@@ -608,14 +647,21 @@ class ProcessTab(QWidget):
             summary_lines = lines[:split_idx]
             poses_lines = lines[split_idx:]
 
-        txt_summary.setPlainText("\n".join(summary_lines).rstrip())
-        txt_summary.moveCursor(txt_summary.textCursor().Start)
+        summary_text = "\n".join(summary_lines).rstrip()
+        poses_text = "\n".join(poses_lines).rstrip()
 
-        txt_poses.setPlainText("\n".join(poses_lines).rstrip())
-        txt_poses.moveCursor(txt_poses.textCursor().Start)
+        try:
+            self.txtRecipeSummary.setPlainText(summary_text)
+            self.txtRecipeSummary.moveCursor(self.txtRecipeSummary.textCursor().Start)
 
-        if info_box is not None and not isdeleted(info_box):
-            info_box.set_values(self._recipe_model.info or {})
+            self.txtRecipePoses.setPlainText(poses_text)
+            self.txtRecipePoses.moveCursor(self.txtRecipePoses.textCursor().Start)
+        except RuntimeError:
+            # TextEdits zerstört
+            return
+
+        base_info = self._recipe_model.info or {}
+        self._info_set_all(base_info)
 
     def set_robot_initialized(self, flag: bool) -> None:
         self._robot_initialized = bool(flag)
@@ -642,10 +688,12 @@ class ProcessTab(QWidget):
         self._update_timer_state()
 
         if self._process_active:
-            if hasattr(self, "lblStatus") and self.lblStatus is not None and not isdeleted(self.lblStatus):
+            try:
                 self.lblStatus.setText(
                     "Prozess läuft.\nStartbedingungen werden während der Ausführung nicht geprüft."
                 )
+            except RuntimeError:
+                pass
         else:
             self._update_start_conditions()
 
@@ -655,27 +703,17 @@ class ProcessTab(QWidget):
 
     @staticmethod
     def _norm_mesh_name(name: str) -> str:
-        """
-        Für den Vergleich:
-          - basename
-          - .stl (case-insensitive) abschneiden
-        """
         n = os.path.basename(name or "").strip()
         if n.lower().endswith(".stl"):
             n = n[:-4]
         return n
 
     def _update_start_conditions(self) -> None:
-        if isdeleted(self):
-            return
-
-        # Reentrancy-Guard, um Rekursion zu verhindern
         if self._in_update_start_conditions:
             return
 
         self._in_update_start_conditions = True
         try:
-            # JEDES MAL: aktuelle Scene holen + Match neu bewerten
             self._update_setup_from_scene()
             self._evaluate_scene_match()
 
@@ -698,12 +736,12 @@ class ProcessTab(QWidget):
 
             can_start = (len(missing) == 0)
 
-            if hasattr(self, "btnStart") and self.btnStart is not None and not isdeleted(self.btnStart):
+            try:
                 self.btnStart.setEnabled(can_start and not self._process_active)
+            except RuntimeError:
+                pass
 
-            if not hasattr(self, "lblStatus") or self.lblStatus is None or isdeleted(self.lblStatus):
-                return
-
+            # Während des Prozesses Text nicht überschreiben
             if self._process_active:
                 return
 
@@ -714,14 +752,14 @@ class ProcessTab(QWidget):
                 msg_lines += [f"- {m}" for m in missing]
                 txt = "\n".join(msg_lines)
 
-            self.lblStatus.setText(txt)
+            try:
+                self.lblStatus.setText(txt)
+            except RuntimeError:
+                pass
         finally:
             self._in_update_start_conditions = False
 
     def _update_timer_state(self) -> None:
-        if not hasattr(self, "_condTimer") or self._condTimer is None or isdeleted(self._condTimer):
-            return
-
         if self._process_active:
             if self._condTimer.isActive():
                 self._condTimer.stop()
@@ -734,9 +772,14 @@ class ProcessTab(QWidget):
     # =====================================================================
 
     def _wire_scene_bridge(self) -> None:
-        scene_br = getattr(self.bridge, "_sb", None) or getattr(self.bridge, "_scene", None)
-        sig = getattr(scene_br, "signals", None) if scene_br else None
-        if not sig:
+        if self._sb is None:
+            self.set_substrate_ok(False)
+            self.set_mount_ok(False)
+            self._set_setup_labels("-", "-", "-")
+            return
+
+        sig = getattr(self._sb, "signals", None)
+        if sig is None:
             self.set_substrate_ok(False)
             self.set_mount_ok(False)
             self._set_setup_labels("-", "-", "-")
@@ -757,47 +800,33 @@ class ProcessTab(QWidget):
         self._evaluate_scene_match()
 
     def _get_scene_currents(self) -> tuple[str, str, str]:
-        """
-        Liest immer direkt die aktuellen Werte von der SceneBridge:
-
-          - tool_current / tool
-          - substrate_current
-          - mount_current
-        """
-        scene_br = getattr(self.bridge, "_sb", None) or getattr(self.bridge, "_scene", None)
-        if scene_br is None:
+        if self._sb is None:
             return "", "", ""
 
-        tool = getattr(scene_br, "tool_current", "") or getattr(scene_br, "tool", "") or ""
-        substrate = getattr(scene_br, "substrate_current", "") or ""
-        mount = getattr(scene_br, "mount_current", "") or ""
+        tool = getattr(self._sb, "tool_current", "") or getattr(self._sb, "tool", "") or ""
+        substrate = getattr(self._sb, "substrate_current", "") or ""
+        mount = getattr(self._sb, "mount_current", "") or ""
 
         return str(tool), str(substrate), str(mount)
 
     def _update_setup_from_scene(self) -> None:
-        """
-        Setup-Anzeige im UI; basiert direkt auf den *current*-Feldern
-        der SceneBridge zum Zeitpunkt des Aufrufs.
-        """
         tool, substrate, mount = self._get_scene_currents()
 
-        # Falls kein Tool, evtl. aus RobotBridge
         if not tool and self._rb is not None:
             tool = getattr(self._rb, "current_tool", "") or getattr(self._rb, "tool", "")
 
         self._set_setup_labels(tool or "-", substrate or "-", mount or "-")
 
     def _set_setup_labels(self, tool: str, substrate: str, mount: str) -> None:
-        self.lblTool.setText(f"Tool: {tool}")
-        self.lblSubstrate.setText(f"Substrate: {substrate}")
-        self.lblMount.setText(f"Mount: {mount}")
+        try:
+            self.lblTool.setText(f"Tool: {tool}")
+            self.lblSubstrate.setText(f"Substrate: {substrate}")
+            self.lblMount.setText(f"Mount: {mount}")
+        except RuntimeError:
+            # Labels schon zerstört
+            pass
 
     def _evaluate_scene_match(self) -> None:
-        """
-        Prüft Substrate/Mount gegen das Rezept auf Basis der aktuellen
-        *current*-Felder der SceneBridge.
-        Vergleich erfolgt auf basename ohne .stl.
-        """
         if not self._recipe_model:
             self.set_substrate_ok(False)
             self.set_mount_ok(False)
