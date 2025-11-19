@@ -38,6 +38,9 @@ class ProcessTab(QWidget):
           [GroupBox] Robot Status
         ),
         [InfoGroupBox]
+        [GroupBox] Process Status / Log
+           ├─ QLabel    (aktueller State)
+           └─ QTextEdit (Log)
         [GroupBox] Recipe
            ├─ QTextEdit  (Summary)
            └─ QTextEdit  (Poses)
@@ -49,7 +52,7 @@ class ProcessTab(QWidget):
         self.ctx = ctx
         self.bridge = bridge
 
-        # Bridges (fest gecacht, keine getattrs mehr im restlichen Code)
+        # Bridges (fest gecacht)
         self._rb = bridge._rb if bridge is not None else None
         self._pb = bridge._pb if bridge is not None else None
         self._poses_state = bridge.poses if bridge is not None else None
@@ -72,10 +75,10 @@ class ProcessTab(QWidget):
         self._process_thread: Optional[ProcessThread] = None
         self._robot_init_thread: Optional[RobotInitThread] = None
 
-        # Info-Box interner Cache (InfoGroupBox selbst hat kein get_values())
+        # Info-Box Cache
         self._info_values: Dict[str, Any] = {}
 
-        # Reentrancy-Guard für _update_start_conditions
+        # Reentrancy-Guard
         self._in_update_start_conditions: bool = False
 
         # ==================================================================
@@ -159,6 +162,29 @@ class ProcessTab(QWidget):
         self.infoBox.setSizePolicy(sp_info)
         root.addWidget(self.infoBox)
 
+        # ---------- PROCESS STATUS / LOG ----------
+        self.grpProcessInfo = QGroupBox("Process Status / Log", self)
+        vproc_info = QVBoxLayout(self.grpProcessInfo)
+        vproc_info.setContentsMargins(8, 8, 8, 8)
+        vproc_info.setSpacing(4)
+
+        self.lblProcessState = QLabel("Kein Prozess aktiv.", self.grpProcessInfo)
+        self.lblProcessState.setWordWrap(True)
+
+        self.txtProcessLog = QTextEdit(self.grpProcessInfo)
+        self.txtProcessLog.setReadOnly(True)
+        self.txtProcessLog.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+
+        vproc_info.addWidget(self.lblProcessState)
+        vproc_info.addWidget(self.txtProcessLog, 1)
+
+        sp_pinfo = self.grpProcessInfo.sizePolicy()
+        sp_pinfo.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp_pinfo.setVerticalPolicy(QSizePolicy.Policy.Expanding)
+        self.grpProcessInfo.setSizePolicy(sp_pinfo)
+
+        root.addWidget(self.grpProcessInfo, 1)
+
         # ---------- RECIPE GROUP ----------
         self.grpRecipe = QGroupBox("Recipe", self)
         vrec = QHBoxLayout(self.grpRecipe)
@@ -221,7 +247,7 @@ class ProcessTab(QWidget):
         self._update_timer_state()
 
     # =====================================================================
-    # Hilfsfunktionen für InfoBox
+    # Hilfsfunktionen für InfoBox / ProcessLog
     # =====================================================================
 
     def _info_set_all(self, values: Optional[Dict[str, Any]]) -> None:
@@ -233,7 +259,6 @@ class ProcessTab(QWidget):
             else:
                 self.infoBox.set_values(None)
         except RuntimeError:
-            # UI schon zerstört
             pass
 
     def _info_update(self, key: str, value: Any | None) -> None:
@@ -249,8 +274,21 @@ class ProcessTab(QWidget):
             else:
                 self.infoBox.set_values(None)
         except RuntimeError:
-            # UI schon zerstört
             pass
+
+    def _append_process_log(self, text: str) -> None:
+        """Text in die Process-Logbox anhängen."""
+        if not text:
+            return
+        try:
+            self.txtProcessLog.append(text)
+        except RuntimeError:
+            pass
+
+    @QtCore.pyqtSlot(str)
+    def _on_process_log_message(self, msg: str) -> None:
+        """Slot für ProcessThread.logMessage."""
+        self._append_process_log(msg)
 
     # =====================================================================
     # Robot-Status Wiring
@@ -264,7 +302,6 @@ class ProcessTab(QWidget):
             else:
                 self.robotStatusBox.set_joints(list(js.position or []))
         except RuntimeError:
-            # Widget zerstört
             pass
 
     def _wire_robot_status(self) -> None:
@@ -389,19 +426,27 @@ class ProcessTab(QWidget):
                 thr.wait(2000)
             thr.deleteLater()
         except RuntimeError:
-            # Thread-Objekt bereits von Qt zerstört
             pass
 
     def _setup_process_thread_for_recipe(self, recipe: Recipe) -> None:
+        """
+        Erstellt einen neuen ProcessThread für das aktuelle Rezept.
+        """
         self._cleanup_process_thread()
 
-        thr = ProcessThread(recipe=recipe, bridge=self.bridge, parent=self)
+        thr = ProcessThread(recipe=recipe, bridge=self.bridge)
         thr.notifyFinished.connect(self._on_process_finished_success)
         thr.notifyError.connect(self._on_process_finished_error)
         thr.finished.connect(self._on_process_thread_finished)
-        # stateChanged kommt aus ProcessThread (pyqtSignal(str))
         thr.stateChanged.connect(self._on_process_state_changed)
+        thr.logMessage.connect(self._on_process_log_message)
         self._process_thread = thr
+
+        # Beim Laden eines neuen Rezepts das Log leeren
+        try:
+            self.txtProcessLog.clear()
+        except RuntimeError:
+            pass
 
     # =====================================================================
     # SprayPath-Ansteuerung
@@ -480,25 +525,29 @@ class ProcessTab(QWidget):
         name = (model.id or "").strip() or os.path.basename(fname)
         self.set_recipe_name(name)
 
-        # UI-Zugriffe in try/except, falls Tab währenddessen zerstört wird
         try:
             self._update_recipe_info_text()
         except RuntimeError:
-            # TextEdits sind bereits zerstört
             return
 
         self._setup_process_thread_for_recipe(model)
+        # FIX: korrekter Methodenname
         self._send_recipe_to_spraypath(model)
 
         self._update_setup_from_scene()
         self._evaluate_scene_match()
+
+        # Status/Log zurücksetzen
+        try:
+            self.lblProcessState.setText("Kein Prozess aktiv.")
+        except RuntimeError:
+            pass
 
     def _on_start_clicked(self) -> None:
         try:
             if not self.btnStart.isEnabled():
                 return
         except RuntimeError:
-            # Button bereits zerstört
             return
 
         if self._recipe_model is None or self._process_thread is None:
@@ -509,9 +558,12 @@ class ProcessTab(QWidget):
             self._process_thread.set_recipe(self._recipe_model)
 
         self.set_process_active(True)
+        self._append_process_log("=== Prozess gestartet ===")
         self._process_thread.startSignal.emit()
 
     def _on_stop_clicked(self) -> None:
+        self._append_process_log("=== Stop angefordert ===")
+
         if self._process_thread is not None and self._process_thread.isRunning():
             self._process_thread.stopSignal.emit()
 
@@ -552,37 +604,35 @@ class ProcessTab(QWidget):
     # ---------------------------------------------------------------------
 
     def _on_process_finished_success(self) -> None:
-        """
-        Erfolgreich abgeschlossen: Prozess-Flag zurücksetzen und Info aktualisieren.
-        (finished-Signal vom Thread kommt zusätzlich noch, ist aber idempotent.)
-        """
         self.set_process_active(False)
         self._info_update("process", "Prozess erfolgreich abgeschlossen.")
+        self._append_process_log("=== Prozess erfolgreich abgeschlossen ===")
+
+        try:
+            self.lblProcessState.setText("Prozess erfolgreich abgeschlossen.")
+        except RuntimeError:
+            pass
 
     def _on_process_finished_error(self, msg: str) -> None:
-        """
-        Fehler-Fall: Prozess-Flag zurücksetzen, Info-Text setzen und Dialog anzeigen.
-        """
         self.set_process_active(False)
         self._info_update("process", f"Fehler: {msg}")
+        self._append_process_log(f"=== Prozessfehler: {msg} ===")
+
+        try:
+            self.lblProcessState.setText(f"Fehler: {msg}")
+        except RuntimeError:
+            pass
+
         try:
             QMessageBox.critical(self, "Prozessfehler", f"Prozess abgebrochen:\n{msg}")
         except RuntimeError:
-            # UI schon zerstört
             pass
 
     def _on_process_thread_finished(self) -> None:
-        """
-        QThread.finished – zur Sicherheit nochmal Prozess-Flag zurücksetzen.
-        (Kann nach notifyFinished/notifyError kommen, ist idempotent.)
-        """
         self.set_process_active(False)
 
     @QtCore.pyqtSlot(str)
     def _on_process_state_changed(self, state: str) -> None:
-        """
-        Wird vom ProcessThread bei jedem State-Wechsel aufgerufen.
-        """
         pretty = {
             "MOVE_PREDISPENSE": "Predispense-Position anfahren",
             "WAIT_PREDISPENSE": "Predispense-Zeit warten",
@@ -594,10 +644,14 @@ class ProcessTab(QWidget):
         }.get(state, state)
 
         try:
+            self.lblProcessState.setText(f"Aktueller Schritt: {pretty}")
+        except RuntimeError:
+            pass
+
+        try:
             prefix = "Prozess läuft.\n" if self._process_active else ""
             self.lblStatus.setText(f"{prefix}Aktueller Schritt: {pretty}")
         except RuntimeError:
-            # Label schon zerstört
             pass
 
         self._info_update("process_state", pretty)
@@ -614,16 +668,11 @@ class ProcessTab(QWidget):
         self._update_start_conditions()
 
     def _update_recipe_info_text(self) -> None:
-        """
-        Aktualisiert Summary- und Poses-Textfelder + InfoBox aus dem Rezept.
-        Muss RuntimeError abfangen, falls TextEdits bereits von Qt zerstört wurden.
-        """
         if not self._recipe_model:
             try:
                 self.txtRecipeSummary.setPlainText("")
                 self.txtRecipePoses.setPlainText("")
             except RuntimeError:
-                # TextEdits zerstört
                 return
             self._info_set_all(None)
             return
@@ -657,7 +706,6 @@ class ProcessTab(QWidget):
             self.txtRecipePoses.setPlainText(poses_text)
             self.txtRecipePoses.moveCursor(self.txtRecipePoses.textCursor().Start)
         except RuntimeError:
-            # TextEdits zerstört
             return
 
         base_info = self._recipe_model.info or {}
@@ -741,7 +789,6 @@ class ProcessTab(QWidget):
             except RuntimeError:
                 pass
 
-            # Während des Prozesses Text nicht überschreiben
             if self._process_active:
                 return
 
@@ -823,7 +870,6 @@ class ProcessTab(QWidget):
             self.lblSubstrate.setText(f"Substrate: {substrate}")
             self.lblMount.setText(f"Mount: {mount}")
         except RuntimeError:
-            # Labels schon zerstört
             pass
 
     def _evaluate_scene_match(self) -> None:

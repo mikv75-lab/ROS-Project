@@ -49,3 +49,88 @@
 2025-11-19 00:34:32 ERROR [1188581] app.tabs.process.thread:349 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.
 2025-11-19 00:34:32 INFO [1188581] app.tabs.process.thread:442 - ProcessThread.run: beendet, _error_msg='Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.', stop_requested=False
 2025-11-19 00:34:32 ERROR [1188581] app.tabs.process.thread:447 - ProcessThread: notifyError(Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.)
+2025-11-19 00:44:32 INFO [1199315] app.tabs.process.thread:88 - ProcessThread: MotionBridge gefunden, motionResultChanged verbunden.
+2025-11-19 00:44:32 INFO [1199315] app.tabs.process.thread:98 - ProcessThread init: recipe=test, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-19 00:44:32 INFO [1199315] app.tabs.process:424 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-19 00:44:45 INFO [1199315] app.tabs.process.thread:132 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-19 00:44:45 INFO [1199315] app.tabs.process.thread:390 - ProcessThread.run: gestartet.
+2025-11-19 00:44:45 INFO [1199315] app.tabs.process.thread:447 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-19 00:44:45 INFO [1199315] app.tabs.process.thread:261 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-19 00:44:45 INFO [1199315] app.tabs.process.thread:477 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-19 00:44:45 INFO [1199315] app.tabs.process.thread:319 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-19 00:44:45 INFO [1199315] app.tabs.process.thread:489 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-19 00:44:45 INFO [1199315] app.tabs.process.thread:352 - ProcessThread: move_to_pose(predispense) via MotionBridge wird aufgerufen.
+2025-11-19 00:44:45 INFO [1199315] app.tabs.process.thread:210 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-19 00:45:45 ERROR [1199315] app.tabs.process.thread:251 - ProcessThread: _wait_for_motion -> TIMEOUT: Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.
+2025-11-19 00:45:45 INFO [1199315] app.tabs.process.thread:164 - ProcessThread: StateMachine wird gestoppt.
+2025-11-19 00:45:45 INFO [1199315] app.tabs.process.thread:173 - ProcessThread: EventLoop.quit() aufgrund Abbruch/Fehler.
+2025-11-19 00:45:45 ERROR [1199315] app.tabs.process.thread:362 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.
+2025-11-19 00:45:45 INFO [1199315] app.tabs.process.thread:455 - ProcessThread.run: beendet, _error_msg='Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.', stop_requested=False
+2025-11-19 00:45:45 ERROR [1199315] app.tabs.process.thread:460 - ProcessThread: notifyError(Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.)
+2025-11-19 00:57:47 INFO [1212295] app.tabs.process.thread:93 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged verbunden.
+2025-11-19 00:57:47 INFO [1212295] app.tabs.process.thread:111 - ProcessThread init: recipe=test, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-19 00:57:47 INFO [1212295] app.tabs.process:428 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-19 00:57:57 INFO [1212295] app.tabs.process.thread:145 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-19 00:57:57 INFO [1212295] app.tabs.process.thread:400 - ProcessThread.run: gestartet.
+2025-11-19 00:57:57 INFO [1212295] app.tabs.process.thread:457 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-19 00:57:57 INFO [1212295] app.tabs.process.thread:271 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-19 00:57:57 INFO [1212295] app.tabs.process.thread:490 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-19 00:57:57 INFO [1212295] app.tabs.process.thread:329 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-19 00:57:57 INFO [1212295] app.tabs.process.thread:502 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-19 00:57:57 INFO [1212295] app.tabs.process.thread:362 - ProcessThread: move_to_pose(predispense) via MotionBridge wird aufgerufen.
+2025-11-19 00:57:57 INFO [1212295] app.tabs.process.thread:218 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-19 01:05:22 INFO [1224106] app.tabs.process.thread:93 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged verbunden.
+2025-11-19 01:05:22 INFO [1224106] app.tabs.process.thread:111 - ProcessThread init: recipe=test, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-19 01:05:22 INFO [1224106] app.tabs.process:428 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-19 01:05:27 INFO [1224106] app.tabs.process.thread:145 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-19 01:05:27 INFO [1224106] app.tabs.process.thread:400 - ProcessThread.run: gestartet.
+2025-11-19 01:05:27 INFO [1224106] app.tabs.process.thread:457 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-19 01:05:27 INFO [1224106] app.tabs.process.thread:271 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-19 01:05:27 INFO [1224106] app.tabs.process.thread:490 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-19 01:05:41 INFO [1224106] app.tabs.process.thread:329 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-19 01:06:01 INFO [1224106] app.tabs.process.thread:502 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-19 01:06:22 INFO [1224106] app.tabs.process.thread:362 - ProcessThread: move_to_pose(predispense) via MotionBridge wird aufgerufen.
+2025-11-19 01:07:12 INFO [1224106] app.tabs.process.thread:218 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-19 01:08:12 ERROR [1224106] app.tabs.process.thread:261 - ProcessThread: _wait_for_motion -> TIMEOUT: Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.
+2025-11-19 01:08:12 INFO [1224106] app.tabs.process.thread:177 - ProcessThread: StateMachine wird gestoppt.
+2025-11-19 01:08:12 INFO [1224106] app.tabs.process.thread:186 - ProcessThread: EventLoop.quit() aufgrund Abbruch/Fehler.
+2025-11-19 01:08:12 ERROR [1224106] app.tabs.process.thread:372 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.
+2025-11-19 01:08:12 INFO [1224106] app.tabs.process.thread:465 - ProcessThread.run: beendet, _error_msg='Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.', stop_requested=False
+2025-11-19 01:08:12 ERROR [1224106] app.tabs.process.thread:473 - ProcessThread: notifyError(Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.)
+2025-11-19 01:09:56 INFO [1230847] app.tabs.process.thread:126 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged verbunden.
+2025-11-19 01:09:56 INFO [1230847] app.tabs.process.thread:144 - ProcessThread init: recipe=test, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-19 01:10:01 INFO [1230847] app.tabs.process.thread:178 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-19 01:10:01 INFO [1230847] app.tabs.process.thread:433 - ProcessThread.run: gestartet.
+2025-11-19 01:10:01 INFO [1230847] app.tabs.process.thread:490 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-19 01:10:01 INFO [1230847] app.tabs.process.thread:304 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-19 01:10:01 INFO [1230847] app.tabs.process.thread:530 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-19 01:10:01 INFO [1230847] app.tabs.process.thread:362 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-19 01:10:01 INFO [1230847] app.tabs.process.thread:542 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-19 01:10:01 INFO [1230847] app.tabs.process.thread:395 - ProcessThread: move_to_pose(predispense) via MotionBridge wird aufgerufen.
+2025-11-19 01:10:01 INFO [1230847] app.tabs.process.thread:251 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-19 01:11:01 ERROR [1230847] app.tabs.process.thread:294 - ProcessThread: _wait_for_motion -> TIMEOUT: Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.
+2025-11-19 01:11:01 INFO [1230847] app.tabs.process.thread:210 - ProcessThread: StateMachine wird gestoppt.
+2025-11-19 01:11:01 INFO [1230847] app.tabs.process.thread:219 - ProcessThread: EventLoop.quit() aufgrund Abbruch/Fehler.
+2025-11-19 01:11:01 ERROR [1230847] app.tabs.process.thread:405 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.
+2025-11-19 01:11:01 INFO [1230847] app.tabs.process.thread:498 - ProcessThread.run: beendet, _error_msg='Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.', stop_requested=False
+2025-11-19 01:11:01 ERROR [1230847] app.tabs.process.thread:513 - ProcessThread: notifyError(Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.)
+2025-11-19 01:17:58 INFO [1240365] app.tabs.process.thread:127 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-19 01:17:58 INFO [1240365] app.tabs.process.thread:145 - ProcessThread init: recipe=test, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-19 01:17:58 INFO [1240365] app.tabs.process:469 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-19 01:18:00 INFO [1240365] app.tabs.process.thread:179 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-19 01:18:00 INFO [1240365] app.tabs.process.thread:428 - ProcessThread.run: gestartet.
+2025-11-19 01:18:00 INFO [1240365] app.tabs.process.thread:485 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-19 01:18:00 INFO [1240365] app.tabs.process.thread:299 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-19 01:18:00 INFO [1240365] app.tabs.process.thread:525 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-19 01:18:00 INFO [1240365] app.tabs.process.thread:357 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-19 01:18:00 INFO [1240365] app.tabs.process.thread:537 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-19 01:18:00 INFO [1240365] app.tabs.process.thread:390 - ProcessThread: move_to_pose(predispense) via MotionBridge wird aufgerufen.
+2025-11-19 01:18:00 INFO [1240365] app.tabs.process.thread:253 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-19 01:18:05 INFO [1240365] app.tabs.process.thread:233 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-19 01:18:05 INFO [1240365] app.tabs.process.thread:233 - ProcessThread: motion_result empfangen: 'ERROR:EXECUTE_FAILED'
+2025-11-19 01:18:05 INFO [1240365] app.tabs.process.thread:269 - ProcessThread: motion_result ausgewertet: 'ERROR:EXECUTE_FAILED'
+2025-11-19 01:18:05 INFO [1240365] app.tabs.process.thread:211 - ProcessThread: StateMachine wird gestoppt.
+2025-11-19 01:18:05 INFO [1240365] app.tabs.process.thread:220 - ProcessThread: EventLoop.quit() aufgrund Abbruch/Fehler.
+2025-11-19 01:18:05 ERROR [1240365] app.tabs.process.thread:400 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:EXECUTE_FAILED
+2025-11-19 01:18:05 INFO [1240365] app.tabs.process.thread:493 - ProcessThread.run: beendet, _error_msg='ERROR:EXECUTE_FAILED', stop_requested=False
+2025-11-19 01:18:05 ERROR [1240365] app.tabs.process.thread:508 - ProcessThread: notifyError(ERROR:EXECUTE_FAILED)
