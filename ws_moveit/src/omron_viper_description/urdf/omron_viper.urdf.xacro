@@ -199,12 +199,49 @@
     <limit effort="100" velocity="10.47198" lower="-3.14159" upper="3.14159"/>
   </joint>
 
-  <!-- TCP-Fixgelenk -->
+  <!-- tool_mount: neutrale Orientierung auf der Interface-Plate -->
   <joint name="tool_mount_joint" type="fixed">
     <parent link="Adept_Viper_650_Interface_Plate"/>
     <child  link="tool_mount"/>
-    <!-- TCP-Ausrichtung wie von dir gewünscht -->
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Sonotek Vortex Nozzle (Mesh in mm -> scale auf Meter) -->
+  <link name="sonotek_vortex">
+    <visual>
+      <!-- Nur das Mesh ist rotiert, KEINE Verschiebung -->
+      <origin xyz="0 0 0" rpy="0 1.57079633 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/tools/Sonotek_Vortex.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="White"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 1.57079633 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/tools/Sonotek_Vortex.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Joint: tool_mount -> mesh (nur Rotation im TF, keine Verschiebung) -->
+  <joint name="sonotek_vortex_joint" type="fixed">
+    <parent link="tool_mount"/>
+    <child  link="sonotek_vortex"/>
+    <!-- TF-Ausrichtung zwischen Flansch und Tool -->
     <origin xyz="0 0 0" rpy="1.57079633 0 -1.57079633"/>
+  </joint>
+
+  <!-- TCP-Link: nur Frame, kein Mesh -->
+  <link name="tcp"/>
+
+  <!-- Joint: sonotek_vortex -> tcp (hier: -10cm in z, +5cm in y) -->
+  <joint name="tcp_joint" type="fixed">
+    <parent link="sonotek_vortex"/>
+    <child  link="tcp"/>
+    <origin xyz="0 0.05 -0.10" rpy="0 0 0"/>
   </joint>
 
 </robot>

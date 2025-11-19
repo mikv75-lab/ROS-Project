@@ -2113,3 +2113,8 @@
 2025-11-19 08:26:00 INFO [1245365] ros.ui_bridge:344 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion states ready
 2025-11-19 08:26:00 INFO [1245365] ros:186 - UIBridge verbunden (node=scene_bridge).
 2025-11-19 08:26:51 INFO [1245365] ros.ui_bridge:415 - UIBridge disconnect()
+2025-11-19 19:49:35 INFO [257153] ros.kill_all_ros:115 - [kill] stopping 2 ROS-related processes…
+2025-11-19 19:49:35 DEBUG [257153] ros.kill_all_ros:119 -  -> TERM pid=253550: /usr/bin/python3 /opt/ros/rolling/bin/ros2 launch omron_moveit_config robot.launch.py
+2025-11-19 19:49:35 DEBUG [257153] ros.kill_all_ros:119 -  -> TERM pid=253556: /root/ws_moveit/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group --ros-args -r __node:=move_group --params-file /tmp/launch_params_rxishsrh
+2025-11-19 19:49:37 INFO [257153] ros.ui_bridge:344 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion states ready
+2025-11-19 19:49:37 INFO [257153] ros:186 - UIBridge verbunden (node=scene_bridge).
