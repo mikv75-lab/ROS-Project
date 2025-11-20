@@ -237,6 +237,10 @@ class Motion(Node):
         if not msg.poses:
             self._emit_result("ERROR:EMPTY_WAYPOINTS")
             return
+
+        # 🔧 alte Planung verwerfen
+        self._planned = None
+
         frame = msg.header.frame_id or self.frame_world
 
         core_chunks: List[RobotTrajectoryCore] = []
@@ -259,6 +263,8 @@ class Motion(Node):
                 result = self._plan()
                 core_traj = self._extract_traj(f"wp_index={idx}", result)
                 if not core_traj:
+                    # Kein gültiger Plan -> insgesamt abbrechen, nichts behalten
+                    self._planned = None
                     return
 
                 msg_traj = core_traj.get_robot_trajectory_msg()
@@ -280,6 +286,7 @@ class Motion(Node):
             merged_msg = _concat_robot_trajectories(msg_chunks)
             if merged_msg is None or not merged_msg.joint_trajectory.points:
                 self._emit_result("ERROR:MERGE_FAILED")
+                self._planned = None
                 return
 
             merged_core = self._msg_to_core(merged_msg)
@@ -289,6 +296,7 @@ class Motion(Node):
             self.pub_preview.publish(MarkerArray(markers=markers))
             self._emit_result(f"PLANNED:OK steps={len(merged_msg.joint_trajectory.points)}")
         except Exception as e:
+            self._planned = None
             self._emit_result(f"ERROR:EXCEPTION {e}")
 
     def _on_plan_named(self, msg: MsgString) -> None:
@@ -299,6 +307,9 @@ class Motion(Node):
         if not name:
             self._emit_result("ERROR:EMPTY_NAME")
             return
+
+        # 🔧 alte Planung verwerfen
+        self._planned = None
 
         try:
             tf = self._lookup_tf(self.frame_world, name)
@@ -325,6 +336,7 @@ class Motion(Node):
             result = self._plan()
             core_traj = self._extract_traj(f"named='{name}'", result)
             if not core_traj:
+                self._planned = None
                 return
 
             msg_traj = core_traj.get_robot_trajectory_msg()
@@ -334,12 +346,17 @@ class Motion(Node):
             self._publish_preview_point(goal)
             self._emit_result(f"PLANNED:OK named='{name}'")
         except Exception as e:
+            self._planned = None
             self._emit_result(f"ERROR:EXCEPTION {e}")
 
     def _on_target_pose(self, msg: PoseStamped) -> None:
         if self._busy:
             self._emit_result("ERROR:BUSY")
             return
+
+        # 🔧 alte Planung verwerfen
+        self._planned = None
+
         frame = msg.header.frame_id or self.frame_world
         goal = PoseStamped()
         goal.header.frame_id = frame
@@ -350,6 +367,7 @@ class Motion(Node):
             result = self._plan()
             core_traj = self._extract_traj("pose", result)
             if not core_traj:
+                self._planned = None
                 return
 
             msg_traj = core_traj.get_robot_trajectory_msg()
@@ -359,6 +377,7 @@ class Motion(Node):
             self._publish_preview_point(goal)
             self._emit_result("PLANNED:OK pose")
         except Exception as e:
+            self._planned = None
             self._emit_result(f"ERROR:EXCEPTION {e}")
 
     def _on_execute(self, msg: MsgBool) -> None:
