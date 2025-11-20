@@ -50,7 +50,8 @@ class MotionBridge(BaseBridge):
 
     Recipe / freie Posen:
       - Hilfsfunktion move_to_pose(pose: PoseStamped)
-        → target_pose + execute
+        → target_pose publizieren
+        → execute(True) wird erst nach "PLANNED:OK pose" automatisch gesetzt.
     """
 
     GROUP = "motion"
@@ -64,6 +65,9 @@ class MotionBridge(BaseBridge):
 
         # pending named-move (home/service) für Auto-Execute
         self._pending_named: Optional[str] = None
+
+        # pending für freie Pose (Recipe)
+        self._pending_pose: bool = False
 
         super().__init__("motion_bridge", content)
 
@@ -92,7 +96,7 @@ class MotionBridge(BaseBridge):
         if self._pending_named:
             name = self._pending_named
             if text.startswith("PLANNED:OK") and f"named='{name}'" in text:
-                # Plan für das erwartete named-Fame ist fertig -> jetzt execute(True)
+                # Plan für das erwartete named-Frame ist fertig -> jetzt execute(True)
                 self.get_logger().info(f"[motion] auto-execute for named '{name}'")
                 self._pending_named = None
                 self._publish_execute(True, label=name)
@@ -100,6 +104,16 @@ class MotionBridge(BaseBridge):
                 # Fehler beim Planen -> pending zurücksetzen
                 self.get_logger().warning(f"[motion] planning for named '{name}' failed: {text}")
                 self._pending_named = None
+
+        # --- Auto-Execute-Logik für freie Pose (Recipe) ---
+        if self._pending_pose:
+            if text.startswith("PLANNED:OK pose"):
+                self.get_logger().info("[motion] auto-execute for recipe_pose")
+                self._pending_pose = False
+                self._publish_execute(True, label="recipe_pose")
+            elif text.startswith("ERROR:"):
+                self.get_logger().warning(f"[motion] planning for recipe_pose failed: {text}")
+                self._pending_pose = False
 
         self.signals.motionResultChanged.emit(text)
 
@@ -210,7 +224,8 @@ class MotionBridge(BaseBridge):
 
           - optional Speed setzen
           - target_pose = PoseStamped publizieren
-          - execute(True) setzen
+          - execute(True) wird NICHT mehr direkt gesetzt,
+            sondern nach "PLANNED:OK pose" automatisch.
 
         Motion-Node behandelt das wie _on_target_pose + _on_execute.
         """
@@ -222,6 +237,9 @@ class MotionBridge(BaseBridge):
             if set_speed is not None:
                 self._on_speed_changed(float(set_speed))
 
+            # Wir erwarten jetzt einen gültigen Plan für genau diese Pose
+            self._pending_pose = True
+
             # target_pose publizieren
             spec_pose = self.spec("subscribe", "target_pose")
             PoseType = spec_pose.resolve_type()
@@ -232,9 +250,8 @@ class MotionBridge(BaseBridge):
             msg_pose.pose = pose.pose
 
             pub_pose.publish(msg_pose)
-            self.get_logger().info("[motion] target_pose (recipe) published.")
-
-            # execute=True
-            self._publish_execute(True, label="recipe_pose")
+            self.get_logger().info("[motion] target_pose (recipe) published, warte auf PLANNED:OK pose.")
+            # KEIN execute(True) mehr hier!
         except Exception as e:
+            self._pending_pose = False
             self.get_logger().error(f"[motion] move_to_pose failed: {e}")

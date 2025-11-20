@@ -22,6 +22,7 @@ from app.widgets.robot_status_box import RobotStatusInfoBox
 from app.widgets.info_groupbox import InfoGroupBox
 from .process_thread import ProcessThread
 from .robot_init_thread import RobotInitThread
+from .process_view import ProcessTabView
 
 _LOG = logging.getLogger("app.tabs.process")
 
@@ -82,132 +83,37 @@ class ProcessTab(QWidget):
         self._in_update_start_conditions: bool = False
 
         # ==================================================================
-        # Layout
+        # View / Layout auslagern
         # ==================================================================
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(8)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        # ---------- TOP ROW ----------
-        top_row = QHBoxLayout()
-        top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.setSpacing(8)
-        root.addLayout(top_row)
+        self.view = ProcessTabView(self)
+        root.addWidget(self.view)
 
-        # --- Process Control ---
-        self.grpProcess = QGroupBox("Process Control", self)
-        vproc_outer = QVBoxLayout(self.grpProcess)
-        vproc_outer.setContentsMargins(8, 8, 8, 8)
-        vproc_outer.setSpacing(6)
+        # Kurz-Referenzen, damit der restliche Code unverändert bleiben kann
+        self.grpProcess: QGroupBox = self.view.grpProcess
+        self.grpStatus: QGroupBox = self.view.grpStatus
+        self.grpSetup: QGroupBox = self.view.grpSetup
+        self.robotStatusBox: RobotStatusInfoBox = self.view.robotStatusBox
+        self.infoBox: InfoGroupBox = self.view.infoBox
+        self.grpProcessInfo: QGroupBox = self.view.grpProcessInfo
+        self.grpRecipe: QGroupBox = self.view.grpRecipe
 
-        self.btnInit = QPushButton("Init", self.grpProcess)
-        self.btnLoadRecipe = QPushButton("Load Recipe", self.grpProcess)
-        self.btnStart = QPushButton("Start", self.grpProcess)
-        self.btnStop = QPushButton("Stop", self.grpProcess)
+        self.btnInit: QPushButton = self.view.btnInit
+        self.btnLoadRecipe: QPushButton = self.view.btnLoadRecipe
+        self.btnStart: QPushButton = self.view.btnStart
+        self.btnStop: QPushButton = self.view.btnStop
 
-        for b in (self.btnInit, self.btnLoadRecipe, self.btnStart, self.btnStop):
-            b.setMinimumHeight(28)
-            vproc_outer.addWidget(b)
-        vproc_outer.addStretch(1)
-        top_row.addWidget(self.grpProcess, 0)
-
-        # --- Startbedingungen ---
-        self.grpStatus = QGroupBox("Startbedingungen", self)
-        vstat = QVBoxLayout(self.grpStatus)
-        vstat.setContentsMargins(8, 8, 8, 8)
-        vstat.setSpacing(4)
-
-        self.lblStatus = QLabel("-", self.grpStatus)
-        self.lblStatus.setWordWrap(True)
-        vstat.addWidget(self.lblStatus)
-        top_row.addWidget(self.grpStatus, 1)
-
-        # --- Setup ---
-        self.grpSetup = QGroupBox("Setup", self)
-        vsetup = QVBoxLayout(self.grpSetup)
-        vsetup.setContentsMargins(8, 8, 8, 8)
-        vsetup.setSpacing(4)
-
-        self.lblTool = QLabel("Tool: -", self.grpSetup)
-        self.lblSubstrate = QLabel("Substrate: -", self.grpSetup)
-        self.lblMount = QLabel("Mount: -", self.grpSetup)
-
-        for lab in (self.lblTool, self.lblSubstrate, self.lblMount):
-            lab.setWordWrap(True)
-            vsetup.addWidget(lab)
-
-        vsetup.addStretch(1)
-        top_row.addWidget(self.grpSetup, 1)
-
-        # --- Robot Status ---
-        self.robotStatusBox = RobotStatusInfoBox(self, title="Robot Status")
-        top_row.addWidget(self.robotStatusBox, 2)
-
-        for gb in (self.grpProcess, self.grpStatus, self.grpSetup):
-            sp = gb.sizePolicy()
-            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-            sp.setVerticalPolicy(QSizePolicy.Policy.Expanding)
-            gb.setSizePolicy(sp)
-
-        sp_rs = self.robotStatusBox.sizePolicy()
-        sp_rs.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        sp_rs.setVerticalPolicy(QSizePolicy.Policy.Fixed)
-        self.robotStatusBox.setSizePolicy(sp_rs)
-
-        # ---------- INFO BOX ----------
-        self.infoBox = InfoGroupBox(self)
-        sp_info = self.infoBox.sizePolicy()
-        sp_info.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        sp_info.setVerticalPolicy(QSizePolicy.Policy.Fixed)
-        self.infoBox.setSizePolicy(sp_info)
-        root.addWidget(self.infoBox)
-
-        # ---------- PROCESS STATUS / LOG ----------
-        self.grpProcessInfo = QGroupBox("Process Status / Log", self)
-        vproc_info = QVBoxLayout(self.grpProcessInfo)
-        vproc_info.setContentsMargins(8, 8, 8, 8)
-        vproc_info.setSpacing(4)
-
-        self.lblProcessState = QLabel("Kein Prozess aktiv.", self.grpProcessInfo)
-        self.lblProcessState.setWordWrap(True)
-
-        self.txtProcessLog = QTextEdit(self.grpProcessInfo)
-        self.txtProcessLog.setReadOnly(True)
-        self.txtProcessLog.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-
-        vproc_info.addWidget(self.lblProcessState)
-        vproc_info.addWidget(self.txtProcessLog, 1)
-
-        sp_pinfo = self.grpProcessInfo.sizePolicy()
-        sp_pinfo.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        sp_pinfo.setVerticalPolicy(QSizePolicy.Policy.Expanding)
-        self.grpProcessInfo.setSizePolicy(sp_pinfo)
-
-        root.addWidget(self.grpProcessInfo, 1)
-
-        # ---------- RECIPE GROUP ----------
-        self.grpRecipe = QGroupBox("Recipe", self)
-        vrec = QHBoxLayout(self.grpRecipe)
-        vrec.setContentsMargins(8, 8, 8, 8)
-        vrec.setSpacing(6)
-
-        self.txtRecipeSummary = QTextEdit(self.grpRecipe)
-        self.txtRecipeSummary.setReadOnly(True)
-        self.txtRecipeSummary.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-
-        self.txtRecipePoses = QTextEdit(self.grpRecipe)
-        self.txtRecipePoses.setReadOnly(True)
-        self.txtRecipePoses.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-
-        vrec.addWidget(self.txtRecipeSummary, 1)
-        vrec.addWidget(self.txtRecipePoses, 1)
-
-        sp_rec = self.grpRecipe.sizePolicy()
-        sp_rec.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        sp_rec.setVerticalPolicy(QSizePolicy.Policy.Expanding)
-        self.grpRecipe.setSizePolicy(sp_rec)
-
-        root.addWidget(self.grpRecipe, 1)
+        self.lblStatus: QLabel = self.view.lblStatus
+        self.lblTool: QLabel = self.view.lblTool
+        self.lblSubstrate: QLabel = self.view.lblSubstrate
+        self.lblMount: QLabel = self.view.lblMount
+        self.lblProcessState: QLabel = self.view.lblProcessState
+        self.txtProcessLog: QTextEdit = self.view.txtProcessLog
+        self.txtRecipeSummary: QTextEdit = self.view.txtRecipeSummary
+        self.txtRecipePoses: QTextEdit = self.view.txtRecipePoses
 
         # ==================================================================
         # Threads
@@ -440,7 +346,8 @@ class ProcessTab(QWidget):
         thr.finished.connect(self._on_process_thread_finished)
         # WICHTIG: Verbindung über Lambda, um Qt-Slot-Signatur-Probleme zu vermeiden
         thr.stateChanged.connect(lambda s, self=self: self._on_process_state_changed(s))
-        thr.logMessage.connect(self._on_process_log_message)
+        thr.logMessage.connect(lambda m, self=self: self._on_process_log_message(m))
+
         self._process_thread = thr
 
         # Beim Laden eines neuen Rezepts das Log leeren
@@ -530,9 +437,9 @@ class ProcessTab(QWidget):
             self._update_recipe_info_text()
         except RuntimeError:
             return
-
+        
+        
         self._setup_process_thread_for_recipe(model)
-        # FIX: korrekter Methodenname
         self._send_recipe_to_spraypath(model)
 
         self._update_setup_from_scene()
@@ -888,3 +795,8 @@ class ProcessTab(QWidget):
         rec_mount_norm = self._norm_mesh_name(self._recipe_model.substrate_mount or "")
 
         sub_ok = bool(rec_sub_norm) and (cur_sub_norm == rec_sub_norm)
+        # sub_ok wird derzeit nur für Startbedingungen verwendet
+        self.set_substrate_ok(sub_ok)
+
+        mount_ok = bool(rec_mount_norm) and (cur_mount_norm == rec_mount_norm)
+        self.set_mount_ok(mount_ok)

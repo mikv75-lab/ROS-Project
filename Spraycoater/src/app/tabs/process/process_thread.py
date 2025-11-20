@@ -125,8 +125,9 @@ class ProcessThread(QtCore.QThread):
                     QtCore.Qt.ConnectionType.DirectConnection,
                 )
                 _LOG.info(
-                    "ProcessThread: MotionBridge gefunden (%s), motionResultChanged als DirectConnection verbunden.",
-                    type(self._motion).__name__,
+                    "ProcessThread: MotionBridge gefunden (%s), "
+                    "motionResultChanged als DirectConnection verbunden.",
+                    type(self._motion).__name__ if self._motion is not None else "None",
                 )
             else:
                 _LOG.warning(
@@ -228,27 +229,36 @@ class ProcessThread(QtCore.QThread):
 
     @QtCore.pyqtSlot(str)
     def _on_motion_result(self, text: str) -> None:
-        # Wird durch DirectConnection im Sender-Thread (MotionBridge) aufgerufen
+        """
+        Wird durch DirectConnection im Sender-Thread (MotionBridge) aufgerufen.
+        Speichert nur den Text; ausgewertet wird er im Thread-Kontext in _wait_for_motion.
+        """
         self._last_motion_result = (text or "").strip()
         _LOG.info("ProcessThread: motion_result empfangen: %r", self._last_motion_result)
 
-    def _has_motion_error(self) -> bool:
-        res = (self._last_motion_result or "").strip().upper()
-        if not res:
-            return False
-        return res.startswith("ERROR:")
-
     def _wait_for_motion(self, timeout_s: float) -> bool:
         """
-        Wartet auf EXECUTED:OK oder ein anderes Motion-Result.
-        Alles, was NICHT EXECUTED ist, wird im Prozesskontext als Fehler gewertet.
-        """
-        if self._motion is None:
-            _LOG.warning("ProcessThread: _wait_for_motion ohne MotionBridge -> direkt OK.")
-            return True
+        Wartet auf ein Motion-Ergebnis.
 
+        Strikt / fail-fast:
+          - Nur EXECUTED:OK / EXECUTED... gilt als Erfolg.
+          - JEDES andere Ergebnis (inkl. ERROR:..., UNKNOWN:..., etc.)
+            ist ein Fehler.
+          - Kein MotionBridge oder timeout_s <= 0 → ebenfalls Fehler.
+        """
+        # MotionBridge muss da sein
+        if self._motion is None:
+            msg = "MotionBridge nicht verfügbar (motion=None)."
+            _LOG.error("ProcessThread: _wait_for_motion: %s", msg)
+            self._abort_if_needed(msg)
+            return False
+
+        # Timeout muss sinnvoll sein
         if timeout_s <= 0.0:
-            return True
+            msg = "Motion timeout ist <= 0 s konfiguriert."
+            _LOG.error("ProcessThread: _wait_for_motion: %s", msg)
+            self._abort_if_needed(msg)
+            return False
 
         _LOG.info("ProcessThread: Warte auf Motion-Ergebnis (timeout=%.1f s)", timeout_s)
         self._last_motion_result = None
@@ -264,24 +274,26 @@ class ProcessThread(QtCore.QThread):
                 return False
 
             res = (self._last_motion_result or "").strip()
-            res_u = res.upper()
             if res:
+                res_u = res.upper()
                 _LOG.info("ProcessThread: motion_result ausgewertet: %r", res)
 
-                # Erfolg
+                # Einziger Erfolgsfall
                 if res_u.startswith("EXECUTED:OK") or res_u.startswith("EXECUTED"):
                     return True
 
-                # Fehler oder „unerwartet“
+                # ALLES andere ist Fehler, ohne Fallback-Mapping
                 if not self._error_msg:
-                    self._error_msg = res or "UNERWARTETES_MOTION_RESULT"
+                    self._error_msg = res
+
+                _LOG.error("ProcessThread: Motion-Fehler: %s", self._error_msg)
                 self._abort_if_needed(self._error_msg)
                 return False
 
             self.msleep(step_ms)
             elapsed_ms += step_ms
 
-        # Timeout
+        # Timeout -> ebenfalls HARTE Fehlerbedingung
         if not self._error_msg:
             self._error_msg = (
                 f"Motion timeout nach {timeout_s:.1f} s während MoveIt-Planung/Ausführung."
@@ -363,6 +375,11 @@ class ProcessThread(QtCore.QThread):
     def _move_pose_with_motion(self, pose: PoseStamped, label: str = "") -> bool:
         """
         Eine Pose via MotionBridge fahren, mit Fehler-/Timeout-Handling.
+
+        Strikt:
+          - Wenn _wait_for_motion() False zurückgibt, wurde bereits ein Fehler
+            gesetzt und _abort_if_needed() aufgerufen.
+          - Es gibt KEINE nachträgliche zweite Auswertung von _last_motion_result.
         """
         if self._should_stop():
             _LOG.info("ProcessThread: _move_pose_with_motion(%s) abgebrochen (stop_requested).", label)
@@ -370,47 +387,34 @@ class ProcessThread(QtCore.QThread):
             return False
 
         if pose is None:
+            msg = f"Interner Fehler: Zielpose ist None (label={label})."
             _LOG.error("ProcessThread: _move_pose_with_motion(%s): pose ist None.", label)
-            self._abort_if_needed("Interner Fehler: Zielpose ist None.")
+            self._abort_if_needed(msg)
             return False
 
         if self._motion is None:
-            _LOG.warning(
-                "ProcessThread: _move_pose_with_motion(%s): KEINE MotionBridge -> Dummy-Sleep.",
-                label,
-            )
-            for _ in range(80):
-                if self._should_stop():
-                    _LOG.info("ProcessThread: Dummy-Sleep abgebrochen (stop_requested).")
-                    self._abort_if_needed("Prozess durch Benutzer gestoppt.")
-                    return False
-                self.msleep(25)
-            return True
+            msg = f"MotionBridge fehlt (motion=None) für label={label}."
+            _LOG.error("ProcessThread: _move_pose_with_motion: %s", msg)
+            self._abort_if_needed(msg)
+            return False
 
         _LOG.info("ProcessThread: move_to_pose(%s) via MotionBridge wird aufgerufen.", label)
         try:
             self._motion.move_to_pose(pose)
         except Exception as e:
-            _LOG.exception("ProcessThread: move_to_pose(%s) failed: %s", label, e)
-            self._abort_if_needed(str(e))
+            msg = f"move_to_pose({label}) failed: {e}"
+            _LOG.exception("ProcessThread: %s", msg)
+            self._abort_if_needed(msg)
             return False
 
         ok = self._wait_for_motion(self._move_timeout_s)
         if not ok:
+            # _wait_for_motion hat bereits _error_msg gesetzt und _abort_if_needed() aufgerufen.
             _LOG.error(
                 "ProcessThread: _move_pose_with_motion(%s) fehlgeschlagen: %s",
                 label,
                 self._error_msg,
             )
-            return False
-
-        if self._has_motion_error():
-            _LOG.error(
-                "ProcessThread: _move_pose_with_motion(%s) Motion-Error: %s",
-                label,
-                self._last_motion_result,
-            )
-            self._abort_if_needed(self._last_motion_result)
             return False
 
         _LOG.info("ProcessThread: _move_pose_with_motion(%s) erfolgreich.", label)
@@ -690,7 +694,7 @@ class ProcessThread(QtCore.QThread):
         """
         State: Roboter nach Home fahren.
         Nutzt, falls vorhanden, move_home() oder go_home() der RobotBridge,
-        sonst Dummy-Sleep.
+        sonst Dummy-Sleep (das ist bewusst KEIN Motion-Fallback).
         """
         _LOG.info("ProcessThread: ENTER MOVE_HOME")
         if self._should_stop():
