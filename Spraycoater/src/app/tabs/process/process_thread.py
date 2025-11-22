@@ -52,6 +52,13 @@ class ProcessThread(QtCore.QThread):
       - MOVE_HOME           : Roboter nach Home
       - FINISHED (QFinalState)
       - ERROR    (QFinalState)
+
+    WICHTIG:
+      - Es gibt KEIN _abort_if_needed mehr.
+      - Jeder State-Handler setzt nur ggf. self._error_msg.
+      - Am ENDE jedes State-Handlers entscheidet _finish_state(), ob
+        - in den ERROR-FinalState (wenn Fehler/Stop), oder
+        - in den normalen Folgestate gewechselt wird.
     """
 
     # Steuer-Signale von außen
@@ -216,6 +223,28 @@ class ProcessThread(QtCore.QThread):
         QtCore.QTimer.singleShot(0, sig.emit)
 
     # ---------------------------------------------------------
+    # Helper: State abschließen
+    # ---------------------------------------------------------
+
+    def _finish_state(self, success_sig: QtCore.pyqtSignal) -> None:
+        """
+        Am ENDE eines State-Handlers aufrufen.
+
+        Logik:
+          - Wenn stop_requested und noch keine Fehlermeldung: generische Stop-Message setzen.
+          - Wenn es eine _error_msg gibt → ERROR-Transition.
+          - Sonst → Transition mit success_sig.
+        """
+        if self._should_stop() and not self._error_msg:
+            self._error_msg = "Prozess durch Benutzer gestoppt."
+
+        if self._error_msg:
+            _LOG.error("ProcessThread: Fehler erkannt, wechsle in ERROR: %s", self._error_msg)
+            self._post_transition(self._sig_error)
+        else:
+            self._post_transition(success_sig)
+
+    # ---------------------------------------------------------
     # Helper: Maschine + Thread-Loop beenden
     # ---------------------------------------------------------
 
@@ -235,46 +264,6 @@ class ProcessThread(QtCore.QThread):
             _LOG.exception("ProcessThread: Fehler bei quit().")
 
     # ---------------------------------------------------------
-    # Abbruch / Fehler
-    # ---------------------------------------------------------
-
-    def _abort_if_needed(self, msg: str | None = None) -> None:
-        """
-        Setzt optional eine Fehlermeldung und beendet den Ablauf.
-
-        Verhalten:
-          - setzt _error_msg, wenn msg übergeben wird
-          - wenn StateMachine läuft: wechselt via _sig_error asynchron in den ERROR-FinalState
-          - wenn StateMachine nicht mehr läuft, wird der Thread-Eventloop via quit() beendet
-
-        WICHTIG:
-          - notifyError() wird NICHT hier aufgerufen, sondern ausschließlich
-            im ERROR-FinalState (_on_state_error).
-        """
-        if msg and not self._error_msg:
-            self._error_msg = msg
-
-        if self._error_msg:
-            _LOG.error("ProcessThread: Abbruch mit Fehler: %s", self._error_msg)
-
-        machine = self._machine
-
-        # Wenn die StateMachine noch läuft: in den ERROR-FinalState wechseln (best effort)
-        if machine is not None and machine.isRunning():
-            try:
-                _LOG.info(
-                    "ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState "
-                    "via Signal (async)."
-                )
-                self._post_transition(self._sig_error)
-                return
-            except Exception:
-                _LOG.exception("ProcessThread: Fehler beim Signalisieren des ERROR-States.")
-
-        # Falls die StateMachine schon beendet ist, Thread-Eventloop direkt beenden
-        self._stop_machine_and_quit()
-
-    # ---------------------------------------------------------
     # Motion-Result-Handling
     # ---------------------------------------------------------
 
@@ -286,29 +275,30 @@ class ProcessThread(QtCore.QThread):
         """
         self._last_motion_result = (text or "").strip()
         _LOG.info("ProcessThread: motion_result empfangen: %r", self._last_motion_result)
-
     def _wait_for_motion(self, timeout_s: float) -> bool:
         """
         Wartet auf ein Motion-Ergebnis.
 
-        Strikt / fail-fast:
-          - Nur EXECUTED:OK / EXECUTED... gilt als Erfolg.
-          - JEDES andere Ergebnis (inkl. ERROR:..., UNKNOWN:..., etc.)
-            ist ein Fehler.
-          - Kein MotionBridge oder timeout_s <= 0 → ebenfalls Fehler.
+        Logik:
+          - PLANNED:OK...  → nur Info, weiter warten
+          - EXECUTED:OK... → Erfolg
+          - ERROR:/FAILED/ABORTED/CANCELLED/UNKNOWN/... → Fehler
+          - Kein MotionBridge oder timeout_s <= 0 → Fehler
         """
         # MotionBridge muss da sein
         if self._motion is None:
             msg = "MotionBridge nicht verfügbar (motion=None)."
             _LOG.error("ProcessThread: _wait_for_motion: %s", msg)
-            self._abort_if_needed(msg)
+            if not self._error_msg:
+                self._error_msg = msg
             return False
 
         # Timeout muss sinnvoll sein
         if timeout_s <= 0.0:
             msg = "Motion timeout ist <= 0 s konfiguriert."
             _LOG.error("ProcessThread: _wait_for_motion: %s", msg)
-            self._abort_if_needed(msg)
+            if not self._error_msg:
+                self._error_msg = msg
             return False
 
         _LOG.info("ProcessThread: Warte auf Motion-Ergebnis (timeout=%.1f s)", timeout_s)
@@ -321,7 +311,8 @@ class ProcessThread(QtCore.QThread):
         while elapsed_ms < max_ms:
             if self._should_stop():
                 _LOG.info("ProcessThread: _wait_for_motion abgebrochen (stop_requested).")
-                self._abort_if_needed("Prozess durch Benutzer gestoppt.")
+                if not self._error_msg:
+                    self._error_msg = "Prozess durch Benutzer gestoppt."
                 return False
 
             res = (self._last_motion_result or "").strip()
@@ -329,16 +320,37 @@ class ProcessThread(QtCore.QThread):
                 res_u = res.upper()
                 _LOG.info("ProcessThread: motion_result ausgewertet: %r", res)
 
-                # Einziger Erfolgsfall
+                # 1) PLANNED:OK → nur Info, weiter warten auf EXECUTED/ERROR
+                if res_u.startswith("PLANNED:OK") or res_u.startswith("PLANNED"):
+                    _LOG.info(
+                        "ProcessThread: Motion-Status ist nur PLANNED, "
+                        "warte weiter auf EXECUTED oder ERROR."
+                    )
+                    # Ergebnis als "verbraucht" markieren, damit wir auf das nächste warten
+                    self._last_motion_result = None
+                    # und weiter im while-Loop
+                    self.msleep(step_ms)
+                    elapsed_ms += step_ms
+                    continue
+
+                # 2) EXECUTED... → Erfolg
                 if res_u.startswith("EXECUTED:OK") or res_u.startswith("EXECUTED"):
                     return True
 
-                # ALLES andere ist Fehler, ohne Fallback-Mapping
+                # 3) Klare Fehler-Präfixe
+                if res_u.startswith(("ERROR", "FAILED", "ABORTED", "CANCELLED", "UNKNOWN")):
+                    if not self._error_msg:
+                        self._error_msg = res
+                    _LOG.error("ProcessThread: Motion-Fehler: %s", self._error_msg)
+                    return False
+
+                # 4) Alles andere behandeln wir vorsichtshalber als Fehler
                 if not self._error_msg:
                     self._error_msg = res
-
-                _LOG.error("ProcessThread: Motion-Fehler: %s", self._error_msg)
-                self._abort_if_needed(self._error_msg)
+                _LOG.error(
+                    "ProcessThread: Unerwartetes Motion-Result, behandle als Fehler: %s",
+                    self._error_msg,
+                )
                 return False
 
             self.msleep(step_ms)
@@ -350,8 +362,8 @@ class ProcessThread(QtCore.QThread):
                 f"Motion timeout nach {timeout_s:.1f} s während MoveIt-Planung/Ausführung."
             )
         _LOG.error("ProcessThread: _wait_for_motion -> TIMEOUT: %s", self._error_msg)
-        self._abort_if_needed(self._error_msg)
         return False
+
 
     # ---------------------------------------------------------
     # Helper: State-Namen emitten
@@ -410,15 +422,17 @@ class ProcessThread(QtCore.QThread):
             ps.pose.position.y = float(p.get("y", 0.0))
             ps.pose.position.z = float(p.get("z", 0.0))
 
-            ps.pose.orientation.x = float(p.get("qx", 0.0))
-            ps.pose.orientation.y = float(p.get("qy", 0.0))
-            ps.pose.orientation.z = float(p.get("qz", 0.0))
-            ps.pose.orientation.w = float(p.get("qw", 1.0))
+            # TEST: Orientierung komplett auf Identität (rx=ry=rz=0)
+            ps.pose.orientation.x = 0.0
+            ps.pose.orientation.y = 0.0
+            ps.pose.orientation.z = 0.0
+            ps.pose.orientation.w = 1.0
 
             out.append(ps)
 
         _LOG.info(
-            "ProcessThread: _get_recipe_poses: benutze erste side='%s' mit %d Posen (frame=%s).",
+            "ProcessThread: _get_recipe_poses: benutze erste side='%s' mit %d Posen "
+            "(frame=%s, quat=identity).",
             first_side, len(out), frame_id,
         )
         return out
@@ -429,27 +443,30 @@ class ProcessThread(QtCore.QThread):
 
         Strikt:
           - Wenn _wait_for_motion() False zurückgibt, wurde bereits ein Fehler
-            gesetzt und _abort_if_needed() aufgerufen.
-          - Es gibt KEINE nachträgliche zweite Auswertung von _last_motion_result.
+            in self._error_msg gesetzt.
+          - Es gibt KEINE weitere Auswertung von _last_motion_result.
 
         Kommunikation mit der MotionBridge erfolgt ausschließlich über
         Qt-Signale (moveToPoseRequested), NICHT über direkte Methodenaufrufe.
         """
         if self._should_stop():
             _LOG.info("ProcessThread: _move_pose_with_motion(%s) abgebrochen (stop_requested).", label)
-            self._abort_if_needed("Prozess durch Benutzer gestoppt.")
+            if not self._error_msg:
+                self._error_msg = "Prozess durch Benutzer gestoppt."
             return False
 
         if pose is None:
             msg = f"Interner Fehler: Zielpose ist None (label={label})."
             _LOG.error("ProcessThread: _move_pose_with_motion(%s): pose ist None.", label)
-            self._abort_if_needed(msg)
+            if not self._error_msg:
+                self._error_msg = msg
             return False
 
         if self._motion is None:
             msg = f"MotionBridge fehlt (motion=None) für label={label}."
             _LOG.error("ProcessThread: _move_pose_with_motion: %s", msg)
-            self._abort_if_needed(msg)
+            if not self._error_msg:
+                self._error_msg = msg
             return False
 
         sigs = getattr(self._motion, "signals", None)
@@ -461,7 +478,8 @@ class ProcessThread(QtCore.QThread):
                 self._motion,
                 sigs,
             )
-            self._abort_if_needed(msg)
+            if not self._error_msg:
+                self._error_msg = msg
             return False
 
         _LOG.info("ProcessThread: moveToPoseRequested(%s) via MotionBridge-Signal wird emittiert.", label)
@@ -472,12 +490,12 @@ class ProcessThread(QtCore.QThread):
         except Exception as e:
             msg = f"moveToPoseRequested({label}) emit failed: {e}"
             _LOG.exception("ProcessThread: %s", msg)
-            self._abort_if_needed(msg)
+            if not self._error_msg:
+                self._error_msg = msg
             return False
 
         ok = self._wait_for_motion(self._move_timeout_s)
         if not ok:
-            # _wait_for_motion hat bereits _error_msg gesetzt und _abort_if_needed() aufgerufen.
             _LOG.error(
                 "ProcessThread: _move_pose_with_motion(%s) fehlgeschlagen: %s",
                 label,
@@ -510,7 +528,7 @@ class ProcessThread(QtCore.QThread):
         self._ended_in_finished_state = False
 
         machine = QStateMachine()
-        self._machine = machine  # für _abort_if_needed()
+        self._machine = machine  # für _finish_state / _stop_machine_and_quit()
 
         # States
         s_move_predisp = QState()
@@ -573,7 +591,7 @@ class ProcessThread(QtCore.QThread):
         # FINISHED-State-Name + notifyFinished kommen aus _on_state_finished
 
         try:
-            machine.start()  # <<< Maschine wird hier gestartet
+            machine.start()
             _LOG.info("ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.")
             # Thread-eigene Eventloop, nötig für QStateMachine + QTimer.singleShot
             self.exec()
@@ -610,65 +628,51 @@ class ProcessThread(QtCore.QThread):
           → path[0]
         """
         _LOG.info("ProcessThread: ENTER MOVE_PREDISPENSE")
-        if self._should_stop():
-            self._abort_if_needed()
-            return
 
-        poses = self._get_recipe_poses()
-        if not poses:
-            _LOG.warning("ProcessThread: MOVE_PREDISPENSE: keine Posen -> direkt weiter.")
-            self._post_transition(self._sig_predispense_move_done)
-            return
-
-        first = poses[0]
-        _LOG.info("ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].")
-
-        if not self._move_pose_with_motion(first, label="predispense"):
-            return
-
-        if self._should_stop():
-            self._abort_if_needed()
-            return
+        # Arbeit nur ausführen, wenn noch kein Fehler gesetzt ist
+        if not self._error_msg and not self._should_stop():
+            poses = self._get_recipe_poses()
+            if not poses:
+                _LOG.warning("ProcessThread: MOVE_PREDISPENSE: keine Posen -> direkt weiter.")
+            else:
+                first = poses[0]
+                _LOG.info("ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].")
+                self._move_pose_with_motion(first, label="predispense")
 
         _LOG.info("ProcessThread: LEAVE MOVE_PREDISPENSE")
-        self._post_transition(self._sig_predispense_move_done)
+        self._finish_state(self._sig_predispense_move_done)
 
     def _on_state_wait_predispense(self) -> None:
         """
         State: predispense-time warten.
         """
         _LOG.info("ProcessThread: ENTER WAIT_PREDISPENSE")
-        if self._should_stop():
-            self._abort_if_needed()
-            return
 
-        pre_t = 0.0
-        try:
-            g = getattr(self._recipe, "globals", None)
-            if g is not None:
-                pre_t = float(getattr(g, "predispense_time", 0.0) or 0.0)
-        except Exception:
+        if not self._error_msg:
             pre_t = 0.0
+            try:
+                g = getattr(self._recipe, "globals", None)
+                if g is not None:
+                    pre_t = float(getattr(g, "predispense_time", 0.0) or 0.0)
+            except Exception:
+                pre_t = 0.0
 
-        _LOG.info("ProcessThread: WAIT_PREDISPENSE: predispense_time=%.3f s", pre_t)
+            _LOG.info("ProcessThread: WAIT_PREDISPENSE: predispense_time=%.3f s", pre_t)
 
-        ms_total = max(0, int(pre_t * 1000))
-        elapsed = 0
-        step = 50  # ms
+            ms_total = max(0, int(pre_t * 1000))
+            elapsed = 0
+            step = 50  # ms
 
-        while elapsed < ms_total:
-            if self._should_stop():
-                self._abort_if_needed()
-                return
-            self.msleep(step)
-            elapsed += step
-
-        if self._should_stop():
-            self._abort_if_needed()
-            return
+            while elapsed < ms_total:
+                if self._should_stop():
+                    if not self._error_msg:
+                        self._error_msg = "Prozess durch Benutzer gestoppt."
+                    break
+                self.msleep(step)
+                elapsed += step
 
         _LOG.info("ProcessThread: LEAVE WAIT_PREDISPENSE")
-        self._post_transition(self._sig_predispense_wait_done)
+        self._finish_state(self._sig_predispense_wait_done)
 
     def _on_state_move_recipe(self) -> None:
         """
@@ -676,72 +680,61 @@ class ProcessThread(QtCore.QThread):
           → alle Zwischen-Pfade path[1:-1]
         """
         _LOG.info("ProcessThread: ENTER MOVE_RECIPE")
-        if self._should_stop():
-            self._abort_if_needed()
-            return
 
-        poses = self._get_recipe_poses()
-        n = len(poses)
-        _LOG.info("ProcessThread: MOVE_RECIPE: Anzahl Posen=%d", n)
+        if not self._error_msg and not self._should_stop():
+            poses = self._get_recipe_poses()
+            n = len(poses)
+            _LOG.info("ProcessThread: MOVE_RECIPE: Anzahl Posen=%d", n)
 
-        if n <= 2:
-            _LOG.info("ProcessThread: MOVE_RECIPE: <=2 Posen, nichts zu fahren.")
-            self._post_transition(self._sig_move_recipe_done)
-            return
+            if n <= 2:
+                _LOG.info("ProcessThread: MOVE_RECIPE: <=2 Posen, nichts zu fahren.")
+            else:
+                for idx, pose in enumerate(poses[1:-1], start=1):
+                    if self._should_stop():
+                        if not self._error_msg:
+                            self._error_msg = "Prozess durch Benutzer gestoppt."
+                        break
 
-        for idx, pose in enumerate(poses[1:-1], start=1):
-            if self._should_stop():
-                self._abort_if_needed()
-                return
+                    _LOG.info("ProcessThread: MOVE_RECIPE: fahre Pose[%d] von %d.", idx, n - 2)
 
-            _LOG.info("ProcessThread: MOVE_RECIPE: fahre Pose[%d] von %d.", idx, n - 2)
-
-            if not self._move_pose_with_motion(pose, label=f"recipe_{idx}"):
-                return
-
-        if self._should_stop():
-            self._abort_if_needed()
-            return
+                    if not self._move_pose_with_motion(pose, label=f"recipe_{idx}"):
+                        # _move_pose_with_motion setzt bereits _error_msg
+                        break
 
         _LOG.info("ProcessThread: LEAVE MOVE_RECIPE")
-        self._post_transition(self._sig_move_recipe_done)
+        self._finish_state(self._sig_move_recipe_done)
 
     def _on_state_wait_postdispense(self) -> None:
         """
         State: postdispense-time warten.
         """
         _LOG.info("ProcessThread: ENTER WAIT_POSTDISPENSE")
-        if self._should_stop():
-            self._abort_if_needed()
-            return
 
-        post_t = 0.0
-        try:
-            g = getattr(self._recipe, "globals", None)
-            if g is not None:
-                post_t = float(getattr(g, "postdispense_time", 0.0) or 0.0)
-        except Exception:
+        if not self._error_msg:
             post_t = 0.0
+            try:
+                g = getattr(self._recipe, "globals", None)
+                if g is not None:
+                    post_t = float(getattr(g, "postdispense_time", 0.0) or 0.0)
+            except Exception:
+                post_t = 0.0
 
-        _LOG.info("ProcessThread: WAIT_POSTDISPENSE: postdispense_time=%.3f s", post_t)
+            _LOG.info("ProcessThread: WAIT_POSTDISPENSE: postdispense_time=%.3f s", post_t)
 
-        ms_total = max(0, int(post_t * 1000))
-        elapsed = 0
-        step = 50  # ms
+            ms_total = max(0, int(post_t * 1000))
+            elapsed = 0
+            step = 50  # ms
 
-        while elapsed < ms_total:
-            if self._should_stop():
-                self._abort_if_needed()
-                return
-            self.msleep(step)
-            elapsed += step
-
-        if self._should_stop():
-            self._abort_if_needed()
-            return
+            while elapsed < ms_total:
+                if self._should_stop():
+                    if not self._error_msg:
+                        self._error_msg = "Prozess durch Benutzer gestoppt."
+                    break
+                self.msleep(step)
+                elapsed += step
 
         _LOG.info("ProcessThread: LEAVE WAIT_POSTDISPENSE")
-        self._post_transition(self._sig_postdispense_wait_done)
+        self._finish_state(self._sig_postdispense_wait_done)
 
     def _on_state_move_retreat(self) -> None:
         """
@@ -749,29 +742,19 @@ class ProcessThread(QtCore.QThread):
           → path[-1], wenn vorhanden
         """
         _LOG.info("ProcessThread: ENTER MOVE_RETREAT")
-        if self._should_stop():
-            self._abort_if_needed()
-            return
 
-        poses = self._get_recipe_poses()
-        n = len(poses)
-        if n < 2:
-            _LOG.info("ProcessThread: MOVE_RETREAT: <2 Posen, kein separates Retreat.")
-            self._post_transition(self._sig_retreat_move_done)
-            return
-
-        last = poses[-1]
-        _LOG.info("ProcessThread: MOVE_RETREAT: fahre Pose[-1].")
-
-        if not self._move_pose_with_motion(last, label="retreat"):
-            return
-
-        if self._should_stop():
-            self._abort_if_needed()
-            return
+        if not self._error_msg and not self._should_stop():
+            poses = self._get_recipe_poses()
+            n = len(poses)
+            if n < 2:
+                _LOG.info("ProcessThread: MOVE_RETREAT: <2 Posen, kein separates Retreat.")
+            else:
+                last = poses[-1]
+                _LOG.info("ProcessThread: MOVE_RETREAT: fahre Pose[-1].")
+                self._move_pose_with_motion(last, label="retreat")
 
         _LOG.info("ProcessThread: LEAVE MOVE_RETREAT")
-        self._post_transition(self._sig_retreat_move_done)
+        self._finish_state(self._sig_retreat_move_done)
 
     def _on_state_move_home(self) -> None:
         """
@@ -780,45 +763,41 @@ class ProcessThread(QtCore.QThread):
         sonst Dummy-Sleep (das ist bewusst KEIN Motion-Fallback).
         """
         _LOG.info("ProcessThread: ENTER MOVE_HOME")
-        if self._should_stop():
-            self._abort_if_needed()
-            return
 
-        try:
-            if self._rb is not None:
-                _LOG.info("ProcessThread: MOVE_HOME: benutze RobotBridge (%s).",
-                          type(self._rb).__name__)
-                if hasattr(self._rb, "move_home"):
-                    self._rb.move_home()
-                elif hasattr(self._rb, "go_home"):
-                    self._rb.go_home()
+        if not self._error_msg and not self._should_stop():
+            try:
+                if self._rb is not None:
+                    _LOG.info("ProcessThread: MOVE_HOME: benutze RobotBridge (%s).",
+                              type(self._rb).__name__)
+                    if hasattr(self._rb, "move_home"):
+                        self._rb.move_home()
+                    elif hasattr(self._rb, "go_home"):
+                        self._rb.go_home()
+                    else:
+                        _LOG.warning(
+                            "ProcessThread: MOVE_HOME: RobotBridge hat kein move_home/go_home, Dummy-Sleep."
+                        )
+                        for _ in range(80):
+                            if self._should_stop():
+                                if not self._error_msg:
+                                    self._error_msg = "Prozess durch Benutzer gestoppt."
+                                break
+                            self.msleep(25)
                 else:
-                    _LOG.warning(
-                        "ProcessThread: MOVE_HOME: RobotBridge hat kein move_home/go_home, Dummy-Sleep."
-                    )
+                    _LOG.warning("ProcessThread: MOVE_HOME: keine RobotBridge, Dummy-Sleep.")
                     for _ in range(80):
                         if self._should_stop():
-                            self._abort_if_needed()
-                            return
+                            if not self._error_msg:
+                                self._error_msg = "Prozess durch Benutzer gestoppt."
+                            break
                         self.msleep(25)
-            else:
-                _LOG.warning("ProcessThread: MOVE_HOME: keine RobotBridge, Dummy-Sleep.")
-                for _ in range(80):
-                    if self._should_stop():
-                        self._abort_if_needed()
-                        return
-                    self.msleep(25)
-        except Exception as e:
-            _LOG.exception("ProcessThread: MOVE_HOME: Exception: %s", e)
-            self._abort_if_needed(str(e))
-            return
-
-        if self._should_stop():
-            self._abort_if_needed()
-            return
+            except Exception as e:
+                _LOG.exception("ProcessThread: MOVE_HOME: Exception: %s", e)
+                if not self._error_msg:
+                    self._error_msg = str(e)
 
         _LOG.info("ProcessThread: LEAVE MOVE_HOME")
-        self._post_transition(self._sig_move_home_done)
+        self._finish_state(self._sig_move_home_done)
 
     def _on_state_error(self) -> None:
         """
@@ -838,7 +817,6 @@ class ProcessThread(QtCore.QThread):
         _LOG.error("ProcessThread: notifyError(%s) im ERROR-State", msg)
         self.notifyError.emit(msg)
 
-        # <<< Maschine stoppen + Thread-Loop beenden
         self._stop_machine_and_quit()
 
     def _on_state_finished(self) -> None:
@@ -857,5 +835,4 @@ class ProcessThread(QtCore.QThread):
         _LOG.info("ProcessThread: notifyFinished() im FINISHED-State")
         self.notifyFinished.emit()
 
-        # <<< Maschine stoppen + Thread-Loop beenden
         self._stop_machine_and_quit()

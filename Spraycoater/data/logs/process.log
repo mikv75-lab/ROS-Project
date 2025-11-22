@@ -1072,3 +1072,930 @@
 2025-11-22 04:06:12 INFO [3692] app.tabs.process.thread:624 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
 2025-11-22 04:06:12 INFO [3692] app.tabs.process.thread:467 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
 2025-11-22 04:06:12 INFO [3692] app.tabs.process.thread:314 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:08:00 INFO [7243] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:08:00 INFO [7243] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:08:00 INFO [7243] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:08:00 INFO [7243] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:08:00 INFO [7243] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:08:03 INFO [7243] app.tabs.process.thread:187 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 04:08:03 INFO [7243] app.tabs.process.thread:506 - ProcessThread.run: gestartet.
+2025-11-22 04:08:03 INFO [7243] app.tabs.process.thread:577 - ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.
+2025-11-22 04:08:03 INFO [7243] app.tabs.process.thread:362 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 04:08:03 INFO [7243] app.tabs.process.thread:612 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 04:08:03 INFO [7243] app.tabs.process.thread:420 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 04:08:03 INFO [7243] app.tabs.process.thread:624 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 04:08:03 INFO [7243] app.tabs.process.thread:467 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:08:03 INFO [7243] app.tabs.process.thread:314 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:08:08 INFO [7243] app.tabs.process.thread:288 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:08:08 INFO [7243] app.tabs.process.thread:330 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:08:08 ERROR [7243] app.tabs.process.thread:340 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:08:08 ERROR [7243] app.tabs.process.thread:258 - ProcessThread: Abbruch mit Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:08:08 INFO [7243] app.tabs.process.thread:265 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal (async).
+2025-11-22 04:08:08 ERROR [7243] app.tabs.process.thread:481 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:08:16 INFO [7243] app.tabs.process.thread:832 - ProcessThread: ENTER ERROR
+2025-11-22 04:08:19 INFO [7243] app.tabs.process.thread:362 - ProcessThread: State gewechselt zu ERROR
+2025-11-22 04:08:21 ERROR [7243] app.tabs.process.thread:838 - ProcessThread: notifyError(ERROR:NO_TRAJECTORY pose) im ERROR-State
+2025-11-22 04:08:28 INFO [7243] app.tabs.process.thread:232 - ProcessThread: quit() aus _stop_machine_and_quit.
+2025-11-22 04:08:28 INFO [7243] app.tabs.process.thread:586 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=True, ended_in_finished=False
+2025-11-22 04:09:11 INFO [11097] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:09:11 INFO [11097] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:09:11 INFO [11097] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:09:11 INFO [11097] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:09:11 INFO [11097] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:10:14 INFO [11097] app.tabs.process.thread:187 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 04:10:14 INFO [11097] app.tabs.process.thread:506 - ProcessThread.run: gestartet.
+2025-11-22 04:10:14 INFO [11097] app.tabs.process.thread:577 - ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.
+2025-11-22 04:10:14 INFO [11097] app.tabs.process.thread:362 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 04:10:14 INFO [11097] app.tabs.process.thread:612 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 04:10:14 INFO [11097] app.tabs.process.thread:420 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 04:10:14 INFO [11097] app.tabs.process.thread:624 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 04:10:14 INFO [11097] app.tabs.process.thread:467 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:10:14 INFO [11097] app.tabs.process.thread:314 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:10:19 INFO [11097] app.tabs.process.thread:288 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:10:19 INFO [11097] app.tabs.process.thread:330 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:10:19 ERROR [11097] app.tabs.process.thread:340 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:10:19 ERROR [11097] app.tabs.process.thread:258 - ProcessThread: Abbruch mit Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:10:19 INFO [11097] app.tabs.process.thread:265 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal (async).
+2025-11-22 04:10:19 ERROR [11097] app.tabs.process.thread:481 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:10:27 INFO [11097] app.tabs.process.thread:832 - ProcessThread: ENTER ERROR
+2025-11-22 04:10:28 INFO [11097] app.tabs.process.thread:362 - ProcessThread: State gewechselt zu ERROR
+2025-11-22 04:10:30 ERROR [11097] app.tabs.process.thread:838 - ProcessThread: notifyError(ERROR:NO_TRAJECTORY pose) im ERROR-State
+2025-11-22 04:12:15 INFO [17193] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:12:15 INFO [17193] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:12:15 INFO [17193] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:12:15 INFO [17193] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:12:15 INFO [17193] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:12:18 INFO [17193] app.tabs.process.thread:284 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
+2025-11-22 04:12:19 INFO [17193] app.tabs.process.thread:284 - ProcessThread: motion_result empfangen: 'ERROR:EXECUTE_FAILED'
+2025-11-22 04:12:21 INFO [17193] app.tabs.process.thread:284 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
+2025-11-22 04:12:21 INFO [17193] app.tabs.process.thread:284 - ProcessThread: motion_result empfangen: 'ERROR:EXECUTE_FAILED'
+2025-11-22 04:12:25 INFO [17193] app.tabs.process.thread:284 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
+2025-11-22 04:12:26 INFO [17193] app.tabs.process.thread:284 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:12:28 INFO [17193] app.tabs.process.thread:187 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 04:12:28 INFO [17193] app.tabs.process.thread:502 - ProcessThread.run: gestartet.
+2025-11-22 04:12:28 INFO [17193] app.tabs.process.thread:573 - ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.
+2025-11-22 04:12:28 INFO [17193] app.tabs.process.thread:358 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 04:12:28 INFO [17193] app.tabs.process.thread:608 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 04:12:28 INFO [17193] app.tabs.process.thread:416 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 04:12:28 INFO [17193] app.tabs.process.thread:620 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 04:12:28 INFO [17193] app.tabs.process.thread:463 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:12:28 INFO [17193] app.tabs.process.thread:310 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:12:33 INFO [17193] app.tabs.process.thread:284 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:12:33 INFO [17193] app.tabs.process.thread:326 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:12:33 ERROR [17193] app.tabs.process.thread:336 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:12:33 ERROR [17193] app.tabs.process.thread:254 - ProcessThread: Abbruch mit Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:12:33 INFO [17193] app.tabs.process.thread:261 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal (async).
+2025-11-22 04:12:33 ERROR [17193] app.tabs.process.thread:477 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:12:36 INFO [17193] app.tabs.process.thread:828 - ProcessThread: ENTER ERROR
+2025-11-22 04:12:36 INFO [17193] app.tabs.process.thread:358 - ProcessThread: State gewechselt zu ERROR
+2025-11-22 04:12:36 ERROR [17193] app.tabs.process.thread:834 - ProcessThread: notifyError(ERROR:NO_TRAJECTORY pose) im ERROR-State
+2025-11-22 04:12:46 WARNING [17193] app.tabs.process.thread:190 - ProcessThread: startSignal ignoriert, Thread läuft bereits.
+2025-11-22 04:13:06 INFO [17193] app.tabs.process.thread:194 - ProcessThread: request_stop() aufgerufen.
+2025-11-22 04:13:13 INFO [17193] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:13:13 INFO [17193] app.tabs.process.thread:194 - ProcessThread: request_stop() aufgerufen.
+2025-11-22 04:14:29 INFO [22865] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:14:29 INFO [22865] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:14:29 INFO [22865] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:14:29 INFO [22865] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:14:29 INFO [22865] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:15:01 INFO [22865] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:15:01 INFO [22865] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:15:01 INFO [22865] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:15:01 INFO [22865] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:15:01 INFO [22865] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:15:27 INFO [24378] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:15:27 INFO [24378] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:15:27 INFO [24378] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:15:27 INFO [24378] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:15:27 INFO [24378] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:15:30 INFO [24378] app.tabs.process.thread:284 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
+2025-11-22 04:15:30 INFO [24378] app.tabs.process.thread:284 - ProcessThread: motion_result empfangen: 'ERROR:EXECUTE_FAILED'
+2025-11-22 04:15:39 INFO [24378] app.tabs.process.thread:284 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
+2025-11-22 04:15:39 INFO [24378] app.tabs.process.thread:284 - ProcessThread: motion_result empfangen: 'ERROR:EXECUTE_FAILED'
+2025-11-22 04:15:42 INFO [24378] app.tabs.process.thread:284 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
+2025-11-22 04:15:42 INFO [24378] app.tabs.process.thread:284 - ProcessThread: motion_result empfangen: 'ERROR:EXECUTE_FAILED'
+2025-11-22 04:22:29 INFO [31260] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:22:29 INFO [31260] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:22:29 INFO [31260] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:22:29 INFO [31260] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:22:29 INFO [31260] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:22:32 INFO [31260] app.tabs.process.thread:187 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 04:22:32 INFO [31260] app.tabs.process.thread:506 - ProcessThread.run: gestartet.
+2025-11-22 04:22:32 INFO [31260] app.tabs.process.thread:577 - ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.
+2025-11-22 04:22:32 INFO [31260] app.tabs.process.thread:362 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 04:22:32 INFO [31260] app.tabs.process.thread:612 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 04:22:32 INFO [31260] app.tabs.process.thread:420 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 04:22:32 INFO [31260] app.tabs.process.thread:624 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 04:22:32 INFO [31260] app.tabs.process.thread:467 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:22:32 INFO [31260] app.tabs.process.thread:314 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:24:04 INFO [34394] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:24:04 INFO [34394] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:24:04 INFO [34394] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:24:04 INFO [34394] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:24:04 INFO [34394] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:24:07 INFO [34394] app.tabs.process.thread:187 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 04:24:07 INFO [34394] app.tabs.process.thread:506 - ProcessThread.run: gestartet.
+2025-11-22 04:24:07 INFO [34394] app.tabs.process.thread:577 - ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.
+2025-11-22 04:24:07 INFO [34394] app.tabs.process.thread:362 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 04:24:07 INFO [34394] app.tabs.process.thread:612 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 04:24:07 INFO [34394] app.tabs.process.thread:420 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 04:24:07 INFO [34394] app.tabs.process.thread:624 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 04:24:07 INFO [34394] app.tabs.process.thread:467 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:24:07 INFO [34394] app.tabs.process.thread:314 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:24:12 INFO [34394] app.tabs.process.thread:288 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:24:12 INFO [34394] app.tabs.process.thread:330 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:24:12 ERROR [34394] app.tabs.process.thread:340 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:24:12 ERROR [34394] app.tabs.process.thread:258 - ProcessThread: Abbruch mit Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:24:12 INFO [34394] app.tabs.process.thread:265 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal (async).
+2025-11-22 04:24:12 ERROR [34394] app.tabs.process.thread:481 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:24:17 INFO [34394] app.tabs.process.thread:832 - ProcessThread: ENTER ERROR
+2025-11-22 04:24:20 INFO [34394] app.tabs.process.thread:362 - ProcessThread: State gewechselt zu ERROR
+2025-11-22 04:24:23 ERROR [34394] app.tabs.process.thread:838 - ProcessThread: notifyError(ERROR:NO_TRAJECTORY pose) im ERROR-State
+2025-11-22 04:24:45 INFO [34394] app.tabs.process.thread:232 - ProcessThread: quit() aus _stop_machine_and_quit.
+2025-11-22 04:24:45 INFO [34394] app.tabs.process.thread:586 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=True, ended_in_finished=False
+2025-11-22 04:25:31 INFO [34394] app.tabs.process.thread:187 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 04:25:31 INFO [34394] app.tabs.process.thread:506 - ProcessThread.run: gestartet.
+2025-11-22 04:25:31 INFO [34394] app.tabs.process.thread:577 - ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.
+2025-11-22 04:25:31 INFO [34394] app.tabs.process.thread:362 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 04:25:31 INFO [34394] app.tabs.process.thread:612 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 04:25:31 INFO [34394] app.tabs.process.thread:420 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 04:25:31 INFO [34394] app.tabs.process.thread:624 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 04:25:31 INFO [34394] app.tabs.process.thread:467 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:25:31 INFO [34394] app.tabs.process.thread:314 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:25:36 INFO [34394] app.tabs.process.thread:288 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:25:36 INFO [34394] app.tabs.process.thread:330 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:25:36 ERROR [34394] app.tabs.process.thread:340 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:25:36 ERROR [34394] app.tabs.process.thread:258 - ProcessThread: Abbruch mit Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:25:36 INFO [34394] app.tabs.process.thread:265 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal (async).
+2025-11-22 04:25:36 ERROR [34394] app.tabs.process.thread:481 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:25:45 INFO [34394] app.tabs.process.thread:832 - ProcessThread: ENTER ERROR
+2025-11-22 04:25:45 INFO [34394] app.tabs.process.thread:362 - ProcessThread: State gewechselt zu ERROR
+2025-11-22 04:25:45 ERROR [34394] app.tabs.process.thread:838 - ProcessThread: notifyError(ERROR:NO_TRAJECTORY pose) im ERROR-State
+2025-11-22 04:25:48 INFO [34394] app.tabs.process.thread:232 - ProcessThread: quit() aus _stop_machine_and_quit.
+2025-11-22 04:25:48 INFO [34394] app.tabs.process.thread:586 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=True, ended_in_finished=False
+2025-11-22 04:27:58 INFO [43601] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:27:58 INFO [43601] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:27:58 INFO [43601] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:27:58 INFO [43601] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:27:58 INFO [43601] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:28:26 INFO [43601] app.tabs.process.thread:187 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 04:28:26 INFO [43601] app.tabs.process.thread:506 - ProcessThread.run: gestartet.
+2025-11-22 04:28:26 INFO [43601] app.tabs.process.thread:577 - ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.
+2025-11-22 04:28:26 INFO [43601] app.tabs.process.thread:362 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 04:28:26 INFO [43601] app.tabs.process.thread:612 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 04:28:26 INFO [43601] app.tabs.process.thread:420 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 04:28:26 INFO [43601] app.tabs.process.thread:624 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 04:28:26 INFO [43601] app.tabs.process.thread:467 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:29:01 INFO [43601] app.tabs.process.thread:314 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:29:17 INFO [43601] app.tabs.process.thread:288 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:29:20 INFO [43601] app.tabs.process.thread:330 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:29:27 ERROR [43601] app.tabs.process.thread:340 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:35:45 INFO [52534] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:35:45 INFO [52534] app.tabs.process.thread:141 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:35:45 INFO [52534] app.tabs.process.thread:160 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:35:45 INFO [52534] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:35:45 INFO [52534] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:35:50 INFO [52534] app.tabs.process.thread:194 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 04:35:50 INFO [52534] app.tabs.process.thread:503 - ProcessThread.run: gestartet.
+2025-11-22 04:35:50 INFO [52534] app.tabs.process.thread:574 - ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.
+2025-11-22 04:35:50 INFO [52534] app.tabs.process.thread:355 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 04:35:54 INFO [52534] app.tabs.process.thread:609 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 04:35:56 INFO [52534] app.tabs.process.thread:413 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 04:35:58 INFO [52534] app.tabs.process.thread:618 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 04:35:59 INFO [52534] app.tabs.process.thread:464 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:36:23 INFO [52534] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:36:27 INFO [52534] app.tabs.process.thread:308 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:37:48 ERROR [52534] app.tabs.process.thread:346 - ProcessThread: _wait_for_motion -> TIMEOUT: Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.
+2025-11-22 04:37:48 ERROR [52534] app.tabs.process.thread:478 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.
+2025-11-22 04:37:48 INFO [52534] app.tabs.process.thread:621 - ProcessThread: LEAVE MOVE_PREDISPENSE
+2025-11-22 04:37:48 ERROR [52534] app.tabs.process.thread:242 - ProcessThread: Fehler erkannt, wechsle in ERROR: Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.
+2025-11-22 04:37:49 INFO [52534] app.tabs.process.thread:790 - ProcessThread: ENTER ERROR
+2025-11-22 04:37:49 INFO [52534] app.tabs.process.thread:355 - ProcessThread: State gewechselt zu ERROR
+2025-11-22 04:38:00 ERROR [52534] app.tabs.process.thread:796 - ProcessThread: notifyError(Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.) im ERROR-State
+2025-11-22 04:38:17 INFO [52534] app.tabs.process.thread:261 - ProcessThread: quit() aus _stop_machine_and_quit.
+2025-11-22 04:38:17 INFO [52534] app.tabs.process.thread:583 - ProcessThread.run: beendet, _error_msg='Motion timeout nach 60.0 s während MoveIt-Planung/Ausführung.', stop_requested=False, ended_in_error=True, ended_in_finished=False
+2025-11-22 04:38:20 INFO [52534] app.tabs.process.thread:194 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 04:38:20 INFO [52534] app.tabs.process.thread:503 - ProcessThread.run: gestartet.
+2025-11-22 04:38:20 INFO [52534] app.tabs.process.thread:574 - ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.
+2025-11-22 04:38:20 INFO [52534] app.tabs.process.thread:355 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 04:38:20 INFO [52534] app.tabs.process.thread:609 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 04:38:20 INFO [52534] app.tabs.process.thread:413 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 04:38:20 INFO [52534] app.tabs.process.thread:618 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 04:38:20 INFO [52534] app.tabs.process.thread:464 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:38:20 INFO [52534] app.tabs.process.thread:308 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:38:25 INFO [52534] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:38:25 INFO [52534] app.tabs.process.thread:325 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 04:38:25 ERROR [52534] app.tabs.process.thread:335 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:38:25 ERROR [52534] app.tabs.process.thread:478 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:38:25 INFO [52534] app.tabs.process.thread:621 - ProcessThread: LEAVE MOVE_PREDISPENSE
+2025-11-22 04:38:25 ERROR [52534] app.tabs.process.thread:242 - ProcessThread: Fehler erkannt, wechsle in ERROR: ERROR:NO_TRAJECTORY pose
+2025-11-22 04:38:25 INFO [52534] app.tabs.process.thread:790 - ProcessThread: ENTER ERROR
+2025-11-22 04:38:25 INFO [52534] app.tabs.process.thread:355 - ProcessThread: State gewechselt zu ERROR
+2025-11-22 04:38:25 ERROR [52534] app.tabs.process.thread:796 - ProcessThread: notifyError(ERROR:NO_TRAJECTORY pose) im ERROR-State
+2025-11-22 04:38:27 INFO [52534] app.tabs.process.thread:261 - ProcessThread: quit() aus _stop_machine_and_quit.
+2025-11-22 04:38:27 INFO [52534] app.tabs.process.thread:583 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=True, ended_in_finished=False
+2025-11-22 04:41:12 INFO [62283] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:41:12 INFO [62283] app.tabs.process.thread:141 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:41:12 INFO [62283] app.tabs.process.thread:160 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:41:12 INFO [62283] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:41:12 INFO [62283] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:41:17 INFO [62283] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
+2025-11-22 04:41:19 INFO [62283] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:41:21 INFO [62283] app.tabs.process.thread:194 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 04:41:21 INFO [62283] app.tabs.process.thread:505 - ProcessThread.run: gestartet.
+2025-11-22 04:41:21 INFO [62283] app.tabs.process.thread:576 - ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.
+2025-11-22 04:41:21 INFO [62283] app.tabs.process.thread:355 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 04:41:21 INFO [62283] app.tabs.process.thread:611 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 04:41:21 INFO [62283] app.tabs.process.thread:414 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene, quat=identity).
+2025-11-22 04:41:21 INFO [62283] app.tabs.process.thread:620 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 04:41:21 INFO [62283] app.tabs.process.thread:466 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:41:21 INFO [62283] app.tabs.process.thread:308 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:41:21 INFO [62283] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:41:21 INFO [62283] app.tabs.process.thread:325 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:41:21 ERROR [62283] app.tabs.process.thread:335 - ProcessThread: Motion-Fehler: PLANNED:OK pose
+2025-11-22 04:41:21 ERROR [62283] app.tabs.process.thread:480 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: PLANNED:OK pose
+2025-11-22 04:41:21 INFO [62283] app.tabs.process.thread:623 - ProcessThread: LEAVE MOVE_PREDISPENSE
+2025-11-22 04:41:21 ERROR [62283] app.tabs.process.thread:242 - ProcessThread: Fehler erkannt, wechsle in ERROR: PLANNED:OK pose
+2025-11-22 04:41:21 INFO [62283] app.tabs.process.thread:792 - ProcessThread: ENTER ERROR
+2025-11-22 04:41:21 INFO [62283] app.tabs.process.thread:355 - ProcessThread: State gewechselt zu ERROR
+2025-11-22 04:41:21 ERROR [62283] app.tabs.process.thread:798 - ProcessThread: notifyError(PLANNED:OK pose) im ERROR-State
+2025-11-22 04:41:22 INFO [62283] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:41:26 INFO [62283] app.tabs.process.thread:261 - ProcessThread: quit() aus _stop_machine_and_quit.
+2025-11-22 04:41:26 INFO [62283] app.tabs.process.thread:585 - ProcessThread.run: beendet, _error_msg='PLANNED:OK pose', stop_requested=False, ended_in_error=True, ended_in_finished=False
+2025-11-22 04:44:25 INFO [65820] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:44:25 INFO [65820] app.tabs.process.thread:141 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:44:25 INFO [65820] app.tabs.process.thread:160 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:44:25 INFO [65820] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:44:25 INFO [65820] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:46:18 INFO [69565] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:46:18 INFO [69565] app.tabs.process.thread:141 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:46:18 INFO [69565] app.tabs.process.thread:160 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:46:18 INFO [69565] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:46:18 INFO [69565] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:46:20 INFO [69565] app.tabs.process.thread:194 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 04:46:20 INFO [69565] app.tabs.process.thread:524 - ProcessThread.run: gestartet.
+2025-11-22 04:46:20 INFO [69565] app.tabs.process.thread:595 - ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.
+2025-11-22 04:46:20 INFO [69565] app.tabs.process.thread:374 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 04:46:20 INFO [69565] app.tabs.process.thread:630 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 04:46:20 INFO [69565] app.tabs.process.thread:433 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene, quat=identity).
+2025-11-22 04:46:20 INFO [69565] app.tabs.process.thread:639 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 04:46:20 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:20 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:20 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:20 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:20 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(predispense) erfolgreich.
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:642 - ProcessThread: LEAVE MOVE_PREDISPENSE
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:374 - ProcessThread: State gewechselt zu WAIT_PREDISPENSE
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:649 - ProcessThread: ENTER WAIT_PREDISPENSE
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:660 - ProcessThread: WAIT_PREDISPENSE: predispense_time=0.000 s
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:674 - ProcessThread: LEAVE WAIT_PREDISPENSE
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:374 - ProcessThread: State gewechselt zu MOVE_RECIPE
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:682 - ProcessThread: ENTER MOVE_RECIPE
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:433 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene, quat=identity).
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:687 - ProcessThread: MOVE_RECIPE: Anzahl Posen=528
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[1] von 526.
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_1) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:21 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_1) erfolgreich.
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[2] von 526.
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_2) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_2) erfolgreich.
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[3] von 526.
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_3) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_3) erfolgreich.
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[4] von 526.
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_4) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:22 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_4) erfolgreich.
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[5] von 526.
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_5) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_5) erfolgreich.
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[6] von 526.
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_6) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_6) erfolgreich.
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[7] von 526.
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_7) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:23 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_7) erfolgreich.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[8] von 526.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_8) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_8) erfolgreich.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[9] von 526.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_9) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_9) erfolgreich.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[10] von 526.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_10) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_10) erfolgreich.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[11] von 526.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_11) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:24 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_11) erfolgreich.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[12] von 526.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_12) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_12) erfolgreich.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[13] von 526.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_13) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_13) erfolgreich.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[14] von 526.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_14) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_14) erfolgreich.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[15] von 526.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_15) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:25 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_15) erfolgreich.
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[16] von 526.
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_16) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_16) erfolgreich.
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[17] von 526.
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_17) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_17) erfolgreich.
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[18] von 526.
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_18) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:26 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_18) erfolgreich.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[19] von 526.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_19) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_19) erfolgreich.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[20] von 526.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_20) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_20) erfolgreich.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[21] von 526.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_21) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_21) erfolgreich.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[22] von 526.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_22) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:27 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_22) erfolgreich.
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[23] von 526.
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_23) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_23) erfolgreich.
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[24] von 526.
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_24) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_24) erfolgreich.
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[25] von 526.
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_25) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:28 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_25) erfolgreich.
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[26] von 526.
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_26) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_26) erfolgreich.
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[27] von 526.
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_27) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_27) erfolgreich.
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[28] von 526.
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_28) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:29 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_28) erfolgreich.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[29] von 526.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_29) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_29) erfolgreich.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[30] von 526.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_30) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_30) erfolgreich.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[31] von 526.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_31) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_31) erfolgreich.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[32] von 526.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_32) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:30 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_32) erfolgreich.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[33] von 526.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_33) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_33) erfolgreich.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[34] von 526.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_34) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_34) erfolgreich.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[35] von 526.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_35) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_35) erfolgreich.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[36] von 526.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_36) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:31 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_36) erfolgreich.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[37] von 526.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_37) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_37) erfolgreich.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[38] von 526.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_38) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_38) erfolgreich.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[39] von 526.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_39) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_39) erfolgreich.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[40] von 526.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_40) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:32 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_40) erfolgreich.
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[41] von 526.
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_41) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_41) erfolgreich.
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[42] von 526.
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_42) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_42) erfolgreich.
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[43] von 526.
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_43) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:33 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_43) erfolgreich.
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[44] von 526.
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_44) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_44) erfolgreich.
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[45] von 526.
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_45) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_45) erfolgreich.
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[46] von 526.
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_46) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:34 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_46) erfolgreich.
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[47] von 526.
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_47) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_47) erfolgreich.
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[48] von 526.
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_48) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_48) erfolgreich.
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[49] von 526.
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_49) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:35 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_49) erfolgreich.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[50] von 526.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_50) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_50) erfolgreich.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[51] von 526.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_51) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_51) erfolgreich.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[52] von 526.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_52) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_52) erfolgreich.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[53] von 526.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_53) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:36 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_53) erfolgreich.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[54] von 526.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_54) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_54) erfolgreich.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[55] von 526.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_55) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_55) erfolgreich.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[56] von 526.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_56) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_56) erfolgreich.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[57] von 526.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_57) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:37 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_57) erfolgreich.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[58] von 526.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_58) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_58) erfolgreich.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[59] von 526.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_59) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_59) erfolgreich.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[60] von 526.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_60) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_60) erfolgreich.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[61] von 526.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_61) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:38 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_61) erfolgreich.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[62] von 526.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_62) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_62) erfolgreich.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[63] von 526.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_63) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_63) erfolgreich.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[64] von 526.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_64) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_64) erfolgreich.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[65] von 526.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_65) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:39 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_65) erfolgreich.
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[66] von 526.
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_66) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_66) erfolgreich.
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[67] von 526.
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_67) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_67) erfolgreich.
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[68] von 526.
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_68) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:40 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_68) erfolgreich.
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[69] von 526.
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_69) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_69) erfolgreich.
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[70] von 526.
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_70) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_70) erfolgreich.
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[71] von 526.
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_71) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'PLANNED:OK pose'
+2025-11-22 04:46:41 INFO [69565] app.tabs.process.thread:325 - ProcessThread: Motion-Status ist nur PLANNED, warte weiter auf EXECUTED oder ERROR.
+2025-11-22 04:46:42 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 04:46:42 INFO [69565] app.tabs.process.thread:321 - ProcessThread: motion_result ausgewertet: 'EXECUTED:OK'
+2025-11-22 04:46:42 INFO [69565] app.tabs.process.thread:506 - ProcessThread: _move_pose_with_motion(recipe_71) erfolgreich.
+2025-11-22 04:46:42 INFO [69565] app.tabs.process.thread:698 - ProcessThread: MOVE_RECIPE: fahre Pose[72] von 526.
+2025-11-22 04:46:42 INFO [69565] app.tabs.process.thread:485 - ProcessThread: moveToPoseRequested(recipe_72) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:46:42 INFO [69565] app.tabs.process.thread:304 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:46:42 INFO [69565] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
