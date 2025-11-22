@@ -9,8 +9,9 @@ Panels:
         - /MotionPlanning1/Planning Metrics1
         - /MotionPlanning1/Planned Path1
         - /TF1/Frames1
+        - /PoseArray1
       Splitter Ratio: 0.5
-    Tree Height: 163
+    Tree Height: 294
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -300,18 +301,18 @@ Visualization Manager:
       Update Interval: 0
       Value: true
     - Alpha: 1
-      Arrow Length: 0.30000001192092896
-      Axes Length: 0.30000001192092896
-      Axes Radius: 0.009999999776482582
+      Arrow Length: 0
+      Axes Length: 0.0024999999441206455
+      Axes Radius: 0.0002500000118743628
       Class: rviz_default_plugins/PoseArray
       Color: 255; 25; 0
       Enabled: true
-      Head Length: 0.07000000029802322
-      Head Radius: 0.029999999329447746
+      Head Length: 0
+      Head Radius: 0
       Name: PoseArray
-      Shaft Length: 0.23000000417232513
-      Shaft Radius: 0.009999999776482582
-      Shape: Arrow (Flat)
+      Shaft Length: 0
+      Shaft Radius: 0
+      Shape: Axes
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -323,7 +324,9 @@ Visualization Manager:
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: MarkerArray
-      Namespaces: true
+      Namespaces:
+        Value: true
+        recipe: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -349,30 +352,50 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.5732266902923584
+      Distance: 0.18284189701080322
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.10000000149011612
-        Y: 0.25
-        Z: 0.30000001192092896
-      Focal Shape Fixed Size: true
+        X: 0
+        Y: 0
+        Z: 0
+      Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.06500019133090973
-      Target Frame: robot_mount
+      Pitch: 1.1597962379455566
+      Target Frame: scene
       Value: Orbit (rviz_default_plugins)
-      Yaw: 5.940183639526367
-    Saved: ~
+      Yaw: 6.068584442138672
+    Saved:
+      - Class: rviz_default_plugins/Orbit
+        Distance: 1.543152093887329
+        Enable Stereo Rendering:
+          Stereo Eye Separation: 0.05999999865889549
+          Stereo Focal Distance: 1
+          Swap Stereo Eyes: false
+          Value: false
+        Focal Point:
+          X: -0.7000000476837158
+          Y: 0.25
+          Z: 0.25
+        Focal Shape Fixed Size: true
+        Focal Shape Size: 0.05000000074505806
+        Invert Z Axis: false
+        Name: Orbit
+        Near Clip Distance: 0.009999999776482582
+        Pitch: 0.10500019043684006
+        Target Frame: scene
+        Value: Orbit (rviz_default_plugins)
+        Yaw: 6.005184173583984
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 975
+  Height: 1369
   Help:
     collapsed: false
   Hide Left Dock: false
@@ -381,9 +404,9 @@ Window Geometry:
     collapsed: false
   MotionPlanning - Trajectory Slider:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000379fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb000000100044006900730070006c006100790073010000003b00000124000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e00670100000165000001930000016a00fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a0056006900650077007301000002fe000000b6000000a000ffffff000001f60000037900000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000503fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb000000100044006900730070006c006100790073010000003b000001a7000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e006701000001e8000002480000016900fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a00560069006500770073010000043600000108000000a000ffffff000007460000050300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
-  Width: 1200
-  X: 3138
-  Y: 353
+  Width: 2560
+  X: 1920
+  Y: 23

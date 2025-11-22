@@ -411,6 +411,11 @@ class ProcessTab(QWidget):
         self._robot_init_thread.startSignal.emit()
 
     def _on_load_recipe_clicked(self) -> None:
+        """
+        Teil 1: Datei auswählen + Rezeptmodell laden.
+        Der eigentliche UI-/Thread-/SprayPath-Kram passiert danach
+        in _apply_loaded_recipe(), optional verzögert.
+        """
         start_dir = getattr(getattr(self.ctx, "paths", None), "recipe_dir", os.getcwd())
 
         fname, _ = QFileDialog.getOpenFileName(
@@ -423,33 +428,68 @@ class ProcessTab(QWidget):
             return
 
         try:
+            # *** Nur Laden + Model-Erstellung ***
             model = Recipe.load_yaml(fname)
         except Exception as e:
             QMessageBox.critical(self, "Ladefehler", f"Rezept konnte nicht geladen werden:\n{e}")
             return
 
+        _LOG.info("ProcessTab: Rezept '%s' geladen, wende nun auf UI/Threads an.", fname)
+
+        # Variante B: leicht verzögert im nächsten Eventloop-Tick
+        QtCore.QTimer.singleShot(
+            0,
+            lambda m=model, f=fname, self=self: self._apply_loaded_recipe(m, f)
+        )
+
+    def _apply_loaded_recipe(self, model: Recipe, fname: str) -> None:
+        """
+        Teil 2: Das fertig geladene Rezept-Model in den UI- und
+        Prozesszustand übernehmen, ProcessThread/SprayPath anstoßen.
+        """
+        if model is None:
+            return
+
+        # 1) Model & Name setzen
         self._recipe_model = model
 
         name = (model.id or "").strip() or os.path.basename(fname)
         self.set_recipe_name(name)
 
+        # 2) Recipe-Textfelder aktualisieren
         try:
             self._update_recipe_info_text()
         except RuntimeError:
+            # UI evtl. schon zerstört (z.B. beim Schließen) -> einfach abbrechen
             return
-        
-        
-        self._setup_process_thread_for_recipe(model)
-        self._send_recipe_to_spraypath(model)
 
-        self._update_setup_from_scene()
-        self._evaluate_scene_match()
+        # 3) ProcessThread vorbereiten
+        try:
+            self._setup_process_thread_for_recipe(model)
+        except Exception:
+            _LOG.exception("ProcessTab: _setup_process_thread_for_recipe() hat eine Exception geworfen")
+            return
 
-        # Status/Log zurücksetzen
+        # 4) SprayPath (MarkerArray) an Bridge schicken
+        try:
+            self._send_recipe_to_spraypath(model)
+        except Exception:
+            _LOG.exception("ProcessTab: _send_recipe_to_spraypath() hat eine Exception geworfen")
+
+        # 5) Setup/Scene prüfen
+        try:
+            self._update_setup_from_scene()
+            self._evaluate_scene_match()
+        except Exception:
+            _LOG.exception("ProcessTab: Szene-/Setup-Update nach Rezeptladen fehlgeschlagen")
+
+        # 6) Status/Log zurücksetzen
         try:
             self.lblProcessState.setText("Kein Prozess aktiv.")
         except RuntimeError:
             pass
+
+        _LOG.info("ProcessTab: Rezept '%s' erfolgreich angewendet (id=%r).", fname, model.id)
 
     def _on_start_clicked(self) -> None:
         try:
@@ -462,12 +502,23 @@ class ProcessTab(QWidget):
             QMessageBox.warning(self, "Kein Rezept", "Es ist kein Rezept geladen.")
             return
 
-        if self._process_thread.recipe is not self._recipe_model:
-            self._process_thread.set_recipe(self._recipe_model)
+        # Safety: sicherstellen, dass Thread das aktuelle Model kennt
+        if getattr(self._process_thread, "recipe", None) is not self._recipe_model:
+            try:
+                self._process_thread.set_recipe(self._recipe_model)
+            except Exception:
+                _LOG.exception("ProcessTab: set_recipe im ProcessThread fehlgeschlagen")
+                QMessageBox.critical(self, "Process-Fehler", "Rezept konnte nicht an den Prozess übergeben werden.")
+                return
 
         self.set_process_active(True)
         self._append_process_log("=== Prozess gestartet ===")
-        self._process_thread.startSignal.emit()
+
+        try:
+            self._process_thread.startSignal.emit()
+        except Exception:
+            _LOG.exception("ProcessTab: startSignal.emit() fehlgeschlagen")
+            self.set_process_active(False)
 
     def _on_stop_clicked(self) -> None:
         self._append_process_log("=== Stop angefordert ===")

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# File: ros/ui_bridge/motion_bridge.py
 from __future__ import annotations
 from typing import Optional
 
@@ -15,12 +16,15 @@ class MotionSignals(QtCore.QObject):
     """
     Qt-Signale für Motion:
 
-    Vom UI kommend:
+    Vom UI / anderen Threads kommend:
       - motionSpeedChanged(float)
       - moveToHomeRequested()
       - moveToServiceRequested()
       - moveToHomeRequestedWithSpeed(float)
       - moveToServiceRequestedWithSpeed(float)
+
+      - moveToPoseRequested(PoseStamped)
+      - moveToPoseWithSpeedRequested(PoseStamped, float)
 
     Zusätzlich (optional):
       - motionResultChanged(str): Texte aus /spraycoater/motion/result
@@ -33,6 +37,10 @@ class MotionSignals(QtCore.QObject):
 
     moveToHomeRequestedWithSpeed = QtCore.pyqtSignal(float)
     moveToServiceRequestedWithSpeed = QtCore.pyqtSignal(float)
+
+    # freie Pose (z.B. aus Recipe / ProcessThread)
+    moveToPoseRequested = QtCore.pyqtSignal(object)              # PoseStamped
+    moveToPoseWithSpeedRequested = QtCore.pyqtSignal(object, float)
 
     motionResultChanged = QtCore.pyqtSignal(str)
 
@@ -49,9 +57,13 @@ class MotionBridge(BaseBridge):
         um Rennbedingungen zu vermeiden.
 
     Recipe / freie Posen:
-      - Hilfsfunktion move_to_pose(pose: PoseStamped)
+      - moveToPoseRequested-Signal → _move_to_pose_impl
         → target_pose publizieren
         → execute(True) wird erst nach "PLANNED:OK pose" automatisch gesetzt.
+
+    Hinweis:
+      Die Pose darf in beliebigem Frame kommen (z.B. 'scene').
+      Der Motion-Node transformiert sie nun intern nach 'world'.
     """
 
     GROUP = "motion"
@@ -71,7 +83,7 @@ class MotionBridge(BaseBridge):
 
         super().__init__("motion_bridge", content)
 
-        # UI-Signale verdrahten
+        # UI-/Thread-Signale verdrahten
         s = self.signals
         s.motionSpeedChanged.connect(self._on_speed_changed)
 
@@ -80,6 +92,10 @@ class MotionBridge(BaseBridge):
 
         s.moveToHomeRequestedWithSpeed.connect(self._on_move_home_with_speed)
         s.moveToServiceRequestedWithSpeed.connect(self._on_move_service_with_speed)
+
+        # freie Pose über Signale
+        s.moveToPoseRequested.connect(self._on_move_to_pose)
+        s.moveToPoseWithSpeedRequested.connect(self._on_move_to_pose_with_speed)
 
         self.get_logger().info("[motion] MotionBridge initialisiert (named home/service via TF + Auto-Execute).")
 
@@ -129,6 +145,7 @@ class MotionBridge(BaseBridge):
         """
         Setzt über /spraycoater/motion/cmd den Speed:
           'speed:<mm/s>'
+        (Motion-Node interpretiert das aktuell als Faktor 0.05..1.0.)
         """
         try:
             msg_type = self.spec("subscribe", "cmd").resolve_type()
@@ -137,7 +154,7 @@ class MotionBridge(BaseBridge):
             if hasattr(msg, "data"):
                 msg.data = f"speed:{float(speed_mm_s):.3f}"
             pub.publish(msg)
-            self.get_logger().info(f"[motion] speed set to {speed_mm_s:.3f} mm/s")
+            self.get_logger().info(f"[motion] speed set to {speed_mm_s:.3f} (raw)")
         except Exception as e:
             self.get_logger().error(f"[motion] publish speed failed: {e}")
 
@@ -158,6 +175,24 @@ class MotionBridge(BaseBridge):
     def _on_move_service_with_speed(self, speed_mm_s: float):
         self._on_speed_changed(speed_mm_s)
         self._do_named("service")
+
+    # ------------------------------------------------------------------
+    # UI/Threads → Bridge: freie Pose per Signal
+    # ------------------------------------------------------------------
+
+    def _on_move_to_pose(self, pose: PoseStamped):
+        """Slot für moveToPoseRequested-Signal (ohne Geschwindigkeitsänderung)."""
+        if pose is None:
+            self.get_logger().warning("[motion] _on_move_to_pose: pose is None")
+            return
+        self._move_to_pose_impl(pose, set_speed=None)
+
+    def _on_move_to_pose_with_speed(self, pose: PoseStamped, speed_mm_s: float):
+        """Slot für moveToPoseWithSpeedRequested-Signal (mit expliziter Speed-Vorgabe)."""
+        if pose is None:
+            self.get_logger().warning("[motion] _on_move_to_pose_with_speed: pose is None")
+            return
+        self._move_to_pose_impl(pose, set_speed=float(speed_mm_s))
 
     # ------------------------------------------------------------------
     # Kern-Move-Logik: Named Frames (home/service)
@@ -215,12 +250,12 @@ class MotionBridge(BaseBridge):
             self.get_logger().error(f"[motion] publish execute failed: {e}")
 
     # ------------------------------------------------------------------
-    # Recipe / freie Pose: Hilfs-Funktion
+    # Recipe / freie Pose: Hilfs-Funktion (API + Impl)
     # ------------------------------------------------------------------
 
     def move_to_pose(self, pose: PoseStamped, set_speed: Optional[float] = None):
         """
-        Öffentliche Hilfsfunktion für andere Teile der App (z.B. Recipe-Executor):
+        Öffentliche Hilfsfunktion für andere Teile der App (Backward-Compat):
 
           - optional Speed setzen
           - target_pose = PoseStamped publizieren
@@ -230,7 +265,20 @@ class MotionBridge(BaseBridge):
         Motion-Node behandelt das wie _on_target_pose + _on_execute.
         """
         if pose is None:
-            self.get_logger().warning("[motion] move_to_pose: pose is None.")
+            self.get_logger().warning("[motion] move_to_pose: pose is None")
+            return
+        self._move_to_pose_impl(pose, set_speed=set_speed)
+
+    def _move_to_pose_impl(self, pose: PoseStamped, set_speed: Optional[float] = None):
+        """
+        Zentrale Implementierung für freie Posen.
+        Wird von:
+          - _on_move_to_pose
+          - _on_move_to_pose_with_speed
+          - move_to_pose (API) verwendet.
+        """
+        if pose is None:
+            self.get_logger().warning("[motion] move_to_pose_impl: pose is None.")
             return
 
         try:
@@ -249,9 +297,18 @@ class MotionBridge(BaseBridge):
             msg_pose.header = pose.header
             msg_pose.pose = pose.pose
 
+            self.get_logger().info(
+                f"[motion] target_pose publish: frame_id='{msg_pose.header.frame_id}', "
+                f"pos=({msg_pose.pose.position.x:.3f}, "
+                f"{msg_pose.pose.position.y:.3f}, "
+                f"{msg_pose.pose.position.z:.3f})"
+            )
+
             pub_pose.publish(msg_pose)
-            self.get_logger().info("[motion] target_pose (recipe) published, warte auf PLANNED:OK pose.")
+            self.get_logger().info(
+                "[motion] target_pose (recipe) published, warte auf PLANNED:OK pose."
+            )
             # KEIN execute(True) mehr hier!
         except Exception as e:
             self._pending_pose = False
-            self.get_logger().error(f"[motion] move_to_pose failed: {e}")
+            self.get_logger().error(f"[motion] move_to_pose_impl failed: {e}")

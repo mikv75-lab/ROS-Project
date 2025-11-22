@@ -51,6 +51,7 @@ class ProcessThread(QtCore.QThread):
       - MOVE_RETREAT        : Retreat-Position anfahren (path[-1])
       - MOVE_HOME           : Roboter nach Home
       - FINISHED (QFinalState)
+      - ERROR    (QFinalState)
     """
 
     # Steuer-Signale von außen
@@ -75,6 +76,9 @@ class ProcessThread(QtCore.QThread):
     _sig_retreat_move_done = QtCore.pyqtSignal()
     _sig_move_home_done = QtCore.pyqtSignal()
 
+    # internes Signal, um in den ERROR-FinalState zu wechseln
+    _sig_error = QtCore.pyqtSignal()
+
     def __init__(
         self,
         *,
@@ -93,6 +97,9 @@ class ProcessThread(QtCore.QThread):
         self._error_msg: str | None = None
         self._machine: QStateMachine | None = None
         self._loop: QtCore.QEventLoop | None = None  # EventLoop-Referenz für sauberen Abbruch
+
+        # Merker, ob die StateMachine im ERROR-FinalState geendet hat
+        self._ended_in_error_state: bool = False
 
         # Logging → Qt-Signal
         self._log_handler: Optional[_QtSignalHandler] = _QtSignalHandler(self)
@@ -192,30 +199,37 @@ class ProcessThread(QtCore.QThread):
 
     def _abort_if_needed(self, msg: str | None = None) -> None:
         """
-        Setzt optional eine Fehlermeldung und stoppt die StateMachine + EventLoop.
-        Wird sowohl für Stop als auch Fehler benutzt.
+        Setzt optional eine Fehlermeldung und beendet den Ablauf.
+
+        Verhalten:
+          - setzt _error_msg, wenn msg übergeben wird
+          - wenn StateMachine läuft: wechselt via _sig_error in den ERROR-FinalState
+          - wenn StateMachine nicht mehr läuft, wird der EventLoop direkt beendet
+
+        WICHTIG:
+          - notifyError() wird NICHT hier aufgerufen, sondern ausschließlich
+            im ERROR-FinalState (_on_state_error).
         """
         if msg and not self._error_msg:
             self._error_msg = msg
             _LOG.error("ProcessThread: Abbruch mit Fehler: %s", msg)
 
-        # optional: ERROR-State nach außen signalisieren
-        if msg:
-            try:
-                self.stateChanged.emit("ERROR")
-            except Exception:
-                pass
-
-        # StateMachine stoppen
-        if self._machine is not None:
-            try:
-                _LOG.info("ProcessThread: StateMachine wird gestoppt.")
-                self._machine.stop()
-            except Exception:
-                _LOG.exception("ProcessThread: Fehler beim Stoppen der StateMachine.")
-
-        # EventLoop beenden, damit run() zurückkehrt
+        machine = self._machine
         loop = self._loop
+
+        # Wenn die StateMachine noch läuft: in den ERROR-FinalState wechseln
+        if machine is not None and machine.isRunning():
+            try:
+                _LOG.info("ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.")
+                self._sig_error.emit()
+                # Der Wechsel in den ERROR-FinalState führt zu machine.finished
+                # und damit via Verbindung zu loop.quit().
+                return
+            except Exception:
+                _LOG.exception("ProcessThread: Fehler beim Signalisieren des ERROR-States.")
+
+        # Falls die StateMachine schon beendet ist, EventLoop direkt beenden,
+        # damit run() zurückkehren kann.
         if loop is not None and loop.isRunning():
             try:
                 _LOG.info("ProcessThread: EventLoop.quit() aufgrund Abbruch/Fehler.")
@@ -380,6 +394,9 @@ class ProcessThread(QtCore.QThread):
           - Wenn _wait_for_motion() False zurückgibt, wurde bereits ein Fehler
             gesetzt und _abort_if_needed() aufgerufen.
           - Es gibt KEINE nachträgliche zweite Auswertung von _last_motion_result.
+
+        Kommunikation mit der MotionBridge erfolgt ausschließlich über
+        Qt-Signale (moveToPoseRequested), NICHT über direkte Methodenaufrufe.
         """
         if self._should_stop():
             _LOG.info("ProcessThread: _move_pose_with_motion(%s) abgebrochen (stop_requested).", label)
@@ -398,11 +415,25 @@ class ProcessThread(QtCore.QThread):
             self._abort_if_needed(msg)
             return False
 
-        _LOG.info("ProcessThread: move_to_pose(%s) via MotionBridge wird aufgerufen.", label)
+        sigs = getattr(self._motion, "signals", None)
+        if sigs is None or not hasattr(sigs, "moveToPoseRequested"):
+            msg = f"MotionBridge.signals.moveToPoseRequested fehlt für label={label}."
+            _LOG.error(
+                "ProcessThread: _move_pose_with_motion: %s (motion=%r, signals=%r)",
+                msg,
+                self._motion,
+                sigs,
+            )
+            self._abort_if_needed(msg)
+            return False
+
+        _LOG.info("ProcessThread: moveToPoseRequested(%s) via MotionBridge-Signal wird emittiert.", label)
         try:
-            self._motion.move_to_pose(pose)
+            # Qt kümmert sich um Thread-Grenzen (QueuedConnection),
+            # MotionBridge führt dann _move_to_pose_impl im eigenen Thread aus.
+            sigs.moveToPoseRequested.emit(pose)
         except Exception as e:
-            msg = f"move_to_pose({label}) failed: {e}"
+            msg = f"moveToPoseRequested({label}) emit failed: {e}"
             _LOG.exception("ProcessThread: %s", msg)
             self._abort_if_needed(msg)
             return False
@@ -432,6 +463,7 @@ class ProcessThread(QtCore.QThread):
         _LOG.info("ProcessThread.run: gestartet.")
         self._stop_requested = False
         self._error_msg = None
+        self._ended_in_error_state = False
 
         machine = QStateMachine()
         self._machine = machine  # für _abort_if_needed()
@@ -444,6 +476,7 @@ class ProcessThread(QtCore.QThread):
         s_move_retreat = QState()
         s_move_home = QState()
         s_finished = QFinalState()
+        s_error = QFinalState()   # ERROR-FinalState
 
         # StateMachine strukturieren
         machine.addState(s_move_predisp)
@@ -453,6 +486,7 @@ class ProcessThread(QtCore.QThread):
         machine.addState(s_move_retreat)
         machine.addState(s_move_home)
         machine.addState(s_finished)
+        machine.addState(s_error)
         machine.setInitialState(s_move_predisp)
 
         # Übergänge
@@ -463,6 +497,17 @@ class ProcessThread(QtCore.QThread):
         s_move_retreat.addTransition(self._sig_retreat_move_done, s_move_home)
         s_move_home.addTransition(self._sig_move_home_done, s_finished)
 
+        # von JEDEM normalen State in den ERROR-FinalState springen können
+        for st in (
+            s_move_predisp,
+            s_wait_predisp,
+            s_move_recipe,
+            s_wait_postdisp,
+            s_move_retreat,
+            s_move_home,
+        ):
+            st.addTransition(self._sig_error, s_error)
+
         # State-Callbacks
         s_move_predisp.entered.connect(self._on_state_move_predispense)
         s_wait_predisp.entered.connect(self._on_state_wait_predispense)
@@ -470,6 +515,7 @@ class ProcessThread(QtCore.QThread):
         s_wait_postdisp.entered.connect(self._on_state_wait_postdispense)
         s_move_retreat.entered.connect(self._on_state_move_retreat)
         s_move_home.entered.connect(self._on_state_move_home)
+        s_error.entered.connect(self._on_state_error)
 
         # State-Namen nach außen signalisieren
         s_move_predisp.entered.connect(lambda: self._emit_state("MOVE_PREDISPENSE"))
@@ -478,6 +524,7 @@ class ProcessThread(QtCore.QThread):
         s_wait_postdisp.entered.connect(lambda: self._emit_state("WAIT_POSTDISPENSE"))
         s_move_retreat.entered.connect(lambda: self._emit_state("MOVE_RETREAT"))
         s_move_home.entered.connect(lambda: self._emit_state("MOVE_HOME"))
+        # ERROR-State-Name + notifyError kommen aus _on_state_error
 
         # EventLoop für diese StateMachine in diesem Thread
         loop = QtCore.QEventLoop()
@@ -490,14 +537,17 @@ class ProcessThread(QtCore.QThread):
             loop.exec()
         except Exception as e:
             _LOG.exception("ProcessThread.run: Exception: %s", e)
-            self._error_msg = self._error_msg or str(e)
+            # Wenn hier was kracht und wir noch keine Fehlermeldung haben:
+            if not self._error_msg:
+                self._error_msg = str(e)
         finally:
             self._machine = None
             self._loop = None
             _LOG.info(
-                "ProcessThread.run: beendet, _error_msg=%r, stop_requested=%s",
+                "ProcessThread.run: beendet, _error_msg=%r, stop_requested=%s, ended_in_error=%s",
                 self._error_msg,
                 self._stop_requested,
+                self._ended_in_error_state,
             )
             # Logging-Handler wieder entfernen
             if self._log_handler is not None:
@@ -507,10 +557,13 @@ class ProcessThread(QtCore.QThread):
                     pass
                 self._log_handler = None
 
-        # Ergebnis auswerten
-        if self._error_msg:
-            _LOG.error("ProcessThread: notifyError(%s)", self._error_msg)
-            self.notifyError.emit(self._error_msg)
+        # Ergebnis auswerten:
+        #  - Wenn wir im ERROR-State gelandet sind, hat _on_state_error bereits
+        #    notifyError() emittiert → hier NICHT nochmal.
+        #  - Wenn kein Fehler und kein Stop: notifyFinished()
+        #  - Wenn nur Stop: nichts emittieren.
+        if self._ended_in_error_state:
+            _LOG.info("ProcessThread: beendet im ERROR-State, notifyError bereits gesendet.")
         elif not self._stop_requested:
             _LOG.info("ProcessThread: notifyFinished() (kein Fehler, kein Stop).")
             self.notifyFinished.emit()
@@ -736,3 +789,20 @@ class ProcessThread(QtCore.QThread):
 
         _LOG.info("ProcessThread: LEAVE MOVE_HOME")
         self._sig_move_home_done.emit()
+
+    def _on_state_error(self) -> None:
+        """
+        Finaler ERROR-State.
+
+        Hier wird:
+          - der ERROR-State nach außen gemeldet
+          - genau EINMAL notifyError() emittiert.
+        """
+        _LOG.info("ProcessThread: ENTER ERROR")
+        self._ended_in_error_state = True
+        self._emit_state("ERROR")
+
+        # Wenn es keine spezifische Fehlermeldung gibt, generische Nachricht setzen
+        msg = self._error_msg or "Unbekannter Prozessfehler."
+        _LOG.error("ProcessThread: notifyError(%s) im ERROR-State", msg)
+        self.notifyError.emit(msg)

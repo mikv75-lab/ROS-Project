@@ -25,6 +25,9 @@ from tf2_ros import Buffer, TransformListener
 from rclpy.time import Time as RclpyTime
 from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
 
+# Achtung: in ROS2 erwartet do_transform_pose(geometry_msgs/Pose, TransformStamped)
+from tf2_geometry_msgs import do_transform_pose
+
 from spraycoater_nodes_py.utils.config_hub import topics, frames
 
 NODE_KEY = "motion"
@@ -191,7 +194,6 @@ class Motion(Node):
     def _msg_to_core(self, msg: RobotTrajectoryMsg) -> RobotTrajectoryCore:
         """Konvertiert moveit_msgs/RobotTrajectory -> core-RobotTrajectory."""
         core = RobotTrajectoryCore(self.robot_model, GROUP_NAME)
-        # Python-Bindings der C++-Methode setRobotTrajectoryMsg(...)
         core.set_robot_trajectory_msg(self.robot_model, GROUP_NAME, msg)
         return core
 
@@ -231,6 +233,10 @@ class Motion(Node):
     # ------------------ Topic handlers ------------------
 
     def _on_plan_waypoints(self, msg: PoseArray) -> None:
+        """
+        Waypoints können z.B. im Frame 'scene' kommen.
+        Hier werden sie (falls nötig) nach world transformiert.
+        """
         if self._busy:
             self._emit_result("ERROR:BUSY")
             return
@@ -241,7 +247,17 @@ class Motion(Node):
         # 🔧 alte Planung verwerfen
         self._planned = None
 
-        frame = msg.header.frame_id or self.frame_world
+        in_frame = msg.header.frame_id or self.frame_world
+        self.log.info(f"[plan_waypoints] in_frame={in_frame}, world={self.frame_world}")
+
+        tf = None
+        if in_frame != self.frame_world:
+            try:
+                tf = self._lookup_tf(self.frame_world, in_frame)
+                self.log.info(f"[plan_waypoints] using TF {self.frame_world} <- {in_frame}")
+            except Exception as e:
+                self._emit_result(f"ERROR:TF_LOOKUP {e}")
+                return
 
         core_chunks: List[RobotTrajectoryCore] = []
         msg_chunks: List[RobotTrajectoryMsg] = []
@@ -255,15 +271,20 @@ class Motion(Node):
                 else:
                     self.arm.set_start_state(None)
 
+                # p ist geometry_msgs/Pose (kein PoseStamped!)
+                if tf is not None:
+                    pose_world = do_transform_pose(p, tf)  # Pose(scene) -> Pose(world)
+                else:
+                    pose_world = p
+
                 goal = PoseStamped()
-                goal.header.frame_id = frame
-                goal.pose = p
+                goal.header.frame_id = self.frame_world
+                goal.pose = pose_world
 
                 self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
                 result = self._plan()
                 core_traj = self._extract_traj(f"wp_index={idx}", result)
                 if not core_traj:
-                    # Kein gültiger Plan -> insgesamt abbrechen, nichts behalten
                     self._planned = None
                     return
 
@@ -273,7 +294,7 @@ class Motion(Node):
                 start_state = "planned"
 
                 m = Marker()
-                m.header.frame_id = frame
+                m.header.frame_id = goal.header.frame_id
                 m.ns = "waypoints"
                 m.id = idx
                 m.type = Marker.SPHERE
@@ -350,6 +371,13 @@ class Motion(Node):
             self._emit_result(f"ERROR:EXCEPTION {e}")
 
     def _on_target_pose(self, msg: PoseStamped) -> None:
+        """
+        Freie Zielpose:
+        - Pose kann z.B. im Frame 'scene' kommen
+        - wird (falls nötig) nach world transformiert
+        - MoveIt bekommt immer eine Pose im world-Frame
+        - TCP (EE_LINK) soll GENAU diese Pose einnehmen.
+        """
         if self._busy:
             self._emit_result("ERROR:BUSY")
             return
@@ -357,11 +385,34 @@ class Motion(Node):
         # 🔧 alte Planung verwerfen
         self._planned = None
 
-        frame = msg.header.frame_id or self.frame_world
+        in_frame = msg.header.frame_id or self.frame_world
+        self.log.info(f"[target_pose] in_frame={in_frame}, world={self.frame_world}")
+
         goal = PoseStamped()
-        goal.header.frame_id = frame
-        goal.pose = msg.pose
+        goal.header.frame_id = self.frame_world
+
         try:
+            if in_frame != self.frame_world:
+                self.log.info(f"[target_pose] transform {in_frame} -> {self.frame_world}")
+                tf = self._lookup_tf(self.frame_world, in_frame)
+                # msg.pose ist geometry_msgs/Pose -> perfekt für do_transform_pose
+                pose_world = do_transform_pose(msg.pose, tf)  # Pose(scene) -> Pose(world)
+            else:
+                pose_world = msg.pose
+
+            self.log.info(
+                f"[target_pose] world pose: "
+                f"pos=({pose_world.position.x:.3f}, "
+                f"{pose_world.position.y:.3f}, "
+                f"{pose_world.position.z:.3f}), "
+                f"quat=({pose_world.orientation.x:.3f}, "
+                f"{pose_world.orientation.y:.3f}, "
+                f"{pose_world.orientation.z:.3f}, "
+                f"{pose_world.orientation.w:.3f})"
+            )
+
+            goal.pose = pose_world
+
             self.arm.set_start_state_to_current_state()
             self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
             result = self._plan()
@@ -425,6 +476,7 @@ class Motion(Node):
         if cmd.startswith("speed:"):
             try:
                 val = float(cmd.split(":", 1)[1])
+                # Achtung: aktuell wird das als Faktor [0.05..1.0] interpretiert
                 self._vel_scale = max(0.05, min(1.0, val))
                 self._emit_result(f"OK:SPEED vel={self._vel_scale:.2f}")
             except Exception:

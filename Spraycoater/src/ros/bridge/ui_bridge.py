@@ -270,7 +270,7 @@ class UIBridge:
       - Stellt Set-APIs bereit (UI -> ROS) via Bridge-Knoten
       - hält zusätzlich ServoBridge in self._servo für den ServiceTab
       - hält zusätzlich RobotBridge in self._robot für Service/Status-UI
-      - hält zusätzlich MotionBridge in self._motion für MotionWidget
+      - hält zusätzlich MotionBridge in self._motion für Motion/Process-UI
     """
 
     def __init__(self, startup_yaml_path: Optional[str] = None):
@@ -401,6 +401,25 @@ class UIBridge:
             self._mb = mb
             # aktuell kein eigener State-Cache nötig, wir reichen nur die Bridge durch
             self._motion = mb  # wichtig: für Widgets als `bridge._motion`
+
+            # Sanity-Check für neue Signale (moveToPoseRequested etc.)
+            try:
+                sigs = getattr(mb, "signals", None)
+                if sigs is None:
+                    _LOG.warning("UIBridge: MotionBridge.signals ist None.")
+                else:
+                    if not hasattr(sigs, "moveToPoseRequested"):
+                        _LOG.warning(
+                            "UIBridge: MotionBridge.signals.moveToPoseRequested fehlt – "
+                            "ProcessThread-Integration könnte nicht funktionieren."
+                        )
+                    else:
+                        _LOG.info(
+                            "UIBridge: MotionBridge-Signale vorhanden "
+                            "(moveToPoseRequested, motionResultChanged)."
+                        )
+            except Exception:
+                _LOG.exception("UIBridge: Fehler beim Prüfen der MotionBridge-Signale.")
 
     def _try_reemit_cached(self) -> None:
         # Falls die Bridges eine reemit_cached()-Hilfsfunktion besitzen, nutzen wir sie.
