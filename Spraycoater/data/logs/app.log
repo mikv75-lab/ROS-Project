@@ -4431,3 +4431,11 @@ TypeError: BaseBridge.__init__() got an unexpected keyword argument 'parent'
 2025-11-22 06:13:19 INFO [192753] app.startup:143 - logging configured
 2025-11-22 06:13:19 INFO [192753] app.startup:148 - warnings enabled
 2025-11-22 06:13:21 INFO [192753] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-22 09:23:56 INFO [300187] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-22 09:23:56 INFO [300187] app.startup:143 - logging configured
+2025-11-22 09:23:56 INFO [300187] app.startup:148 - warnings enabled
+2025-11-22 09:23:59 INFO [300187] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-22 09:26:12 INFO [302677] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-22 09:26:12 INFO [302677] app.startup:143 - logging configured
+2025-11-22 09:26:12 INFO [302677] app.startup:148 - warnings enabled
+2025-11-22 09:26:14 INFO [302677] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
