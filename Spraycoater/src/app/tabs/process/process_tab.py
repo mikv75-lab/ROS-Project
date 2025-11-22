@@ -48,7 +48,7 @@ class ProcessTab(QWidget):
       )
     """
 
-    def __init__(self, *, ctx, bridge, parent: Optional[QWidget] = None):
+    def __init__(self, *, ctx, bridge, parent: Optional[Widget] = None):
         super().__init__(parent)
         self.ctx = ctx
         self.bridge = bridge
@@ -75,6 +75,12 @@ class ProcessTab(QWidget):
         self._process_active: bool = False
         self._process_thread: Optional[ProcessThread] = None
         self._robot_init_thread: Optional[RobotInitThread] = None
+
+        # Ergebnis eines Prozesslaufs:
+        #   None      -> noch nichts
+        #   "success" -> notifyFinished verarbeitet
+        #   "error"   -> notifyError verarbeitet (hat Vorrang)
+        self._process_outcome: Optional[str] = None
 
         # Info-Box Cache
         self._info_values: Dict[str, Any] = {}
@@ -337,8 +343,12 @@ class ProcessTab(QWidget):
     def _setup_process_thread_for_recipe(self, recipe: Recipe) -> None:
         """
         Erstellt einen neuen ProcessThread für das aktuelle Rezept.
+        Wird bei jedem 'Load Recipe' aufgerufen.
         """
         self._cleanup_process_thread()
+
+        # neuer Lauf-Kontext -> Outcome zurücksetzen
+        self._process_outcome = None
 
         thr = ProcessThread(recipe=recipe, bridge=self.bridge)
         thr.notifyFinished.connect(self._on_process_finished_success)
@@ -463,7 +473,7 @@ class ProcessTab(QWidget):
             # UI evtl. schon zerstört (z.B. beim Schließen) -> einfach abbrechen
             return
 
-        # 3) ProcessThread vorbereiten
+        # 3) ProcessThread vorbereiten (neuer Thread pro Load)
         try:
             self._setup_process_thread_for_recipe(model)
         except Exception:
@@ -501,6 +511,9 @@ class ProcessTab(QWidget):
         if self._recipe_model is None or self._process_thread is None:
             QMessageBox.warning(self, "Kein Rezept", "Es ist kein Rezept geladen.")
             return
+
+        # Ergebnis-Status für diesen Lauf zurücksetzen
+        self._process_outcome = None
 
         # Safety: sicherstellen, dass Thread das aktuelle Model kennt
         if getattr(self._process_thread, "recipe", None) is not self._recipe_model:
@@ -563,6 +576,21 @@ class ProcessTab(QWidget):
     # ---------------------------------------------------------------------
 
     def _on_process_finished_success(self) -> None:
+        """
+        Wird vom ProcessThread.notifyFinished() gerufen.
+
+        Wichtig:
+          - Wenn bereits ein Fehler gemeldet wurde (_process_outcome == "error"),
+            wird der Erfolgs-Callback ignoriert.
+        """
+        if self._process_outcome == "error":
+            _LOG.info("ProcessTab: notifyFinished ignoriert, da bereits ein Fehler gemeldet wurde.")
+            return
+
+        # Nur setzen, wenn noch nichts feststeht
+        if self._process_outcome is None:
+            self._process_outcome = "success"
+
         self.set_process_active(False)
         self._info_update("process", "Prozess erfolgreich abgeschlossen.")
         self._append_process_log("=== Prozess erfolgreich abgeschlossen ===")
@@ -573,6 +601,24 @@ class ProcessTab(QWidget):
             pass
 
     def _on_process_finished_error(self, msg: str) -> None:
+        """
+        Wird vom ProcessThread.notifyError(msg) gerufen.
+
+        - Wenn bereits Erfolg gesetzt war, gewinnt der Fehler und überschreibt.
+        - Wenn bereits ein Fehler verarbeitet wurde, wird der zweite ignoriert.
+        """
+        if self._process_outcome == "error":
+            _LOG.info("ProcessTab: zusätzlicher Fehler-Callback ignoriert: %s", msg)
+            return
+
+        if self._process_outcome == "success":
+            _LOG.warning(
+                "ProcessTab: Fehler-Callback nach notifyFinished erhalten, "
+                "Fehler hat Vorrang: %s", msg
+            )
+
+        self._process_outcome = "error"
+
         self.set_process_active(False)
         self._info_update("process", f"Fehler: {msg}")
         self._append_process_log(f"=== Prozessfehler: {msg} ===")

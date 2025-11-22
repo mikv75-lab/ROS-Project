@@ -94,6 +94,8 @@ class Motion(Node):
         self.frames = frames()
         self._F = self.frames.resolve
         self.frame_world = self._F(self.frames.get("world", WORLD_FRAME))
+        # ⚙️ Scene-Frame (kommt vom Editor/Recipe; dort in mm, hier in m erwartet)
+        self.frame_scene = self._F(self.frames.get("scene", "scene"))
 
         # --- TF buffer
         self.tf_buffer = Buffer()
@@ -230,12 +232,31 @@ class Motion(Node):
         )
         return traj_core
 
+    # ------------------ mm → m Konvertierung ------------------
+
+    def _mm_pose_to_m(self, pose, ctx: str = "") -> None:
+        """
+        Interpretiert pose.position.* als Millimeter und wandelt sie in Meter um.
+        Wird nur verwendet, wenn frame_id == frame_scene.
+        """
+        try:
+            pose.position.x *= 0.001
+            pose.position.y *= 0.001
+            pose.position.z *= 0.001
+            self.log.info(
+                f"[{ctx}] mm→m: pos=({pose.position.x:.3f}, "
+                f"{pose.position.y:.3f}, {pose.position.z:.3f})"
+            )
+        except Exception as e:
+            self.log.error(f"[{ctx}] mm→m conversion failed: {e}")
+
     # ------------------ Topic handlers ------------------
 
     def _on_plan_waypoints(self, msg: PoseArray) -> None:
         """
         Waypoints können z.B. im Frame 'scene' kommen.
-        Hier werden sie (falls nötig) nach world transformiert.
+        Hier werden sie (falls nötig) zuerst von mm → m konvertiert
+        und dann nach world transformiert.
         """
         if self._busy:
             self._emit_result("ERROR:BUSY")
@@ -249,6 +270,11 @@ class Motion(Node):
 
         in_frame = msg.header.frame_id or self.frame_world
         self.log.info(f"[plan_waypoints] in_frame={in_frame}, world={self.frame_world}")
+
+        # Falls der Editor/Recipe im scene-Frame in mm sendet → umrechnen
+        if in_frame == self.frame_scene:
+            for p in msg.poses:
+                self._mm_pose_to_m(p, ctx="plan_waypoints")
 
         tf = None
         if in_frame != self.frame_world:
@@ -373,7 +399,7 @@ class Motion(Node):
     def _on_target_pose(self, msg: PoseStamped) -> None:
         """
         Freie Zielpose:
-        - Pose kann z.B. im Frame 'scene' kommen
+        - Pose kann z.B. im Frame 'scene' kommen (dann zunächst mm→m)
         - wird (falls nötig) nach world transformiert
         - MoveIt bekommt immer eine Pose im world-Frame
         - TCP (EE_LINK) soll GENAU diese Pose einnehmen.
@@ -388,6 +414,10 @@ class Motion(Node):
         in_frame = msg.header.frame_id or self.frame_world
         self.log.info(f"[target_pose] in_frame={in_frame}, world={self.frame_world}")
 
+        # Falls vom Recipe/Editor im scene-Frame in mm → umrechnen
+        if in_frame == self.frame_scene:
+            self._mm_pose_to_m(msg.pose, ctx="target_pose")
+
         goal = PoseStamped()
         goal.header.frame_id = self.frame_world
 
@@ -395,7 +425,7 @@ class Motion(Node):
             if in_frame != self.frame_world:
                 self.log.info(f"[target_pose] transform {in_frame} -> {self.frame_world}")
                 tf = self._lookup_tf(self.frame_world, in_frame)
-                # msg.pose ist geometry_msgs/Pose -> perfekt für do_transform_pose
+                # msg.pose ist (ggf. skalierte) geometry_msgs/Pose
                 pose_world = do_transform_pose(msg.pose, tf)  # Pose(scene) -> Pose(world)
             else:
                 pose_world = msg.pose

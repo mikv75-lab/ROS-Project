@@ -96,10 +96,10 @@ class ProcessThread(QtCore.QThread):
         self._stop_requested = False
         self._error_msg: str | None = None
         self._machine: QStateMachine | None = None
-        self._loop: QtCore.QEventLoop | None = None  # EventLoop-Referenz für sauberen Abbruch
 
-        # Merker, ob die StateMachine im ERROR-FinalState geendet hat
+        # Merker, ob die StateMachine im ERROR- oder FINISHED-FinalState geendet hat
         self._ended_in_error_state: bool = False
+        self._ended_in_finished_state: bool = False
 
         # Logging → Qt-Signal
         self._log_handler: Optional[_QtSignalHandler] = _QtSignalHandler(self)
@@ -125,7 +125,7 @@ class ProcessThread(QtCore.QThread):
         try:
             sigs = getattr(self._motion, "signals", None) if self._motion is not None else None
             if sigs is not None and hasattr(sigs, "motionResultChanged"):
-                # WICHTIG: DirectConnection, damit _on_motion_result auch ohne
+                # DirectConnection, damit _on_motion_result auch ohne separaten
                 # Eventloop im QThread ausgeführt wird (im Sender-Thread).
                 sigs.motionResultChanged.connect(
                     self._on_motion_result,
@@ -197,14 +197,55 @@ class ProcessThread(QtCore.QThread):
     def _should_stop(self) -> bool:
         return self._stop_requested
 
+    # ---------------------------------------------------------
+    # Zentrale Transition-Hilfe
+    # ---------------------------------------------------------
+
+    def _post_transition(self, sig: QtCore.pyqtSignal) -> None:
+        """
+        Führt einen State-Übergang *asynchron* aus.
+
+        WICHTIG:
+          - Niemals .emit() direkt aus einem State-Handler aufrufen.
+          - Immer _post_transition(self._sig_...) verwenden.
+        """
+        if self._machine is None or not self._machine.isRunning():
+            _LOG.warning("ProcessThread: _post_transition aufgerufen, aber StateMachine läuft nicht mehr.")
+            return
+
+        QtCore.QTimer.singleShot(0, sig.emit)
+
+    # ---------------------------------------------------------
+    # Helper: Maschine + Thread-Loop beenden
+    # ---------------------------------------------------------
+
+    def _stop_machine_and_quit(self) -> None:
+        """Stoppt die StateMachine (falls noch laufend) und beendet den Thread-Eventloop."""
+        m = self._machine
+        if m is not None and m.isRunning():
+            try:
+                _LOG.info("ProcessThread: stoppe StateMachine.")
+                m.stop()
+            except Exception:
+                _LOG.exception("ProcessThread: Fehler beim Stoppen der StateMachine.")
+        try:
+            _LOG.info("ProcessThread: quit() aus _stop_machine_and_quit.")
+            self.quit()
+        except Exception:
+            _LOG.exception("ProcessThread: Fehler bei quit().")
+
+    # ---------------------------------------------------------
+    # Abbruch / Fehler
+    # ---------------------------------------------------------
+
     def _abort_if_needed(self, msg: str | None = None) -> None:
         """
         Setzt optional eine Fehlermeldung und beendet den Ablauf.
 
         Verhalten:
           - setzt _error_msg, wenn msg übergeben wird
-          - wenn StateMachine läuft: wechselt via _sig_error in den ERROR-FinalState
-          - wenn StateMachine nicht mehr läuft, wird der EventLoop direkt beendet
+          - wenn StateMachine läuft: wechselt via _sig_error asynchron in den ERROR-FinalState
+          - wenn StateMachine nicht mehr läuft, wird der Thread-Eventloop via quit() beendet
 
         WICHTIG:
           - notifyError() wird NICHT hier aufgerufen, sondern ausschließlich
@@ -212,30 +253,26 @@ class ProcessThread(QtCore.QThread):
         """
         if msg and not self._error_msg:
             self._error_msg = msg
-            _LOG.error("ProcessThread: Abbruch mit Fehler: %s", msg)
+
+        if self._error_msg:
+            _LOG.error("ProcessThread: Abbruch mit Fehler: %s", self._error_msg)
 
         machine = self._machine
-        loop = self._loop
 
-        # Wenn die StateMachine noch läuft: in den ERROR-FinalState wechseln
+        # Wenn die StateMachine noch läuft: in den ERROR-FinalState wechseln (best effort)
         if machine is not None and machine.isRunning():
             try:
-                _LOG.info("ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.")
-                self._sig_error.emit()
-                # Der Wechsel in den ERROR-FinalState führt zu machine.finished
-                # und damit via Verbindung zu loop.quit().
+                _LOG.info(
+                    "ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState "
+                    "via Signal (async)."
+                )
+                self._post_transition(self._sig_error)
                 return
             except Exception:
                 _LOG.exception("ProcessThread: Fehler beim Signalisieren des ERROR-States.")
 
-        # Falls die StateMachine schon beendet ist, EventLoop direkt beenden,
-        # damit run() zurückkehren kann.
-        if loop is not None and loop.isRunning():
-            try:
-                _LOG.info("ProcessThread: EventLoop.quit() aufgrund Abbruch/Fehler.")
-                loop.quit()
-            except Exception:
-                _LOG.exception("ProcessThread: Fehler beim Beenden des EventLoops.")
+        # Falls die StateMachine schon beendet ist, Thread-Eventloop direkt beenden
+        self._stop_machine_and_quit()
 
     # ---------------------------------------------------------
     # Motion-Result-Handling
@@ -458,12 +495,19 @@ class ProcessThread(QtCore.QThread):
     def run(self) -> None:
         """
         Thread-Einstieg: baut die QStateMachine auf, startet sie
-        und wartet im lokalen EventLoop bis FINISHED oder Abbruch.
+        und startet den Thread-Eventloop.
+
+        WICHTIG:
+        - Diese Methode wertet das Ergebnis NICHT mehr aus.
+        - Alle Ergebnis-Signale (notifyFinished / notifyError)
+          werden ausschließlich in den State-Handlern
+          _on_state_finished() bzw. _on_state_error() emittiert.
         """
         _LOG.info("ProcessThread.run: gestartet.")
         self._stop_requested = False
         self._error_msg = None
         self._ended_in_error_state = False
+        self._ended_in_finished_state = False
 
         machine = QStateMachine()
         self._machine = machine  # für _abort_if_needed()
@@ -516,6 +560,7 @@ class ProcessThread(QtCore.QThread):
         s_move_retreat.entered.connect(self._on_state_move_retreat)
         s_move_home.entered.connect(self._on_state_move_home)
         s_error.entered.connect(self._on_state_error)
+        s_finished.entered.connect(self._on_state_finished)
 
         # State-Namen nach außen signalisieren
         s_move_predisp.entered.connect(lambda: self._emit_state("MOVE_PREDISPENSE"))
@@ -525,29 +570,26 @@ class ProcessThread(QtCore.QThread):
         s_move_retreat.entered.connect(lambda: self._emit_state("MOVE_RETREAT"))
         s_move_home.entered.connect(lambda: self._emit_state("MOVE_HOME"))
         # ERROR-State-Name + notifyError kommen aus _on_state_error
-
-        # EventLoop für diese StateMachine in diesem Thread
-        loop = QtCore.QEventLoop()
-        self._loop = loop
-        machine.finished.connect(loop.quit)
+        # FINISHED-State-Name + notifyFinished kommen aus _on_state_finished
 
         try:
-            machine.start()
-            _LOG.info("ProcessThread.run: StateMachine gestartet, EventLoop läuft.")
-            loop.exec()
+            machine.start()  # <<< Maschine wird hier gestartet
+            _LOG.info("ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.")
+            # Thread-eigene Eventloop, nötig für QStateMachine + QTimer.singleShot
+            self.exec()
         except Exception as e:
             _LOG.exception("ProcessThread.run: Exception: %s", e)
-            # Wenn hier was kracht und wir noch keine Fehlermeldung haben:
             if not self._error_msg:
                 self._error_msg = str(e)
         finally:
             self._machine = None
-            self._loop = None
             _LOG.info(
-                "ProcessThread.run: beendet, _error_msg=%r, stop_requested=%s, ended_in_error=%s",
+                "ProcessThread.run: beendet, _error_msg=%r, stop_requested=%s, "
+                "ended_in_error=%s, ended_in_finished=%s",
                 self._error_msg,
                 self._stop_requested,
                 self._ended_in_error_state,
+                self._ended_in_finished_state,
             )
             # Logging-Handler wieder entfernen
             if self._log_handler is not None:
@@ -556,19 +598,7 @@ class ProcessThread(QtCore.QThread):
                 except Exception:
                     pass
                 self._log_handler = None
-
-        # Ergebnis auswerten:
-        #  - Wenn wir im ERROR-State gelandet sind, hat _on_state_error bereits
-        #    notifyError() emittiert → hier NICHT nochmal.
-        #  - Wenn kein Fehler und kein Stop: notifyFinished()
-        #  - Wenn nur Stop: nichts emittieren.
-        if self._ended_in_error_state:
-            _LOG.info("ProcessThread: beendet im ERROR-State, notifyError bereits gesendet.")
-        elif not self._stop_requested:
-            _LOG.info("ProcessThread: notifyFinished() (kein Fehler, kein Stop).")
-            self.notifyFinished.emit()
-        else:
-            _LOG.info("ProcessThread: beendet durch Stop, kein notifyFinished().")
+        # KEINE Ergebnis-Auswertung / KEIN notifyFinished/notifyError hier!
 
     # ---------------------------------------------------------
     # State-Handler
@@ -587,7 +617,7 @@ class ProcessThread(QtCore.QThread):
         poses = self._get_recipe_poses()
         if not poses:
             _LOG.warning("ProcessThread: MOVE_PREDISPENSE: keine Posen -> direkt weiter.")
-            self._sig_predispense_move_done.emit()
+            self._post_transition(self._sig_predispense_move_done)
             return
 
         first = poses[0]
@@ -601,7 +631,7 @@ class ProcessThread(QtCore.QThread):
             return
 
         _LOG.info("ProcessThread: LEAVE MOVE_PREDISPENSE")
-        self._sig_predispense_move_done.emit()
+        self._post_transition(self._sig_predispense_move_done)
 
     def _on_state_wait_predispense(self) -> None:
         """
@@ -638,7 +668,7 @@ class ProcessThread(QtCore.QThread):
             return
 
         _LOG.info("ProcessThread: LEAVE WAIT_PREDISPENSE")
-        self._sig_predispense_wait_done.emit()
+        self._post_transition(self._sig_predispense_wait_done)
 
     def _on_state_move_recipe(self) -> None:
         """
@@ -656,7 +686,7 @@ class ProcessThread(QtCore.QThread):
 
         if n <= 2:
             _LOG.info("ProcessThread: MOVE_RECIPE: <=2 Posen, nichts zu fahren.")
-            self._sig_move_recipe_done.emit()
+            self._post_transition(self._sig_move_recipe_done)
             return
 
         for idx, pose in enumerate(poses[1:-1], start=1):
@@ -674,7 +704,7 @@ class ProcessThread(QtCore.QThread):
             return
 
         _LOG.info("ProcessThread: LEAVE MOVE_RECIPE")
-        self._sig_move_recipe_done.emit()
+        self._post_transition(self._sig_move_recipe_done)
 
     def _on_state_wait_postdispense(self) -> None:
         """
@@ -711,7 +741,7 @@ class ProcessThread(QtCore.QThread):
             return
 
         _LOG.info("ProcessThread: LEAVE WAIT_POSTDISPENSE")
-        self._sig_postdispense_wait_done.emit()
+        self._post_transition(self._sig_postdispense_wait_done)
 
     def _on_state_move_retreat(self) -> None:
         """
@@ -727,7 +757,7 @@ class ProcessThread(QtCore.QThread):
         n = len(poses)
         if n < 2:
             _LOG.info("ProcessThread: MOVE_RETREAT: <2 Posen, kein separates Retreat.")
-            self._sig_retreat_move_done.emit()
+            self._post_transition(self._sig_retreat_move_done)
             return
 
         last = poses[-1]
@@ -741,7 +771,7 @@ class ProcessThread(QtCore.QThread):
             return
 
         _LOG.info("ProcessThread: LEAVE MOVE_RETREAT")
-        self._sig_retreat_move_done.emit()
+        self._post_transition(self._sig_retreat_move_done)
 
     def _on_state_move_home(self) -> None:
         """
@@ -788,7 +818,7 @@ class ProcessThread(QtCore.QThread):
             return
 
         _LOG.info("ProcessThread: LEAVE MOVE_HOME")
-        self._sig_move_home_done.emit()
+        self._post_transition(self._sig_move_home_done)
 
     def _on_state_error(self) -> None:
         """
@@ -797,6 +827,7 @@ class ProcessThread(QtCore.QThread):
         Hier wird:
           - der ERROR-State nach außen gemeldet
           - genau EINMAL notifyError() emittiert.
+          - die StateMachine gestoppt und der Thread beendet.
         """
         _LOG.info("ProcessThread: ENTER ERROR")
         self._ended_in_error_state = True
@@ -806,3 +837,25 @@ class ProcessThread(QtCore.QThread):
         msg = self._error_msg or "Unbekannter Prozessfehler."
         _LOG.error("ProcessThread: notifyError(%s) im ERROR-State", msg)
         self.notifyError.emit(msg)
+
+        # <<< Maschine stoppen + Thread-Loop beenden
+        self._stop_machine_and_quit()
+
+    def _on_state_finished(self) -> None:
+        """
+        Finaler FINISHED-State.
+
+        Hier wird:
+          - der FINISHED-State nach außen gemeldet
+          - genau EINMAL notifyFinished() emittiert.
+          - die StateMachine gestoppt und der Thread beendet.
+        """
+        _LOG.info("ProcessThread: ENTER FINISHED")
+        self._ended_in_finished_state = True
+        self._emit_state("FINISHED")
+
+        _LOG.info("ProcessThread: notifyFinished() im FINISHED-State")
+        self.notifyFinished.emit()
+
+        # <<< Maschine stoppen + Thread-Loop beenden
+        self._stop_machine_and_quit()

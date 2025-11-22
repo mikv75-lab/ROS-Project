@@ -523,3 +523,552 @@
 2025-11-22 01:51:24 INFO [151847] app.tabs.process:492 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
 2025-11-22 01:51:29 INFO [151847] app.tabs.process.thread:251 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
 2025-11-22 01:51:29 INFO [151847] app.tabs.process.thread:251 - ProcessThread: motion_result empfangen: 'ERROR:EXECUTE_FAILED'
+2025-11-22 01:52:13 INFO [153105] app.tabs.process:437 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 01:52:13 INFO [153105] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 01:52:13 INFO [153105] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 01:52:13 INFO [153105] app.tabs.process:377 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 01:52:13 INFO [153105] app.tabs.process:492 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 01:52:16 INFO [153105] app.tabs.process.thread:187 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 01:52:16 INFO [153105] app.tabs.process.thread:463 - ProcessThread.run: gestartet.
+2025-11-22 01:52:16 INFO [153105] app.tabs.process.thread:536 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 01:52:16 INFO [153105] app.tabs.process.thread:325 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 01:52:16 INFO [153105] app.tabs.process.thread:582 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 01:52:16 INFO [153105] app.tabs.process.thread:383 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 01:52:22 INFO [153105] app.tabs.process.thread:594 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 01:52:23 INFO [153105] app.tabs.process.thread:430 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 01:52:23 INFO [153105] app.tabs.process.thread:277 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 01:52:28 INFO [153105] app.tabs.process.thread:251 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 01:52:28 INFO [153105] app.tabs.process.thread:293 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 01:52:28 ERROR [153105] app.tabs.process.thread:303 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 01:52:28 INFO [153105] app.tabs.process.thread:223 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 01:52:28 ERROR [153105] app.tabs.process.thread:444 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 01:52:28 INFO [153105] app.tabs.process.thread:546 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False
+2025-11-22 01:52:55 INFO [153105] app.tabs.process.thread:801 - ProcessThread: ENTER ERROR
+2025-11-22 01:52:55 INFO [153105] app.tabs.process.thread:325 - ProcessThread: State gewechselt zu ERROR
+2025-11-22 01:52:55 ERROR [153105] app.tabs.process.thread:807 - ProcessThread: notifyError(ERROR:NO_TRAJECTORY pose) im ERROR-State
+2025-11-22 01:52:57 INFO [153105] app.tabs.process.thread:568 - ProcessThread: notifyFinished() (kein Fehler, kein Stop).
+2025-11-22 01:53:15 INFO [153105] app.tabs.process.thread:187 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 01:53:15 INFO [153105] app.tabs.process.thread:463 - ProcessThread.run: gestartet.
+2025-11-22 01:53:15 INFO [153105] app.tabs.process.thread:536 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 01:53:15 INFO [153105] app.tabs.process.thread:325 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 01:53:15 INFO [153105] app.tabs.process.thread:582 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 01:53:15 INFO [153105] app.tabs.process.thread:383 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 01:53:15 INFO [153105] app.tabs.process.thread:594 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 01:53:15 INFO [153105] app.tabs.process.thread:430 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 01:53:15 INFO [153105] app.tabs.process.thread:277 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 01:53:20 INFO [153105] app.tabs.process.thread:251 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 01:53:20 INFO [153105] app.tabs.process.thread:293 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 01:53:20 ERROR [153105] app.tabs.process.thread:303 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 01:53:20 INFO [153105] app.tabs.process.thread:223 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 01:53:20 ERROR [153105] app.tabs.process.thread:444 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 01:53:20 INFO [153105] app.tabs.process.thread:546 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False
+2025-11-22 01:53:20 INFO [153105] app.tabs.process.thread:568 - ProcessThread: notifyFinished() (kein Fehler, kein Stop).
+2025-11-22 01:54:07 INFO [159641] app.tabs.process:437 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 01:54:07 INFO [159641] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 01:54:07 INFO [159641] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 01:54:07 INFO [159641] app.tabs.process:377 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 01:54:07 INFO [159641] app.tabs.process:492 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 01:54:09 INFO [159641] app.tabs.process.thread:251 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
+2025-11-22 01:54:10 INFO [159641] app.tabs.process.thread:251 - ProcessThread: motion_result empfangen: 'ERROR:EXECUTE_FAILED'
+2025-11-22 01:54:15 INFO [159641] app.tabs.process.thread:251 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
+2025-11-22 01:54:16 INFO [159641] app.tabs.process.thread:251 - ProcessThread: motion_result empfangen: 'ERROR:EXECUTE_FAILED'
+2025-11-22 01:58:51 INFO [161593] app.tabs.process:437 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 01:58:51 INFO [161593] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 01:58:51 INFO [161593] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 01:58:51 INFO [161593] app.tabs.process:377 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 01:58:51 INFO [161593] app.tabs.process:492 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 01:58:59 INFO [161593] app.tabs.process.thread:187 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 01:58:59 INFO [161593] app.tabs.process.thread:463 - ProcessThread.run: gestartet.
+2025-11-22 01:58:59 INFO [161593] app.tabs.process.thread:536 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 01:58:59 INFO [161593] app.tabs.process.thread:325 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 01:58:59 INFO [161593] app.tabs.process.thread:582 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 01:58:59 INFO [161593] app.tabs.process.thread:383 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 01:59:02 INFO [161593] app.tabs.process.thread:594 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 01:59:04 INFO [161593] app.tabs.process.thread:430 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 01:59:04 INFO [161593] app.tabs.process.thread:277 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 01:59:09 INFO [161593] app.tabs.process.thread:251 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 01:59:09 INFO [161593] app.tabs.process.thread:293 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 01:59:09 ERROR [161593] app.tabs.process.thread:303 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 01:59:09 INFO [161593] app.tabs.process.thread:223 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 01:59:09 ERROR [161593] app.tabs.process.thread:444 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 01:59:09 INFO [161593] app.tabs.process.thread:546 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False
+2025-11-22 01:59:28 INFO [161593] app.tabs.process.thread:801 - ProcessThread: ENTER ERROR
+2025-11-22 01:59:28 INFO [161593] app.tabs.process.thread:325 - ProcessThread: State gewechselt zu ERROR
+2025-11-22 01:59:28 ERROR [161593] app.tabs.process.thread:807 - ProcessThread: notifyError(ERROR:NO_TRAJECTORY pose) im ERROR-State
+2025-11-22 01:59:30 INFO [161593] app.tabs.process.thread:568 - ProcessThread: notifyFinished() (kein Fehler, kein Stop).
+2025-11-22 02:10:18 INFO [172938] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:10:18 INFO [172938] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:10:18 INFO [172938] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:10:18 INFO [172938] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:10:18 INFO [172938] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:11:05 INFO [175710] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:11:05 INFO [175710] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:11:05 INFO [175710] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:11:05 INFO [175710] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:11:05 INFO [175710] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:11:09 INFO [175710] app.tabs.process.thread:187 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 02:11:09 INFO [175710] app.tabs.process.thread:463 - ProcessThread.run: gestartet.
+2025-11-22 02:11:09 INFO [175710] app.tabs.process.thread:536 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 02:11:09 INFO [175710] app.tabs.process.thread:325 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 02:11:09 INFO [175710] app.tabs.process.thread:582 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 02:11:09 INFO [175710] app.tabs.process.thread:383 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 02:11:43 INFO [175710] app.tabs.process.thread:594 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 02:11:45 INFO [175710] app.tabs.process.thread:430 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 02:11:45 INFO [175710] app.tabs.process.thread:277 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 02:11:50 INFO [175710] app.tabs.process.thread:251 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:11:50 INFO [175710] app.tabs.process.thread:293 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:11:50 ERROR [175710] app.tabs.process.thread:303 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:11:50 INFO [175710] app.tabs.process.thread:223 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 02:11:50 ERROR [175710] app.tabs.process.thread:444 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:11:50 INFO [175710] app.tabs.process.thread:546 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False
+2025-11-22 02:11:56 INFO [175710] app.tabs.process.thread:568 - ProcessThread: notifyFinished() (kein Fehler, kein Stop).
+2025-11-22 02:16:33 INFO [183338] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:16:33 INFO [183338] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:16:33 INFO [183338] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:16:33 INFO [183338] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:16:33 INFO [183338] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:16:35 INFO [183338] app.tabs.process.thread:187 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 02:16:35 INFO [183338] app.tabs.process.thread:463 - ProcessThread.run: gestartet.
+2025-11-22 02:16:35 INFO [183338] app.tabs.process.thread:536 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 02:16:35 INFO [183338] app.tabs.process.thread:325 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 02:16:40 INFO [183338] app.tabs.process.thread:582 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 02:16:40 INFO [183338] app.tabs.process.thread:383 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 02:16:40 INFO [183338] app.tabs.process.thread:594 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 02:16:45 INFO [183338] app.tabs.process.thread:430 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 02:16:45 INFO [183338] app.tabs.process.thread:277 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 02:16:50 INFO [183338] app.tabs.process.thread:251 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:16:50 INFO [183338] app.tabs.process.thread:293 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:16:50 ERROR [183338] app.tabs.process.thread:303 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:16:50 INFO [183338] app.tabs.process.thread:223 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 02:16:50 ERROR [183338] app.tabs.process.thread:444 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:16:50 INFO [183338] app.tabs.process.thread:546 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False
+2025-11-22 02:16:50 INFO [183338] app.tabs.process.thread:568 - ProcessThread: notifyFinished() (kein Fehler, kein Stop).
+2025-11-22 02:25:14 INFO [191419] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:25:14 INFO [191419] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:25:14 INFO [191419] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:25:14 INFO [191419] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:25:14 INFO [191419] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:25:26 INFO [191419] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 02:25:26 INFO [191419] app.tabs.process.thread:464 - ProcessThread.run: gestartet.
+2025-11-22 02:25:26 INFO [191419] app.tabs.process.thread:540 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 02:25:26 INFO [191419] app.tabs.process.thread:326 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 02:25:26 INFO [191419] app.tabs.process.thread:594 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 02:25:26 INFO [191419] app.tabs.process.thread:384 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 02:25:26 INFO [191419] app.tabs.process.thread:606 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 02:25:33 INFO [191419] app.tabs.process.thread:431 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 02:25:33 INFO [191419] app.tabs.process.thread:278 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 02:25:38 INFO [191419] app.tabs.process.thread:252 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:25:38 INFO [191419] app.tabs.process.thread:294 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:25:38 ERROR [191419] app.tabs.process.thread:304 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:25:38 INFO [191419] app.tabs.process.thread:224 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 02:25:38 ERROR [191419] app.tabs.process.thread:445 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:25:38 INFO [191419] app.tabs.process.thread:550 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 02:25:38 ERROR [191419] app.tabs.process.thread:579 - ProcessThread: unerwartetes Ende ohne Final-State, notifyError(ERROR:NO_TRAJECTORY pose).
+2025-11-22 02:26:28 INFO [195648] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:26:28 INFO [195648] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:26:28 INFO [195648] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:26:28 INFO [195648] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:26:28 INFO [195648] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:26:34 INFO [195648] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 02:26:34 INFO [195648] app.tabs.process.thread:464 - ProcessThread.run: gestartet.
+2025-11-22 02:26:34 INFO [195648] app.tabs.process.thread:540 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 02:26:34 INFO [195648] app.tabs.process.thread:326 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 02:26:34 INFO [195648] app.tabs.process.thread:594 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 02:26:34 INFO [195648] app.tabs.process.thread:384 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 02:26:34 INFO [195648] app.tabs.process.thread:606 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 02:26:41 INFO [195648] app.tabs.process.thread:431 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 02:26:41 INFO [195648] app.tabs.process.thread:278 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 02:26:46 INFO [195648] app.tabs.process.thread:252 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:26:46 INFO [195648] app.tabs.process.thread:294 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:26:46 ERROR [195648] app.tabs.process.thread:304 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:26:46 INFO [195648] app.tabs.process.thread:224 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 02:26:46 ERROR [195648] app.tabs.process.thread:445 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:26:46 INFO [195648] app.tabs.process.thread:550 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 02:26:46 ERROR [195648] app.tabs.process.thread:579 - ProcessThread: unerwartetes Ende ohne Final-State, notifyError(ERROR:NO_TRAJECTORY pose).
+2025-11-22 02:29:13 INFO [201197] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:29:13 INFO [201197] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:29:13 INFO [201197] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:29:13 INFO [201197] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:29:13 INFO [201197] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:29:17 INFO [201197] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 02:29:17 INFO [201197] app.tabs.process.thread:464 - ProcessThread.run: gestartet.
+2025-11-22 02:29:17 INFO [201197] app.tabs.process.thread:540 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 02:29:17 INFO [201197] app.tabs.process.thread:326 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 02:29:17 INFO [201197] app.tabs.process.thread:594 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 02:29:17 INFO [201197] app.tabs.process.thread:384 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 02:29:17 INFO [201197] app.tabs.process.thread:606 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 02:29:23 INFO [201197] app.tabs.process.thread:431 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 02:29:23 INFO [201197] app.tabs.process.thread:278 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 02:29:28 INFO [201197] app.tabs.process.thread:252 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:29:28 INFO [201197] app.tabs.process.thread:294 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:29:28 ERROR [201197] app.tabs.process.thread:304 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:29:28 INFO [201197] app.tabs.process.thread:224 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 02:29:28 ERROR [201197] app.tabs.process.thread:445 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:29:28 INFO [201197] app.tabs.process.thread:550 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 02:29:28 ERROR [201197] app.tabs.process.thread:579 - ProcessThread: unerwartetes Ende ohne Final-State, notifyError(ERROR:NO_TRAJECTORY pose).
+2025-11-22 02:36:58 INFO [210455] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:36:58 INFO [210455] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:36:58 INFO [210455] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:36:58 INFO [210455] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:36:58 INFO [210455] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:37:01 INFO [210455] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 02:37:01 INFO [210455] app.tabs.process.thread:470 - ProcessThread.run: gestartet.
+2025-11-22 02:37:01 INFO [210455] app.tabs.process.thread:546 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 02:37:01 INFO [210455] app.tabs.process.thread:326 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 02:37:01 INFO [210455] app.tabs.process.thread:583 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 02:37:01 INFO [210455] app.tabs.process.thread:384 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 02:37:01 INFO [210455] app.tabs.process.thread:595 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 02:37:05 INFO [210455] app.tabs.process.thread:431 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 02:37:05 INFO [210455] app.tabs.process.thread:278 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 02:37:10 INFO [210455] app.tabs.process.thread:252 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:37:10 INFO [210455] app.tabs.process.thread:294 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:37:10 ERROR [210455] app.tabs.process.thread:304 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:37:10 INFO [210455] app.tabs.process.thread:224 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 02:37:10 ERROR [210455] app.tabs.process.thread:445 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:37:10 INFO [210455] app.tabs.process.thread:557 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 02:37:35 INFO [210455] app.tabs.process.thread:802 - ProcessThread: ENTER ERROR
+2025-11-22 02:37:37 INFO [210455] app.tabs.process.thread:326 - ProcessThread: State gewechselt zu ERROR
+2025-11-22 02:37:37 ERROR [210455] app.tabs.process.thread:808 - ProcessThread: notifyError(ERROR:NO_TRAJECTORY pose) im ERROR-State
+2025-11-22 02:37:43 INFO [210455] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 02:37:43 INFO [210455] app.tabs.process.thread:470 - ProcessThread.run: gestartet.
+2025-11-22 02:37:43 INFO [210455] app.tabs.process.thread:546 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 02:37:43 INFO [210455] app.tabs.process.thread:326 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 02:37:43 INFO [210455] app.tabs.process.thread:583 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 02:37:43 INFO [210455] app.tabs.process.thread:384 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 02:37:43 INFO [210455] app.tabs.process.thread:595 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 02:37:47 INFO [210455] app.tabs.process.thread:431 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 02:37:47 INFO [210455] app.tabs.process.thread:278 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 02:37:52 INFO [210455] app.tabs.process.thread:252 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:37:52 INFO [210455] app.tabs.process.thread:294 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:37:52 ERROR [210455] app.tabs.process.thread:304 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:37:52 INFO [210455] app.tabs.process.thread:224 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 02:37:52 ERROR [210455] app.tabs.process.thread:445 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:37:52 INFO [210455] app.tabs.process.thread:557 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 02:38:56 INFO [216723] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:38:56 INFO [216723] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:38:56 INFO [216723] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:38:56 INFO [216723] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:38:56 INFO [216723] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:39:05 INFO [216723] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 02:39:05 INFO [216723] app.tabs.process.thread:470 - ProcessThread.run: gestartet.
+2025-11-22 02:39:05 INFO [216723] app.tabs.process.thread:546 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 02:39:05 INFO [216723] app.tabs.process.thread:326 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 02:39:05 INFO [216723] app.tabs.process.thread:583 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 02:39:05 INFO [216723] app.tabs.process.thread:384 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 02:39:05 INFO [216723] app.tabs.process.thread:595 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 02:39:05 INFO [216723] app.tabs.process.thread:431 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 02:39:05 INFO [216723] app.tabs.process.thread:278 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 02:39:10 INFO [216723] app.tabs.process.thread:252 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:39:10 INFO [216723] app.tabs.process.thread:294 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:39:10 ERROR [216723] app.tabs.process.thread:304 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:39:10 INFO [216723] app.tabs.process.thread:224 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 02:39:10 ERROR [216723] app.tabs.process.thread:445 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:39:10 INFO [216723] app.tabs.process.thread:557 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 02:40:50 INFO [222133] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:40:50 INFO [222133] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:40:50 INFO [222133] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:40:50 INFO [222133] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:40:50 INFO [222133] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:40:58 INFO [222133] app.tabs.process.thread:252 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
+2025-11-22 02:41:00 INFO [222133] app.tabs.process.thread:252 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 02:41:06 INFO [222133] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:41:06 INFO [222133] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:41:06 INFO [222133] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:41:06 INFO [222133] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:41:06 INFO [222133] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:41:08 INFO [222133] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 02:41:08 INFO [222133] app.tabs.process.thread:470 - ProcessThread.run: gestartet.
+2025-11-22 02:41:08 INFO [222133] app.tabs.process.thread:546 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 02:41:08 INFO [222133] app.tabs.process.thread:326 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 02:41:08 INFO [222133] app.tabs.process.thread:583 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 02:41:08 INFO [222133] app.tabs.process.thread:384 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 02:41:08 INFO [222133] app.tabs.process.thread:595 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 02:41:08 INFO [222133] app.tabs.process.thread:431 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 02:41:08 INFO [222133] app.tabs.process.thread:278 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 02:41:13 INFO [222133] app.tabs.process.thread:252 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:41:13 INFO [222133] app.tabs.process.thread:294 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:41:13 ERROR [222133] app.tabs.process.thread:304 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:41:13 INFO [222133] app.tabs.process.thread:224 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 02:41:13 ERROR [222133] app.tabs.process.thread:445 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:41:13 INFO [222133] app.tabs.process.thread:557 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 02:42:37 INFO [226048] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:42:37 INFO [226048] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:42:37 INFO [226048] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:42:37 INFO [226048] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:42:37 INFO [226048] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:42:40 INFO [226048] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 02:42:40 INFO [226048] app.tabs.process.thread:470 - ProcessThread.run: gestartet.
+2025-11-22 02:42:40 INFO [226048] app.tabs.process.thread:546 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 02:42:40 INFO [226048] app.tabs.process.thread:326 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 02:42:40 INFO [226048] app.tabs.process.thread:583 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 02:42:40 INFO [226048] app.tabs.process.thread:384 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 02:42:40 INFO [226048] app.tabs.process.thread:595 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 02:42:48 INFO [226048] app.tabs.process.thread:431 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 02:42:56 INFO [226048] app.tabs.process.thread:278 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 02:42:58 INFO [226048] app.tabs.process.thread:252 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:42:58 INFO [226048] app.tabs.process.thread:294 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:42:58 ERROR [226048] app.tabs.process.thread:304 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:42:58 INFO [226048] app.tabs.process.thread:224 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 02:43:27 INFO [226048] app.tabs.process.thread:557 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 02:47:09 INFO [232504] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:47:09 INFO [232504] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:47:09 INFO [232504] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:47:09 INFO [232504] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:47:09 INFO [232504] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:50:00 INFO [235220] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:50:00 INFO [235220] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:50:00 INFO [235220] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:50:00 INFO [235220] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:50:00 INFO [235220] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:50:19 INFO [235220] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 02:50:19 INFO [235220] app.tabs.process.thread:470 - ProcessThread.run: gestartet.
+2025-11-22 02:50:19 INFO [235220] app.tabs.process.thread:546 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 02:50:19 INFO [235220] app.tabs.process.thread:326 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 02:50:19 INFO [235220] app.tabs.process.thread:583 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 02:50:19 INFO [235220] app.tabs.process.thread:384 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 02:50:19 INFO [235220] app.tabs.process.thread:595 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 02:50:22 INFO [235220] app.tabs.process.thread:431 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 02:50:22 INFO [235220] app.tabs.process.thread:278 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 02:50:27 INFO [235220] app.tabs.process.thread:252 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:50:27 INFO [235220] app.tabs.process.thread:294 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:50:27 ERROR [235220] app.tabs.process.thread:304 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:50:27 INFO [235220] app.tabs.process.thread:224 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 02:50:27 ERROR [235220] app.tabs.process.thread:445 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:50:27 INFO [235220] app.tabs.process.thread:557 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 02:56:36 INFO [242324] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:56:36 INFO [242324] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:56:36 INFO [242324] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:56:36 INFO [242324] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:56:36 INFO [242324] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:56:38 INFO [242324] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 02:56:38 INFO [242324] app.tabs.process.thread:470 - ProcessThread.run: gestartet.
+2025-11-22 02:56:38 INFO [242324] app.tabs.process.thread:546 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 02:56:38 INFO [242324] app.tabs.process.thread:326 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 02:56:38 INFO [242324] app.tabs.process.thread:583 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 02:56:38 INFO [242324] app.tabs.process.thread:384 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 02:56:38 INFO [242324] app.tabs.process.thread:595 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 02:56:41 INFO [242324] app.tabs.process.thread:431 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 02:56:41 INFO [242324] app.tabs.process.thread:278 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 02:56:46 INFO [242324] app.tabs.process.thread:252 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:56:46 INFO [242324] app.tabs.process.thread:294 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:56:46 ERROR [242324] app.tabs.process.thread:304 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:56:46 INFO [242324] app.tabs.process.thread:224 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 02:56:46 ERROR [242324] app.tabs.process.thread:445 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:56:46 INFO [242324] app.tabs.process.thread:557 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 02:59:02 INFO [247503] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 02:59:02 INFO [247503] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 02:59:02 INFO [247503] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 02:59:02 INFO [247503] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 02:59:02 INFO [247503] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 02:59:04 INFO [247503] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 02:59:04 INFO [247503] app.tabs.process.thread:470 - ProcessThread.run: gestartet.
+2025-11-22 02:59:04 INFO [247503] app.tabs.process.thread:546 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 02:59:04 INFO [247503] app.tabs.process.thread:326 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 02:59:04 INFO [247503] app.tabs.process.thread:583 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 02:59:04 INFO [247503] app.tabs.process.thread:384 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 02:59:04 INFO [247503] app.tabs.process.thread:595 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 02:59:11 INFO [247503] app.tabs.process.thread:431 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 02:59:17 INFO [247503] app.tabs.process.thread:278 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 02:59:17 INFO [247503] app.tabs.process.thread:252 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:59:17 INFO [247503] app.tabs.process.thread:294 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 02:59:17 ERROR [247503] app.tabs.process.thread:304 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 02:59:17 INFO [247503] app.tabs.process.thread:224 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 02:59:19 INFO [247503] app.tabs.process.thread:557 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 03:01:00 INFO [251624] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 03:01:00 INFO [251624] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 03:01:00 INFO [251624] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 03:01:00 INFO [251624] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 03:01:00 INFO [251624] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 03:03:18 INFO [251624] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 03:03:18 INFO [251624] app.tabs.process.thread:470 - ProcessThread.run: gestartet.
+2025-11-22 03:03:18 INFO [251624] app.tabs.process.thread:546 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 03:03:18 INFO [251624] app.tabs.process.thread:326 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 03:03:18 INFO [251624] app.tabs.process.thread:583 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 03:03:18 INFO [251624] app.tabs.process.thread:384 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 03:03:18 INFO [251624] app.tabs.process.thread:595 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 03:03:23 INFO [251624] app.tabs.process.thread:431 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 03:03:23 INFO [251624] app.tabs.process.thread:278 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 03:03:28 INFO [251624] app.tabs.process.thread:252 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 03:03:28 INFO [251624] app.tabs.process.thread:294 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 03:03:28 ERROR [251624] app.tabs.process.thread:304 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:03:28 INFO [251624] app.tabs.process.thread:224 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal.
+2025-11-22 03:03:28 ERROR [251624] app.tabs.process.thread:445 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:03:28 INFO [251624] app.tabs.process.thread:557 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 03:12:36 INFO [260765] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 03:12:37 INFO [260765] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 03:12:37 INFO [260765] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 03:12:37 INFO [260765] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 03:12:37 INFO [260765] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 03:13:31 INFO [260765] app.tabs.process.thread:202 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 03:13:31 INFO [260765] app.tabs.process.thread:486 - ProcessThread.run: gestartet.
+2025-11-22 03:13:31 INFO [260765] app.tabs.process.thread:562 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 03:13:31 INFO [260765] app.tabs.process.thread:342 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 03:13:31 INFO [260765] app.tabs.process.thread:599 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 03:13:31 INFO [260765] app.tabs.process.thread:400 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 03:13:31 INFO [260765] app.tabs.process.thread:611 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 03:13:31 INFO [260765] app.tabs.process.thread:447 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 03:13:31 INFO [260765] app.tabs.process.thread:294 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 03:13:36 INFO [260765] app.tabs.process.thread:268 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 03:13:36 INFO [260765] app.tabs.process.thread:310 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 03:13:36 ERROR [260765] app.tabs.process.thread:320 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:13:36 INFO [260765] app.tabs.process.thread:238 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal (async).
+2025-11-22 03:13:36 ERROR [260765] app.tabs.process.thread:461 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:13:36 INFO [260765] app.tabs.process.thread:573 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 03:24:06 INFO [269749] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 03:24:06 INFO [269749] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 03:24:06 INFO [269749] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 03:24:06 INFO [269749] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 03:24:06 INFO [269749] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 03:24:06 INFO [269749] app.tabs.process.thread:268 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
+2025-11-22 03:24:08 INFO [269749] app.tabs.process.thread:268 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 03:24:14 INFO [269749] app.tabs.process.thread:202 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 03:24:14 INFO [269749] app.tabs.process.thread:486 - ProcessThread.run: gestartet.
+2025-11-22 03:24:14 INFO [269749] app.tabs.process.thread:562 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 03:24:14 INFO [269749] app.tabs.process.thread:342 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 03:24:14 INFO [269749] app.tabs.process.thread:599 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 03:24:14 INFO [269749] app.tabs.process.thread:400 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 03:24:14 INFO [269749] app.tabs.process.thread:611 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 03:24:14 INFO [269749] app.tabs.process.thread:447 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 03:24:14 INFO [269749] app.tabs.process.thread:294 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 03:24:19 INFO [269749] app.tabs.process.thread:268 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 03:24:19 INFO [269749] app.tabs.process.thread:310 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 03:24:19 ERROR [269749] app.tabs.process.thread:320 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:24:19 INFO [269749] app.tabs.process.thread:238 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal (async).
+2025-11-22 03:24:19 ERROR [269749] app.tabs.process.thread:461 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:24:19 INFO [269749] app.tabs.process.thread:573 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 03:26:26 INFO [275139] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 03:26:26 INFO [275139] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 03:26:26 INFO [275139] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 03:26:26 INFO [275139] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 03:26:26 INFO [275139] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 03:26:27 INFO [275139] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 03:26:27 INFO [275139] app.tabs.process.thread:495 - ProcessThread.run: gestartet.
+2025-11-22 03:26:27 INFO [275139] app.tabs.process.thread:571 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 03:26:27 INFO [275139] app.tabs.process.thread:351 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 03:26:27 INFO [275139] app.tabs.process.thread:608 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 03:26:27 INFO [275139] app.tabs.process.thread:409 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 03:26:27 INFO [275139] app.tabs.process.thread:620 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 03:26:27 INFO [275139] app.tabs.process.thread:456 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 03:26:27 INFO [275139] app.tabs.process.thread:303 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 03:26:32 INFO [275139] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 03:26:32 INFO [275139] app.tabs.process.thread:319 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 03:26:32 ERROR [275139] app.tabs.process.thread:329 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:26:32 ERROR [275139] app.tabs.process.thread:240 - ProcessThread: Abbruch mit Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:26:32 INFO [275139] app.tabs.process.thread:248 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal (async).
+2025-11-22 03:26:32 ERROR [275139] app.tabs.process.thread:470 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:26:33 INFO [275139] app.tabs.process.thread:582 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 03:32:24 INFO [284750] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 03:32:24 INFO [284750] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 03:32:24 INFO [284750] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 03:32:24 INFO [284750] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 03:32:24 INFO [284750] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 03:32:37 INFO [284750] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
+2025-11-22 03:32:39 INFO [284750] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 03:32:43 INFO [284750] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 03:32:43 INFO [284750] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 03:32:43 INFO [284750] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 03:32:43 INFO [284750] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 03:32:43 INFO [284750] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 03:33:32 INFO [286282] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 03:33:32 INFO [286282] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 03:33:32 INFO [286282] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 03:33:32 INFO [286282] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 03:33:32 INFO [286282] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 03:33:54 INFO [286282] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 03:33:54 INFO [286282] app.tabs.process.thread:495 - ProcessThread.run: gestartet.
+2025-11-22 03:33:54 INFO [286282] app.tabs.process.thread:571 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 03:33:54 INFO [286282] app.tabs.process.thread:351 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 03:33:58 INFO [286282] app.tabs.process.thread:608 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 03:34:00 INFO [286282] app.tabs.process.thread:409 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 03:34:03 INFO [286282] app.tabs.process.thread:620 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 03:34:20 INFO [286282] app.tabs.process.thread:456 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 03:36:13 INFO [286282] app.tabs.process.thread:303 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 03:36:18 INFO [286282] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 03:36:18 INFO [286282] app.tabs.process.thread:319 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 03:36:18 ERROR [286282] app.tabs.process.thread:329 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:36:18 ERROR [286282] app.tabs.process.thread:240 - ProcessThread: Abbruch mit Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:36:18 INFO [286282] app.tabs.process.thread:248 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal (async).
+2025-11-22 03:36:18 ERROR [286282] app.tabs.process.thread:470 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:36:19 INFO [286282] app.tabs.process.thread:582 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 03:47:07 INFO [298542] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 03:47:07 INFO [298542] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 03:47:07 INFO [298542] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 03:47:07 INFO [298542] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 03:47:07 INFO [298542] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 03:48:22 INFO [298542] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
+2025-11-22 03:48:23 INFO [298542] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'ERROR:EXECUTE_FAILED'
+2025-11-22 03:49:16 INFO [302329] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 03:49:16 INFO [302329] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 03:49:16 INFO [302329] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 03:49:16 INFO [302329] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 03:49:16 INFO [302329] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 03:49:24 INFO [302329] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 03:49:24 INFO [302329] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 03:49:24 INFO [302329] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 03:49:24 INFO [302329] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 03:49:24 INFO [302329] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 03:49:57 INFO [302329] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 03:49:57 INFO [302329] app.tabs.process.thread:495 - ProcessThread.run: gestartet.
+2025-11-22 03:49:57 INFO [302329] app.tabs.process.thread:571 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 03:49:57 INFO [302329] app.tabs.process.thread:351 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 03:49:59 INFO [302329] app.tabs.process.thread:608 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 03:49:59 INFO [302329] app.tabs.process.thread:409 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 03:49:59 INFO [302329] app.tabs.process.thread:620 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 03:49:59 INFO [302329] app.tabs.process.thread:456 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 03:49:59 INFO [302329] app.tabs.process.thread:303 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 03:50:51 INFO [304418] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 03:50:52 INFO [304418] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 03:50:52 INFO [304418] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 03:50:52 INFO [304418] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 03:50:52 INFO [304418] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 03:51:01 INFO [304418] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: "PLANNED:OK named='home'"
+2025-11-22 03:51:01 INFO [304418] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'ERROR:EXECUTE_FAILED'
+2025-11-22 03:52:36 INFO [306840] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 03:52:36 INFO [306840] app.tabs.process.thread:135 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 03:52:36 INFO [306840] app.tabs.process.thread:154 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 03:52:36 INFO [306840] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 03:52:36 INFO [306840] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 03:52:43 INFO [306840] app.tabs.process.thread:188 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 03:52:43 INFO [306840] app.tabs.process.thread:495 - ProcessThread.run: gestartet.
+2025-11-22 03:52:43 INFO [306840] app.tabs.process.thread:571 - ProcessThread.run: StateMachine gestartet, EventLoop läuft.
+2025-11-22 03:52:43 INFO [306840] app.tabs.process.thread:351 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 03:53:40 INFO [306840] app.tabs.process.thread:608 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 03:53:40 INFO [306840] app.tabs.process.thread:409 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 03:53:40 INFO [306840] app.tabs.process.thread:620 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 03:53:40 INFO [306840] app.tabs.process.thread:456 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 03:56:48 INFO [306840] app.tabs.process.thread:303 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 03:56:53 INFO [306840] app.tabs.process.thread:277 - ProcessThread: motion_result empfangen: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 03:56:53 INFO [306840] app.tabs.process.thread:319 - ProcessThread: motion_result ausgewertet: 'ERROR:NO_TRAJECTORY pose'
+2025-11-22 03:56:53 ERROR [306840] app.tabs.process.thread:329 - ProcessThread: Motion-Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:56:53 ERROR [306840] app.tabs.process.thread:240 - ProcessThread: Abbruch mit Fehler: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:56:53 INFO [306840] app.tabs.process.thread:248 - ProcessThread: Fehler erkannt -> wechsle in ERROR-FinalState via Signal (async).
+2025-11-22 03:56:53 ERROR [306840] app.tabs.process.thread:470 - ProcessThread: _move_pose_with_motion(predispense) fehlgeschlagen: ERROR:NO_TRAJECTORY pose
+2025-11-22 03:56:53 INFO [306840] app.tabs.process.thread:582 - ProcessThread.run: beendet, _error_msg='ERROR:NO_TRAJECTORY pose', stop_requested=False, ended_in_error=False, ended_in_finished=False
+2025-11-22 04:01:58 INFO [317018] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:01:58 INFO [317018] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:01:58 INFO [317018] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:01:58 INFO [317018] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:01:58 INFO [317018] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:01:59 INFO [317018] app.tabs.process.thread:187 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 04:01:59 INFO [317018] app.tabs.process.thread:506 - ProcessThread.run: gestartet.
+2025-11-22 04:01:59 INFO [317018] app.tabs.process.thread:577 - ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.
+2025-11-22 04:01:59 INFO [317018] app.tabs.process.thread:362 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 04:01:59 INFO [317018] app.tabs.process.thread:612 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 04:01:59 INFO [317018] app.tabs.process.thread:420 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 04:01:59 INFO [317018] app.tabs.process.thread:624 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 04:01:59 INFO [317018] app.tabs.process.thread:467 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:02:04 INFO [317018] app.tabs.process.thread:314 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
+2025-11-22 04:06:06 INFO [3692] app.tabs.process:447 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-22 04:06:06 INFO [3692] app.tabs.process.thread:134 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged als DirectConnection verbunden.
+2025-11-22 04:06:06 INFO [3692] app.tabs.process.thread:153 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge, timeout=60.0 s
+2025-11-22 04:06:06 INFO [3692] app.tabs.process:387 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-22 04:06:06 INFO [3692] app.tabs.process:502 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/test.yaml' erfolgreich angewendet (id='recipe').
+2025-11-22 04:06:12 INFO [3692] app.tabs.process.thread:187 - ProcessThread: startSignal erhalten, Thread wird gestartet.
+2025-11-22 04:06:12 INFO [3692] app.tabs.process.thread:506 - ProcessThread.run: gestartet.
+2025-11-22 04:06:12 INFO [3692] app.tabs.process.thread:577 - ProcessThread.run: StateMachine gestartet, Thread-Eventloop läuft.
+2025-11-22 04:06:12 INFO [3692] app.tabs.process.thread:362 - ProcessThread: State gewechselt zu MOVE_PREDISPENSE
+2025-11-22 04:06:12 INFO [3692] app.tabs.process.thread:612 - ProcessThread: ENTER MOVE_PREDISPENSE
+2025-11-22 04:06:12 INFO [3692] app.tabs.process.thread:420 - ProcessThread: _get_recipe_poses: benutze erste side='top' mit 528 Posen (frame=scene).
+2025-11-22 04:06:12 INFO [3692] app.tabs.process.thread:624 - ProcessThread: MOVE_PREDISPENSE: fahre Pose[0].
+2025-11-22 04:06:12 INFO [3692] app.tabs.process.thread:467 - ProcessThread: moveToPoseRequested(predispense) via MotionBridge-Signal wird emittiert.
+2025-11-22 04:06:12 INFO [3692] app.tabs.process.thread:314 - ProcessThread: Warte auf Motion-Ergebnis (timeout=60.0 s)
