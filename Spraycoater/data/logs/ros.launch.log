@@ -2910,3 +2910,344 @@
 2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792071.232254739] [omron_arm_controller]: Accepted new action goal
 2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.232901216] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: omron_arm_controller started execution
 2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.232921761] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Goal request accepted!
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792071.399576413] [omron_arm_controller]: Goal reached, success!
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.433048402] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Controller 'omron_arm_controller' successfully finished
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.460217767] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Completed trajectory execution with status SUCCEEDED ...
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.461402556] [motion]: EXECUTED:OK
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.473688442] [motion]: [target_pose] in_frame=scene, world=world
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.474256565] [motion]: [target_pose] mm→m: pos=(-0.037, 0.023, 0.062)
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.474844628] [motion]: [target_pose] transform scene -> world
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.476430960] [motion]: [target_pose] world pose: pos=(-0.037, 0.623, 0.112), quat=(0.000, 0.000, 0.000, 1.000)
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.477196279] [motion]: Calling PlanningRequestAdapter 'ResolveConstraintFrames'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.477299711] [motion]: Calling PlanningRequestAdapter 'ValidateWorkspaceBounds'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792071.477311293] [moveit_1380420859.moveit.ros.validate_workspace_bounds]: It looks like the planning volume was not specified. Using default values.
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.477333450] [motion]: Calling PlanningRequestAdapter 'CheckStartStateBounds'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.477360441] [motion]: Calling PlanningRequestAdapter 'CheckStartStateCollision'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.478812925] [moveit_598455649.moveit.planners.ompl.model_based_planning_context]: Planner configuration 'omron_arm_group' will use planner 'geometric::RRTConnect'. Additional configuration parameters will be set when the planner is constructed.
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.479013847] [motion]: Calling Planner 'OMPL'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.522535490] [motion]: Calling PlanningResponseAdapter 'AddTimeOptimalParameterization'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.522862606] [motion]: Calling PlanningResponseAdapter 'ValidateSolution'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.523206743] [motion]: Calling PlanningResponseAdapter 'DisplayMotionPath'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792071.523394976] [moveit_1380420859.moveit.ros.planning_pipeline]: The planner plugin did not fill out the 'planner_id' field of the MotionPlanResponse. Setting it to the planner ID name of the MotionPlanRequest assuming that the planner plugin does warn you if it does not use the requested planner.
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.524411271] [motion]: _extract_traj(pose): 3 points, joints=['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.525946541] [motion]: PLANNED:OK pose
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.535556582] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.535656893] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.535822868] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.535860031] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.535957924] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Validating trajectory with allowed_start_tolerance 0.01
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.540471682] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Starting trajectory execution ...
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.540761031] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.540794669] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.542571550] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: sending trajectory to omron_arm_controller
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792071.543167872] [omron_arm_controller]: Received new action goal
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792071.543219538] [omron_arm_controller]: Accepted new action goal
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.543790279] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: omron_arm_controller started execution
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.543878705] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Goal request accepted!
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792071.689564694] [omron_arm_controller]: Goal reached, success!
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.694158620] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Controller 'omron_arm_controller' successfully finished
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.720108249] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Completed trajectory execution with status SUCCEEDED ...
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.722020085] [motion]: EXECUTED:OK
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.735748787] [motion]: [target_pose] in_frame=scene, world=world
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.736360720] [motion]: [target_pose] mm→m: pos=(-0.039, 0.018, 0.062)
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.737089882] [motion]: [target_pose] transform scene -> world
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.738722945] [motion]: [target_pose] world pose: pos=(-0.039, 0.618, 0.112), quat=(0.000, 0.000, 0.000, 1.000)
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.739283715] [motion]: Calling PlanningRequestAdapter 'ResolveConstraintFrames'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.739363077] [motion]: Calling PlanningRequestAdapter 'ValidateWorkspaceBounds'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792071.739373551] [moveit_1380420859.moveit.ros.validate_workspace_bounds]: It looks like the planning volume was not specified. Using default values.
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.739398226] [motion]: Calling PlanningRequestAdapter 'CheckStartStateBounds'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.739425318] [motion]: Calling PlanningRequestAdapter 'CheckStartStateCollision'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.740064342] [moveit_598455649.moveit.planners.ompl.model_based_planning_context]: Planner configuration 'omron_arm_group' will use planner 'geometric::RRTConnect'. Additional configuration parameters will be set when the planner is constructed.
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.740136856] [motion]: Calling Planner 'OMPL'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.770758463] [motion]: Calling PlanningResponseAdapter 'AddTimeOptimalParameterization'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.770922626] [motion]: Calling PlanningResponseAdapter 'ValidateSolution'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.771092025] [motion]: Calling PlanningResponseAdapter 'DisplayMotionPath'
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792071.771243195] [moveit_1380420859.moveit.ros.planning_pipeline]: The planner plugin did not fill out the 'planner_id' field of the MotionPlanResponse. Setting it to the planner ID name of the MotionPlanRequest assuming that the planner plugin does warn you if it does not use the requested planner.
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.772231090] [motion]: _extract_traj(pose): 3 points, joints=['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.774232359] [motion]: PLANNED:OK pose
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.780359340] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.781130902] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.781175116] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.781194855] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.781226177] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Validating trajectory with allowed_start_tolerance 0.01
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.790286426] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Starting trajectory execution ...
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.790403253] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.790454214] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.791168269] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: sending trajectory to omron_arm_controller
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792071.791529829] [omron_arm_controller]: Received new action goal
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792071.791567999] [omron_arm_controller]: Accepted new action goal
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.791889173] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: omron_arm_controller started execution
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.791904683] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Goal request accepted!
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792071.959566163] [omron_arm_controller]: Goal reached, success!
+2025-11-22 06:14:31 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792071.992450189] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Controller 'omron_arm_controller' successfully finished
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.020056444] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Completed trajectory execution with status SUCCEEDED ...
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.022288680] [motion]: EXECUTED:OK
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.050088738] [motion]: [target_pose] in_frame=scene, world=world
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.050606279] [motion]: [target_pose] mm→m: pos=(-0.041, 0.012, 0.062)
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.051218303] [motion]: [target_pose] transform scene -> world
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.052836803] [motion]: [target_pose] world pose: pos=(-0.041, 0.612, 0.112), quat=(0.000, 0.000, 0.000, 1.000)
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.053356157] [motion]: Calling PlanningRequestAdapter 'ResolveConstraintFrames'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.053479449] [motion]: Calling PlanningRequestAdapter 'ValidateWorkspaceBounds'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792072.053525683] [moveit_1380420859.moveit.ros.validate_workspace_bounds]: It looks like the planning volume was not specified. Using default values.
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.053571917] [motion]: Calling PlanningRequestAdapter 'CheckStartStateBounds'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.053612309] [motion]: Calling PlanningRequestAdapter 'CheckStartStateCollision'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.054247400] [moveit_598455649.moveit.planners.ompl.model_based_planning_context]: Planner configuration 'omron_arm_group' will use planner 'geometric::RRTConnect'. Additional configuration parameters will be set when the planner is constructed.
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.054337551] [motion]: Calling Planner 'OMPL'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.105886281] [motion]: Calling PlanningResponseAdapter 'AddTimeOptimalParameterization'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.106246183] [motion]: Calling PlanningResponseAdapter 'ValidateSolution'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.106605883] [motion]: Calling PlanningResponseAdapter 'DisplayMotionPath'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792072.106767350] [moveit_1380420859.moveit.ros.planning_pipeline]: The planner plugin did not fill out the 'planner_id' field of the MotionPlanResponse. Setting it to the planner ID name of the MotionPlanRequest assuming that the planner plugin does warn you if it does not use the requested planner.
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.107794676] [motion]: _extract_traj(pose): 3 points, joints=['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.108969469] [motion]: PLANNED:OK pose
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.113745392] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.113797972] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.113823658] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.113837055] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.113855085] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Validating trajectory with allowed_start_tolerance 0.01
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.120109496] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Starting trajectory execution ...
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.120235306] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.120269050] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.122307787] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: sending trajectory to omron_arm_controller
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792072.123558629] [omron_arm_controller]: Received new action goal
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792072.123629441] [omron_arm_controller]: Accepted new action goal
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.124222427] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: omron_arm_controller started execution
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.124242573] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Goal request accepted!
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792072.279502096] [omron_arm_controller]: Goal reached, success!
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.324375169] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Controller 'omron_arm_controller' successfully finished
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.350131252] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Completed trajectory execution with status SUCCEEDED ...
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.351873345] [motion]: EXECUTED:OK
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.364868080] [motion]: [target_pose] in_frame=scene, world=world
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.366435208] [motion]: [target_pose] mm→m: pos=(-0.043, 0.006, 0.062)
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.367645658] [motion]: [target_pose] transform scene -> world
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.370134449] [motion]: [target_pose] world pose: pos=(-0.043, 0.606, 0.112), quat=(0.000, 0.000, 0.000, 1.000)
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.370631844] [motion]: Calling PlanningRequestAdapter 'ResolveConstraintFrames'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.370784649] [motion]: Calling PlanningRequestAdapter 'ValidateWorkspaceBounds'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792072.370806205] [moveit_1380420859.moveit.ros.validate_workspace_bounds]: It looks like the planning volume was not specified. Using default values.
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.370831789] [motion]: Calling PlanningRequestAdapter 'CheckStartStateBounds'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.370859490] [motion]: Calling PlanningRequestAdapter 'CheckStartStateCollision'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.371460434] [moveit_598455649.moveit.planners.ompl.model_based_planning_context]: Planner configuration 'omron_arm_group' will use planner 'geometric::RRTConnect'. Additional configuration parameters will be set when the planner is constructed.
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.371539808] [motion]: Calling Planner 'OMPL'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.407139950] [motion]: Calling PlanningResponseAdapter 'AddTimeOptimalParameterization'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.407299100] [motion]: Calling PlanningResponseAdapter 'ValidateSolution'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.407449588] [motion]: Calling PlanningResponseAdapter 'DisplayMotionPath'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792072.407576304] [moveit_1380420859.moveit.ros.planning_pipeline]: The planner plugin did not fill out the 'planner_id' field of the MotionPlanResponse. Setting it to the planner ID name of the MotionPlanRequest assuming that the planner plugin does warn you if it does not use the requested planner.
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.408338816] [motion]: _extract_traj(pose): 3 points, joints=['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.409441185] [motion]: PLANNED:OK pose
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.412620668] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.412652398] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.412676774] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.412689163] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.412711021] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Validating trajectory with allowed_start_tolerance 0.01
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.420150801] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Starting trajectory execution ...
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.420256062] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.420291720] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.420989363] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: sending trajectory to omron_arm_controller
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792072.421353999] [omron_arm_controller]: Received new action goal
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792072.421415141] [omron_arm_controller]: Accepted new action goal
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.421754494] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: omron_arm_controller started execution
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.421769502] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Goal request accepted!
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792072.609581537] [omron_arm_controller]: Goal reached, success!
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.622191591] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Controller 'omron_arm_controller' successfully finished
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.650053496] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Completed trajectory execution with status SUCCEEDED ...
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.650974554] [motion]: EXECUTED:OK
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.659155995] [motion]: [target_pose] in_frame=scene, world=world
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.659663262] [motion]: [target_pose] mm→m: pos=(-0.043, -0.000, 0.062)
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.660205079] [motion]: [target_pose] transform scene -> world
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.661340587] [motion]: [target_pose] world pose: pos=(-0.043, 0.600, 0.112), quat=(0.000, 0.000, 0.000, 1.000)
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.661764652] [motion]: Calling PlanningRequestAdapter 'ResolveConstraintFrames'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.661843825] [motion]: Calling PlanningRequestAdapter 'ValidateWorkspaceBounds'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792072.661853797] [moveit_1380420859.moveit.ros.validate_workspace_bounds]: It looks like the planning volume was not specified. Using default values.
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.661901643] [motion]: Calling PlanningRequestAdapter 'CheckStartStateBounds'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.661943747] [motion]: Calling PlanningRequestAdapter 'CheckStartStateCollision'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.662453431] [moveit_598455649.moveit.planners.ompl.model_based_planning_context]: Planner configuration 'omron_arm_group' will use planner 'geometric::RRTConnect'. Additional configuration parameters will be set when the planner is constructed.
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.662534920] [motion]: Calling Planner 'OMPL'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.704208264] [motion]: Calling PlanningResponseAdapter 'AddTimeOptimalParameterization'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.704461092] [motion]: Calling PlanningResponseAdapter 'ValidateSolution'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.704740814] [motion]: Calling PlanningResponseAdapter 'DisplayMotionPath'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792072.704975510] [moveit_1380420859.moveit.ros.planning_pipeline]: The planner plugin did not fill out the 'planner_id' field of the MotionPlanResponse. Setting it to the planner ID name of the MotionPlanRequest assuming that the planner plugin does warn you if it does not use the requested planner.
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.705898180] [motion]: _extract_traj(pose): 3 points, joints=['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.707242900] [motion]: PLANNED:OK pose
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.710420974] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.710475468] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.710496822] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.710506895] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.710527443] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Validating trajectory with allowed_start_tolerance 0.01
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.720097623] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Starting trajectory execution ...
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.720202985] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.720235016] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.720518969] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: sending trajectory to omron_arm_controller
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792072.720849458] [omron_arm_controller]: Received new action goal
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792072.720884612] [omron_arm_controller]: Accepted new action goal
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.721121122] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: omron_arm_controller started execution
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.721135929] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Goal request accepted!
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792072.899616912] [omron_arm_controller]: Goal reached, success!
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.921786570] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Controller 'omron_arm_controller' successfully finished
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.950110313] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Completed trajectory execution with status SUCCEEDED ...
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.951212984] [motion]: EXECUTED:OK
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.960391231] [motion]: [target_pose] in_frame=scene, world=world
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.960952387] [motion]: [target_pose] mm→m: pos=(-0.042, -0.006, 0.062)
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.961520997] [motion]: [target_pose] transform scene -> world
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.962771436] [motion]: [target_pose] world pose: pos=(-0.042, 0.594, 0.112), quat=(0.000, 0.000, 0.000, 1.000)
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.963191976] [motion]: Calling PlanningRequestAdapter 'ResolveConstraintFrames'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.963273062] [motion]: Calling PlanningRequestAdapter 'ValidateWorkspaceBounds'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792072.963282632] [moveit_1380420859.moveit.ros.validate_workspace_bounds]: It looks like the planning volume was not specified. Using default values.
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.963304590] [motion]: Calling PlanningRequestAdapter 'CheckStartStateBounds'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.963332492] [motion]: Calling PlanningRequestAdapter 'CheckStartStateCollision'
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.964565203] [moveit_598455649.moveit.planners.ompl.model_based_planning_context]: Planner configuration 'omron_arm_group' will use planner 'geometric::RRTConnect'. Additional configuration parameters will be set when the planner is constructed.
+2025-11-22 06:14:32 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792072.964868798] [motion]: Calling Planner 'OMPL'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.008924059] [motion]: Calling PlanningResponseAdapter 'AddTimeOptimalParameterization'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.009326065] [motion]: Calling PlanningResponseAdapter 'ValidateSolution'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.009720013] [motion]: Calling PlanningResponseAdapter 'DisplayMotionPath'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792073.010464092] [moveit_1380420859.moveit.ros.planning_pipeline]: The planner plugin did not fill out the 'planner_id' field of the MotionPlanResponse. Setting it to the planner ID name of the MotionPlanRequest assuming that the planner plugin does warn you if it does not use the requested planner.
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.011694220] [motion]: _extract_traj(pose): 3 points, joints=['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.014132965] [motion]: PLANNED:OK pose
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.019292734] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.019351466] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.019374032] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.019384408] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.019406672] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Validating trajectory with allowed_start_tolerance 0.01
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.020035298] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Starting trajectory execution ...
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.020093929] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.020111962] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.020342660] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: sending trajectory to omron_arm_controller
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792073.020614661] [omron_arm_controller]: Received new action goal
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792073.020641962] [omron_arm_controller]: Accepted new action goal
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.020937940] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: omron_arm_controller started execution
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.020951842] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Goal request accepted!
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792073.189575167] [omron_arm_controller]: Goal reached, success!
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.221377184] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Controller 'omron_arm_controller' successfully finished
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.252015236] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Completed trajectory execution with status SUCCEEDED ...
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.252856426] [motion]: EXECUTED:OK
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.258500861] [motion]: [target_pose] in_frame=scene, world=world
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.258831796] [motion]: [target_pose] mm→m: pos=(-0.041, -0.012, 0.062)
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.259172705] [motion]: [target_pose] transform scene -> world
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.260872312] [motion]: [target_pose] world pose: pos=(-0.041, 0.588, 0.112), quat=(0.000, 0.000, 0.000, 1.000)
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.261283538] [motion]: Calling PlanningRequestAdapter 'ResolveConstraintFrames'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.261351941] [motion]: Calling PlanningRequestAdapter 'ValidateWorkspaceBounds'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792073.261363829] [moveit_1380420859.moveit.ros.validate_workspace_bounds]: It looks like the planning volume was not specified. Using default values.
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.261417624] [motion]: Calling PlanningRequestAdapter 'CheckStartStateBounds'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.261493785] [motion]: Calling PlanningRequestAdapter 'CheckStartStateCollision'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.262177516] [moveit_598455649.moveit.planners.ompl.model_based_planning_context]: Planner configuration 'omron_arm_group' will use planner 'geometric::RRTConnect'. Additional configuration parameters will be set when the planner is constructed.
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.262272011] [motion]: Calling Planner 'OMPL'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.309960127] [motion]: Calling PlanningResponseAdapter 'AddTimeOptimalParameterization'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.310180046] [motion]: Calling PlanningResponseAdapter 'ValidateSolution'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.310412557] [motion]: Calling PlanningResponseAdapter 'DisplayMotionPath'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792073.310625725] [moveit_1380420859.moveit.ros.planning_pipeline]: The planner plugin did not fill out the 'planner_id' field of the MotionPlanResponse. Setting it to the planner ID name of the MotionPlanRequest assuming that the planner plugin does warn you if it does not use the requested planner.
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.311481523] [motion]: _extract_traj(pose): 3 points, joints=['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.314026248] [motion]: PLANNED:OK pose
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.318399026] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.318467832] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.318501479] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.318518908] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.318548324] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Validating trajectory with allowed_start_tolerance 0.01
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.320602842] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Starting trajectory execution ...
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.320798885] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.320989588] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.322094418] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: sending trajectory to omron_arm_controller
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792073.322924627] [omron_arm_controller]: Received new action goal
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792073.322966435] [omron_arm_controller]: Accepted new action goal
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.323627197] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: omron_arm_controller started execution
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.323668501] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Goal request accepted!
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792073.479640833] [omron_arm_controller]: Goal reached, success!
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.523727246] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Controller 'omron_arm_controller' successfully finished
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.550097291] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Completed trajectory execution with status SUCCEEDED ...
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.551173712] [motion]: EXECUTED:OK
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.560465285] [motion]: [target_pose] in_frame=scene, world=world
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.561914046] [motion]: [target_pose] mm→m: pos=(-0.039, -0.018, 0.062)
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.562672023] [motion]: [target_pose] transform scene -> world
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.564443156] [motion]: [target_pose] world pose: pos=(-0.039, 0.582, 0.112), quat=(0.000, 0.000, 0.000, 1.000)
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.564900421] [motion]: Calling PlanningRequestAdapter 'ResolveConstraintFrames'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.564982828] [motion]: Calling PlanningRequestAdapter 'ValidateWorkspaceBounds'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792073.564995118] [moveit_1380420859.moveit.ros.validate_workspace_bounds]: It looks like the planning volume was not specified. Using default values.
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.565019900] [motion]: Calling PlanningRequestAdapter 'CheckStartStateBounds'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.565056369] [motion]: Calling PlanningRequestAdapter 'CheckStartStateCollision'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.565623844] [moveit_598455649.moveit.planners.ompl.model_based_planning_context]: Planner configuration 'omron_arm_group' will use planner 'geometric::RRTConnect'. Additional configuration parameters will be set when the planner is constructed.
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.565697285] [motion]: Calling Planner 'OMPL'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.618593525] [motion]: Calling PlanningResponseAdapter 'AddTimeOptimalParameterization'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.618926374] [motion]: Calling PlanningResponseAdapter 'ValidateSolution'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.619318560] [motion]: Calling PlanningResponseAdapter 'DisplayMotionPath'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792073.619502111] [moveit_1380420859.moveit.ros.planning_pipeline]: The planner plugin did not fill out the 'planner_id' field of the MotionPlanResponse. Setting it to the planner ID name of the MotionPlanRequest assuming that the planner plugin does warn you if it does not use the requested planner.
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.620444647] [motion]: _extract_traj(pose): 3 points, joints=['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.623012341] [motion]: PLANNED:OK pose
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.627901116] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.628052127] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.628243435] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.628302167] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.628370872] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Validating trajectory with allowed_start_tolerance 0.01
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.630091534] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Starting trajectory execution ...
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.630187843] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.630219677] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.630523916] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: sending trajectory to omron_arm_controller
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792073.631050289] [omron_arm_controller]: Received new action goal
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792073.631087160] [omron_arm_controller]: Accepted new action goal
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.631461817] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: omron_arm_controller started execution
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.631478943] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Goal request accepted!
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792073.809598144] [omron_arm_controller]: Goal reached, success!
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.831841624] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Controller 'omron_arm_controller' successfully finished
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.860053624] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Completed trajectory execution with status SUCCEEDED ...
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.861066477] [motion]: EXECUTED:OK
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.872992032] [motion]: [target_pose] in_frame=scene, world=world
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.873716362] [motion]: [target_pose] mm→m: pos=(-0.036, -0.023, 0.062)
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.874531158] [motion]: [target_pose] transform scene -> world
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.875686661] [motion]: [target_pose] world pose: pos=(-0.036, 0.577, 0.112), quat=(0.000, 0.000, 0.000, 1.000)
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.876003895] [motion]: Calling PlanningRequestAdapter 'ResolveConstraintFrames'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.876067161] [motion]: Calling PlanningRequestAdapter 'ValidateWorkspaceBounds'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792073.876077638] [moveit_1380420859.moveit.ros.validate_workspace_bounds]: It looks like the planning volume was not specified. Using default values.
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.876100002] [motion]: Calling PlanningRequestAdapter 'CheckStartStateBounds'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.876124482] [motion]: Calling PlanningRequestAdapter 'CheckStartStateCollision'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.876732658] [moveit_598455649.moveit.planners.ompl.model_based_planning_context]: Planner configuration 'omron_arm_group' will use planner 'geometric::RRTConnect'. Additional configuration parameters will be set when the planner is constructed.
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.876824735] [motion]: Calling Planner 'OMPL'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.919500971] [motion]: Calling PlanningResponseAdapter 'AddTimeOptimalParameterization'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.919739123] [motion]: Calling PlanningResponseAdapter 'ValidateSolution'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.920006491] [motion]: Calling PlanningResponseAdapter 'DisplayMotionPath'
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792073.920139167] [moveit_1380420859.moveit.ros.planning_pipeline]: The planner plugin did not fill out the 'planner_id' field of the MotionPlanResponse. Setting it to the planner ID name of the MotionPlanRequest assuming that the planner plugin does warn you if it does not use the requested planner.
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.921235434] [motion]: _extract_traj(pose): 3 points, joints=['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.922521296] [motion]: PLANNED:OK pose
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.927042365] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.927110264] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.927140688] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.927155094] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.927237501] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Validating trajectory with allowed_start_tolerance 0.01
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.930094826] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Starting trajectory execution ...
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.930196676] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.930226495] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.930503836] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: sending trajectory to omron_arm_controller
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792073.930979134] [omron_arm_controller]: Received new action goal
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792073.931014695] [omron_arm_controller]: Accepted new action goal
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.931242572] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: omron_arm_controller started execution
+2025-11-22 06:14:33 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792073.931255870] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Goal request accepted!
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792074.099582248] [omron_arm_controller]: Goal reached, success!
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.131833337] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Controller 'omron_arm_controller' successfully finished
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.159930788] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Completed trajectory execution with status SUCCEEDED ...
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.160789401] [motion]: EXECUTED:OK
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.168355242] [motion]: [target_pose] in_frame=scene, world=world
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.168925234] [motion]: [target_pose] mm→m: pos=(-0.032, -0.028, 0.062)
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.170084347] [motion]: [target_pose] transform scene -> world
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.172676796] [motion]: [target_pose] world pose: pos=(-0.032, 0.572, 0.112), quat=(0.000, 0.000, 0.000, 1.000)
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.173523731] [motion]: Calling PlanningRequestAdapter 'ResolveConstraintFrames'
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.173712990] [motion]: Calling PlanningRequestAdapter 'ValidateWorkspaceBounds'
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792074.173730306] [moveit_1380420859.moveit.ros.validate_workspace_bounds]: It looks like the planning volume was not specified. Using default values.
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.173756681] [motion]: Calling PlanningRequestAdapter 'CheckStartStateBounds'
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.173788392] [motion]: Calling PlanningRequestAdapter 'CheckStartStateCollision'
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.174599992] [moveit_598455649.moveit.planners.ompl.model_based_planning_context]: Planner configuration 'omron_arm_group' will use planner 'geometric::RRTConnect'. Additional configuration parameters will be set when the planner is constructed.
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.174901901] [motion]: Calling Planner 'OMPL'
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.235370741] [motion]: Calling PlanningResponseAdapter 'AddTimeOptimalParameterization'
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.235592014] [motion]: Calling PlanningResponseAdapter 'ValidateSolution'
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.235901674] [motion]: Calling PlanningResponseAdapter 'DisplayMotionPath'
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [WARN] [1763792074.236072611] [moveit_1380420859.moveit.ros.planning_pipeline]: The planner plugin did not fill out the 'planner_id' field of the MotionPlanResponse. Setting it to the planner ID name of the MotionPlanRequest assuming that the planner plugin does warn you if it does not use the requested planner.
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.236924077] [motion]: _extract_traj(pose): 3 points, joints=['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.238235905] [motion]: PLANNED:OK pose
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.243648720] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.243707713] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.243755632] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.243776672] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.243809087] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Validating trajectory with allowed_start_tolerance 0.01
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.250166790] [moveit_1380420859.moveit.ros.trajectory_execution_manager]: Starting trajectory execution ...
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.250276620] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.250306318] [moveit_1380420859.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.250618394] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: sending trajectory to omron_arm_controller
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792074.251034261] [omron_arm_controller]: Received new action goal
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792074.251077348] [omron_arm_controller]: Accepted new action goal
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.251428585] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: omron_arm_controller started execution
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [motion-13] [INFO] [1763792074.251448417] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]: Goal request accepted!
+2025-11-22 06:14:34 INFO [192753] ros.launch:105 - [ros2_control_node-3] [INFO] [1763792074.389590067] [omron_arm_controller]: Goal reached, success!

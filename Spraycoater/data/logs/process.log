@@ -6027,3 +6027,63 @@
 2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:539 - ProcessThread: moveToPoseRequested(recipe_61) via MotionBridge-Signal wird emittiert.
 2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
 2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:320 - ProcessThread: Motion-Status PLANNED..., warte auf EXECUTED/ERROR.
+2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:355 - ProcessThread: Motion EXECUTED:OK in Phase MOVE_RECIPE
+2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:386 - ProcessThread: MOVE_RECIPE: nächster Wegpunkt 62/526.
+2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:539 - ProcessThread: moveToPoseRequested(recipe_62) via MotionBridge-Signal wird emittiert.
+2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:320 - ProcessThread: Motion-Status PLANNED..., warte auf EXECUTED/ERROR.
+2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:355 - ProcessThread: Motion EXECUTED:OK in Phase MOVE_RECIPE
+2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:386 - ProcessThread: MOVE_RECIPE: nächster Wegpunkt 63/526.
+2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:539 - ProcessThread: moveToPoseRequested(recipe_63) via MotionBridge-Signal wird emittiert.
+2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 06:14:31 INFO [192753] app.tabs.process.thread:320 - ProcessThread: Motion-Status PLANNED..., warte auf EXECUTED/ERROR.
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:355 - ProcessThread: Motion EXECUTED:OK in Phase MOVE_RECIPE
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:386 - ProcessThread: MOVE_RECIPE: nächster Wegpunkt 64/526.
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:539 - ProcessThread: moveToPoseRequested(recipe_64) via MotionBridge-Signal wird emittiert.
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:320 - ProcessThread: Motion-Status PLANNED..., warte auf EXECUTED/ERROR.
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:355 - ProcessThread: Motion EXECUTED:OK in Phase MOVE_RECIPE
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:386 - ProcessThread: MOVE_RECIPE: nächster Wegpunkt 65/526.
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:539 - ProcessThread: moveToPoseRequested(recipe_65) via MotionBridge-Signal wird emittiert.
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:320 - ProcessThread: Motion-Status PLANNED..., warte auf EXECUTED/ERROR.
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:355 - ProcessThread: Motion EXECUTED:OK in Phase MOVE_RECIPE
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:386 - ProcessThread: MOVE_RECIPE: nächster Wegpunkt 66/526.
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:539 - ProcessThread: moveToPoseRequested(recipe_66) via MotionBridge-Signal wird emittiert.
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:320 - ProcessThread: Motion-Status PLANNED..., warte auf EXECUTED/ERROR.
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:355 - ProcessThread: Motion EXECUTED:OK in Phase MOVE_RECIPE
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:386 - ProcessThread: MOVE_RECIPE: nächster Wegpunkt 67/526.
+2025-11-22 06:14:32 INFO [192753] app.tabs.process.thread:539 - ProcessThread: moveToPoseRequested(recipe_67) via MotionBridge-Signal wird emittiert.
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:320 - ProcessThread: Motion-Status PLANNED..., warte auf EXECUTED/ERROR.
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:355 - ProcessThread: Motion EXECUTED:OK in Phase MOVE_RECIPE
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:386 - ProcessThread: MOVE_RECIPE: nächster Wegpunkt 68/526.
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:539 - ProcessThread: moveToPoseRequested(recipe_68) via MotionBridge-Signal wird emittiert.
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:320 - ProcessThread: Motion-Status PLANNED..., warte auf EXECUTED/ERROR.
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:355 - ProcessThread: Motion EXECUTED:OK in Phase MOVE_RECIPE
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:386 - ProcessThread: MOVE_RECIPE: nächster Wegpunkt 69/526.
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:539 - ProcessThread: moveToPoseRequested(recipe_69) via MotionBridge-Signal wird emittiert.
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:320 - ProcessThread: Motion-Status PLANNED..., warte auf EXECUTED/ERROR.
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:355 - ProcessThread: Motion EXECUTED:OK in Phase MOVE_RECIPE
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:386 - ProcessThread: MOVE_RECIPE: nächster Wegpunkt 70/526.
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:539 - ProcessThread: moveToPoseRequested(recipe_70) via MotionBridge-Signal wird emittiert.
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 06:14:33 INFO [192753] app.tabs.process.thread:320 - ProcessThread: Motion-Status PLANNED..., warte auf EXECUTED/ERROR.
+2025-11-22 06:14:34 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'EXECUTED:OK'
+2025-11-22 06:14:34 INFO [192753] app.tabs.process.thread:355 - ProcessThread: Motion EXECUTED:OK in Phase MOVE_RECIPE
+2025-11-22 06:14:34 INFO [192753] app.tabs.process.thread:386 - ProcessThread: MOVE_RECIPE: nächster Wegpunkt 71/526.
+2025-11-22 06:14:34 INFO [192753] app.tabs.process.thread:539 - ProcessThread: moveToPoseRequested(recipe_71) via MotionBridge-Signal wird emittiert.
+2025-11-22 06:14:34 INFO [192753] app.tabs.process.thread:300 - ProcessThread: motion_result empfangen: 'PLANNED:OK pose'
+2025-11-22 06:14:34 INFO [192753] app.tabs.process.thread:320 - ProcessThread: Motion-Status PLANNED..., warte auf EXECUTED/ERROR.
