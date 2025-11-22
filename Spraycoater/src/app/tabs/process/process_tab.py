@@ -48,7 +48,7 @@ class ProcessTab(QWidget):
       )
     """
 
-    def __init__(self, *, ctx, bridge, parent: Optional[Widget] = None):
+    def __init__(self, *, ctx, bridge, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
         self.bridge = bridge
@@ -534,10 +534,29 @@ class ProcessTab(QWidget):
             self.set_process_active(False)
 
     def _on_stop_clicked(self) -> None:
+        """
+        Stop-Button:
+          - setzt das Stop-Flag im ProcessThread *direkt* (ohne auf die
+            QThread-Eventloop zu warten),
+          - schickt zusätzlich das stopSignal (Abwärtskompatibilität),
+          - stoppt ggf. auch den RobotInitThread.
+        """
         self._append_process_log("=== Stop angefordert ===")
 
-        if self._process_thread is not None and self._process_thread.isRunning():
-            self._process_thread.stopSignal.emit()
+        thr = self._process_thread
+        if thr is not None:
+            try:
+                # Direkt das Flag setzen (thread-safe genug, nur bool),
+                # damit _wait_for_motion() nicht auf Events angewiesen ist.
+                thr.request_stop()
+            except Exception:
+                _LOG.exception("ProcessTab: request_stop() auf ProcessThread fehlgeschlagen.")
+
+            try:
+                if thr.isRunning():
+                    thr.stopSignal.emit()
+            except Exception:
+                _LOG.exception("ProcessTab: stopSignal.emit() auf ProcessThread fehlgeschlagen.")
 
         if self._robot_init_thread is not None and self._robot_init_thread.isRunning():
             self._robot_init_thread.stopSignal.emit()
@@ -646,6 +665,7 @@ class ProcessTab(QWidget):
             "MOVE_RETREAT": "Retreat-Position anfahren",
             "MOVE_HOME": "Home-Position anfahren",
             "ERROR": "Fehler – Prozess abgebrochen",
+            "FINISHED": "Prozess abgeschlossen",
         }.get(state, state)
 
         try:
