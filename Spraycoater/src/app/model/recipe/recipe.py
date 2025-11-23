@@ -328,6 +328,13 @@ class Recipe:
         if tool_frame is None:
             tool_frame = str((self.planner or {}).get("tool_frame", "tool_mount"))
 
+        # --- Z-Offset für Export / Spray-Pfad ---
+        # Falls vorhanden, kann ein expliziter Offset gesetzt werden (z.B. aus Scene-Config),
+        # sonst wird für "top" automatisch zmin als Mount-Offset verwendet.
+        explicit_scene_z_off = self.parameters.get("scene_z_offset_mm", None)
+        auto_z_off = float(zmin)
+        z_offset_top_default = float(explicit_scene_z_off) if explicit_scene_z_off is not None else auto_z_off
+
         # Surface-Normalen (zeigen VON der Oberfläche weg/ins Freie)
         face = {
             "top":   {"surface_n": np.array([0, 0,  1.0]), "anchor": ("z", zmax), "axes": ("x", "y")},
@@ -430,6 +437,7 @@ class Recipe:
                         "sample_step_mm": step, "stand_off_mm": float(stand_off_mm),
                         "tool_frame": tool_frame,
                         "angle_hints": _extract_angle_hints(pdef),
+                        "z_offset_top_mm": z_offset_top_default if side == "top" else 0.0,
                     },
                     "poses_quat": []
                 }
@@ -441,6 +449,12 @@ class Recipe:
             # Stand-off: vom Surface weg schieben
             if abs(stand_off_mm) > 1e-9:
                 Pw = Pw + surface_n.reshape(1, 3) * float(stand_off_mm)
+
+            # Nur für die TOP-Seite: Z-Offset abziehen, damit z relativ
+            # zum Mount/Substrat gespeichert/verschickt wird (z.B. 12 statt 62).
+            if side == "top":
+                Pw = Pw.copy()
+                Pw[:, 2] -= z_offset_top_default
 
             # Tangenten in Ebene senkrecht zur Tool-Z-Achse (tool_z) projizieren
             T = np.empty_like(Pw)
@@ -478,6 +492,9 @@ class Recipe:
                 "tool_frame": tool_frame,
                 "angle_hints": _extract_angle_hints(pdef),
             }
+
+            if side == "top":
+                meta["z_offset_top_mm"] = z_offset_top_default
 
             sides_out[side] = {"meta": meta, "poses_quat": poses}
 

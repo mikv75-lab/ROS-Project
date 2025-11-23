@@ -4531,3 +4531,75 @@ TypeError: BaseBridge.__init__() got an unexpected keyword argument 'parent'
 2025-11-22 21:54:36 INFO [446558] app.startup:143 - logging configured
 2025-11-22 21:54:36 INFO [446558] app.startup:148 - warnings enabled
 2025-11-22 21:54:40 INFO [446558] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 14:01:41 INFO [514490] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 14:01:41 INFO [514490] app.startup:143 - logging configured
+2025-11-23 14:01:41 INFO [514490] app.startup:148 - warnings enabled
+2025-11-23 14:01:45 INFO [514490] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 14:02:57 INFO [516716] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 14:02:57 INFO [516716] app.startup:143 - logging configured
+2025-11-23 14:02:57 INFO [516716] app.startup:148 - warnings enabled
+2025-11-23 14:02:59 INFO [516716] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 14:11:34 INFO [524698] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 14:11:34 INFO [524698] app.startup:143 - logging configured
+2025-11-23 14:11:34 INFO [524698] app.startup:148 - warnings enabled
+2025-11-23 14:11:37 INFO [524698] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 14:12:19 INFO [526094] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 14:12:19 INFO [526094] app.startup:143 - logging configured
+2025-11-23 14:12:19 INFO [526094] app.startup:148 - warnings enabled
+2025-11-23 14:12:21 INFO [526094] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 14:14:51 INFO [528504] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 14:14:51 INFO [528504] app.startup:143 - logging configured
+2025-11-23 14:14:51 INFO [528504] app.startup:148 - warnings enabled
+2025-11-23 14:14:53 INFO [528504] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 14:18:17 INFO [532294] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 14:18:17 INFO [532294] app.startup:143 - logging configured
+2025-11-23 14:18:17 INFO [532294] app.startup:148 - warnings enabled
+2025-11-23 14:18:19 INFO [532294] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 14:40:30 INFO [560312] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 14:40:30 INFO [560312] app.startup:143 - logging configured
+2025-11-23 14:40:30 INFO [560312] app.startup:148 - warnings enabled
+2025-11-23 14:40:33 INFO [560312] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 15:11:48 INFO [579561] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 15:11:48 INFO [579561] app.startup:143 - logging configured
+2025-11-23 15:11:48 INFO [579561] app.startup:148 - warnings enabled
+2025-11-23 15:11:51 INFO [579561] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 15:12:43 INFO [581069] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 15:12:43 INFO [581069] app.startup:143 - logging configured
+2025-11-23 15:12:43 INFO [581069] app.startup:148 - warnings enabled
+2025-11-23 15:12:45 INFO [581069] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 15:14:21 INFO [583188] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 15:14:21 INFO [583188] app.startup:143 - logging configured
+2025-11-23 15:14:21 INFO [583188] app.startup:148 - warnings enabled
+2025-11-23 15:14:24 INFO [583188] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 15:14:53 INFO [584363] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 15:14:53 INFO [584363] app.startup:143 - logging configured
+2025-11-23 15:14:53 INFO [584363] app.startup:148 - warnings enabled
+2025-11-23 15:14:55 INFO [584363] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 15:15:31 INFO [585551] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 15:15:31 INFO [585551] app.startup:143 - logging configured
+2025-11-23 15:15:31 INFO [585551] app.startup:148 - warnings enabled
+2025-11-23 15:15:33 INFO [585551] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 15:16:13 INFO [586739] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 15:16:13 INFO [586739] app.startup:143 - logging configured
+2025-11-23 15:16:13 INFO [586739] app.startup:148 - warnings enabled
+2025-11-23 15:16:16 INFO [586739] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 15:23:46 INFO [592725] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 15:23:46 INFO [592725] app.startup:143 - logging configured
+2025-11-23 15:23:46 INFO [592725] app.startup:148 - warnings enabled
+2025-11-23 15:23:50 INFO [592725] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 15:50:05 INFO [620921] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 15:50:05 INFO [620921] app.startup:143 - logging configured
+2025-11-23 15:50:05 INFO [620921] app.startup:148 - warnings enabled
+2025-11-23 15:50:08 INFO [620921] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 15:52:58 INFO [623322] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 15:52:58 INFO [623322] app.startup:143 - logging configured
+2025-11-23 15:52:58 INFO [623322] app.startup:148 - warnings enabled
+2025-11-23 15:52:59 INFO [623322] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 15:53:19 INFO [624038] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 15:53:19 INFO [624038] app.startup:143 - logging configured
+2025-11-23 15:53:19 INFO [624038] app.startup:148 - warnings enabled
+2025-11-23 15:53:20 INFO [624038] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-11-23 15:56:32 INFO [627011] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-11-23 15:56:32 INFO [627011] app.startup:143 - logging configured
+2025-11-23 15:56:32 INFO [627011] app.startup:148 - warnings enabled
+2025-11-23 15:56:33 INFO [627011] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
