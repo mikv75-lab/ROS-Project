@@ -5275,3 +5275,28 @@ AttributeError: 'NoneType' object has no attribute 'set_spraypath'
 2025-11-23 15:56:35 DEBUG [627011] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
 2025-11-23 15:56:36 INFO [627011] app.tabs.recipe:112 - RecipeTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene, sides=top)
 2025-11-23 15:56:36 INFO [627011] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-23 17:04:40 INFO [672526] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-23 17:04:40 DEBUG [672526] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-23 17:04:40 DEBUG [672526] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-23 17:04:40 INFO [672526] app.tabs.recipe:112 - RecipeTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene, sides=top)
+2025-11-23 17:04:40 INFO [672526] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-23 17:09:29 INFO [675170] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-23 17:09:29 DEBUG [675170] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-23 17:09:29 DEBUG [675170] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-23 17:09:29 INFO [675170] app.tabs.recipe:112 - RecipeTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene, sides=top)
+2025-11-23 17:09:29 INFO [675170] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-23 17:10:37 INFO [678474] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-23 17:10:37 DEBUG [678474] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-23 17:10:37 DEBUG [678474] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-23 17:10:37 INFO [678474] app.tabs.recipe:112 - RecipeTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene, sides=top)
+2025-11-23 17:10:37 INFO [678474] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-23 17:11:47 INFO [680156] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-23 17:11:47 DEBUG [680156] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-23 17:11:47 DEBUG [680156] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-23 17:11:47 INFO [680156] app.tabs.recipe:112 - RecipeTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene, sides=top)
+2025-11-23 17:11:47 INFO [680156] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-23 17:16:01 INFO [686799] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-23 17:16:01 DEBUG [686799] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-11-23 17:16:01 DEBUG [686799] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-11-23 17:16:01 INFO [686799] app.tabs.recipe:112 - RecipeTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene, sides=top)
+2025-11-23 17:16:01 INFO [686799] app.tabs.recipe:143 - initial preview ausgeführt

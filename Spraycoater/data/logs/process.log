@@ -1994,3 +1994,14 @@
 2025-11-23 16:26:52 INFO [627011] app.tabs.process.thread:917 - ProcessThread: ENTER FINISHED
 2025-11-23 16:26:52 INFO [627011] app.tabs.process.thread:410 - ProcessThread: State gewechselt zu FINISHED
 2025-11-23 16:26:52 INFO [627011] app.tabs.process.thread:923 - ProcessThread: notifyFinished() im FINISHED-State, 528 Posen werden übergeben.
+2025-11-23 17:10:51 INFO [678474] app.tabs.process:452 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/recipe.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-23 17:10:51 INFO [678474] app.tabs.process.thread:154 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged verbunden.
+2025-11-23 17:10:51 INFO [678474] app.tabs.process.thread:170 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge
+2025-11-23 17:10:51 INFO [678474] app.tabs.process:392 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-23 17:10:51 INFO [678474] app.tabs.process:507 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/recipe.yaml' erfolgreich angewendet (id='recipe').
+2025-11-23 17:10:55 INFO [678474] app.tabs.process.thread:210 - ProcessThread: request_stop() aufgerufen.
+2025-11-23 17:12:43 INFO [680156] app.tabs.process:452 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/recipe.yaml' geladen, wende nun auf UI/Threads an.
+2025-11-23 17:12:43 INFO [680156] app.tabs.process.thread:154 - ProcessThread: MotionBridge gefunden (MotionBridge), motionResultChanged verbunden.
+2025-11-23 17:12:43 INFO [680156] app.tabs.process.thread:170 - ProcessThread init: recipe=recipe, rb=RobotBridge, motion=MotionBridge
+2025-11-23 17:12:43 INFO [680156] app.tabs.process:392 - ProcessTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene)
+2025-11-23 17:12:43 INFO [680156] app.tabs.process:507 - ProcessTab: Rezept '/root/Spraycoater/data/recipes/recipe.yaml' erfolgreich angewendet (id='recipe').
