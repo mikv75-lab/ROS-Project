@@ -22,7 +22,7 @@ class SprayPath(Node):
       - spray_path.set            (MarkerArray)
         → Kommando vom PyQt-Editor (fertiger Pfad als MarkerArray, Sollpfad)
       - spray_path.executed_poses (PoseArray)
-        → gefahrene Posen vom ProcessTab (Istpfad)
+        → gefahrene Posen vom ProcessTab / Recorder (Istpfad)
 
     PUB (alle TRANSIENT_LOCAL / latched):
       - spray_path.poses            (PoseArray): Punkte des Sollpfads als neutrale Posen

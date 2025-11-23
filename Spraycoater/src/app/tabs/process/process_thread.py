@@ -57,6 +57,11 @@ class ProcessThread(QtCore.QThread):
           * State emittiert moveToPoseRequested(...)
           * MotionBridge/MoveIt führen aus und publizieren motionResultChanged(...)
           * ProcessThread wertet das Ergebnis aus und triggert State-Transition.
+
+    NEU:
+      - Während der Motion-Phasen werden über RobotBridge.signals.tcpPoseChanged
+        TCP-Posen mitgesammelt und im FINISHED-State als "gefahrene Trajektorie"
+        (List[PoseStamped]) über notifyFinished(...) zurückgegeben.
     """
 
     # Steuer-Signale von außen
@@ -64,7 +69,7 @@ class ProcessThread(QtCore.QThread):
     stopSignal = QtCore.pyqtSignal()
 
     # Ergebnis-Signale nach außen
-    # Bei Erfolg: komplette Liste der Rezept-Posen (List[PoseStamped])
+    # Bei Erfolg: komplette Liste der *gefahrenen* TCP-Posen (List[PoseStamped])
     notifyFinished = QtCore.pyqtSignal(object)
     notifyError = QtCore.pyqtSignal(str)
 
@@ -118,6 +123,9 @@ class ProcessThread(QtCore.QThread):
         self._recipe_poses: List[PoseStamped] = []
         self._recipe_index: int = 0
 
+        # NEU: gefahrene Trajektorie (TCP-Stream) während des Prozesslaufs
+        self._executed_poses: List[PoseStamped] = []
+
         # --- Predispense-Safety-Timer ---
         self._predispense_timer: Optional[QtCore.QTimer] = None
         self._predispense_elapsed_ms: int = 0
@@ -131,11 +139,11 @@ class ProcessThread(QtCore.QThread):
         _LOG.addHandler(self._log_handler)
 
         # Feste Referenzen aus der UIBridge (ohne getattr/hasattr für Logik)
-        self._rb = bridge._rb            # RobotBridge (falls später noch benötigt)
-        self._motion = bridge._motion    # MotionBridge
+        self._rb = getattr(bridge, "_rb", None)            # RobotBridge
+        self._motion = getattr(bridge, "_motion", None)    # MotionBridge
         self._motion_signals = self._motion.signals if self._motion is not None else None
-        self._pb = bridge._pb            # PosesBridge
-        self._poses_state = bridge.poses # PosesState (Home/Service-Copy)
+        self._pb = getattr(bridge, "_pb", None)            # PosesBridge
+        self._poses_state = getattr(bridge, "poses", None) # PosesState (Home/Service-Copy)
 
         # motion_result-Integration (eventbasiert, ohne Polling)
         if self._motion is not None and self._motion_signals is not None:
@@ -153,6 +161,29 @@ class ProcessThread(QtCore.QThread):
                 "ProcessThread: MotionBridge oder deren Signale sind None – "
                 "Bewegungen können nicht ausgeführt werden."
             )
+
+        # NEU: TCP-Stream vom Robot mitloggen (echte Trajektorie)
+        if self._rb is not None:
+            try:
+                sig_r = getattr(self._rb, "signals", None)
+                if sig_r is None:
+                    _LOG.warning("ProcessThread: RobotBridge.signals ist None – kein TCP-Logging möglich.")
+                else:
+                    if hasattr(sig_r, "tcpPoseChanged"):
+                        sig_r.tcpPoseChanged.connect(self._on_tcp_stream)
+                        _LOG.info(
+                            "ProcessThread: RobotBridge tcpPoseChanged verbunden – "
+                            "gefahrene Trajektorie wird mitgeloggt."
+                        )
+                    else:
+                        _LOG.warning(
+                            "ProcessThread: RobotBridge.signals.tcpPoseChanged fehlt – "
+                            "kein Live-Trajektorien-Logging möglich."
+                        )
+            except Exception:
+                _LOG.exception("ProcessThread: Fehler beim Verbinden von tcpPoseChanged.")
+        else:
+            _LOG.warning("ProcessThread: RobotBridge ist None – kein TCP-Logging möglich.")
 
         # Signale von außen auf Slots verdrahten
         self.startSignal.connect(self._on_start_signal)
@@ -344,7 +375,7 @@ class ProcessThread(QtCore.QThread):
         Wird aufgerufen, wenn Motion EXECUTED:OK gemeldet hat.
         Entscheidet anhand der aktuellen Phase, was passiert:
           - MOVE_PREDISPENSE: State-Transition auf WAIT_PREDISPENSE
-          - MOVE_RECIPE: nächster Waypoint oder Transition auf WAIT_POSTDISPENSE
+          - MOVE_RECIPE: nächster Wegpunkt oder Transition auf WAIT_POSTDISPENSE
           - MOVE_RETREAT: Transition auf MOVE_HOME
           - MOVE_HOME: Transition auf FINISHED
         """
@@ -400,6 +431,45 @@ class ProcessThread(QtCore.QThread):
 
         # Fallback
         self._current_phase = self.PHASE_NONE
+
+    # ---------------------------------------------------------
+    # TCP-Stream: gefahrene Trajektorie mitschneiden
+    # ---------------------------------------------------------
+
+    @QtCore.pyqtSlot(object)
+    def _on_tcp_stream(self, msg: object) -> None:
+        """
+        Wird von RobotBridge.signals.tcpPoseChanged gerufen.
+
+        Schneidet nur während aktiver Motion-Phasen (MOVE_PREDISPENSE,
+        MOVE_RECIPE, MOVE_RETREAT, MOVE_HOME) die TCP-Posen mit und legt sie
+        in self._executed_poses ab.
+        """
+        if self._machine is None or not self._machine.isRunning():
+            return
+
+        if self._current_phase not in (
+            self.PHASE_MOVE_PREDISPENSE,
+            self.PHASE_MOVE_RECIPE,
+            self.PHASE_MOVE_RETREAT,
+            self.PHASE_MOVE_HOME,
+        ):
+            # Nur während der tatsächlichen Bewegung mitschneiden
+            return
+
+        if self._should_stop() or self._error_msg:
+            return
+
+        if not isinstance(msg, PoseStamped):
+            return
+
+        # Harte Kopie anlegen (kein Shared-Objekt, das später verändert wird)
+        snap = PoseStamped()
+        snap.header.frame_id = msg.header.frame_id
+        snap.header.stamp = msg.header.stamp
+        snap.pose = msg.pose  # Pose ist ein eigener Typ, die Zuweisung kopiert die Werte
+
+        self._executed_poses.append(snap)
 
     # ---------------------------------------------------------
     # State-Namen emitten
@@ -559,6 +629,8 @@ class ProcessThread(QtCore.QThread):
         self._recipe_poses = []
         self._recipe_index = 0
         self._predispense_elapsed_ms = 0
+        # NEU: gefahrene Trajektorie pro Lauf zurücksetzen
+        self._executed_poses = []
 
         machine = QStateMachine()
         self._machine = machine  # für _finish_state / _stop_machine_and_quit()
@@ -633,11 +705,12 @@ class ProcessThread(QtCore.QThread):
             self._machine = None
             _LOG.info(
                 "ProcessThread.run: beendet, _error_msg=%r, stop_requested=%s, "
-                "ended_in_error=%s, ended_in_finished=%s",
+                "ended_in_error=%s, ended_in_finished=%s, executed_poses=%d",
                 self._error_msg,
                 self._stop_requested,
                 self._ended_in_error_state,
                 self._ended_in_finished_state,
+                len(self._executed_poses),
             )
             if self._log_handler is not None:
                 try:
@@ -918,11 +991,19 @@ class ProcessThread(QtCore.QThread):
         self._ended_in_finished_state = True
         self._emit_state("FINISHED")
 
-        # Liste der verwendeten Rezept-Posen an den Aufrufer geben
-        poses_copy: List[PoseStamped] = list(self._recipe_poses or [])
+        # Bevorzugt: echte gefahrene TCP-Trajektorie (falls Logging aktiv war)
+        if self._executed_poses:
+            poses_source = "executed TCP stream"
+            poses_copy: List[PoseStamped] = list(self._executed_poses)
+        else:
+            # Fallback: die verwendeten Rezept-Posen
+            poses_source = "recipe_poses (fallback)"
+            poses_copy = list(self._recipe_poses or [])
+
         _LOG.info(
-            "ProcessThread: notifyFinished() im FINISHED-State, %d Posen werden übergeben.",
+            "ProcessThread: notifyFinished() im FINISHED-State, %d Posen werden übergeben (%s).",
             len(poses_copy),
+            poses_source,
         )
         self.notifyFinished.emit(poses_copy)
 

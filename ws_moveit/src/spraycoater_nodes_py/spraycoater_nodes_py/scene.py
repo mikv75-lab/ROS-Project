@@ -111,6 +111,7 @@ class Scene(Node):
         und bei cage/mount/substrate-Wechsel aktualisiert.
       - /collision_object hat TRANSIENT_LOCAL-QoS -> Late Joiner (RViz etc.)
         bekommen immer den letzten Stand, ohne 1 Hz-Republish.
+      - Änderungen (cage/mount/substrate) werden zurück in scene.yaml geschrieben.
     """
 
     def __init__(self):
@@ -136,6 +137,10 @@ class Scene(Node):
             raise ValueError("YAML: 'scene_objects' fehlt oder ist nicht Liste")
         self.scene_objects = data["scene_objects"]
         self.base_dir = os.path.dirname(os.path.abspath(scene_yaml))
+
+        # Pfad + komplette YAML speichern, damit wir später Änderungen persistieren können
+        self._scene_yaml_path = scene_yaml
+        self._scene_yaml_data = data
 
         # Robot-Auswahl + Asset-Dirs
         sel = (robot_cfg.get("selected") or "").strip()
@@ -223,6 +228,10 @@ class Scene(Node):
         self.current_mount: str = self._initial_current_from_yaml("substrate_mount")
         self.current_substrate: str = self._initial_current_from_yaml("substrate")
 
+        # Direkt initial Listen + Current publizieren, damit UI sofort Daten hat
+        self._publish_lists_once()
+        self._publish_current_once()
+
         self.get_logger().info(
             "⏳ Warte auf MoveIt – Szene wird einmalig gesendet, "
             "CollisionObjects sind latched (TRANSIENT_LOCAL)."
@@ -270,6 +279,23 @@ class Scene(Node):
         self.pub_mount_current.publish(String(data=self.current_mount))
         self.pub_substrate_current.publish(String(data=self.current_substrate))
         self.initial_state_published = True
+
+    def _save_scene_yaml(self):
+        """Aktuelle scene_objects zurück in scene.yaml schreiben."""
+        try:
+            if not hasattr(self, "_scene_yaml_path") or not hasattr(self, "_scene_yaml_data"):
+                self.get_logger().error("❌ _save_scene_yaml: YAML-Metadaten fehlen, nichts gespeichert.")
+                return
+            with open(self._scene_yaml_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(
+                    self._scene_yaml_data,
+                    f,
+                    sort_keys=False,
+                    allow_unicode=True,
+                )
+            self.get_logger().info(f"💾 scene.yaml aktualisiert: {self._scene_yaml_path}")
+        except Exception as e:
+            self.get_logger().error(f"❌ Fehler beim Schreiben von scene.yaml: {e!r}")
 
     # ------------------------
     # Initial "current" aus YAML bestimmen
@@ -410,14 +436,20 @@ class Scene(Node):
             self.get_logger().error(f"YAML-Objekt mit id='{oid}' nicht gefunden – Abbruch.")
             return
 
+        # --- Fall 1: Löschen ---
         if name == "":
-            # Löschen
             self._remove_object(oid)
             setattr(self, state_attr, "")
             pub.publish(String(data=""))
+
+            # YAML: mesh leeren
+            obj["mesh"] = ""
+            self._save_scene_yaml()
+
             self.get_logger().info(f"✅ {kind}: mesh entfernt (current='').")
             return
 
+        # --- Fall 2: Neues Mesh setzen ---
         # Mesh finden (Dateiname in roots | absolute Pfade | package://...)
         if not self._exists_in(name, roots):
             self.get_logger().error(f"{kind}: Mesh '{name}' nicht gefunden in {roots} (oder ungültig).")
@@ -433,24 +465,47 @@ class Scene(Node):
         co = self._make_co_from_obj_and_mesh(obj, mesh_path)
         self.scene_pub.publish(co)
 
+        # State + Current-Topic updaten
         setattr(self, state_attr, name)
         pub.publish(String(data=name))
-        self.get_logger().info(f"🎯 {kind}: mesh gesetzt -> {name}")
+
+        # YAML aktualisieren: relativer Pfad zur config-Datei (wie in deiner YAML)
+        try:
+            new_rel = os.path.relpath(mesh_path, self.base_dir)
+        except Exception:
+            new_rel = mesh_path  # Fallback: absoluter Pfad
+
+        obj["mesh"] = new_rel
+        self._save_scene_yaml()
+
+        self.get_logger().info(f"🎯 {kind}: mesh gesetzt -> {name} (yaml='{new_rel}')")
 
     def _on_set_cage(self, msg: String):
-        self._handle_set(kind="cage", name=(msg.data or "").strip(),
-                         roots=self._roots_cage,
-                         pub=self.pub_cage_current, state_attr="current_cage")
+        self._handle_set(
+            kind="cage",
+            name=(msg.data or "").strip(),
+            roots=self._roots_cage,
+            pub=self.pub_cage_current,
+            state_attr="current_cage",
+        )
 
     def _on_set_mount(self, msg: String):
-        self._handle_set(kind="mount", name=(msg.data or "").strip(),
-                         roots=self._roots_mount,
-                         pub=self.pub_mount_current, state_attr="current_mount")
+        self._handle_set(
+            kind="mount",
+            name=(msg.data or "").strip(),
+            roots=self._roots_mount,
+            pub=self.pub_mount_current,
+            state_attr="current_mount",
+        )
 
     def _on_set_substrate(self, msg: String):
-        self._handle_set(kind="substrate", name=(msg.data or "").strip(),
-                         roots=self._roots_substrate,
-                         pub=self.pub_substrate_current, state_attr="current_substrate")
+        self._handle_set(
+            kind="substrate",
+            name=(msg.data or "").strip(),
+            roots=self._roots_substrate,
+            pub=self.pub_substrate_current,
+            state_attr="current_substrate",
+        )
 
     # ------------------------
     # Scene publication (Initial aus YAML – unverändert)
@@ -512,7 +567,7 @@ class Scene(Node):
 
         self.get_logger().info("🎯 Szene FINAL & EINMALIG an MoveIt gesendet (latched).")
 
-        # >>> Jetzt EINMALIG die UI-States veröffentlichen (Listen + Currents)
+        # Sicherstellen, dass Listen/Current mindestens einmal gesendet wurden
         self._publish_lists_once()
         self._publish_current_once()
 
@@ -538,18 +593,12 @@ class Scene(Node):
             self.ps_client = self.create_client(GetPlanningScene, "/get_planning_scene")
 
         if not self.ps_client.wait_for_service(timeout_sec=0.5):
-            self.get_logger().info("⏳ Warte auf MoveIt PlanningScene Service...")
+            self.get_logger().info("⏳ Warte auf MoveIt PlanningScene Service (/get_planning_scene)...")
             return
 
-        req = GetPlanningScene.Request()
-        req.components.components = PlanningSceneComponents.SCENE_SETTINGS
-        future = self.ps_client.call_async(req)
-        future.add_done_callback(self._moveit_ready_callback)
-
-    def _moveit_ready_callback(self, _):
-        self.get_logger().info("✅ MoveIt bereit – sende Szene in 3 Sekunden...")
+        self.get_logger().info("✅ MoveIt PlanningScene Service verfügbar – sende Szene.")
         self.wait_timer.cancel()
-        self.create_timer(3.0, self._publish_scene)
+        self._publish_scene()
 
 
 def main():

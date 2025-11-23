@@ -170,14 +170,14 @@ topics:
 
   spray_path:
     subscribe:
-      # UI → spray_path_bridge → SprayPath-Node:
-      # Rezeptpfad als MarkerArray (für RViz + weitere Verarbeitung)
+      # UI / ProcessThread → SprayPath-Node:
+      # Rezeptpfad als MarkerArray (Sollpfad)
       - id: set
         name: /spraycoater/spray_path/set
         type: visualization_msgs/msg/MarkerArray
         qos: default
 
-      # UI → spray_path_bridge → SprayPath-Node:
+      # UI / ProcessThread → SprayPath-Node:
       # gefahrene Posen (Istpfad) als PoseArray
       - id: executed_poses
         name: /spraycoater/spray_path/executed_poses

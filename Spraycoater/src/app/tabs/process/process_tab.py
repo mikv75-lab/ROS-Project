@@ -132,6 +132,7 @@ class ProcessTab(QWidget):
                 home_timeout_s=60.0,
                 pos_tol_mm=1.0,
             )
+            # RobotInitThread.notifyFinished ist idealerweise pyqtSignal() (ohne Arg)
             self._robot_init_thread.notifyFinished.connect(self._on_robot_init_finished)
             self._robot_init_thread.notifyError.connect(self._on_robot_init_error)
 
@@ -201,6 +202,192 @@ class ProcessTab(QWidget):
     def _on_process_log_message(self, msg: str) -> None:
         """Slot für ProcessThread.logMessage."""
         self._append_process_log(msg)
+
+    # =====================================================================
+    # Trajektorien-Metriken / Score
+    # =====================================================================
+
+    @staticmethod
+    def _compute_trajectory_metrics_from_ps_list(
+        poses: List[PoseStamped]
+    ) -> Dict[str, Any]:
+        """
+        Berechnet einfache Metriken für eine Trajektorie:
+
+          - traj_points      : Anzahl Posen
+          - traj_length_mm   : Gesamtweg in mm (Annahme: x/y/z in mm)
+          - traj_min_x/y/z   : Bounding-Box-Minima
+          - traj_max_x/y/z   : Bounding-Box-Maxima
+
+        Ist die Liste leer oder zu kurz, werden sinnvolle Defaults gesetzt.
+        """
+        metrics: Dict[str, Any] = {
+            "traj_points": 0,
+            "traj_length_mm": 0.0,
+            "traj_min_x": None,
+            "traj_min_y": None,
+            "traj_min_z": None,
+            "traj_max_x": None,
+            "traj_max_y": None,
+            "traj_max_z": None,
+        }
+
+        if not poses:
+            return metrics
+
+        # Bounding-Box initialisieren
+        first = poses[0]
+        try:
+            x0 = float(first.pose.position.x)
+            y0 = float(first.pose.position.y)
+            z0 = float(first.pose.position.z)
+        except Exception:
+            x0 = y0 = z0 = 0.0
+
+        min_x = max_x = x0
+        min_y = max_y = y0
+        min_z = max_z = z0
+
+        total_len = 0.0
+        last_x, last_y, last_z = x0, y0, z0
+
+        for i, p in enumerate(poses):
+            try:
+                x = float(p.pose.position.x)
+                y = float(p.pose.position.y)
+                z = float(p.pose.position.z)
+            except Exception:
+                continue
+
+            # Bounding-Box
+            min_x = min(min_x, x)
+            max_x = max(max_x, x)
+            min_y = min(min_y, y)
+            max_y = max(max_y, y)
+            min_z = min(min_z, z)
+            max_z = max(max_z, z)
+
+            if i > 0:
+                dx = x - last_x
+                dy = y - last_y
+                dz = z - last_z
+                step = math.sqrt(dx * dx + dy * dy + dz * dz)
+                total_len += step
+
+            last_x, last_y, last_z = x, y, z
+
+        metrics["traj_points"] = len(poses)
+        metrics["traj_length_mm"] = total_len  # Annahme: Koordinaten sind in mm
+
+        metrics["traj_min_x"] = min_x
+        metrics["traj_min_y"] = min_y
+        metrics["traj_min_z"] = min_z
+        metrics["traj_max_x"] = max_x
+        metrics["traj_max_y"] = max_y
+        metrics["traj_max_z"] = max_z
+
+        return metrics
+
+    @staticmethod
+    def _compute_trajectory_score(metrics: Dict[str, Any]) -> Optional[float]:
+        """
+        Einfache, heuristische Score-Funktion:
+          - 0 .. 100
+          - kürzerer Gesamtweg => höherer Score
+
+        Idee:
+          score = clamp(100000 / (traj_length_mm + 1), 0, 100)
+
+        Absolutwerte sind egal – es geht darum, Runs miteinander vergleichen zu können.
+        """
+        try:
+            total_mm = float(metrics.get("traj_length_mm", 0.0) or 0.0)
+        except Exception:
+            return None
+
+        points = int(metrics.get("traj_points", 0) or 0)
+        if points < 2 or total_mm <= 0.0:
+            return None
+
+        raw = 100000.0 / (total_mm + 1.0)
+        if raw < 0.0:
+            raw = 0.0
+        if raw > 100.0:
+            raw = 100.0
+        return raw
+
+    def _update_info_with_trajectory_metrics(
+        self,
+        metrics: Dict[str, Any],
+        score: Optional[float],
+    ) -> None:
+        """
+        Schreibt die berechneten Metriken + Score in die InfoBox.
+        """
+        pts = int(metrics.get("traj_points", 0) or 0)
+        total_mm = float(metrics.get("traj_length_mm", 0.0) or 0.0)
+
+        self._info_update("traj_points", pts if pts > 0 else None)
+        self._info_update(
+            "traj_length_mm",
+            f"{total_mm:.1f} mm" if total_mm > 0.0 else None,
+        )
+
+        if score is not None:
+            self._info_update("traj_score", f"{score:.1f} / 100")
+        else:
+            self._info_update("traj_score", None)
+
+        # Bounding-Box optional, nur wenn sinnvoll
+        for axis in ("x", "y", "z"):
+            mn = metrics.get(f"traj_min_{axis}")
+            mx = metrics.get(f"traj_max_{axis}")
+            key = f"traj_{axis}_range_mm"
+            if mn is None or mx is None:
+                self._info_update(key, None)
+            else:
+                self._info_update(key, f"{mn:.1f} .. {mx:.1f} mm")
+
+    def _log_trajectory_metrics(
+        self,
+        metrics: Dict[str, Any],
+        score: Optional[float],
+    ) -> None:
+        """
+        Schreibt eine kurze Zusammenfassung der Metriken/Score ins Process-Log.
+        """
+        pts = int(metrics.get("traj_points", 0) or 0)
+        total_mm = float(metrics.get("traj_length_mm", 0.0) or 0.0)
+
+        if pts <= 0:
+            self._append_process_log("Trajektorie: keine Posen übergeben.")
+            return
+
+        self._append_process_log(
+            f"Trajektorie: {pts} Posen, Gesamtlänge ≈ {total_mm:.1f} mm."
+        )
+
+        if score is not None:
+            self._append_process_log(
+                f"Einfache Score-Bewertung: {score:.1f} / 100 "
+                "(kürzerer Weg ⇒ höherer Score)."
+            )
+
+        # Bounding-Box optional zusätzlich loggen
+        mn_x = metrics.get("traj_min_x")
+        mx_x = metrics.get("traj_max_x")
+        mn_y = metrics.get("traj_min_y")
+        mx_y = metrics.get("traj_max_y")
+        mn_z = metrics.get("traj_min_z")
+        mx_z = metrics.get("traj_max_z")
+
+        if None not in (mn_x, mx_x, mn_y, mx_y, mn_z, mx_z):
+            self._append_process_log(
+                "Trajektorie Bounding-Box:"
+                f" X=[{mn_x:.1f}, {mx_x:.1f}] mm,"
+                f" Y=[{mn_y:.1f}, {mx_y:.1f}] mm,"
+                f" Z=[{mn_z:.1f}, {mx_z:.1f}] mm."
+            )
 
     # =====================================================================
     # Robot-Status Wiring
@@ -307,8 +494,9 @@ class ProcessTab(QWidget):
         except Exception:
             return False
 
-        dist_m = math.sqrt(dx * dx + dy * dy + dz * dz)
-        dist_mm = dist_m * 1000.0
+        dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+        # Annahme: Koordinaten sind in mm
+        dist_mm = dist
         return dist_mm <= pos_tol_mm
 
     def _recompute_robot_at_home(self) -> None:
@@ -351,14 +539,18 @@ class ProcessTab(QWidget):
         self._process_outcome = None
 
         thr = ProcessThread(recipe=recipe, bridge=self.bridge)
-        # notifyFinished liefert nun die Liste der Rezept-Posen
-        # → über Lambda anbinden, damit Qt-Typen nicht meckern.
+
+        # WICHTIG:
+        # notifyFinished(object) → Slot mit Arg via Lambda einbinden,
+        # sonst meckert Qt über Signatur-Mismatch.
         thr.notifyFinished.connect(
             lambda poses_obj, self=self: self._on_process_finished_success(poses_obj)
         )
-        thr.notifyError.connect(self._on_process_finished_error)
+        # WICHTIG: auch für notifyError über ein Lambda gehen
+        thr.notifyError.connect(
+            lambda msg, self=self: self._on_process_finished_error(msg)
+        )
         thr.finished.connect(self._on_process_thread_finished)
-        # WICHTIG: Verbindung über Lambda, um Qt-Slot-Signatur-Probleme zu vermeiden
         thr.stateChanged.connect(lambda s, self=self: self._on_process_state_changed(s))
         thr.logMessage.connect(lambda m, self=self: self._on_process_log_message(m))
 
@@ -601,6 +793,11 @@ class ProcessTab(QWidget):
         Wird vom ProcessThread.notifyFinished(poses_list) gerufen.
 
         poses_obj: erwartet wird eine List[PoseStamped], kann aber None/anderes sein.
+
+        Neu:
+          - Executed-Trajektorie als PoseArray an SprayPath senden
+          - Metriken + Score berechnen
+          - InfoBox + Log damit updaten
         """
 
         if self._process_outcome == "error":
@@ -611,21 +808,18 @@ class ProcessTab(QWidget):
         if self._process_outcome is None:
             self._process_outcome = "success"
 
-        # Versuchen, den tatsächlich gefahrenen Pfad an SprayPath zu schicken
-        try:
-            poses: List[PoseStamped] = []
-            if isinstance(poses_obj, list) and poses_obj:
-                # Filtern auf PoseStamped-Instanzen
-                poses = [p for p in poses_obj if isinstance(p, PoseStamped)]
+        poses: List[PoseStamped] = []
+        if isinstance(poses_obj, list) and poses_obj:
+            poses = [p for p in poses_obj if isinstance(p, PoseStamped)]
 
-            if poses:
+        # 1) Executed-Pfad an SprayPath senden
+        if poses:
+            try:
                 pa = PoseArray()
-                # Frame aus erster Pose übernehmen, sonst "scene"
                 frame = poses[0].header.frame_id or "scene"
                 pa.header.frame_id = frame
                 pa.poses = [p.pose for p in poses]
 
-                # Erwartetes API: bridge.set_executed_path(PoseArray)
                 if self.bridge is not None and hasattr(self.bridge, "set_executed_path"):
                     try:
                         self.bridge.set_executed_path(pa)  # type: ignore[attr-defined]
@@ -642,11 +836,26 @@ class ProcessTab(QWidget):
                         "aber bridge.set_executed_path existiert (noch) nicht.",
                         len(poses),
                     )
-            else:
-                _LOG.info("ProcessTab: notifyFinished ohne gültige PoseListe oder Liste leer.")
-        except Exception:
-            _LOG.exception("ProcessTab: Fehler beim Verarbeiten der executed Poses aus notifyFinished")
+            except Exception:
+                _LOG.exception(
+                    "ProcessTab: Fehler beim Erzeugen/Publizieren des executed PoseArray"
+                )
+        else:
+            _LOG.info("ProcessTab: notifyFinished ohne gültige PoseListe oder Liste leer.")
 
+        # 2) Trajektorien-Metriken + Score berechnen
+        try:
+            metrics = self._compute_trajectory_metrics_from_ps_list(poses)
+            score = self._compute_trajectory_score(metrics)
+
+            # InfoBox aktualisieren
+            self._update_info_with_trajectory_metrics(metrics, score)
+            # Log-Ausgabe
+            self._log_trajectory_metrics(metrics, score)
+        except Exception:
+            _LOG.exception("ProcessTab: Fehler bei Berechnung/Anzeige der Trajektorien-Metriken")
+
+        # Rest wie gehabt
         self.set_process_active(False)
         self._info_update("process", "Prozess erfolgreich abgeschlossen.")
         self._append_process_log("=== Prozess erfolgreich abgeschlossen ===")
@@ -845,6 +1054,10 @@ class ProcessTab(QWidget):
             if not self._mount_ok:
                 missing.append("Mount-Konfiguration stimmt nicht mit dem Rezept überein")
 
+            # Tool-Check könnte später ergänzt werden
+            # if not self._tool_ok:
+            #     missing.append("Tool-Konfiguration stimmt nicht mit dem Rezept überein")
+
             can_start = (len(missing) == 0)
 
             try:
@@ -950,7 +1163,6 @@ class ProcessTab(QWidget):
         rec_mount_norm = self._norm_mesh_name(self._recipe_model.substrate_mount or "")
 
         sub_ok = bool(rec_sub_norm) and (cur_sub_norm == rec_sub_norm)
-        # sub_ok wird derzeit nur für Startbedingungen verwendet
         self.set_substrate_ok(sub_ok)
 
         mount_ok = bool(rec_mount_norm) and (cur_mount_norm == rec_mount_norm)

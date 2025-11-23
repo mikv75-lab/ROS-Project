@@ -1,5 +1,5 @@
+# src/ros/bridge/motion_bridge.py
 # -*- coding: utf-8 -*-
-# File: ros/ui_bridge/motion_bridge.py
 from __future__ import annotations
 from typing import Optional
 
@@ -26,8 +26,11 @@ class MotionSignals(QtCore.QObject):
       - moveToPoseRequested(PoseStamped)
       - moveToPoseWithSpeedRequested(PoseStamped, float)
 
-    Zusätzlich (optional):
+    Zusätzlich (Inbound aus ROS):
       - motionResultChanged(str): Texte aus /spraycoater/motion/result
+
+    Plus:
+      - reemit_cached(): emittiert den letzten bekannten motionResult-Text erneut.
     """
 
     motionSpeedChanged = QtCore.pyqtSignal(float)
@@ -43,6 +46,20 @@ class MotionSignals(QtCore.QObject):
     moveToPoseWithSpeedRequested = QtCore.pyqtSignal(object, float)
 
     motionResultChanged = QtCore.pyqtSignal(str)
+
+    def __init__(self, parent: Optional[QtCore.QObject] = None) -> None:
+        super().__init__(parent)
+        # Cache für Re-Emit
+        self.last_result: str = ""
+
+    @QtCore.pyqtSlot()
+    def reemit_cached(self) -> None:
+        """
+        Erneutes Aussenden des letzten Motion-Result-Strings.
+        Wird von UIBridge._try_reemit_cached() verwendet.
+        """
+        if self.last_result:
+            self.motionResultChanged.emit(self.last_result)
 
 
 class MotionBridge(BaseBridge):
@@ -107,6 +124,9 @@ class MotionBridge(BaseBridge):
     def _on_motion_result(self, msg: MsgString):
         text = (getattr(msg, "data", "") or "").strip()
         self.get_logger().info(f"[motion] result: {text or '-'}")
+
+        # Cache aktualisieren (für reemit_cached)
+        self.signals.last_result = text
 
         # --- Auto-Execute-Logik für named (home/service) ---
         if self._pending_named:

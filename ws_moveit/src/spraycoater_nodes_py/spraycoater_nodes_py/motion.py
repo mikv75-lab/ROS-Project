@@ -122,6 +122,10 @@ class Motion(Node):
         topic_prev = self.loader.publish_topic(NODE_KEY, "preview_markers")
         topic_res  = self.loader.publish_topic(NODE_KEY, "motion_result")
 
+        # WICHTIG:
+        #  - pub_traj_plan   → geplante RobotTrajectoryMsg (latched)
+        #  - pub_traj_exec   → ausgeführte RobotTrajectoryMsg (latched)
+        # Dein ProcessThread kann diese pro Phase sammeln.
         self.pub_traj_jt   = self.create_publisher(JointTrajectory,       topic_traj, qos_traj)
         self.pub_traj_plan = self.create_publisher(RobotTrajectoryMsg,    topic_plan, _latched_qos())
         self.pub_traj_exec = self.create_publisher(RobotTrajectoryMsg,    topic_exec, _latched_qos())
@@ -257,6 +261,10 @@ class Motion(Node):
         Waypoints können z.B. im Frame 'scene' kommen.
         Hier werden sie (falls nötig) zuerst von mm → m konvertiert
         und dann nach world transformiert.
+
+        Ergebnis:
+          - self._planned: RobotTrajectoryCore über ALLE Waypoints
+          - /spraycoater/motion/trajectory_planned (RobotTrajectoryMsg, latched)
         """
         if self._busy:
             self._emit_result("ERROR:BUSY")
@@ -403,6 +411,10 @@ class Motion(Node):
         - wird (falls nötig) nach world transformiert
         - MoveIt bekommt immer eine Pose im world-Frame
         - TCP (EE_LINK) soll GENAU diese Pose einnehmen.
+
+        Ergebnis:
+          - self._planned (core)
+          - /spraycoater/motion/trajectory_planned (RobotTrajectoryMsg, latched)
         """
         if self._busy:
             self._emit_result("ERROR:BUSY")
@@ -462,6 +474,17 @@ class Motion(Node):
             self._emit_result(f"ERROR:EXCEPTION {e}")
 
     def _on_execute(self, msg: MsgBool) -> None:
+        """
+        Führt die aktuell geplante Trajektorie aus.
+
+        Wichtig für dich:
+          - Vor dem Execute nimmst du über /motion/result das `PLANNED:OK ...`
+          - Beim EXECUTED:OK wird:
+              * /spraycoater/motion/trajectory_executed (RobotTrajectoryMsg, latched)
+                mit der tatsächlich ausgeführten Trajektorie publiziert.
+          - Dein ProcessThread kann beides als (planned, executed) Paar für
+            die aktuelle Phase in Listen schreiben.
+        """
         if msg.data is False:
             self._on_stop(MsgEmpty())
             return
@@ -488,6 +511,7 @@ class Motion(Node):
             elif not status:
                 self._emit_result("ERROR:EXECUTE_FAILED")
             else:
+                # 🟢 HIER: ausgeführte Trajektorie als RobotTrajectoryMsg
                 self.pub_traj_exec.publish(msg_traj)
                 self._emit_result("EXECUTED:OK")
         except Exception as e:

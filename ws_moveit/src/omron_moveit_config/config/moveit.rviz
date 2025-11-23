@@ -4,10 +4,10 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /MotionPlanning1
         - /MotionPlanning1/Scene Geometry1
         - /MotionPlanning1/Planning Metrics1
         - /MotionPlanning1/Planned Path1
+        - /TF1
         - /TF1/Frames1
         - /PoseArray1
       Splitter Ratio: 0.5
@@ -269,7 +269,7 @@ Visualization Manager:
           Value: false
         world:
           Value: true
-      Marker Scale: 1
+      Marker Scale: 0.25
       Name: TF
       Show Arrows: true
       Show Axes: true
@@ -335,9 +335,7 @@ Visualization Manager:
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: MarkerArray
-      Namespaces:
-        Value: true
-        executed_path: true
+      Namespaces: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -384,7 +382,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.521481990814209
+      Distance: 2.137572765350342
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -399,10 +397,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.764796257019043
+      Pitch: 0.3397962749004364
       Target Frame: scene
       Value: Orbit (rviz_default_plugins)
-      Yaw: 6.233584403991699
+      Yaw: 5.983584403991699
     Saved:
       - Class: rviz_default_plugins/Orbit
         Distance: 1.543152093887329

@@ -186,7 +186,7 @@ def generate_launch_description():
             emulate_tty=False,
             arguments=["--ros-args", "--log-level", "error"],
         )
-        scene_after_robot = TimerAction(period=5.0, actions=[scene_node])
+        scene_after_robot = TimerAction(period=10.0, actions=[scene_node])
 
         # Poses-Node
         poses_node = Node(
@@ -197,7 +197,7 @@ def generate_launch_description():
             emulate_tty=False,
             arguments=["--ros-args", "--log-level", "error"],
         )
-        poses_after_robot = TimerAction(period=5.0, actions=[poses_node])
+        poses_after_robot = TimerAction(period=10.0, actions=[poses_node])
 
         # Spray-Path-Node
         spray_node = Node(
@@ -208,7 +208,7 @@ def generate_launch_description():
             emulate_tty=False,
             arguments=["--ros-args", "--log-level", "error"],
         )
-        spray_after_robot = TimerAction(period=5.0, actions=[spray_node])
+        spray_after_robot = TimerAction(period=10.0, actions=[spray_node])
 
         # Servo-Node (Bridge UI ↔ moveit_servo)
         servo_node = Node(
@@ -219,7 +219,7 @@ def generate_launch_description():
             emulate_tty=False,
             arguments=["--ros-args", "--log-level", "info"],
         )
-        servo_after_robot = TimerAction(period=5.0, actions=[servo_node])
+        servo_after_robot = TimerAction(period=10.0, actions=[servo_node])
 
         # Motion-Node (MoveItPy: plan_named home/service/recipe)
         motion_node = Node(
@@ -231,7 +231,7 @@ def generate_launch_description():
             arguments=["--ros-args", "--log-level", "info"],
             parameters=[moveit_cfg_dict],
         )
-        motion_after_robot = TimerAction(period=7.0, actions=[motion_node])
+        motion_after_robot = TimerAction(period=10.0, actions=[motion_node])
 
         # Robot-Node (Status/Kommandos ↔ realer Adapter / Sim)
         robot_node = Node(

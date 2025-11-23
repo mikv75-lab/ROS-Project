@@ -24,6 +24,9 @@ class SprayPathSignals(QtCore.QObject):
     Outbound (UI -> ROS):
       - setRequested(MarkerArray)         # UI erzeugt MarkerArray für SprayPath (Sollpfad)
       - executedPathRequested(PoseArray)  # UI gibt gefahrenen Pfad als PoseArray (Istpfad)
+
+    Zusätzlich:
+      - reemit_cached(): emittiert gecachte Werte erneut (für UIBridge._try_reemit_cached)
     """
 
     # Inbound
@@ -34,34 +37,52 @@ class SprayPathSignals(QtCore.QObject):
     setRequested = QtCore.pyqtSignal(object)          # MarkerArray (Rezeptpfad)
     executedPathRequested = QtCore.pyqtSignal(object) # PoseArray (gefahrener Pfad)
 
+    def __init__(self, parent: Optional[QtCore.QObject] = None) -> None:
+        super().__init__(parent)
+
+        # Cache für Re-Emit (wird von Bridge gepflegt)
+        self.current_name: str = ""
+        self.poses: Optional[PoseArray] = None
+        self.executed_poses: Optional[PoseArray] = None
+
+    @QtCore.pyqtSlot()
+    def reemit_cached(self) -> None:
+        """
+        Erneutes Aussenden der letzten bekannten Werte.
+        Wird von UIBridge._try_reemit_cached() verwendet, wenn sich Widgets neu verbinden.
+        """
+        if self.current_name:
+            self.currentNameChanged.emit(self.current_name)
+        if self.poses is not None:
+            self.posesChanged.emit(self.poses)
+        # executed_poses hat aktuell kein eigenes Qt-Signal – nur interner Cache.
+        # Falls später nötig, kann hier ein weiterer Signaltyp ergänzt werden.
+        # (z.B. executedPosesChanged)
+
 
 class SprayPathBridge(BaseBridge):
     """
     UI-Bridge für 'spray_path' mit eingebauten Qt-Signalen.
 
-    Abonniert:
+    Abonniert (ROS -> UI, topics.spray_path.publish.*):
       - spray_path.current        (String, latched)
       - spray_path.poses          (PoseArray)
       - spray_path.executed_poses (PoseArray)   [optional für spätere UI-Nutzung]
 
-    Publiziert:
+    Publiziert (UI -> ROS, topics.spray_path.subscribe.*):
       - spray_path.set            (MarkerArray)  [Sollpfad]
       - spray_path.executed_poses (PoseArray)   [Istpfad vom ProcessTab]
     """
     GROUP = "spray_path"
 
     def __init__(self, content: AppContent):
+        # Signale anlegen (inkl. Cachefelder)
         self.signals = SprayPathSignals()
 
         # Interner State (roh, ohne Defaults/Fallbacks)
         self.current_name: str = ""
         self.poses: Optional[PoseArray] = None
         self.executed_poses: Optional[PoseArray] = None
-
-        # Spiegeln auf Signals-Objekt für initialen UI-Pull
-        self.signals.current_name = ""
-        self.signals.poses = None
-        self.signals.executed_poses = None  # nur Cache, kein eigenes Qt-Signal
 
         super().__init__("spray_path_bridge", content)
 
@@ -89,7 +110,7 @@ class SprayPathBridge(BaseBridge):
     def _on_executed_poses(self, msg: PoseArray):
         """
         Optionaler Callback, falls die UI den gefahrenen Pfad auch wieder aus ROS
-        zurücklesen möchte. Aktuell nur im Bridge-internen State.
+        zurücklesen möchte. Aktuell nur im Bridge-internen State und im Signals-Cache.
         """
         self.executed_poses = msg
         self.signals.executed_poses = msg
@@ -104,6 +125,7 @@ class SprayPathBridge(BaseBridge):
         """
         try:
             topic_id = "set"
+            # Typ aus subscribe-Konfiguration (UI -> Node)
             Msg = self.spec("subscribe", topic_id).resolve_type()
             if not isinstance(marker_array, Msg):
                 # bewusst *keine* Konvertierung/Fallbacks – Typ muss stimmen
@@ -112,7 +134,8 @@ class SprayPathBridge(BaseBridge):
                 )
             pub = self.pub(topic_id)
             self.get_logger().info(
-                f"[spray_path] -> {topic_id}: publishing MarkerArray with {len(marker_array.markers)} markers"
+                f"[spray_path] -> {topic_id}: publishing MarkerArray with "
+                f"{len(marker_array.markers)} markers"
             )
             pub.publish(marker_array)
         except Exception as e:
@@ -122,9 +145,13 @@ class SprayPathBridge(BaseBridge):
         """
         Publisht den gefahrenen Pfad als PoseArray auf spray_path.executed_poses.
         Wird typischerweise vom ProcessTab nach erfolgreichem Lauf aufgerufen.
+
+        Der SprayPath-Node erzeugt daraus wiederum MarkerArray für RViz,
+        analog zum Rezeptpfad.
         """
         try:
             topic_id = "executed_poses"
+            # Typ aus subscribe-Konfiguration (UI -> Node)
             Msg = self.spec("subscribe", topic_id).resolve_type()
             if not isinstance(pose_array, Msg):
                 raise TypeError(
@@ -132,7 +159,8 @@ class SprayPathBridge(BaseBridge):
                 )
             pub = self.pub(topic_id)
             self.get_logger().info(
-                f"[spray_path] -> {topic_id}: publishing executed PoseArray with {len(pose_array.poses)} poses"
+                f"[spray_path] -> {topic_id}: publishing executed PoseArray with "
+                f"{len(pose_array.poses)} poses"
             )
             pub.publish(pose_array)
         except Exception as e:

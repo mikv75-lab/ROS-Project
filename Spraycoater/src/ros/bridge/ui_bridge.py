@@ -637,6 +637,7 @@ class UIBridge:
         sig.currentNameChanged.connect(lambda name: self.spraypath._set_current_name(name))
         sig.posesChanged.connect(lambda pa: self.spraypath._set_poses(pa))
         # executed_poses werden aktuell nicht in SprayPathState gespiegelt – RViz reicht.
+        # (Falls du sie später brauchst, kann hier analog ein Cache ergänzt werden.)
 
     def _wire_robot_into_state(self, rb: RobotBridge) -> None:
         """Verbindet die Qt-Signale der RobotBridge mit unserem RobotState-Cache."""
