@@ -8,7 +8,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 
 from std_msgs.msg import String
-from geometry_msgs.msg import Pose, PoseArray
+from geometry_msgs.msg import Pose, PoseArray, Point
 from visualization_msgs.msg import MarkerArray, Marker
 
 from spraycoater_nodes_py.utils.config_hub import topics, frames
@@ -19,16 +19,21 @@ class SprayPath(Node):
     SprayPath-Manager.
 
     SUB:
-      - spray_path.set (MarkerArray)
-        → Kommando vom PyQt-Editor (fertiger Pfad als MarkerArray)
+      - spray_path.set            (MarkerArray)
+        → Kommando vom PyQt-Editor (fertiger Pfad als MarkerArray, Sollpfad)
+      - spray_path.executed_poses (PoseArray)
+        → gefahrene Posen vom ProcessTab (Istpfad)
 
     PUB (alle TRANSIENT_LOCAL / latched):
-      - spray_path.poses   (PoseArray): Punkte des Pfads als neutrale Posen
-      - spray_path.markers (MarkerArray): aktuelles MarkerArray für RViz
-      - spray_path.current (String): aktueller Pfad-Name (optional für UI)
+      - spray_path.poses            (PoseArray): Punkte des Sollpfads als neutrale Posen
+      - spray_path.markers          (MarkerArray): aktuelles MarkerArray für RViz (Sollpfad)
+      - spray_path.current          (String): aktueller Pfad-Name (optional für UI)
+      - spray_path.executed_poses   (PoseArray): gefahrene Posen (durchgereicht)
+      - spray_path.executed_markers (MarkerArray): Marker für den Istpfad (z.B. andere Farbe)
 
     Semantik:
-      - JEDER set-Aufruf ersetzt den aktuellen Pfad vollständig.
+      - JEDER set-Aufruf ersetzt den aktuellen Sollpfad vollständig.
+      - JEDER executed_poses-Aufruf ersetzt den aktuellen Istpfad vollständig.
       - Kein Timer-Republish; Late Joiner bekommen letzten Stand über QoS.
     """
 
@@ -46,6 +51,9 @@ class SprayPath(Node):
         topic_set = self.loader.subscribe_topic(self.GROUP, "set")
         qos_set = self.loader.qos_by_id("subscribe", self.GROUP, "set")
 
+        topic_exec_in = self.loader.subscribe_topic(self.GROUP, "executed_poses")
+        qos_exec_in = self.loader.qos_by_id("subscribe", self.GROUP, "executed_poses")
+
         # Latched QoS für unsere Publisher (wie bei Scene)
         latched_qos = QoSProfile(
             depth=10,
@@ -56,11 +64,16 @@ class SprayPath(Node):
         topic_current = self.loader.publish_topic(self.GROUP, "current")
         topic_poses = self.loader.publish_topic(self.GROUP, "poses")
         topic_markers = self.loader.publish_topic(self.GROUP, "markers")
+        topic_exec_poses = self.loader.publish_topic(self.GROUP, "executed_poses")
+        topic_exec_markers = self.loader.publish_topic(self.GROUP, "executed_markers")
 
         # Publisher / Subscriber
         self.pub_current = self.create_publisher(String, topic_current, latched_qos)
         self.pub_poses = self.create_publisher(PoseArray, topic_poses, latched_qos)
         self.pub_markers = self.create_publisher(MarkerArray, topic_markers, latched_qos)
+
+        self.pub_exec_poses = self.create_publisher(PoseArray, topic_exec_poses, latched_qos)
+        self.pub_exec_markers = self.create_publisher(MarkerArray, topic_exec_markers, latched_qos)
 
         self.sub_set = self.create_subscription(
             MarkerArray,
@@ -69,14 +82,27 @@ class SprayPath(Node):
             qos_set,
         )
 
+        self.sub_exec = self.create_subscription(
+            PoseArray,
+            topic_exec_in,
+            self._on_executed_poses,
+            qos_exec_in,
+        )
+
         # interner Zustand (für evtl. Debug/inspektieren)
         self._last_frame = self.frames.get("scene", "scene")
         self._last_name: str = ""
         self._last_pa: PoseArray | None = None
         self._last_markers: MarkerArray | None = None
 
+        self._last_exec_frame = self._last_frame
+        self._last_exec_pa: PoseArray | None = None
+        self._last_exec_markers: MarkerArray | None = None
+
         self.get_logger().info(
-            "✅ SprayPathManager bereit: /set → /poses + /markers (+ /current), "
+            "✅ SprayPathManager bereit: "
+            "/set → /poses + /markers (+ /current), "
+            "executed_poses → executed_markers, "
             "TRANSIENT_LOCAL (latched), kein 1 Hz-Republish."
         )
 
@@ -114,7 +140,7 @@ class SprayPath(Node):
     def _publish_current_name(self, name: str) -> None:
         self.pub_current.publish(String(data=name))
 
-    # ----------------------------- handler -----------------------------
+    # ----------------------------- handler: Sollpfad -----------------------------
 
     def _on_set_spraypath(self, msg: MarkerArray) -> None:
         if msg is None or len(msg.markers) == 0:
@@ -189,7 +215,74 @@ class SprayPath(Node):
         self._publish_current_name(name)
 
         self.get_logger().info(
-            f"🎯 SprayPath gesetzt: name='{name}', frame='{frame}', "
+            f"🎯 SprayPath gesetzt (Soll): name='{name}', frame='{frame}', "
+            f"points={len(pa.poses)}, markers={len(out_ma.markers)}"
+        )
+
+    # ----------------------------- handler: Istpfad -----------------------------
+
+    def _on_executed_poses(self, msg: PoseArray) -> None:
+        if msg is None or len(msg.poses) == 0:
+            self.get_logger().warning("⚠️ spray_path.executed_poses: leeres PoseArray – ignoriere")
+            return
+
+        frame = (msg.header.frame_id or "").strip() or self._last_exec_frame
+        self._last_exec_frame = frame
+
+        now = self.get_clock().now().to_msg()
+
+        # PoseArray ggf. mit aktualisiertem Header weiterreichen
+        pa = PoseArray()
+        pa.header.frame_id = frame
+        pa.header.stamp = now
+        pa.poses = list(msg.poses)
+
+        if len(pa.poses) < 2:
+            self.get_logger().warning(
+                "⚠️ spray_path.executed_poses: <2 Posen, Marker-LINE_STRIP wäre degeneriert – ignoriere"
+            )
+            return
+
+        # Marker als LINE_STRIP aus den Posen bauen
+        m = Marker()
+        m.header.frame_id = frame
+        m.header.stamp = now
+        m.ns = "executed_path"
+        m.id = 1000
+        m.type = Marker.LINE_STRIP
+        m.action = Marker.ADD
+
+        # einfache Skalierung, damit Linie sichtbar ist
+        m.scale.x = 0.002  # Liniendicke
+        m.scale.y = 0.0
+        m.scale.z = 0.0
+
+        # Farbe (z.B. abgesetzt vom Rezeptpfad – hier grün)
+        m.color.r = 0.0
+        m.color.g = 1.0
+        m.color.b = 0.0
+        m.color.a = 1.0
+
+        for p in pa.poses:
+            pt = Point()
+            pt.x = p.position.x
+            pt.y = p.position.y
+            pt.z = p.position.z
+            m.points.append(pt)
+
+        out_ma = MarkerArray()
+        out_ma.markers.append(m)
+
+        # Zustand merken
+        self._last_exec_pa = pa
+        self._last_exec_markers = out_ma
+
+        # ONE SHOT Publish (latched)
+        self.pub_exec_poses.publish(pa)
+        self.pub_exec_markers.publish(out_ma)
+
+        self.get_logger().info(
+            f"✅ Executed SprayPath gesetzt (Ist): frame='{frame}', "
             f"points={len(pa.poses)}, markers={len(out_ma.markers)}"
         )
 

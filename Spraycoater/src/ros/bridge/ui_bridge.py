@@ -1,3 +1,4 @@
+# src/ros/bridge/ui_bridge.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import os
@@ -126,7 +127,7 @@ class SprayPathState:
     """
     Signal-freier State-Container für SprayPath:
       - current_name (str)
-      - poses (PoseArray|None)
+      - poses (PoseArray|None)  [Sollpfad]
       - marker-Visualisierung passiert ausschließlich im RViz/Preview
       - thread-sicher per RLock
     """
@@ -512,6 +513,22 @@ class UIBridge:
         except Exception as e:
             _LOG.error("set_spraypath failed: %s", e)
 
+    def set_executed_path(self, pose_array: PoseArray) -> None:
+        """
+        Publisht den tatsächlich gefahrenen Pfad (Istpfad) als PoseArray.
+        Wird vom ProcessTab nach notifyFinished(...) aufgerufen.
+
+        Der SprayPath-Node erzeugt daraus wiederum MarkerArray für RViz,
+        analog zum Rezeptpfad.
+        """
+        if not self._spb:
+            _LOG.error("set_executed_path: SprayPathBridge nicht verfügbar.")
+            return
+        try:
+            self._spb.publish_executed_path(pose_array)
+        except Exception as e:
+            _LOG.error("set_executed_path failed: %s", e)
+
     # ---------- Robot: Set-API (UI -> ROS) ----------
     def robot_init(self) -> None:
         """Sendet ein INIT-Kommando an den Robot-Node."""
@@ -619,6 +636,7 @@ class UIBridge:
         sig = spb.signals
         sig.currentNameChanged.connect(lambda name: self.spraypath._set_current_name(name))
         sig.posesChanged.connect(lambda pa: self.spraypath._set_poses(pa))
+        # executed_poses werden aktuell nicht in SprayPathState gespiegelt – RViz reicht.
 
     def _wire_robot_into_state(self, rb: RobotBridge) -> None:
         """Verbindet die Qt-Signale der RobotBridge mit unserem RobotState-Cache."""

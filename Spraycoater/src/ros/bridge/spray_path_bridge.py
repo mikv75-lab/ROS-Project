@@ -22,7 +22,8 @@ class SprayPathSignals(QtCore.QObject):
       - posesChanged(PoseArray)       # aktueller Pfad als PoseArray
 
     Outbound (UI -> ROS):
-      - setRequested(MarkerArray)     # UI erzeugt MarkerArray für SprayPath
+      - setRequested(MarkerArray)         # UI erzeugt MarkerArray für SprayPath (Sollpfad)
+      - executedPathRequested(PoseArray)  # UI gibt gefahrenen Pfad als PoseArray (Istpfad)
     """
 
     # Inbound
@@ -30,7 +31,8 @@ class SprayPathSignals(QtCore.QObject):
     posesChanged = QtCore.pyqtSignal(object)   # PoseArray
 
     # Outbound
-    setRequested = QtCore.pyqtSignal(object)   # MarkerArray
+    setRequested = QtCore.pyqtSignal(object)          # MarkerArray (Rezeptpfad)
+    executedPathRequested = QtCore.pyqtSignal(object) # PoseArray (gefahrener Pfad)
 
 
 class SprayPathBridge(BaseBridge):
@@ -38,11 +40,13 @@ class SprayPathBridge(BaseBridge):
     UI-Bridge für 'spray_path' mit eingebauten Qt-Signalen.
 
     Abonniert:
-      - spray_path.current (String, latched)
-      - spray_path.poses   (PoseArray)
+      - spray_path.current        (String, latched)
+      - spray_path.poses          (PoseArray)
+      - spray_path.executed_poses (PoseArray)   [optional für spätere UI-Nutzung]
 
     Publiziert:
-      - spray_path.set (MarkerArray)
+      - spray_path.set            (MarkerArray)  [Sollpfad]
+      - spray_path.executed_poses (PoseArray)   [Istpfad vom ProcessTab]
     """
     GROUP = "spray_path"
 
@@ -52,15 +56,18 @@ class SprayPathBridge(BaseBridge):
         # Interner State (roh, ohne Defaults/Fallbacks)
         self.current_name: str = ""
         self.poses: Optional[PoseArray] = None
+        self.executed_poses: Optional[PoseArray] = None
 
         # Spiegeln auf Signals-Objekt für initialen UI-Pull
         self.signals.current_name = ""
         self.signals.poses = None
+        self.signals.executed_poses = None  # nur Cache, kein eigenes Qt-Signal
 
         super().__init__("spray_path_bridge", content)
 
         # Qt Outbound -> ROS
         self.signals.setRequested.connect(self.publish_set)
+        self.signals.executedPathRequested.connect(self.publish_executed_path)
 
     # -------- eingehend (ROS -> UI) --------
 
@@ -77,6 +84,16 @@ class SprayPathBridge(BaseBridge):
         self.signals.poses = msg
         self.signals.posesChanged.emit(msg)
         self.get_logger().info(f"[spray_path] poses received: {len(msg.poses)} poses")
+
+    @sub_handler("spray_path", "executed_poses")
+    def _on_executed_poses(self, msg: PoseArray):
+        """
+        Optionaler Callback, falls die UI den gefahrenen Pfad auch wieder aus ROS
+        zurücklesen möchte. Aktuell nur im Bridge-internen State.
+        """
+        self.executed_poses = msg
+        self.signals.executed_poses = msg
+        self.get_logger().info(f"[spray_path] executed_poses received: {len(msg.poses)} poses")
 
     # -------- ausgehend (UI -> ROS) --------
 
@@ -100,3 +117,23 @@ class SprayPathBridge(BaseBridge):
             pub.publish(marker_array)
         except Exception as e:
             self.get_logger().error(f"[spray_path] publish set failed: {e}")
+
+    def publish_executed_path(self, pose_array: PoseArray) -> None:
+        """
+        Publisht den gefahrenen Pfad als PoseArray auf spray_path.executed_poses.
+        Wird typischerweise vom ProcessTab nach erfolgreichem Lauf aufgerufen.
+        """
+        try:
+            topic_id = "executed_poses"
+            Msg = self.spec("subscribe", topic_id).resolve_type()
+            if not isinstance(pose_array, Msg):
+                raise TypeError(
+                    f"spray_path.executed_poses erwartet {Msg.__name__}, bekommen: {type(pose_array).__name__}"
+                )
+            pub = self.pub(topic_id)
+            self.get_logger().info(
+                f"[spray_path] -> {topic_id}: publishing executed PoseArray with {len(pose_array.poses)} poses"
+            )
+            pub.publish(pose_array)
+        except Exception as e:
+            self.get_logger().error(f"[spray_path] publish_executed_path failed: {e}")

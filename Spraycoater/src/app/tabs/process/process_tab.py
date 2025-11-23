@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QSizePolicy, QFileDialog, QMessageBox, QTextEdit
 )
 
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PoseArray
 from visualization_msgs.msg import MarkerArray
 
 from app.model.recipe.recipe import Recipe
@@ -351,7 +351,11 @@ class ProcessTab(QWidget):
         self._process_outcome = None
 
         thr = ProcessThread(recipe=recipe, bridge=self.bridge)
-        thr.notifyFinished.connect(self._on_process_finished_success)
+        # notifyFinished liefert nun die Liste der Rezept-Posen
+        # → über Lambda anbinden, damit Qt-Typen nicht meckern.
+        thr.notifyFinished.connect(
+            lambda poses_obj, self=self: self._on_process_finished_success(poses_obj)
+        )
         thr.notifyError.connect(self._on_process_finished_error)
         thr.finished.connect(self._on_process_thread_finished)
         # WICHTIG: Verbindung über Lambda, um Qt-Slot-Signatur-Probleme zu vermeiden
@@ -367,7 +371,7 @@ class ProcessTab(QWidget):
             pass
 
     # =====================================================================
-    # SprayPath-Ansteuerung
+    # SprayPath-Ansteuerung (Soll-Pfad)
     # =====================================================================
 
     def _send_recipe_to_spraypath(self, recipe: Recipe) -> None:
@@ -480,7 +484,7 @@ class ProcessTab(QWidget):
             _LOG.exception("ProcessTab: _setup_process_thread_for_recipe() hat eine Exception geworfen")
             return
 
-        # 4) SprayPath (MarkerArray) an Bridge schicken
+        # 4) SprayPath (MarkerArray) an Bridge schicken (Soll-Pfad)
         try:
             self._send_recipe_to_spraypath(model)
         except Exception:
@@ -546,8 +550,6 @@ class ProcessTab(QWidget):
         thr = self._process_thread
         if thr is not None:
             try:
-                # Direkt das Flag setzen (thread-safe genug, nur bool),
-                # damit _wait_for_motion() nicht auf Events angewiesen ist.
                 thr.request_stop()
             except Exception:
                 _LOG.exception("ProcessTab: request_stop() auf ProcessThread fehlgeschlagen.")
@@ -594,14 +596,13 @@ class ProcessTab(QWidget):
     # Callbacks vom ProcessThread
     # ---------------------------------------------------------------------
 
-    def _on_process_finished_success(self) -> None:
+    def _on_process_finished_success(self, poses_obj: object) -> None:
         """
-        Wird vom ProcessThread.notifyFinished() gerufen.
+        Wird vom ProcessThread.notifyFinished(poses_list) gerufen.
 
-        Wichtig:
-          - Wenn bereits ein Fehler gemeldet wurde (_process_outcome == "error"),
-            wird der Erfolgs-Callback ignoriert.
+        poses_obj: erwartet wird eine List[PoseStamped], kann aber None/anderes sein.
         """
+
         if self._process_outcome == "error":
             _LOG.info("ProcessTab: notifyFinished ignoriert, da bereits ein Fehler gemeldet wurde.")
             return
@@ -609,6 +610,42 @@ class ProcessTab(QWidget):
         # Nur setzen, wenn noch nichts feststeht
         if self._process_outcome is None:
             self._process_outcome = "success"
+
+        # Versuchen, den tatsächlich gefahrenen Pfad an SprayPath zu schicken
+        try:
+            poses: List[PoseStamped] = []
+            if isinstance(poses_obj, list) and poses_obj:
+                # Filtern auf PoseStamped-Instanzen
+                poses = [p for p in poses_obj if isinstance(p, PoseStamped)]
+
+            if poses:
+                pa = PoseArray()
+                # Frame aus erster Pose übernehmen, sonst "scene"
+                frame = poses[0].header.frame_id or "scene"
+                pa.header.frame_id = frame
+                pa.poses = [p.pose for p in poses]
+
+                # Erwartetes API: bridge.set_executed_path(PoseArray)
+                if self.bridge is not None and hasattr(self.bridge, "set_executed_path"):
+                    try:
+                        self.bridge.set_executed_path(pa)  # type: ignore[attr-defined]
+                        _LOG.info(
+                            "ProcessTab: executed path mit %d Posen an SprayPath gesendet (frame=%s).",
+                            len(pa.poses),
+                            pa.header.frame_id,
+                        )
+                    except Exception:
+                        _LOG.exception("ProcessTab: bridge.set_executed_path failed")
+                else:
+                    _LOG.info(
+                        "ProcessTab: executed path vorhanden (%d Posen), "
+                        "aber bridge.set_executed_path existiert (noch) nicht.",
+                        len(poses),
+                    )
+            else:
+                _LOG.info("ProcessTab: notifyFinished ohne gültige PoseListe oder Liste leer.")
+        except Exception:
+            _LOG.exception("ProcessTab: Fehler beim Verarbeiten der executed Poses aus notifyFinished")
 
         self.set_process_active(False)
         self._info_update("process", "Prozess erfolgreich abgeschlossen.")
@@ -619,6 +656,7 @@ class ProcessTab(QWidget):
         except RuntimeError:
             pass
 
+    @QtCore.pyqtSlot(str)
     def _on_process_finished_error(self, msg: str) -> None:
         """
         Wird vom ProcessThread.notifyError(msg) gerufen.

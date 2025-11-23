@@ -42,11 +42,11 @@ topics:
         name: /spraycoater/tool/state
         type: std_msgs/msg/String
         qos: latched
-      - id: tool_list 
-        name: /spraycoater/tool/list 
-        type: std_msgs/msg/String 
+      - id: tool_list
+        name: /spraycoater/tool/list
+        type: std_msgs/msg/String
         qos: latched
-        
+
   motion:
     subscribe:
       - id: plan_waypoints
@@ -116,9 +116,9 @@ topics:
         type: std_msgs/msg/String
         qos: latched
 
-      - id: tool_list 
-        name: /spraycoater/tool/list 
-        type: std_msgs/msg/String 
+      - id: tool_list
+        name: /spraycoater/tool/list
+        type: std_msgs/msg/String
         qos: latched
 
       - id: cage_current
@@ -177,22 +177,41 @@ topics:
         type: visualization_msgs/msg/MarkerArray
         qos: default
 
+      # UI → spray_path_bridge → SprayPath-Node:
+      # gefahrene Posen (Istpfad) als PoseArray
+      - id: executed_poses
+        name: /spraycoater/spray_path/executed_poses
+        type: geometry_msgs/msg/PoseArray
+        qos: default
+
     publish:
-      # SprayPath-Node → UI: "welcher Pfad ist aktiv"
+      # SprayPath-Node → UI: "welcher Pfad ist aktiv" (betrifft Sollpfad)
       - id: current
         name: /spraycoater/spray_path/current
         type: std_msgs/msg/String
         qos: latched
 
-      # SprayPath-Node → UI/RViz: Pfad als PoseArray (optional weiter nutzen)
+      # SprayPath-Node → UI/RViz: Pfad als PoseArray (Sollpfad)
       - id: poses
         name: /spraycoater/spray_path/poses
         type: geometry_msgs/msg/PoseArray
         qos: default
 
-      # SprayPath-Node → UI/RViz: fertige Marker (falls Node selbst Marker erzeugt)
+      # SprayPath-Node → UI/RViz: fertige Marker (Sollpfad)
       - id: markers
         name: /spraycoater/spray_path/markers
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
+
+      # SprayPath-Node → UI/RViz: gefahrene Posen (Istpfad)
+      - id: executed_poses
+        name: /spraycoater/spray_path/executed_poses
+        type: geometry_msgs/msg/PoseArray
+        qos: default
+
+      # SprayPath-Node → UI/RViz: fertige Marker für den Istpfad
+      - id: executed_markers
+        name: /spraycoater/spray_path/executed_markers
         type: visualization_msgs/msg/MarkerArray
         qos: latched
 

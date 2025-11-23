@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Optional, List
 
 import logging
-
 from PyQt6 import QtCore
 from PyQt6.QtStateMachine import QStateMachine, QState, QFinalState
 
@@ -43,7 +42,6 @@ class ProcessThread(QtCore.QThread):
     QThread mit eigener QStateMachine für einen Prozesslauf.
 
     States:
-
       - MOVE_PREDISPENSE    : erste/Predispense-Position anfahren (path[0])
       - WAIT_PREDISPENSE    : predispense-Zeit warten
       - MOVE_RECIPE         : alle Zwischenpunkte fahren (path[1:-1])
@@ -66,7 +64,8 @@ class ProcessThread(QtCore.QThread):
     stopSignal = QtCore.pyqtSignal()
 
     # Ergebnis-Signale nach außen
-    notifyFinished = QtCore.pyqtSignal()
+    # Bei Erfolg: komplette Liste der Rezept-Posen (List[PoseStamped])
+    notifyFinished = QtCore.pyqtSignal(object)
     notifyError = QtCore.pyqtSignal(str)
 
     # State-Änderungen nach außen
@@ -131,8 +130,8 @@ class ProcessThread(QtCore.QThread):
         self._log_handler.setFormatter(formatter)
         _LOG.addHandler(self._log_handler)
 
-        # Feste Referenzen aus der UIBridge (ohne getattr/hasattr)
-        self._rb = bridge._rb            # RobotBridge (falls du später noch was brauchst)
+        # Feste Referenzen aus der UIBridge (ohne getattr/hasattr für Logik)
+        self._rb = bridge._rb            # RobotBridge (falls später noch benötigt)
         self._motion = bridge._motion    # MotionBridge
         self._motion_signals = self._motion.signals if self._motion is not None else None
         self._pb = bridge._pb            # PosesBridge
@@ -141,12 +140,10 @@ class ProcessThread(QtCore.QThread):
         # motion_result-Integration (eventbasiert, ohne Polling)
         if self._motion is not None and self._motion_signals is not None:
             try:
-                # WICHTIG: keine explizite DirectConnection, damit Qt sauber
-                # eine QueuedConnection zwischen Threads macht.
+                # Keine explizite DirectConnection: Qt kümmert sich um QueuedConnection
                 self._motion_signals.motionResultChanged.connect(self._on_motion_result)
                 _LOG.info(
-                    "ProcessThread: MotionBridge gefunden (%s), "
-                    "motionResultChanged verbunden.",
+                    "ProcessThread: MotionBridge gefunden (%s), motionResultChanged verbunden.",
                     type(self._motion).__name__,
                 )
             except Exception as e:
@@ -426,10 +423,9 @@ class ProcessThread(QtCore.QThread):
 
         Wir nehmen IMMER die **erste Side im Dict** `paths_compiled["sides"]`
         und interpretieren deren `poses_quat` als kompletten Prozesspfad:
-
-          - poses[0]   -> Predispense
-          - poses[1:-1]-> Rezeptpfad
-          - poses[-1]  -> Retreat
+           - poses[0]   -> Predispense
+           - poses[1:-1]-> Rezeptpfad
+           - poses[-1]  -> Retreat
         """
         try:
             pc = self._recipe.paths_compiled or {}
@@ -487,9 +483,8 @@ class ProcessThread(QtCore.QThread):
     def _get_home_pose(self) -> Optional[PoseStamped]:
         """
         Versucht, eine Home-Pose als PoseStamped zu bekommen:
-
-          1. PosesBridge.get_last_home_pose()
-          2. PosesState.home()
+           1. PosesBridge.get_last_home_pose()
+           2. PosesState.home()
 
         Wenn nichts da ist, None zurück.
         """
@@ -923,7 +918,12 @@ class ProcessThread(QtCore.QThread):
         self._ended_in_finished_state = True
         self._emit_state("FINISHED")
 
-        _LOG.info("ProcessThread: notifyFinished() im FINISHED-State")
-        self.notifyFinished.emit()
+        # Liste der verwendeten Rezept-Posen an den Aufrufer geben
+        poses_copy: List[PoseStamped] = list(self._recipe_poses or [])
+        _LOG.info(
+            "ProcessThread: notifyFinished() im FINISHED-State, %d Posen werden übergeben.",
+            len(poses_copy),
+        )
+        self.notifyFinished.emit(poses_copy)
 
         self._stop_machine_and_quit()
