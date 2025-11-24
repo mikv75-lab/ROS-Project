@@ -50,6 +50,14 @@ class ProcessTab(QWidget):
            ├─ QTextEdit  (Summary)
            └─ QTextEdit  (Poses)
       )
+
+    Zusätzlich:
+      - "Rezept laden"  → ProcessThread im MODE_RECIPE (=setup),
+                          Worker = ProcessSetupStatemachine (MoveIt/Motion)
+
+      - "Run laden"     → ProcessThread im MODE_RUN (=servo),
+                          Worker = ProcessRunStatemachine
+                          (Servo-Run eines Run-YAML, z.B. aus data/runs)
     """
 
     def __init__(self, *, ctx, bridge, parent: Optional[QWidget] = None):
@@ -125,6 +133,14 @@ class ProcessTab(QWidget):
         self.txtRecipeSummary: QTextEdit = self.view.txtRecipeSummary
         self.txtRecipePoses: QTextEdit = self.view.txtRecipePoses
 
+        # -------------------------------------------------------------
+        # Neuer Button: Run-Trajektorie / Run-Recipe laden (Servo-Modus)
+        # -------------------------------------------------------------
+        self.btnLoadRunRecipe = QPushButton("Run laden", self.grpProcess)
+        proc_layout = self.grpProcess.layout()
+        if proc_layout is not None:
+            proc_layout.addWidget(self.btnLoadRunRecipe)
+
         # ==================================================================
         # Threads
         # ==================================================================
@@ -145,6 +161,7 @@ class ProcessTab(QWidget):
         # ==================================================================
         self.btnInit.clicked.connect(self._on_init_clicked)
         self.btnLoadRecipe.clicked.connect(self._on_load_recipe_clicked)
+        self.btnLoadRunRecipe.clicked.connect(self._on_load_run_recipe_clicked)
         self.btnStart.clicked.connect(self._on_start_clicked)
         self.btnStop.clicked.connect(self._on_stop_clicked)
 
@@ -671,7 +688,7 @@ class ProcessTab(QWidget):
 
     def _setup_process_thread_for_recipe(self, recipe: Recipe) -> None:
         """
-        Erstellt einen neuen ProcessThread für das aktuelle Rezept.
+        Erstellt einen neuen ProcessThread im "recipe"-Modus für das aktuelle Rezept.
         Wird bei jedem 'Load Recipe' aufgerufen.
         """
         self._cleanup_process_thread()
@@ -700,6 +717,41 @@ class ProcessTab(QWidget):
             self.txtProcessLog.clear()
         except RuntimeError:
             pass
+
+    def _setup_process_thread_for_run(self, run_yaml_path: str) -> None:
+        """
+        Erstellt einen neuen ProcessThread im "run"-Modus, der ein Run-YAML
+        (Servo-/Joint-Trajektorie) abfährt.
+
+        run_yaml_path:
+          - Pfad zu einer YAML-Datei, die von ProcessRunStatemachine verstanden wird.
+        """
+        self._cleanup_process_thread()
+        self._process_outcome = None
+
+        thr = ProcessThread.for_run(
+            run_yaml_path=run_yaml_path,
+            bridge=self.bridge,
+        )
+
+        thr.notifyFinished.connect(
+            lambda result_obj, self=self: self._on_process_finished_success(result_obj)
+        )
+        thr.notifyError.connect(
+            lambda msg, self=self: self._on_process_finished_error(msg)
+        )
+        thr.finished.connect(self._on_process_thread_finished)
+        thr.stateChanged.connect(lambda s, self=self: self._on_process_state_changed(s))
+        thr.logMessage.connect(lambda m, self=self: self._on_process_log_message(m))
+
+        self._process_thread = thr
+
+        try:
+            self.txtProcessLog.clear()
+        except RuntimeError:
+            pass
+
+        self._append_process_log("Run-Recipe geladen (Servo-Playback).")
 
     # =====================================================================
     # SprayPath-Ansteuerung (Soll-Pfad)
@@ -787,6 +839,43 @@ class ProcessTab(QWidget):
             lambda m=model, f=fname, self=self: self._apply_loaded_recipe(m, f)
         )
 
+    def _on_load_run_recipe_clicked(self) -> None:
+        """
+        Wählt eine Run-Recipe-Datei (Servo-/Joint-YAML) aus data/runs aus
+        und setzt den ProcessThread in den MODE_RUN (Servo-Statemachine).
+
+        Das genaue Format der Run-Datei wird in ProcessRunStatemachine
+        interpretiert (z.B. joints/segments/...).
+        """
+        runs_dir = self._get_runs_dir()
+        start_dir = str(runs_dir)
+
+        fname, _ = QFileDialog.getOpenFileName(
+            self,
+            "Run-Recipe laden",
+            start_dir,
+            "YAML (*.yaml *.yml)",
+        )
+        if not fname:
+            return
+
+        base = os.path.basename(fname)
+        name_no_ext, _ = os.path.splitext(base)
+        if name_no_ext:
+            self.set_recipe_name(name_no_ext)
+
+        _LOG.info("ProcessTab: Run-Recipe-Datei '%s' ausgewählt.", fname)
+
+        # ProcessThread im Servo-/Run-Modus vorbereiten
+        self._setup_process_thread_for_run(fname)
+
+        try:
+            self.lblProcessState.setText("Kein Prozess aktiv (Run-Recipe / Servo).")
+        except RuntimeError:
+            pass
+
+        self._append_process_log(f"Run-Recipe geladen: {base}")
+
     def _apply_loaded_recipe(self, model: Recipe, fname: str) -> None:
         """
         Teil 2: Das fertig geladene Rezept-Model in den UI- und
@@ -808,7 +897,7 @@ class ProcessTab(QWidget):
             # UI evtl. schon zerstört (z.B. beim Schließen) -> einfach abbrechen
             return
 
-        # 3) ProcessThread vorbereiten (neuer Thread pro Load)
+        # 3) ProcessThread vorbereiten (neuer Thread pro Load, "recipe"-Modus)
         try:
             self._setup_process_thread_for_recipe(model)
         except Exception:
@@ -843,20 +932,24 @@ class ProcessTab(QWidget):
         except RuntimeError:
             return
 
-        if self._recipe_model is None or self._process_thread is None:
-            QMessageBox.warning(self, "Kein Rezept", "Es ist kein Rezept geladen.")
+        if self._process_thread is None:
+            QMessageBox.warning(self, "Kein Prozess", "Es ist kein Rezept/Run geladen.")
             return
 
         # Ergebnis-Status für diesen Lauf zurücksetzen
         self._process_outcome = None
 
-        # Safety: sicherstellen, dass Thread das aktuelle Model kennt
-        if getattr(self._process_thread, "recipe", None) is not self._recipe_model:
+        # Safety: für den "recipe"-Modus sicherstellen, dass Thread das aktuelle Model kennt
+        if self._recipe_model is not None and getattr(self._process_thread, "recipe", None) is not self._recipe_model:
             try:
                 self._process_thread.set_recipe(self._recipe_model)
             except Exception:
                 _LOG.exception("ProcessTab: set_recipe im ProcessThread fehlgeschlagen")
-                QMessageBox.critical(self, "Process-Fehler", "Rezept konnte nicht an den Prozess übergeben werden.")
+                QMessageBox.critical(
+                    self,
+                    "Process-Fehler",
+                    "Rezept konnte nicht an den Prozess übergeben werden.",
+                )
                 return
 
         self.set_process_active(True)
@@ -1035,8 +1128,9 @@ class ProcessTab(QWidget):
             self._update_info_with_trajectory_metrics(metrics, score)
             # Log-Ausgabe
             self._log_trajectory_metrics(metrics, score)
-            # YAML-Log speichern
-            self._save_trajectory_yaml(poses, metrics, score)
+            # YAML-Log speichern (nur wenn wir ein Rezept haben)
+            if self._recipe_model or self._recipe_name:
+                self._save_trajectory_yaml(poses, metrics, score)
         except Exception:
             _LOG.exception("ProcessTab: Fehler bei Berechnung/Anzeige/Speicherung der Trajektorien-Metriken")
 
@@ -1230,8 +1324,10 @@ class ProcessTab(QWidget):
             if not self._robot_at_home:
                 missing.append("Roboter nicht in Home-Position (TCP ≉ Home-Pose)")
 
+            # Für Run-Playback / Servo-Run reicht theoretisch ein geladener Run,
+            # wir behalten hier aber die Logik bei: es muss mind. ein Name gesetzt sein.
             if not self._recipe_name:
-                missing.append("Kein Rezept geladen")
+                missing.append("Kein Rezept/Run geladen")
 
             if not self._substrate_ok:
                 missing.append("Substrate-Konfiguration stimmt nicht mit dem Rezept überein")

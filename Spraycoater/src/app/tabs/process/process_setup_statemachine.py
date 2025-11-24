@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# File: tabs/process/process_statemachine.py
+# File: tabs/process/process_setup_statemachine.py
 from __future__ import annotations
 
 from typing import Optional, List, Dict, Any
@@ -14,7 +14,7 @@ from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg
 
 from app.model.recipe.recipe import Recipe
 
-_LOG = logging.getLogger("app.tabs.process.statemachine")
+_LOG = logging.getLogger("app.tabs.process.setup_statemachine")
 
 
 class QStatemachine(QStateMachine):
@@ -30,7 +30,7 @@ class _QtSignalHandler(logging.Handler):
     Leitet Log-Messages dieses Loggers über ein Qt-Signal nach außen,
     damit sie im UI angezeigt werden können.
     """
-    def __init__(self, owner: "ProcessStatemachine") -> None:
+    def __init__(self, owner: "ProcessSetupStatemachine") -> None:
         super().__init__()
         self._owner = owner
 
@@ -46,22 +46,24 @@ class _QtSignalHandler(logging.Handler):
             pass
 
 
-class ProcessStatemachine(QtCore.QObject):
+class ProcessSetupStatemachine(QtCore.QObject):
     """
-    StateMachine-Worker, der im Hintergrund-Thread läuft.
+    StateMachine-Worker für den „Setup-/MoveIt“-Prozesslauf (Predispense → Recipe → Retreat → Home).
 
-    Enthält:
-      - QStatemachine mit den Prozess-States
-      - Logging
-      - Aufzeichnung von TCP-Posen und MoveIt-Trajektorien
+    Läuft im Hintergrund-Thread und:
+
+      - Steuert MoveIt / MotionBridge
+      - Beobachtet Motion-Ergebnisse
+      - Zeichnet TCP-Trajektorie (tcpPoseChanged) mit
+      - Sammelt geplante / ausgeführte MoveIt-Trajektorien
 
     API für den ProcessThread:
       - Slots:
           start()
           request_stop()
       - Properties/Methoden:
-          recipe
-          set_recipe(recipe)
+          recipe        (Optional[Recipe])
+          set_recipe(...)
       - Signale:
           notifyFinished(object)
           notifyError(str)
@@ -103,13 +105,15 @@ class ProcessStatemachine(QtCore.QObject):
     def __init__(
         self,
         *,
-        recipe: Recipe,
+        recipe: Optional[Recipe],
         bridge,
         parent: Optional[QtCore.QObject] = None,
     ) -> None:
         super().__init__(parent)
 
-        self._recipe = recipe
+        # Recipe kann None sein, wenn der ProcessThread ohne Rezept erstellt
+        # und später über set_recipe() gefüttert wird.
+        self._recipe: Optional[Recipe] = recipe
         self._bridge = bridge
 
         self._stop_requested: bool = False
@@ -164,26 +168,26 @@ class ProcessStatemachine(QtCore.QObject):
                 if hasattr(self._motion_signals, "motionResultChanged"):
                     self._motion_signals.motionResultChanged.connect(self._on_motion_result)
                     _LOG.info(
-                        "ProcessStatemachine: MotionBridge gefunden (%s), motionResultChanged verbunden.",
+                        "ProcessSetupStatemachine: MotionBridge gefunden (%s), motionResultChanged verbunden.",
                         type(self._motion).__name__,
                     )
 
                 if hasattr(self._motion_signals, "plannedTrajectoryChanged"):
                     self._motion_signals.plannedTrajectoryChanged.connect(self._on_planned_traj)
                     _LOG.info(
-                        "ProcessStatemachine: plannedTrajectoryChanged mit _on_planned_traj verbunden."
+                        "ProcessSetupStatemachine: plannedTrajectoryChanged mit _on_planned_traj verbunden."
                     )
 
                 if hasattr(self._motion_signals, "executedTrajectoryChanged"):
                     self._motion_signals.executedTrajectoryChanged.connect(self._on_executed_traj)
                     _LOG.info(
-                        "ProcessStatemachine: executedTrajectoryChanged mit _on_executed_traj verbunden."
+                        "ProcessSetupStatemachine: executedTrajectoryChanged mit _on_executed_traj verbunden."
                     )
             except Exception as e:
-                _LOG.exception("ProcessStatemachine: Konnte Motion-Signale nicht verbinden: %s", e)
+                _LOG.exception("ProcessSetupStatemachine: Konnte Motion-Signale nicht verbinden: %s", e)
         else:
             _LOG.error(
-                "ProcessStatemachine: MotionBridge oder deren Signale sind None – "
+                "ProcessSetupStatemachine: MotionBridge oder deren Signale sind None – "
                 "Bewegungen können nicht ausgeführt/geloggt werden."
             )
 
@@ -192,28 +196,28 @@ class ProcessStatemachine(QtCore.QObject):
             try:
                 sig_r = getattr(self._rb, "signals", None)
                 if sig_r is None:
-                    _LOG.warning("ProcessStatemachine: RobotBridge.signals ist None – kein TCP-Logging.")
+                    _LOG.warning("ProcessSetupStatemachine: RobotBridge.signals ist None – kein TCP-Logging.")
                 else:
                     self._rb_signals = sig_r
                     if hasattr(sig_r, "tcpPoseChanged"):
                         sig_r.tcpPoseChanged.connect(self._on_tcp_stream)
                         _LOG.info(
-                            "ProcessStatemachine: RobotBridge tcpPoseChanged verbunden – "
+                            "ProcessSetupStatemachine: RobotBridge tcpPoseChanged verbunden – "
                             "gefahrene Trajektorie wird mitgeloggt (Queue)."
                         )
                     else:
                         _LOG.warning(
-                            "ProcessStatemachine: RobotBridge.signals.tcpPoseChanged fehlt – "
+                            "ProcessSetupStatemachine: RobotBridge.signals.tcpPoseChanged fehlt – "
                             "kein Live-Trajektorien-Logging möglich."
                         )
             except Exception:
-                _LOG.exception("ProcessStatemachine: Fehler beim Verbinden von tcpPoseChanged.")
+                _LOG.exception("ProcessSetupStatemachine: Fehler beim Verbinden von tcpPoseChanged.")
         else:
-            _LOG.warning("ProcessStatemachine: RobotBridge ist None – kein TCP-Logging möglich.")
+            _LOG.warning("ProcessSetupStatemachine: RobotBridge ist None – kein TCP-Logging möglich.")
 
         _LOG.info(
-            "ProcessStatemachine init: recipe=%s, rb=%s, motion=%s",
-            getattr(recipe, "id", None),
+            "ProcessSetupStatemachine init: recipe=%s, rb=%s, motion=%s",
+            getattr(recipe, "id", None) if recipe is not None else None,
             type(self._rb).__name__ if self._rb is not None else "None",
             type(self._motion).__name__ if self._motion is not None else "None",
         )
@@ -229,9 +233,16 @@ class ProcessStatemachine(QtCore.QObject):
         Läuft im Worker-Thread.
         """
         _LOG.info(
-            "ProcessStatemachine.start: gestartet (Thread=%r)",
+            "ProcessSetupStatemachine.start: gestartet (Thread=%r)",
             int(QtCore.QThread.currentThreadId()),
         )
+
+        if self._recipe is None:
+            msg = "Kein Rezept im ProcessSetupStatemachine gesetzt."
+            _LOG.error("ProcessSetupStatemachine.start: %s", msg)
+            self._error_msg = msg
+            self._signal_error(msg)
+            return
 
         # Reset Lauf-Status
         self._stop_requested = False
@@ -317,9 +328,9 @@ class ProcessStatemachine(QtCore.QObject):
 
         try:
             machine.start()
-            _LOG.info("ProcessStatemachine.start: StateMachine gestartet.")
+            _LOG.info("ProcessSetupStatemachine.start: StateMachine gestartet.")
         except Exception as e:
-            _LOG.exception("ProcessStatemachine.start: Exception: %s", e)
+            _LOG.exception("ProcessSetupStatemachine.start: Exception: %s", e)
             if not self._error_msg:
                 self._error_msg = str(e)
             self._signal_error(self._error_msg)
@@ -329,18 +340,18 @@ class ProcessStatemachine(QtCore.QObject):
         """
         Stop-Flag setzen; die States prüfen regelmäßig _should_stop().
         """
-        _LOG.info("ProcessStatemachine: request_stop() aufgerufen.")
+        _LOG.info("ProcessSetupStatemachine: request_stop() aufgerufen.")
         self._stop_requested = True
 
     @property
-    def recipe(self) -> Recipe:
+    def recipe(self) -> Optional[Recipe]:
         return self._recipe
 
     def set_recipe(self, recipe: Recipe) -> None:
         """
         Nur verwenden, wenn kein Run aktiv ist.
         """
-        _LOG.info("ProcessStatemachine.set_recipe: recipe=%s", getattr(recipe, "id", None))
+        _LOG.info("ProcessSetupStatemachine.set_recipe: recipe=%s", getattr(recipe, "id", None))
         self._recipe = recipe
 
     # ------------------------------------------------------------------ #
@@ -356,7 +367,7 @@ class ProcessStatemachine(QtCore.QObject):
         Läuft im Worker-Thread.
         """
         if self._machine is None or not self._machine.isRunning():
-            _LOG.warning("ProcessStatemachine: _post_transition, aber StateMachine läuft nicht mehr.")
+            _LOG.warning("ProcessSetupStatemachine: _post_transition, aber StateMachine läuft nicht mehr.")
             return
         QtCore.QTimer.singleShot(0, sig.emit)
 
@@ -369,7 +380,7 @@ class ProcessStatemachine(QtCore.QObject):
         if self._should_stop() and not self._error_msg:
             self._error_msg = "Prozess durch Benutzer gestoppt."
         if self._error_msg:
-            _LOG.error("ProcessStatemachine: Fehler erkannt, wechsle in ERROR: %s", self._error_msg)
+            _LOG.error("ProcessSetupStatemachine: Fehler erkannt, wechsle in ERROR: %s", self._error_msg)
             self._post_transition(self._sig_error)
         else:
             self._post_transition(success_sig)
@@ -382,7 +393,7 @@ class ProcessStatemachine(QtCore.QObject):
             self._error_msg = msg
         if not self._error_msg:
             self._error_msg = "Unbekannter Prozessfehler."
-        _LOG.error("ProcessStatemachine: _signal_error: %s", self._error_msg)
+        _LOG.error("ProcessSetupStatemachine: _signal_error: %s", self._error_msg)
         self._post_transition(self._sig_error)
 
     def _disconnect_signals(self) -> None:
@@ -443,10 +454,10 @@ class ProcessStatemachine(QtCore.QObject):
         m = self._machine
         if m is not None and m.isRunning():
             try:
-                _LOG.info("ProcessStatemachine: stoppe StateMachine.")
+                _LOG.info("ProcessSetupStatemachine: stoppe StateMachine.")
                 m.stop()
             except Exception:
-                _LOG.exception("ProcessStatemachine: Fehler beim Stoppen der StateMachine.")
+                _LOG.exception("ProcessSetupStatemachine: Fehler beim Stoppen der StateMachine.")
 
         self._machine = None
 
@@ -460,14 +471,14 @@ class ProcessStatemachine(QtCore.QObject):
         if not res:
             return
 
-        _LOG.info("ProcessStatemachine: motion_result empfangen: %r", res)
+        _LOG.info("ProcessSetupStatemachine: motion_result empfangen: %r", res)
 
         if self._machine is None or not self._machine.isRunning():
-            _LOG.info("ProcessStatemachine: motion_result ignoriert (StateMachine läuft nicht mehr).")
+            _LOG.info("ProcessSetupStatemachine: motion_result ignoriert (StateMachine läuft nicht mehr).")
             return
 
         if self._current_phase == self.PHASE_NONE:
-            _LOG.info("ProcessStatemachine: motion_result ignoriert (keine aktive Motion-Phase).")
+            _LOG.info("ProcessSetupStatemachine: motion_result ignoriert (keine aktive Motion-Phase).")
             return
 
         if self._should_stop():
@@ -480,7 +491,7 @@ class ProcessStatemachine(QtCore.QObject):
 
         # PLANNED... kommt zuerst, danach EXECUTED/ERROR
         if res_u.startswith("PLANNED"):
-            _LOG.info("ProcessStatemachine: Motion-Status PLANNED..., warte auf EXECUTED/ERROR.")
+            _LOG.info("ProcessSetupStatemachine: Motion-Status PLANNED..., warte auf EXECUTED/ERROR.")
             return
 
         # EXECUTED -> Success-Pfad der aktuellen Phase
@@ -492,7 +503,7 @@ class ProcessStatemachine(QtCore.QObject):
         if res_u.startswith(("ERROR", "FAILED", "ABORTED", "CANCELLED", "UNKNOWN")):
             if not self._error_msg:
                 self._error_msg = res
-            _LOG.error("ProcessStatemachine: Motion-Fehler: %s", self._error_msg)
+            _LOG.error("ProcessSetupStatemachine: Motion-Fehler: %s", self._error_msg)
             self._signal_error(self._error_msg)
             return
 
@@ -500,7 +511,7 @@ class ProcessStatemachine(QtCore.QObject):
         if not self._error_msg:
             self._error_msg = res
         _LOG.error(
-            "ProcessStatemachine: Unerwartetes Motion-Result, behandle als Fehler: %s",
+            "ProcessSetupStatemachine: Unerwartetes Motion-Result, behandle als Fehler: %s",
             self._error_msg,
         )
         self._signal_error(self._error_msg)
@@ -511,7 +522,7 @@ class ProcessStatemachine(QtCore.QObject):
         Entscheidet anhand von self._current_phase, wie es weitergeht.
         """
         phase = self._current_phase
-        _LOG.info("ProcessStatemachine: Motion EXECUTED:OK in Phase %s", phase)
+        _LOG.info("ProcessSetupStatemachine: Motion EXECUTED:OK in Phase %s", phase)
 
         # 1) Predispense-Fahrt fertig -> Warte-State
         if phase == self.PHASE_MOVE_PREDISPENSE:
@@ -522,7 +533,7 @@ class ProcessStatemachine(QtCore.QObject):
         # 2) Rezept-Fahrt (Zwischenpunkte)
         if phase == self.PHASE_MOVE_RECIPE:
             if not self._recipe_poses:
-                _LOG.error("ProcessStatemachine: MOVE_RECIPE: _recipe_poses leer – Rezept inkonsistent.")
+                _LOG.error("ProcessSetupStatemachine: MOVE_RECIPE: _recipe_poses leer – Rezept inkonsistent.")
                 if not self._error_msg:
                     self._error_msg = "Rezept inkonsistent: keine Posen für MOVE_RECIPE."
                 self._post_transition(self._sig_error)
@@ -530,14 +541,14 @@ class ProcessStatemachine(QtCore.QObject):
 
             self._recipe_index += 1
             if self._recipe_index >= len(self._recipe_poses) - 1:
-                _LOG.info("ProcessStatemachine: MOVE_RECIPE: alle Zwischen-Posen abgefahren.")
+                _LOG.info("ProcessSetupStatemachine: MOVE_RECIPE: alle Zwischen-Posen abgefahren.")
                 self._current_phase = self.PHASE_NONE
                 self._post_transition(self._sig_move_recipe_done)
                 return
 
             pose = self._recipe_poses[self._recipe_index]
             _LOG.info(
-                "ProcessStatemachine: MOVE_RECIPE: nächster Wegpunkt %d/%d.",
+                "ProcessSetupStatemachine: MOVE_RECIPE: nächster Wegpunkt %d/%d.",
                 self._recipe_index,
                 len(self._recipe_poses) - 2,
             )
@@ -581,7 +592,7 @@ class ProcessStatemachine(QtCore.QObject):
         try:
             self._tcp_pose_queue.put_nowait(snap)
         except Exception as e:
-            _LOG.exception("ProcessStatemachine: _on_tcp_stream: Queue-Fehler: %s", e)
+            _LOG.exception("ProcessSetupStatemachine: _on_tcp_stream: Queue-Fehler: %s", e)
 
     @QtCore.pyqtSlot(object)
     def _on_planned_traj(self, msg: object) -> None:
@@ -594,7 +605,7 @@ class ProcessStatemachine(QtCore.QObject):
         try:
             self._planned_traj_queue.put_nowait(msg)
         except Exception as e:
-            _LOG.exception("ProcessStatemachine: _on_planned_traj: Queue-Fehler: %s", e)
+            _LOG.exception("ProcessSetupStatemachine: _on_planned_traj: Queue-Fehler: %s", e)
 
     @QtCore.pyqtSlot(object)
     def _on_executed_traj(self, msg: object) -> None:
@@ -607,7 +618,7 @@ class ProcessStatemachine(QtCore.QObject):
         try:
             self._executed_traj_queue.put_nowait(msg)
         except Exception as e:
-            _LOG.exception("ProcessStatemachine: _on_executed_traj: Queue-Fehler: %s", e)
+            _LOG.exception("ProcessSetupStatemachine: _on_executed_traj: Queue-Fehler: %s", e)
 
     def _poll_queues(self) -> None:
         """
@@ -649,7 +660,7 @@ class ProcessStatemachine(QtCore.QObject):
             if self._current_phase in active_phases:
                 self._planned_traj_list.append(traj)
                 _LOG.info(
-                    "ProcessStatemachine: _poll_queues: geplantes Segment #%d (points=%d).",
+                    "ProcessSetupStatemachine: _poll_queues: geplantes Segment #%d (points=%d).",
                     len(self._planned_traj_list),
                     len(traj.joint_trajectory.points),
                 )
@@ -664,7 +675,7 @@ class ProcessStatemachine(QtCore.QObject):
             if self._current_phase in active_phases:
                 self._executed_traj_list.append(traj)
                 _LOG.info(
-                    "ProcessStatemachine: _poll_queues: ausgeführtes Segment #%d (points=%d).",
+                    "ProcessSetupStatemachine: _poll_queues: ausgeführtes Segment #%d (points=%d).",
                     len(self._executed_traj_list),
                     len(traj.joint_trajectory.points),
                 )
@@ -686,7 +697,7 @@ class ProcessStatemachine(QtCore.QObject):
     # ------------------------------------------------------------------ #
 
     def _emit_state(self, name: str) -> None:
-        _LOG.info("ProcessStatemachine: State gewechselt zu %s", name)
+        _LOG.info("ProcessSetupStatemachine: State gewechselt zu %s", name)
         try:
             self.stateChanged.emit(name)
         except Exception:
@@ -700,15 +711,19 @@ class ProcessStatemachine(QtCore.QObject):
           - Wenn leer/nicht vorhanden -> [] + Log-Warnung
           - Die States behandeln [] als Fehler und setzen _error_msg.
         """
+        if self._recipe is None:
+            _LOG.error("ProcessSetupStatemachine: _get_recipe_poses: kein Rezept gesetzt.")
+            return []
+
         try:
             pc = self._recipe.paths_compiled or {}
         except Exception:
-            _LOG.error("ProcessStatemachine: _get_recipe_poses: recipe.paths_compiled nicht verfügbar.")
+            _LOG.error("ProcessSetupStatemachine: _get_recipe_poses: recipe.paths_compiled nicht verfügbar.")
             return []
 
         sides = pc.get("sides") or {}
         if not isinstance(sides, dict) or not sides:
-            _LOG.warning("ProcessStatemachine: _get_recipe_poses: paths_compiled.sides ist leer.")
+            _LOG.warning("ProcessSetupStatemachine: _get_recipe_poses: paths_compiled.sides ist leer.")
             return []
 
         first_side = next(iter(sides.keys()))
@@ -717,7 +732,7 @@ class ProcessStatemachine(QtCore.QObject):
 
         if not poses_quat:
             _LOG.warning(
-                "ProcessStatemachine: _get_recipe_poses: erste Side '%s' hat keine poses_quat.",
+                "ProcessSetupStatemachine: _get_recipe_poses: erste side '%s' hat keine poses_quat.",
                 first_side,
             )
             return []
@@ -739,7 +754,7 @@ class ProcessStatemachine(QtCore.QObject):
             out.append(ps)
 
         _LOG.info(
-            "ProcessStatemachine: _get_recipe_poses: benutze erste side='%s' mit %d Posen (frame=%s).",
+            "ProcessSetupStatemachine: _get_recipe_poses: benutze erste side='%s' mit %d Posen (frame=%s).",
             first_side, len(out), frame_id,
         )
         return out
@@ -765,7 +780,7 @@ class ProcessStatemachine(QtCore.QObject):
             except Exception:
                 pass
 
-        _LOG.warning("ProcessStatemachine: _get_home_pose: keine Home-Pose verfügbar.")
+        _LOG.warning("ProcessSetupStatemachine: _get_home_pose: keine Home-Pose verfügbar.")
         return None
 
     def _send_motion_pose(self, pose: PoseStamped, label: str) -> None:
@@ -774,25 +789,25 @@ class ProcessStatemachine(QtCore.QObject):
         """
         if pose is None:
             msg = f"Interner Fehler: Zielpose ist None (label={label})."
-            _LOG.error("ProcessStatemachine: _send_motion_pose: %s", msg)
+            _LOG.error("ProcessSetupStatemachine: _send_motion_pose: %s", msg)
             self._signal_error(msg)
             return
 
         if self._motion is None or self._motion_signals is None:
             msg = f"MotionBridge fehlt für label={label}."
-            _LOG.error("ProcessStatemachine: _send_motion_pose: %s", msg)
+            _LOG.error("ProcessSetupStatemachine: _send_motion_pose: %s", msg)
             self._signal_error(msg)
             return
 
         try:
             _LOG.info(
-                "ProcessStatemachine: moveToPoseRequested(%s) via MotionBridge-Signal wird emittiert.",
+                "ProcessSetupStatemachine: moveToPoseRequested(%s) via MotionBridge-Signal wird emittiert.",
                 label,
             )
             self._motion_signals.moveToPoseRequested.emit(pose)
         except Exception as e:
             msg = f"moveToPoseRequested({label}) emit failed: {e}"
-            _LOG.exception("ProcessStatemachine: %s", msg)
+            _LOG.exception("ProcessSetupStatemachine: %s", msg)
             self._signal_error(msg)
 
     # ------------------------------------------------------------------ #
@@ -800,12 +815,12 @@ class ProcessStatemachine(QtCore.QObject):
     # ------------------------------------------------------------------ #
 
     def _on_state_move_predispense(self) -> None:
-        _LOG.info("ProcessStatemachine: ENTER MOVE_PREDISPENSE")
+        _LOG.info("ProcessSetupStatemachine: ENTER MOVE_PREDISPENSE")
 
         if self._error_msg or self._should_stop():
-            _LOG.info("ProcessStatemachine: MOVE_PREDISPENSE: Fehler/Stop vor Start erkannt.")
+            _LOG.info("ProcessSetupStatemachine: MOVE_PREDISPENSE: Fehler/Stop vor Start erkannt.")
             self._finish_state(self._sig_predispense_move_done)
-            _LOG.info("ProcessStatemachine: LEAVE MOVE_PREDISPENSE")
+            _LOG.info("ProcessSetupStatemachine: LEAVE MOVE_PREDISPENSE")
             return
 
         poses = self._get_recipe_poses()
@@ -815,31 +830,31 @@ class ProcessStatemachine(QtCore.QObject):
         if not poses:
             # Kein Fallback mehr: ohne Posen ist das Rezept ungültig
             msg = "Rezept enthält keine gültigen Posen für Predispense."
-            _LOG.error("ProcessStatemachine: MOVE_PREDISPENSE: %s", msg)
+            _LOG.error("ProcessSetupStatemachine: MOVE_PREDISPENSE: %s", msg)
             if not self._error_msg:
                 self._error_msg = msg
             self._finish_state(self._sig_predispense_move_done)
-            _LOG.info("ProcessStatemachine: LEAVE MOVE_PREDISPENSE (ERROR)")
+            _LOG.info("ProcessSetupStatemachine: LEAVE MOVE_PREDISPENSE (ERROR)")
             return
 
         first = poses[0]
-        _LOG.info("ProcessStatemachine: MOVE_PREDISPENSE: fahre Pose[0].")
+        _LOG.info("ProcessSetupStatemachine: MOVE_PREDISPENSE: fahre Pose[0].")
         self._current_phase = self.PHASE_MOVE_PREDISPENSE
         self._send_motion_pose(first, label="predispense")
 
-        _LOG.info("ProcessStatemachine: LEAVE MOVE_PREDISPENSE (warte auf EXECUTED:OK).")
+        _LOG.info("ProcessSetupStatemachine: LEAVE MOVE_PREDISPENSE (warte auf EXECUTED:OK).")
 
     def _on_state_wait_predispense(self) -> None:
-        _LOG.info("ProcessStatemachine: ENTER WAIT_PREDISPENSE")
+        _LOG.info("ProcessSetupStatemachine: ENTER WAIT_PREDISPENSE")
 
-        if not self._error_msg:
+        if not self._error_msg and self._recipe is not None:
             pre_t = 0.0
             try:
-                pre_t = float(self._recipe.globals.predispose_time or 0.0)
+                pre_t = float(getattr(self._recipe.globals, "predispense_time", 0.0) or 0.0)
             except Exception:
                 pre_t = 0.0
 
-            _LOG.info("ProcessStatemachine: WAIT_PREDISPENSE: predispense_time=%.3f s", pre_t)
+            _LOG.info("ProcessSetupStatemachine: WAIT_PREDISPENSE: predispense_time=%.3f s", pre_t)
 
             ms_total = max(0, int(pre_t * 1000))
             elapsed = 0
@@ -853,16 +868,16 @@ class ProcessStatemachine(QtCore.QObject):
                 QtCore.QThread.msleep(step)
                 elapsed += step
 
-        _LOG.info("ProcessStatemachine: LEAVE WAIT_PREDISPENSE")
+        _LOG.info("ProcessSetupStatemachine: LEAVE WAIT_PREDISPENSE")
         self._finish_state(self._sig_predispense_wait_done)
 
     def _on_state_move_recipe(self) -> None:
-        _LOG.info("ProcessStatemachine: ENTER MOVE_RECIPE")
+        _LOG.info("ProcessSetupStatemachine: ENTER MOVE_RECIPE")
 
         if self._error_msg or self._should_stop():
-            _LOG.info("ProcessStatemachine: MOVE_RECIPE: Fehler/Stop vor Start erkannt.")
+            _LOG.info("ProcessSetupStatemachine: MOVE_RECIPE: Fehler/Stop vor Start erkannt.")
             self._finish_state(self._sig_move_recipe_done)
-            _LOG.info("ProcessStatemachine: LEAVE MOVE_RECIPE")
+            _LOG.info("ProcessSetupStatemachine: LEAVE MOVE_RECIPE")
             return
 
         if not self._recipe_poses:
@@ -870,38 +885,38 @@ class ProcessStatemachine(QtCore.QObject):
             self._recipe_index = 0
 
         n = len(self._recipe_poses)
-        _LOG.info("ProcessStatemachine: MOVE_RECIPE: Anzahl Posen=%d", n)
+        _LOG.info("ProcessSetupStatemachine: MOVE_RECIPE: Anzahl Posen=%d", n)
 
         # Keine „stummen“ Fallbacks mehr:
         # Für eine sinnvolle Trajektorie brauchen wir mind. 3 Posen (Start, mind. 1 Innenpunkt, Ende)
         if n <= 2:
             msg = "Rezept enthält zu wenige Posen für MOVE_RECIPE (mind. 3 erforderlich)."
-            _LOG.error("ProcessStatemachine: MOVE_RECIPE: %s", msg)
+            _LOG.error("ProcessSetupStatemachine: MOVE_RECIPE: %s", msg)
             if not self._error_msg:
                 self._error_msg = msg
             self._finish_state(self._sig_move_recipe_done)
-            _LOG.info("ProcessStatemachine: LEAVE MOVE_RECIPE (ERROR)")
+            _LOG.info("ProcessSetupStatemachine: LEAVE MOVE_RECIPE (ERROR)")
             return
 
         self._recipe_index = 1
         pose = self._recipe_poses[self._recipe_index]
-        _LOG.info("ProcessStatemachine: MOVE_RECIPE: starte mit Pose[1] von %d.", n - 2)
+        _LOG.info("ProcessSetupStatemachine: MOVE_RECIPE: starte mit Pose[1] von %d.", n - 2)
         self._current_phase = self.PHASE_MOVE_RECIPE
         self._send_motion_pose(pose, label=f"recipe_{self._recipe_index}")
 
-        _LOG.info("ProcessStatemachine: LEAVE MOVE_RECIPE (warte auf EXECUTED:OK / Folgewaypoints).")
+        _LOG.info("ProcessSetupStatemachine: LEAVE MOVE_RECIPE (warte auf EXECUTED:OK / Folgewaypoints).")
 
     def _on_state_wait_postdispense(self) -> None:
-        _LOG.info("ProcessStatemachine: ENTER WAIT_POSTDISPENSE")
+        _LOG.info("ProcessSetupStatemachine: ENTER WAIT_POSTDISPENSE")
 
-        if not self._error_msg:
+        if not self._error_msg and self._recipe is not None:
             post_t = 0.0
             try:
-                post_t = float(self._recipe.globals.postdispense_time or 0.0)
+                post_t = float(getattr(self._recipe.globals, "postdispense_time", 0.0) or 0.0)
             except Exception:
                 post_t = 0.0
 
-            _LOG.info("ProcessStatemachine: WAIT_POSTDISPENSE: postdispense_time=%.3f s", post_t)
+            _LOG.info("ProcessSetupStatemachine: WAIT_POSTDISPENSE: postdispense_time=%.3f s", post_t)
 
             ms_total = max(0, int(post_t * 1000))
             elapsed = 0
@@ -915,16 +930,16 @@ class ProcessStatemachine(QtCore.QObject):
                 QtCore.QThread.msleep(step)
                 elapsed += step
 
-        _LOG.info("ProcessStatemachine: LEAVE WAIT_POSTDISPENSE")
+        _LOG.info("ProcessSetupStatemachine: LEAVE WAIT_POSTDISPENSE")
         self._finish_state(self._sig_postdispense_wait_done)
 
     def _on_state_move_retreat(self) -> None:
-        _LOG.info("ProcessStatemachine: ENTER MOVE_RETREAT")
+        _LOG.info("ProcessSetupStatemachine: ENTER MOVE_RETREAT")
 
         if self._error_msg or self._should_stop():
-            _LOG.info("ProcessStatemachine: MOVE_RETREAT: Fehler/Stop vor Start erkannt.")
+            _LOG.info("ProcessSetupStatemachine: MOVE_RETREAT: Fehler/Stop vor Start erkannt.")
             self._finish_state(self._sig_retreat_move_done)
-            _LOG.info("ProcessStatemachine: LEAVE MOVE_RETREAT")
+            _LOG.info("ProcessSetupStatemachine: LEAVE MOVE_RETREAT")
             return
 
         if not self._recipe_poses:
@@ -934,56 +949,56 @@ class ProcessStatemachine(QtCore.QObject):
         n = len(self._recipe_poses)
         if n < 2:
             msg = "Rezept enthält zu wenige Posen für MOVE_RETREAT (mind. 2 erforderlich)."
-            _LOG.error("ProcessStatemachine: MOVE_RETREAT: %s", msg)
+            _LOG.error("ProcessSetupStatemachine: MOVE_RETREAT: %s", msg)
             if not self._error_msg:
                 self._error_msg = msg
             self._finish_state(self._sig_retreat_move_done)
-            _LOG.info("ProcessStatemachine: LEAVE MOVE_RETREAT (ERROR)")
+            _LOG.info("ProcessSetupStatemachine: LEAVE MOVE_RETREAT (ERROR)")
             return
 
         last = self._recipe_poses[-1]
-        _LOG.info("ProcessStatemachine: MOVE_RETREAT: fahre Pose[-1].")
+        _LOG.info("ProcessSetupStatemachine: MOVE_RETREAT: fahre Pose[-1].")
         self._current_phase = self.PHASE_MOVE_RETREAT
         self._send_motion_pose(last, label="retreat")
 
-        _LOG.info("ProcessStatemachine: LEAVE MOVE_RETREAT (warte auf EXECUTED:OK).")
+        _LOG.info("ProcessSetupStatemachine: LEAVE MOVE_RETREAT (warte auf EXECUTED:OK).")
 
     def _on_state_move_home(self) -> None:
-        _LOG.info("ProcessStatemachine: ENTER MOVE_HOME")
+        _LOG.info("ProcessSetupStatemachine: ENTER MOVE_HOME")
 
         if self._error_msg or self._should_stop():
-            _LOG.info("ProcessStatemachine: MOVE_HOME: Fehler/Stop vor Start erkannt.")
+            _LOG.info("ProcessSetupStatemachine: MOVE_HOME: Fehler/Stop vor Start erkannt.")
             self._finish_state(self._sig_move_home_done)
-            _LOG.info("ProcessStatemachine: LEAVE MOVE_HOME")
+            _LOG.info("ProcessSetupStatemachine: LEAVE MOVE_HOME")
             return
 
         home = self._get_home_pose()
         if home is None:
             msg = "Keine Home-Pose verfügbar – MOVE_HOME kann nicht ausgeführt werden."
-            _LOG.error("ProcessStatemachine: MOVE_HOME: %s", msg)
+            _LOG.error("ProcessSetupStatemachine: MOVE_HOME: %s", msg)
             if not self._error_msg:
                 self._error_msg = msg
-            _LOG.info("ProcessStatemachine: LEAVE MOVE_HOME (ERROR)")
+            _LOG.info("ProcessSetupStatemachine: LEAVE MOVE_HOME (ERROR)")
             self._finish_state(self._sig_move_home_done)
             return
 
-        _LOG.info("ProcessStatemachine: MOVE_HOME: sende Home-Pose via MotionBridge.")
+        _LOG.info("ProcessSetupStatemachine: MOVE_HOME: sende Home-Pose via MotionBridge.")
         self._current_phase = self.PHASE_MOVE_HOME
         self._send_motion_pose(home, label="home")
 
-        _LOG.info("ProcessStatemachine: LEAVE MOVE_HOME (warte auf EXECUTED:OK).")
+        _LOG.info("ProcessSetupStatemachine: LEAVE MOVE_HOME (warte auf EXECUTED:OK).")
 
     def _on_state_error(self) -> None:
-        _LOG.info("ProcessStatemachine: ENTER ERROR")
+        _LOG.info("ProcessSetupStatemachine: ENTER ERROR")
         self._ended_in_error_state = True
         self._emit_state("ERROR")
 
         msg = self._error_msg or "Unbekannter Prozessfehler."
-        _LOG.error("ProcessStatemachine: notifyError(%s) im ERROR-State", msg)
+        _LOG.error("ProcessSetupStatemachine: notifyError(%s) im ERROR-State", msg)
         self.notifyError.emit(msg)
 
         _LOG.info(
-            "ProcessStatemachine: run beendet (ERROR), stop_requested=%s, "
+            "ProcessSetupStatemachine: run beendet (ERROR), stop_requested=%s, "
             "executed_poses=%d, planned_traj_segments=%d, executed_traj_segments=%d",
             self._stop_requested,
             len(self._executed_poses),
@@ -994,14 +1009,14 @@ class ProcessStatemachine(QtCore.QObject):
         self._stop_machine_and_quit()
 
     def _on_state_finished(self) -> None:
-        _LOG.info("ProcessStatemachine: ENTER FINISHED")
+        _LOG.info("ProcessSetupStatemachine: ENTER FINISHED")
         self._ended_in_finished_state = True
         self._emit_state("FINISHED")
 
         poses_copy: List[PoseStamped] = list(self._executed_poses)
 
         _LOG.info(
-            "ProcessStatemachine: notifyFinished() im FINISHED-State, %d Posen (TCP executed), "
+            "ProcessSetupStatemachine: notifyFinished() im FINISHED-State, %d Posen (TCP executed), "
             "%d geplante Trajs, %d ausgeführte Trajs.",
             len(poses_copy),
             len(self._planned_traj_list),
@@ -1017,7 +1032,7 @@ class ProcessStatemachine(QtCore.QObject):
         self.notifyFinished.emit(result)
 
         _LOG.info(
-            "ProcessStatemachine: run beendet (FINISHED), stop_requested=%s, "
+            "ProcessSetupStatemachine: run beendet (FINISHED), stop_requested=%s, "
             "executed_poses=%d, planned_traj_segments=%d, executed_traj_segments=%d",
             self._stop_requested,
             len(self._executed_poses),

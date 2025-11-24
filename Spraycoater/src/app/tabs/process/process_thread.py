@@ -9,7 +9,8 @@ from PyQt6 import QtCore
 from PyQt6.QtCore import QCoreApplication
 
 from app.model.recipe.recipe import Recipe
-from .process_statemachine import ProcessStatemachine  # <--- neues Modul + Klasse
+from .process_setup_statemachine import ProcessSetupStatemachine   # ehem. ProcessStatemachine
+from .process_run_statemachine import ProcessRunStatemachine       # ehem. ServoRunStatemachine
 
 _LOG = logging.getLogger("app.tabs.process.thread")
 
@@ -17,9 +18,21 @@ _LOG = logging.getLogger("app.tabs.process.thread")
 class ProcessThread(QtCore.QObject):
     """
     Wrapper, der von außen wie ein "Thread" aussieht, aber intern
-    aus einem QThread + ProcessStatemachine (QObject im Worker-Thread) besteht.
+    aus einem QThread + StateMachine-Worker (QObject im Worker-Thread) besteht.
 
-    Öffentliche API (wie vorher):
+    Es gibt zwei Modi:
+
+      - MODE_RECIPE (="setup"):
+          Worker = ProcessSetupStatemachine
+          Quelle = Recipe (paths_compiled)
+          -> Klassischer MoveIt/Motion-Ablauf inkl. Predispense/Retreat, Logging usw.
+
+      - MODE_RUN (="servo"):
+          Worker = ProcessRunStatemachine
+          Quelle = Run-YAML (Joint-Trajektorie für Servo)
+          -> Servo-basierter Replay des Run-Recipes
+
+    Öffentliche API (wie vorher, weiterhin kompatibel):
       - startSignal (pyqtSignal)
       - stopSignal (pyqtSignal)
       - notifyFinished(object)
@@ -30,14 +43,20 @@ class ProcessThread(QtCore.QObject):
       - isRunning()
       - request_stop()
       - wait(timeout_ms)
+
+    Für den Servo-Run-Modus gibt es die Klassenmethode:
+      ProcessThread.for_run(run_yaml_path="...", bridge=...)
     """
+
+    MODE_RECIPE = "setup"
+    MODE_RUN = "servo"
 
     # externe Steuer-Signale (GUI-Seite verwendet diese wie bisher)
     startSignal = QtCore.pyqtSignal()
     stopSignal = QtCore.pyqtSignal()
 
     # Ergebnis / Fehler (vom Worker durchgereicht)
-    notifyFinished = QtCore.pyqtSignal(object)  # Dict[str, Any] oder List[PoseStamped]
+    notifyFinished = QtCore.pyqtSignal(object)  # Dict[str, Any]
     notifyError = QtCore.pyqtSignal(str)
 
     # UI-Hilfssignale
@@ -50,17 +69,23 @@ class ProcessThread(QtCore.QObject):
     def __init__(
         self,
         *,
-        recipe: Recipe,
+        recipe: Optional[Recipe],
         bridge,
         parent: Optional[QtCore.QObject] = None,
+        mode: str = MODE_RECIPE,
+        run_yaml_path: Optional[str] = None,
     ) -> None:
         super().__init__(parent)
 
         self._thread = QtCore.QThread()   # kein Parent, Lebensdauer selbst verwalten
         self._bridge = bridge
-        self._recipe: Recipe = recipe
+        self._recipe: Optional[Recipe] = recipe
 
-        self._worker: Optional[ProcessStatemachine] = None
+        # Modus / Run-Daten
+        self._mode: str = mode or self.MODE_RECIPE
+        self._run_yaml_path: Optional[str] = run_yaml_path
+
+        self._worker: Optional[QtCore.QObject] = None
 
         # Signals vom Wrapper -> Worker (indirekt via Slots)
         self.startSignal.connect(self._on_start_signal)
@@ -79,10 +104,35 @@ class ProcessThread(QtCore.QObject):
                 pass
 
         _LOG.info(
-            "ProcessThread-Wrapper init: Thread=%r",
+            "ProcessThread-Wrapper init: mode=%s, Thread=%r",
+            self._mode,
             int(self._thread.currentThreadId())
             if self._thread.currentThread() is not None
             else None,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Convenience-Konstruktor für Servo-Run-Playback
+    # ------------------------------------------------------------------ #
+
+    @classmethod
+    def for_run(
+        cls,
+        *,
+        run_yaml_path: str,
+        bridge,
+        parent: Optional[QtCore.QObject] = None,
+    ) -> "ProcessThread":
+        """
+        Erzeugt einen ProcessThread im MODE_RUN (= Servo-Modus), der eine
+        Run-YAML-Datei (Joint-Trajektorie) über Servo abfährt.
+        """
+        return cls(
+            recipe=None,
+            bridge=bridge,
+            parent=parent,
+            mode=cls.MODE_RUN,
+            run_yaml_path=run_yaml_path,
         )
 
     # ------------------------------------------------------------------ #
@@ -90,12 +140,14 @@ class ProcessThread(QtCore.QObject):
     # ------------------------------------------------------------------ #
 
     @property
-    def recipe(self) -> Recipe:
+    def recipe(self) -> Optional[Recipe]:
         return self._recipe
 
     def set_recipe(self, recipe: Recipe) -> None:
         """
         Rezept nur wechseln, wenn kein Run aktiv ist.
+        Wird hauptsächlich im MODE_RECIPE benutzt, kann aber im MODE_RUN
+        optional genutzt werden, um z.B. spätere Auswertungen zu stützen.
         """
         if self.isRunning():
             _LOG.warning("ProcessThread.set_recipe ignoriert: Thread/Run läuft noch.")
@@ -104,9 +156,9 @@ class ProcessThread(QtCore.QObject):
         self._recipe = recipe
 
         # Falls bereits ein Worker existiert (aber Thread nicht läuft),
-        # geben wir das Rezept weiter.
-        if self._worker is not None:
-            self._worker.set_recipe(recipe)
+        # geben wir das Rezept an Worker weiter (nur sinnvoll im MODE_RECIPE).
+        if self._worker is not None and isinstance(self._worker, ProcessSetupStatemachine):
+            self._worker.set_recipe(recipe)  # type: ignore[attr-defined]
 
     def isRunning(self) -> bool:
         """
@@ -142,22 +194,42 @@ class ProcessThread(QtCore.QObject):
     # Interne Worker-Verwaltung
     # ------------------------------------------------------------------ #
 
-    def _create_worker(self) -> ProcessStatemachine:
+    def _create_worker(self) -> QtCore.QObject:
         """
-        Erzeugt ein neues ProcessStatemachine-Objekt für einen Run,
+        Erzeugt einen neuen Worker-Statemachine-Objekt für einen Run,
         verschiebt es in den QThread und verdrahtet die Signals.
+
+        MODE_RECIPE -> ProcessSetupStatemachine
+        MODE_RUN    -> ProcessRunStatemachine
         """
-        worker = ProcessStatemachine(recipe=self._recipe, bridge=self._bridge)
+        if self._mode == self.MODE_RUN:
+            worker = ProcessRunStatemachine(
+                run_yaml_path=self._run_yaml_path or "",
+                bridge=self._bridge,
+            )
+            _LOG.info(
+                "ProcessThread: Worker=ProcessRunStatemachine, run_yaml_path=%r",
+                self._run_yaml_path,
+            )
+        else:
+            worker = ProcessSetupStatemachine(
+                recipe=self._recipe,  # kann None sein, Worker loggt das
+                bridge=self._bridge,
+            )
+            _LOG.info(
+                "ProcessThread: Worker=ProcessSetupStatemachine, recipe=%r",
+                getattr(self._recipe, "id", None),
+            )
 
         # Worker in den Hintergrund-Thread verschieben
         worker.moveToThread(self._thread)
 
         # Signals vom Worker -> Wrapper (mit Cleanup)
-        worker.stateChanged.connect(self.stateChanged)
-        worker.logMessage.connect(self.logMessage)
-
-        worker.notifyFinished.connect(self._on_worker_finished)
-        worker.notifyError.connect(self._on_worker_error)
+        # Beide Worker-Typen haben dieselben Signaturen.
+        worker.stateChanged.connect(self.stateChanged)           # type: ignore[attr-defined]
+        worker.logMessage.connect(self.logMessage)               # type: ignore[attr-defined]
+        worker.notifyFinished.connect(self._on_worker_finished)  # type: ignore[attr-defined]
+        worker.notifyError.connect(self._on_worker_error)        # type: ignore[attr-defined]
 
         self._worker = worker
         return worker
@@ -172,10 +244,10 @@ class ProcessThread(QtCore.QObject):
         if worker is None:
             return
 
-        _LOG.info("ProcessThread: cleanup Worker nach Run.")
+        _LOG.info("ProcessThread: cleanup Worker nach Run (mode=%s).", self._mode)
 
         try:
-            # externe Signale lösen, Logging etc.
+            # externe Signale lösen, Logging etc. (nur Setup-Statemachine hat das)
             if hasattr(worker, "_disconnect_signals"):
                 worker._disconnect_signals()  # type: ignore[attr-defined]
         except Exception:
@@ -201,10 +273,10 @@ class ProcessThread(QtCore.QObject):
         - triggert Worker.start() via QueuedConnection
         """
         if not self._thread.isRunning():
-            _LOG.info("ProcessThread: starte Hintergrund-Thread.")
+            _LOG.info("ProcessThread: starte Hintergrund-Thread (mode=%s).", self._mode)
             self._thread.start()
         else:
-            _LOG.info("ProcessThread: Hintergrund-Thread läuft bereits.")
+            _LOG.info("ProcessThread: Hintergrund-Thread läuft bereits (mode=%s).", self._mode)
 
         # ggf. alten Worker wegräumen (sollte nach Run ohnehin passiert sein)
         if self._worker is not None:
