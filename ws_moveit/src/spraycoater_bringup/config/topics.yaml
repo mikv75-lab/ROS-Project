@@ -179,8 +179,9 @@ topics:
 
       # UI / ProcessThread → SprayPath-Node:
       # gefahrene Posen (Istpfad) als PoseArray
+      # 👉 eigener Topicname, um keinen Loop zu bauen
       - id: executed_poses
-        name: /spraycoater/spray_path/executed_poses
+        name: /spraycoater/spray_path/executed_poses_in
         type: geometry_msgs/msg/PoseArray
         qos: default
 
@@ -207,7 +208,7 @@ topics:
       - id: executed_poses
         name: /spraycoater/spray_path/executed_poses
         type: geometry_msgs/msg/PoseArray
-        qos: default
+        qos: latched
 
       # SprayPath-Node → UI/RViz: fertige Marker für den Istpfad
       - id: executed_markers

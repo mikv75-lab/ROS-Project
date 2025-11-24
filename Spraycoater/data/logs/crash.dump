@@ -1,39 +1,6 @@
 Fatal Python error: Segmentation fault
 
-Thread 0x00007f28f37fe6c0 (most recent call first):
-  File "/usr/lib/python3.12/threading.py", line 355 in wait
-  File "/usr/lib/python3.12/threading.py", line 655 in wait
-  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_timeout.py", line 43 in _on_run
-  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_daemon_thread.py", line 53 in run
-  File "/usr/lib/python3.12/threading.py", line 1073 in _bootstrap_inner
-  File "/usr/lib/python3.12/threading.py", line 1030 in _bootstrap
-  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydev_bundle/pydev_monkey.py", line 1134 in __call__
-
-Thread 0x00007f29d5a0b6c0 (most recent call first):
-  File "/usr/lib/python3.12/threading.py", line 359 in wait
-  File "/usr/lib/python3.12/threading.py", line 655 in wait
-  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/pydevd.py", line 2257 in _do_wait_suspend
-  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/pydevd.py", line 2188 in do_wait_suspend
-  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/context.py", line 137 in ok
-  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 792 in _wait_for_ready_callbacks
-  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 887 in wait_for_ready_callbacks
-  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 917 in _spin_once_impl
-  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 934 in spin_once
-  File "/opt/ros/rolling/lib/python3.12/site-packages/rclpy/executors.py", line 350 in spin
-  File "/root/Spraycoater/src/ros/bridge/runner.py", line 97 in _spin
-  File "/usr/lib/python3.12/threading.py", line 1010 in run
-  File "/usr/lib/python3.12/threading.py", line 1073 in _bootstrap_inner
-  File "/usr/lib/python3.12/threading.py", line 1030 in _bootstrap
-  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydev_bundle/pydev_monkey.py", line 1134 in __call__
-
-Thread 0x00007f29f78246c0 (most recent call first):
-  File "/root/Spraycoater/src/ros/ros_launcher.py", line 100 in _stream_proc_to_logger
-  File "/usr/lib/python3.12/threading.py", line 1010 in run
-  File "/usr/lib/python3.12/threading.py", line 1073 in _bootstrap_inner
-  File "/usr/lib/python3.12/threading.py", line 1030 in _bootstrap
-  File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydev_bundle/pydev_monkey.py", line 1134 in __call__
-
-Thread 0x00007f2a54de66c0 (most recent call first):
+Thread 0x00007efc29f5f6c0 (most recent call first):
   File "/usr/lib/python3.12/threading.py", line 359 in wait
   File "/usr/lib/python3.12/threading.py", line 655 in wait
   File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/pydevd.py", line 325 in _on_run
@@ -41,7 +8,7 @@ Thread 0x00007f2a54de66c0 (most recent call first):
   File "/usr/lib/python3.12/threading.py", line 1073 in _bootstrap_inner
   File "/usr/lib/python3.12/threading.py", line 1030 in _bootstrap
 
-Thread 0x00007f2a555e76c0 (most recent call first):
+Thread 0x00007efc2a7606c0 (most recent call first):
   File "/usr/lib/python3.12/threading.py", line 359 in wait
   File "/usr/lib/python3.12/threading.py", line 655 in wait
   File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/pydevd.py", line 279 in _on_run
@@ -49,14 +16,14 @@ Thread 0x00007f2a555e76c0 (most recent call first):
   File "/usr/lib/python3.12/threading.py", line 1073 in _bootstrap_inner
   File "/usr/lib/python3.12/threading.py", line 1030 in _bootstrap
 
-Thread 0x00007f2a55ee86c0 (most recent call first):
+Thread 0x00007efc2b0616c0 (most recent call first):
   File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_comm.py", line 227 in _read_line
   File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_comm.py", line 245 in _on_run
   File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_daemon_thread.py", line 53 in run
   File "/usr/lib/python3.12/threading.py", line 1073 in _bootstrap_inner
   File "/usr/lib/python3.12/threading.py", line 1030 in _bootstrap
 
-Thread 0x00007f2a566e96c0 (most recent call first):
+Thread 0x00007efc2b8626c0 (most recent call first):
   File "/usr/lib/python3.12/threading.py", line 359 in wait
   File "/usr/lib/python3.12/queue.py", line 180 in get
   File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_comm.py", line 390 in _on_run
@@ -64,9 +31,13 @@ Thread 0x00007f2a566e96c0 (most recent call first):
   File "/usr/lib/python3.12/threading.py", line 1073 in _bootstrap_inner
   File "/usr/lib/python3.12/threading.py", line 1030 in _bootstrap
 
-Thread 0x00007f2a57db2b80 (most recent call first):
-  File "/root/Spraycoater/src/app/main_gui.py", line 158 in main
-  File "/root/Spraycoater/src/app/main_gui.py", line 169 in <module>
+Current thread 0x00007efc2cf2bb80 (most recent call first):
+  File "/root/Spraycoater/.venv/lib/python3.12/site-packages/pyvista/plotting/plotter.py", line 2157 in render
+  File "/root/Spraycoater/.venv/lib/python3.12/site-packages/pyvistaqt/plotting.py", line 320 in _render
+  File "/root/Spraycoater/.venv/lib/python3.12/site-packages/pyvistaqt/plotting.py", line 327 in render
+  File "/root/Spraycoater/src/app/main_gui.py", line 171 in notify
+  File "/root/Spraycoater/src/app/main_gui.py", line 211 in main
+  File "/root/Spraycoater/src/app/main_gui.py", line 223 in <module>
   File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_runpy.py", line 118 in _run_code
   File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_runpy.py", line 127 in _run_module_code
   File "/root/.vscode-server/extensions/ms-python.debugpy-2025.16.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_runpy.py", line 310 in run_path

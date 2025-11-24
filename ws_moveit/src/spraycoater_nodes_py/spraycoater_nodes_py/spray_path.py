@@ -19,21 +19,21 @@ class SprayPath(Node):
     SprayPath-Manager.
 
     SUB:
-      - spray_path.set            (MarkerArray)
+      - spray_path.set              (MarkerArray)
         → Kommando vom PyQt-Editor (fertiger Pfad als MarkerArray, Sollpfad)
-      - spray_path.executed_poses (PoseArray)
-        → gefahrene Posen vom ProcessTab / Recorder (Istpfad)
+      - spray_path.executed_poses_in (PoseArray)
+        → gefahrene Posen vom ProcessTab / Recorder (Istpfad, UI → Node)
 
     PUB (alle TRANSIENT_LOCAL / latched):
       - spray_path.poses            (PoseArray): Punkte des Sollpfads als neutrale Posen
       - spray_path.markers          (MarkerArray): aktuelles MarkerArray für RViz (Sollpfad)
       - spray_path.current          (String): aktueller Pfad-Name (optional für UI)
-      - spray_path.executed_poses   (PoseArray): gefahrene Posen (durchgereicht)
+      - spray_path.executed_poses   (PoseArray): gefahrene Posen (Node → UI/RViz)
       - spray_path.executed_markers (MarkerArray): Marker für den Istpfad (z.B. andere Farbe)
 
     Semantik:
       - JEDER set-Aufruf ersetzt den aktuellen Sollpfad vollständig.
-      - JEDER executed_poses-Aufruf ersetzt den aktuellen Istpfad vollständig.
+      - JEDER executed_poses_in-Aufruf ersetzt den aktuellen Istpfad vollständig.
       - Kein Timer-Republish; Late Joiner bekommen letzten Stand über QoS.
     """
 
@@ -51,8 +51,9 @@ class SprayPath(Node):
         topic_set = self.loader.subscribe_topic(self.GROUP, "set")
         qos_set = self.loader.qos_by_id("subscribe", self.GROUP, "set")
 
-        topic_exec_in = self.loader.subscribe_topic(self.GROUP, "executed_poses")
-        qos_exec_in = self.loader.qos_by_id("subscribe", self.GROUP, "executed_poses")
+        # ⚠️ wichtig: UI → Node nutzt jetzt executed_poses_in
+        topic_exec_in = self.loader.subscribe_topic(self.GROUP, "executed_poses_in")
+        qos_exec_in = self.loader.qos_by_id("subscribe", self.GROUP, "executed_poses_in")
 
         # Latched QoS für unsere Publisher (wie bei Scene)
         latched_qos = QoSProfile(
@@ -102,7 +103,7 @@ class SprayPath(Node):
         self.get_logger().info(
             "✅ SprayPathManager bereit: "
             "/set → /poses + /markers (+ /current), "
-            "executed_poses → executed_markers, "
+            "executed_poses_in → executed_poses + executed_markers, "
             "TRANSIENT_LOCAL (latched), kein 1 Hz-Republish."
         )
 
@@ -223,7 +224,9 @@ class SprayPath(Node):
 
     def _on_executed_poses(self, msg: PoseArray) -> None:
         if msg is None or len(msg.poses) == 0:
-            self.get_logger().warning("⚠️ spray_path.executed_poses: leeres PoseArray – ignoriere")
+            self.get_logger().warning(
+                "⚠️ spray_path.executed_poses_in: leeres PoseArray – ignoriere"
+            )
             return
 
         frame = (msg.header.frame_id or "").strip() or self._last_exec_frame
@@ -239,7 +242,8 @@ class SprayPath(Node):
 
         if len(pa.poses) < 2:
             self.get_logger().warning(
-                "⚠️ spray_path.executed_poses: <2 Posen, Marker-LINE_STRIP wäre degeneriert – ignoriere"
+                "⚠️ spray_path.executed_poses_in: <2 Posen, Marker-LINE_STRIP wäre "
+                "degeneriert – ignoriere"
             )
             return
 

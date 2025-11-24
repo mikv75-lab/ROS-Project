@@ -21,11 +21,25 @@ for p in (SRC_ROOT, RES_ROOT):
 LOG_DIR = os.path.join(PROJECT_ROOT, "data", "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 CRASH_PATH = os.path.join(LOG_DIR, "crash.dump")
+
+# Vorhandenen Crashdump (vom letzten Lauf) einmal ausgeben, dann löschen
 try:
     if os.path.exists(CRASH_PATH):
-        os.remove(CRASH_PATH)
+        try:
+            with open(CRASH_PATH, "r", encoding="utf-8") as _old:
+                print("\n=== Previous crash.dump ===", file=sys.stderr)
+                print(_old.read(), file=sys.stderr)
+                sys.stderr.flush()
+        except Exception:
+            pass
+        try:
+            os.remove(CRASH_PATH)
+        except Exception:
+            pass
 except Exception:
     pass
+
+# Neuen Crashdump-Filehandler anlegen
 try:
     _CRASH_FH = open(CRASH_PATH, "w", buffering=1, encoding="utf-8")
     faulthandler.enable(file=_CRASH_FH, all_threads=True)
@@ -37,18 +51,33 @@ try:
 except Exception:
     _CRASH_FH = None
 
+
 def _excepthook(exc_type, exc, tb):
+    # 1) Immer direkt in die Konsole (STDERR) drucken
+    try:
+        print("\n=== UNCAUGHT EXCEPTION ===", file=sys.stderr)
+        traceback.print_exception(exc_type, exc, tb, file=sys.stderr)
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+    # 2) Zusätzlich über logging-Subsystem
     try:
         logging.critical("UNCAUGHT EXCEPTION", exc_info=(exc_type, exc, tb))
     except Exception:
         pass
+
+    # 3) Und in crash.dump schreiben
     try:
         if _CRASH_FH:
             traceback.print_exception(exc_type, exc, tb, file=_CRASH_FH)
             _CRASH_FH.flush()
     except Exception:
         pass
+
+
 sys.excepthook = _excepthook
+
 
 def _on_exit_flush():
     try:
@@ -56,6 +85,8 @@ def _on_exit_flush():
             _CRASH_FH.flush()
     except Exception:
         pass
+
+
 atexit.register(_on_exit_flush)
 
 # ==== Imports, nachdem Backend fixiert ist ====
@@ -87,7 +118,8 @@ from vtkmodules.vtkCommonCore import vtkFileOutputWindow, vtkOutputWindow
 vtk_log_dir = os.path.join(PROJECT_ROOT, "data", "logs")
 os.makedirs(vtk_log_dir, exist_ok=True)
 vtk_log = os.path.join(vtk_log_dir, "vtk.log")
-fow = vtkFileOutputWindow(); fow.SetFileName(vtk_log)
+fow = vtkFileOutputWindow()
+fow.SetFileName(vtk_log)
 vtkOutputWindow.SetInstance(fow)
 logging.getLogger(__name__).info("VTK log -> %s", vtk_log)
 
@@ -95,14 +127,17 @@ logging.getLogger(__name__).info("VTK log -> %s", vtk_log)
 from app.startup_fsm import StartupMachine
 from app.main_window import MainWindow   # MainWindow nutzt Splitter (RViz-Placeholder rechts) & PyVista nur im RecipeTab
 
+
 def resource_path(*parts: str) -> str:
     return os.path.join(RES_ROOT, *parts)
+
 
 def _startup_path_strict() -> str:
     cfg = resource_path("config", "startup.yaml")
     if not os.path.exists(cfg):
         raise FileNotFoundError(f"startup.yaml nicht gefunden: {cfg}")
     return cfg
+
 
 def _make_splash():
     pm_path = resource_path("images", "splash.png")
@@ -117,14 +152,32 @@ def _make_splash():
     splash.show()
     return splash
 
+
 def _nonblocking_logging_shutdown():
     try:
         logging.shutdown()
     except Exception:
         pass
 
+
+class ExceptionApp(QApplication):
+    """
+    QApplication-Subklasse, damit Exceptions in Qt-Events
+    (Slots, Timer, QThreads, Signals) NICHT still verschluckt werden,
+    sondern über _excepthook in Konsole + crash.dump landen.
+    """
+    def notify(self, receiver, event):
+        try:
+            return super().notify(receiver, event)
+        except Exception:
+            _excepthook(*sys.exc_info())
+            # False zurückgeben, damit Qt das Event als "nicht handled" sieht
+            return False
+
+
 def main():
-    app = QApplication(sys.argv)
+    # ExceptionApp statt "normaler" QApplication verwenden
+    app = ExceptionApp(sys.argv)
     app.aboutToQuit.connect(lambda: QTimer.singleShot(0, _nonblocking_logging_shutdown))
 
     splash = _make_splash()
@@ -164,6 +217,7 @@ def main():
         except Exception:
             pass
     sys.exit(rc)
+
 
 if __name__ == "__main__":
     main()

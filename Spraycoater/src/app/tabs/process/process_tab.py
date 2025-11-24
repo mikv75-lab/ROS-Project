@@ -9,8 +9,8 @@ from typing import Optional, List, Dict, Any
 
 from PyQt6 import QtCore
 from PyQt6.QtWidgets import (
-    QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout,
-    QGroupBox, QSizePolicy, QFileDialog, QMessageBox, QTextEdit
+    QWidget, QPushButton, QLabel, QVBoxLayout,
+    QGroupBox, QFileDialog, QMessageBox, QTextEdit
 )
 
 from geometry_msgs.msg import PoseStamped, PoseArray
@@ -540,13 +540,11 @@ class ProcessTab(QWidget):
 
         thr = ProcessThread(recipe=recipe, bridge=self.bridge)
 
-        # WICHTIG:
         # notifyFinished(object) → Slot mit Arg via Lambda einbinden,
-        # sonst meckert Qt über Signatur-Mismatch.
+        # damit die Signaturen sauber passen.
         thr.notifyFinished.connect(
-            lambda poses_obj, self=self: self._on_process_finished_success(poses_obj)
+            lambda result_obj, self=self: self._on_process_finished_success(result_obj)
         )
-        # WICHTIG: auch für notifyError über ein Lambda gehen
         thr.notifyError.connect(
             lambda msg, self=self: self._on_process_finished_error(msg)
         )
@@ -642,7 +640,7 @@ class ProcessTab(QWidget):
 
         _LOG.info("ProcessTab: Rezept '%s' geladen, wende nun auf UI/Threads an.", fname)
 
-        # Variante B: leicht verzögert im nächsten Eventloop-Tick
+        # leicht verzögert im nächsten Eventloop-Tick
         QtCore.QTimer.singleShot(
             0,
             lambda m=model, f=fname, self=self: self._apply_loaded_recipe(m, f)
@@ -732,9 +730,8 @@ class ProcessTab(QWidget):
     def _on_stop_clicked(self) -> None:
         """
         Stop-Button:
-          - setzt das Stop-Flag im ProcessThread *direkt* (ohne auf die
-            QThread-Eventloop zu warten),
-          - schickt zusätzlich das stopSignal (Abwärtskompatibilität),
+          - setzt das Stop-Flag im ProcessThread direkt,
+          - schickt zusätzlich das stopSignal,
           - stoppt ggf. auch den RobotInitThread.
         """
         self._append_process_log("=== Stop angefordert ===")
@@ -788,14 +785,21 @@ class ProcessTab(QWidget):
     # Callbacks vom ProcessThread
     # ---------------------------------------------------------------------
 
-    def _on_process_finished_success(self, poses_obj: object) -> None:
+    def _on_process_finished_success(self, result_obj: object) -> None:
         """
-        Wird vom ProcessThread.notifyFinished(poses_list) gerufen.
+        Wird vom ProcessThread.notifyFinished(...) gerufen.
 
-        poses_obj: erwartet wird eine List[PoseStamped], kann aber None/anderes sein.
+        result_obj kann sein:
+          - Dict:
+              {
+                "poses": List[PoseStamped],
+                "planned_traj": List[RobotTrajectoryMsg] | RobotTrajectoryMsg | None,
+                "executed_traj": List[RobotTrajectoryMsg] | RobotTrajectoryMsg | None,
+              }
+          - oder (rückwärtskompatibel) eine List[PoseStamped]
 
         Neu:
-          - Executed-Trajektorie als PoseArray an SprayPath senden
+          - Executed-TCP-Pfad als PoseArray an SprayPath senden
           - Metriken + Score berechnen
           - InfoBox + Log damit updaten
         """
@@ -809,8 +813,45 @@ class ProcessTab(QWidget):
             self._process_outcome = "success"
 
         poses: List[PoseStamped] = []
-        if isinstance(poses_obj, list) and poses_obj:
-            poses = [p for p in poses_obj if isinstance(p, PoseStamped)]
+        planned_traj: Any = None
+        executed_traj: Any = None
+
+        # -------------------------
+        # Result-Objekt auswerten
+        # -------------------------
+        if isinstance(result_obj, dict):
+            raw_poses = result_obj.get("poses") or result_obj.get("tcp_poses") or []
+            if isinstance(raw_poses, list):
+                poses = [p for p in raw_poses if isinstance(p, PoseStamped)]
+
+            planned_traj = result_obj.get("planned_traj", None)
+            executed_traj = result_obj.get("executed_traj", None)
+
+            # Nur Infos loggen – ob das Listen oder einzelne sind, ist uns hier egal
+            if planned_traj is not None:
+                if isinstance(planned_traj, list):
+                    self._append_process_log(
+                        f"Geplante Trajektorien vom Motion-Node empfangen (Segmente: {len(planned_traj)})."
+                    )
+                else:
+                    self._append_process_log("Geplante Trajektorie (planned_traj) vom Motion-Node empfangen.")
+
+            if executed_traj is not None:
+                if isinstance(executed_traj, list):
+                    self._append_process_log(
+                        f"Ausgeführte Trajektorien vom Motion-Node empfangen (Segmente: {len(executed_traj)})."
+                    )
+                else:
+                    self._append_process_log("Ausgeführte Trajektorie (executed_traj) vom Motion-Node empfangen.")
+        elif isinstance(result_obj, list):
+            # Rückwärtskompatibel: alte Variante, nur Pose-Liste
+            poses = [p for p in result_obj if isinstance(p, PoseStamped)]
+        else:
+            _LOG.warning(
+                "ProcessTab: _on_process_finished_success: unerwarteter Result-Typ %r, "
+                "erwarte Dict oder List[PoseStamped].",
+                type(result_obj),
+            )
 
         # 1) Executed-Pfad an SprayPath senden
         if poses:
@@ -843,7 +884,7 @@ class ProcessTab(QWidget):
         else:
             _LOG.info("ProcessTab: notifyFinished ohne gültige PoseListe oder Liste leer.")
 
-        # 2) Trajektorien-Metriken + Score berechnen
+        # 2) Trajektorien-Metriken + Score berechnen (auf Basis der TCP-Posen)
         try:
             metrics = self._compute_trajectory_metrics_from_ps_list(poses)
             score = self._compute_trajectory_score(metrics)

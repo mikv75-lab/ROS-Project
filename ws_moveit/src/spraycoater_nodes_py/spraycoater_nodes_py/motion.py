@@ -122,10 +122,8 @@ class Motion(Node):
         topic_prev = self.loader.publish_topic(NODE_KEY, "preview_markers")
         topic_res  = self.loader.publish_topic(NODE_KEY, "motion_result")
 
-        # WICHTIG:
-        #  - pub_traj_plan   → geplante RobotTrajectoryMsg (latched)
-        #  - pub_traj_exec   → ausgeführte RobotTrajectoryMsg (latched)
-        # Dein ProcessThread kann diese pro Phase sammeln.
+        # pub_traj_plan   → geplante RobotTrajectoryMsg (latched)
+        # pub_traj_exec   → ausgeführte RobotTrajectoryMsg (latched)
         self.pub_traj_jt   = self.create_publisher(JointTrajectory,       topic_traj, qos_traj)
         self.pub_traj_plan = self.create_publisher(RobotTrajectoryMsg,    topic_plan, _latched_qos())
         self.pub_traj_exec = self.create_publisher(RobotTrajectoryMsg,    topic_exec, _latched_qos())
@@ -477,13 +475,10 @@ class Motion(Node):
         """
         Führt die aktuell geplante Trajektorie aus.
 
-        Wichtig für dich:
-          - Vor dem Execute nimmst du über /motion/result das `PLANNED:OK ...`
+        Wichtig:
           - Beim EXECUTED:OK wird:
               * /spraycoater/motion/trajectory_executed (RobotTrajectoryMsg, latched)
                 mit der tatsächlich ausgeführten Trajektorie publiziert.
-          - Dein ProcessThread kann beides als (planned, executed) Paar für
-            die aktuelle Phase in Listen schreiben.
         """
         if msg.data is False:
             self._on_stop(MsgEmpty())

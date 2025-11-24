@@ -7,6 +7,7 @@ from PyQt6 import QtCore
 
 from std_msgs.msg import String as MsgString
 from geometry_msgs.msg import PoseStamped
+from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg
 
 from config.startup import AppContent
 from .base_bridge import BaseBridge, sub_handler
@@ -28,6 +29,8 @@ class MotionSignals(QtCore.QObject):
 
     Zusätzlich (Inbound aus ROS):
       - motionResultChanged(str): Texte aus /spraycoater/motion/result
+      - plannedTrajectoryChanged(RobotTrajectoryMsg)
+      - executedTrajectoryChanged(RobotTrajectoryMsg)
 
     Plus:
       - reemit_cached(): emittiert den letzten bekannten motionResult-Text erneut.
@@ -46,6 +49,10 @@ class MotionSignals(QtCore.QObject):
     moveToPoseWithSpeedRequested = QtCore.pyqtSignal(object, float)
 
     motionResultChanged = QtCore.pyqtSignal(str)
+
+    # NEU: MoveIt-Trajektorien als Qt-Signale
+    plannedTrajectoryChanged = QtCore.pyqtSignal(object)   # RobotTrajectoryMsg
+    executedTrajectoryChanged = QtCore.pyqtSignal(object)  # RobotTrajectoryMsg
 
     def __init__(self, parent: Optional[QtCore.QObject] = None) -> None:
         super().__init__(parent)
@@ -81,6 +88,11 @@ class MotionBridge(BaseBridge):
     Hinweis:
       Die Pose darf in beliebigem Frame kommen (z.B. 'scene').
       Der Motion-Node transformiert sie nun intern nach 'world'.
+
+    NEU:
+      - Empfang der geplanten und ausgeführten Trajektorie als
+        moveit_msgs/RobotTrajectory (latched Topics) und Weitergabe
+        als Qt-Signale + Cache.
     """
 
     GROUP = "motion"
@@ -97,6 +109,10 @@ class MotionBridge(BaseBridge):
 
         # pending für freie Pose (Recipe)
         self._pending_pose: bool = False
+
+        # NEU: Cache für Trajektorien (MoveIt RobotTrajectoryMsg)
+        self._last_planned_traj: Optional[RobotTrajectoryMsg] = None
+        self._last_executed_traj: Optional[RobotTrajectoryMsg] = None
 
         super().__init__("motion_bridge", content)
 
@@ -152,6 +168,30 @@ class MotionBridge(BaseBridge):
                 self._pending_pose = False
 
         self.signals.motionResultChanged.emit(text)
+
+    # NEU: geplante Trajektorie vom Motion-Node (latched Topic)
+    @sub_handler("motion", "planned_trajectory_rt")
+    def _on_planned_traj(self, msg: RobotTrajectoryMsg):
+        """
+        Wird aufgerufen, wenn der Motion-Node eine geplante Trajektorie publiziert.
+        """
+        self._last_planned_traj = msg
+        try:
+            self.signals.plannedTrajectoryChanged.emit(msg)
+        except Exception as e:
+            self.get_logger().error(f"[motion] plannedTrajectoryChanged emit failed: {e}")
+
+    # NEU: ausgeführte Trajektorie vom Motion-Node (latched Topic)
+    @sub_handler("motion", "executed_trajectory_rt")
+    def _on_executed_traj(self, msg: RobotTrajectoryMsg):
+        """
+        Wird aufgerufen, wenn der Motion-Node eine ausgeführte Trajektorie publiziert.
+        """
+        self._last_executed_traj = msg
+        try:
+            self.signals.executedTrajectoryChanged.emit(msg)
+        except Exception as e:
+            self.get_logger().error(f"[motion] executedTrajectoryChanged emit failed: {e}")
 
     # ------------------------------------------------------------------
     # UI → Bridge: Speed-Handling
@@ -286,7 +326,6 @@ class MotionBridge(BaseBridge):
         """
         if pose is None:
             self.get_logger().warning("[motion] move_to_pose: pose is None")
-            return
         self._move_to_pose_impl(pose, set_speed=set_speed)
 
     def _move_to_pose_impl(self, pose: PoseStamped, set_speed: Optional[float] = None):
@@ -332,3 +371,13 @@ class MotionBridge(BaseBridge):
         except Exception as e:
             self._pending_pose = False
             self.get_logger().error(f"[motion] move_to_pose_impl failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Getter für geplante/ausgeführte Trajektorien (optional)
+    # ------------------------------------------------------------------
+
+    def last_planned_trajectory(self) -> Optional[RobotTrajectoryMsg]:
+        return self._last_planned_traj
+
+    def last_executed_trajectory(self) -> Optional[RobotTrajectoryMsg]:
+        return self._last_executed_traj

@@ -17,6 +17,7 @@ from .motion_bridge import MotionBridge
 from geometry_msgs.msg import PoseStamped, PoseArray
 from sensor_msgs.msg import JointState
 from visualization_msgs.msg import MarkerArray
+from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg  # NEU
 
 _LOG = logging.getLogger("ros.ui_bridge")
 
@@ -261,13 +262,49 @@ class RobotState:
             return self._joints
 
 
+# ------------------------------ State: Motion (NEU) ------------------------------
+
+class MotionState:
+    """
+    Signal-freier State-Container für Motion:
+      - planned (RobotTrajectoryMsg|None)
+      - executed (RobotTrajectoryMsg|None)
+      - thread-sicher per RLock
+
+    Dient als einfacher Cache, damit UI / ProcessTab bei Bedarf
+    auf die letzte geplante/ausgeführte Trajektorie zugreifen kann.
+    """
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._planned: Optional[RobotTrajectoryMsg] = None
+        self._executed: Optional[RobotTrajectoryMsg] = None
+
+    # Setter
+    def _set_planned(self, msg: RobotTrajectoryMsg) -> None:
+        with self._lock:
+            self._planned = msg
+
+    def _set_executed(self, msg: RobotTrajectoryMsg) -> None:
+        with self._lock:
+            self._executed = msg
+
+    # Getter
+    def planned(self) -> Optional[RobotTrajectoryMsg]:
+        with self._lock:
+            return self._planned
+
+    def executed(self) -> Optional[RobotTrajectoryMsg]:
+        with self._lock:
+            return self._executed
+
+
 # ============================== UIBridge ==============================
 
 class UIBridge:
     """
     Dünne UI-Bridge:
       - Start/Stop RosBridge
-      - Cacht Zustände in `scene`, `poses`, `spraypath`, `robot` (signal-frei)
+      - Cacht Zustände in `scene`, `poses`, `spraypath`, `robot`, `motion` (signal-frei)
       - Stellt Set-APIs bereit (UI -> ROS) via Bridge-Knoten
       - hält zusätzlich ServoBridge in self._servo für den ServiceTab
       - hält zusätzlich RobotBridge in self._robot für Service/Status-UI
@@ -283,6 +320,7 @@ class UIBridge:
         self.poses = PosesState()
         self.spraypath = SprayPathState()
         self.robot = RobotState()
+        self.motion = MotionState()  # NEU
 
         # gehaltene Bridge-Referenzen
         self._sb: Optional[SceneBridge] = None
@@ -400,8 +438,9 @@ class UIBridge:
             if mb is None:
                 raise RuntimeError("MotionBridge nicht gefunden – wurde sie gestartet?")
             self._mb = mb
-            # aktuell kein eigener State-Cache nötig, wir reichen nur die Bridge durch
+            # aktuell: sowohl Bridge direkt durchreichen als auch State-Cache versorgen
             self._motion = mb  # wichtig: für Widgets als `bridge._motion`
+            self._wire_motion_into_state(mb)  # NEU
 
             # Sanity-Check für neue Signale (moveToPoseRequested etc.)
             try:
@@ -417,7 +456,7 @@ class UIBridge:
                     else:
                         _LOG.info(
                             "UIBridge: MotionBridge-Signale vorhanden "
-                            "(moveToPoseRequested, motionResultChanged)."
+                            "(moveToPoseRequested, motionResultChanged, planned/executedTraj)."
                         )
             except Exception:
                 _LOG.exception("UIBridge: Fehler beim Prüfen der MotionBridge-Signale.")
@@ -520,6 +559,10 @@ class UIBridge:
 
         Der SprayPath-Node erzeugt daraus wiederum MarkerArray für RViz,
         analog zum Rezeptpfad.
+
+        Achtung:
+          - UI → Node:  topics.spray_path.subscribe.executed_poses_in
+          - Node → UI:  topics.spray_path.publish.executed_poses
         """
         if not self._spb:
             _LOG.error("set_executed_path: SprayPathBridge nicht verfügbar.")
@@ -652,6 +695,33 @@ class UIBridge:
         sig.errorsChanged.connect(lambda v: self.robot._set_errors(v))
         sig.tcpPoseChanged.connect(lambda msg: self.robot._set_tcp_pose(msg))
         sig.jointsChanged.connect(lambda msg: self.robot._set_joints(msg))
+
+    def _wire_motion_into_state(self, mb: MotionBridge) -> None:
+        """
+        Verbindet die Qt-Signale der MotionBridge mit unserem MotionState-Cache.
+        So kannst du z.B. im ProcessTab nach einem Run aus bridge.motion.planned()
+        und bridge.motion.executed() die letzten Trajs ziehen.
+        """
+        sig = getattr(mb, "signals", None)
+        if sig is None:
+            _LOG.warning("UIBridge: MotionBridge.signals ist None – kein MotionState-Cache möglich.")
+            return
+
+        if hasattr(sig, "plannedTrajectoryChanged"):
+            sig.plannedTrajectoryChanged.connect(lambda msg: self.motion._set_planned(msg))
+        else:
+            _LOG.warning(
+                "UIBridge: MotionSignals.plannedTrajectoryChanged fehlt – "
+                "geplante Trajektorie wird nicht gecached."
+            )
+
+        if hasattr(sig, "executedTrajectoryChanged"):
+            sig.executedTrajectoryChanged.connect(lambda msg: self.motion._set_executed(msg))
+        else:
+            _LOG.warning(
+                "UIBridge: MotionSignals.executedTrajectoryChanged fehlt – "
+                "ausgeführte Trajektorie wird nicht gecached."
+            )
 
 
 def get_ui_bridge(_ctx) -> UIBridge:
