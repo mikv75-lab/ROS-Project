@@ -22,13 +22,13 @@ class SprayPath(Node):
       - spray_path.set              (MarkerArray)
         → Kommando vom PyQt-Editor (fertiger Pfad als MarkerArray, Sollpfad)
       - spray_path.executed_poses_in (PoseArray)
-        → gefahrene Posen vom ProcessTab / Recorder (Istpfad, UI → Node)
+        → gefahrene Posen vom ProcessTab / Recorder (Istpfad)
 
     PUB (alle TRANSIENT_LOCAL / latched):
       - spray_path.poses            (PoseArray): Punkte des Sollpfads als neutrale Posen
       - spray_path.markers          (MarkerArray): aktuelles MarkerArray für RViz (Sollpfad)
       - spray_path.current          (String): aktueller Pfad-Name (optional für UI)
-      - spray_path.executed_poses   (PoseArray): gefahrene Posen (Node → UI/RViz)
+      - spray_path.executed_poses   (PoseArray): gefahrene Posen (durchgereicht)
       - spray_path.executed_markers (MarkerArray): Marker für den Istpfad (z.B. andere Farbe)
 
     Semantik:
@@ -51,7 +51,11 @@ class SprayPath(Node):
         topic_set = self.loader.subscribe_topic(self.GROUP, "set")
         qos_set = self.loader.qos_by_id("subscribe", self.GROUP, "set")
 
-        # ⚠️ wichtig: UI → Node nutzt jetzt executed_poses_in
+        # ⚠️ ID muss zu topics.yaml passen:
+        #   subscribe:
+        #     - id: executed_poses_in
+        #       name: /spraycoater/spray_path/executed_poses_in
+        #       type: geometry_msgs/msg/PoseArray
         topic_exec_in = self.loader.subscribe_topic(self.GROUP, "executed_poses_in")
         qos_exec_in = self.loader.qos_by_id("subscribe", self.GROUP, "executed_poses_in")
 
@@ -65,6 +69,7 @@ class SprayPath(Node):
         topic_current = self.loader.publish_topic(self.GROUP, "current")
         topic_poses = self.loader.publish_topic(self.GROUP, "poses")
         topic_markers = self.loader.publish_topic(self.GROUP, "markers")
+        # Node → UI/RViz: gefahrene Posen (Istpfad)
         topic_exec_poses = self.loader.publish_topic(self.GROUP, "executed_poses")
         topic_exec_markers = self.loader.publish_topic(self.GROUP, "executed_markers")
 
@@ -224,9 +229,7 @@ class SprayPath(Node):
 
     def _on_executed_poses(self, msg: PoseArray) -> None:
         if msg is None or len(msg.poses) == 0:
-            self.get_logger().warning(
-                "⚠️ spray_path.executed_poses_in: leeres PoseArray – ignoriere"
-            )
+            self.get_logger().warning("⚠️ spray_path.executed_poses_in: leeres PoseArray – ignoriere")
             return
 
         frame = (msg.header.frame_id or "").strip() or self._last_exec_frame
@@ -242,8 +245,7 @@ class SprayPath(Node):
 
         if len(pa.poses) < 2:
             self.get_logger().warning(
-                "⚠️ spray_path.executed_poses_in: <2 Posen, Marker-LINE_STRIP wäre "
-                "degeneriert – ignoriere"
+                "⚠️ spray_path.executed_poses_in: <2 Posen, Marker-LINE_STRIP wäre degeneriert – ignoriere"
             )
             return
 

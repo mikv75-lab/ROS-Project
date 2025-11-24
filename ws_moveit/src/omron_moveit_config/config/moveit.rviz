@@ -10,6 +10,9 @@ Panels:
         - /TF1
         - /TF1/Frames1
         - /PoseArray1
+        - /MarkerArray1
+        - /MarkerArray2
+        - /PoseArray2
       Splitter Ratio: 0.5
     Tree Height: 288
   - Class: rviz_common/Help
@@ -324,7 +327,9 @@ Visualization Manager:
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: MarkerArray
-      Namespaces: true
+      Namespaces:
+        Value: true
+        recipe: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -335,13 +340,36 @@ Visualization Manager:
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: MarkerArray
-      Namespaces: true
+      Namespaces:
+        Value: true
+        executed_path: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /spraycoater/spray_path/executed_markers
+      Value: true
+    - Alpha: 1
+      Arrow Length: 0.30000001192092896
+      Axes Length: 0.0024999999441206455
+      Axes Radius: 0.0002500000118743628
+      Class: rviz_default_plugins/PoseArray
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.07000000029802322
+      Head Radius: 0.029999999329447746
+      Name: PoseArray
+      Shaft Length: 0.23000000417232513
+      Shaft Radius: 0.009999999776482582
+      Shape: Axes
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /spraycoater/spray_path/executed_poses
       Value: true
     - Alpha: 1
       Arrow Length: 0.30000001192092896
@@ -362,7 +390,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /spraycoater/spray_path/executed_poses
+        Value: /spraycoater/spray_path/executed_poses_in
       Value: true
   Enabled: true
   Global Options:
@@ -382,7 +410,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.137572765350342
+      Distance: 0.30107879638671875
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -397,10 +425,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.3397962749004364
+      Pitch: 0.7147959470748901
       Target Frame: scene
       Value: Orbit (rviz_default_plugins)
-      Yaw: 5.983584403991699
+      Yaw: 0.39539822936058044
     Saved:
       - Class: rviz_default_plugins/Orbit
         Distance: 1.543152093887329
