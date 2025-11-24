@@ -5,7 +5,11 @@ from __future__ import annotations
 import os
 import math
 import logging
+import datetime
+from pathlib import Path
 from typing import Optional, List, Dict, Any
+
+import yaml
 
 from PyQt6 import QtCore
 from PyQt6.QtWidgets import (
@@ -388,6 +392,143 @@ class ProcessTab(QWidget):
                 f" Y=[{mn_y:.1f}, {mx_y:.1f}] mm,"
                 f" Z=[{mn_z:.1f}, {mx_z:.1f}] mm."
             )
+
+    # =====================================================================
+    # Trajektorie-Logging (YAML) – ein File pro Rezept in data/runs
+    # =====================================================================
+
+    def _get_runs_dir(self) -> Path:
+        """
+        Bestimmt den Ordner 'data/runs'.
+
+        Annahme:
+          ctx.paths.recipe_dir -> /root/Spraycoater/data/recipes
+          => runs-dir          -> /root/Spraycoater/data/runs
+
+        Fallback: ./runs im aktuellen Arbeitsverzeichnis.
+        """
+        base_dir: Path | None = None
+
+        try:
+            recipe_dir = getattr(getattr(self.ctx, "paths", None), "recipe_dir", None)
+            if recipe_dir:
+                # .../data/recipes -> .../data
+                base_dir = Path(recipe_dir).resolve().parent
+        except Exception:
+            base_dir = None
+
+        if base_dir is None:
+            base_dir = Path(os.getcwd())
+
+        runs_dir = base_dir / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        return runs_dir
+
+    def _get_run_filename_for_recipe(self) -> Path:
+        """
+        Gibt den vollständigen Pfad zur Run-Datei für das aktuelle Rezept zurück.
+
+        Schema:  <data>/runs/<recipe_name>.yaml
+
+        - recipe_name basiert auf Recipe.id oder dem im ProcessTab gesetzten Rezeptnamen.
+        - vorhandene Datei wird später überschrieben.
+        """
+        # bevorzugt die Recipe-ID
+        rec_id = None
+        if self._recipe_model is not None:
+            rec_id = (self._recipe_model.id or "").strip()
+
+        name = rec_id or (self._recipe_name or "unnamed_recipe")
+        # Dateinamen-safe machen
+        safe_name = "".join(
+            c if c.isalnum() or c in ("-", "_") else "_"
+            for c in name
+        )
+        runs_dir = self._get_runs_dir()
+        return runs_dir / f"{safe_name}.yaml"
+
+    def _save_trajectory_yaml(
+        self,
+        poses: List[PoseStamped],
+        metrics: Dict[str, Any],
+        score: Optional[float],
+    ) -> None:
+        """
+        Speichert die TCP-Trajektorie + Metriken als YAML in data/runs/<recipe>.yaml.
+
+        - überschreibt vorhandene Datei
+        - zeigt nach Erfolg ein kleines Popup „Run gespeichert“
+        """
+        if not poses:
+            _LOG.info("ProcessTab: _save_trajectory_yaml: keine Posen -> nichts zu speichern.")
+            return
+
+        frame = poses[0].header.frame_id or "scene"
+
+        # Basis-Struct
+        data: Dict[str, Any] = {
+            "version": 1,
+            "recipe_id": self._recipe_model.id if self._recipe_model else self._recipe_name,
+            "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+            "frame_id": frame,
+            "metrics": dict(metrics or {}),
+        }
+
+        if score is not None:
+            data["metrics"]["score"] = float(score)
+
+        # Posen als einfache Dicts ablegen (x,y,z,qx,qy,qz,qw)
+        pose_list: List[Dict[str, float]] = []
+        for p in poses:
+            try:
+                pose_list.append(
+                    {
+                        "x": float(p.pose.position.x),
+                        "y": float(p.pose.position.y),
+                        "z": float(p.pose.position.z),
+                        "qx": float(p.pose.orientation.x),
+                        "qy": float(p.pose.orientation.y),
+                        "qz": float(p.pose.orientation.z),
+                        "qw": float(p.pose.orientation.w),
+                    }
+                )
+            except Exception:
+                # einzelne kaputte Pose überspringen
+                continue
+
+        data["poses"] = pose_list
+
+        try:
+            out_path = self._get_run_filename_for_recipe()
+            with out_path.open("w", encoding="utf-8") as f:
+                yaml.safe_dump(
+                    data,
+                    f,
+                    sort_keys=False,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                )
+
+            _LOG.info(
+                "ProcessTab: Trajektorie-Log mit %d Posen nach '%s' gespeichert (überschrieben, falls vorhanden).",
+                len(pose_list),
+                str(out_path),
+            )
+            self._append_process_log(f"Trajektorie-Log gespeichert: {out_path.name}")
+
+            # kleines Popup
+            try:
+                QMessageBox.information(
+                    self,
+                    "Run gespeichert",
+                    f"Trajektorie für Rezept wurde gespeichert:\n{out_path.name}",
+                )
+            except RuntimeError:
+                # UI evtl. schon zu
+                pass
+
+        except Exception:
+            _LOG.exception("ProcessTab: _save_trajectory_yaml: Fehler beim Schreiben der YAML-Datei.")
 
     # =====================================================================
     # Robot-Status Wiring
@@ -802,6 +943,7 @@ class ProcessTab(QWidget):
           - Executed-TCP-Pfad als PoseArray an SprayPath senden
           - Metriken + Score berechnen
           - InfoBox + Log damit updaten
+          - Trajektorie als YAML in data/runs/<recipe>.yaml speichern
         """
 
         if self._process_outcome == "error":
@@ -893,8 +1035,10 @@ class ProcessTab(QWidget):
             self._update_info_with_trajectory_metrics(metrics, score)
             # Log-Ausgabe
             self._log_trajectory_metrics(metrics, score)
+            # YAML-Log speichern
+            self._save_trajectory_yaml(poses, metrics, score)
         except Exception:
-            _LOG.exception("ProcessTab: Fehler bei Berechnung/Anzeige der Trajektorien-Metriken")
+            _LOG.exception("ProcessTab: Fehler bei Berechnung/Anzeige/Speicherung der Trajektorien-Metriken")
 
         # Rest wie gehabt
         self.set_process_active(False)

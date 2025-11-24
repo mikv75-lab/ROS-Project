@@ -70,8 +70,8 @@ class SprayPathBridge(BaseBridge):
       - spray_path.executed_poses (PoseArray)   [optional für spätere UI-Nutzung]
 
     Publiziert (UI -> ROS, topics.spray_path.subscribe.*):
-      - spray_path.set              (MarkerArray)        [Sollpfad]
-      - spray_path.executed_poses_in (PoseArray)        [Istpfad vom ProcessTab → Node]
+      - spray_path.set               (MarkerArray)       [Sollpfad]
+      - spray_path.executed_poses_in (PoseArray)         [Istpfad vom ProcessTab → Node]
     """
     GROUP = "spray_path"
 
@@ -150,14 +150,12 @@ class SprayPathBridge(BaseBridge):
         analog zum Rezeptpfad.
         """
         try:
-            # ⚠️ wichtig: UI → Node nutzt jetzt executed_poses_in,
-            # während Node → UI weiterhin executed_poses publisht.
             topic_id = "executed_poses_in"
             # Typ aus subscribe-Konfiguration (UI -> Node)
             Msg = self.spec("subscribe", topic_id).resolve_type()
             if not isinstance(pose_array, Msg):
                 raise TypeError(
-                    f"spray_path.executed_poses_in erwartet {Msg.__name__}, "
+                    f"spray_path.{topic_id} erwartet {Msg.__name__}, "
                     f"bekommen: {type(pose_array).__name__}"
                 )
             pub = self.pub(topic_id)
