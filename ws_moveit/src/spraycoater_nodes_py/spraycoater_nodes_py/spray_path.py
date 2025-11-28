@@ -20,21 +20,14 @@ class SprayPath(Node):
 
     SUB:
       - spray_path.set              (MarkerArray)
-        → Kommando vom PyQt-Editor (fertiger Pfad als MarkerArray, Sollpfad)
       - spray_path.executed_poses_in (PoseArray)
-        → gefahrene Posen vom ProcessTab / Recorder (Istpfad)
 
-    PUB (alle TRANSIENT_LOCAL / latched):
-      - spray_path.poses            (PoseArray): Punkte des Sollpfads als neutrale Posen
-      - spray_path.markers          (MarkerArray): aktuelles MarkerArray für RViz (Sollpfad)
-      - spray_path.current          (String): aktueller Pfad-Name (optional für UI)
-      - spray_path.executed_poses   (PoseArray): gefahrene Posen (durchgereicht)
-      - spray_path.executed_markers (MarkerArray): Marker für den Istpfad (z.B. andere Farbe)
-
-    Semantik:
-      - JEDER set-Aufruf ersetzt den aktuellen Sollpfad vollständig.
-      - JEDER executed_poses_in-Aufruf ersetzt den aktuellen Istpfad vollständig.
-      - Kein Timer-Republish; Late Joiner bekommen letzten Stand über QoS.
+    PUB (alle TRANSIENT_LOCAL / latched + 1 Hz republish):
+      - spray_path.poses
+      - spray_path.markers
+      - spray_path.current
+      - spray_path.executed_poses
+      - spray_path.executed_markers
     """
 
     GROUP = "spray_path"
@@ -47,19 +40,14 @@ class SprayPath(Node):
         self.frames = frames()
         self._F = self.frames.resolve
 
-        # Topics & QoS aus config_hub für SUB
+        # Topics & QoS aus config_hub
         topic_set = self.loader.subscribe_topic(self.GROUP, "set")
         qos_set = self.loader.qos_by_id("subscribe", self.GROUP, "set")
 
-        # ⚠️ ID muss zu topics.yaml passen:
-        #   subscribe:
-        #     - id: executed_poses_in
-        #       name: /spraycoater/spray_path/executed_poses_in
-        #       type: geometry_msgs/msg/PoseArray
         topic_exec_in = self.loader.subscribe_topic(self.GROUP, "executed_poses_in")
         qos_exec_in = self.loader.qos_by_id("subscribe", self.GROUP, "executed_poses_in")
 
-        # Latched QoS für unsere Publisher (wie bei Scene)
+        # Latched QoS für unsere Publisher
         latched_qos = QoSProfile(
             depth=10,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -69,7 +57,6 @@ class SprayPath(Node):
         topic_current = self.loader.publish_topic(self.GROUP, "current")
         topic_poses = self.loader.publish_topic(self.GROUP, "poses")
         topic_markers = self.loader.publish_topic(self.GROUP, "markers")
-        # Node → UI/RViz: gefahrene Posen (Istpfad)
         topic_exec_poses = self.loader.publish_topic(self.GROUP, "executed_poses")
         topic_exec_markers = self.loader.publish_topic(self.GROUP, "executed_markers")
 
@@ -77,7 +64,6 @@ class SprayPath(Node):
         self.pub_current = self.create_publisher(String, topic_current, latched_qos)
         self.pub_poses = self.create_publisher(PoseArray, topic_poses, latched_qos)
         self.pub_markers = self.create_publisher(MarkerArray, topic_markers, latched_qos)
-
         self.pub_exec_poses = self.create_publisher(PoseArray, topic_exec_poses, latched_qos)
         self.pub_exec_markers = self.create_publisher(MarkerArray, topic_exec_markers, latched_qos)
 
@@ -95,7 +81,7 @@ class SprayPath(Node):
             qos_exec_in,
         )
 
-        # interner Zustand (für evtl. Debug/inspektieren)
+        # Interner Zustand
         self._last_frame = self.frames.get("scene", "scene")
         self._last_name: str = ""
         self._last_pa: PoseArray | None = None
@@ -105,31 +91,29 @@ class SprayPath(Node):
         self._last_exec_pa: PoseArray | None = None
         self._last_exec_markers: MarkerArray | None = None
 
+        # 1 Hz Republish Timer
+        self._timer = self.create_timer(1.0, self._republish_all)
+
         self.get_logger().info(
-            "✅ SprayPathManager bereit: "
-            "/set → /poses + /markers (+ /current), "
-            "executed_poses_in → executed_poses + executed_markers, "
-            "TRANSIENT_LOCAL (latched), kein 1 Hz-Republish."
+            "✅ SprayPathManager bereit: set→poses/markers, exec_in→executed_*, "
+            "TRANSIENT_LOCAL + 1Hz Republish."
         )
 
-    # ----------------------------- helpers -----------------------------
+    # ----------------------------------------------------------------------
+    # Helper
+    # ----------------------------------------------------------------------
 
     @staticmethod
     def _extract_name(ma: MarkerArray) -> str:
-        # 1) TEXT_VIEW_FACING.text
         for m in ma.markers:
             if m.type == Marker.TEXT_VIEW_FACING:
                 t = (m.text or "").strip()
                 if t:
                     return t
-
-        # 2) erstes non-empty ns
         for m in ma.markers:
             ns = (m.ns or "").strip()
             if ns:
                 return ns
-
-        # kein Fallback-Text – dann bleibt Name ""
         return ""
 
     @staticmethod
@@ -146,14 +130,15 @@ class SprayPath(Node):
     def _publish_current_name(self, name: str) -> None:
         self.pub_current.publish(String(data=name))
 
-    # ----------------------------- handler: Sollpfad -----------------------------
+    # ----------------------------------------------------------------------
+    # Handler: Sollpfad
+    # ----------------------------------------------------------------------
 
     def _on_set_spraypath(self, msg: MarkerArray) -> None:
         if msg is None or len(msg.markers) == 0:
             self.get_logger().warning("⚠️ spray_path.set: leeres MarkerArray – ignoriere")
             return
 
-        # Frame bestimmen: erster Marker mit non-empty frame_id
         frame = self._last_frame
         for m in msg.markers:
             fid = (m.header.frame_id or "").strip()
@@ -162,18 +147,15 @@ class SprayPath(Node):
                 break
         self._last_frame = frame
 
-        # Name aus Text/Namespace holen (kann leer sein)
         name = self._extract_name(msg)
-
-        # Pfad-Marker wählen (bevorzugt LINE_STRIP)
         m_path = self._prefer_linestrip(msg)
         if m_path is None:
-            self.get_logger().warning("⚠️ spray_path.set: kein Marker mit ≥2 Punkten – ignoriere")
+            self.get_logger().warning("⚠️ spray_path.set: kein gültiger Pfad – ignoriere")
             return
 
         now = self.get_clock().now().to_msg()
 
-        # PoseArray bauen
+        # PoseArray (Sollpfad)
         pa = PoseArray()
         pa.header.frame_id = frame
         pa.header.stamp = now
@@ -183,15 +165,13 @@ class SprayPath(Node):
             p.position.x = pt.x
             p.position.y = pt.y
             p.position.z = pt.z
-            p.orientation.w = 1.0  # neutral
+            p.orientation.w = 1.0
             pa.poses.append(p)
 
-        # MarkerArray für RViz: wir übernehmen msg unverändert,
-        # setzen aber einheitlich Frame + Timestamp
+        # MarkerArray (Sollpfad)
         out_ma = MarkerArray()
         for src in msg.markers:
             m = Marker()
-            # Felder manuell kopieren (kein Fallback, keine Magie)
             m.header.frame_id = frame
             m.header.stamp = now
             m.ns = src.ns
@@ -215,21 +195,22 @@ class SprayPath(Node):
         self._last_markers = out_ma
         self._last_name = name
 
-        # ONE SHOT Publish (latched)
+        # One-Shot + latched
         self.pub_poses.publish(pa)
         self.pub_markers.publish(out_ma)
         self._publish_current_name(name)
 
         self.get_logger().info(
-            f"🎯 SprayPath gesetzt (Soll): name='{name}', frame='{frame}', "
-            f"points={len(pa.poses)}, markers={len(out_ma.markers)}"
+            f"🎯 Sollpfad gesetzt: name='{name}', frame='{frame}', points={len(pa.poses)}"
         )
 
-    # ----------------------------- handler: Istpfad -----------------------------
+    # ----------------------------------------------------------------------
+    # Handler: Istpfad
+    # ----------------------------------------------------------------------
 
     def _on_executed_poses(self, msg: PoseArray) -> None:
         if msg is None or len(msg.poses) == 0:
-            self.get_logger().warning("⚠️ spray_path.executed_poses_in: leeres PoseArray – ignoriere")
+            self.get_logger().warning("⚠️ executed_poses_in: leer – ignoriere")
             return
 
         frame = (msg.header.frame_id or "").strip() or self._last_exec_frame
@@ -237,19 +218,17 @@ class SprayPath(Node):
 
         now = self.get_clock().now().to_msg()
 
-        # PoseArray ggf. mit aktualisiertem Header weiterreichen
+        # PoseArray (Istpfad)
         pa = PoseArray()
         pa.header.frame_id = frame
         pa.header.stamp = now
         pa.poses = list(msg.poses)
 
         if len(pa.poses) < 2:
-            self.get_logger().warning(
-                "⚠️ spray_path.executed_poses_in: <2 Posen, Marker-LINE_STRIP wäre degeneriert – ignoriere"
-            )
+            self.get_logger().warning("⚠️ executed_poses_in: <2 Posen – ignoriere")
             return
 
-        # Marker als LINE_STRIP aus den Posen bauen
+        # MarkerArray (Istpfad)
         m = Marker()
         m.header.frame_id = frame
         m.header.stamp = now
@@ -257,13 +236,7 @@ class SprayPath(Node):
         m.id = 1000
         m.type = Marker.LINE_STRIP
         m.action = Marker.ADD
-
-        # einfache Skalierung, damit Linie sichtbar ist
-        m.scale.x = 0.002  # Liniendicke
-        m.scale.y = 0.0
-        m.scale.z = 0.0
-
-        # Farbe (z.B. abgesetzt vom Rezeptpfad – hier grün)
+        m.scale.x = 0.002
         m.color.r = 0.0
         m.color.g = 1.0
         m.color.b = 0.0
@@ -283,14 +256,31 @@ class SprayPath(Node):
         self._last_exec_pa = pa
         self._last_exec_markers = out_ma
 
-        # ONE SHOT Publish (latched)
+        # One-Shot + latched
         self.pub_exec_poses.publish(pa)
         self.pub_exec_markers.publish(out_ma)
 
         self.get_logger().info(
-            f"✅ Executed SprayPath gesetzt (Ist): frame='{frame}', "
-            f"points={len(pa.poses)}, markers={len(out_ma.markers)}"
+            f"✅ Istpfad gesetzt: points={len(pa.poses)}, frame='{frame}'"
         )
+
+    # ----------------------------------------------------------------------
+    # 1 Hz REPUBLISH
+    # ----------------------------------------------------------------------
+
+    def _republish_all(self):
+        if self._last_pa is not None:
+            self.pub_poses.publish(self._last_pa)
+        if self._last_markers is not None:
+            self.pub_markers.publish(self._last_markers)
+
+        if self._last_name:
+            self._publish_current_name(self._last_name)
+
+        if self._last_exec_pa is not None:
+            self.pub_exec_poses.publish(self._last_exec_pa)
+        if self._last_exec_markers is not None:
+            self.pub_exec_markers.publish(self._last_exec_markers)
 
 
 def main(args=None):

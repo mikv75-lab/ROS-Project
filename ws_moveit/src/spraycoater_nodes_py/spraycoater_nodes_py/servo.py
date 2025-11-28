@@ -197,16 +197,30 @@ class ServoBridge(Node):
             )
 
     def _on_set_frame(self, msg: String) -> None:
-        raw = (msg.data or "").strip()
+        raw = (msg.data or "").strip().lower()
         if not raw:
             self.get_logger().warning("set_frame: Leerstring ignoriert.")
             return
 
+        # Nur diese zwei Frames sind erlaubt
+        allowed = ("world", "tcp")
+        if raw not in allowed:
+            self.get_logger().warning(
+                f"set_frame: Frame '{raw}' nicht erlaubt. "
+                f"Erlaubt: 'world', 'tcp'. "
+                f"Frames.yaml enthält, wird aber ignoriert: "
+                f"{list(self.frames_cfg.frames.keys())}"
+            )
+            return
+
+        # Frame aus frames.yaml auflösen
         resolved = self._F(self.frames_cfg.get(raw, raw))
+
         old = self.current_frame
         self.current_frame = resolved
+
         self.get_logger().info(
-            f"Frame geändert: '{raw}' → '{resolved}' (alt='{old}')"
+            f"Servo-Frame geändert: {old} → {self.current_frame} (gewählt: {raw})"
         )
 
 

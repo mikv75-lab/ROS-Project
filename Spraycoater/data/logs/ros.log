@@ -5005,3 +5005,76 @@
 2025-11-24 15:43:12 INFO [295449] ros.ui_bridge:457 - UIBridge: MotionBridge-Signale vorhanden (moveToPoseRequested, motionResultChanged, planned/executedTraj).
 2025-11-24 15:43:12 INFO [295449] ros.ui_bridge:383 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion states ready
 2025-11-24 15:43:12 INFO [295449] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-25 14:33:49 INFO [519125] ros.kill_all_ros:115 - [kill] stopping 8 ROS-related processes…
+2025-11-25 14:33:49 DEBUG [519125] ros.kill_all_ros:119 -  -> TERM pid=295555: /usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-25 14:33:49 DEBUG [519125] ros.kill_all_ros:119 -  -> TERM pid=295571: /root/ws_moveit/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group --ros-args -r __node:=move_group --params-file /tmp/launch_params_mhiulk01
+2025-11-25 14:33:49 DEBUG [519125] ros.kill_all_ros:119 -  -> TERM pid=296080: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/scene --ros-args --log-level error --ros-args -r __node:=scene
+2025-11-25 14:33:49 DEBUG [519125] ros.kill_all_ros:119 -  -> TERM pid=296081: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/poses --ros-args --log-level error --ros-args -r __node:=poses
+2025-11-25 14:33:49 DEBUG [519125] ros.kill_all_ros:119 -  -> TERM pid=296082: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/spray_path --ros-args --log-level error --ros-args -r __node:=spray_path
+2025-11-25 14:33:49 DEBUG [519125] ros.kill_all_ros:119 -  -> TERM pid=296083: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/servo --ros-args --log-level info --ros-args -r __node:=servo
+2025-11-25 14:33:49 DEBUG [519125] ros.kill_all_ros:119 -  -> TERM pid=296084: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/motion --ros-args --log-level info --ros-args -r __node:=motion --params-file /tmp/launch_params_y4i2_kke
+2025-11-25 14:33:49 DEBUG [519125] ros.kill_all_ros:119 -  -> TERM pid=296085: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/robot --ros-args --log-level info --ros-args -r __node:=robot
+2025-11-25 14:33:52 INFO [519125] ros.ui_bridge:457 - UIBridge: MotionBridge-Signale vorhanden (moveToPoseRequested, motionResultChanged, planned/executedTraj).
+2025-11-25 14:33:52 INFO [519125] ros.ui_bridge:383 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion states ready
+2025-11-25 14:33:52 INFO [519125] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-28 18:35:45 INFO [19589] ros.kill_all_ros:112 - [kill] nothing to stop.
+2025-11-28 18:35:46 INFO [19589] ros.ui_bridge:457 - UIBridge: MotionBridge-Signale vorhanden (moveToPoseRequested, motionResultChanged, planned/executedTraj).
+2025-11-28 18:35:46 INFO [19589] ros.ui_bridge:383 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion states ready
+2025-11-28 18:35:46 INFO [19589] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-28 21:43:51 INFO [121313] ros.kill_all_ros:115 - [kill] stopping 8 ROS-related processes…
+2025-11-28 21:43:51 DEBUG [121313] ros.kill_all_ros:119 -  -> TERM pid=19728: /usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-28 21:43:51 DEBUG [121313] ros.kill_all_ros:119 -  -> TERM pid=19754: /root/ws_moveit/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group --ros-args -r __node:=move_group --params-file /tmp/launch_params_jx942pl3
+2025-11-28 21:43:51 DEBUG [121313] ros.kill_all_ros:119 -  -> TERM pid=20222: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/scene --ros-args --log-level error --ros-args -r __node:=scene
+2025-11-28 21:43:51 DEBUG [121313] ros.kill_all_ros:119 -  -> TERM pid=20223: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/poses --ros-args --log-level error --ros-args -r __node:=poses
+2025-11-28 21:43:51 DEBUG [121313] ros.kill_all_ros:119 -  -> TERM pid=20224: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/spray_path --ros-args --log-level error --ros-args -r __node:=spray_path
+2025-11-28 21:43:51 DEBUG [121313] ros.kill_all_ros:119 -  -> TERM pid=20225: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/servo --ros-args --log-level info --ros-args -r __node:=servo
+2025-11-28 21:43:51 DEBUG [121313] ros.kill_all_ros:119 -  -> TERM pid=20236: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/motion --ros-args --log-level info --ros-args -r __node:=motion --params-file /tmp/launch_params_6oq5dorb
+2025-11-28 21:43:51 DEBUG [121313] ros.kill_all_ros:119 -  -> TERM pid=20237: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/robot --ros-args --log-level info --ros-args -r __node:=robot
+2025-11-28 21:43:54 INFO [121313] ros.ui_bridge:457 - UIBridge: MotionBridge-Signale vorhanden (moveToPoseRequested, motionResultChanged, planned/executedTraj).
+2025-11-28 21:43:54 INFO [121313] ros.ui_bridge:383 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion states ready
+2025-11-28 21:43:54 INFO [121313] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-28 21:59:42 INFO [134144] ros.kill_all_ros:115 - [kill] stopping 9 ROS-related processes…
+2025-11-28 21:59:42 DEBUG [134144] ros.kill_all_ros:119 -  -> TERM pid=121422: /usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-28 21:59:42 DEBUG [134144] ros.kill_all_ros:119 -  -> TERM pid=121448: /root/ws_moveit/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group --ros-args -r __node:=move_group --params-file /tmp/launch_params_u7kizie2
+2025-11-28 21:59:42 DEBUG [134144] ros.kill_all_ros:119 -  -> TERM pid=121450: /opt/ros/rolling/lib/rviz2/rviz2 -d /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/moveit.rviz --ros-args -r __node:=rviz2 --params-file /tmp/launch_params_vnnqlv7i
+2025-11-28 21:59:42 DEBUG [134144] ros.kill_all_ros:119 -  -> TERM pid=121930: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/scene --ros-args --log-level error --ros-args -r __node:=scene
+2025-11-28 21:59:42 DEBUG [134144] ros.kill_all_ros:119 -  -> TERM pid=121931: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/poses --ros-args --log-level error --ros-args -r __node:=poses
+2025-11-28 21:59:42 DEBUG [134144] ros.kill_all_ros:119 -  -> TERM pid=121932: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/spray_path --ros-args --log-level error --ros-args -r __node:=spray_path
+2025-11-28 21:59:42 DEBUG [134144] ros.kill_all_ros:119 -  -> TERM pid=121933: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/servo --ros-args --log-level info --ros-args -r __node:=servo
+2025-11-28 21:59:42 DEBUG [134144] ros.kill_all_ros:119 -  -> TERM pid=121934: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/motion --ros-args --log-level info --ros-args -r __node:=motion --params-file /tmp/launch_params_vz6dj8nr
+2025-11-28 21:59:42 DEBUG [134144] ros.kill_all_ros:119 -  -> TERM pid=121935: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/robot --ros-args --log-level info --ros-args -r __node:=robot
+2025-11-28 21:59:45 INFO [134144] ros.ui_bridge:457 - UIBridge: MotionBridge-Signale vorhanden (moveToPoseRequested, motionResultChanged, planned/executedTraj).
+2025-11-28 21:59:45 INFO [134144] ros.ui_bridge:383 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion states ready
+2025-11-28 21:59:45 INFO [134144] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-28 22:00:02 INFO [134144] ros.ui_bridge:474 - UIBridge disconnect()
+2025-11-28 22:00:17 INFO [135414] ros.kill_all_ros:112 - [kill] nothing to stop.
+2025-11-28 22:00:18 INFO [135414] ros.ui_bridge:457 - UIBridge: MotionBridge-Signale vorhanden (moveToPoseRequested, motionResultChanged, planned/executedTraj).
+2025-11-28 22:00:18 INFO [135414] ros.ui_bridge:383 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion states ready
+2025-11-28 22:00:18 INFO [135414] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-28 22:15:43 INFO [152940] ros.kill_all_ros:115 - [kill] stopping 8 ROS-related processes…
+2025-11-28 22:15:43 DEBUG [152940] ros.kill_all_ros:119 -  -> TERM pid=135513: /usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-11-28 22:15:43 DEBUG [152940] ros.kill_all_ros:119 -  -> TERM pid=135522: /root/ws_moveit/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group --ros-args -r __node:=move_group --params-file /tmp/launch_params_sktows2q
+2025-11-28 22:15:43 DEBUG [152940] ros.kill_all_ros:119 -  -> TERM pid=136007: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/scene --ros-args --log-level error --ros-args -r __node:=scene
+2025-11-28 22:15:43 DEBUG [152940] ros.kill_all_ros:119 -  -> TERM pid=136008: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/poses --ros-args --log-level error --ros-args -r __node:=poses
+2025-11-28 22:15:43 DEBUG [152940] ros.kill_all_ros:119 -  -> TERM pid=136009: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/spray_path --ros-args --log-level error --ros-args -r __node:=spray_path
+2025-11-28 22:15:43 DEBUG [152940] ros.kill_all_ros:119 -  -> TERM pid=136010: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/servo --ros-args --log-level info --ros-args -r __node:=servo
+2025-11-28 22:15:43 DEBUG [152940] ros.kill_all_ros:119 -  -> TERM pid=136013: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/motion --ros-args --log-level info --ros-args -r __node:=motion --params-file /tmp/launch_params_t2a8t30e
+2025-11-28 22:15:43 DEBUG [152940] ros.kill_all_ros:119 -  -> TERM pid=136015: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/robot --ros-args --log-level info --ros-args -r __node:=robot
+2025-11-28 22:15:45 INFO [152940] ros.ui_bridge:457 - UIBridge: MotionBridge-Signale vorhanden (moveToPoseRequested, motionResultChanged, planned/executedTraj).
+2025-11-28 22:15:45 INFO [152940] ros.ui_bridge:383 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion states ready
+2025-11-28 22:15:45 INFO [152940] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-28 22:16:05 INFO [152940] ros.ui_bridge:474 - UIBridge disconnect()
+2025-11-28 22:16:29 INFO [154196] ros.kill_all_ros:112 - [kill] nothing to stop.
+2025-11-28 22:16:31 INFO [154196] ros.ui_bridge:457 - UIBridge: MotionBridge-Signale vorhanden (moveToPoseRequested, motionResultChanged, planned/executedTraj).
+2025-11-28 22:16:31 INFO [154196] ros.ui_bridge:383 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion states ready
+2025-11-28 22:16:31 INFO [154196] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-11-28 22:24:32 INFO [164615] ros.kill_all_ros:115 - [kill] stopping 6 ROS-related processes…
+2025-11-28 22:24:32 DEBUG [164615] ros.kill_all_ros:119 -  -> TERM pid=154771: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/scene --ros-args --log-level error --ros-args -r __node:=scene
+2025-11-28 22:24:32 DEBUG [164615] ros.kill_all_ros:119 -  -> TERM pid=154772: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/poses --ros-args --log-level error --ros-args -r __node:=poses
+2025-11-28 22:24:32 DEBUG [164615] ros.kill_all_ros:119 -  -> TERM pid=154773: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/spray_path --ros-args --log-level error --ros-args -r __node:=spray_path
+2025-11-28 22:24:32 DEBUG [164615] ros.kill_all_ros:119 -  -> TERM pid=154774: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/servo --ros-args --log-level info --ros-args -r __node:=servo
+2025-11-28 22:24:32 DEBUG [164615] ros.kill_all_ros:119 -  -> TERM pid=154779: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/motion --ros-args --log-level info --ros-args -r __node:=motion --params-file /tmp/launch_params_n_h17zut
+2025-11-28 22:24:32 DEBUG [164615] ros.kill_all_ros:119 -  -> TERM pid=154780: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/robot --ros-args --log-level info --ros-args -r __node:=robot
+2025-11-28 22:24:35 INFO [164615] ros.ui_bridge:457 - UIBridge: MotionBridge-Signale vorhanden (moveToPoseRequested, motionResultChanged, planned/executedTraj).
+2025-11-28 22:24:35 INFO [164615] ros.ui_bridge:383 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion states ready
+2025-11-28 22:24:35 INFO [164615] ros:186 - UIBridge verbunden (node=scene_bridge).

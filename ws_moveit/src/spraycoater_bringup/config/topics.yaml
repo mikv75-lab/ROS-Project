@@ -273,3 +273,20 @@ topics:
         name: /spraycoater/robot/joint_states
         type: sensor_msgs/msg/JointState
         qos: sensor_data
+
+  omron:
+    subscribe:
+      - id: command              # z.B. vom PyQt-OmronTerminal
+        name: /spraycoater/omron/command
+        type: std_msgs/msg/String
+        qos: default
+
+    publish:
+      - id: raw_tx               # alles, was der Driver an den TCP-Server sendet
+        name: /spraycoater/omron/raw_tx
+        type: std_msgs/msg/String
+        qos: default
+      - id: raw_rx               # alles, was vom TCP-Server zurückkommt
+        name: /spraycoater/omron/raw_rx
+        type: std_msgs/msg/String
+        qos: default

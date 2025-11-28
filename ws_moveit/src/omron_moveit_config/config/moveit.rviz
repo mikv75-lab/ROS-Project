@@ -4,15 +4,11 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
+        - /MotionPlanning1
         - /MotionPlanning1/Scene Geometry1
-        - /MotionPlanning1/Planning Metrics1
-        - /MotionPlanning1/Planned Path1
-        - /TF1
+        - /MotionPlanning1/Scene Robot1
+        - /MotionPlanning1/Planning Request1
         - /TF1/Frames1
-        - /PoseArray1
-        - /MarkerArray1
-        - /MarkerArray2
-        - /PoseArray2
       Splitter Ratio: 0.5
     Tree Height: 288
   - Class: rviz_common/Help
@@ -145,12 +141,12 @@ Visualization Manager:
         TextHeight: 0.07999999821186066
       Planning Request:
         Colliding Link Color: 255; 0; 0
-        Goal State Alpha: 1
+        Goal State Alpha: 0.25
         Goal State Color: 250; 128; 0
         Interactive Marker Size: 0
         Joint Violation Color: 255; 0; 255
         Planning Group: omron_arm_group
-        Query Goal State: true
+        Query Goal State: false
         Query Start State: false
         Show Workspace: false
         Start State Alpha: 1
@@ -159,7 +155,7 @@ Visualization Manager:
       Robot Description: robot_description
       Scene Geometry:
         Scene Alpha: 1
-        Scene Color: 230; 230; 230
+        Scene Color: 147; 147; 147
         Scene Display Time: 0.009999999776482582
         Show Scene Geometry: true
         Voxel Coloring: Z-Axis
@@ -224,7 +220,7 @@ Visualization Manager:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-        Robot Alpha: 0.5
+        Robot Alpha: 1
         Show Robot Collision: false
         Show Robot Visual: true
       Value: true
@@ -312,7 +308,7 @@ Visualization Manager:
       Enabled: true
       Head Length: 0
       Head Radius: 0
-      Name: PoseArray
+      Name: paPlanned
       Shaft Length: 0
       Shaft Radius: 0
       Shape: Axes
@@ -326,10 +322,8 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
-      Name: MarkerArray
-      Namespaces:
-        Value: true
-        recipe: true
+      Name: maPlanned
+      Namespaces: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -339,10 +333,8 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
-      Name: MarkerArray
-      Namespaces:
-        Value: true
-        executed_path: true
+      Name: maExecuted
+      Namespaces: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -359,7 +351,7 @@ Visualization Manager:
       Enabled: true
       Head Length: 0.07000000029802322
       Head Radius: 0.029999999329447746
-      Name: PoseArray
+      Name: paExecuted
       Shaft Length: 0.23000000417232513
       Shaft Radius: 0.009999999776482582
       Shape: Axes
@@ -370,27 +362,6 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /spraycoater/spray_path/executed_poses
-      Value: true
-    - Alpha: 1
-      Arrow Length: 0.30000001192092896
-      Axes Length: 0.30000001192092896
-      Axes Radius: 0.009999999776482582
-      Class: rviz_default_plugins/PoseArray
-      Color: 255; 25; 0
-      Enabled: true
-      Head Length: 0.07000000029802322
-      Head Radius: 0.029999999329447746
-      Name: PoseArray
-      Shaft Length: 0.23000000417232513
-      Shaft Radius: 0.009999999776482582
-      Shape: Arrow (Flat)
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /spraycoater/spray_path/executed_poses_in
       Value: true
   Enabled: true
   Global Options:
@@ -410,7 +381,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 0.30107879638671875
+      Distance: 2.3636350631713867
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -425,10 +396,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.7147959470748901
+      Pitch: 0.5597959160804749
       Target Frame: scene
       Value: Orbit (rviz_default_plugins)
-      Yaw: 0.39539822936058044
+      Yaw: 0.06040005758404732
     Saved:
       - Class: rviz_default_plugins/Orbit
         Distance: 1.543152093887329
