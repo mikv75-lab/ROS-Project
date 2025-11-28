@@ -8,52 +8,33 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QSizePolicy
 )
 
-# RecipeStore für planner- und defaultsgetriebene Widgets
 from app.model.recipe.recipe_store import RecipeStore
 
-# Neue, getrennte Widgets
 from ...widgets.robot_command_box import RobotCommandButtonsBox
 from ...widgets.robot_status_box import RobotStatusInfoBox
 
-# Service-Widgets
 from .scene_box import SceneGroupBox
 from .poses_box import PosesGroupBox
 from .tool_box import ToolGroupBox
 from .motion_widget import MotionWidget
+
+# Jog-Widgets nutzen jetzt korrekt ctx für Frames/QoS/Topics
 from .servo_widgets import JointJogWidget, CartesianJogWidget
 
 _LOG = logging.getLogger("app.tabs.service")
 
 
 class ServiceTab(QWidget):
-    """
-    Service-Tab Layout (nur Code, keine .ui):
-
-      [0] Row:
-            ├── RobotCommandButtonsBox (links)
-            └── RobotStatusInfoBox    (rechts)
-      [1] Tabs:
-            ├── Motion (Planner + Motion-Speed)
-            ├── Joint Jog
-            └── Cartesian Jog
-      [2] Row(HBox): PosesGroupBox | ToolGroupBox | SceneGroupBox
-      [3] Spacer (Expanding)
-
-    Zusätzlich:
-      - Beim Tab-Wechsel wird der Servo eingeschaltet.
-      - Beim Tab-Wechsel wird der Servo-Command-Type gesetzt:
-          Motion      -> JOINT_JOG (Default)
-          Joint Jog   -> JOINT_JOG
-          Cartesian   -> TWIST
-    """
 
     def __init__(self, *, ctx, store: RecipeStore, bridge, parent: Optional[QWidget] = None):
         super().__init__(parent)
+
+        # 🔥 Zentral: AppContext mit content (frames,qos,topics)
         self.ctx = ctx
         self.store = store
         self.bridge = bridge
 
-        # RobotBridge + Signals besorgen
+        # RobotBridge + Signals
         self._rb = getattr(self.bridge, "_rb", None)
         self._sig = getattr(self._rb, "signals", None) if self._rb else None
 
@@ -62,26 +43,29 @@ class ServiceTab(QWidget):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
 
-        # --- [0] Command (links) + Status (rechts) --------------------------
+        # ================================================================
+        # [0] TOP ROW: COMMANDS + STATUS
+        # ================================================================
         topRow = QHBoxLayout()
-        topRow.setContentsMargins(0, 0, 0, 0)
         topRow.setSpacing(8)
 
         self.commandBox = RobotCommandButtonsBox(self, title="Commands")
-        self.statusBox = RobotStatusInfoBox(self, title="Robot Status")
+        self.statusBox  = RobotStatusInfoBox(self, title="Robot Status")
 
-        # Size-Policies
         for w in (self.commandBox, self.statusBox):
             sp = w.sizePolicy()
-            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+            sp.setHorizontalPolicy(QSizePolicy.Expanding)
             sp.setVerticalPolicy(QSizePolicy.Preferred)
             w.setSizePolicy(sp)
 
-        topRow.addWidget(self.commandBox, 1)  # schmaler
-        topRow.addWidget(self.statusBox, 2)   # breiter
+        topRow.addWidget(self.commandBox, 1)
+        topRow.addWidget(self.statusBox, 2)
         root.addLayout(topRow)
 
-        # --- [2] Unten: Poses | Tool | Scene nebeneinander ------------------
+        # ================================================================
+        # [2] BOTTOM ROW: Poses | Tools | Scene
+        # ================================================================
+        # (Noch ohne ctx – kann aber leicht umgestellt werden)
         self.posesBox = PosesGroupBox(self.bridge, self)
         self.toolBox  = ToolGroupBox(self.bridge, self)
         self.sceneBox = SceneGroupBox(self.bridge, self)
@@ -91,58 +75,70 @@ class ServiceTab(QWidget):
         rowBottom.addWidget(self.posesBox)
         rowBottom.addWidget(self.toolBox)
         rowBottom.addWidget(self.sceneBox)
-        rowBottom.setStretch(0, 1)
-        rowBottom.setStretch(1, 1)
-        rowBottom.setStretch(2, 1)
         root.addLayout(rowBottom)
 
-        # --- [1] Subtabs: Motion | Joint Jog | Cartesian Jog ----------------
+        # ================================================================
+        # [1] SUBTABS: Motion | Joint Jog | Cartesian Jog
+        # ================================================================
         self.tabs = QTabWidget(self)
         root.addWidget(self.tabs)
 
-        # (a) Motion — store-geführt
-        self.motionWidget = MotionWidget(store=self.store, bridge=self.bridge, parent=self.tabs)
+        # (a) Motion
+        self.motionWidget = MotionWidget(
+            store=self.store,
+            bridge=self.bridge,
+            parent=self.tabs
+        )
         self.tabs.addTab(self.motionWidget, "Motion")
 
-        # (b) Joint Jog
-        self.jointJogWidget = JointJogWidget(self.bridge, self.tabs)
+        # (b) Joint Jog — jetzt MIT ctx → verwendet frames.yaml
+        self.jointJogWidget = JointJogWidget(self.ctx, self.bridge, self.tabs)
         self.tabs.addTab(self.jointJogWidget, "Joint Jog")
 
-        # (c) Cartesian Jog
-        self.cartJogWidget = CartesianJogWidget(self.bridge, self.tabs)
+        # (c) Cartesian Jog — jetzt MIT ctx → verwendet frames.yaml
+        self.cartJogWidget = CartesianJogWidget(self.ctx, self.bridge, self.tabs)
         self.tabs.addTab(self.cartJogWidget, "Cartesian Jog")
 
-        for w in (self.motionWidget, self.jointJogWidget, self.cartJogWidget,
-                  self.posesBox, self.toolBox, self.sceneBox):
+        # Size Policies vereinheitlichen
+        for w in (
+            self.motionWidget,
+            self.jointJogWidget,
+            self.cartJogWidget,
+            self.posesBox,
+            self.toolBox,
+            self.sceneBox,
+        ):
             sp = w.sizePolicy()
-            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+            sp.setHorizontalPolicy(QSizePolicy.Expanding)
             sp.setVerticalPolicy(QSizePolicy.Preferred)
             w.setSizePolicy(sp)
 
-        # Wiring RobotBridge <-> Boxes
+        # ================================================================
+        # Bridge inbound/outbound wiring
+        # ================================================================
         self._wire_bridge_inbound()
         self._wire_outbound()
 
-        # --- Tab-Change -> Servo / CommandType ------------------------------
+        # Tab-Change → Servo + Correct Mode
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self._on_tab_changed(self.tabs.currentIndex())
 
-    # ------------------------------------------------------------------ #
-    #  Bridge: inbound (ROS -> StatusBox)
-    # ------------------------------------------------------------------ #
+    # ======================================================================
+    # Bridge INBOUND: ROS → UI
+    # ======================================================================
     @QtCore.pyqtSlot(object)
     def _on_joints(self, js):
         if js is None or not hasattr(js, "position"):
             self.statusBox.set_joints(None)
-        else:
-            self.statusBox.set_joints(list(js.position or []))
+            return
+        self.statusBox.set_joints(list(js.position or []))
 
-    def _wire_bridge_inbound(self) -> None:
+    def _wire_bridge_inbound(self):
         if not self._sig:
             return
 
         sig = self._sig
-        sb = self.statusBox
+        sb  = self.statusBox
 
         if hasattr(sig, "connectionChanged"):
             sig.connectionChanged.connect(sb.set_connection)
@@ -165,15 +161,15 @@ class ServiceTab(QWidget):
         if hasattr(sig, "jointsChanged"):
             sig.jointsChanged.connect(self._on_joints)
 
-    # ------------------------------------------------------------------ #
-    #  Bridge: outbound (CommandBox -> RobotBridge-Signals)
-    # ------------------------------------------------------------------ #
-    def _wire_outbound(self) -> None:
+    # ======================================================================
+    # Bridge OUTBOUND: UI → ROS
+    # ======================================================================
+    def _wire_outbound(self):
         if not self._sig:
             return
 
         sig = self._sig
-        cb = self.commandBox
+        cb  = self.commandBox
 
         cb.initRequested.connect(sig.initRequested.emit)
         cb.stopRequested.connect(sig.stopRequested.emit)
@@ -183,37 +179,36 @@ class ServiceTab(QWidget):
         cb.servoEnableRequested.connect(sig.servoEnableRequested.emit)
         cb.servoDisableRequested.connect(sig.servoDisableRequested.emit)
 
-    # ------------------------------------------------------------------ #
-    #  Tab-Change: Servo immer an + command_type pro Tab
-    # ------------------------------------------------------------------ #
+    # ======================================================================
+    # Tab-Wechsel → Servo an + Command-Modus setzen
+    # ======================================================================
     def _on_tab_changed(self, idx: int) -> None:
         page = self.tabs.widget(idx)
 
-        # Servo immer an – ist idempotent, falls er schon an ist.
+        # Servo immer einschalten
         try:
             if hasattr(self.bridge, "robot_servo_on"):
                 self.bridge.robot_servo_on()
         except Exception as e:
             _LOG.error("robot_servo_on() failed: %s", e)
 
-        # Command-Type je nach Tab
-        mode: Optional[str] = None
+        # Modus setzen
         if page is self.jointJogWidget:
-            mode = "joint"      # -> JOINT_JOG
+            mode = "joint"
         elif page is self.cartJogWidget:
-            mode = "cart"       # -> TWIST
-        else:
-            # Motion-Tab: Default ebenfalls JOINT_JOG
+            mode = "cart"
+        else:  # Motion-Tab
             mode = "joint"
 
-        if mode and hasattr(self.bridge, "servo_set_command_type"):
+        if hasattr(self.bridge, "servo_set_command_type"):
             try:
                 self.bridge.servo_set_command_type(mode)
             except Exception as e:
                 _LOG.error("servo_set_command_type(%s) failed: %s", mode, e)
 
-    # ------------ Forwarder (optional) ---------------------------------------
-    # Planner (aus Motion-Subtab)
+    # ======================================================================
+    # Forwarder-API
+    # ======================================================================
     def get_planner(self) -> str:
         return self.motionWidget.get_planner()
 
@@ -226,7 +221,6 @@ class ServiceTab(QWidget):
     def set_planner_params(self, cfg: Dict[str, Any]) -> None:
         self.motionWidget.set_params(cfg)
 
-    # Jog-Parameter
     def get_joint_jog_params(self) -> Dict[str, float]:
         return self.jointJogWidget.get_params()
 
