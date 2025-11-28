@@ -5155,3 +5155,6 @@
 2025-11-28 22:25:45 INFO [164615] ros.launch:105 - [motion-13] [INFO] [1764368745.784246488] [moveit_1114370401.moveit.ros.trajectory_execution_manager]: Completed trajectory execution with status SUCCEEDED ...
 2025-11-28 22:25:45 INFO [164615] ros.launch:105 - [motion-13] [INFO] [1764368745.785028781] [motion]: EXECUTED:OK
 2025-11-28 22:26:49 INFO [164615] ros.launch:105 - [ros2_control_node-3] [WARN] [1764368809.670874736] [controller_manager]: Overrun detected! The controller manager missed its desired rate of 100 Hz. The loop took 11.713886 ms (missed cycles : 2).
+2025-11-28 22:28:13 INFO [164615] ros.launch:105 - [robot-14] [INFO] [1764368893.600527236] [robot]: 📥 Command: SERVO_ON
+2025-11-28 22:28:13 INFO [164615] ros.launch:105 - [robot-14] [INFO] [1764368893.600901038] [robot]: 🔁 Robot-Mode -> READY
+2025-11-28 22:28:14 INFO [164615] ros.launch:105 - [robot-14] [INFO] [1764368894.115523378] [robot]: 📥 Command: SERVO_ON
