@@ -93,6 +93,10 @@ class ProcessSetupStatemachine(QtCore.QObject):
         self._poses: List[PoseStamped] = []
         self._recipe_index: int = 0
 
+        # Retry-Logik für RECIPE
+        self._max_retries: int = 3
+        self._retry_count: int = 0  # pro aktuell aktiver Pose
+
         # Aktueller State-Name (für Motion-Result-Handling)
         self._current_state_name: str = ""
 
@@ -134,6 +138,7 @@ class ProcessSetupStatemachine(QtCore.QObject):
 
         self._stop_requested = False
         self._error_msg = None
+        self._retry_count = 0
 
         # SprayPath-Posen aus UIBridge holen
         pa: Optional[PoseArray] = self._ui.spraypath.poses()
@@ -289,9 +294,15 @@ class ProcessSetupStatemachine(QtCore.QObject):
 
         # Erste Pose anfahren
         pose = self._poses[0]
+        self._retry_count = 0
         _LOG.info(
-            "ProcessSetupStatemachine: PREDISPENSE -> motion_move_to_pose (idx=0, frame=%s)",
+            "ProcessSetupStatemachine: PREDISPENSE -> motion_move_to_pose (idx=0, frame=%s) "
+            "(frame=%s, pos=(%.3f, %.3f, %.3f))",
             pose.header.frame_id,
+            pose.header.frame_id,
+            pose.pose.position.x,
+            pose.pose.position.y,
+            pose.pose.position.z,
         )
         self._ui.motion_move_to_pose(pose)
 
@@ -329,11 +340,17 @@ class ProcessSetupStatemachine(QtCore.QObject):
             return
 
         pose = self._poses[self._recipe_index]
+        self._retry_count = 0  # neuer Pose-Schritt → Retry-Zähler zurücksetzen
         _LOG.info(
-            "ProcessSetupStatemachine: RECIPE -> motion_move_to_pose (idx=%d/%d, frame=%s)",
+            "ProcessSetupStatemachine: RECIPE -> motion_move_to_pose (idx=%d/%d, frame=%s) "
+            "(frame=%s, pos=(%.3f, %.3f, %.3f))",
             self._recipe_index,
             len(self._poses) - 1,
             pose.header.frame_id,
+            pose.header.frame_id,
+            pose.pose.position.x,
+            pose.pose.position.y,
+            pose.pose.position.z,
         )
         self._ui.motion_move_to_pose(pose)
 
@@ -355,10 +372,16 @@ class ProcessSetupStatemachine(QtCore.QObject):
 
         # Letzte Pose als Retreat
         pose = self._poses[-1]
+        self._retry_count = 0
         _LOG.info(
-            "ProcessSetupStatemachine: RETREAT -> motion_move_to_pose (idx=%d, frame=%s)",
+            "ProcessSetupStatemachine: RETREAT -> motion_move_to_pose (idx=%d, frame=%s) "
+            "(frame=%s, pos=(%.3f, %.3f, %.3f))",
             len(self._poses) - 1,
             pose.header.frame_id,
+            pose.header.frame_id,
+            pose.pose.position.x,
+            pose.pose.position.y,
+            pose.pose.position.z,
         )
         self._ui.motion_move_to_pose(pose)
         # Weiter geht es in _on_motion_result()
@@ -371,6 +394,7 @@ class ProcessSetupStatemachine(QtCore.QObject):
             self._finish_state(self._sig_home_done)
             return
 
+        self._retry_count = 0
         _LOG.info("ProcessSetupStatemachine: HOME -> motion_move_home()")
         self._ui.motion_move_home()
         # Weiter geht es in _on_motion_result()
@@ -378,6 +402,71 @@ class ProcessSetupStatemachine(QtCore.QObject):
     # ------------------------------------------------------------------ #
     # Motion-Ergebnis-Handler
     # ------------------------------------------------------------------ #
+
+    def _log_recipe_pose_state(self, prefix: str, result: str) -> None:
+        """
+        Hilfslogging für RECIPE, inkl. Frame + Position der aktuellen Zielpose.
+        """
+        pose: Optional[PoseStamped] = None
+        if 0 <= self._recipe_index < len(self._poses):
+            pose = self._poses[self._recipe_index]
+
+        if pose is not None:
+            _LOG.error(
+                "ProcessSetupStatemachine: RECIPE: Pose idx=%d %s%s (frame=%s, pos=(%.3f, %.3f, %.3f))",
+                self._recipe_index,
+                prefix,
+                result,
+                pose.header.frame_id,
+                pose.pose.position.x,
+                pose.pose.position.y,
+                pose.pose.position.z,
+            )
+        else:
+            _LOG.error(
+                "ProcessSetupStatemachine: RECIPE: Pose idx=%d %s%s (keine Pose vorhanden)",
+                self._recipe_index,
+                prefix,
+                result,
+            )
+
+    def _handle_recipe_error_with_retry(self, result: str) -> None:
+        """
+        Behandelt ERROR:EXEC im RECIPE-State mit bis zu _max_retries Retries
+        der aktuellen Pose, bevor ein echter Fehler signalisiert wird.
+        """
+        # Erst schön loggen, inkl. Pose
+        self._log_recipe_pose_state("ERROR:", result)
+
+        # Wenn keine Posen vorhanden, können wir nicht retry'n
+        if not (0 <= self._recipe_index < len(self._poses)):
+            self._signal_error(result)
+            return
+
+        if self._retry_count < self._max_retries:
+            self._retry_count += 1
+            pose = self._poses[self._recipe_index]
+            _LOG.warning(
+                "ProcessSetupStatemachine: RECIPE: Retry %d/%d für Pose idx=%d "
+                "(frame=%s, pos=(%.3f, %.3f, %.3f)) wegen %s",
+                self._retry_count,
+                self._max_retries,
+                self._recipe_index,
+                pose.header.frame_id,
+                pose.pose.position.x,
+                pose.pose.position.y,
+                pose.pose.position.z,
+                result,
+            )
+            # dieselbe Pose erneut anfahren
+            self._ui.motion_move_to_pose(pose)
+        else:
+            _LOG.error(
+                "ProcessSetupStatemachine: RECIPE: maximale Retries (%d) erreicht für Pose idx=%d – breche ab.",
+                self._max_retries,
+                self._recipe_index,
+            )
+            self._signal_error(result)
 
     @QtCore.pyqtSlot(str)
     def _on_motion_result(self, result: str) -> None:
@@ -387,19 +476,26 @@ class ProcessSetupStatemachine(QtCore.QObject):
         Nutzt den aktuellen State-Namen, um zu entscheiden,
         ob ein Schritt fertig ist oder der nächste Pose-Schritt gestartet wird.
         """
-        _LOG.info("ProcessSetupStatemachine: motion_result=%s (state=%s)",
-                  result, self._current_state_name)
+        _LOG.info(
+            "ProcessSetupStatemachine: motion_result=%s (state=%s)",
+            result,
+            self._current_state_name,
+        )
 
         if not self._machine or not self._machine.isRunning():
             _LOG.debug("ProcessSetupStatemachine: motion_result ignoriert – Maschine läuft nicht.")
             return
 
         if result.startswith("ERROR"):
-            self._signal_error(result)
+            # Spezielle Behandlung für RECIPE: Retries
+            if self._current_state_name == "RECIPE":
+                self._handle_recipe_error_with_retry(result)
+            else:
+                self._signal_error(result)
             return
 
         if not result.startswith("EXECUTED:OK"):
-            # andere Result-Texte ignorieren
+            # andere Result-Texte (z. B. PLANNED:OK) ignorieren
             return
 
         # Nur EXECUTED:OK relevant
@@ -408,10 +504,29 @@ class ProcessSetupStatemachine(QtCore.QObject):
             self._finish_state(self._sig_predispense_done)
 
         elif self._current_state_name == "RECIPE":
-            _LOG.info(
-                "ProcessSetupStatemachine: RECIPE: Pose idx=%d EXECUTED:OK.",
-                self._recipe_index,
-            )
+            # Aktuelle Pose zum Loggen holen (vor dem Index++!)
+            pose: Optional[PoseStamped] = None
+            if 0 <= self._recipe_index < len(self._poses):
+                pose = self._poses[self._recipe_index]
+
+            if pose is not None:
+                _LOG.info(
+                    "ProcessSetupStatemachine: RECIPE: Pose idx=%d EXECUTED:OK. "
+                    "(frame=%s, pos=(%.3f, %.3f, %.3f))",
+                    self._recipe_index,
+                    pose.header.frame_id,
+                    pose.pose.position.x,
+                    pose.pose.position.y,
+                    pose.pose.position.z,
+                )
+            else:
+                _LOG.info(
+                    "ProcessSetupStatemachine: RECIPE: Pose idx=%d EXECUTED:OK.",
+                    self._recipe_index,
+                )
+
+            # Für nächste Pose Retry-Zähler wieder bei 0 starten
+            self._retry_count = 0
             self._recipe_index += 1
             self._start_next_recipe_pose()
 

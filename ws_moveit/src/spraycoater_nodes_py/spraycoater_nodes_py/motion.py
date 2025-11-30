@@ -21,7 +21,7 @@ from trajectory_msgs.msg import JointTrajectory
 from visualization_msgs.msg import Marker, MarkerArray
 from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg
 
-from moveit.planning import MoveItPy
+from moveit.planning import MoveItPy, PlanRequestParameters
 from moveit.core.robot_trajectory import RobotTrajectory as RobotTrajectoryCore
 
 from tf2_ros import Buffer, TransformListener
@@ -74,7 +74,7 @@ class Motion(Node):
         # Speed in mm/s (z.B. aus UI / Recipe)
         self._speed_mm_s: float = 100.0
 
-        # Planner-Konfiguration (Pipeline/Planner/Params), wie vom UI geschickt
+        # Planner-Konfiguration (Pipeline/Planner/Params) – später aus UI/Recipe
         # Erwartetes Format des JSON-Strings:
         #   {
         #     "pipeline": "ompl",
@@ -82,6 +82,45 @@ class Motion(Node):
         #     "params": { ... }
         #   }
         self._planner_cfg: Dict[str, Any] = {}
+
+        # --- Globale Planning-Parameter (wie RViz-Widget: planning time, attempts, scaling)
+        # Hardcoded Defaults (später aus Rezept/GUI setzen)
+        self._planning_time: float = 3.0
+        self._planning_attempts: int = 10
+        self._vel_scaling: float = 0.10
+        self._acc_scaling: float = 0.10
+
+        # Single-Pipeline-PlanRequestParameters (nutzt globales Profil "plan_request_params")
+        self._plan_params: Optional[PlanRequestParameters] = None
+        try:
+            # "plan_request_params" ist der Default-Block aus der moveit_py.yaml
+            self._plan_params = PlanRequestParameters(self.robot, "plan_request_params")
+
+            # Pipeline + Planner-ID hart setzen (wie im RViz MoveIt-Widget)
+            self._plan_params.planning_pipeline = "ompl"
+            self._plan_params.planner_id = "RRTConnectkConfigDefault"
+
+            # Hardcoded Defaults überschreiben (statt nur YAML)
+            self._plan_params.planning_time = self._planning_time
+            self._plan_params.planning_attempts = self._planning_attempts
+            self._plan_params.max_velocity_scaling_factor = self._vel_scaling
+            self._plan_params.max_acceleration_scaling_factor = self._acc_scaling
+
+            self.log.info(
+                "[config] PlanRequestParameters initialisiert: "
+                f"pipeline='{self._plan_params.planning_pipeline}', "
+                f"planner_id='{self._plan_params.planner_id}', "
+                f"planning_time={self._planning_time:.2f}s, "
+                f"attempts={self._planning_attempts}, "
+                f"vel_scale={self._vel_scaling:.2f}, "
+                f"acc_scale={self._acc_scaling:.2f}"
+            )
+        except Exception as e:
+            # Fallback: plan() ohne extra Parameter benutzen
+            self._plan_params = None
+            self.log.warn(
+                f"[config] PlanRequestParameters konnte nicht initialisiert werden: {e}"
+            )
 
         # ---------------- Publishers ----------------
 
@@ -158,6 +197,7 @@ class Motion(Node):
         )
 
         # 6) Planner-Konfiguration (Pipeline + Planner-ID + Params) setzen
+        #    → vorerst nur Logging; später kannst du hier _plan_params updaten.
         self.create_subscription(
             MsgString,
             self.cfg_topics.subscribe_topic(NODE_KEY, "set_planner_cfg"),
@@ -214,6 +254,7 @@ class Motion(Node):
             self.log.info(
                 f"[config] Planner cfg updated: pipeline='{pipeline}', planner_id='{planner_id}'"
             )
+            # Später kannst du hier z.B. self._plan_params.planning_time usw. anpassen.
         except Exception as e:
             self.log.error(f"[config] set_planner_cfg: invalid JSON '{raw}': {e}")
 
@@ -242,7 +283,6 @@ class Motion(Node):
             # Falls nötig, von in_frame -> world per TF transformieren
             if in_frame != self.frame_world:
                 tf = self._lookup_tf(self.frame_world, in_frame)
-                # do_transform_pose arbeitet hier mit Pose -> gibt Pose zurück
                 pose_world = do_transform_pose(pose_in, tf)
             else:
                 pose_world = pose_in
@@ -261,7 +301,12 @@ class Motion(Node):
             self.arm.set_start_state_to_current_state()
             self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
 
-            result = self.arm.plan()
+            # --- Plan ausführen (immer mit unseren globalen Parametern, falls vorhanden)
+            if self._plan_params is not None:
+                result = self.arm.plan(single_plan_parameters=self._plan_params)
+            else:
+                result = self.arm.plan()
+
             core = getattr(result, "trajectory", None)
 
             if core is None:
@@ -309,7 +354,12 @@ class Motion(Node):
             self.arm.set_start_state_to_current_state()
             self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
 
-            result = self.arm.plan()
+            # --- Plan ausführen (immer mit unseren globalen Parametern, falls vorhanden)
+            if self._plan_params is not None:
+                result = self.arm.plan(single_plan_parameters=self._plan_params)
+            else:
+                result = self.arm.plan()
+
             core = getattr(result, "trajectory", None)
 
             if core is None:
@@ -350,20 +400,15 @@ class Motion(Node):
             # geplante Trajektorie aus MoveItPy holen
             msg_traj = self._planned.get_robot_trajectory_msg()
 
-            # WICHTIG:
-            #  - KEIN direktes publish auf pub_target_traj mehr!
-            #  - MoveIt kümmert sich selbst darum, die Trajektorie
-            #    an den FollowJointTrajectory-Controller zu schicken.
+            # MoveIt kümmert sich selbst darum, die Trajektorie
+            # an den FollowJointTrajectory-Controller zu schicken.
             ok = self.robot.execute(self._planned, controllers=[])
 
             if self._cancel:
                 self._emit("STOPPED:USER")
             elif not ok:
-                # MoveIt meldet einen echten Ausführungsfehler
                 self._emit("ERROR:EXEC")
             else:
-                # Ausführung war laut MoveIt erfolgreich:
-                # -> Trajektorie als "executed" publishen
                 self.pub_executed.publish(msg_traj)
                 self._emit("EXECUTED:OK")
 
