@@ -26,9 +26,10 @@ class MotionWidget(QWidget):
       - motionSpeedChanged(float mm_s)
       - moveHomeRequestedWithSpeed(float mm_s)
       - moveServiceRequestedWithSpeed(float mm_s)
+      - plannerCfgChanged(object)  # Dict mit pipeline/planner_id/params
 
     Die "Legacy"-Signals ohne Speed (moveHomeRequested / moveServiceRequested)
-    werden vom Widget aktuell NICHT mehr verwendet.
+    werden vom Widget aktuell NICHT mehr verwendet, sind aber noch vorhanden.
     """
 
     motionSpeedChanged = QtCore.pyqtSignal(float)
@@ -36,6 +37,7 @@ class MotionWidget(QWidget):
     moveServiceRequested = QtCore.pyqtSignal()
     moveHomeRequestedWithSpeed = QtCore.pyqtSignal(float)
     moveServiceRequestedWithSpeed = QtCore.pyqtSignal(float)
+    plannerCfgChanged = QtCore.pyqtSignal(object)  # z.B. Dict[str, Any]
 
     def __init__(
         self,
@@ -88,7 +90,6 @@ class MotionWidget(QWidget):
         root.addLayout(row)
 
         # Buttons -> nur noch Varianten MIT Speed
-        # (Keine Doppel-Ausführung mehr!)
         self.btnHome.clicked.connect(
             lambda: self.moveHomeRequestedWithSpeed.emit(self.get_motion_speed_mm_s())
         )
@@ -97,34 +98,39 @@ class MotionWidget(QWidget):
         )
 
     def _wire_outbound_to_bridge_if_present(self):
-        # bevorzugt dedizierte Motion-Bridge, sonst Poses-Bridge
-        targets = []
-        if self.bridge is not None:
-            for attr in ("_motion", "_pb"):
-                obj = getattr(self.bridge, attr, None)
-                if obj and getattr(obj, "signals", None):
-                    targets.append(obj.signals)
+        """
+        Verdrahtet die Widget-Signale direkt mit der MotionBridge,
+        wenn eine UIBridge mit MotionBridge (_motion) übergeben wurde.
+        Kein hasattr-/Target-Magic mehr.
+        """
+        if self.bridge is None:
+            return
 
-        for t in targets:
-            if hasattr(t, "motionSpeedChanged"):
-                self.motionSpeedChanged.connect(t.motionSpeedChanged.emit)
+        # Wir erwarten eine UIBridge mit MotionBridge-Instanz in _motion
+        motion_bridge = getattr(self.bridge, "_motion", None)
+        if motion_bridge is None:
+            return
 
-            # Varianten MIT Speed
-            if hasattr(t, "moveToHomeRequestedWithSpeed"):
-                self.moveHomeRequestedWithSpeed.connect(
-                    t.moveToHomeRequestedWithSpeed.emit
-                )
-            if hasattr(t, "moveToServiceRequestedWithSpeed"):
-                self.moveServiceRequestedWithSpeed.connect(
-                    t.moveToServiceRequestedWithSpeed.emit
-                )
+        sig = getattr(motion_bridge, "signals", None)
+        if sig is None:
+            return
 
-            # Legacy-Varianten OHNE Speed: bleiben vorhanden,
-            # werden vom Widget aber aktuell nicht mehr emittiert.
-            if hasattr(t, "moveToHomeRequested"):
-                self.moveHomeRequested.connect(t.moveToHomeRequested.emit)
-            if hasattr(t, "moveToServiceRequested"):
-                self.moveServiceRequested.connect(t.moveToServiceRequested.emit)
+        # Speed-Änderung
+        self.motionSpeedChanged.connect(sig.motionSpeedChanged)
+
+        # Buttons -> Varianten MIT Speed
+        self.moveHomeRequestedWithSpeed.connect(sig.moveToHomeRequestedWithSpeed)
+        self.moveServiceRequestedWithSpeed.connect(sig.moveToServiceRequestedWithSpeed)
+
+        # Legacy-Signale (aktuell ungenutzt, aber weiterhin verfügbar)
+        self.moveHomeRequested.connect(sig.moveToHomeRequested)
+        self.moveServiceRequested.connect(sig.moveToServiceRequested)
+
+        # Planner-Konfiguration (als Dict) → MotionBridge
+        self.plannerCfgChanged.connect(sig.plannerCfgChanged)
+
+        # Beim ersten Verbinden direkt aktuelle Planner-Config einmal pushen
+        self._emit_planner_cfg()
 
     # ---------- Store-Handling ----------
     def set_store(self, store: RecipeStore):
@@ -134,6 +140,8 @@ class MotionWidget(QWidget):
         self.store = store
         self.planner.set_store(store)
         self.planner.apply_store_defaults()
+        # Nach Store-Wechsel neue Planner-Config pushen
+        self._emit_planner_cfg()
 
     # ---------- Utilities ----------
     def set_busy(self, busy: bool):
@@ -153,6 +161,8 @@ class MotionWidget(QWidget):
     def apply_planner_model(self, planner_cfg: Dict[str, Any] | None):
         """Recipe.planner → UI (strikt, keine Fallbacks)."""
         self.planner.apply_planner_model(planner_cfg)
+        # nach Übernahme aus Recipe auch an MotionNode weitergeben
+        self._emit_planner_cfg()
 
     def collect_planner(self) -> Dict[str, Any]:
         """UI → Dict (für Recipe.planner)."""
@@ -167,10 +177,22 @@ class MotionWidget(QWidget):
 
     def set_planner(self, pipeline: str):
         self.planner.set_planner(pipeline)
+        self._emit_planner_cfg()
 
     def set_params(self, cfg: Dict[str, Any]):
         self.planner.set_params(cfg)
+        self._emit_planner_cfg()
 
     def reset_defaults(self):
         """Lädt Defaults *nur* aus RecipeStore."""
         self.planner.apply_store_defaults()
+        self._emit_planner_cfg()
+
+    # ---------- Planner → Bridge Helper ----------
+    def _emit_planner_cfg(self):
+        """
+        Baut die Planner-Konfiguration (Dict) aus der UI
+        und emittiert plannerCfgChanged.
+        """
+        cfg = self.collect_planner()
+        self.plannerCfgChanged.emit(cfg)

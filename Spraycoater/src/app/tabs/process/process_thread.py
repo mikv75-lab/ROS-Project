@@ -24,28 +24,13 @@ class ProcessThread(QtCore.QObject):
 
       - MODE_RECIPE (="setup"):
           Worker = ProcessSetupStatemachine
-          Quelle = Recipe (paths_compiled)
+          Quelle = Recipe (paths_compiled) über UIBridge.spraypath
           -> Klassischer MoveIt/Motion-Ablauf inkl. Predispense/Retreat, Logging usw.
 
       - MODE_RUN (="servo"):
           Worker = ProcessRunStatemachine
           Quelle = Run-YAML (Joint-Trajektorie für Servo)
           -> Servo-basierter Replay des Run-Recipes
-
-    Öffentliche API (wie vorher, weiterhin kompatibel):
-      - startSignal (pyqtSignal)
-      - stopSignal (pyqtSignal)
-      - notifyFinished(object)
-      - notifyError(str)
-      - stateChanged(str)
-      - logMessage(str)
-      - recipe property + set_recipe(...)
-      - isRunning()
-      - request_stop()
-      - wait(timeout_ms)
-
-    Für den Servo-Run-Modus gibt es die Klassenmethode:
-      ProcessThread.for_run(run_yaml_path="...", bridge=...)
     """
 
     MODE_RECIPE = "setup"
@@ -78,12 +63,12 @@ class ProcessThread(QtCore.QObject):
         super().__init__(parent)
 
         self._thread = QtCore.QThread()   # kein Parent, Lebensdauer selbst verwalten
-        self._bridge = bridge
+        self._bridge = bridge             # typischerweise UIBridge
         self._recipe: Optional[Recipe] = recipe
 
         # Modus / Run-Daten
         self._mode: str = mode or self.MODE_RECIPE
-        self._run_yaml_path: Optional[str] = run_yaml_path
+        self._run_yaml_path: Optional[run_yaml_path] = run_yaml_path
 
         self._worker: Optional[QtCore.QObject] = None
 
@@ -156,9 +141,13 @@ class ProcessThread(QtCore.QObject):
         self._recipe = recipe
 
         # Falls bereits ein Worker existiert (aber Thread nicht läuft),
-        # geben wir das Rezept an Worker weiter (nur sinnvoll im MODE_RECIPE).
+        # und dieser eine set_recipe-Methode hat, geben wir das Rezept weiter.
         if self._worker is not None and isinstance(self._worker, ProcessSetupStatemachine):
-            self._worker.set_recipe(recipe)  # type: ignore[attr-defined]
+            if hasattr(self._worker, "set_recipe"):
+                try:
+                    self._worker.set_recipe(recipe)  # type: ignore[attr-defined]
+                except Exception:
+                    _LOG.exception("ProcessThread.set_recipe: Fehler beim set_recipe im Worker.")
 
     def isRunning(self) -> bool:
         """
@@ -203,6 +192,7 @@ class ProcessThread(QtCore.QObject):
         MODE_RUN    -> ProcessRunStatemachine
         """
         if self._mode == self.MODE_RUN:
+            # Hier bleibt es wie gehabt: ProcessRunStatemachine bekommt die komplette Bridge
             worker = ProcessRunStatemachine(
                 run_yaml_path=self._run_yaml_path or "",
                 bridge=self._bridge,
@@ -212,9 +202,10 @@ class ProcessThread(QtCore.QObject):
                 self._run_yaml_path,
             )
         else:
+            # Setup-Statemachine holt sich alles, was sie braucht, aus der UIBridge
             worker = ProcessSetupStatemachine(
-                recipe=self._recipe,  # kann None sein, Worker loggt das
-                bridge=self._bridge,
+                recipe=self._recipe,      # kann None sein, Worker loggt das
+                ui_bridge=self._bridge,   # UIBridge (mit spraypath, motion, robot, ...)
             )
             _LOG.info(
                 "ProcessThread: Worker=ProcessSetupStatemachine, recipe=%r",
@@ -225,7 +216,6 @@ class ProcessThread(QtCore.QObject):
         worker.moveToThread(self._thread)
 
         # Signals vom Worker -> Wrapper (mit Cleanup)
-        # Beide Worker-Typen haben dieselben Signaturen.
         worker.stateChanged.connect(self.stateChanged)           # type: ignore[attr-defined]
         worker.logMessage.connect(self.logMessage)               # type: ignore[attr-defined]
         worker.notifyFinished.connect(self._on_worker_finished)  # type: ignore[attr-defined]
@@ -247,7 +237,7 @@ class ProcessThread(QtCore.QObject):
         _LOG.info("ProcessThread: cleanup Worker nach Run (mode=%s).", self._mode)
 
         try:
-            # externe Signale lösen, Logging etc. (nur Setup-Statemachine hat das)
+            # Falls der Worker eine eigene Disconnect-Logik hat
             if hasattr(worker, "_disconnect_signals"):
                 worker._disconnect_signals()  # type: ignore[attr-defined]
         except Exception:

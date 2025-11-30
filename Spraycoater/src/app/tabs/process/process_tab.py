@@ -13,8 +13,8 @@ import yaml
 
 from PyQt6 import QtCore
 from PyQt6.QtWidgets import (
-    QWidget, QPushButton, QLabel, QVBoxLayout,
-    QGroupBox, QFileDialog, QMessageBox, QTextEdit
+    QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout,
+    QGroupBox, QFileDialog, QMessageBox, QTextEdit, QSizePolicy
 )
 
 from geometry_msgs.msg import PoseStamped, PoseArray
@@ -26,7 +26,6 @@ from app.widgets.robot_status_box import RobotStatusInfoBox
 from app.widgets.info_groupbox import InfoGroupBox
 from .process_thread import ProcessThread
 from .robot_init_thread import RobotInitThread
-from .process_view import ProcessTabView
 
 _LOG = logging.getLogger("app.tabs.process")
 
@@ -40,7 +39,7 @@ class ProcessTab(QWidget):
           [GroupBox] Process Control,
           [GroupBox] Startbedingungen,
           [GroupBox] Setup (Tool / Substrate / Mount),
-          [GroupBox] Robot Status
+          [RobotStatusInfoBox] Robot Status
         ),
         [InfoGroupBox]
         [GroupBox] Process Status / Log
@@ -101,37 +100,141 @@ class ProcessTab(QWidget):
         self._in_update_start_conditions: bool = False
 
         # ==================================================================
-        # View / Layout auslagern
+        # View / Layout: nur Process-UI (kein Foxglove/WebView)
         # ==================================================================
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        self.view = ProcessTabView(self)
-        root.addWidget(self.view)
+        left = QWidget(self)
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(8, 8, 8, 8)
+        left_layout.setSpacing(8)
 
-        # Kurz-Referenzen, damit der restliche Code unverändert bleiben kann
-        self.grpProcess: QGroupBox = self.view.grpProcess
-        self.grpStatus: QGroupBox = self.view.grpStatus
-        self.grpSetup: QGroupBox = self.view.grpSetup
-        self.robotStatusBox: RobotStatusInfoBox = self.view.robotStatusBox
-        self.infoBox: InfoGroupBox = self.view.infoBox
-        self.grpProcessInfo: QGroupBox = self.view.grpProcessInfo
-        self.grpRecipe: QGroupBox = self.view.grpRecipe
+        # ---------- TOP ROW ----------
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(8)
+        left_layout.addLayout(top_row)
 
-        self.btnInit: QPushButton = self.view.btnInit
-        self.btnLoadRecipe: QPushButton = self.view.btnLoadRecipe
-        self.btnStart: QPushButton = self.view.btnStart
-        self.btnStop: QPushButton = self.view.btnStop
+        # --- Process Control ---
+        self.grpProcess = QGroupBox("Process Control", left)
+        vproc_outer = QVBoxLayout(self.grpProcess)
+        vproc_outer.setContentsMargins(8, 8, 8, 8)
+        vproc_outer.setSpacing(6)
 
-        self.lblStatus: QLabel = self.view.lblStatus
-        self.lblTool: QLabel = self.view.lblTool
-        self.lblSubstrate: QLabel = self.view.lblSubstrate
-        self.lblMount: QLabel = self.view.lblMount
-        self.lblProcessState: QLabel = self.view.lblProcessState
-        self.txtProcessLog: QTextEdit = self.view.txtProcessLog
-        self.txtRecipeSummary: QTextEdit = self.view.txtRecipeSummary
-        self.txtRecipePoses: QTextEdit = self.view.txtRecipePoses
+        self.btnInit = QPushButton("Init", self.grpProcess)
+        self.btnLoadRecipe = QPushButton("Load Recipe", self.grpProcess)
+        self.btnStart = QPushButton("Start", self.grpProcess)
+        self.btnStop = QPushButton("Stop", self.grpProcess)
+
+        for b in (self.btnInit, self.btnLoadRecipe, self.btnStart, self.btnStop):
+            b.setMinimumHeight(28)
+            vproc_outer.addWidget(b)
+        vproc_outer.addStretch(1)
+        top_row.addWidget(self.grpProcess, 0)
+
+        # --- Startbedingungen ---
+        self.grpStatus = QGroupBox("Startbedingungen", left)
+        vstat = QVBoxLayout(self.grpStatus)
+        vstat.setContentsMargins(8, 8, 8, 8)
+        vstat.setSpacing(4)
+
+        self.lblStatus = QLabel("-", self.grpStatus)
+        self.lblStatus.setWordWrap(True)
+        vstat.addWidget(self.lblStatus)
+        top_row.addWidget(self.grpStatus, 1)
+
+        # --- Setup ---
+        self.grpSetup = QGroupBox("Setup", left)
+        vsetup = QVBoxLayout(self.grpSetup)
+        vsetup.setContentsMargins(8, 8, 8, 8)
+        vsetup.setSpacing(4)
+
+        self.lblTool = QLabel("Tool: -", self.grpSetup)
+        self.lblSubstrate = QLabel("Substrate: -", self.grpSetup)
+        self.lblMount = QLabel("Mount: -", self.grpSetup)
+
+        for lab in (self.lblTool, self.lblSubstrate, self.lblMount):
+            lab.setWordWrap(True)
+            vsetup.addWidget(lab)
+
+        vsetup.addStretch(1)
+        top_row.addWidget(self.grpSetup, 1)
+
+        # --- Robot Status ---
+        self.robotStatusBox = RobotStatusInfoBox(left, title="Robot Status")
+        top_row.addWidget(self.robotStatusBox, 2)
+
+        # Size Policies für Top-Row
+        for gb in (self.grpProcess, self.grpStatus, self.grpSetup):
+            sp = gb.sizePolicy()
+            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+            sp.setVerticalPolicy(QSizePolicy.Policy.Expanding)
+            gb.setSizePolicy(sp)
+
+        sp_rs = self.robotStatusBox.sizePolicy()
+        sp_rs.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp_rs.setVerticalPolicy(QSizePolicy.Policy.Fixed)
+        self.robotStatusBox.setSizePolicy(sp_rs)
+
+        # ---------- INFO BOX ----------
+        self.infoBox = InfoGroupBox(left)
+        sp_info = self.infoBox.sizePolicy()
+        sp_info.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp_info.setVerticalPolicy(QSizePolicy.Policy.Fixed)
+        self.infoBox.setSizePolicy(sp_info)
+        left_layout.addWidget(self.infoBox)
+
+        # ---------- PROCESS STATUS / LOG ----------
+        self.grpProcessInfo = QGroupBox("Process Status / Log", left)
+        vproc_info = QVBoxLayout(self.grpProcessInfo)
+        vproc_info.setContentsMargins(8, 8, 8, 8)
+        vproc_info.setSpacing(4)
+
+        self.lblProcessState = QLabel("Kein Prozess aktiv.", self.grpProcessInfo)
+        self.lblProcessState.setWordWrap(True)
+
+        self.txtProcessLog = QTextEdit(self.grpProcessInfo)
+        self.txtProcessLog.setReadOnly(True)
+        self.txtProcessLog.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+
+        vproc_info.addWidget(self.lblProcessState)
+        vproc_info.addWidget(self.txtProcessLog, 1)
+
+        sp_pinfo = self.grpProcessInfo.sizePolicy()
+        sp_pinfo.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp_pinfo.setVerticalPolicy(QSizePolicy.Policy.Expanding)
+        self.grpProcessInfo.setSizePolicy(sp_pinfo)
+
+        left_layout.addWidget(self.grpProcessInfo, 1)
+
+        # ---------- RECIPE GROUP ----------
+        self.grpRecipe = QGroupBox("Recipe", left)
+        vrec = QHBoxLayout(self.grpRecipe)
+        vrec.setContentsMargins(8, 8, 8, 8)
+        vrec.setSpacing(6)
+
+        self.txtRecipeSummary = QTextEdit(self.grpRecipe)
+        self.txtRecipeSummary.setReadOnly(True)
+        self.txtRecipeSummary.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+
+        self.txtRecipePoses = QTextEdit(self.grpRecipe)
+        self.txtRecipePoses.setReadOnly(True)
+        self.txtRecipePoses.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+
+        vrec.addWidget(self.txtRecipeSummary, 1)
+        vrec.addWidget(self.txtRecipePoses, 1)
+
+        sp_rec = self.grpRecipe.sizePolicy()
+        sp_rec.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp_rec.setVerticalPolicy(QSizePolicy.Policy.Expanding)
+        self.grpRecipe.setSizePolicy(sp_rec)
+
+        left_layout.addWidget(self.grpRecipe, 1)
+
+        # Linke Seite in Root-Layout einhängen
+        root.addWidget(left)
 
         # -------------------------------------------------------------
         # Neuer Button: Run-Trajektorie / Run-Recipe laden (Servo-Modus)

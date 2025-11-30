@@ -25,7 +25,6 @@ class Recipe:
     description: str = ""
     tool: Optional[str] = None
     substrate: Optional[str] = None
-    substrates: List[str] = field(default_factory=list)
     substrate_mount: Optional[str] = None
 
     # Instanzparameter
@@ -55,7 +54,6 @@ class Recipe:
             description=str(d.get("description") or ""),
             tool=d.get("tool"),
             substrate=d.get("substrate"),
-            substrates=list(d.get("substrates") or ([] if d.get("substrate") is None else [d.get("substrate")])),
             substrate_mount=d.get("substrate_mount") or d.get("mount"),
             parameters=dict(d.get("parameters") or {}),
             planner=dict(d.get("planner") or {}),
@@ -102,7 +100,6 @@ class Recipe:
             "description": self.description,
             "tool": self.tool,
             "substrate": self.substrate,
-            "substrates": self.substrates if self.substrates else ([self.substrate] if self.substrate else []),
             "substrate_mount": self.substrate_mount,
             # parameters / planner auch durch _to_plain jagen (falls da mal numpy drin landet)
             "parameters": Recipe._to_plain(self.parameters or {}),
@@ -520,14 +517,6 @@ class Recipe:
         if self.substrate_mount:
             lines.append(f"substrate_mount: {self.substrate_mount}")
         lines.append(f"valid: {self.valid}")
-
-        subs = self.substrates if self.substrates else (
-            [self.substrate] if self.substrate else []
-        )
-        if subs and not (len(subs) == 1 and self.substrate and subs[0] == self.substrate):
-            lines.append("substrates:")
-            for s in subs:
-                lines.append(f"  - {s}")
 
         # Parameters
         if self.parameters:

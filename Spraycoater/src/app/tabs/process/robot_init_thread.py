@@ -41,16 +41,23 @@ class RobotInitThread(QtCore.QThread):
     ) -> None:
         """
         `bridge` ist deine UIBridge-Instanz.
+        Es wird erwartet, dass sie folgende Attribute besitzt:
+
+          - bridge._rb           -> RobotBridge (mit .initialized, .signals.initRequested, tcp_pose())
+          - bridge._motion       -> MotionBridge (mit .signals.moveToHomeRequested)
+          - bridge.robot         -> RobotState (mit .tcp_pose())
+          - bridge.poses         -> PosesState (mit .home())
         """
         super().__init__(parent)
-        self._bridge = bridge               # UIBridge
-        self._rb = getattr(bridge, "_rb", None)       # RobotBridge (Kommandos)
-        self._motion = getattr(bridge, "_motion", None)  # MotionBridge (Home-Fahrt)
+
+        # Direkte Referenzen ohne getattr/hasattr
+        self._bridge = bridge
+        self._rb = bridge._rb                 # RobotBridge
+        self._motion = bridge._motion         # MotionBridge
 
         # State-Container der UIBridge (signal-frei, thread-safe)
-        # Diese Objekte existieren immer (werden in UIBridge.__init__ angelegt).
-        self._robot_state = bridge.robot    # RobotState
-        self._poses_state = bridge.poses    # PosesState
+        self._robot_state = bridge.robot      # RobotState
+        self._poses_state = bridge.poses      # PosesState
 
         self._init_timeout_s = float(init_timeout_s)
         self._home_timeout_s = float(home_timeout_s)
@@ -66,13 +73,9 @@ class RobotInitThread(QtCore.QThread):
         self.startSignal.connect(self._on_start_signal)
         self.stopSignal.connect(self.request_stop)
 
-        # Motion-Result-Listener, falls verfügbar
-        try:
-            if self._motion is not None and hasattr(self._motion, "signals"):
-                self._motion.signals.motionResultChanged.connect(self._on_motion_result)
-        except Exception:
-            # nicht kritisch, Init läuft auch ohne Text-Feedback
-            pass
+        # Motion-Result-Listener (direkt, ohne Fallbacks)
+        if self._motion is not None:
+            self._motion.signals.motionResultChanged.connect(self._on_motion_result)
 
     # ------------------------------------------------------------------
     # Public API (Slots)
@@ -176,34 +179,19 @@ class RobotInitThread(QtCore.QThread):
         """
         Prüft initialized-Flag aus RobotBridge.
         """
-        rb = self._rb
-        if rb is None:
+        if self._rb is None:
             return False
-        try:
-            return bool(rb.initialized)
-        except Exception:
-            return False
+        return bool(self._rb.initialized)
 
     def _send_init(self) -> None:
         """
         INIT-Kommando über RobotBridge auslösen.
-        Bevorzugt RobotSignals.initRequested, sonst RobotBridge.do_init().
+        Erwartet: self._rb.signals.initRequested
         """
-        rb = self._rb
-        if rb is None:
+        if self._rb is None:
             return
 
-        try:
-            sig = getattr(rb, "signals", None)
-            if sig is not None and hasattr(sig, "initRequested"):
-                sig.initRequested.emit()
-                return
-
-            if hasattr(rb, "do_init"):
-                rb.do_init()
-        except Exception:
-            # Fehler hier sind nicht kritisch, der Timeout fängt das ab
-            pass
+        self._rb.signals.initRequested.emit()
 
     def _wait_for_initialized(self, timeout_s: float) -> bool:
         """
@@ -232,41 +220,24 @@ class RobotInitThread(QtCore.QThread):
 
     def _get_tcp_pose(self) -> Optional[PoseStamped]:
         """
-        Holt die aktuelle TCP-Pose bevorzugt aus dem RobotState-Cache der UIBridge.
+        Holt die aktuelle TCP-Pose aus dem RobotState-Cache der UIBridge.
         """
-        try:
-            pose = self._robot_state.tcp_pose()
-            if isinstance(pose, PoseStamped) or pose is None:
-                return pose
-        except Exception:
-            pass
-
-        # Fallback direkt aus RobotBridge, falls nötig
-        rb = self._rb
-        if rb is None:
+        if self._robot_state is None:
             return None
-        try:
-            pose2 = getattr(rb, "tcp_pose", None)
-            if isinstance(pose2, PoseStamped) or pose2 is None:
-                return pose2
-        except Exception:
-            pass
-
+        pose = self._robot_state.tcp_pose()
+        if isinstance(pose, PoseStamped) or pose is None:
+            return pose
         return None
 
     def _get_home_pose(self) -> Optional[PoseStamped]:
         """
         Holt die Home-Pose aus dem PosesState-Cache der UIBridge.
-
-        Vorteil: PosesState wird durch PosesBridge-Signale gefüllt, unabhängig
-        davon, wann dieser Thread erzeugt wurde. Kein Caching-Problem mehr.
         """
-        try:
-            pose = self._poses_state.home()
-            if isinstance(pose, PoseStamped) or pose is None:
-                return pose
-        except Exception:
-            pass
+        if self._poses_state is None:
+            return None
+        pose = self._poses_state.home()
+        if isinstance(pose, PoseStamped) or pose is None:
+            return pose
         return None
 
     @staticmethod
@@ -295,25 +266,13 @@ class RobotInitThread(QtCore.QThread):
     def _send_home(self) -> bool:
         """
         Triggert eine Home-Fahrt über MotionBridge.
-        Bevorzugt MotionSignals.moveToHomeRequested, sonst internen Helper.
+        Erwartet: self._motion.signals.moveToHomeRequested
         """
-        m = self._motion
-        if m is None:
+        if self._motion is None:
             return False
 
-        try:
-            sig = getattr(m, "signals", None)
-            if sig is not None and hasattr(sig, "moveToHomeRequested"):
-                sig.moveToHomeRequested.emit()
-                return True
-
-            if hasattr(m, "_do_named"):
-                m._do_named("home")  # type: ignore[attr-defined]
-                return True
-        except Exception:
-            return False
-
-        return False
+        self._motion.signals.moveToHomeRequested.emit()
+        return True
 
     def _wait_for_home(self, timeout_s: float) -> bool:
         """

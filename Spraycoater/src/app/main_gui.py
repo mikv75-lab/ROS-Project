@@ -9,6 +9,13 @@ os.environ.setdefault("PYVISTA_QT_API", "pyqt6")
 os.environ.setdefault("QT_X11_NO_MITSHM", "1")
 os.environ["MPLBACKEND"] = "Agg"
 
+# OpenGL:
+# - Software-Rendering erzwingen (kein GLX/ANGLE-Stress mit Xming)
+os.environ["QT_OPENGL"] = "software"
+
+# Klassisches X11 im Container
+os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+
 HERE         = os.path.abspath(os.path.dirname(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 SRC_ROOT     = os.path.join(PROJECT_ROOT, "src")

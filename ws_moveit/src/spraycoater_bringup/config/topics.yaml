@@ -49,52 +49,73 @@ topics:
 
   motion:
     subscribe:
-      - id: plan_waypoints
-        name: /spraycoater/motion/plan/waypoints
-        type: geometry_msgs/msg/PoseArray
+      # 1) Freie Pose planen
+      - id: plan_pose
+        name: /spraycoater/motion/plan_pose
+        type: geometry_msgs/msg/PoseStamped
         qos: default
+
+      # 2) Named-Pose planen ("home", "service")
       - id: plan_named
-        name: /spraycoater/motion/plan/named
+        name: /spraycoater/motion/plan_named
         type: std_msgs/msg/String
         qos: default
+
+      # 3) Ausführen des letzten gültigen Plans
       - id: execute
         name: /spraycoater/motion/execute
         type: std_msgs/msg/Bool
         qos: default
+
+      # 4) Bewegung sofort stoppen
       - id: stop
         name: /spraycoater/motion/stop
         type: std_msgs/msg/Empty
         qos: default
 
-      # optional
-      - id: cmd
-        name: /spraycoater/motion/cmd
-        type: std_msgs/msg/String
+      # 5) Motion-Speed (mm/s) aus UI / Recipe
+      - id: set_speed_mm_s
+        name: /spraycoater/motion/set_speed_mm_s
+        type: std_msgs/msg/Float64
         qos: default
-      - id: target_pose
-        name: /spraycoater/motion/target_pose
-        type: geometry_msgs/msg/PoseStamped
+
+      # 6) Planner + Params als JSON-String
+      #    z.B. {
+      #      "pipeline": "ompl",
+      #      "planner_id": "RRTConnectkConfigDefault",
+      #      "params": { "range": 0.2, "goal_bias": 0.05 }
+      #    }
+      - id: set_planner_cfg
+        name: /spraycoater/motion/set_planner_cfg
+        type: std_msgs/msg/String
         qos: default
 
     publish:
-      - id: trajectory
-        name: /spraycoater/motion/trajectory
+      # An den Controller gesendete Soll-Trajektorie
+      - id: target_trajectory
+        name: /spraycoater/motion/target_trajectory
         type: trajectory_msgs/msg/JointTrajectory
         qos: default
 
+      # MoveIt: geplante Trajektorie (UI/Analyse)
       - id: planned_trajectory_rt
         name: /spraycoater/motion/trajectory_planned
         type: moveit_msgs/msg/RobotTrajectory
         qos: latched
+
+      # MoveIt: ausgeführte Trajektorie (UI/Analyse)
       - id: executed_trajectory_rt
         name: /spraycoater/motion/trajectory_executed
         type: moveit_msgs/msg/RobotTrajectory
         qos: latched
 
+      # RViz/Foxglove Preview-Pfade
       - id: preview_markers
         name: /spraycoater/motion/preview/markers
         type: visualization_msgs/msg/MarkerArray
         qos: latched
+
+      # Text-Status (PLANNED:OK, EXECUTED:OK, ERROR:...)
       - id: motion_result
         name: /spraycoater/motion/result
         type: std_msgs/msg/String

@@ -1,7 +1,8 @@
 # src/ros/bridge/motion_bridge.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Dict, Any
+import json
 
 from PyQt6 import QtCore
 
@@ -23,9 +24,8 @@ class MotionSignals(QtCore.QObject):
       - moveToServiceRequested()
       - moveToHomeRequestedWithSpeed(float)
       - moveToServiceRequestedWithSpeed(float)
-
       - moveToPoseRequested(PoseStamped)
-      - moveToPoseWithSpeedRequested(PoseStamped, float)
+      - plannerCfgChanged(object)  # z.B. dict mit pipeline/planner_id/params
 
     Zusätzlich (Inbound aus ROS):
       - motionResultChanged(str): Texte aus /spraycoater/motion/result
@@ -36,21 +36,25 @@ class MotionSignals(QtCore.QObject):
       - reemit_cached(): emittiert den letzten bekannten motionResult-Text erneut.
     """
 
+    # Config aus UI
     motionSpeedChanged = QtCore.pyqtSignal(float)
+    plannerCfgChanged = QtCore.pyqtSignal(object)
 
+    # Named-Moves ohne Speed
     moveToHomeRequested = QtCore.pyqtSignal()
     moveToServiceRequested = QtCore.pyqtSignal()
 
+    # Named-Moves mit Speed (ServiceTab/MotionWidget)
     moveToHomeRequestedWithSpeed = QtCore.pyqtSignal(float)
     moveToServiceRequestedWithSpeed = QtCore.pyqtSignal(float)
 
     # freie Pose (z.B. aus Recipe / ProcessThread)
-    moveToPoseRequested = QtCore.pyqtSignal(object)              # PoseStamped
-    moveToPoseWithSpeedRequested = QtCore.pyqtSignal(object, float)
+    moveToPoseRequested = QtCore.pyqtSignal(object)  # PoseStamped
 
+    # Ergebnis-Text
     motionResultChanged = QtCore.pyqtSignal(str)
 
-    # NEU: MoveIt-Trajektorien als Qt-Signale
+    # MoveIt-Trajektorien als Qt-Signale
     plannedTrajectoryChanged = QtCore.pyqtSignal(object)   # RobotTrajectoryMsg
     executedTrajectoryChanged = QtCore.pyqtSignal(object)  # RobotTrajectoryMsg
 
@@ -73,26 +77,32 @@ class MotionBridge(BaseBridge):
     """
     Bridge für 'motion'.
 
-    Home/Service:
-      - nutzt plan_named + execute:
-          plan_named: "home" oder "service"
-          execute: Bool(True)
-      → ABER: execute wird jetzt erst nach "PLANNED:OK named='...'" geschickt,
-        um Rennbedingungen zu vermeiden.
+    Protokoll (Themen):
 
-    Recipe / freie Posen:
-      - moveToPoseRequested-Signal → _move_to_pose_impl
-        → target_pose publizieren
-        → execute(True) wird erst nach "PLANNED:OK pose" automatisch gesetzt.
+      Subscribe:
+        - plan_named       (std_msgs/String)           → /spraycoater/motion/plan_named
+        - plan_pose        (geometry_msgs/PoseStamped) → /spraycoater/motion/plan_pose
+        - execute          (std_msgs/Bool)             → /spraycoater/motion/execute
+        - stop             (std_msgs/Empty)            → /spraycoater/motion/stop
+        - set_speed_mm_s   (std_msgs/Float64)          → /spraycoater/motion/set_speed_mm_s
+        - set_planner_cfg  (std_msgs/String)           → /spraycoater/motion/set_planner_cfg
 
-    Hinweis:
-      Die Pose darf in beliebigem Frame kommen (z.B. 'scene').
-      Der Motion-Node transformiert sie nun intern nach 'world'.
+      Publish:
+        - motion_result         (std_msgs/String)
+            z.B. "PLANNED:OK pose", "PLANNED:OK named='home'", "EXECUTED:OK", "ERROR:..."
+        - planned_trajectory_rt  (moveit_msgs/RobotTrajectory, latched)
+        - executed_trajectory_rt (moveit_msgs/RobotTrajectory, latched)
 
-    NEU:
-      - Empfang der geplanten und ausgeführten Trajektorie als
-        moveit_msgs/RobotTrajectory (latched Topics) und Weitergabe
-        als Qt-Signale + Cache.
+    Auto-Execute-Logik:
+      - Home/Service:
+          UI → moveToHomeRequested / moveToServiceRequested
+          → plan_named('home'/'service')
+          → bei "PLANNED:OK named='...'" wird automatisch execute(True) gesetzt.
+
+      - Recipe / freie Pose:
+          UI/ProcessThread → moveToPoseRequested(pose)
+          → plan_pose(pose)
+          → bei "PLANNED:OK pose" wird automatisch execute(True) gesetzt.
     """
 
     GROUP = "motion"
@@ -101,16 +111,13 @@ class MotionBridge(BaseBridge):
         # Signale VOR super().__init__, analog SceneBridge
         self.signals = MotionSignals()
 
-        # Zuletzt gesetzte Motion-Geschwindigkeit (mm/s)
-        self._last_speed_mm_s: float = 100.0
-
         # pending named-move (home/service) für Auto-Execute
         self._pending_named: Optional[str] = None
 
         # pending für freie Pose (Recipe)
         self._pending_pose: bool = False
 
-        # NEU: Cache für Trajektorien (MoveIt RobotTrajectoryMsg)
+        # Cache für Trajektorien (MoveIt RobotTrajectoryMsg)
         self._last_planned_traj: Optional[RobotTrajectoryMsg] = None
         self._last_executed_traj: Optional[RobotTrajectoryMsg] = None
 
@@ -118,19 +125,26 @@ class MotionBridge(BaseBridge):
 
         # UI-/Thread-Signale verdrahten
         s = self.signals
-        s.motionSpeedChanged.connect(self._on_speed_changed)
 
+        # Named-Moves ohne Speed
         s.moveToHomeRequested.connect(self._on_move_home)
         s.moveToServiceRequested.connect(self._on_move_service)
 
+        # Named-Moves mit Speed
         s.moveToHomeRequestedWithSpeed.connect(self._on_move_home_with_speed)
         s.moveToServiceRequestedWithSpeed.connect(self._on_move_service_with_speed)
 
-        # freie Pose über Signale
+        # freie Pose über Signal
         s.moveToPoseRequested.connect(self._on_move_to_pose)
-        s.moveToPoseWithSpeedRequested.connect(self._on_move_to_pose_with_speed)
 
-        self.get_logger().info("[motion] MotionBridge initialisiert (named home/service via TF + Auto-Execute).")
+        # Config: Speed + PlannerCfg
+        s.motionSpeedChanged.connect(self._on_motion_speed_changed)
+        s.plannerCfgChanged.connect(self._on_planner_cfg_changed)
+
+        self.get_logger().info(
+            "[motion] MotionBridge initialisiert "
+            "(plan_named/plan_pose + Auto-Execute + Speed/Planner-Topics)."
+        )
 
     # ------------------------------------------------------------------
     # Inbound vom Motion-Node (publish in topics.yaml)
@@ -160,16 +174,16 @@ class MotionBridge(BaseBridge):
         # --- Auto-Execute-Logik für freie Pose (Recipe) ---
         if self._pending_pose:
             if text.startswith("PLANNED:OK pose"):
-                self.get_logger().info("[motion] auto-execute for recipe_pose")
+                self.get_logger().info("[motion] auto-execute for pose")
                 self._pending_pose = False
-                self._publish_execute(True, label="recipe_pose")
+                self._publish_execute(True, label="pose")
             elif text.startswith("ERROR:"):
-                self.get_logger().warning(f"[motion] planning for recipe_pose failed: {text}")
+                self.get_logger().warning(f"[motion] planning for pose failed: {text}")
                 self._pending_pose = False
 
         self.signals.motionResultChanged.emit(text)
 
-    # NEU: geplante Trajektorie vom Motion-Node (latched Topic)
+    # geplante Trajektorie vom Motion-Node (latched Topic)
     @sub_handler("motion", "planned_trajectory_rt")
     def _on_planned_traj(self, msg: RobotTrajectoryMsg):
         """
@@ -181,7 +195,7 @@ class MotionBridge(BaseBridge):
         except Exception as e:
             self.get_logger().error(f"[motion] plannedTrajectoryChanged emit failed: {e}")
 
-    # NEU: ausgeführte Trajektorie vom Motion-Node (latched Topic)
+    # ausgeführte Trajektorie vom Motion-Node (latched Topic)
     @sub_handler("motion", "executed_trajectory_rt")
     def _on_executed_traj(self, msg: RobotTrajectoryMsg):
         """
@@ -194,31 +208,6 @@ class MotionBridge(BaseBridge):
             self.get_logger().error(f"[motion] executedTrajectoryChanged emit failed: {e}")
 
     # ------------------------------------------------------------------
-    # UI → Bridge: Speed-Handling
-    # ------------------------------------------------------------------
-
-    def _on_speed_changed(self, speed_mm_s: float):
-        self._last_speed_mm_s = float(speed_mm_s)
-        self._publish_speed(speed_mm_s)
-
-    def _publish_speed(self, speed_mm_s: float):
-        """
-        Setzt über /spraycoater/motion/cmd den Speed:
-          'speed:<mm/s>'
-        (Motion-Node interpretiert das aktuell als Faktor 0.05..1.0.)
-        """
-        try:
-            msg_type = self.spec("subscribe", "cmd").resolve_type()
-            pub = self.pub("cmd")
-            msg = msg_type()
-            if hasattr(msg, "data"):
-                msg.data = f"speed:{float(speed_mm_s):.3f}"
-            pub.publish(msg)
-            self.get_logger().info(f"[motion] speed set to {speed_mm_s:.3f} (raw)")
-        except Exception as e:
-            self.get_logger().error(f"[motion] publish speed failed: {e}")
-
-    # ------------------------------------------------------------------
     # UI → Bridge: Move-Requests (Home/Service = named TF)
     # ------------------------------------------------------------------
 
@@ -228,35 +217,19 @@ class MotionBridge(BaseBridge):
     def _on_move_service(self):
         self._do_named("service")
 
-    def _on_move_home_with_speed(self, speed_mm_s: float):
-        self._on_speed_changed(speed_mm_s)
+    def _on_move_home_with_speed(self, speed: float):
+        """
+        Variante mit Speed: zuerst Speed publizieren, dann named-Plan.
+        """
+        self._publish_speed_mm_s(speed)
         self._do_named("home")
 
-    def _on_move_service_with_speed(self, speed_mm_s: float):
-        self._on_speed_changed(speed_mm_s)
+    def _on_move_service_with_speed(self, speed: float):
+        """
+        Variante mit Speed: zuerst Speed publizieren, dann named-Plan.
+        """
+        self._publish_speed_mm_s(speed)
         self._do_named("service")
-
-    # ------------------------------------------------------------------
-    # UI/Threads → Bridge: freie Pose per Signal
-    # ------------------------------------------------------------------
-
-    def _on_move_to_pose(self, pose: PoseStamped):
-        """Slot für moveToPoseRequested-Signal (ohne Geschwindigkeitsänderung)."""
-        if pose is None:
-            self.get_logger().warning("[motion] _on_move_to_pose: pose is None")
-            return
-        self._move_to_pose_impl(pose, set_speed=None)
-
-    def _on_move_to_pose_with_speed(self, pose: PoseStamped, speed_mm_s: float):
-        """Slot für moveToPoseWithSpeedRequested-Signal (mit expliziter Speed-Vorgabe)."""
-        if pose is None:
-            self.get_logger().warning("[motion] _on_move_to_pose_with_speed: pose is None")
-            return
-        self._move_to_pose_impl(pose, set_speed=float(speed_mm_s))
-
-    # ------------------------------------------------------------------
-    # Kern-Move-Logik: Named Frames (home/service)
-    # ------------------------------------------------------------------
 
     def _do_named(self, name: str):
         """
@@ -274,7 +247,7 @@ class MotionBridge(BaseBridge):
             # Merken, dass wir für dieses named einen Auto-Execute wollen
             self._pending_named = name
 
-            # 1) plan_named publizieren
+            # plan_named publizieren
             spec_named = self.spec("subscribe", "plan_named")
             MsgNamed = spec_named.resolve_type()
             pub_named = self.pub("plan_named")
@@ -289,6 +262,65 @@ class MotionBridge(BaseBridge):
         except Exception as e:
             self._pending_named = None
             self.get_logger().error(f"[motion] move_named('{name}') failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Config: Speed + PlannerCfg (nur Topic-Forwarding)
+    # ------------------------------------------------------------------
+
+    def _publish_speed_mm_s(self, speed: float):
+        """
+        Hilfsfunktion: Speed als std_msgs/Float64 auf set_speed_mm_s publizieren.
+        """
+        try:
+            spec = self.spec("subscribe", "set_speed_mm_s")
+            MsgType = spec.resolve_type()
+            pub = self.pub("set_speed_mm_s")
+
+            msg = MsgType()
+            if hasattr(msg, "data"):
+                msg.data = float(speed)
+
+            pub.publish(msg)
+            self.get_logger().info(f"[motion] set_speed_mm_s -> {float(speed):.1f} mm/s")
+        except Exception as e:
+            self.get_logger().error(f"[motion] set_speed_mm_s publish failed: {e}")
+
+    def _on_motion_speed_changed(self, speed: float):
+        """
+        UI-Event: Motion-Speed geändert.
+        Wird 1:1 auf das Topic set_speed_mm_s weitergeleitet.
+        """
+        self._publish_speed_mm_s(speed)
+
+    def _on_planner_cfg_changed(self, cfg: object):
+        """
+        UI-Event: Planner-Konfiguration geändert.
+        Erwartet dict-ähnlich; wird als JSON-String auf set_planner_cfg publiziert.
+        """
+        try:
+            if cfg is None:
+                self.get_logger().warning("[motion] plannerCfgChanged: cfg is None")
+                return
+
+            raw: str
+            if isinstance(cfg, str):
+                raw = cfg
+            else:
+                # dict / Mapping o.ä. -> JSON
+                raw = json.dumps(cfg, ensure_ascii=False)
+
+            spec = self.spec("subscribe", "set_planner_cfg")
+            MsgType = spec.resolve_type()
+            pub = self.pub("set_planner_cfg")
+
+            msg = MsgType()
+            if hasattr(msg, "data"):
+                msg.data = raw
+
+            pub.publish(msg)
+            self.get_logger().info(f"[motion] set_planner_cfg -> {raw}")
+        except Exception as e:
+            self.get_logger().error(f"[motion] set_planner_cfg publish failed: {e}")
 
     # ------------------------------------------------------------------
     # Helper: Execute-Flag setzen
@@ -317,23 +349,27 @@ class MotionBridge(BaseBridge):
         """
         Öffentliche Hilfsfunktion für andere Teile der App (Backward-Compat):
 
-          - optional Speed setzen
-          - target_pose = PoseStamped publizieren
-          - execute(True) wird NICHT mehr direkt gesetzt,
+          - target (Plan) setzen via plan_pose
+          - execute(True) wird NICHT direkt gesetzt,
             sondern nach "PLANNED:OK pose" automatisch.
-
-        Motion-Node behandelt das wie _on_target_pose + _on_execute.
         """
         if pose is None:
             self.get_logger().warning("[motion] move_to_pose: pose is None")
-        self._move_to_pose_impl(pose, set_speed=set_speed)
+            return
+        self._move_to_pose_impl(pose)
 
-    def _move_to_pose_impl(self, pose: PoseStamped, set_speed: Optional[float] = None):
+    def _on_move_to_pose(self, pose: PoseStamped):
+        """Slot für moveToPoseRequested-Signal."""
+        if pose is None:
+            self.get_logger().warning("[motion] _on_move_to_pose: pose is None")
+            return
+        self._move_to_pose_impl(pose)
+
+    def _move_to_pose_impl(self, pose: PoseStamped):
         """
         Zentrale Implementierung für freie Posen.
         Wird von:
           - _on_move_to_pose
-          - _on_move_to_pose_with_speed
           - move_to_pose (API) verwendet.
         """
         if pose is None:
@@ -341,23 +377,20 @@ class MotionBridge(BaseBridge):
             return
 
         try:
-            if set_speed is not None:
-                self._on_speed_changed(float(set_speed))
-
             # Wir erwarten jetzt einen gültigen Plan für genau diese Pose
             self._pending_pose = True
 
-            # target_pose publizieren
-            spec_pose = self.spec("subscribe", "target_pose")
+            # plan_pose publizieren
+            spec_pose = self.spec("subscribe", "plan_pose")
             PoseType = spec_pose.resolve_type()
-            pub_pose = self.pub("target_pose")
+            pub_pose = self.pub("plan_pose")
 
             msg_pose = PoseType()
             msg_pose.header = pose.header
             msg_pose.pose = pose.pose
 
             self.get_logger().info(
-                f"[motion] target_pose publish: frame_id='{msg_pose.header.frame_id}', "
+                f"[motion] plan_pose publish: frame_id='{msg_pose.header.frame_id}', "
                 f"pos=({msg_pose.pose.position.x:.3f}, "
                 f"{msg_pose.pose.position.y:.3f}, "
                 f"{msg_pose.pose.position.z:.3f})"
@@ -365,9 +398,9 @@ class MotionBridge(BaseBridge):
 
             pub_pose.publish(msg_pose)
             self.get_logger().info(
-                "[motion] target_pose (recipe) published, warte auf PLANNED:OK pose."
+                "[motion] plan_pose (recipe) published, warte auf PLANNED:OK pose."
             )
-            # KEIN execute(True) mehr hier!
+            # KEIN execute(True) mehr hier – das macht _on_motion_result nach PLANNED:OK pose.
         except Exception as e:
             self._pending_pose = False
             self.get_logger().error(f"[motion] move_to_pose_impl failed: {e}")

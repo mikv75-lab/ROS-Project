@@ -111,7 +111,6 @@ def generate_launch_description():
         )
 
         # MoveIt-Konfig für Motion-Node (MoveItPy)
-        # aktuell hart auf omron_viper_s650, passt aber zu deinem Setup
         moveit_config = (
             MoveItConfigsBuilder("omron_viper_s650", package_name=moveit_pkg)
             .to_moveit_configs()
@@ -165,6 +164,7 @@ def generate_launch_description():
             "max_velocity_scaling_factor": 1.0,
             "max_acceleration_scaling_factor": 1.0,
         }
+
         # Optional: Existenzprüfungen der zentralen Configs (werden von config_hub genutzt)
         must_exist = [
             os.path.join(bringup_share, "config", "frames.yaml"),
@@ -244,7 +244,7 @@ def generate_launch_description():
         )
         robot_after_robot = TimerAction(period=10.0, actions=[robot_node])
 
-        # Rückgabe der Sequenz
+        # Rückgabe der Sequenz (ohne Foxglove-Bridge)
         return [
             include_robot,
             scene_after_robot,

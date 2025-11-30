@@ -4,9 +4,7 @@ import logging
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QGuiApplication
-from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout
-
-from pyvistaqt import QtInteractor
+from PyQt6.QtWidgets import QMainWindow, QTabWidget
 
 from app.tabs.process.process_tab import ProcessTab
 from app.tabs.recipe.recipe_tab import RecipeTab
@@ -26,66 +24,37 @@ class MainWindow(QMainWindow):
         self.bridge = bridge
         self.setWindowTitle("SprayCoater UI")
 
-        # 🔹 Zentralen RecipeStore einmal erstellen und weiterreichen
+        # Zentralen RecipeStore einmal erstellen und weiterreichen
         self.store = RecipeStore.from_ctx(self.ctx)
-
-        # Persistenter Preview-Interactor (lebt im MainWindow)
-        self.previewPlot = QtInteractor(self)
-        self.previewPlot.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 
         # Tabs
         tabs = QTabWidget(self)
-        tabs.addTab(ProcessTab(ctx=self.ctx, bridge=self.bridge), "Process")
 
-        # RecipeTab bekommt Store + attach_preview
-        self.recipeTab = RecipeTab(   # Referenz behalten
+        # ProcessTab
+        self.processTab = ProcessTab(ctx=self.ctx, bridge=self.bridge)
+        tabs.addTab(self.processTab, "Process")
+
+        # RecipeTab (ohne Preview-Interactor / attach_preview)
+        self.recipeTab = RecipeTab(
             ctx=self.ctx,
             store=self.store,
             bridge=self.bridge,
-            attach_preview_widget=self.attach_preview_widget,
         )
         tabs.addTab(self.recipeTab, "Recipe")
 
         # ServiceTab bekommt denselben Store
-        tabs.addTab(ServiceTab(ctx=self.ctx, store=self.store, bridge=self.bridge), "Service")
-        tabs.addTab(SystemTab(ctx=self.ctx, bridge=self.bridge), "System")
+        self.serviceTab = ServiceTab(ctx=self.ctx, store=self.store, bridge=self.bridge)
+        tabs.addTab(self.serviceTab, "Service")
+
+        # SystemTab
+        self.systemTab = SystemTab(ctx=self.ctx, bridge=self.bridge)
+        tabs.addTab(self.systemTab, "System")
+
         self.setCentralWidget(tabs)
 
         # Nach Layout/Show einmalig zentrieren
         self._centered_once = False
         QTimer.singleShot(0, self.center_on_primary)
-
-    # Preview-Host einhängen (vom RecipeTab aufgerufen)
-    def attach_preview_widget(self, host_widget):
-        try:
-            ly = host_widget.layout()
-            if ly is None:
-                ly = QVBoxLayout(host_widget)
-                ly.setContentsMargins(0, 0, 0, 0)
-
-            # Interactor einhängen
-            self.previewPlot.setParent(host_widget)
-            try:
-                ly.addWidget(self.previewPlot)
-            except Exception:
-                pass
-
-            # Panel-Objekt robust finden (Elternkette hochlaufen)
-            panel = host_widget
-            while panel is not None and not hasattr(panel, "set_interactor"):
-                panel = panel.parent()
-
-            if panel is not None and hasattr(panel, "set_interactor"):
-                panel.set_interactor(self.previewPlot)  # -> emit interactorReady
-
-            # Erstes Rendern anstoßen
-            self.previewPlot.setEnabled(True)
-            self.previewPlot.show()
-            self.previewPlot.update()
-            if hasattr(self.previewPlot, "render"):
-                self.previewPlot.render()
-        except Exception:
-            _LOG.exception("Attach preview widget failed")
 
     def showEvent(self, event):
         super().showEvent(event)
