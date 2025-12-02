@@ -1,10 +1,12 @@
-# spraycoater_bringup/config/robot.yaml
 version: 1
+
+# Welcher Roboter ist aktiv (Key in robots:)
 selected: omron   # meca | omron
 
 robots:
   meca:
     moveit_pkg: mecademic_moveit_config
+    backend: meca_sim          # später meca_real möglich
     cage_dirs:
       - resource/environment
     mount_dirs:
@@ -14,6 +16,7 @@ robots:
 
   omron:
     moveit_pkg: omron_moveit_config
+    backend: omron_sim         # für echten Roboter: omron_real
     cage_dirs:
       - resource/environment
     mount_dirs:

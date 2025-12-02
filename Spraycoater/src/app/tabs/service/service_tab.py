@@ -12,13 +12,13 @@ from app.model.recipe.recipe_store import RecipeStore
 
 from ...widgets.robot_command_box import RobotCommandButtonsBox
 from ...widgets.robot_status_box import RobotStatusInfoBox
+from ...widgets.omron_tcp_widget import OmronTcpWidget   # ⬅️ NEU
 
 from .scene_box import SceneGroupBox
 from .poses_box import PosesGroupBox
 from .tool_box import ToolGroupBox
 from .motion_widget import MotionWidget
 
-# Jog-Widgets nutzen jetzt korrekt ctx für Frames/QoS/Topics
 from .servo_widgets import JointJogWidget, CartesianJogWidget
 
 _LOG = logging.getLogger("app.tabs.service")
@@ -44,28 +44,30 @@ class ServiceTab(QWidget):
         root.setSpacing(8)
 
         # ================================================================
-        # [0] TOP ROW: COMMANDS + STATUS
+        # [0] TOP ROW: COMMANDS + STATUS + OMRON TCP
         # ================================================================
         topRow = QHBoxLayout()
         topRow.setSpacing(8)
 
         self.commandBox = RobotCommandButtonsBox(self, title="Commands")
         self.statusBox  = RobotStatusInfoBox(self, title="Robot Status")
+        self.omronWidget = OmronTcpWidget(self.bridge, self)   # ⬅️ NEU
 
-        for w in (self.commandBox, self.statusBox):
+        for w in (self.commandBox, self.statusBox, self.omronWidget):
             sp = w.sizePolicy()
             sp.setHorizontalPolicy(QSizePolicy.Expanding)
             sp.setVerticalPolicy(QSizePolicy.Preferred)
             w.setSizePolicy(sp)
 
+        # Commands | Status | TCP-Client (rechts)
         topRow.addWidget(self.commandBox, 1)
         topRow.addWidget(self.statusBox, 2)
+        topRow.addWidget(self.omronWidget, 2)
         root.addLayout(topRow)
 
         # ================================================================
         # [2] BOTTOM ROW: Poses | Tools | Scene
         # ================================================================
-        # (Noch ohne ctx – kann aber leicht umgestellt werden)
         self.posesBox = PosesGroupBox(self.bridge, self)
         self.toolBox  = ToolGroupBox(self.bridge, self)
         self.sceneBox = SceneGroupBox(self.bridge, self)
@@ -91,11 +93,11 @@ class ServiceTab(QWidget):
         )
         self.tabs.addTab(self.motionWidget, "Motion")
 
-        # (b) Joint Jog — jetzt MIT ctx → verwendet frames.yaml
+        # (b) Joint Jog
         self.jointJogWidget = JointJogWidget(self.ctx, self.bridge, self.tabs)
         self.tabs.addTab(self.jointJogWidget, "Joint Jog")
 
-        # (c) Cartesian Jog — jetzt MIT ctx → verwendet frames.yaml
+        # (c) Cartesian Jog
         self.cartJogWidget = CartesianJogWidget(self.ctx, self.bridge, self.tabs)
         self.tabs.addTab(self.cartJogWidget, "Cartesian Jog")
 
@@ -185,19 +187,17 @@ class ServiceTab(QWidget):
     def _on_tab_changed(self, idx: int) -> None:
         page = self.tabs.widget(idx)
 
-        # Servo immer einschalten
         try:
             if hasattr(self.bridge, "robot_servo_on"):
                 self.bridge.robot_servo_on()
         except Exception as e:
             _LOG.error("robot_servo_on() failed: %s", e)
 
-        # Modus setzen
         if page is self.jointJogWidget:
             mode = "joint"
         elif page is self.cartJogWidget:
             mode = "cart"
-        else:  # Motion-Tab
+        else:
             mode = "joint"
 
         if hasattr(self.bridge, "servo_set_command_type"):

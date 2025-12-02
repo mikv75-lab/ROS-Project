@@ -95,6 +95,14 @@ class Poses(Node):
     def __init__(self):
         super().__init__("poses")
 
+        # -----------------------------------------
+        # Backend-Parameter (omron_sim, omron_real, ...)
+        # -----------------------------------------
+        self.declare_parameter("backend", "default")
+        self.backend: str = (
+            self.get_parameter("backend").get_parameter_value().string_value or "default"
+        )
+
         # Resolver / Frames
         self.loader = topics()
         self.frames = frames()
@@ -145,7 +153,8 @@ class Poses(Node):
         self._publish_named_pose_if_exists("service")
 
         self.get_logger().info(
-            f"✅ PosesManager aktiv – {len(self.poses)} Posen (world='{self.frame_world}', tcp='{self.frame_tcp}') – nur /tf_static"
+            f"✅ PosesManager aktiv (backend='{self.backend}') – "
+            f"{len(self.poses)} Posen (world='{self.frame_world}', tcp='{self.frame_tcp}') – nur /tf_static"
         )
 
     # ---------- TF/Publish Utilities ----------

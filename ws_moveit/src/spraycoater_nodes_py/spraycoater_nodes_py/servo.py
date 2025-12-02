@@ -31,6 +31,10 @@ class ServoBridge(Node):
       publish (ServoBridge -> moveit_servo):
         - cartesian_mm (geometry_msgs/TwistStamped)  /servo/cartesian_mm
         - joint_jog    (control_msgs/JointJog)       /servo/joint_jog
+
+    Backend:
+      - per Parameter 'backend' (z.B. 'omron_sim', 'omron_real', 'meca_sim')
+        aktuell nur fürs Logging; Service-Name bleibt /omron_servo_node/...
     """
 
     # Mapping von String -> ServoCommandType
@@ -50,14 +54,20 @@ class ServoBridge(Node):
     def __init__(self) -> None:
         super().__init__("servo_bridge")
 
+        # ---------------- Backend-Parameter ----------------
+        # z.B. "omron_sim", "omron_real", "meca_sim" – kommt aus bringup
+        self.declare_parameter("backend", "default")
+        self.backend: str = (
+            self.get_parameter("backend").get_parameter_value().string_value or "default"
+        )
+
         # Config-Loader / Frames
         self.loader = topics()
         self.frames_cfg = frames()
         self._F = self.frames_cfg.resolve
 
-        # Default-Frame (world aus frames.yaml, sonst "world")
+        # Default-Frame (tcp aus frames.yaml, sonst "world")
         self.current_frame = self._F(self.frames_cfg.get("tcp", "world"))
-        self.get_logger().info(f"ServoBridge: Initial frame = '{self.current_frame}'")
 
         # ---- Topics aus config_hub laden ----
         topic_twist_in = self.loader.subscribe_topic(NODE_KEY, "twist_out")
@@ -101,13 +111,15 @@ class ServoBridge(Node):
         )
 
         # ---- Service-Client für CommandType ----
+        # (Name bleibt fix, da dein omron_servo_node sowohl in SIM als auch REAL so heißt)
         self.servo_client = self.create_client(
             ServoCommandType, "/omron_servo_node/switch_command_type"
         )
         self.current_mode: int | None = None
 
         self.get_logger().info(
-            f"✅ ServoBridge aktiv – Publiziert auf '{topic_cartesian_cmd}' und '{topic_joint_cmd}'"
+            f"✅ ServoBridge aktiv (backend='{self.backend}') – "
+            f"Frame='{self.current_frame}', publish: '{topic_cartesian_cmd}', '{topic_joint_cmd}'"
         )
 
     # ------------------------------------------------------------
@@ -121,7 +133,7 @@ class ServoBridge(Node):
         out.header.stamp = self.get_clock().now().to_msg()
         self.pub_cartesian.publish(out)
         self.get_logger().debug(
-            f"Twist → cartesian_mm (frame={out.header.frame_id}, "
+            f"[{self.backend}] Twist → cartesian_mm (frame={out.header.frame_id}, "
             f"lin=({out.twist.linear.x:.4f},"
             f"{out.twist.linear.y:.4f},"
             f"{out.twist.linear.z:.4f}), "
@@ -141,14 +153,14 @@ class ServoBridge(Node):
 
         self.pub_joint.publish(out)
         self.get_logger().debug(
-            f"JointJog → joint_jog (n={len(out.joint_names)}, duration={out.duration:.3f})"
+            f"[{self.backend}] JointJog → joint_jog (n={len(out.joint_names)}, duration={out.duration:.3f})"
         )
 
     def _on_set_mode(self, msg: String) -> None:
         raw = (msg.data or "").strip().upper()
         if raw not in self.MODE_MAP:
             self.get_logger().warning(
-                f"Unbekannter Servo-Mode '{msg.data}' – erwartet z.B. JOINT_JOG, TWIST oder POSE."
+                f"[{self.backend}] Unbekannter Servo-Mode '{msg.data}' – erwartet z.B. JOINT_JOG, TWIST oder POSE."
             )
             return
 
@@ -159,13 +171,13 @@ class ServoBridge(Node):
         """Interne Hilfsfunktion: CommandType-Service synchron aufrufen."""
         if self.current_mode == cmd_type:
             self.get_logger().info(
-                f"Servo-Mode bereits '{label}' – kein Servicecall nötig."
+                f"[{self.backend}] Servo-Mode bereits '{label}' – kein Servicecall nötig."
             )
             return
 
         if not self.servo_client.wait_for_service(timeout_sec=5.0):
             self.get_logger().warning(
-                "Service /omron_servo_node/switch_command_type nicht verfügbar."
+                f"[{self.backend}] Service /omron_servo_node/switch_command_type nicht verfügbar."
             )
             return
 
@@ -173,40 +185,39 @@ class ServoBridge(Node):
         req.command_type = cmd_type
 
         self.get_logger().info(
-            f"↪ switch_command_type: '{label}' → command_type={cmd_type}"
+            f"[{self.backend}] ↪ switch_command_type: '{label}' → command_type={cmd_type}"
         )
         future = self.servo_client.call_async(req)
         rclpy.spin_until_future_complete(self, future)
 
         if not future.result():
             self.get_logger().error(
-                "switch_command_type: Keine Antwort vom Service."
+                f"[{self.backend}] switch_command_type: Keine Antwort vom Service."
             )
             return
 
         resp = future.result()
         if resp.success:
-            # Response hat *nur* success, kein command_type-Feld
             self.current_mode = cmd_type
             self.get_logger().info(
-                f"✅ Servo-Mode geändert auf '{label}' (command_type={cmd_type})"
+                f"[{self.backend}] ✅ Servo-Mode geändert auf '{label}' (command_type={cmd_type})"
             )
         else:
             self.get_logger().warning(
-                f"❌ switch_command_type fehlgeschlagen (command_type={cmd_type})"
+                f"[{self.backend}] ❌ switch_command_type fehlgeschlagen (command_type={cmd_type})"
             )
 
     def _on_set_frame(self, msg: String) -> None:
         raw = (msg.data or "").strip().lower()
         if not raw:
-            self.get_logger().warning("set_frame: Leerstring ignoriert.")
+            self.get_logger().warning(f"[{self.backend}] set_frame: Leerstring ignoriert.")
             return
 
         # Nur diese zwei Frames sind erlaubt
         allowed = ("world", "tcp")
         if raw not in allowed:
             self.get_logger().warning(
-                f"set_frame: Frame '{raw}' nicht erlaubt. "
+                f"[{self.backend}] set_frame: Frame '{raw}' nicht erlaubt. "
                 f"Erlaubt: 'world', 'tcp'. "
                 f"Frames.yaml enthält, wird aber ignoriert: "
                 f"{list(self.frames_cfg.frames.keys())}"
@@ -220,12 +231,12 @@ class ServoBridge(Node):
         self.current_frame = resolved
 
         self.get_logger().info(
-            f"Servo-Frame geändert: {old} → {self.current_frame} (gewählt: {raw})"
+            f"[{self.backend}] Servo-Frame geändert: {old} → {self.current_frame} (gewählt: {raw})"
         )
 
 
 # ------------------------------------------------------------------
-# main: normaler Node-Start (kein Test mehr)
+# main: normaler Node-Start
 # ------------------------------------------------------------------
 def main(args=None):
     rclpy.init(args=args)

@@ -311,3 +311,7 @@ topics:
         name: /spraycoater/omron/raw_rx
         type: std_msgs/msg/String
         qos: default
+      - id: connectionStatus     # TCP-Verbindungsstatus OmronTcpBridge -> UI
+        name: /spraycoater/omron/connection_status
+        type: std_msgs/msg/Bool
+        qos: default

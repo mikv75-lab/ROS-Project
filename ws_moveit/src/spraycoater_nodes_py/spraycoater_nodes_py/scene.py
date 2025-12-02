@@ -112,10 +112,22 @@ class Scene(Node):
       - /collision_object hat TRANSIENT_LOCAL-QoS -> Late Joiner (RViz etc.)
         bekommen immer den letzten Stand, ohne 1 Hz-Republish.
       - Änderungen (cage/mount/substrate) werden zurück in scene.yaml geschrieben.
+
+      Backend-Parameter:
+        - backend: z.B. "omron_sim", "omron_real", "meca_sim"
+          (aktuell nur fürs Logging / Debugging, Verhalten identisch)
     """
 
     def __init__(self):
         super().__init__("scene")
+
+        # ------------------------
+        # Backend-Parameter (omron_sim, omron_real, ...)
+        # ------------------------
+        self.declare_parameter("backend", "default")
+        self.backend: str = (
+            self.get_parameter("backend").get_parameter_value().string_value or "default"
+        )
 
         # ------------------------
         # Loader (Topics/QoS + Frames) aus ROS-Paket
@@ -233,7 +245,8 @@ class Scene(Node):
         self._publish_current_once()
 
         self.get_logger().info(
-            "⏳ Warte auf MoveIt – Szene wird einmalig gesendet, "
+            f"⏳ SceneNode aktiv (backend='{self.backend}', robot='{sel or 'unknown'}') – "
+            "warte auf MoveIt; Szene wird einmalig gesendet, "
             "CollisionObjects sind latched (TRANSIENT_LOCAL)."
         )
         self._start_scene_wait()
@@ -565,7 +578,9 @@ class Scene(Node):
             co.operation = CollisionObject.ADD
             self.scene_pub.publish(co)
 
-        self.get_logger().info("🎯 Szene FINAL & EINMALIG an MoveIt gesendet (latched).")
+        self.get_logger().info(
+            f"🎯 Szene FINAL & EINMALIG an MoveIt gesendet (latched, backend='{self.backend}')."
+        )
 
         # Sicherstellen, dass Listen/Current mindestens einmal gesendet wurden
         self._publish_lists_once()

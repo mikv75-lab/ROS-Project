@@ -1,27 +1,16 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="omron_viper_s650">
 
-  <!--
-    Pfad zur Datei mit den Initialpositionen.
-    Bitte ggf. den Paketnamen/Pfad anpassen, falls deine initial_positions.yaml woanders liegt.
-  -->
-  <xacro:arg
-      name="initial_positions_file"
-      default="$(find omron_moveit_config)/config/initial_positions.yaml" />
-
   <!-- Basis-URDF aus dem Beschreibungspaket -->
   <xacro:include filename="$(find omron_viper_description)/urdf/omron_viper.urdf.xacro" />
 
   <!-- ros2_control-Xacro aus diesem Paket -->
   <xacro:include filename="omron_viper_s650.ros2_control.xacro" />
 
-  <!--
-    ros2_control-System:
-      - Name: omron_viper_s650_system
-      - Initialpositionen aus initial_positions_file
-  -->
+  <!-- ros2_control-System:
+       - Name: omron_viper_s650_system
+       - Initialpositionen werden *intern* geladen -->
   <xacro:omron_viper_s650_ros2_control
-      name="omron_viper_s650_system"
-      initial_positions_file="$(arg initial_positions_file)" />
+      name="omron_viper_s650_system" />
 
 </robot>

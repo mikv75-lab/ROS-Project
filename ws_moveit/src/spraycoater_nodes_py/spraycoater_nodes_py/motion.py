@@ -24,6 +24,8 @@ from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg
 from moveit.planning import MoveItPy, PlanRequestParameters
 from moveit.core.robot_trajectory import RobotTrajectory as RobotTrajectoryCore
 
+from moveit_configs_utils import MoveItConfigsBuilder
+
 from tf2_ros import Buffer, TransformListener
 from tf2_geometry_msgs import do_transform_pose
 
@@ -33,6 +35,17 @@ NODE_KEY    = "motion"
 GROUP_NAME  = "omron_arm_group"
 EE_LINK     = "tcp"
 WORLD_FRAME = "world"
+
+# ----------------- Planner Defaults (hart kodiert) -----------------
+
+DEFAULT_PLANNER_CFG: Dict[str, Any] = {
+    "pipeline": "ompl",
+    "planner_id": "RRTConnectkConfigDefault",
+    "planning_time": 10.0,
+    "planning_attempts": 100,
+    "max_velocity_scaling_factor": 0.10,
+    "max_acceleration_scaling_factor": 0.10,
+}
 
 
 # ----------------- QoS -----------------
@@ -52,74 +65,98 @@ class Motion(Node):
     def __init__(self):
         super().__init__("motion")
 
+        self.log = self.get_logger()
+
         self.cfg_topics = topics()
         self.cfg_frames = frames()
 
         self.frame_world = self.cfg_frames.resolve(self.cfg_frames.get("world", WORLD_FRAME))
         self.frame_scene = self.cfg_frames.resolve(self.cfg_frames.get("scene", "scene"))
 
+        # Backend-String (z.B. 'default' / 'omron')
+        self.backend = (
+            self.declare_parameter("backend", "default")
+            .get_parameter_value()
+            .string_value
+            or "default"
+        )
+
         # --- TF listener
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=False)
 
-        # --- MoveIt
-        self.log = self.get_logger()
-        self.robot = MoveItPy(node_name=self.get_name())
+        # --- MoveIt-Konfiguration explizit als config_dict aufbauen
+        #     (damit die Planning Pipelines sicher da sind)
+        moveit_cfg = MoveItConfigsBuilder(
+            "omron_viper_s650",
+            package_name="omron_moveit_config",
+        ).to_moveit_configs()
+
+        cfg_dict = moveit_cfg.to_dict()
+
+        # Pipelines + Plugins hart setzen (analog bringup.launch.py)
+        pipeline_names = [
+            "ompl",
+            "pilz_industrial_motion_planner",
+            "chomp",
+            "stomp",
+        ]
+        cfg_dict["planning_pipelines"] = pipeline_names
+        cfg_dict["default_planning_pipeline"] = "ompl"
+
+        pipeline_plugins = {
+            "ompl": "ompl_interface/OMPLPlanner",
+            "pilz_industrial_motion_planner": "pilz_industrial_motion_planner/CommandPlanner",
+            "chomp": "chomp_interface/CHOMPPlanner",
+            "stomp": "stomp_moveit/StompPlanner",
+        }
+
+        request_adapters = (
+            "default_planner_request_adapters/AddTimeOptimalParameterization "
+            "default_planner_request_adapters/FixWorkspaceBounds "
+            "default_planner_request_adapters/FixStartStateBounds "
+            "default_planner_request_adapters/FixStartStateCollision "
+            "default_planner_request_adapters/FixStartStatePathConstraints"
+        )
+
+        for pipeline, plugin_name in pipeline_plugins.items():
+            cfg_dict[pipeline] = {
+                "planning_plugin": plugin_name,
+                "request_adapters": request_adapters,
+                "start_state_max_bounds_error": 0.1,
+            }
+
+        # --- MoveItPy mit config_dict initialisieren
+        self.robot = MoveItPy(
+            node_name=f"{self.get_name()}_moveit",
+            config_dict=cfg_dict,
+        )
         time.sleep(0.5)
         self.arm = self.robot.get_planning_component(GROUP_NAME)
         self.robot_model = self.robot.get_robot_model()
-        self.log.info(f"MoveItPy ready (group={GROUP_NAME})")
+        self.log.info(f"MoveItPy ready (group={GROUP_NAME}, backend='{self.backend}')")
 
         # ---------------- intern: Motion-Config (Speed + Planner) ----------------
-        # Speed in mm/s (z.B. aus UI / Recipe)
         self._speed_mm_s: float = 100.0
 
-        # Planner-Konfiguration (Pipeline/Planner/Params) – später aus UI/Recipe
-        # Erwartetes Format des JSON-Strings:
-        #   {
-        #     "pipeline": "ompl",
-        #     "planner_id": "RRTConnectkConfigDefault",
-        #     "params": { ... }
-        #   }
-        self._planner_cfg: Dict[str, Any] = {}
+        # Planner-Konfiguration (immer mit Default vorbelegt)
+        self._planner_cfg: Dict[str, Any] = DEFAULT_PLANNER_CFG.copy()
 
-        # --- Globale Planning-Parameter (wie RViz-Widget: planning time, attempts, scaling)
-        # Hardcoded Defaults (später aus Rezept/GUI setzen)
-        self._planning_time: float = 3.0
-        self._planning_attempts: int = 10
-        self._vel_scaling: float = 0.10
-        self._acc_scaling: float = 0.10
+        # Starttoleranz (für später, wenn du sie z.B. als Rezeptwert durchreichen willst)
+        self._allowed_start_tolerance: float = 0.01  # aktuell nur dokumentarisch
 
-        # Single-Pipeline-PlanRequestParameters (nutzt globales Profil "plan_request_params")
+        # PlanRequestParameters – Try; bei Fehler planen wir ohne spezielle Params
         self._plan_params: Optional[PlanRequestParameters] = None
         try:
-            # "plan_request_params" ist der Default-Block aus der moveit_py.yaml
+            # Basis-Parameter-Objekt holen
             self._plan_params = PlanRequestParameters(self.robot, "plan_request_params")
-
-            # Pipeline + Planner-ID hart setzen (wie im RViz MoveIt-Widget)
-            self._plan_params.planning_pipeline = "ompl"
-            self._plan_params.planner_id = "RRTConnectkConfigDefault"
-
-            # Hardcoded Defaults überschreiben (statt nur YAML)
-            self._plan_params.planning_time = self._planning_time
-            self._plan_params.planning_attempts = self._planning_attempts
-            self._plan_params.max_velocity_scaling_factor = self._vel_scaling
-            self._plan_params.max_acceleration_scaling_factor = self._acc_scaling
-
-            self.log.info(
-                "[config] PlanRequestParameters initialisiert: "
-                f"pipeline='{self._plan_params.planning_pipeline}', "
-                f"planner_id='{self._plan_params.planner_id}', "
-                f"planning_time={self._planning_time:.2f}s, "
-                f"attempts={self._planning_attempts}, "
-                f"vel_scale={self._vel_scaling:.2f}, "
-                f"acc_scale={self._acc_scaling:.2f}"
-            )
+            # Hart kodierte Defaults anwenden
+            self._apply_planner_cfg_to_params()
         except Exception as e:
-            # Fallback: plan() ohne extra Parameter benutzen
             self._plan_params = None
-            self.log.warn(
-                f"[config] PlanRequestParameters konnte nicht initialisiert werden: {e}"
+            self.log.warning(
+                f"[config] PlanRequestParameters konnte nicht initialisiert werden: {e}. "
+                "Nutze arm.plan() ohne explizite Parameter."
             )
 
         # ---------------- Publishers ----------------
@@ -156,7 +193,7 @@ class Motion(Node):
 
         # --------------- Subscribers ----------------
 
-        # 1) freie Pose planen (Posen kommen in m, beliebiger Frame wie 'scene')
+        # freie Pose planen
         self.create_subscription(
             PoseStamped,
             self.cfg_topics.subscribe_topic(NODE_KEY, "plan_pose"),
@@ -164,7 +201,7 @@ class Motion(Node):
             self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "plan_pose")
         )
 
-        # 2) named Pose planen (home/service)
+        # named Pose planen (home/service)
         self.create_subscription(
             MsgString,
             self.cfg_topics.subscribe_topic(NODE_KEY, "plan_named"),
@@ -172,7 +209,7 @@ class Motion(Node):
             self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "plan_named")
         )
 
-        # 3) geplanten Plan ausführen
+        # geplanten Plan ausführen
         self.create_subscription(
             MsgBool,
             self.cfg_topics.subscribe_topic(NODE_KEY, "execute"),
@@ -180,7 +217,7 @@ class Motion(Node):
             self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "execute")
         )
 
-        # 4) Bewegung stoppen
+        # Bewegung stoppen
         self.create_subscription(
             MsgEmpty,
             self.cfg_topics.subscribe_topic(NODE_KEY, "stop"),
@@ -188,7 +225,7 @@ class Motion(Node):
             self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "stop")
         )
 
-        # 5) Motion-Speed (mm/s) setzen
+        # Motion-Speed (mm/s) setzen
         self.create_subscription(
             MsgFloat64,
             self.cfg_topics.subscribe_topic(NODE_KEY, "set_speed_mm_s"),
@@ -196,8 +233,7 @@ class Motion(Node):
             self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "set_speed_mm_s")
         )
 
-        # 6) Planner-Konfiguration (Pipeline + Planner-ID + Params) setzen
-        #    → vorerst nur Logging; später kannst du hier _plan_params updaten.
+        # Planner-Konfiguration (Pipeline + Planner-ID + Params) setzen
         self.create_subscription(
             MsgString,
             self.cfg_topics.subscribe_topic(NODE_KEY, "set_planner_cfg"),
@@ -209,8 +245,9 @@ class Motion(Node):
         self._planned: Optional[RobotTrajectoryCore] = None
         self._busy = False
         self._cancel = False
+        self._last_goal_pose: Optional[PoseStamped] = None
 
-        self.log.info("MotionNode online.")
+        self.log.info(f"MotionNode online (backend='{self.backend}').")
 
     # ----------------------------------------------------------
     # TF Helper
@@ -230,13 +267,58 @@ class Motion(Node):
         self.log.info(text)
 
     # ----------------------------------------------------------
-    # CONFIG: Speed + Planner (nur Topics implementiert)
+    # CONFIG: Planner-Defaults in PlanRequestParameters schreiben
+    # ----------------------------------------------------------
+
+    def _apply_planner_cfg_to_params(self) -> None:
+        if self._plan_params is None:
+            return
+
+        cfg = self._planner_cfg
+        p = self._plan_params
+
+        pipeline = (cfg.get("pipeline") or DEFAULT_PLANNER_CFG["pipeline"]).strip()
+        planner_id = (cfg.get("planner_id") or DEFAULT_PLANNER_CFG["planner_id"]).strip()
+
+        # Pipeline für MoveItPy setzen
+        try:
+            self.robot.set_pipelines([pipeline])
+        except Exception as e:
+            self.log.warning(f"[config] set_pipelines('{pipeline}') failed: {e}")
+
+        # Planner-ID, falls Attribut vorhanden
+        try:
+            p.planner_id = planner_id
+        except AttributeError:
+            self.log.warning("[config] PlanRequestParameters hat kein Attribut 'planner_id'; ignoriere Planner-ID.")
+
+        # Zeit / Versuche / Scaling aus Config
+        p.planning_time = float(cfg.get("planning_time", DEFAULT_PLANNER_CFG["planning_time"]))
+        p.planning_attempts = int(cfg.get("planning_attempts", DEFAULT_PLANNER_CFG["planning_attempts"]))
+        p.max_velocity_scaling_factor = float(
+            cfg.get("max_velocity_scaling_factor", DEFAULT_PLANNER_CFG["max_velocity_scaling_factor"])
+        )
+        p.max_acceleration_scaling_factor = float(
+            cfg.get("max_acceleration_scaling_factor", DEFAULT_PLANNER_CFG["max_acceleration_scaling_factor"])
+        )
+
+        self.log.info(
+            f"[config] Planner applied: pipeline='{pipeline}', "
+            f"planner_id='{getattr(p, 'planner_id', '<n/a>')}', "
+            f"time={p.planning_time:.2f}s, "
+            f"attempts={p.planning_attempts}, "
+            f"vel_scale={p.max_velocity_scaling_factor:.2f}, "
+            f"acc_scale={p.max_acceleration_scaling_factor:.2f}"
+        )
+
+    # ----------------------------------------------------------
+    # CONFIG: Speed + Planner (Topic-Callbacks)
     # ----------------------------------------------------------
 
     def _on_set_speed_mm_s(self, msg: MsgFloat64):
         v = float(msg.data)
         if v <= 0.0:
-            self.log.warn(f"[config] set_speed_mm_s ignoriert (<= 0): {v}")
+            self.log.warning(f"[config] set_speed_mm_s ignoriert (<= 0): {v}")
             return
         self._speed_mm_s = v
         self.log.info(f"[config] Motion speed set to {self._speed_mm_s:.1f} mm/s")
@@ -248,18 +330,15 @@ class Motion(Node):
             if not isinstance(cfg, dict):
                 raise ValueError("planner_cfg JSON ist kein Objekt (dict).")
 
-            self._planner_cfg = cfg
-            pipeline = cfg.get("pipeline", "<none>")
-            planner_id = cfg.get("planner_id", "<none>")
-            self.log.info(
-                f"[config] Planner cfg updated: pipeline='{pipeline}', planner_id='{planner_id}'"
-            )
-            # Später kannst du hier z.B. self._plan_params.planning_time usw. anpassen.
+            # vorhandene Defaults überschreiben
+            self._planner_cfg.update(cfg)
+            self._apply_planner_cfg_to_params()
+
         except Exception as e:
             self.log.error(f"[config] set_planner_cfg: invalid JSON '{raw}': {e}")
 
     # ----------------------------------------------------------
-    # PLAN POSE (Posen kommen in m, beliebiger Frame wie 'scene')
+    # PLAN POSE
     # ----------------------------------------------------------
 
     def _on_plan_pose(self, msg: PoseStamped):
@@ -268,11 +347,11 @@ class Motion(Node):
             return
 
         self._planned = None
+        self._last_goal_pose = None
 
         in_frame = msg.header.frame_id or self.frame_world
         self.log.info(f"[plan_pose] in_frame={in_frame} → world={self.frame_world}")
 
-        # Eingangs-Pose: bereits in m (z.B. aus Setup-StateMachine)
         pose_in = msg.pose
         self.log.info(
             f"[plan_pose] incoming (m) in '{in_frame}': "
@@ -280,7 +359,6 @@ class Motion(Node):
         )
 
         try:
-            # Falls nötig, von in_frame -> world per TF transformieren
             if in_frame != self.frame_world:
                 tf = self._lookup_tf(self.frame_world, in_frame)
                 pose_world = do_transform_pose(pose_in, tf)
@@ -292,7 +370,6 @@ class Motion(Node):
                 f"({pose_world.position.x:.3f}, {pose_world.position.y:.3f}, {pose_world.position.z:.3f})"
             )
 
-            # Goal: TCP in world
             goal = PoseStamped()
             goal.header.frame_id = self.frame_world
             goal.header.stamp = self.get_clock().now().to_msg()
@@ -301,14 +378,12 @@ class Motion(Node):
             self.arm.set_start_state_to_current_state()
             self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
 
-            # --- Plan ausführen (immer mit unseren globalen Parametern, falls vorhanden)
             if self._plan_params is not None:
                 result = self.arm.plan(single_plan_parameters=self._plan_params)
             else:
                 result = self.arm.plan()
 
             core = getattr(result, "trajectory", None)
-
             if core is None:
                 self._emit("ERROR:NO_TRAJ pose")
                 return
@@ -316,6 +391,7 @@ class Motion(Node):
             msg_traj = core.get_robot_trajectory_msg()
 
             self._planned = core
+            self._last_goal_pose = goal
             self.pub_planned.publish(msg_traj)
             self._publish_preview(goal)
 
@@ -325,7 +401,7 @@ class Motion(Node):
             self._emit(f"ERROR:EX {e}")
 
     # ----------------------------------------------------------
-    # PLAN NAMED (home/service) – Frames aus TF, bereits in m
+    # PLAN NAMED (home/service)
     # ----------------------------------------------------------
 
     def _on_plan_named(self, msg: MsgString):
@@ -333,12 +409,13 @@ class Motion(Node):
             self._emit("ERROR:BUSY")
             return
 
-        name = msg.data.strip()
+        name = (msg.data or "").strip()
         if not name:
             self._emit("ERROR:EMPTY_NAME")
             return
 
         self._planned = None
+        self._last_goal_pose = None
 
         try:
             tf = self._lookup_tf(self.frame_world, name)
@@ -354,14 +431,12 @@ class Motion(Node):
             self.arm.set_start_state_to_current_state()
             self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
 
-            # --- Plan ausführen (immer mit unseren globalen Parametern, falls vorhanden)
             if self._plan_params is not None:
                 result = self.arm.plan(single_plan_parameters=self._plan_params)
             else:
                 result = self.arm.plan()
 
             core = getattr(result, "trajectory", None)
-
             if core is None:
                 self._emit("ERROR:NO_TRAJ named")
                 return
@@ -369,6 +444,7 @@ class Motion(Node):
             msg_traj = core.get_robot_trajectory_msg()
 
             self._planned = core
+            self._last_goal_pose = goal
             self.pub_planned.publish(msg_traj)
             self._publish_preview(goal)
 
@@ -378,7 +454,7 @@ class Motion(Node):
             self._emit(f"ERROR:EX {e}")
 
     # ----------------------------------------------------------
-    # EXECUTE  (Variante A: MoveIt fährt selbst)
+    # EXECUTE – ohne interne Retries, nur ein Versuch
     # ----------------------------------------------------------
 
     def _on_execute(self, msg: MsgBool):
@@ -397,20 +473,19 @@ class Motion(Node):
         self._cancel = False
 
         try:
-            # geplante Trajektorie aus MoveItPy holen
             msg_traj = self._planned.get_robot_trajectory_msg()
 
-            # MoveIt kümmert sich selbst darum, die Trajektorie
-            # an den FollowJointTrajectory-Controller zu schicken.
             ok = self.robot.execute(self._planned, controllers=[])
 
             if self._cancel:
                 self._emit("STOPPED:USER")
-            elif not ok:
-                self._emit("ERROR:EXEC")
-            else:
+                return
+
+            if ok:
                 self.pub_executed.publish(msg_traj)
                 self._emit("EXECUTED:OK")
+            else:
+                self._emit("ERROR:EXEC")
 
         except Exception as e:
             self._emit(f"ERROR:EX {e}")

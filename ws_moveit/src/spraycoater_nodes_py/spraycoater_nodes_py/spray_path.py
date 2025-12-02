@@ -19,7 +19,7 @@ class SprayPath(Node):
     SprayPath-Manager.
 
     SUB:
-      - spray_path.set              (MarkerArray)
+      - spray_path.set               (MarkerArray)
       - spray_path.executed_poses_in (PoseArray)
 
     PUB (alle TRANSIENT_LOCAL / latched + 1 Hz republish):
@@ -28,12 +28,22 @@ class SprayPath(Node):
       - spray_path.current
       - spray_path.executed_poses
       - spray_path.executed_markers
+
+    Backend:
+      - Parameter 'backend' (z.B. 'omron_sim', 'omron_real', 'meca_sim')
+        aktuell nur für Logging / Debug
     """
 
     GROUP = "spray_path"
 
     def __init__(self):
         super().__init__("spraypath_manager")
+
+        # ---------------- Backend-Parameter ----------------
+        self.declare_parameter("backend", "default")
+        self.backend: str = (
+            self.get_parameter("backend").get_parameter_value().string_value or "default"
+        )
 
         # Config-Hub
         self.loader = topics()
@@ -95,8 +105,8 @@ class SprayPath(Node):
         self._timer = self.create_timer(1.0, self._republish_all)
 
         self.get_logger().info(
-            "✅ SprayPathManager bereit: set→poses/markers, exec_in→executed_*, "
-            "TRANSIENT_LOCAL + 1Hz Republish."
+            f"✅ SprayPathManager bereit (backend='{self.backend}'): "
+            f"set→poses/markers, exec_in→executed_*, TRANSIENT_LOCAL + 1Hz Republish."
         )
 
     # ----------------------------------------------------------------------
@@ -136,7 +146,9 @@ class SprayPath(Node):
 
     def _on_set_spraypath(self, msg: MarkerArray) -> None:
         if msg is None or len(msg.markers) == 0:
-            self.get_logger().warning("⚠️ spray_path.set: leeres MarkerArray – ignoriere")
+            self.get_logger().warning(
+                f"[{self.backend}] ⚠️ spray_path.set: leeres MarkerArray – ignoriere"
+            )
             return
 
         frame = self._last_frame
@@ -150,7 +162,9 @@ class SprayPath(Node):
         name = self._extract_name(msg)
         m_path = self._prefer_linestrip(msg)
         if m_path is None:
-            self.get_logger().warning("⚠️ spray_path.set: kein gültiger Pfad – ignoriere")
+            self.get_logger().warning(
+                f"[{self.backend}] ⚠️ spray_path.set: kein gültiger Pfad – ignoriere"
+            )
             return
 
         now = self.get_clock().now().to_msg()
@@ -201,7 +215,8 @@ class SprayPath(Node):
         self._publish_current_name(name)
 
         self.get_logger().info(
-            f"🎯 Sollpfad gesetzt: name='{name}', frame='{frame}', points={len(pa.poses)}"
+            f"[{self.backend}] 🎯 Sollpfad gesetzt: name='{name}', "
+            f"frame='{frame}', points={len(pa.poses)}"
         )
 
     # ----------------------------------------------------------------------
@@ -210,7 +225,9 @@ class SprayPath(Node):
 
     def _on_executed_poses(self, msg: PoseArray) -> None:
         if msg is None or len(msg.poses) == 0:
-            self.get_logger().warning("⚠️ executed_poses_in: leer – ignoriere")
+            self.get_logger().warning(
+                f"[{self.backend}] ⚠️ executed_poses_in: leer – ignoriere"
+            )
             return
 
         frame = (msg.header.frame_id or "").strip() or self._last_exec_frame
@@ -225,7 +242,9 @@ class SprayPath(Node):
         pa.poses = list(msg.poses)
 
         if len(pa.poses) < 2:
-            self.get_logger().warning("⚠️ executed_poses_in: <2 Posen – ignoriere")
+            self.get_logger().warning(
+                f"[{self.backend}] ⚠️ executed_poses_in: <2 Posen – ignoriere"
+            )
             return
 
         # MarkerArray (Istpfad)
@@ -261,7 +280,7 @@ class SprayPath(Node):
         self.pub_exec_markers.publish(out_ma)
 
         self.get_logger().info(
-            f"✅ Istpfad gesetzt: points={len(pa.poses)}, frame='{frame}'"
+            f"[{self.backend}] ✅ Istpfad gesetzt: points={len(pa.poses)}, frame='{frame}'"
         )
 
     # ----------------------------------------------------------------------

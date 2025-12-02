@@ -1,0 +1,5 @@
+pilz_industrial_motion_planner:
+    planning_plugin: pilz_industrial_motion_planner/CommandPlanner
+    planner_configs:
+        PTP:
+            type: pilz_industrial_motion_planner/CommandPlanner

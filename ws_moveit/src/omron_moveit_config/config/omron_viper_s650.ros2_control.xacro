@@ -4,15 +4,16 @@
   <!--
     Macro für ros2_control:
       - name: Name des ros2_control-Systems (z.B. "omron_viper_s650_system")
-      - initial_positions_file: YAML-Datei mit Abschnitt "initial_positions"
-           initial_positions:
-             joint_1: 0.0
-             joint_2: 0.0
-             ...
+      - initial_positions werden intern aus
+        $(find omron_moveit_config)/config/initial_positions.yaml geladen.
   -->
-  <xacro:macro name="omron_viper_s650_ros2_control" params="name initial_positions_file">
+  <xacro:macro name="omron_viper_s650_ros2_control" params="name">
 
     <!-- YAML mit Startpositionen laden -->
+    <xacro:property
+        name="initial_positions_file"
+        value="$(find omron_moveit_config)/config/initial_positions.yaml" />
+
     <xacro:property
         name="initial_positions"
         value="${xacro.load_yaml(initial_positions_file)['initial_positions']}" />
