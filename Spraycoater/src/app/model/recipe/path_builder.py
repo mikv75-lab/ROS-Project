@@ -24,14 +24,14 @@ class PathBuilder:
     """
     Bauen von **rohen Pfaden** (mm) aus einzelnen Path-Definitionen.
 
-    Unterstützte path.type:
-      - meander_plane
-      - spiral_plane
-      - spiral_cylinder (Helix)
-      - perimeter_follow_plane
-      - polyhelix_pyramid
-      - polyhelix_cube
-      - direkt: points_mm / polyline_mm
+    Unterstützte path.type (EXAKT wie im YAML, keine Legacy-Aliase):
+      - "path.meander.plane"          → _meander_plane
+      - "path.spiral.plane"           → _spiral_plane
+      - "path.spiral.cylinder"        → _spiral_cylinder_centerline (Helix)
+      - "path.perimeter_follow.plane" → _perimeter_follow_plane
+      - "path.polyhelix.pyramid"      → _polyhelix_pyramid
+      - "path.polyhelix.cube"         → _polyhelix_cube
+      - direkt: points_mm / polyline_mm  (ohne Berücksichtigung von type)
 
     WICHTIG:
     - KEINE Fallbacks auf Rezept-Defaults/Schemas/etc.
@@ -59,7 +59,7 @@ class PathBuilder:
         pd = PathBuilder._from_path_dict(
             p, sample_step_mm=sample_step_mm, max_points=max_points
         )
-        # Pre/Retreat nicht mehr geometrisch anhängen (keine Distanzen in Globals).
+        # Kein Pre/Retreat mehr – Geometrie bleibt unverändert.
         pd = PathBuilder._apply_predispense_retreat(pd, globals_params)
         PathBuilder._inject_globals_meta(pd, globals_params)
         return pd
@@ -124,6 +124,7 @@ class PathBuilder:
         sample_step_mm: float,
         max_points: int,
     ) -> PathData:
+        # 1) Direkte Punkte (points_mm / polyline_mm) – unabhängig vom type
         pts = p.get("points_mm") or p.get("polyline_mm")
         if pts is not None:
             P = np.asarray(pts, dtype=float).reshape(-1, 3)
@@ -132,34 +133,41 @@ class PathBuilder:
                 P = P[::stride]
             return PathData(points_mm=P, meta={"source": "points"})
 
-        ptype = str(p.get("type", "")).strip().lower()
+        # 2) Neues Typ-Schema ist Pflicht (kein Legacy, kein Fallback)
+        raw_type = p.get("type")
+        if raw_type is None or str(raw_type).strip() == "":
+            raise ValueError("PathBuilder: path.type fehlt oder ist leer (kein Fallback).")
 
-        if ptype in ("meander", "meander_plane"):
+        ptype = str(raw_type).strip().lower()
+
+        # --- Mapping: NUR neue Typ-Namen ---
+        if ptype == "path.meander.plane":
             P = PathBuilder._meander_plane(p, sample_step_mm, max_points)
-            meta = {"source": "meander_plane"}
+            meta = {"source": ptype}
 
-        elif ptype in ("spiral", "spiral_plane"):
+        elif ptype == "path.spiral.plane":
             P = PathBuilder._spiral_plane(p, sample_step_mm, max_points)
-            meta = {"source": "spiral_plane"}
+            meta = {"source": ptype}
 
-        elif ptype in ("spiral_cylinder", "helix", "spiral_cyl"):
+        elif ptype == "path.spiral.cylinder":
             P = PathBuilder._spiral_cylinder_centerline(p, sample_step_mm, max_points)
-            meta = {"source": "spiral_cylinder"}
+            meta = {"source": ptype}
 
-        elif ptype in ("perimeter_follow_plane", "perimeter_follow", "perimeter_meander", "perimeter"):
+        elif ptype == "path.perimeter_follow.plane":
             P = PathBuilder._perimeter_follow_plane(p, sample_step_mm, max_points)
-            meta = {"source": "perimeter_follow_plane"}
+            meta = {"source": ptype}
 
-        elif ptype in ("polyhelix_pyramid",):
+        elif ptype == "path.polyhelix.pyramid":
             P = PathBuilder._polyhelix_pyramid(p, sample_step_mm, max_points)
-            meta = {"source": "polyhelix_pyramid"}
+            meta = {"source": ptype}
 
-        elif ptype in ("polyhelix_cube",):
+        elif ptype == "path.polyhelix.cube":
             P = PathBuilder._polyhelix_cube(p, sample_step_mm, max_points)
-            meta = {"source": "polyhelix_cube"}
+            meta = {"source": ptype}
 
         else:
-            raise ValueError(f"Unsupported path.type: {ptype!r}")
+            # Bewusst: Fehlermeldung zeigt den ORIGINALEN type-Wert.
+            raise ValueError(f"Unsupported path.type: {raw_type!r}")
 
         return PathData(points_mm=P, meta=meta)
 
@@ -370,7 +378,7 @@ class PathBuilder:
         straight_y = max(0.0, 2.0 * (hy - r))
         perimeter = 2.0 * (straight_x + straight_y) + 2.0 * math.pi * r
 
-        n_total = max(8, int(perimeter / max(step, 1e-6)) + 1)
+        _ = max(8, int(perimeter / max(step, 1e-6)) + 1)  # n_total – aktuell nicht explizit genutzt
 
         pts = []
 

@@ -12,15 +12,13 @@ Geladen wird:
 - robot_description_kinematics   → config/kinematics.yaml
 - joint_limits                   → config/joint_limits.yaml
 - trajectory_execution           → config/moveit_controllers.yaml
-- planning_pipelines             → nur OMPL
+- planning_pipelines             → OMPL (default), STOMP, CHOMP, Pilz
 - planning_scene_monitor         → einfache Flags
 
 NICHT geladen werden:
 
 - sensors_3d.yaml
 - moveit_cpp.yaml
-- pilz_cartesian_limits.yaml
-- chomp/stomp/pilz-Planner
 """
 
 from moveit_configs_utils import MoveItConfigsBuilder
@@ -28,10 +26,13 @@ from moveit_configs_utils import MoveItConfigsBuilder
 
 def create_omron_moveit_config():
     """
-    Erzeugt eine minimal benötigte MoveIt-Konfiguration für den Omron Viper S650.
+    Erzeugt eine MoveIt-Konfiguration für den Omron Viper S650.
 
-    Diese Konfiguration ist für reine Planung & Ausführung mit OMPL gedacht,
-    ohne Sensorik, Octomap, Pilz, CHOMP, STOMP etc.
+    Pipelines:
+        - ompl                         (Default)
+        - stomp
+        - chomp
+        - pilz_industrial_motion_planner
     """
     builder = (
         MoveItConfigsBuilder(
@@ -56,8 +57,14 @@ def create_omron_moveit_config():
         )
         .planning_pipelines(
             default_planning_pipeline="ompl",
-            pipelines=["ompl"],
-            # load_all=False = keine zusätzlichen Default-Pipelines anhängen
+            pipelines=[
+                "ompl",
+                "stomp",
+                "chomp",
+                "pilz_industrial_motion_planner",
+            ],
+            # load_all ist egal, wenn pipelines explizit gesetzt sind,
+            # aber wir halten es explizit bei False:
             load_all=False,
         )
     )

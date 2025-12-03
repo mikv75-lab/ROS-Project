@@ -2,7 +2,6 @@ version: 1
 
 # -------------------------------------------------------------------
 # Zentrale UI-/Validierungs-Spezifikationen mit DEFAULT-WERTEN
-# -> Diese Defaults greifen global; Rezepte nutzen nur type + allowed.
 # -------------------------------------------------------------------
 recipe_params:
 
@@ -16,27 +15,6 @@ recipe_params:
     flow_ml_min:      { type: number, min: 0.0,  max: 100.0,step: 0.1, unit: "ml/min",default: 5.0 }
     pre_dispense_s:   { type: number, min: 0.0,  max: 10.0, step: 0.1, unit: "s",     default: 0.2 }
     post_dispense_s:  { type: number, min: 0.0,  max: 10.0, step: 0.1, unit: "s",     default: 0.1 }
-
-  planner:
-      pipeline:              { type: enum,   values: ["ompl","pilz","chomp","stomp","servo"], default: "ompl" }
-      planner_id:            { type: string, default: "RRTConnectkConfigDefault" }
-
-      planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1, default: 2.0 }
-      attempts:              { type: integer,min: 1,   max: 100,  step: 1,   default: 1 }
-
-      # Skalierungen
-      velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
-      acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
-
-      # Cartesian Optionen (für z.B. Pilz/Cartesian/Servo-Usecases)
-      cartesian.eef_step_mm:   { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
-      cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
-
-      # Servo (nur sichtbar wenn pipeline=servo)
-      servo.publish_period_s:        { type: number, min: 0.002, max: 0.1, step: 0.001, default: 0.01, visible_if: {"pipeline":"servo"} }
-      servo.linear_scale:            { type: number, min: 0.0,   max: 2.0, step: 0.05,  default: 0.6,  visible_if: {"pipeline":"servo"} }
-      servo.rotational_scale:        { type: number, min: 0.0,   max: 2.0, step: 0.05,  default: 1.0,  visible_if: {"pipeline":"servo"} }
-      servo.low_pass_filter_coeff:   { type: number, min: 0.0,   max: 10.0,step: 0.1,   default: 2.0,  visible_if: {"pipeline":"servo"} }
 
   # --- Meander (Ebene) ---
   path.meander.plane:
@@ -53,7 +31,6 @@ recipe_params:
     boustrophedon:     { type: boolean, default: true }
     start:             { type: enum, values: ["auto","minx_miny","minx_maxy","maxx_miny","maxx_maxy"], default: "auto" }
 
-    # ✨ NEU: Nur Winkel (Auto/Custom)
     predispense.angle_mode: { type: enum, values: ["auto","custom"], default: "auto" }
     predispense.angle_deg:  { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
                               visible_if: {"predispense.angle_mode":"custom"} }
@@ -70,7 +47,6 @@ recipe_params:
     z_mm:             { type: number, min: 0.0,  max: 500,  step: 0.1, unit: "mm", default: 10.0 }
     direction:        { type: enum,   values: ["cw","ccw"], default: "ccw" }
 
-    # ✨ NEU: Nur Winkel (Auto/Custom)
     predispense.angle_mode: { type: enum, values: ["auto","custom"], default: "auto" }
     predispense.angle_deg:  { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
                               visible_if: {"predispense.angle_mode":"custom"} }
@@ -87,7 +63,6 @@ recipe_params:
     start_from:       { type: enum,   values: ["top","bottom"], default: "top" }
     direction:        { type: enum,   values: ["cw","ccw"],     default: "ccw" }
 
-    # ✨ NEU: Nur Winkel (Auto/Custom)
     predispense.angle_mode: { type: enum, values: ["auto","custom"], default: "auto" }
     predispense.angle_deg:  { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
                               visible_if: {"predispense.angle_mode":"custom"} }
@@ -111,7 +86,6 @@ recipe_params:
     flow_scale_max:         { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
     cos_alpha_comp:         { type: boolean, default: true }
 
-    # ✨ NEU: Nur Winkel (Auto/Custom)
     predispense.angle_mode: { type: enum, values: ["auto","custom"], default: "auto" }
     predispense.angle_deg:  { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
                               visible_if: {"predispense.angle_mode":"custom"} }
@@ -133,7 +107,6 @@ recipe_params:
     flow_scale_max:         { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
     cos_alpha_comp:         { type: boolean, default: true }
 
-    # ✨ NEU: Nur Winkel (Auto/Custom)
     predispense.angle_mode: { type: enum, values: ["auto","custom"], default: "auto" }
     predispense.angle_deg:  { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
                               visible_if: {"predispense.angle_mode":"custom"} }
@@ -157,7 +130,6 @@ recipe_params:
     flow_scale_min:    { type: number, min: 0.0, max: 1.0, step: 0.05, default: 0.6 }
     flow_scale_max:    { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
 
-    # ✨ NEU: Nur Winkel (Auto/Custom)
     predispense.angle_mode: { type: enum, values: ["auto","custom"], default: "auto" }
     predispense.angle_deg:  { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
                               visible_if: {"predispense.angle_mode":"custom"} }
@@ -166,7 +138,529 @@ recipe_params:
                               visible_if: {"retreat.angle_mode":"custom"} }
 
 # -------------------------------------------------------------------
-# Rezepte – substrate_types ist entfernt; alles steckt pro Rezept/Side.
+# Planner-Settings: globale Rollen + Planner-Details
+# -------------------------------------------------------------------
+planner_settings:
+
+  # Rollen → welche Planner sind je Kategorie erlaubt?
+  validate_move:
+    - "RRTConnect"
+    - "RRTConnectkConfigDefault"
+    - "RRT"
+    - "PRM"
+    - "PRMkConfigDefault"
+    - "KPIECE"
+    - "BKPIECE"
+    - "LBKPIECE"
+    - "EST"
+    - "BiEST"
+    - "SBL"
+    - "PTP"
+
+  validate_path:
+    - "RRTstar"
+    - "RRTstarkConfigDefault"
+    - "RRTsharp"
+    - "PRMstar"
+    - "STRIDE"
+    - "FMT"
+    - "BFMT"
+    - "PDST"
+    - "TRRT"
+    - "Lightning"
+    - "Thunder"
+    - "LIN"
+    - "CIRC"
+
+  refine:
+    - "CHOMP"
+    - "CHOMPOptimizer"
+    - "CHOMPTrajectoryOptimizer"
+    - "STOMP"
+    - "STOMP_Replan"
+    - "STOMP_Smoothing"
+    - "STOMP_Optimize"
+
+  optimize:
+    - "TimeOptimalTrajectoryGeneration"
+    - "IterativeParabolicTimeParameterization"
+    - "SplineInterpolator"
+
+  service:
+    - "PTP"
+    - "LIN"
+    - "CIRC"
+    - "RRTConnectkConfigDefault"
+    - "RRTConnect"
+    - "PRMkConfigDefault"
+    - "PRM"
+
+  # Planner-Sets pro Path-Typ
+  path_types:
+
+    # --- Planare Pfade (Top-Flächen etc.) ---
+    path.meander.plane:
+      validate_move:
+        - "RRTConnectkConfigDefault"
+        - "RRTConnect"
+        - "PRMkConfigDefault"
+        - "PTP"
+      validate_path:
+        - "RRTstarkConfigDefault"
+        - "PRMstar"
+        - "STRIDE"
+        - "FMT"
+        - "BFMT"
+        - "TRRT"
+        - "Lightning"
+        - "Thunder"
+        - "LIN"
+        - "CIRC"
+
+    path.spiral.plane:
+      validate_move:
+        - "RRTConnectkConfigDefault"
+        - "RRTConnect"
+        - "PRMkConfigDefault"
+        - "PTP"
+      validate_path:
+        - "RRTstarkConfigDefault"
+        - "RRTstar"
+        - "PRMstar"
+        - "STRIDE"
+        - "FMT"
+        - "BFMT"
+        - "TRRT"
+        - "Lightning"
+        - "Thunder"
+
+    path.perimeter_follow.plane:
+      validate_move:
+        - "RRTConnectkConfigDefault"
+        - "PTP"
+      validate_path:
+        - "LIN"
+        - "CIRC"
+        - "RRTstarkConfigDefault"
+
+    # --- Helix / Zylinder ---
+    path.spiral.cylinder:
+      validate_move:
+        - "RRTConnectkConfigDefault"
+        - "RRTConnect"
+        - "PRMkConfigDefault"
+        - "PTP"
+      validate_path:
+        - "RRTstarkConfigDefault"
+        - "RRTstar"
+        - "RRTsharp"
+        - "PDST"
+        - "TRRT"
+        - "Lightning"
+        - "Thunder"
+
+    # --- Polyhelix / Volumenformen ---
+    path.polyhelix.pyramid:
+      validate_move:
+        - "RRTConnectkConfigDefault"
+        - "RRTConnect"
+        - "RRT"
+        - "PRM"
+        - "PRMkConfigDefault"
+        - "KPIECE"
+        - "BKPIECE"
+        - "LBKPIECE"
+        - "EST"
+        - "BiEST"
+        - "SBL"
+        - "PTP"
+      validate_path:
+        - "RRTstarkConfigDefault"
+        - "RRTstar"
+        - "RRTsharp"
+        - "PRMstar"
+        - "STRIDE"
+        - "FMT"
+        - "BFMT"
+        - "PDST"
+        - "TRRT"
+        - "Lightning"
+        - "Thunder"
+
+    path.polyhelix.cube:
+      validate_move:
+        - "RRTConnectkConfigDefault"
+        - "RRTConnect"
+        - "RRT"
+        - "PRM"
+        - "PRMkConfigDefault"
+        - "KPIECE"
+        - "BKPIECE"
+        - "LBKPIECE"
+        - "EST"
+        - "BiEST"
+        - "SBL"
+        - "PTP"
+      validate_path:
+        - "RRTstarkConfigDefault"
+        - "RRTstar"
+        - "RRTsharp"
+        - "PRMstar"
+        - "STRIDE"
+        - "FMT"
+        - "BFMT"
+        - "PDST"
+        - "TRRT"
+        - "Lightning"
+        - "Thunder"
+
+# Detail-Tabelle: alle Planner pro Pipeline (mit Beschreibung)
+planner_pipeline:
+
+  # -------------------------------------------------------------------
+  # OMPL: Sampling-based Motion Planning
+  # -------------------------------------------------------------------
+  ompl:
+    RRTConnect:
+      description: "Schneller bidirektionaler RRT-Planner (grobe, schnelle Pfade)."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    RRTConnectkConfigDefault:
+      description: "MoveIt-Standardkonfiguration von RRTConnect (sehr zuverlässig)."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    RRT:
+      description: "Einfacher RRT-Planner (klassisch, weniger effizient)."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    RRTstar:
+      description: "RRT* – asymptotisch optimal, liefert qualitativ bessere Pfade."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    RRTstarkConfigDefault:
+      description: "Standardkonfiguration von RRT* mit optimierten Parametern."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    RRTsharp:
+      description: "Verbesserter RRT-Variant mit Fokus auf Pfadqualität."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    PRM:
+      description: "Probabilistic Roadmap (PRM) – gut für globale Pfade."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    PRMkConfigDefault:
+      description: "MoveIt-Standardkonfiguration für PRM (robust, universell)."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    PRMstar:
+      description: "Optimierte PRM-Variante mit besserer Pfadqualität."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    KPIECE:
+      description: "KPIECE – gut für Probleme mit wenigen Freiheitsgraden."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    BKPIECE:
+      description: "Balanced KPIECE – ausgewogene Exploration und Exploitation."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    LBKPIECE:
+      description: "Lazy BKPIECE – schnellere Planung mit verzögerter Kollisionsprüfung."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    EST:
+      description: "Expansive Space Trees – für komplexe Konfigurationsräume."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    BiEST:
+      description: "Bidirektionale EST-Variante für schnellere Konvergenz."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    SBL:
+      description: "Single-query Bi-directional Lazy – schnell für Einzelanfragen."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    STRIDE:
+      description: "STRIDE – strukturierter Sampling-Planner."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    FMT:
+      description: "Fast Marching Tree – sehr effizient bei vielen Samples."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    BFMT:
+      description: "Bidirektionaler FMT – zwei Bäume für bessere Abdeckung."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    PDST:
+      description: "Projection-based Distance System Trees – arbeitet mit Projektionen."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    TRRT:
+      description: "Transition-based RRT – berücksichtigt Kostenlandschaften (z.B. Glattheit)."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    Lightning:
+      description: "Lightning – Experience-Planner, speichert und nutzt frühere Lösungen."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+    Thunder:
+      description: "Thunder – robuste Lightning-Variante mit verbesserter Wiederverwendung."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
+        cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
+
+
+  # -------------------------------------------------------------------
+  # Pilz: Deterministische Industrial Motion
+  # -------------------------------------------------------------------
+  pilz:
+    PTP:
+      description: "Pilz-PTP: deterministische Joint-Moves (sichere Übergänge, Service/Move)."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 1.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+
+    LIN:
+      description: "Pilz-LIN: lineare TCP-Bewegung (z.B. gerade Spray-Pfade / Zustellungen)."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 1.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+
+    CIRC:
+      description: "Pilz-CIRC: Kreisbogensegmente (Perimeter, Rundungen, Edge-Spray)."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 1.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+
+
+  # -------------------------------------------------------------------
+  # CHOMP: Gradient-basierte Trajektorienoptimierung
+  # -------------------------------------------------------------------
+  chomp:
+    CHOMP:
+      description: "CHOMP – kontinuierliche Trajektorienoptimierung auf bestehender Lösung."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 5.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+
+    CHOMPOptimizer:
+      description: "CHOMPOptimizer – expliziter Optimierer für Trajektorienfeinschliff."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 5.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+
+    CHOMPTrajectoryOptimizer:
+      description: "CHOMPTrajectoryOptimizer – Fokus auf Optimierung kompletter Trajektorien."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 5.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+
+
+  # -------------------------------------------------------------------
+  # STOMP: Stochastische Trajektorienoptimierung
+  # -------------------------------------------------------------------
+  stomp:
+    STOMP:
+      description: "STOMP – stochastische Optimierung, ideal für Spray-Trajektorien mit Kostenfunktion."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 5.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+
+    STOMP_Replan:
+      description: "STOMP_Replan – STOMP-Variante mit Neuberechnung bei schlechter Lösung."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 5.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+
+    STOMP_Smoothing:
+      description: "STOMP_Smoothing – Fokus auf Glättung bestehender Trajektorien."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 5.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+
+    STOMP_Optimize:
+      description: "STOMP_Optimize – stärkere Kostenorientierung für maximale Optimierung."
+      params:
+        planning_time_s:       { type: number, min: 0.1, max: 60.0, step: 0.1,  default: 5.0 }
+        attempts:              { type: integer,min: 1,   max: 100,  step: 1,    default: 1 }
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+
+
+  # -------------------------------------------------------------------
+  # Post-Processing: Zeitparameterisierung / Spline-Interpolation
+  # -------------------------------------------------------------------
+  post:
+    TimeOptimalTrajectoryGeneration:
+      description: "TOTG – zeitoptimale Trajektorienparameterisierung."
+      params:
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
+
+    IterativeParabolicTimeParameterization:
+      description: "IPTP – klassische zeitliche Parameterisierung über Parabelsegmente."
+      params:
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
+
+    SplineInterpolator:
+      description: "SplineInterpolator – glättet Trajektorien über Splines für weiche Bewegungen."
+      params:
+        velocity_scaling:      { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
+        acceleration_scaling:  { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
+
+# -------------------------------------------------------------------
+# Rezepte – Path-Typen je Substrat/Side
 # -------------------------------------------------------------------
 recipes:
 
@@ -176,10 +670,14 @@ recipes:
     substrates: ["wafer_d100_h2", "wafer_d150_h2", "wafer_d200_h2"]
     substrate_mounts: ["circle_d240_h50"]
     parameters: {}
+
     sides:
       top:
-        allowed_path_types: ["meander_plane", "spiral_plane", "perimeter_follow_plane"]
-        default_path: { type: "spiral_plane" }
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+          - "path.perimeter_follow.plane"
+        default_path: { type: "path.spiral.plane" }
 
   - id: "mask"
     substrate_type: "mask"
@@ -187,35 +685,50 @@ recipes:
     substrates: ["mask_100_10"]
     substrate_mounts: ["flat_240x240x50"]
     parameters: {}
+
     sides:
       top:
-        allowed_path_types: ["meander_plane", "perimeter_follow_plane"]
-        default_path: { type: "meander_plane" }
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.perimeter_follow.plane"
+        default_path: { type: "path.meander.plane" }
 
   - id: "tube"
     substrate_type: "tube"
     tools: ["spray_nozzle_01", "spray_nozzle_02"]
-    substrates: ["tube_ID5mm_t1p5mm_h100mm", "tube_ID10mm_t1p5mm_h100mm", "tube_ID20mm_t1p5mm_h100mm"]
+    substrates:
+      - "tube_ID5mm_t1p5mm_h100mm"
+      - "tube_ID10mm_t1p5mm_h100mm"
+      - "tube_ID20mm_t1p5mm_h100mm"
     substrate_mounts: ["post_d30mm_h100mm"]
     parameters: {}
+
     sides:
       helix:
-        allowed_path_types: ["spiral_cylinder"]
-        default_path: { type: "spiral_cylinder" }
+        allowed_path_types:
+          - "path.spiral.cylinder"
+        default_path: { type: "path.spiral.cylinder" }
 
   - id: "cylinder"
     substrate_type: "cylinder"
     tools: ["spray_nozzle_01", "spray_nozzle_02"]
-    substrates: ["cylinder_d100_h100", "cylinder_d150_h150", "cylinder_d200_h200"]
+    substrates:
+      - "cylinder_d100_h100"
+      - "cylinder_d150_h150"
+      - "cylinder_d200_h200"
     substrate_mounts: ["post_d30mm_h100mm"]
     parameters: {}
+
     sides:
       top:
-        allowed_path_types: ["meander_plane", "spiral_plane"]
-        default_path: { type: "spiral_plane" }
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.spiral.plane" }
       helix:
-        allowed_path_types: ["spiral_cylinder"]
-        default_path: { type: "spiral_cylinder" }
+        allowed_path_types:
+          - "path.spiral.cylinder"
+        default_path: { type: "path.spiral.cylinder" }
 
   - id: "cube"
     substrate_type: "cube"
@@ -223,25 +736,38 @@ recipes:
     substrates: ["cube_100", "cube_150"]
     substrate_mounts: ["flat_240x240x50"]
     parameters: {}
+
     sides:
       top:
-        allowed_path_types: ["meander_plane", "spiral_plane"]
-        default_path: { type: "meander_plane" }
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
       front:
-        allowed_path_types: ["meander_plane", "spiral_plane"]
-        default_path: { type: "meander_plane" }
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
       back:
-        allowed_path_types: ["meander_plane", "spiral_plane"]
-        default_path: { type: "meander_plane" }
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
       left:
-        allowed_path_types: ["meander_plane", "spiral_plane"]
-        default_path: { type: "meander_plane" }
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
       right:
-        allowed_path_types: ["meander_plane", "spiral_plane"]
-        default_path: { type: "meander_plane" }
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
       polyhelix:
-        allowed_path_types: ["polyhelix_pyramid", "polyhelix_cube"]
-        default_path: { type: "polyhelix_cube" }
+        allowed_path_types:
+          - "path.polyhelix.pyramid"
+          - "path.polyhelix.cube"
+        default_path: { type: "path.polyhelix.cube" }
 
   - id: "hemisphere"
     substrate_type: "hemisphere"
@@ -249,10 +775,13 @@ recipes:
     substrates: ["hemisphere_d200"]
     substrate_mounts: ["circle_d240_h50", "flat_240x240x50"]
     parameters: {}
+
     sides:
       top:
-        allowed_path_types: ["meander_plane", "spiral_plane"]
-        default_path: { type: "meander_plane" }
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
 
   - id: "pyramid"
     substrate_type: "pyramid"
@@ -260,19 +789,30 @@ recipes:
     substrates: ["pyramid_d150_h150", "pyramid_d200_h200"]
     substrate_mounts: ["flat_240x240x50"]
     parameters: {}
+
     sides:
       front:
-        allowed_path_types: ["meander_plane", "spiral_plane"]
-        default_path: { type: "meander_plane" }
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
       back:
-        allowed_path_types: ["meander_plane", "spiral_plane"]
-        default_path: { type: "meander_plane" }
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
       left:
-        allowed_path_types: ["meander_plane", "spiral_plane"]
-        default_path: { type: "meander_plane" }
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
       right:
-        allowed_path_types: ["meander_plane", "spiral_plane"]
-        default_path: { type: "meander_plane" }
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
       polyhelix:
-        allowed_path_types: ["polyhelix_pyramid", "polyhelix_cube"]
-        default_path: { type: "polyhelix_pyramid" }
+        allowed_path_types:
+          - "path.polyhelix.pyramid"
+          - "path.polyhelix.cube"
+        default_path: { type: "path.polyhelix.pyramid" }

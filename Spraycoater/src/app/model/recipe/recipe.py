@@ -12,13 +12,12 @@ class Recipe:
     """
     Schlanke Rezeptstruktur:
       - parameters:     globale Instanzwerte (aus recipe_params.globals)
-      - planner:        Planner-/Pipeline-Instanzwerte (aus recipe_params.planner)
+      - planner:        Planner-/Pipeline-Instanzwerte (optional, frei definierbar)
       - paths_by_side:  pro Side genau EINE Path-Definition (dict)
       - _paths_cache:   rohe Geometriepunkte (N,3) je Side (nur RAM)
       - paths_compiled: gespeicherte Posen (Quaternionen) + Meta (für Export/Save)
       - info:           abgeleitete Kennzahlen (Längen, Punkte etc.) – wird von
                         Recipe selbst gepflegt und im YAML gespeichert.
-      - valid:          Flag, ob das Rezept als "valide" markiert wurde (z.B. nach erfolgreichem Dryrun)
     """
     # Meta / Auswahl
     id: str
@@ -29,7 +28,7 @@ class Recipe:
 
     # Instanzparameter
     parameters: Dict[str, Any] = field(default_factory=dict)  # globals
-    planner:    Dict[str, Any] = field(default_factory=dict)  # planner
+    planner:    Dict[str, Any] = field(default_factory=dict)  # planner-instanz (frei)
 
     # Pfad-Definitionen pro Side
     paths_by_side: Dict[str, Dict[str, Any]] = field(default_factory=dict)
@@ -43,9 +42,6 @@ class Recipe:
     # Abgeleitete Info (z.B. aus kompilierten Pfaden)
     info: Dict[str, Any] = field(default_factory=dict)
 
-    # Gültigkeitsflag (z.B. nach Validierung / Dryrun)
-    valid: bool = False
-
     # ---------- YAML ----------
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "Recipe":
@@ -54,13 +50,14 @@ class Recipe:
             description=str(d.get("description") or ""),
             tool=d.get("tool"),
             substrate=d.get("substrate"),
-            substrate_mount=d.get("substrate_mount") or d.get("mount"),
+            # STRIKT: nur noch substrate_mount (kein 'mount'-Fallback)
+            substrate_mount=d.get("substrate_mount"),
             parameters=dict(d.get("parameters") or {}),
             planner=dict(d.get("planner") or {}),
-            paths_by_side=dict(d.get("paths_by_side") or d.get("paths") or {}),
+            # STRIKT: nur noch paths_by_side (kein 'paths'-Fallback)
+            paths_by_side=dict(d.get("paths_by_side") or {}),
             paths_compiled=dict(d.get("paths_compiled") or {}),
             info=dict(d.get("info") or {}),
-            valid=bool(d.get("valid", False)),
         )
 
     @staticmethod
@@ -107,7 +104,6 @@ class Recipe:
             "paths_by_side": Recipe._to_plain(
                 {s: dict(p or {}) for s, p in (self.paths_by_side or {}).items()}
             ),
-            "valid": bool(self.valid),
         }
         if self.paths_compiled:
             out["paths_compiled"] = Recipe._to_plain(self.paths_compiled)
@@ -130,15 +126,12 @@ class Recipe:
         """
         # Info aus kompilierten Pfaden aktualisieren (falls vorhanden)
         if self.paths_compiled:
-            try:
-                self._recompute_info_from_compiled()
-            except Exception:
-                # Wenn Info-Berechnung scheitert, lieber nur valid setzen
-                self.info = {"valid": bool(self.valid)}
+            # Wenn die Info-Berechnung crasht, soll es bewusst krachen
+            # statt „valid“ o.ä. zu faken.
+            self._recompute_info_from_compiled()
 
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         data = self.to_dict()
-        # Falls hier noch was schiefgeht, lieber explizit crashen
         with open(path, "w", encoding="utf-8") as f:
             yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
 
@@ -234,7 +227,6 @@ class Recipe:
         Aktualisiert self.info auf Basis von paths_compiled.
 
         - total_points / total_length_mm / sides werden neu berechnet.
-        - valid wird immer aus self.valid gespiegelt.
         - Alle anderen Keys in self.info (z.B. mesh_tris, mesh_bounds_mm,
           eta_s, medium_ml, ...) bleiben unangetastet.
         """
@@ -244,14 +236,13 @@ class Recipe:
 
         if not isinstance(sides, dict) or not sides:
             info_new: Dict[str, Any] = {
-                "valid": bool(self.valid),
                 "total_points": 0,
                 "total_length_mm": 0.0,
                 "sides": {},
             }
             # restliche Keys aus alter Info übernehmen
             for k, v in old.items():
-                if k not in ("valid", "total_points", "total_length_mm", "sides"):
+                if k not in ("total_points", "total_length_mm", "sides"):
                     info_new[k] = v
             self.info = info_new
             return
@@ -291,7 +282,6 @@ class Recipe:
             total_length += length
 
         info_new: Dict[str, Any] = {
-            "valid": bool(self.valid),
             "total_points": total_points,
             "total_length_mm": total_length,
             "sides": sides_info,
@@ -299,7 +289,7 @@ class Recipe:
 
         # alle übrigen Keys aus alter Info übernehmen (z.B. mesh_tris, mesh_bounds_mm, eta_s, medium_ml, ...)
         for k, v in old.items():
-            if k not in ("valid", "total_points", "total_length_mm", "sides"):
+            if k not in ("total_points", "total_length_mm", "sides"):
                 info_new[k] = v
 
         self.info = info_new
@@ -326,8 +316,6 @@ class Recipe:
             tool_frame = str((self.planner or {}).get("tool_frame", "tool_mount"))
 
         # --- Z-Offset für Export / Spray-Pfad ---
-        # Falls vorhanden, kann ein expliziter Offset gesetzt werden (z.B. aus Scene-Config),
-        # sonst wird für "top" automatisch zmin als Mount-Offset verwendet.
         explicit_scene_z_off = self.parameters.get("scene_z_offset_mm", None)
         auto_z_off = float(zmin)
         z_offset_top_default = float(explicit_scene_z_off) if explicit_scene_z_off is not None else auto_z_off
@@ -516,7 +504,6 @@ class Recipe:
             lines.append(f"substrate: {self.substrate}")
         if self.substrate_mount:
             lines.append(f"substrate_mount: {self.substrate_mount}")
-        lines.append(f"valid: {self.valid}")
 
         # Parameters
         if self.parameters:

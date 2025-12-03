@@ -1,33 +1,45 @@
+# Welche Planner-Plugins generell verfügbar sind
 planning_plugins:
   - ompl_interface/OMPLPlanner
 
+# Einstellungen für die OMPL-Pipeline
 ompl:
   default_planner_config: RRTConnectkConfigDefault
 
-request_adapters:
-  - default_planning_request_adapters/ResolveConstraintFrames
-  - default_planning_request_adapters/ValidateWorkspaceBounds
-  - default_planning_request_adapters/CheckStartStateBounds
-  - default_planning_request_adapters/CheckStartStateCollision
-  - default_planning_request_adapters/CheckForStackedConstraints
+  request_adapters:
+    - default_planning_request_adapters/ResolveConstraintFrames
+    - default_planning_request_adapters/ValidateWorkspaceBounds
+    - default_planning_request_adapters/CheckStartStateBounds
+    - default_planning_request_adapters/CheckStartStateCollision
+    - default_planning_request_adapters/CheckForStackedConstraints
 
-response_adapters:
-  - default_planning_response_adapters/AddTimeOptimalParameterization
-  # Optional, falls du später mehr willst:
-  # - default_planning_response_adapters/AddRuckigTrajectorySmoothing
-  # - default_planning_response_adapters/DisplayMotionPath
-  # - default_planning_response_adapters/ValidateSolution
+  response_adapters:
+    - default_planning_response_adapters/AddTimeOptimalParameterization
 
-start_state_max_bounds_error: 0.1
+  start_state_max_bounds_error: 0.1
 
+# Konkrete OMPL-Planner-Konfigurationen (global)
 planner_configs:
   RRTConnectkConfigDefault:
     type: geometric::RRTConnect
     range: 0.1
+
   RRTkConfigDefault:
     type: geometric::RRT
     range: 0.1
+
   RRTstarkConfigDefault:
     type: geometric::RRTstar
     range: 0.1
-    # weitere Planner kannst du hier ergänzen
+    # hier kannst du später noch optimization_objective usw. ergänzen
+
+# >>> WICHTIG: Gruppe mit diesen Plannern verknüpfen <<<
+omron_arm_group:
+  planner_configs:
+    - RRTConnectkConfigDefault
+    - RRTkConfigDefault
+    - RRTstarkConfigDefault
+
+  # Optional, aber sinnvoll:
+  projection_evaluator: joints(joint_1,joint_2,joint_3,joint_4,joint_5,joint_6)
+  longest_valid_segment_fraction: 0.01

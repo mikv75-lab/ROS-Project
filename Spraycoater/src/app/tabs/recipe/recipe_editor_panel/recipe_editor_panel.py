@@ -36,9 +36,8 @@ class RecipeEditorPanel(QWidget):
         - Zeile 1: New | Load | Save | Delete   (HBox)
         - Zeile 2: HLine
         - Zeile 3: Update Preview | Validate | Optimize (HBox)
-      -> alles in einem VBoxLayout innerhalb der GroupBox.
 
-    Content: RecipeEditorContent (Meta/Context | Globals/Planner | Sides)
+    Content: RecipeEditorContent (Meta/Setup | Globals/Move Planner | Sides)
     """
     updatePreviewRequested = pyqtSignal(object)  # model: Recipe
     validateRequested = pyqtSignal()
@@ -69,9 +68,9 @@ class RecipeEditorPanel(QWidget):
         hButtons.setContentsMargins(0, 0, 0, 0)
         hButtons.setSpacing(6)
 
-        self.btnNew    = QPushButton("New", self.gbCommands)
-        self.btnLoad   = QPushButton("Load", self.gbCommands)
-        self.btnSave   = QPushButton("Save", self.gbCommands)
+        self.btnNew = QPushButton("New", self.gbCommands)
+        self.btnLoad = QPushButton("Load", self.gbCommands)
+        self.btnSave = QPushButton("Save", self.gbCommands)
         self.btnDelete = QPushButton("Delete", self.gbCommands)
 
         for b in (self.btnNew, self.btnLoad, self.btnSave, self.btnDelete):
@@ -81,14 +80,14 @@ class RecipeEditorPanel(QWidget):
             b.setSizePolicy(sp)
             hButtons.addWidget(b, 1)
 
-        # Zeile 3: Footer-Buttons in eigener HBox
+        # Zeile 3: Footer-Buttons
         hFooter = QHBoxLayout()
         hFooter.setContentsMargins(0, 0, 0, 0)
         hFooter.setSpacing(8)
 
         self.btnUpdatePreview = QPushButton("Update Preview", self.gbCommands)
-        self.btnValidate      = QPushButton("Validate", self.gbCommands)
-        self.btnOptimize      = QPushButton("Optimize", self.gbCommands)
+        self.btnValidate = QPushButton("Validate", self.gbCommands)
+        self.btnOptimize = QPushButton("Optimize", self.gbCommands)
 
         for b in (self.btnUpdatePreview, self.btnValidate, self.btnOptimize):
             sp = b.sizePolicy()
@@ -97,7 +96,6 @@ class RecipeEditorPanel(QWidget):
             b.setSizePolicy(sp)
             hFooter.addWidget(b, 1)
 
-        # alles in VBox: HBox (oben) -> HLine -> HBox (unten)
         cmd_layout.addLayout(hButtons)
         cmd_layout.addWidget(_hline())
         cmd_layout.addLayout(hFooter)
@@ -126,7 +124,7 @@ class RecipeEditorPanel(QWidget):
         self.btnOptimize.clicked.connect(self.optimizeRequested.emit)
         self.btnUpdatePreview.clicked.connect(self._relay_update_preview)
 
-        # Erstes Rezept initialisieren
+        # Erstes Rezept initialisieren (falls vorhanden)
         combo = getattr(self.content, "sel_recipe", None)
         if combo and combo.count() > 0:
             if combo.currentIndex() < 0:
@@ -151,10 +149,6 @@ class RecipeEditorPanel(QWidget):
         combo.blockSignals(False)
 
     def _current_recipe_def(self) -> Optional[Dict[str, Any]]:
-        """
-        Liefert das aktuell im ComboBox ausgewählte Rezept-Definition-Dict.
-        Fängt RuntimeError ab, falls das ComboBox-Objekt bereits von Qt gelöscht wurde.
-        """
         combo = getattr(self.content, "sel_recipe", None)
         if combo is None:
             return None
@@ -165,32 +159,36 @@ class RecipeEditorPanel(QWidget):
         return self._recipes_by_id.get(rid)
 
     def _new_model_from_rec_def(self, rec_def: Dict[str, Any]) -> Recipe:
-        params  = self.store.collect_global_defaults()
-        planner = self._safe_call(self.store.collect_planner_defaults, default={})
-        pbs     = self.store.build_default_paths_for_recipe(rec_def)
+        """
+        Erstellt ein frisches Recipe-Modell:
+          - parameters:      Defaults aus recipe_params.globals
+          - planner (move):  Defaults aus recipe_params.planner (Move-Planner)
+          - paths_by_side:   Default-Paths aus rec_def.sides[..].default_path
+          - tool/substrate/mount: erste Einträge aus rec_def
+        """
+        params = self.store.collect_global_defaults()
+        move_planner = self.store.collect_planner_defaults()
+        pbs = self.store.build_default_paths_for_recipe(rec_def)
 
-        subs   = rec_def.get("substrates") or []
-        sub    = subs[0] if subs else None
+        subs = rec_def.get("substrates") or []
+        sub = subs[0] if subs else None
         mounts = rec_def.get("substrate_mounts") or []
-        mnt    = mounts[0] if mounts else None
-        tools  = rec_def.get("tools") or []
-        tool   = tools[0] if tools else None
+        mnt = mounts[0] if mounts else None
+        tools = rec_def.get("tools") or []
+        tool = tools[0] if tools else None
 
         model = Recipe.from_dict({
             "id": "",
             "description": rec_def.get("description") or "",
             "tool": tool,
             "substrate": sub,
-            "substrates": [sub] if sub else [],
             "substrate_mount": mnt,
             "parameters": params,
-            "planner": planner,
+            # aktuell: model.planner enthält den Move-Planner (flach oder später nested["move"])
+            "planner": move_planner,
             "paths_by_side": pbs,
         })
 
-        model.tools = tools                     # type: ignore[attr-defined]
-        model.substrates = subs                 # type: ignore[assignment]
-        model.substrate_mounts = mounts         # type: ignore[attr-defined]
         return model
 
     def _apply_model(self, model: Recipe, rec_def: Dict[str, Any]) -> None:
@@ -198,21 +196,15 @@ class RecipeEditorPanel(QWidget):
         self._active_rec_def = rec_def
 
         # Meta-Felder oben im Panel setzen
-        try:
-            name = getattr(model, "id", "") or ""
-            desc = getattr(model, "description", "") or ""
-            self.content.set_meta(name=name, desc=desc)
-        except Exception:
-            pass
+        name = model.id or ""
+        desc = model.description or ""
+        self.content.set_meta(name=name, desc=desc)
 
-        # Content füllen (Context, Globals, Planner, Sides)
+        # Content füllen (Setup, Globals, Move-Planner, Sides)
         self.content.apply_recipe_model(model, rec_def)
 
-        # Planner darunter (zur Sicherheit nochmal)
-        try:
-            self.content.apply_planner_model(model.planner or {})
-        except Exception:
-            pass
+        # Move-Planner nochmal zur Sicherheit in die Box schieben
+        self.content.apply_planner_model(model.planner or {})
 
     def _on_recipe_select_changed(self, _index: int) -> None:
         rec_def = self._current_recipe_def()
@@ -237,6 +229,8 @@ class RecipeEditorPanel(QWidget):
     def _on_load_clicked(self) -> None:
         """
         Rezept aus YAML laden, Modell vollständig füllen und dann UI synchronisieren.
+        Strikt:
+          - model.id MUSS einem rec_def.id in store.recipes entsprechen.
         """
         start_dir = getattr(getattr(self.ctx, "paths", None), "recipe_dir", os.getcwd())
         fname, _ = QFileDialog.getOpenFileName(self, "Rezept laden", start_dir, "YAML (*.yaml *.yml)")
@@ -247,14 +241,20 @@ class RecipeEditorPanel(QWidget):
             # 1) Modell komplett aus YAML
             model = Recipe.load_yaml(fname)
 
-            # 2) passende Rezept-Definition anhand model.id suchen
+            if not model.id:
+                raise ValueError("Geladenes Rezept hat kein 'id'-Feld.")
+
+            # 2) passende Rezept-Definition anhand model.id suchen (keine Fallbacks)
             rec_def = self._recipes_by_id.get(model.id)
             if not rec_def:
-                rec_def = self._current_recipe_def() or {}
+                raise ValueError(
+                    f"Kein recipes[..].id == '{model.id}' gefunden. "
+                    f"Bitte ein Rezept mit gültiger ID laden."
+                )
 
-            # 2a) ComboBox "recipe" auf das geladene Rezept setzen (wenn vorhanden)
+            # 2a) ComboBox "recipe" auf das geladene Rezept setzen
             combo = getattr(self.content, "sel_recipe", None)
-            if combo is not None and model.id:
+            if combo is not None:
                 try:
                     idx = combo.findText(str(model.id))
                     if idx >= 0:
@@ -262,22 +262,13 @@ class RecipeEditorPanel(QWidget):
                         combo.setCurrentIndex(idx)
                         combo.blockSignals(False)
                 except RuntimeError:
-                    # Combo ist evtl. schon zerstört
-                    pass
+                    return
 
             # 3) Modell in UI applizieren
-            try:
-                self._apply_model(model, rec_def)
-            except RuntimeError:
-                # Panel/Content bereits gelöscht – Ladevorgang abbrechen
-                return
+            self._apply_model(model, rec_def)
 
             # 4) Preview & RViz updaten
-            try:
-                self.updatePreviewRequested.emit(model)
-            except RuntimeError:
-                # Signal-Receiver existiert nicht mehr
-                return
+            self.updatePreviewRequested.emit(model)
 
             # 5) Info-Dialog
             basename = os.path.basename(fname)
@@ -287,7 +278,6 @@ class RecipeEditorPanel(QWidget):
                 QMessageBox.information(None, "Geladen", basename)
 
         except Exception as e:
-            # Fehlerdialog robust anzeigen
             try:
                 QMessageBox.critical(self, "Ladefehler", str(e))
             except RuntimeError:
@@ -309,7 +299,10 @@ class RecipeEditorPanel(QWidget):
             start_dir = getattr(getattr(self.ctx, "paths", None), "recipe_dir", os.getcwd())
             suggested = f"{name}.yaml"
             fname, _ = QFileDialog.getSaveFileName(
-                self, "Rezept speichern", os.path.join(start_dir, suggested), "YAML (*.yaml *.yml)")
+                self, "Rezept speichern",
+                os.path.join(start_dir, suggested),
+                "YAML (*.yaml *.yml)"
+            )
             if not fname:
                 return
             model.save_yaml(fname)
@@ -337,12 +330,15 @@ class RecipeEditorPanel(QWidget):
     # ============================ Export/Trigger ========================
 
     def current_model(self) -> Recipe:
-        collect_planner: Callable[[], Dict[str, Any]] = getattr(self.content, "collect_planner", lambda: {})
-        params         = self.content.collect_globals()
-        paths_by_side  = self.content.collect_paths_by_side()
-        planner        = collect_planner()
+        """
+        Baut aus dem aktuellen UI-Zustand ein Recipe-Objekt
+        (inkl. globals, Move-Planner, paths_by_side).
+        """
+        params = self.content.collect_globals()
+        paths_by_side = self.content.collect_paths_by_side()
+        move_planner = self.content.collect_planner()
         tool, sub, mnt = self.content.active_selectors_values()
-        name, desc     = self.content.meta_values()
+        name, desc = self.content.meta_values()
 
         model = self._active_model
         if model is None:
@@ -353,10 +349,10 @@ class RecipeEditorPanel(QWidget):
         model.description = (desc or "").strip()
         model.tool = tool
         model.substrate = sub
-        model.substrates = [sub] if sub else []
         model.substrate_mount = mnt
         model.parameters = params
-        model.planner = planner
+        # aktuell: planner == Move-Planner-Config
+        model.planner = move_planner
         model.paths_by_side = paths_by_side
 
         self._active_model = model
@@ -370,12 +366,4 @@ class RecipeEditorPanel(QWidget):
         try:
             self.updatePreviewRequested.emit(self.current_model())
         except RuntimeError:
-            # Falls Panel schon zerstört wird – nichts tun
             return
-
-    @staticmethod
-    def _safe_call(fn, default=None):
-        try:
-            return fn()
-        except Exception:
-            return default

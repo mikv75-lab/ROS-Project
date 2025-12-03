@@ -6717,3 +6717,502 @@ AttributeError: 'NoneType' object has no attribute 'set_spraypath'
 2025-11-30 04:54:57 WARNING [889921] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
 2025-11-30 04:54:57 WARNING [889921] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
 2025-11-30 04:54:57 ERROR [889921] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 05:04:45 WARNING [903802] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 05:04:45 WARNING [903802] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 05:04:45 INFO [903802] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 05:04:45 WARNING [903802] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 05:04:46 WARNING [903802] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 05:04:46 WARNING [903802] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 05:04:46 WARNING [903802] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 05:04:46 WARNING [903802] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 05:04:46 WARNING [903802] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 05:04:46 WARNING [903802] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 05:04:46 WARNING [903802] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 05:04:46 WARNING [903802] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 05:04:46 ERROR [903802] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 05:22:41 WARNING [928384] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 05:22:41 WARNING [928384] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 05:22:41 INFO [928384] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 05:22:41 WARNING [928384] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 05:22:41 WARNING [928384] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 05:22:41 WARNING [928384] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 05:22:41 WARNING [928384] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 05:22:41 WARNING [928384] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 05:22:41 WARNING [928384] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 05:22:41 WARNING [928384] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 05:22:41 WARNING [928384] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 05:22:41 WARNING [928384] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 05:22:42 ERROR [928384] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 05:24:05 WARNING [929990] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 05:24:05 WARNING [929990] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 05:24:05 INFO [929990] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 05:24:05 WARNING [929990] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 05:24:06 WARNING [929990] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 05:24:06 WARNING [929990] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 05:24:06 WARNING [929990] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 05:24:06 WARNING [929990] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 05:24:06 WARNING [929990] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 05:24:06 WARNING [929990] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 05:24:06 WARNING [929990] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 05:24:06 WARNING [929990] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 05:24:06 ERROR [929990] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 05:28:27 WARNING [934149] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 05:28:27 WARNING [934149] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 05:28:27 INFO [934149] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 05:28:27 WARNING [934149] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 05:28:27 WARNING [934149] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 05:28:27 WARNING [934149] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 05:28:27 WARNING [934149] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 05:28:27 WARNING [934149] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 05:28:27 WARNING [934149] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 05:28:27 WARNING [934149] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 05:28:27 WARNING [934149] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 05:28:28 WARNING [934149] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 05:28:28 ERROR [934149] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 05:32:21 WARNING [938509] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 05:32:21 WARNING [938509] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 05:32:21 INFO [938509] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 05:32:21 WARNING [938509] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 05:32:21 WARNING [938509] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 05:32:21 WARNING [938509] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 05:32:21 WARNING [938509] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 05:32:21 WARNING [938509] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 05:32:21 WARNING [938509] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 05:32:20 WARNING [938509] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 05:32:20 WARNING [938509] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 05:32:20 WARNING [938509] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 05:32:20 ERROR [938509] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 05:42:23 WARNING [948447] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 05:42:23 WARNING [948447] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 05:42:23 INFO [948447] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 05:42:23 WARNING [948447] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 05:42:24 WARNING [948447] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 05:42:24 WARNING [948447] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 05:42:24 WARNING [948447] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 05:42:24 WARNING [948447] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 05:42:24 WARNING [948447] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 05:42:24 WARNING [948447] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 05:42:24 WARNING [948447] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 05:42:24 WARNING [948447] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 05:42:24 ERROR [948447] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 05:43:49 WARNING [950273] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 05:43:49 WARNING [950273] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 05:43:49 INFO [950273] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 05:43:49 WARNING [950273] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 05:43:49 WARNING [950273] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 05:43:49 WARNING [950273] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 05:43:49 WARNING [950273] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 05:43:49 WARNING [950273] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 05:43:50 WARNING [950273] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 05:43:50 WARNING [950273] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 05:43:50 WARNING [950273] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 05:43:50 WARNING [950273] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 05:43:50 ERROR [950273] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 05:47:24 WARNING [954857] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 05:47:24 WARNING [954857] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 05:47:24 INFO [954857] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 05:47:24 WARNING [954857] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 05:47:24 WARNING [954857] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 05:47:24 WARNING [954857] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 05:47:24 WARNING [954857] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 05:47:25 WARNING [954857] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 05:47:25 WARNING [954857] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 05:47:25 WARNING [954857] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 05:47:25 WARNING [954857] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 05:47:25 WARNING [954857] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 05:47:25 ERROR [954857] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 05:52:40 WARNING [960778] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 05:52:40 WARNING [960778] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 05:52:40 INFO [960778] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 05:52:40 WARNING [960778] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 05:52:40 WARNING [960778] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 05:52:40 WARNING [960778] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 05:52:40 WARNING [960778] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 05:52:40 WARNING [960778] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 05:52:40 WARNING [960778] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 05:52:40 WARNING [960778] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 05:52:40 WARNING [960778] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 05:52:40 WARNING [960778] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 05:52:40 ERROR [960778] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 06:43:16 WARNING [3257] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 06:43:16 WARNING [3257] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 06:43:16 INFO [3257] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 06:43:16 WARNING [3257] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 06:43:16 WARNING [3257] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 06:43:16 WARNING [3257] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 06:43:16 WARNING [3257] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 06:43:16 WARNING [3257] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 06:43:16 WARNING [3257] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 06:43:17 WARNING [3257] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 06:43:17 WARNING [3257] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 06:43:17 WARNING [3257] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 06:43:17 ERROR [3257] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 06:46:43 WARNING [6956] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 06:46:43 WARNING [6956] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 06:46:43 INFO [6956] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 06:46:43 WARNING [6956] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 06:46:43 WARNING [6956] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 06:46:42 WARNING [6956] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 06:46:42 WARNING [6956] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 06:46:42 WARNING [6956] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 06:46:42 WARNING [6956] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 06:46:42 WARNING [6956] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 06:46:42 WARNING [6956] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 06:46:42 WARNING [6956] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 06:46:42 ERROR [6956] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 14:06:53 WARNING [50320] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 14:06:53 WARNING [50320] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 14:06:53 INFO [50320] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 14:06:53 WARNING [50320] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 14:06:53 WARNING [50320] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 14:06:53 WARNING [50320] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 14:06:53 WARNING [50320] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 14:06:53 WARNING [50320] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 14:06:53 WARNING [50320] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 14:06:54 WARNING [50320] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 14:06:54 WARNING [50320] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 14:06:54 WARNING [50320] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 14:06:54 ERROR [50320] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 15:09:05 WARNING [36631] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 15:09:05 WARNING [36631] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 15:09:05 INFO [36631] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 15:09:05 WARNING [36631] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 15:09:06 WARNING [36631] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 15:09:06 WARNING [36631] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 15:09:06 WARNING [36631] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 15:09:06 WARNING [36631] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 15:09:06 WARNING [36631] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 15:09:06 WARNING [36631] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 15:09:06 WARNING [36631] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 15:09:06 WARNING [36631] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 15:09:06 ERROR [36631] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 15:11:18 WARNING [40319] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 15:11:18 WARNING [40319] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 15:11:18 INFO [40319] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 15:11:18 WARNING [40319] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 15:11:18 WARNING [40319] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 15:11:18 WARNING [40319] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 15:11:18 WARNING [40319] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 15:11:18 WARNING [40319] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 15:11:18 WARNING [40319] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 15:11:19 WARNING [40319] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 15:11:19 WARNING [40319] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 15:11:19 WARNING [40319] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 15:11:19 ERROR [40319] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 15:27:33 WARNING [63019] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 15:27:33 WARNING [63019] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 15:27:33 INFO [63019] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 15:27:33 WARNING [63019] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 15:27:34 WARNING [63019] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 15:27:34 WARNING [63019] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 15:27:34 WARNING [63019] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 15:27:34 WARNING [63019] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 15:27:34 WARNING [63019] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 15:27:34 WARNING [63019] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 15:27:34 WARNING [63019] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 15:27:34 WARNING [63019] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 15:27:34 ERROR [63019] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-11-30 15:29:47 WARNING [66437] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-11-30 15:29:47 WARNING [66437] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-11-30 15:29:47 INFO [66437] app.tabs.recipe:143 - initial preview ausgeführt
+2025-11-30 15:29:47 WARNING [66437] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-11-30 15:29:47 WARNING [66437] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-11-30 15:29:48 WARNING [66437] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-11-30 15:29:48 WARNING [66437] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-11-30 15:29:48 WARNING [66437] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-11-30 15:29:48 WARNING [66437] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-11-30 15:29:48 WARNING [66437] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-11-30 15:29:48 WARNING [66437] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-11-30 15:29:48 WARNING [66437] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-11-30 15:29:48 ERROR [66437] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-12-01 17:06:01 WARNING [335177] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-12-01 17:06:01 WARNING [335177] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-12-01 17:06:01 INFO [335177] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 17:06:01 WARNING [335177] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-12-01 17:06:01 WARNING [335177] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-12-01 17:06:01 WARNING [335177] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-12-01 17:06:01 WARNING [335177] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-12-01 17:06:01 WARNING [335177] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-12-01 17:06:01 WARNING [335177] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-12-01 17:06:01 WARNING [335177] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-12-01 17:06:01 WARNING [335177] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-12-01 17:06:01 WARNING [335177] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-12-01 17:06:01 ERROR [335177] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-12-01 17:06:38 WARNING [335988] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-12-01 17:06:38 WARNING [335988] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-12-01 17:06:38 INFO [335988] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 17:06:38 WARNING [335988] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-12-01 17:06:38 WARNING [335988] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-12-01 17:06:38 WARNING [335988] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-12-01 17:06:38 WARNING [335988] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-12-01 17:06:38 WARNING [335988] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-12-01 17:06:38 WARNING [335988] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-12-01 17:06:38 WARNING [335988] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-12-01 17:06:38 WARNING [335988] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-12-01 17:06:38 WARNING [335988] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-12-01 17:06:38 ERROR [335988] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-12-01 17:06:57 WARNING [336350] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-12-01 17:06:57 WARNING [336350] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-12-01 17:06:57 INFO [336350] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 17:06:57 WARNING [336350] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-12-01 17:06:57 WARNING [336350] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-12-01 17:06:57 WARNING [336350] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-12-01 17:06:57 WARNING [336350] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-12-01 17:06:57 WARNING [336350] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-12-01 17:06:57 WARNING [336350] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-12-01 17:06:57 WARNING [336350] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-12-01 17:06:57 WARNING [336350] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-12-01 17:06:57 WARNING [336350] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-12-01 17:06:57 ERROR [336350] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-12-01 17:10:17 WARNING [338378] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-12-01 17:10:17 WARNING [338378] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-12-01 17:10:17 INFO [338378] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 17:10:17 WARNING [338378] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-12-01 17:10:17 WARNING [338378] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-12-01 17:10:17 WARNING [338378] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-12-01 17:10:17 WARNING [338378] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-12-01 17:10:18 WARNING [338378] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-12-01 17:10:18 WARNING [338378] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-12-01 17:10:18 WARNING [338378] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-12-01 17:10:18 WARNING [338378] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-12-01 17:10:18 WARNING [338378] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-12-01 17:10:18 ERROR [338378] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-12-01 17:13:48 WARNING [340602] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-12-01 17:13:48 WARNING [340602] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-12-01 17:13:48 INFO [340602] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 17:13:48 WARNING [340602] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-12-01 17:13:48 WARNING [340602] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-12-01 17:13:48 WARNING [340602] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-12-01 17:13:48 WARNING [340602] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-12-01 17:13:48 WARNING [340602] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-12-01 17:13:48 WARNING [340602] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-12-01 17:13:48 WARNING [340602] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-12-01 17:13:48 WARNING [340602] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-12-01 17:13:49 WARNING [340602] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-12-01 17:13:49 ERROR [340602] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-12-01 17:17:29 WARNING [342982] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-12-01 17:17:29 WARNING [342982] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-12-01 17:17:29 INFO [342982] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 17:17:29 WARNING [342982] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-12-01 17:17:29 WARNING [342982] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-12-01 17:17:29 WARNING [342982] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-12-01 17:17:29 WARNING [342982] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-12-01 17:17:29 WARNING [342982] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-12-01 17:17:29 WARNING [342982] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-12-01 17:17:30 WARNING [342982] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-12-01 17:17:30 WARNING [342982] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-12-01 17:17:30 WARNING [342982] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-12-01 17:17:30 ERROR [342982] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-12-01 17:18:20 WARNING [344373] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-12-01 17:18:20 WARNING [344373] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-12-01 17:18:20 INFO [344373] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 17:18:20 WARNING [344373] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-12-01 17:18:20 WARNING [344373] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-12-01 17:18:20 WARNING [344373] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-12-01 17:18:20 WARNING [344373] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-12-01 17:18:20 WARNING [344373] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-12-01 17:18:20 WARNING [344373] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-12-01 17:18:20 WARNING [344373] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-12-01 17:18:21 WARNING [344373] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-12-01 17:18:21 WARNING [344373] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-12-01 17:18:21 ERROR [344373] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-12-01 17:33:28 WARNING [354958] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-12-01 17:33:28 WARNING [354958] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-12-01 17:33:28 INFO [354958] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 17:33:28 WARNING [354958] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-12-01 17:33:28 WARNING [354958] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-12-01 17:33:28 WARNING [354958] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-12-01 17:33:28 WARNING [354958] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-12-01 17:33:28 WARNING [354958] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-12-01 17:33:28 WARNING [354958] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-12-01 17:33:28 WARNING [354958] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-12-01 17:33:29 WARNING [354958] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-12-01 17:33:29 WARNING [354958] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-12-01 17:33:29 ERROR [354958] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-12-01 17:39:40 WARNING [360551] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (9 left)
+2025-12-01 17:39:40 WARNING [360551] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-12-01 17:39:40 INFO [360551] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 17:39:40 WARNING [360551] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (8 left)
+2025-12-01 17:39:40 WARNING [360551] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (7 left)
+2025-12-01 17:39:40 WARNING [360551] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (6 left)
+2025-12-01 17:39:40 WARNING [360551] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (5 left)
+2025-12-01 17:39:40 WARNING [360551] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (4 left)
+2025-12-01 17:39:40 WARNING [360551] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (3 left)
+2025-12-01 17:39:40 WARNING [360551] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (2 left)
+2025-12-01 17:39:40 WARNING [360551] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (1 left)
+2025-12-01 17:39:40 WARNING [360551] app.tabs.recipe.preview.panel:209 - handle_update_preview: no interactor -> retry (0 left)
+2025-12-01 17:39:40 ERROR [360551] app.tabs.recipe.preview.panel:212 - handle_update_preview: no interactor (give up)
+2025-12-01 17:44:53 INFO [364460] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 17:44:53 DEBUG [364460] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 17:44:53 DEBUG [364460] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-01 17:44:53 INFO [364460] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 17:45:21 INFO [365004] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 17:45:21 DEBUG [365004] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 17:45:21 DEBUG [365004] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-01 17:45:21 INFO [365004] app.tabs.recipe:112 - RecipeTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene, sides=top)
+2025-12-01 17:45:21 INFO [365004] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 17:47:56 INFO [368283] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 17:47:56 DEBUG [368283] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 17:47:56 DEBUG [368283] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-01 17:47:56 INFO [368283] app.tabs.recipe:112 - RecipeTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene, sides=top)
+2025-12-01 17:47:56 INFO [368283] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 17:50:41 INFO [371176] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 17:50:41 DEBUG [371176] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 17:50:41 DEBUG [371176] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-01 17:50:41 INFO [371176] app.tabs.recipe:112 - RecipeTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene, sides=top)
+2025-12-01 17:50:41 INFO [371176] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 17:58:34 INFO [377782] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 17:58:34 DEBUG [377782] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 17:58:34 DEBUG [377782] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-01 17:58:34 INFO [377782] app.tabs.recipe:112 - RecipeTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene, sides=top)
+2025-12-01 17:58:34 INFO [377782] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 18:38:57 INFO [405369] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 18:38:57 DEBUG [405369] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 18:38:57 DEBUG [405369] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-01 18:38:58 INFO [405369] app.tabs.recipe:112 - RecipeTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene, sides=top)
+2025-12-01 18:38:58 INFO [405369] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 18:59:29 INFO [421531] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 18:59:29 DEBUG [421531] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 18:59:29 DEBUG [421531] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-01 18:59:30 INFO [421531] app.tabs.recipe:112 - RecipeTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene, sides=top)
+2025-12-01 18:59:30 INFO [421531] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-01 19:10:12 INFO [432488] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 19:10:12 DEBUG [432488] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-01 19:10:12 DEBUG [432488] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-01 19:10:12 INFO [432488] app.tabs.recipe:112 - RecipeTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene, sides=top)
+2025-12-01 19:10:12 INFO [432488] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-03 17:32:34 INFO [871040] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 17:32:34 DEBUG [871040] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 17:32:34 DEBUG [871040] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-03 17:32:34 ERROR [871040] app.tabs.recipe.preview.panel:250 - compile_poses failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 242, in handle_update_preview
+    compiled = model.compile_poses(
+               ^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/recipe.py", line 401, in compile_poses
+    pd = PathBuilder.from_side(
+         ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/path_builder.py", line 59, in from_side
+    pd = PathBuilder._from_path_dict(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/path_builder.py", line 162, in _from_path_dict
+    raise ValueError(f"Unsupported path.type: {ptype!r}")
+ValueError: Unsupported path.type: 'path.spiral.plane'
+2025-12-03 17:32:34 WARNING [871040] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-12-03 17:32:34 INFO [871040] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-03 17:32:55 INFO [871869] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 17:32:55 DEBUG [871869] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 17:32:55 DEBUG [871869] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-03 17:32:55 ERROR [871869] app.tabs.recipe.preview.panel:250 - compile_poses failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 242, in handle_update_preview
+    compiled = model.compile_poses(
+               ^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/recipe.py", line 401, in compile_poses
+    pd = PathBuilder.from_side(
+         ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/path_builder.py", line 59, in from_side
+    pd = PathBuilder._from_path_dict(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/path_builder.py", line 162, in _from_path_dict
+    raise ValueError(f"Unsupported path.type: {ptype!r}")
+ValueError: Unsupported path.type: 'path.spiral.plane'
+2025-12-03 17:32:55 WARNING [871869] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-12-03 17:32:55 INFO [871869] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-03 17:44:49 INFO [878766] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 17:44:49 DEBUG [878766] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 17:44:49 DEBUG [878766] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-03 17:44:49 ERROR [878766] app.tabs.recipe.preview.panel:250 - compile_poses failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 242, in handle_update_preview
+    compiled = model.compile_poses(
+               ^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/recipe.py", line 401, in compile_poses
+    pd = PathBuilder.from_side(
+         ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/path_builder.py", line 59, in from_side
+    pd = PathBuilder._from_path_dict(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/path_builder.py", line 162, in _from_path_dict
+    raise ValueError(f"Unsupported path.type: {ptype!r}")
+ValueError: Unsupported path.type: 'path.spiral.plane'
+2025-12-03 17:44:49 WARNING [878766] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-12-03 17:44:49 INFO [878766] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-03 18:24:06 INFO [901538] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 18:24:06 DEBUG [901538] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 18:24:06 DEBUG [901538] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-03 18:24:06 ERROR [901538] app.tabs.recipe.preview.panel:250 - compile_poses failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 242, in handle_update_preview
+    compiled = model.compile_poses(
+               ^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/recipe.py", line 401, in compile_poses
+    pd = PathBuilder.from_side(
+         ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/path_builder.py", line 59, in from_side
+    pd = PathBuilder._from_path_dict(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/path_builder.py", line 162, in _from_path_dict
+    raise ValueError(f"Unsupported path.type: {ptype!r}")
+ValueError: Unsupported path.type: 'path.spiral.plane'
+2025-12-03 18:24:06 WARNING [901538] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-12-03 18:24:06 INFO [901538] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-03 18:27:07 INFO [903419] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 18:27:07 DEBUG [903419] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 18:27:07 DEBUG [903419] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-03 18:27:07 ERROR [903419] app.tabs.recipe.preview.panel:250 - compile_poses failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/tabs/recipe/coating_preview_panel/coating_preview_panel.py", line 242, in handle_update_preview
+    compiled = model.compile_poses(
+               ^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/recipe.py", line 401, in compile_poses
+    pd = PathBuilder.from_side(
+         ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/path_builder.py", line 59, in from_side
+    pd = PathBuilder._from_path_dict(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/Spraycoater/src/app/model/recipe/path_builder.py", line 162, in _from_path_dict
+    raise ValueError(f"Unsupported path.type: {ptype!r}")
+ValueError: Unsupported path.type: 'path.spiral.plane'
+2025-12-03 18:27:07 WARNING [903419] app.tabs.recipe:120 - RecipeTab: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray
+2025-12-03 18:27:07 INFO [903419] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-03 18:31:38 INFO [906191] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 18:31:38 DEBUG [906191] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 18:31:38 DEBUG [906191] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-03 18:31:38 INFO [906191] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-03 18:32:30 INFO [906191] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 18:32:30 DEBUG [906191] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 18:32:30 DEBUG [906191] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-03 18:32:42 INFO [906191] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-12-03 18:32:42 DEBUG [906191] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-12-03 18:32:42 DEBUG [906191] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/mask_100_10.stl
+2025-12-03 18:33:15 INFO [906191] app.tabs.recipe.mesh_utils:230 - Mount 'post_d30mm_h100mm' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/post_d30mm_h100mm.stl
+2025-12-03 18:33:15 DEBUG [906191] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/post_d30mm_h100mm.stl
+2025-12-03 18:33:15 DEBUG [906191] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/tube_ID5mm_t1p5mm_h100mm.stl
+2025-12-03 18:34:19 INFO [906191] app.tabs.recipe.mesh_utils:230 - Mount 'post_d30mm_h100mm' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/post_d30mm_h100mm.stl
+2025-12-03 18:34:19 DEBUG [906191] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/post_d30mm_h100mm.stl
+2025-12-03 18:34:19 DEBUG [906191] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/cylinder_d100_h100.stl
+2025-12-03 18:34:35 INFO [906191] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-12-03 18:34:35 DEBUG [906191] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-12-03 18:34:35 DEBUG [906191] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/cube_100.stl
+2025-12-03 18:35:45 INFO [906191] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-12-03 18:35:45 DEBUG [906191] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-12-03 18:35:45 DEBUG [906191] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/cube_100.stl
+2025-12-03 18:36:01 INFO [906191] app.tabs.recipe.mesh_utils:230 - Mount 'flat_240x240x50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-12-03 18:36:01 DEBUG [906191] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl
+2025-12-03 18:36:01 DEBUG [906191] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/pyramid_d150_h150.stl
+2025-12-03 18:55:23 INFO [920558] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 18:55:23 DEBUG [920558] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 18:55:23 DEBUG [920558] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-03 18:55:23 INFO [920558] app.tabs.recipe:143 - initial preview ausgeführt
+2025-12-03 18:55:36 INFO [920558] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 18:55:36 DEBUG [920558] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 18:55:36 DEBUG [920558] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-03 18:55:41 INFO [920558] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 18:55:41 DEBUG [920558] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 18:55:41 DEBUG [920558] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-03 19:45:39 INFO [946642] app.tabs.recipe.mesh_utils:230 - Mount 'circle_d240_h50' mesh -> /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 19:45:39 DEBUG [946642] app.tabs.recipe.mesh_utils:241 - load_mount_mesh_from_key: path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrate_mounts/circle_d240_h50.stl
+2025-12-03 19:45:39 DEBUG [946642] app.tabs.recipe.mesh_utils:198 - load_mesh: resolved path = /root/ws_moveit/install/spraycoater_bringup/share/spraycoater_bringup/resource/substrates/wafer_d100_h2.stl
+2025-12-03 19:45:39 INFO [946642] app.tabs.recipe:112 - RecipeTab: MarkerArray mit 3 Markern an SprayPath gesendet (frame=scene, sides=top)
+2025-12-03 19:45:39 INFO [946642] app.tabs.recipe:143 - initial preview ausgeführt

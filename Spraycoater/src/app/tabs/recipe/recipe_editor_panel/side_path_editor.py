@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.model.recipe.recipe_store import RecipeStore
+from app.widgets.planner_groupbox import PlannerGroupBox
 
 
 class Vec2Edit(QWidget):
@@ -46,6 +47,7 @@ def _compact_form(f: QFormLayout) -> None:
     f.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
     f.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
 
+
 def _intish(*vals) -> bool:
     try:
         return all(float(v).is_integer() for v in vals)
@@ -55,39 +57,75 @@ def _intish(*vals) -> bool:
 
 class SidePathEditor(QWidget):
     """
-    Kompakte Page je Path-Typ, Stack passt Höhe an aktuelle Page an.
+    Editor für EINE Side:
+
+      oben:   type (Combo)
+      unten:  HBox:
+                [links]  Path-Parameter-Stack
+                [rechts] Path-Planner (role="path")
     """
+
     def __init__(self, *, side_name: str, store: RecipeStore, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.side_name = side_name
         self.store = store
 
         self._side_cfg: Dict[str, Any] = {}
+        # ptype -> (page, fields_map, params_schema)
         self._type_pages: Dict[str, Tuple[QWidget, Dict[str, Tuple[QWidget, str, Dict[str, Any]]], Dict[str, Any]]] = {}
 
+        # ==================================================================
+        # Root-Layout: VBox
+        # ==================================================================
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(6)
 
-        form = QFormLayout()
-        _compact_form(form)
+        # --- TYPE oben in eigenem FormLayout ---
+        top_form = QFormLayout()
+        _compact_form(top_form)
         self.type_combo = QComboBox()
-        form.addRow(f"type ({self.side_name})", self.type_combo)
-        root.addLayout(form)
+        top_form.addRow(f"type ({self.side_name})", self.type_combo)
+        root.addLayout(top_form)
 
+        # ==================================================================
+        # Untere HBox: [links] Path-Stack  |  [rechts] Path-Planner
+        # ==================================================================
+        bottom = QHBoxLayout()
+        bottom.setContentsMargins(0, 0, 0, 0)
+        bottom.setSpacing(8)
+        root.addLayout(bottom)
+
+        # LINKS: Stack mit Parametern
         self.stack = QStackedWidget()
         sp_stack = self.stack.sizePolicy()
-        sp_stack.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+        sp_stack.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
         sp_stack.setVerticalPolicy(QSizePolicy.Policy.Preferred)
         self.stack.setSizePolicy(sp_stack)
-        root.addWidget(self.stack)
+        bottom.addWidget(self.stack, 3)
 
+        # RECHTS: Path-Planner (role="path")
+        self.pathPlanner = PlannerGroupBox(
+            parent=self,
+            title="Path planner",
+            role="path",
+            store=self.store,
+        )
+        sp_pl = self.pathPlanner.sizePolicy()
+        sp_pl.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+        sp_pl.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+        self.pathPlanner.setSizePolicy(sp_pl)
+        bottom.addWidget(self.pathPlanner, 2)
+
+        # Gesamt-SizePolicy
         sp_self = self.sizePolicy()
         sp_self.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
         sp_self.setVerticalPolicy(QSizePolicy.Policy.Preferred)
         self.setSizePolicy(sp_self)
 
         self.type_combo.currentIndexChanged.connect(self._on_type_changed)
+
+    # ------------------------------------------------------------------ UI-Pages
 
     def _clear_pages(self):
         self._type_pages.clear()
@@ -114,13 +152,17 @@ class SidePathEditor(QWidget):
         if self.type_combo.count() > 0:
             self._on_type_changed(0)
 
-    def _build_page_for_type(self, ptype: str, params: Dict[str, Any]) -> Tuple[QWidget, Dict[str, Tuple[QWidget, str, Dict[str, Any]]]]:
+    def _build_page_for_type(
+        self,
+        ptype: str,
+        params: Dict[str, Any]
+    ) -> Tuple[QWidget, Dict[str, Tuple[QWidget, str, Dict[str, Any]]]]:
         page = QWidget()
         f = QFormLayout(page)
         _compact_form(f)
 
         sp_page = page.sizePolicy()
-        sp_page.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+        sp_page.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
         sp_page.setVerticalPolicy(QSizePolicy.Policy.Preferred)
         page.setSizePolicy(sp_page)
 
@@ -141,9 +183,14 @@ class SidePathEditor(QWidget):
             elif t == "string":
                 w = QLineEdit(); kind = "string"
             elif t == "enum":
-                w = QComboBox(); kind = "combo"; w.addItems([str(v) for v in (spec.get("values") or [])])
+                w = QComboBox(); kind = "combo"
+                w.addItems([str(v) for v in (spec.get("values") or [])])
             elif t == "vec2":
-                step = float(spec.get("step", [0.1, 0.1])[0] if isinstance(spec.get("step"), (list, tuple)) else spec.get("step", 0.1))
+                step = float(
+                    spec.get("step", [0.1, 0.1])[0]
+                    if isinstance(spec.get("step"), (list, tuple))
+                    else spec.get("step", 0.1)
+                )
                 unit = str(spec.get("unit", "") or "")
                 w = Vec2Edit(step=step, unit=unit); kind = "vec2"
             elif t == "number":
@@ -152,7 +199,8 @@ class SidePathEditor(QWidget):
                 maxv = float(spec.get("max", 0.0))
                 unit = str(spec.get("unit", "") or "")
                 if _intish(step, minv, maxv):
-                    sb = QSpinBox(); sb.setMinimum(int(minv)); sb.setMaximum(int(maxv)); sb.setSingleStep(int(step))
+                    sb = QSpinBox()
+                    sb.setMinimum(int(minv)); sb.setMaximum(int(maxv)); sb.setSingleStep(int(step))
                     w = sb; kind = "int"
                 else:
                     sb = QDoubleSpinBox()
@@ -162,7 +210,8 @@ class SidePathEditor(QWidget):
                     sb.setDecimals(decimals)
                     w = sb; kind = "double"
                 if unit:
-                    if not unit.startswith(" "): unit = " " + unit
+                    if not unit.startswith(" "):
+                        unit = " " + unit
                     w.setSuffix(unit)
             else:
                 continue
@@ -180,7 +229,14 @@ class SidePathEditor(QWidget):
         self._wire_visibility(fields, form=f)
         return page, fields
 
-    def _wire_visibility(self, fields: Dict[str, Tuple[QWidget, str, Dict[str, Any]]], *, form: QFormLayout) -> None:
+    # ------------------------------------------------------------------ Sichtbarkeit
+
+    def _wire_visibility(
+        self,
+        fields: Dict[str, Tuple[QWidget, str, Dict[str, Any]]],
+        *,
+        form: QFormLayout
+    ) -> None:
         deps: Dict[str, Tuple[str, Any]] = {}
         for key, (_w, _kind, spec) in fields.items():
             vcond = spec.get("visible_if")
@@ -244,7 +300,8 @@ class SidePathEditor(QWidget):
 
         _apply_visibility()
 
-    # --- API ---
+    # ------------------------------------------------------------------ API: Path-Defaults
+
     def apply_default_path(self, path: Dict[str, Any], *, helix_enums=None, plane_enums=None) -> None:
         if isinstance(path, dict) and "_side_cfg" in path:
             self._side_cfg = dict(path["_side_cfg"] or {})
@@ -268,9 +325,11 @@ class SidePathEditor(QWidget):
             elif kind == "string":
                 w.setText("" if val is None else str(val))
             elif kind == "int":
-                if val is not None: w.setValue(int(val))
+                if val is not None:
+                    w.setValue(int(val))
             elif kind == "double":
-                if val is not None: w.setValue(float(val))
+                if val is not None:
+                    w.setValue(float(val))
             elif isinstance(w, Vec2Edit):
                 if isinstance(val, (list, tuple)) and len(val) >= 2:
                     w.set([float(val[0]), float(val[1])])
@@ -282,13 +341,31 @@ class SidePathEditor(QWidget):
         out: Dict[str, Any] = {"type": t} if t else {}
         page, fields_map, _params = self._type_pages.get(t, (None, {}, {}))
         for key, (w, kind, _spec) in fields_map.items():
-            if kind == "double":  out[key] = float(w.value())
-            elif kind == "int":   out[key] = int(w.value())
-            elif kind == "check": out[key] = bool(w.isChecked())
-            elif kind == "combo": out[key] = str(w.currentText())
-            elif kind == "string":out[key] = str(w.text())
-            elif isinstance(w, Vec2Edit): out[key] = w.get()
+            if kind == "double":
+                out[key] = float(w.value())
+            elif kind == "int":
+                out[key] = int(w.value())
+            elif kind == "check":
+                out[key] = bool(w.isChecked())
+            elif kind == "combo":
+                out[key] = str(w.currentText())
+            elif kind == "string":
+                out[key] = str(w.text())
+            elif isinstance(w, Vec2Edit):
+                out[key] = w.get()
         return out
+
+    # ------------------------------------------------------------------ Path-Planner API (pro Side)
+
+    def apply_path_planner_model(self, cfg: Dict[str, Any] | None) -> None:
+        """Recipe.planner['path'][side_name] → UI."""
+        self.pathPlanner.apply_planner_model(cfg or {})
+
+    def collect_path_planner(self) -> Dict[str, Any]:
+        """UI → Planner-Config für diese Side."""
+        return self.pathPlanner.collect_planner()
+
+    # ------------------------------------------------------------------ Auto-Reset (nur Path-Defaults)
 
     def enable_auto_reset(self, rec_def: Dict[str, Any], side_name: str) -> None:
         self._side_cfg = self.store.build_side_runtime_cfg_strict(rec_def, side_name)
@@ -302,7 +379,8 @@ class SidePathEditor(QWidget):
 
         self.type_combo.currentTextChanged.connect(lambda _t: _reload_defaults())
 
-    # --- intern ---
+    # ------------------------------------------------------------------ intern
+
     def _on_type_changed(self, _idx: int) -> None:
         idx = max(0, self.type_combo.currentIndex())
         if 0 <= idx < self.stack.count():
