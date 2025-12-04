@@ -1,45 +1,40 @@
-# Welche Planner-Plugins generell verfügbar sind
+# omron_moveit_config/config/ompl_planning.yaml
+# Minimal-Config für OMPL beim Omron Viper S650
+
+# Welcher Planner-Plugin benutzt wird
 planning_plugins:
   - ompl_interface/OMPLPlanner
 
-# Einstellungen für die OMPL-Pipeline
-ompl:
-  default_planner_config: RRTConnectkConfigDefault
+# Request-Adapter (vor dem eigentlichen Planen)
+request_adapters:
+  - default_planning_request_adapters/ResolveConstraintFrames
+  - default_planning_request_adapters/ValidateWorkspaceBounds
+  - default_planning_request_adapters/CheckStartStateBounds
+  - default_planning_request_adapters/CheckStartStateCollision
+  - default_planning_request_adapters/CheckForStackedConstraints
 
-  request_adapters:
-    - default_planning_request_adapters/ResolveConstraintFrames
-    - default_planning_request_adapters/ValidateWorkspaceBounds
-    - default_planning_request_adapters/CheckStartStateBounds
-    - default_planning_request_adapters/CheckStartStateCollision
-    - default_planning_request_adapters/CheckForStackedConstraints
+# Response-Adapter (nach dem Planen) – hier kommt die Zeitparameterisierung!
+response_adapters:
+  - default_planning_response_adapters/AddTimeOptimalParameterization
 
-  response_adapters:
-    - default_planning_response_adapters/AddTimeOptimalParameterization
+# Toleranz für Bounds-Fehler im Startzustand
+start_state_max_bounds_error: 0.1
 
-  start_state_max_bounds_error: 0.1
-
-# Konkrete OMPL-Planner-Konfigurationen (global)
+# Konkrete OMPL-Planner-Konfigurationen
+# -> "range" weggelassen, wir nutzen nur die Defaults.
 planner_configs:
   RRTConnectkConfigDefault:
     type: geometric::RRTConnect
-    range: 0.1
 
   RRTkConfigDefault:
     type: geometric::RRT
-    range: 0.1
 
   RRTstarkConfigDefault:
     type: geometric::RRTstar
-    range: 0.1
-    # hier kannst du später noch optimization_objective usw. ergänzen
 
-# >>> WICHTIG: Gruppe mit diesen Plannern verknüpfen <<<
+# Diese Planner der Arm-Gruppe zuordnen
 omron_arm_group:
   planner_configs:
     - RRTConnectkConfigDefault
     - RRTkConfigDefault
     - RRTstarkConfigDefault
-
-  # Optional, aber sinnvoll:
-  projection_evaluator: joints(joint_1,joint_2,joint_3,joint_4,joint_5,joint_6)
-  longest_valid_segment_fraction: 0.01
