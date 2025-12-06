@@ -8,6 +8,18 @@ import sys
 import time
 import json
 from typing import Optional, Dict, Any
+import os
+
+# ---------------------------------------------------------------------------
+# WICHTIGER WORKAROUND:
+# ROS2 Rolling / rcl akzeptiert keine YAML-Aliase in --params-file mehr.
+# Launch hängt aber für den motion-Node /tmp/launch_params_*.yaml an, in denen
+# Aliase drinstecken → rcl scheitert schon VOR unserem Code.
+#
+# Deswegen: global alle zusätzlichen CLI-Args wegschneiden, damit weder
+# rclpy noch MoveItPy / rclcpp irgendwelche --params-file sehen.
+# ---------------------------------------------------------------------------
+sys.argv = sys.argv[:1]
 
 import rclpy
 from rclpy.node import Node
@@ -24,10 +36,10 @@ from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg
 from moveit.planning import MoveItPy, PlanRequestParameters
 from moveit.core.robot_trajectory import RobotTrajectory as RobotTrajectoryCore
 
-from moveit_configs_utils import MoveItConfigsBuilder
-
 from tf2_ros import Buffer, TransformListener
 from tf2_geometry_msgs import do_transform_pose
+
+from ament_index_python.packages import get_package_share_directory
 
 from spraycoater_nodes_py.utils.config_hub import topics, frames
 
@@ -85,46 +97,20 @@ class Motion(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=False)
 
-        # --- MoveIt-Konfiguration explizit als config_dict aufbauen
-        #     (damit die Planning Pipelines sicher da sind)
-        moveit_cfg = MoveItConfigsBuilder(
-            "omron_viper_s650",
-            package_name="omron_moveit_config",
-        ).to_moveit_configs()
+        # ------------------------------------------------------------------
+        # MoveIt-Konfiguration:
+        #  - identisch zur robot_sim.launch.py / move_group-Konfiguration
+        #  - minimale, funktionierende OMPL-Pipeline für MoveItPy/MoveItCpp
+        # ------------------------------------------------------------------
+        cfg_pkg = get_package_share_directory("omron_moveit_config")
+        launch_dir = os.path.join(cfg_pkg, "launch")
+        if launch_dir not in sys.path:
+            sys.path.insert(0, launch_dir)
 
+        from moveit_common import create_omron_moveit_config  # type: ignore
+
+        moveit_cfg = create_omron_moveit_config()
         cfg_dict = moveit_cfg.to_dict()
-
-        # Pipelines + Plugins hart setzen (analog bringup.launch.py)
-        pipeline_names = [
-            "ompl",
-            "pilz_industrial_motion_planner",
-            "chomp",
-            "stomp",
-        ]
-        cfg_dict["planning_pipelines"] = pipeline_names
-        cfg_dict["default_planning_pipeline"] = "ompl"
-
-        pipeline_plugins = {
-            "ompl": "ompl_interface/OMPLPlanner",
-            "pilz_industrial_motion_planner": "pilz_industrial_motion_planner/CommandPlanner",
-            "chomp": "chomp_interface/CHOMPPlanner",
-            "stomp": "stomp_moveit/StompPlanner",
-        }
-
-        request_adapters = (
-            "default_planner_request_adapters/AddTimeOptimalParameterization "
-            "default_planner_request_adapters/FixWorkspaceBounds "
-            "default_planner_request_adapters/FixStartStateBounds "
-            "default_planner_request_adapters/FixStartStateCollision "
-            "default_planner_request_adapters/FixStartStatePathConstraints"
-        )
-
-        for pipeline, plugin_name in pipeline_plugins.items():
-            cfg_dict[pipeline] = {
-                "planning_plugin": plugin_name,
-                "request_adapters": request_adapters,
-                "start_state_max_bounds_error": 0.1,
-            }
 
         # --- MoveItPy mit config_dict initialisieren
         self.robot = MoveItPy(
@@ -520,8 +506,7 @@ class Motion(Node):
 # ------------------------ main ------------------------
 
 def main(args=None):
-    # VSCode/debugpy hängt dir manchmal .yaml args an → rausfiltern
-    sys.argv[:] = [a for a in sys.argv if not a.endswith(".yaml")]
+    # KEINE zusätzliche Arg-Manipulation hier – das haben wir oben global gemacht.
     rclpy.init(args=args)
     node = Motion()
     rclpy.spin(node)

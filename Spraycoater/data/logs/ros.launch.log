@@ -4283,3 +4283,539 @@
 2025-12-03 19:56:14 INFO [946642] ros.launch:224 - stopping bringup…
 2025-12-03 19:56:14 INFO [946642] ros.launch:114 - === roslaunch stream END ===
 2025-12-03 19:56:14 INFO [946642] ros.launch:260 - bringup stopped.
+2025-12-03 19:58:25 INFO [958235] ros.launch:155 - starting bringup: ros2 launch spraycoater_bringup bringup.launch.py sim:=true
+2025-12-03 19:58:25 INFO [958235] ros.launch:98 - === roslaunch stream START === pid=958340
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [INFO] [launch]: All log files can be found below /root/.ros/log/2025-12-03-19-58-26-195819-a7c312aa7d2f-958340
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [INFO] [launch]: Default logging verbosity is set to INFO
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [INFO] [static_transform_publisher-1]: process started with pid [958365]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [INFO] [robot_state_publisher-2]: process started with pid [958366]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [INFO] [ros2_control_node-3]: process started with pid [958367]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [INFO] [spawner-4]: process started with pid [958368]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [INFO] [spawner-5]: process started with pid [958369]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [INFO] [move_group-6]: process started with pid [958370]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [INFO] [rviz2-7]: process started with pid [958371]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [static_transform_publisher-1] [INFO] [1764791906.486362001] [tf_world_to_omron_mount]: Spinning until stopped - publishing transform
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [static_transform_publisher-1] translation: ('0.000000', '0.000000', '0.000000')
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [static_transform_publisher-1] rotation: ('0.000000', '0.000000', '0.707107', '0.707107')
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [static_transform_publisher-1] from 'world' to 'robot_mount'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [INFO] [1764791906.492001517] [robot_state_publisher]: Robot initialized
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.512576164] [controller_manager]: Using Steady (Monotonic) clock for triggering controller manager cycles.
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.522198509] [controller_manager]: Subscribing to '/robot_description' topic for robot description.
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.527585333] [controller_manager]: Enforcing command limits is enabled...
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.537814463] [controller_manager]: update rate is 100 Hz
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.537899063] [controller_manager]: Spawning controller_manager RT thread with scheduler priority: 50
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [WARN] [1764791906.538025208] [controller_manager]: Could not enable FIFO RT scheduling policy: with error number <1>(Operation not permitted). See [https://control.ros.org/master/doc/ros2_control/controller_manager/doc/userdoc.html] for details on how to enable realtime scheduling.
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [move_group-6] [WARN] [1764791906.555465841] [rcl.logging_rosout]: Publisher already registered for node name: 'move_group'. If this is due to multiple nodes with the same name then all logs for the logger named 'move_group' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791906.566080347] [move_group.move_group.moveit.ros.rdf_loader]: Loaded robot model in 0.00345209 seconds
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791906.566256588] [move_group.move_group.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.655834280] [controller_manager]: Received robot description from topic.
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.659982587] [controller_manager]: Using JointLimiter for joint 'joint_5' in hardware 'omron_viper_s650_system' : '  has position limits: true [-2.0944, 2.0944]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [6.54498]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.660046665] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_5' in hardware 'omron_viper_s650_system'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.660089317] [controller_manager]: Using JointLimiter for joint 'joint_4' in hardware 'omron_viper_s650_system' : '  has position limits: true [-3.31613, 3.31613]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [6.54498]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.660103803] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_4' in hardware 'omron_viper_s650_system'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.660116277] [controller_manager]: Using JointLimiter for joint 'joint_6' in hardware 'omron_viper_s650_system' : '  has position limits: true [-3.14159, 3.14159]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [10.472]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.660124425] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_6' in hardware 'omron_viper_s650_system'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.660134182] [controller_manager]: Using JointLimiter for joint 'joint_3' in hardware 'omron_viper_s650_system' : '  has position limits: true [-0.50615, 4.46805]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [6.54498]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.660141425] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_3' in hardware 'omron_viper_s650_system'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.660150982] [controller_manager]: Using JointLimiter for joint 'joint_2' in hardware 'omron_viper_s650_system' : '  has position limits: true [-3.31613, 0.7854]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [5.23599]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.660157520] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_2' in hardware 'omron_viper_s650_system'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.660165769] [controller_manager]: Using JointLimiter for joint 'joint_1' in hardware 'omron_viper_s650_system' : '  has position limits: true [-2.96706, 2.96706]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has velocity limits: true [5.72468]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has acceleration limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has deceleration limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has jerk limits: false [nan]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   has effort limits: true [100]
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3]   angle wraparound: false'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.660171503] [controller_manager]: Creating JointSaturationLimiter for joint 'joint_1' in hardware 'omron_viper_s650_system'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.661874866] [controller_manager]: Loading hardware 'omron_viper_s650_system'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.663152916] [controller_manager]: Loaded hardware 'omron_viper_s650_system' from plugin 'mock_components/GenericSystem'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.663261357] [controller_manager]: Initialize hardware 'omron_viper_s650_system'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.674974353] [controller_manager]: Successful initialization of hardware 'omron_viper_s650_system'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.675353794] [resource_manager]: 'configure' hardware 'omron_viper_s650_system'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.675370795] [resource_manager]: Successful 'configure' of hardware 'omron_viper_s650_system'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.675377233] [resource_manager]: 'activate' hardware 'omron_viper_s650_system'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.675384274] [resource_manager]: Successful 'activate' of hardware 'omron_viper_s650_system'
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791906.675483460] [controller_manager]: Resource Manager has been successfully initialized. Starting Controller Manager services...
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791906.774723936] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791906.774770411] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791906.774777050] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791906.774781476] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791906.774786003] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791906.774790127] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791906.774794051] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-12-03 19:58:26 INFO [958235] ros.launch:105 - [spawner-4] [INFO] [1764791906.879878752] [spawner_joint_state_broadcaster]: waiting for service /controller_manager/list_controllers to become available...
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791907.065197440] [rviz2]: Stereo is NOT SUPPORTED
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791907.065484359] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791907.131285548] [rviz2]: Stereo is NOT SUPPORTED
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.133872043] [controller_manager]: Loading controller : 'joint_state_broadcaster' of type 'joint_state_broadcaster/JointStateBroadcaster'
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.133943873] [controller_manager]: Loading controller 'joint_state_broadcaster'
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.140159810] [controller_manager]: Controller 'joint_state_broadcaster' node arguments: --ros-args --params-file /tmp/launch_params_296jo5jh --params-file /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/ros2_controllers.yaml --params-file /tmp/launch_params_7zqrqomb
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [spawner-4] [INFO] [1764791907.170806402] [spawner_joint_state_broadcaster]: [94mLoaded [1mjoint_state_broadcaster[0m
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.173840881] [controller_manager]: Configuring controller: 'joint_state_broadcaster'
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.174095607] [joint_state_broadcaster]: 'joints' or 'interfaces' parameter is empty. All available state interfaces will be published
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.272379890] [controller_manager]: Activating controllers: [ joint_state_broadcaster ]
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791907.275892734] [move_group.move_group.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791907.276378443] [move_group.move_group.moveit.ros.moveit_cpp]: Listening to 'joint_states' for joint states
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.278638382] [controller_manager]: Successfully switched controllers!
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791907.278772083] [move_group.move_group.moveit.ros.current_state_monitor]: Listening to joint states on topic 'joint_states'
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791907.279920462] [move_group.move_group.moveit.ros.planning_scene_monitor]: Listening to '/attached_collision_object' for attached collision objects
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791907.279967041] [move_group.move_group.moveit.ros.planning_scene_monitor]: Stopping existing planning scene publisher.
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791907.280099837] [move_group.move_group.moveit.ros.planning_scene_monitor]: Stopped publishing maintained planning scene.
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791907.280820051] [move_group.move_group.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791907.280980513] [move_group.move_group.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791907.281989557] [move_group.move_group.moveit.ros.planning_scene_monitor]: Listening to '/planning_scene'
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791907.282047907] [move_group.move_group.moveit.ros.planning_scene_monitor]: Starting world geometry update monitor for collision objects, attached objects, octomap updates.
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791907.283549100] [move_group.move_group.moveit.ros.planning_scene_monitor]: Listening to 'collision_object'
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791907.284623939] [move_group.move_group.moveit.ros.planning_scene_monitor]: Listening to 'planning_scene_world' for planning scene world geometry
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [move_group-6] [WARN] [1764791907.284957034] [move_group.move_group.moveit.ros.occupancy_map_monitor]: Resolution not specified for Octomap. Assuming resolution = 0.1 instead
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [move_group-6] [ERROR] [1764791907.284998684] [move_group.move_group.moveit.ros.occupancy_map_monitor]: No 3D sensor plugin(s) defined for octomap updates
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [spawner-4] [INFO] [1764791907.291261502] [spawner_joint_state_broadcaster]: [92mConfigured and activated [1mjoint_state_broadcaster[0m
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [rviz2-7] Warning: class_loader.impl: SEVERE WARNING!!! A namespace collision has occurred with plugin factory for class rviz_default_plugins::displays::InteractiveMarkerDisplay. New factory will OVERWRITE existing one. This situation occurs when libraries containing plugins are directly linked against an executable (the one running right now generating this message). Please separate plugins out into their own library or just don't link against the library and use either class_loader::ClassLoader/MultiLibraryClassLoader to open.
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [rviz2-7]          at line 321 in /opt/ros/rolling/include/class_loader/class_loader/class_loader_core.hpp
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [rviz2-7] [WARN] [1764791907.352898143] [rcl.logging_rosout]: Publisher already registered for node name: 'rviz2'. If this is due to multiple nodes with the same name then all logs for the logger named 'rviz2' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [spawner-5] [INFO] [1764791907.409074474] [spawner_omron_arm_controller]: waiting for service /controller_manager/list_controllers to become available...
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [INFO] [spawner-4]: process has finished cleanly [pid 958368]
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.912497487] [controller_manager]: Loading controller : 'omron_arm_controller' of type 'joint_trajectory_controller/JointTrajectoryController'
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.912580886] [controller_manager]: Loading controller 'omron_arm_controller'
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.917618163] [controller_manager]: Controller 'omron_arm_controller' node arguments: --ros-args --params-file /tmp/launch_params_296jo5jh --params-file /root/ws_moveit/install/omron_moveit_config/share/omron_moveit_config/config/ros2_controllers.yaml --params-file /tmp/launch_params_7zqrqomb
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [spawner-5] [INFO] [1764791907.949601161] [spawner_omron_arm_controller]: [94mLoaded [1momron_arm_controller[0m
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.951621162] [controller_manager]: Configuring controller: 'omron_arm_controller'
+2025-12-03 19:58:27 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.951894298] [omron_arm_controller]: No specific joint names are used for command interfaces. Using 'joints' parameter.
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.951970152] [omron_arm_controller]: Command interfaces are [position] and state interfaces are [position velocity].
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.952013713] [omron_arm_controller]: Using 'splines' interpolation method.
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.955176963] [omron_arm_controller]: Action status changes will be monitored at 20.00 Hz.
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.968179355] [omron_arm_controller]: Setting initial scaling factor to 1.000000
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.968232071] [omron_arm_controller]: No scaling interface set. This controller will not read speed scaling from the hardware.
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.971437373] [controller_manager]: Activating controllers: [ omron_arm_controller ]
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [ros2_control_node-3] [INFO] [1764791907.978574328] [controller_manager]: Successfully switched controllers!
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [spawner-5] [INFO] [1764791907.989913154] [spawner_omron_arm_controller]: [92mConfigured and activated [1momron_arm_controller[0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [INFO] [spawner-5]: process has finished cleanly [pid 958369]
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.586687285] [move_group.move_group.moveit.ros.planning_pipeline]: Successfully loaded planner 'OMPL'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [WARN] [1764791908.586757008] [move_group.move_group.moveit.ros.planning_pipeline]: No planning request adapter names specified.
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [WARN] [1764791908.586767672] [move_group.move_group.moveit.ros.planning_pipeline]: No planning response adapter names specified.
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.597610716] [move_group.move_group.moveit.ros.planning_pipeline]: Successfully loaded planner 'STOMP'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.599892753] [move_group]: Try loading adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.602115429] [move_group]: Loaded adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.602195112] [move_group]: Try loading adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.602509720] [move_group]: Loaded adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.602529339] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.602634476] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.602650574] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.602670998] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.602677336] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckForStackedConstraints'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.602691723] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckForStackedConstraints'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.605773710] [move_group]: Try loading adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.612668917] [move_group]: Loaded adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.622670861] [move_group.move_group.moveit.ros.planning_pipeline]: Successfully loaded planner 'CHOMP'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.624414433] [move_group]: Try loading adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.624623299] [move_group]: Loaded adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.624637083] [move_group]: Try loading adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.624856111] [move_group]: Loaded adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.624871303] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.624899172] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.624908126] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.624921809] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.624926638] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckForStackedConstraints'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.624940120] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckForStackedConstraints'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.627486761] [move_group]: Try loading adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.630896233] [move_group]: Loaded adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.638207060] [move_group.move_group.moveit.planners.pilz.joint_limits_aggregator]: Reading limits from namespace robot_description_planning
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.645319082] [move_group.move_group.moveit.planners.pilz.command_planner]: Available plugins: pilz_industrial_motion_planner/PlanningContextLoaderCIRC pilz_industrial_motion_planner/PlanningContextLoaderLIN pilz_industrial_motion_planner/PlanningContextLoaderPTP
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.645400073] [move_group.move_group.moveit.planners.pilz.command_planner]: About to load: pilz_industrial_motion_planner/PlanningContextLoaderCIRC
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.649023040] [move_group.move_group.moveit.planners.pilz.command_planner]: Registered Algorithm [CIRC]
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.649084010] [move_group.move_group.moveit.planners.pilz.command_planner]: About to load: pilz_industrial_motion_planner/PlanningContextLoaderLIN
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.651915880] [move_group.move_group.moveit.planners.pilz.command_planner]: Registered Algorithm [LIN]
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.652005825] [move_group.move_group.moveit.planners.pilz.command_planner]: About to load: pilz_industrial_motion_planner/PlanningContextLoaderPTP
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.654179404] [move_group.move_group.moveit.planners.pilz.command_planner]: Registered Algorithm [PTP]
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.654264419] [move_group.move_group.moveit.ros.planning_pipeline]: Successfully loaded planner 'Pilz Industrial Motion Planner'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.655900338] [move_group]: Try loading adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.656072180] [move_group]: Loaded adapter 'default_planning_request_adapters/ResolveConstraintFrames'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.656080933] [move_group]: Try loading adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.656375419] [move_group]: Loaded adapter 'default_planning_request_adapters/ValidateWorkspaceBounds'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.656392824] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.656415562] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateBounds'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.656420190] [move_group]: Try loading adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.656430453] [move_group]: Loaded adapter 'default_planning_request_adapters/CheckStartStateCollision'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.657848651] [move_group]: Try loading adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.658600510] [move_group]: Loaded adapter 'default_planning_response_adapters/AddTimeOptimalParameterization'
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [WARN] [1764791908.661098858] [rcl.logging_rosout]: Publisher already registered for node name: 'move_group'. If this is due to multiple nodes with the same name then all logs for the logger named 'move_group' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.698196288] [move_group.move_group.moveit.plugins.simple_controller_manager]: Added FollowJointTrajectory controller for omron_arm_controller
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.698430005] [move_group.move_group.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.698465923] [move_group.move_group.moveit.plugins.simple_controller_manager]: Returned 1 controllers in list
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.699407330] [move_group.move_group.moveit.ros.trajectory_execution_manager]: Trajectory execution is managing controllers
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.699485001] [move_group]: MoveGroup debug mode is ON
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.765177207] [move_group.move_group.moveit.ros.move_group.executable]:
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6]
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] ********************************************************
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] * MoveGroup using:
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] *     - apply_planning_scene_service
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] *     - clear_octomap_service
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] *     - get_group_urdf
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] *     - load_geometry_from_file
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] *     - CartesianPathService
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] *     - execute_trajectory_action
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] *     - get_planning_scene_service
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] *     - kinematics_service
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] *     - move_action
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] *     - motion_plan_service
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] *     - query_planners_service
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] *     - state_validation_service
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] *     - save_geometry_to_file
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] ********************************************************
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6]
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.765279226] [move_group.move_group.moveit.ros.move_group.context]: MoveGroup context using pipeline ompl
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791908.765301159] [move_group.move_group.moveit.ros.move_group.context]: MoveGroup context initialization complete
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [96mLoading 'move_group/ApplyPlanningSceneService'...[0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [96mLoading 'move_group/ClearOctomapService'...[0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [96mLoading 'move_group/GetUrdfService'...[0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [96mLoading 'move_group/LoadGeometryFromFileService'...[0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupCartesianPathService'...[0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupExecuteTrajectoryAction'...[0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupGetPlanningSceneService'...[0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupKinematicsService'...[0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupMoveAction'...[0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupPlanService'...[0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupQueryPlannersService'...[0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [96mLoading 'move_group/MoveGroupStateValidationService'...[0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [96mLoading 'move_group/SaveGeometryToFileService'...[0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6]
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6] [92mYou can start planning now![0m
+2025-12-03 19:58:28 INFO [958235] ros.launch:105 - [move_group-6]
+2025-12-03 19:58:30 INFO [958235] ros.launch:105 - [rviz2-7] [ERROR] [1764791910.422567434] [rviz2.moveit.ros.motion_planning_frame]: Action server: /recognize_objects not available
+2025-12-03 19:58:30 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791910.449146957] [rviz2.moveit.ros.motion_planning_frame]: MoveGroup namespace changed: / -> . Reloading params.
+2025-12-03 19:58:30 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791910.547457039] [rviz2.moveit.ros.rdf_loader]: Loaded robot model in 0.00343463 seconds
+2025-12-03 19:58:30 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791910.547555749] [rviz2.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-12-03 19:58:30 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791910.740410434] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-12-03 19:58:30 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791910.740465374] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-12-03 19:58:30 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791910.740472719] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-12-03 19:58:30 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791910.740477851] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-12-03 19:58:30 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791910.740481976] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-12-03 19:58:30 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791910.740486202] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-12-03 19:58:30 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791910.740490428] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-12-03 19:58:31 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791911.244287196] [rviz2.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-12-03 19:58:31 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791911.279296717] [rviz2.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-12-03 19:58:31 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791911.280593366] [rviz2.moveit.ros.planning_scene_monitor]: Listening to '/monitored_planning_scene'
+2025-12-03 19:58:31 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791911.604032317] [interactive_marker_display_93855717656896]: Connected on namespace: /rviz_moveit_motion_planning_display/robot_interaction_interactive_marker_topic
+2025-12-03 19:58:31 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791911.640010200] [rviz2.moveit.ros.motion_planning_frame]: group omron_arm_group
+2025-12-03 19:58:31 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791911.640055172] [rviz2.moveit.ros.motion_planning_frame]: Constructing new MoveGroup connection for group 'omron_arm_group' in namespace ''
+2025-12-03 19:58:31 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791911.666655289] [rviz2.moveit.ros.move_group_interface]: Ready to take commands for planning group omron_arm_group.
+2025-12-03 19:58:31 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791911.729089015] [interactive_marker_display_93855717656896]: Sending request for interactive markers
+2025-12-03 19:58:31 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791911.840892789] [interactive_marker_display_93855717656896]: Service response received for initialization
+2025-12-03 19:58:32 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764791912.047640654] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 19:58:36 INFO [958235] ros.launch:105 - [INFO] [scene-8]: process started with pid [958812]
+2025-12-03 19:58:36 INFO [958235] ros.launch:105 - [INFO] [poses-9]: process started with pid [958813]
+2025-12-03 19:58:36 INFO [958235] ros.launch:105 - [INFO] [spray_path-10]: process started with pid [958814]
+2025-12-03 19:58:36 INFO [958235] ros.launch:105 - [INFO] [servo-11]: process started with pid [958815]
+2025-12-03 19:58:36 INFO [958235] ros.launch:105 - [INFO] [motion-12]: process started with pid [958816]
+2025-12-03 19:58:36 INFO [958235] ros.launch:105 - [INFO] [robot_sim-13]: process started with pid [958817]
+2025-12-03 19:58:36 INFO [958235] ros.launch:105 - [INFO] [omron_tcp_bridge-14]: process started with pid [958818]
+2025-12-03 19:58:36 INFO [958235] ros.launch:105 - [omron_tcp_bridge-14] [INFO] [1764791916.995340800] [omron_tcp_bridge]: 🔌 OmronTcpBridge verbindet zu host.docker.internal:5000 (timeout=3.0s)
+2025-12-03 19:58:36 INFO [958235] ros.launch:105 - [omron_tcp_bridge-14] [INFO] [1764791916.996306917] [omron_tcp_bridge]: Hinweis: host/port können via --ros-args -p host:=... -p port:=... überschrieben werden.
+2025-12-03 19:58:36 INFO [958235] ros.launch:105 - [omron_tcp_bridge-14] [INFO] [1764791916.996975239] [omron_tcp_bridge]: ⚠️ connectionStatus = False (TCP getrennt)
+2025-12-03 19:58:37 INFO [958235] ros.launch:105 - [servo-11] [INFO] [1764791917.093896571] [servo]: ✅ ServoBridge aktiv (backend='default') – Frame='tcp', publish: '/servo/cartesian_mm', '/servo/joint_jog'
+2025-12-03 19:58:37 INFO [958235] ros.launch:105 - [robot_sim-13] [INFO] [1764791917.100456098] [robot]: 🤖 SimRobot gestartet: tcp_pose = Pose(tool_mount in world), Joints aus /joint_states
+2025-12-03 19:58:37 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791917.787103807] [moveit_767484698.moveit.py.cpp_initializer]: Initialize rclcpp
+2025-12-03 19:58:37 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791917.787237325] [moveit_767484698.moveit.py.cpp_initializer]: Initialize node parameters
+2025-12-03 19:58:37 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791917.787256456] [moveit_767484698.moveit.py.cpp_initializer]: Initialize node and executor
+2025-12-03 19:58:37 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791917.806174581] [moveit_767484698.moveit.py.cpp_initializer]: Spin separate thread
+2025-12-03 19:58:37 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791917.812877490] [moveit_767484698.moveit.ros.rdf_loader]: Loaded robot model in 0.00644066 seconds
+2025-12-03 19:58:37 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791917.814033717] [moveit_767484698.moveit.core.robot_model]: Loading robot model 'omron_viper_s650'...
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.154588059] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link2 -2.96706 2.96706
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.154639239] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link3 -3.31613 0.7854
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.154646621] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link4 -0.50615 4.46805
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.154651510] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link5 -3.31613 3.31613
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.154656199] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_s650_Link6 -2.0944 2.0944
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.154660688] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: IK Using joint Adept_Viper_650_Interface_Plate -3.14159 3.14159
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.154664579] [trac_ik_kinematics_plugin.trac_ik_kinematics_plugin]: Using solve type Distance
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.777245473] [moveit_767484698.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.777575398] [moveit_767484698.moveit.ros.moveit_cpp]: Listening to 'joint_states' for joint states
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.781335072] [moveit_767484698.moveit.ros.current_state_monitor]: Listening to joint states on topic 'joint_states'
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.784046407] [moveit_767484698.moveit.ros.planning_scene_monitor]: Listening to '/attached_collision_object' for attached collision objects
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.784304002] [moveit_767484698.moveit.ros.planning_scene_monitor]: Stopping existing planning scene publisher.
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.785511068] [moveit_767484698.moveit.ros.planning_scene_monitor]: Stopped publishing maintained planning scene.
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.787685663] [moveit_767484698.moveit.ros.planning_scene_monitor]: Publishing maintained planning scene on 'monitored_planning_scene'
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.787855963] [moveit_767484698.moveit.ros.planning_scene_monitor]: Starting planning scene monitor
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.790075552] [moveit_767484698.moveit.ros.planning_scene_monitor]: Listening to '/planning_scene'
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.790137008] [moveit_767484698.moveit.ros.planning_scene_monitor]: Starting world geometry update monitor for collision objects, attached objects, octomap updates.
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.793200616] [moveit_767484698.moveit.ros.planning_scene_monitor]: Listening to 'collision_object'
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791918.794888054] [moveit_767484698.moveit.ros.planning_scene_monitor]: Listening to 'planning_scene_world' for planning scene world geometry
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [WARN] [1764791918.795207903] [moveit_767484698.moveit.ros.occupancy_map_monitor]: Resolution not specified for Octomap. Assuming resolution = 0.1 instead
+2025-12-03 19:58:38 INFO [958235] ros.launch:105 - [motion-12] [ERROR] [1764791918.795262475] [moveit_767484698.moveit.ros.occupancy_map_monitor]: No 3D sensor plugin(s) defined for octomap updates
+2025-12-03 19:58:39 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791919.117937452] [move_group.move_group.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-12-03 19:58:39 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791919.130162612] [move_group.move_group.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-12-03 19:58:39 INFO [958235] ros.launch:105 - [move_group-6] [INFO] [1764791919.134384949] [move_group.move_group.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12] [ERROR] [1764791920.767770032] [moveit_767484698.moveit.ros.moveit_cpp]: Failed to load any planning pipelines.
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791920.767782430] [moveit_767484698.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12] [FATAL] [1764791920.767921004] [moveit_767484698.moveit.ros.moveit_cpp]: Failed to load planning pipelines from parameter server
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791920.770666289] [moveit_767484698.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791920.771686198] [moveit_767484698.moveit.ros.planning_scene_monitor]: Published update collision object
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791920.771704695] [moveit_767484698.moveit.ros.planning_scene_monitor]: Stopped publishing maintained planning scene.
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791920.771796778] [moveit_767484698.moveit.ros.planning_scene_monitor]: Stopping world geometry monitor
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12] [INFO] [1764791920.771808375] [moveit_767484698.moveit.ros.planning_scene_monitor]: Stopping planning scene monitor
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12] Traceback (most recent call last):
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12]   File "/root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/motion", line 33, in <module>
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12]     sys.exit(load_entry_point('spraycoater-nodes-py', 'console_scripts', 'motion')())
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/motion.py", line 526, in main
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12]     node = Motion()
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12]            ^^^^^^^^
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12]   File "/root/ws_moveit/build/spraycoater_nodes_py/spraycoater_nodes_py/motion.py", line 130, in __init__
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12]     self.robot = MoveItPy(
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12]                  ^^^^^^^^^
+2025-12-03 19:58:40 INFO [958235] ros.launch:105 - [motion-12] RuntimeError: Failed to load planning pipelines from parameter server
+2025-12-03 19:58:41 INFO [958235] ros.launch:105 - [ERROR] [motion-12]: process has died [pid 958816, exit code 1, cmd '/root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/motion --ros-args --log-level info --ros-args -r __node:=motion --params-file /tmp/launch_params_6knszjrs --params-file /tmp/launch_params_6po8_pkv'].
+2025-12-03 19:58:47 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791927.397302767] [rviz2.moveit.ros.planning_scene_monitor]: Stopped publishing maintained planning scene.
+2025-12-03 19:58:47 INFO [958235] ros.launch:105 - [rviz2-7] [INFO] [1764791927.397351459] [rviz2.moveit.ros.planning_scene_monitor]: Stopping planning scene monitor
+2025-12-03 19:58:47 INFO [958235] ros.launch:105 - [INFO] [rviz2-7]: process has finished cleanly [pid 958371]
+2025-12-03 19:59:01 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764791941.986280738] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 19:59:31 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764791971.921043540] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:00:01 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792001.868983684] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:00:31 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792031.800456262] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:01:01 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792061.734630634] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:01:31 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792091.671045540] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:02:01 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792121.605282948] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:02:31 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792151.542256102] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:03:01 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792181.486256210] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:03:31 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792211.421887048] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:04:01 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792241.358208113] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:04:31 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792271.292124143] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:05:01 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792301.229351813] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:05:31 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792331.160757687] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:06:01 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792361.098564334] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:06:31 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792391.042186546] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:07:00 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792420.977892651] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:07:30 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792450.912684048] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:08:00 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792480.844188634] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:08:30 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792510.778023665] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:09:00 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792540.721620902] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:09:30 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792570.661520242] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:10:00 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792600.601056046] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:10:30 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792630.532522134] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:11:00 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792660.467233084] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:11:30 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792690.410481316] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:12:00 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792720.347768181] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:12:30 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792750.280108148] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:13:00 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792780.215120917] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:13:30 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792810.151708825] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:14:00 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792840.082761201] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:14:30 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792870.030889857] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:14:59 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792899.964323407] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:15:29 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792929.893770373] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:15:59 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792959.822117752] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:16:29 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764792989.754545971] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:16:59 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793019.687125970] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:17:29 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793049.627030595] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:17:59 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793079.573485323] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:18:29 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793109.508336085] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:18:59 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793139.447091068] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:19:29 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793169.383425858] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:19:59 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793199.320170213] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:20:29 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793229.255250834] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:20:59 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793259.195640382] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:21:29 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793289.133048300] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:21:59 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793319.071607991] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:22:29 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793349.010229251] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:22:58 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793378.946364350] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:23:28 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793408.883429376] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:23:58 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793438.818095516] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:24:28 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793468.766274583] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:24:58 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793498.693731553] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:25:28 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793528.630094846] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:25:58 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793558.563926933] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:26:28 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793588.500571990] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:26:58 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793618.449705582] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:27:28 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793648.383858957] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:27:58 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793678.319483118] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:28:28 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793708.255373157] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:28:58 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793738.187873089] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:29:28 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793768.134050902] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:29:58 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793798.069994724] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:30:28 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793828.008738306] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:30:57 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793857.941649204] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:31:27 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793887.879288754] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:31:57 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793917.814174247] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:32:27 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793947.749223598] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:32:57 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764793977.687500459] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:33:27 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794007.617126143] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:33:57 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794037.555495799] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:34:27 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794067.483035568] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:34:57 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794097.414268810] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:35:27 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794127.357725517] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:35:57 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794157.295058311] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:36:27 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794187.228307011] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:36:57 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794217.164448560] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:37:27 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794247.098440382] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:37:57 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794277.048488189] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:38:26 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794306.988053125] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:38:56 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794336.927003722] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:39:26 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794366.859810959] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:39:56 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794396.798456377] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:40:26 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794426.734450121] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:40:56 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794456.671773110] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:41:26 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794486.619014428] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:41:56 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794516.554606434] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:42:56 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794576.504108607] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:43:26 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794606.437479290] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:43:56 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794636.380205281] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:44:26 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794666.316865042] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:44:56 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794696.248818948] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:45:26 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794726.184827924] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:45:56 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794756.121132228] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:46:56 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794816.082639505] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:47:26 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794846.022306068] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:47:55 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794875.960016437] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:48:55 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794935.919564016] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:49:25 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794965.848354666] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:49:55 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764794995.796731524] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:50:25 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795025.736374954] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:50:55 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795055.673685091] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:51:25 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795085.616328874] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:51:55 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795115.554402464] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:52:55 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795175.520345939] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:53:25 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795205.469132862] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:53:55 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795235.409523348] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:54:25 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795265.349336528] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:54:55 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795295.291896672] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:55:25 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795325.228892768] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:55:55 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795355.173445373] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:56:25 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795385.114825680] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:56:55 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795415.054075777] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:57:24 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795444.991921911] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:57:54 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795474.924572425] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:58:24 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795504.860341146] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:58:54 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795534.814732727] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:59:24 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795564.753894486] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 20:59:54 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795594.692895114] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:00:24 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795624.628063553] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:00:54 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795654.565406611] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:01:24 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795684.494601247] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:01:54 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795714.439869416] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:02:24 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795744.368426809] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:02:54 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795774.307991924] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:03:24 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795804.247770004] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:03:54 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795834.180887088] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:04:24 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795864.124408648] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:04:54 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795894.062418574] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:05:24 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795923.999866664] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:05:53 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795953.927378743] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:06:23 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764795983.864870730] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:06:53 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796013.795182660] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:07:23 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796043.741059718] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:07:53 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796073.672578766] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:08:23 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796103.612724841] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:08:53 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796133.546176281] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:09:23 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796163.474008514] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:09:53 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796193.418938578] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:10:23 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796223.356202333] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:10:53 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796253.287652360] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:11:23 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796283.222642982] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:11:53 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796313.151885713] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:12:23 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796343.082149900] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:12:53 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796373.029164882] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:13:22 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796402.966729059] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:13:52 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796432.902530843] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:14:22 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796462.833536507] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:14:52 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796492.769574419] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:15:22 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796522.705288976] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:15:52 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796552.644593767] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:16:22 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796582.575109830] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:16:52 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796612.507950720] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:17:22 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796642.435394325] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:17:52 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796672.383900521] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:18:22 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796702.315326086] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:18:52 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796732.243841753] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:19:22 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796762.178523426] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:19:52 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796792.114739842] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:20:22 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796822.041555934] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:20:51 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796851.984821758] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:21:21 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796881.910905523] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:21:42 INFO [958235] ros.launch:105 - [ros2_control_node-3] [WARN] [1764796902.956469813] [controller_manager]: Overrun detected! The controller manager missed its desired rate of 100 Hz. The loop took 15.775637 ms (missed cycles : 2).
+2025-12-03 21:21:51 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796911.847045027] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:22:21 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796941.780483149] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:22:51 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764796971.707965398] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:23:21 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797001.638156180] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:23:51 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797031.578302984] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:24:21 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797061.504854426] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:24:51 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797091.434121546] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:25:21 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797121.366747124] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:25:51 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797151.307259378] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:26:10 INFO [958235] ros.launch:105 - [ros2_control_node-3] [WARN] [1764797170.667016618] [controller_manager]: Overrun detected! The controller manager missed its desired rate of 100 Hz. The loop took 10.215016 ms (missed cycles : 2).
+2025-12-03 21:26:21 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797181.235775753] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:26:51 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797211.176013651] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:27:21 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797241.106006181] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:27:51 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797271.027202900] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:28:20 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797300.956585625] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:28:50 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797330.884207295] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:29:20 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797360.827900951] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:29:50 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797390.760140451] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:30:20 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797420.681109904] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:30:50 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797450.609962384] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:31:20 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797480.535841336] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:31:50 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797510.468231924] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:32:20 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797540.410490425] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:32:50 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797570.335541855] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:33:20 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797600.261047553] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:33:50 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797630.191115566] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:34:20 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797660.119833136] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:34:50 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797690.051696734] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:35:19 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797719.981304557] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:35:49 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797749.920557452] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:36:19 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797779.849479494] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:36:49 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797809.782658180] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:37:19 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797839.710702947] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:37:49 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797869.639322994] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:38:19 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797899.563790101] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:38:49 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797929.506011837] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:39:19 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797959.437972878] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:39:49 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764797989.366198249] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:40:19 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798019.284091250] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:40:49 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798049.214909153] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:41:19 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798079.142632094] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:41:49 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798109.082926337] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:42:19 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798139.008195726] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:42:48 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798168.939037492] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:43:18 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798198.867807287] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:43:48 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798228.794086908] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:44:18 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798258.734530488] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:44:48 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798288.655509793] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:45:18 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798318.582699310] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:45:48 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798348.503885692] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:46:18 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798378.434056926] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:46:48 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798408.372259280] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:47:18 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798438.293728789] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:47:48 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798468.221207163] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:48:18 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798498.151004359] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:48:48 INFO [958235] ros.launch:105 - [robot_state_publisher-2] [WARN] [1764798528.078958584] [robot_state_publisher]: Moved backwards in time, re-publishing joint transforms!
+2025-12-03 21:48:50 INFO [958235] ros.launch:224 - stopping bringup…
+2025-12-03 21:48:50 INFO [958235] ros.launch:114 - === roslaunch stream END ===
+2025-12-03 21:48:50 INFO [958235] ros.launch:260 - bringup stopped.

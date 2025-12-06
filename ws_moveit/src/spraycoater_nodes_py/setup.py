@@ -61,7 +61,7 @@ setup(
             "robot_omron = spraycoater_nodes_py.robot.omron:main",
 
             # Omron TCP Bridge
-            "omron_tcp_bridge = spraycoater_nodes_py.omron_tcp_bridge:main",
+            "omron_tcp_bridge = spraycoater_nodes_py.robot.omron_tcp_bridge:main",
         ],
     },
 )

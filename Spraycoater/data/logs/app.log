@@ -5722,3 +5722,7 @@ ValueError: topics.yaml: 'topics' fehlt oder ist ungültig.
 2025-12-03 19:45:35 INFO [946642] app.startup:143 - logging configured
 2025-12-03 19:45:35 INFO [946642] app.startup:148 - warnings enabled
 2025-12-03 19:45:37 INFO [946642] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)
+2025-12-03 19:58:25 INFO [958235] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-12-03 19:58:25 INFO [958235] app.startup:143 - logging configured
+2025-12-03 19:58:25 INFO [958235] app.startup:148 - warnings enabled
+2025-12-03 19:58:27 INFO [958235] app.startup:199 - StartupMachine finished (ctx=True, bridge=True)

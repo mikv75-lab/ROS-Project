@@ -35,8 +35,8 @@ class SimRobot(BaseRobot):
         self.frames = frames()
         self._F = self.frames.resolve
 
-        self.world_frame = self._detect_world_frame()
-        self.tool_frame = self._detect_tool_frame()
+        self.world_frame = "world"
+        self.tool_frame = "tcp"
 
         self._tcp_pose.header.frame_id = self.world_frame
         self._joints = JointState()
@@ -70,29 +70,6 @@ class SimRobot(BaseRobot):
             f"🤖 SimRobot gestartet: tcp_pose = Pose({self.tool_frame} in {self.world_frame}), "
             "Joints aus /joint_states"
         )
-
-    # ---------------------------------------------------------
-    # Frame-Detection
-    # ---------------------------------------------------------
-    def _detect_world_frame(self) -> str:
-        for cand in ("world", "base_world", "map"):
-            try:
-                fid = self._F(cand)
-                if fid:
-                    return fid
-            except Exception:
-                continue
-        return "world"
-
-    def _detect_tool_frame(self) -> str:
-        for cand in ("tool_mount", "tcp", "tool0", "ee_link"):
-            try:
-                fid = self._F(cand)
-                if fid:
-                    return fid
-            except Exception:
-                continue
-        return "tcp"
 
     # ---------------------------------------------------------
     # Joint-State Callback

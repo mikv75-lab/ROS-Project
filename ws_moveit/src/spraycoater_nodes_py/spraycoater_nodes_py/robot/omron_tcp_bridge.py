@@ -8,11 +8,12 @@
 #          omron.raw_rx           (/spraycoater/omron/raw_rx)
 #          omron.connectionStatus (/spraycoater/omron/connection_status)
 #
-# WICHTIG:
-#   - Keine dauerhafte Reader-Loop mehr.
-#   - Pro eingehendem Command: send_line() + recv_line() (Request/Response).
-#   - Wenn der Server die Verbindung schließt, wird beim nächsten Command
-#     automatisch neu verbunden.
+# Design:
+#   - Kein Dauer-Reader-Thread.
+#   - Pro Command: send_line() + recv_line().
+#   - Wenn Server schließt → beim nächsten Command reconnect.
+#   - connectionStatus wird bei State-Wechsel UND periodisch gepublished,
+#     damit das Qt-Widget den Status sicher mitbekommt.
 
 from __future__ import annotations
 
@@ -86,13 +87,21 @@ class OmronTcpBridge(Node):
         # initial klarstellen: nicht verbunden
         self._set_connection(False)
 
+        # Direkt beim Start einmalig Verbindungsversuch
+        self.get_logger().info("🌐 Initialer Verbindungsversuch zum Omron-Server ...")
+        self._ensure_connected()
+
+        # 🔁 Periodischer Status-Tick, damit das UI immer einen frischen Wert bekommt
+        self._conn_timer = self.create_timer(1.0, self._publish_connection_status)
+
     # ------------------------------------------------------------------
-    # Verbindung
+    # Verbindung / State
     # ------------------------------------------------------------------
     def _set_connection(self, connected: bool) -> None:
-        """Setzt internen State und published connectionStatus."""
+        """Setzt internen State und published connectionStatus (sofort)."""
         connected = bool(connected)
         self._connected = connected
+
         try:
             msg = Bool()
             msg.data = connected
@@ -105,8 +114,17 @@ class OmronTcpBridge(Node):
         else:
             self.get_logger().info("⚠️ connectionStatus = False (TCP getrennt)")
 
+    def _publish_connection_status(self) -> None:
+        """Periodisches Re-Publish des aktuellen Verbindungsstatus."""
+        try:
+            msg = Bool()
+            msg.data = self._connected
+            self.pub_conn.publish(msg)
+        except Exception as e:
+            self.get_logger().error(f"❌ connectionStatus periodic publish failed: {e}")
+
     def _ensure_connected(self) -> bool:
-        """Nur beim Senden aufgerufen – kein Dauer-Reconnect mehr."""
+        """Sorgt dafür, dass der TCP-Socket verbunden ist (lazy + Reconnect)."""
         if self._connected:
             return True
         try:
@@ -128,8 +146,7 @@ class OmronTcpBridge(Node):
         if hasattr(self._client, "send_line"):
             self._client.send_line(line)
         elif hasattr(self._client, "_send_line"):
-            # ältere Variante
-            self._client._send_line(line)
+            self._client._send_line(line)  # ältere Variante
         else:
             raise RuntimeError("OmronTcpClient hat weder send_line() noch _send_line().")
 
