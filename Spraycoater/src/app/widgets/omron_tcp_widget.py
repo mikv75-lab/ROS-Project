@@ -27,10 +27,13 @@ class OmronTcpWidget(QtWidgets.QWidget):
         self._bridge = ui_bridge
         self._omron = getattr(ui_bridge, "_omron", None)
 
+        # letzter bekannter Connection-Status (für Change-Detection)
+        self._last_connected: Optional[bool] = None
+
         self._build_ui()
         self._wire_signals()
 
-        # Initialer Status
+        # Initialer Status (nur UI setzen, kein Log-Spam)
         self._update_connection_indicator(False)
 
     # ------------------------------------------------------------------
@@ -60,7 +63,7 @@ class OmronTcpWidget(QtWidgets.QWidget):
         # --- Eingabezeile: Command + Buttons ---
         cmd_layout = QtWidgets.QHBoxLayout()
         self._cmd_edit = QtWidgets.QLineEdit(self)
-        self._cmd_edit.setPlaceholderText("Command eingeben, z.B. 'MOVEJ P1' ...")
+        self._cmd_edit.setPlaceholderText("Command eingeben, z.B. 'PING' ...")
         self._send_btn = QtWidgets.QPushButton("Send", self)
         self._clear_btn = QtWidgets.QPushButton("Clear", self)
 
@@ -139,6 +142,13 @@ class OmronTcpWidget(QtWidgets.QWidget):
 
     @QtCore.pyqtSlot(bool)
     def _update_connection_indicator(self, connected: bool) -> None:
+        # Nur reagieren, wenn sich der Status geändert hat
+        if self._last_connected is not None and connected == self._last_connected:
+            # Zustand ist derselbe wie vorher -> keine Log-Zeile schreiben
+            return
+
+        self._last_connected = connected
+
         if connected:
             self._status_label.setText("CONNECTED")
             self._status_label.setStyleSheet("color: #00aa00; font-weight: bold;")

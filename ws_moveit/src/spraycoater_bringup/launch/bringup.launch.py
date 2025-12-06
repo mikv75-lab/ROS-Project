@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import os
+import sys
 import yaml
 from math import radians, sin, cos
 
@@ -16,7 +17,6 @@ from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
-from moveit_configs_utils import MoveItConfigsBuilder
 
 
 def _rpy_rad_to_quat(roll, pitch, yaw):
@@ -82,9 +82,7 @@ def generate_launch_description():
         if not moveit_pkg:
             raise ValueError(f"[bringup] robots.{sel}.moveit_pkg fehlt/leer")
 
-        # 🔹 Robot-Name aus robot.yaml oder aus moveit_pkg ableiten
-        #    - wenn in robot.yaml z.B. 'robot_name: omron_viper_s650' steht → nimm das
-        #    - sonst: 'omron_moveit_config' -> 'omron'
+        # Robot-Name aus robot.yaml oder aus moveit_pkg ableiten
         robot_name = sel_entry.get("robot_name")
         if not robot_name:
             robot_name = moveit_pkg
@@ -118,9 +116,9 @@ def generate_launch_description():
 
         # --------- MoveIt robot_sim.launch.py einbinden (ros2_control, RViz, tf) ---------
         moveit_share = FindPackageShare(moveit_pkg).perform(context)
-        robot_launch = os.path.join(moveit_share, "launch", "robot_sim.launch.py")
+        robot_launch = os.path.join(moveit_share, "launch", "robot_omron.launch.py")
         if not os.path.exists(robot_launch):
-            raise FileNotFoundError(f"[bringup] MoveIt robot.launch.py fehlt: {robot_launch}")
+            raise FileNotFoundError(f"[bringup] MoveIt robot_sim.launch.py fehlt: {robot_launch}")
 
         include_robot = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(robot_launch),
@@ -134,66 +132,22 @@ def generate_launch_description():
                 "mount_qy": str(qy),
                 "mount_qz": str(qz),
                 "mount_qw": str(qw),
-                # kein 'sim' nötig – robot_sim.launch.py kennt dieses Argument nicht
                 "use_sim_time": LaunchConfiguration("use_sim_time"),
             }.items(),
         )
 
-        # --------- MoveIt-Konfig für Motion-Node (MoveItPy) – wie im robot_sim ----------
+        # --------- MoveIt-Konfig für Motion-Node (MoveItPy) ----------
+        #
+        # Dazu wird das launch-Verzeichnis des MoveIt-Pakets in sys.path gelegt.
+        launch_dir = os.path.join(moveit_share, "launch")
+        if launch_dir not in sys.path:
+            sys.path.insert(0, launch_dir)
 
-        moveit_config = (
-            MoveItConfigsBuilder(robot_name, package_name=moveit_pkg)
-            .to_moveit_configs()
-        )
+        # aktuell ist moveit_common omron-spezifisch
+        from moveit_common import create_omron_moveit_config  # type: ignore
+
+        moveit_config = create_omron_moveit_config()
         moveit_cfg_dict = moveit_config.to_dict()
-
-        # --- Planungspipelines: deine erweiterten Einstellungen für den MotionNode ---
-        moveit_cfg_dict["planning_pipelines"] = {
-            "pipeline_names": ["ompl", "pilz_industrial_motion_planner", "chomp", "stomp"],
-            "default_planning_pipeline": "ompl",
-            "ompl": {
-                "planning_plugin": "ompl_interface/OMPLPlanner",
-                "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization",
-                "start_state_max_bounds_error": 0.1,
-                "parameter_namespace": "ompl_planning",
-            },
-            "pilz_industrial_motion_planner": {
-                "planning_plugin": "pilz_industrial_motion_planner/CommandPlanner",
-                "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization",
-                "start_state_max_bounds_error": 0.1,
-                "parameter_namespace": "pilz_industrial_motion_planner_planning",
-            },
-            "chomp": {
-                "planning_plugin": "chomp_interface/CHOMPPlanner",
-                "request_adapters": "default_planner_request_adapters/AddTimeOptimalParameterization",
-                "start_state_max_bounds_error": 0.1,
-                "parameter_namespace": "chomp_planning",
-            },
-            "stomp": {
-                "planning_plugin": "stomp_moveit/StompPlanner",
-                "request_adapters": "default_planning_request_adapters/AddTimeOptimalParameterization",
-                "start_state_max_bounds_error": 0.1,
-                "parameter_namespace": "stomp_planning",
-            },
-        }
-
-        moveit_cfg_dict["moveit_cpp"] = {
-            "default_planning_pipeline": "ompl",
-            "planning_pipelines": {
-                "pipeline_names": ["ompl", "pilz_industrial_motion_planner", "chomp", "stomp"],
-                "default_planning_pipeline": "ompl",
-            },
-        }
-
-        # 🔧 Plan-Request-Parameter, die dein MotionNode abfragt
-        moveit_cfg_dict["plan_request_params"] = {
-            "planning_pipeline": "ompl",
-            "planner_id": "",
-            "planning_time": 5.0,
-            "planning_attempts": 1,
-            "max_velocity_scaling_factor": 1.0,
-            "max_acceleration_scaling_factor": 1.0,
-        }
 
         # Optional: Existenzprüfungen der zentralen Configs (werden von config_hub genutzt)
         must_exist = [
@@ -272,32 +226,7 @@ def generate_launch_description():
         )
         motion_after_robot = TimerAction(period=10.0, actions=[motion_node])
 
-        # Robot-Node: Sim / Omron je nach sim-Flag
-        sim_str = LaunchConfiguration("sim").perform(context).lower().strip()
-        robot_executable = "robot_sim" if sim_str in ("1", "true", "yes") else "robot_omron"
-
-        robot_node = Node(
-            package="spraycoater_nodes_py",
-            executable=robot_executable,
-            name="robot",
-            output="log",
-            emulate_tty=False,
-            arguments=["--ros-args", "--log-level", "info"],
-            parameters=[{"backend": backend, "use_sim_time": use_sim_time}],
-        )
-        robot_after_robot = TimerAction(period=10.0, actions=[robot_node])
-
-        # Omron TCP Bridge
-        tcp_bridge_node = Node(
-            package="spraycoater_nodes_py",
-            executable="omron_tcp_bridge",
-            name="omron_tcp_bridge",
-            output="log",
-            emulate_tty=False,
-            arguments=["--ros-args", "--log-level", "info"],
-            parameters=[{"backend": backend, "use_sim_time": use_sim_time}],
-        )
-        tcp_bridge_after_robot = TimerAction(period=10.0, actions=[tcp_bridge_node])
+       
 
         # Rückgabe der Sequenz
         return [
@@ -307,8 +236,6 @@ def generate_launch_description():
             spray_after_robot,
             servo_after_robot,
             motion_after_robot,
-            robot_after_robot,
-            tcp_bridge_after_robot,
         ]
 
     return LaunchDescription(

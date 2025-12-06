@@ -10,7 +10,7 @@ paths:
 
 ros:
   launch_ros: true
-  sim_robot:  true
+  sim_robot:  false
   
 configs:
   # Zentrale YAMLs im bringup/config
