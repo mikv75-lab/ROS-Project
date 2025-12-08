@@ -16,7 +16,6 @@ class OmronTcpWidget(QtWidgets.QWidget):
 
     Erwartet:
         ui_bridge._omron -> OmronBridge mit:
-            - signals.rawTxChanged(str)
             - signals.rawRxChanged(str)
             - signals.connectionChanged(bool)
             - Methode send_command(str)
@@ -71,7 +70,7 @@ class OmronTcpWidget(QtWidgets.QWidget):
         cmd_layout.addWidget(self._send_btn)
         cmd_layout.addWidget(self._clear_btn)
 
-        # --- Gemeinsames Log-Fenster für TX/RX ---
+        # --- Log-Fenster (Konsole) ---
         self._log_view = QtWidgets.QTextEdit(self)
         self._log_view.setReadOnly(True)
         self._log_view.setLineWrapMode(QtWidgets.QTextEdit.LineWrapMode.NoWrap)
@@ -91,60 +90,84 @@ class OmronTcpWidget(QtWidgets.QWidget):
 
         # OmronBridge-Signale (falls vorhanden)
         if self._omron is None or not hasattr(self._omron, "signals"):
-            self._append_log("SYS", "[WARN] OmronBridge nicht verfügbar.")
+            self._append_sys("[WARN] OmronBridge nicht verfügbar.")
             return
 
         sig = self._omron.signals
 
-        # raw_tx -> Log
-        if hasattr(sig, "rawTxChanged"):
-            sig.rawTxChanged.connect(lambda txt: self._append_log("TX", txt))
-
-        # raw_rx -> Log
+        # raw_rx -> Konsole (als RX)
         if hasattr(sig, "rawRxChanged"):
-            sig.rawRxChanged.connect(lambda txt: self._append_log("RX", txt))
+            sig.rawRxChanged.connect(self._on_raw_rx)
 
-        # connectionChanged -> Status (falls vorhanden)
+        # connectionChanged -> Status
         if hasattr(sig, "connectionChanged"):
             sig.connectionChanged.connect(self._update_connection_indicator)
 
     # ------------------------------------------------------------------
-    # Helper: Log + Status
+    # Helper: Zeit + Konsolen-Ausgabe
     # ------------------------------------------------------------------
     def _current_time_str(self) -> str:
         return QtCore.QTime.currentTime().toString("HH:mm:ss")
 
-    def _append_log(self, direction: str, text: str) -> None:
+    def _append_console_line(self, text: str) -> None:
         """
-        direction: "TX", "RX" oder "SYS"
+        Reine Konsolenzeile (für User-Eingaben):
+        [HH:MM:SS] <text>
         """
         text = (text or "").rstrip()
         if not text:
             return
 
         ts = self._current_time_str()
+        escaped = html.escape(text)
+        line = f'<span style="color:#666666;">[{ts}]</span> {escaped}'
+        self._log_view.append(line)
 
-        # Farben
-        if direction == "TX":
-            color = "#0077cc"   # blau
-        elif direction == "RX":
-            color = "#00aa00"   # grün
-        else:
-            color = "#888888"   # grau für System
+    def _append_rx(self, text: str) -> None:
+        """
+        RX-Zeilen vom Omron-Server:
+        [HH:MM:SS] [RX] <text>
+        """
+        text = (text or "").rstrip()
+        if not text:
+            return
 
+        ts = self._current_time_str()
         escaped = html.escape(text)
         line = (
             f'<span style="color:#666666;">[{ts}]</span> '
-            f'<span style="color:{color};">[{direction}] {escaped}</span>'
+            f'<span style="color:#00aa00;">[RX] {escaped}</span>'
         )
-
         self._log_view.append(line)
+
+    def _append_sys(self, text: str) -> None:
+        """
+        System-Meldungen:
+        [HH:MM:SS] [SYS] <text>
+        """
+        text = (text or "").rstrip()
+        if not text:
+            return
+
+        ts = self._current_time_str()
+        escaped = html.escape(text)
+        line = (
+            f'<span style="color:#666666;">[{ts}]</span> '
+            f'<span style="color:#888888;">[SYS] {escaped}</span>'
+        )
+        self._log_view.append(line)
+
+    # ------------------------------------------------------------------
+    # Slots für eingehende ROS-Signale
+    # ------------------------------------------------------------------
+    @QtCore.pyqtSlot(str)
+    def _on_raw_rx(self, txt: str) -> None:
+        self._append_rx(txt)
 
     @QtCore.pyqtSlot(bool)
     def _update_connection_indicator(self, connected: bool) -> None:
         # Nur reagieren, wenn sich der Status geändert hat
         if self._last_connected is not None and connected == self._last_connected:
-            # Zustand ist derselbe wie vorher -> keine Log-Zeile schreiben
             return
 
         self._last_connected = connected
@@ -152,11 +175,11 @@ class OmronTcpWidget(QtWidgets.QWidget):
         if connected:
             self._status_label.setText("CONNECTED")
             self._status_label.setStyleSheet("color: #00aa00; font-weight: bold;")
-            self._append_log("SYS", "Verbunden mit ACE-Server.")
+            self._append_sys("Verbunden mit ACE-Server.")
         else:
             self._status_label.setText("DISCONNECTED")
             self._status_label.setStyleSheet("color: #aa0000; font-weight: bold;")
-            self._append_log("SYS", "Verbindung getrennt.")
+            self._append_sys("Verbindung getrennt.")
 
     # ------------------------------------------------------------------
     # Slots: Buttons
@@ -167,8 +190,11 @@ class OmronTcpWidget(QtWidgets.QWidget):
         if not cmd:
             return
 
+        # Direkt in die Konsole schreiben (ohne [TX], einfach der Text)
+        self._append_console_line(cmd)
+
         if self._omron is None:
-            self._append_log("TX", f"(kein OmronBridge) {cmd}")
+            self._append_sys("(kein OmronBridge – Command nicht gesendet)")
             self._cmd_edit.clear()
             return
 
@@ -177,21 +203,18 @@ class OmronTcpWidget(QtWidgets.QWidget):
             try:
                 self._omron.send_command(cmd)
             except Exception as e:
-                self._append_log("SYS", f"[ERROR] send_command failed: {e}")
+                self._append_sys(f"[ERROR] send_command failed: {e}")
         # Fallback: Signal commandRequested, falls vorhanden
         elif hasattr(self._omron, "signals") and hasattr(self._omron.signals, "commandRequested"):
             try:
                 self._omron.signals.commandRequested.emit(cmd)
             except Exception as e:
-                self._append_log("SYS", f"[ERROR] commandRequested.emit failed: {e}")
+                self._append_sys(f"[ERROR] commandRequested.emit failed: {e}")
         else:
-            self._append_log(
-                "SYS",
-                "[ERROR] OmronBridge hat weder send_command() noch signals.commandRequested",
+            self._append_sys(
+                "[ERROR] OmronBridge hat weder send_command() noch signals.commandRequested"
             )
 
-        # lokales Echo, falls raw_tx noch nicht kommt
-        self._append_log("TX", cmd)
         self._cmd_edit.clear()
 
     @QtCore.pyqtSlot()

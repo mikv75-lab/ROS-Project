@@ -85,12 +85,27 @@ class Motion(Node):
         self.frame_world = self.cfg_frames.resolve(self.cfg_frames.get("world", WORLD_FRAME))
         self.frame_scene = self.cfg_frames.resolve(self.cfg_frames.get("scene", "scene"))
 
-        # Backend-String (z.B. 'default' / 'omron')
+        # Backend-String (z.B. 'default' / 'omron_sim' / 'omron_real')
         self.backend = (
             self.declare_parameter("backend", "default")
             .get_parameter_value()
             .string_value
             or "default"
+        )
+        backend_lower = self.backend.lower()
+        self.is_real_backend = ("omron" in backend_lower) and ("sim" not in backend_lower)
+
+        # maximale TCP-Geschwindigkeit in mm/s, die 100 % entsprechen soll
+        self.max_tcp_speed_mm_s = (
+            self.declare_parameter("max_tcp_speed_mm_s", 300.0)
+            .get_parameter_value()
+            .double_value
+        )
+
+        self.log.info(
+            f"MotionNode starting (backend='{self.backend}', "
+            f"is_real_backend={self.is_real_backend}, "
+            f"max_tcp_speed_mm_s={self.max_tcp_speed_mm_s})"
         )
 
         # --- TF listener
@@ -123,6 +138,7 @@ class Motion(Node):
         self.log.info(f"MoveItPy ready (group={GROUP_NAME}, backend='{self.backend}')")
 
         # ---------------- intern: Motion-Config (Speed + Planner) ----------------
+        # Globale "Rezept-Geschwindigkeit" in mm/s (wird für REAL in % gemappt)
         self._speed_mm_s: float = 100.0
 
         # Planner-Konfiguration (immer mit Default vorbelegt)
@@ -175,6 +191,13 @@ class Motion(Node):
             MsgString,
             self.cfg_topics.publish_topic(NODE_KEY, "motion_result"),
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "motion_result")
+        )
+
+        # Omron-Command-Publisher (MOVEJ etc.) – genutzt im Real-Backend
+        self.pub_omron_cmd = self.create_publisher(
+            MsgString,
+            "/omron/command",
+            10,
         )
 
         # --------------- Subscribers ----------------
@@ -440,7 +463,7 @@ class Motion(Node):
             self._emit(f"ERROR:EX {e}")
 
     # ----------------------------------------------------------
-    # EXECUTE – ohne interne Retries, nur ein Versuch
+    # EXECUTE – je nach Backend: MoveIt-Exec (SIM) oder Omron MOVEJ
     # ----------------------------------------------------------
 
     def _on_execute(self, msg: MsgBool):
@@ -461,7 +484,12 @@ class Motion(Node):
         try:
             msg_traj = self._planned.get_robot_trajectory_msg()
 
-            ok = self.robot.execute(self._planned, controllers=[])
+            if self.is_real_backend:
+                # → Trajektorie via OmronTcpBridge ausführen
+                ok = self._execute_via_omron(msg_traj)
+            else:
+                # → normale MoveIt-Execution (Sim/Fake)
+                ok = self.robot.execute(self._planned, controllers=[])
 
             if self._cancel:
                 self._emit("STOPPED:USER")
@@ -478,6 +506,61 @@ class Motion(Node):
 
         finally:
             self._busy = False
+
+    # ----------------------------------------------------------
+    # REAL-Backend: Trajektorie via Omron MOVEJ
+    # ----------------------------------------------------------
+
+    def _execute_via_omron(self, traj_msg: RobotTrajectoryMsg) -> bool:
+        """
+        Führt eine geplante Trajektorie im REAL-Backend über den Omron-TCP-Client aus.
+
+        V1: nur Endpunkt -> ein MOVEJ-Kommando.
+        Später: hier kann man auf "viele MOVEJ" oder echtes Streaming erweitern.
+        """
+        jt = traj_msg.joint_trajectory
+        if not jt.points:
+            self.log.error("[omron] Trajektorie hat keine Punkte.")
+            return False
+
+        # Nur Endpunkt nehmen (letzter Punkt)
+        last = jt.points[-1]
+        names = list(jt.joint_names)
+        positions = list(last.positions)
+
+        if len(names) < 6 or len(positions) < 6:
+            self.log.error(
+                f"[omron] Zu wenige Joints in Trajektorie (names={len(names)}, positions={len(positions)})"
+            )
+            return False
+
+        j_rad = positions[:6]
+
+        # rad -> deg
+        import math
+        j_deg = [p * 180.0 / math.pi for p in j_rad]
+
+        # mm/s -> %
+        v_mm_s = float(self._speed_mm_s)
+        if v_mm_s <= 0.0:
+            v_mm_s = 50.0  # fallback
+
+        max_tcp = float(self.max_tcp_speed_mm_s) if self.max_tcp_speed_mm_s > 0.0 else 300.0
+        speed_pct = 100.0 * v_mm_s / max_tcp
+        if speed_pct > 100.0:
+            speed_pct = 100.0
+        if speed_pct < 5.0:
+            speed_pct = 5.0
+
+        # MOVEJ j1 j2 j3 j4 j5 j6 speed_pct
+        cmd = "MOVEJ " + " ".join(f"{a:.3f}" for a in j_deg) + f" {speed_pct:.1f}"
+
+        self.log.info(f"[omron] MOVEJ via TCP: {cmd}")
+        self.pub_omron_cmd.publish(MsgString(data=cmd))
+
+        # V1: wir gehen davon aus, dass das Senden ok ist.
+        # Später kann hier ein ACK/Status-Topic ausgewertet werden.
+        return True
 
     # ----------------------------------------------------------
     # STOP

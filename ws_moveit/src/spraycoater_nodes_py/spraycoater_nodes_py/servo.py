@@ -18,23 +18,22 @@ NODE_KEY = "servo"
 
 class ServoBridge(Node):
     """
-    Bridge zwischen UI-ServiceTabs und moveit_servo.
+    Bridge zwischen UI-ServiceTabs und moveit_servo (Fake-/SIM-Roboter)
+    ODER Omron-Real (via TCP-Bridge).
 
-    Topics (laut topics.yaml, NODE_KEY='servo'):
+    SIM-Backends  (z.B. 'omron_sim', 'meca_sim', 'default'):
+      - publizieren Twist/JointJog an moveit_servo:
+          /servo/cartesian_mm (TwistStamped)
+          /servo/joint_jog    (JointJog)
+      - benutzen /omron_servo_node/switch_command_type
 
-      subscribe (UI -> ServoBridge):
-        - twist_out   (geometry_msgs/TwistStamped)   /servo/delta_twist_cmds
-        - joint_out   (control_msgs/JointJog)        /servo/delta_joint_cmds
-        - set_mode    (std_msgs/String)              /servo/set_mode
-        - set_frame   (std_msgs/String)              /servo/set_frame
-
-      publish (ServoBridge -> moveit_servo):
-        - cartesian_mm (geometry_msgs/TwistStamped)  /servo/cartesian_mm
-        - joint_jog    (control_msgs/JointJog)       /servo/joint_jog
-
-    Backend:
-      - per Parameter 'backend' (z.B. 'omron_sim', 'omron_real', 'meca_sim')
-        aktuell nur fürs Logging; Service-Name bleibt /omron_servo_node/...
+    REAL-Backends (z.B. 'omron_real'):
+      - wandeln Twist/JointJog in ASCII-Kommandos:
+          JOGJ axis step_deg speed_pct
+          JOGC speed_mmps dx dy dz drx dry drz
+        und publishen die Strings auf:
+          /omron/command
+      - kein moveit_servo Service, keine Publishes an cartesian_mm/joint_jog
     """
 
     # Mapping von String -> ServoCommandType
@@ -51,17 +50,43 @@ class ServoBridge(Node):
         "P":         ServoCommandType.Request.POSE,
     }
 
+    # simple Reihenfolge der Achsen
+    AXIS_ORDER = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
+
     def __init__(self) -> None:
         super().__init__("servo_bridge")
 
         # ---------------- Backend-Parameter ----------------
-        # z.B. "omron_sim", "omron_real", "meca_sim" – kommt aus bringup
         self.declare_parameter("backend", "default")
         self.backend: str = (
             self.get_parameter("backend").get_parameter_value().string_value or "default"
         )
+        backend_lower = self.backend.lower()
 
-        # Config-Loader / Frames
+        self.is_real_backend = "real" in backend_lower
+
+        # moveit_servo-Service nur in SIM / default
+        self.use_servo_service = (
+            (not self.is_real_backend)
+            and ("sim" in backend_lower or self.backend == "default")
+        )
+
+        # Defaults für REAL-Backend (kannst du aus Bringup setzen)
+        # → landen im Command (JOGJ/JOGC), Omron setzt SPEED nur aus diesen Werten.
+        self.declare_parameter("joint_speed_pct_default", 30.0)
+        self.declare_parameter("cart_speed_mmps_default", 50.0)
+        self.joint_speed_pct_default = (
+            self.get_parameter("joint_speed_pct_default")
+            .get_parameter_value()
+            .double_value
+        )
+        self.cart_speed_mmps_default = (
+            self.get_parameter("cart_speed_mmps_default")
+            .get_parameter_value()
+            .double_value
+        )
+
+        # Config-Loader / Frames (nur für SIM relevant)
         self.loader = topics()
         self.frames_cfg = frames()
         self._F = self.frames_cfg.resolve
@@ -69,7 +94,7 @@ class ServoBridge(Node):
         # Default-Frame (tcp aus frames.yaml, sonst "world")
         self.current_frame = self._F(self.frames_cfg.get("tcp", "world"))
 
-        # ---- Topics aus config_hub laden ----
+        # ---- Topics aus config_hub ----
         topic_twist_in = self.loader.subscribe_topic(NODE_KEY, "twist_out")
         qos_twist_in = self.loader.qos_by_id("subscribe", NODE_KEY, "twist_out")
 
@@ -88,13 +113,16 @@ class ServoBridge(Node):
         topic_joint_cmd = self.loader.publish_topic(NODE_KEY, "joint_jog")
         qos_joint_cmd = self.loader.qos_by_id("publish", NODE_KEY, "joint_jog")
 
-        # ---- Publisher (an moveit_servo) ----
+        # ---- Publisher für SIM (moveit_servo) ----
         self.pub_cartesian = self.create_publisher(
             TwistStamped, topic_cartesian_cmd, qos_cartesian_cmd
         )
         self.pub_joint = self.create_publisher(
             JointJog, topic_joint_cmd, qos_joint_cmd
         )
+
+        # ---- Publisher für REAL (OmronTcpBridge) ----
+        self.pub_omron_cmd = self.create_publisher(String, "/omron/command", 10)
 
         # ---- Subscriber (von UI-Tabs) ----
         self.create_subscription(
@@ -110,16 +138,27 @@ class ServoBridge(Node):
             String, topic_set_frame, self._on_set_frame, qos_set_frame
         )
 
-        # ---- Service-Client für CommandType ----
-        # (Name bleibt fix, da dein omron_servo_node sowohl in SIM als auch REAL so heißt)
-        self.servo_client = self.create_client(
-            ServoCommandType, "/omron_servo_node/switch_command_type"
-        )
+        # ---- Service-Client für CommandType (nur SIM/Fake) ----
+        if self.use_servo_service:
+            self.servo_client = self.create_client(
+                ServoCommandType, "/omron_servo_node/switch_command_type"
+            )
+            self.get_logger().info(
+                f"ServoBridge: benutze moveit_servo CommandType-Service (backend='{self.backend}')"
+            )
+        else:
+            self.servo_client = None
+            self.get_logger().info(
+                f"ServoBridge: KEIN moveit_servo CommandType-Service aktiv (backend='{self.backend}')"
+            )
+
         self.current_mode: int | None = None
 
         self.get_logger().info(
             f"✅ ServoBridge aktiv (backend='{self.backend}') – "
-            f"Frame='{self.current_frame}', publish: '{topic_cartesian_cmd}', '{topic_joint_cmd}'"
+            f"Frame='{self.current_frame}', "
+            f"SIM publish: '{topic_cartesian_cmd}', '{topic_joint_cmd}', "
+            f"REAL publish: '/omron/command'"
         )
 
     # ------------------------------------------------------------
@@ -127,6 +166,22 @@ class ServoBridge(Node):
     # ------------------------------------------------------------
 
     def _on_twist_cmd(self, msg: TwistStamped) -> None:
+        """
+        Cartesian Jog:
+          SIM  -> TwistStamped an moveit_servo (/servo/cartesian_mm)
+          REAL -> JOGC-String an OmronTcpBridge (/omron/command)
+        """
+        if self.is_real_backend:
+            cmd = self._make_jogc_cmd_from_twist(msg)
+            if cmd is None:
+                return
+            out = String()
+            out.data = cmd
+            self.pub_omron_cmd.publish(out)
+            self.get_logger().debug(f"[{self.backend}] JOGC → '{cmd}'")
+            return
+
+        # --- SIM / Fake-Roboter ---
         out = TwistStamped()
         out.twist = msg.twist  # nur Inhalt übernehmen
         out.header.frame_id = self.current_frame
@@ -143,6 +198,22 @@ class ServoBridge(Node):
         )
 
     def _on_joint_cmd(self, msg: JointJog) -> None:
+        """
+        Joint Jog:
+          SIM  -> JointJog an moveit_servo (/servo/joint_jog)
+          REAL -> JOGJ-String an OmronTcpBridge (/omron/command)
+        """
+        if self.is_real_backend:
+            cmd = self._make_jogj_cmd_from_joint(msg)
+            if cmd is None:
+                return
+            out = String()
+            out.data = cmd
+            self.pub_omron_cmd.publish(out)
+            self.get_logger().debug(f"[{self.backend}] JOGJ → '{cmd}'")
+            return
+
+        # --- SIM / Fake-Roboter ---
         out = JointJog()
         out.header.frame_id = msg.header.frame_id or self.current_frame
         out.header.stamp = self.get_clock().now().to_msg()
@@ -156,6 +227,97 @@ class ServoBridge(Node):
             f"[{self.backend}] JointJog → joint_jog (n={len(out.joint_names)}, duration={out.duration:.3f})"
         )
 
+    # ------------------------------------------------------------
+    # Hilfsfunktionen REAL-Backend
+    # ------------------------------------------------------------
+
+    def _make_jogj_cmd_from_joint(self, msg: JointJog) -> str | None:
+        """
+        Erwartung:
+          - genau ein Joint im Array
+          - displacements[0] = Schritt in Grad
+          - velocities[0]   = Speed in % (optional -> Default)
+        """
+        if not msg.joint_names:
+            self.get_logger().warn(f"[{self.backend}] JOGJ: joint_names leer.")
+            return None
+
+        jname = msg.joint_names[0].lower()
+        # Achsnummer bestimmen
+        try:
+            axis = self.AXIS_ORDER.index(jname) + 1
+        except ValueError:
+            # Fallback: z.B. 'Viper_s650_Link1' → letzte Ziffer
+            try:
+                axis = int(jname[-1])
+            except Exception:
+                self.get_logger().warn(
+                    f"[{self.backend}] JOGJ: kann Achse aus '{msg.joint_names[0]}' nicht bestimmen."
+                )
+                return None
+
+        if axis < 1 or axis > 6:
+            self.get_logger().warn(
+                f"[{self.backend}] JOGJ: ungültige Achse {axis} aus '{msg.joint_names[0]}'"
+            )
+            return None
+
+        step_deg = 0.0
+        if msg.displacements:
+            step_deg = msg.displacements[0]
+        else:
+            self.get_logger().warn(
+                f"[{self.backend}] JOGJ: displacements leer – Schritt=0."
+            )
+
+        if abs(step_deg) < 1e-6:
+            return None
+
+        if msg.velocities:
+            speed_pct = msg.velocities[0]
+        else:
+            speed_pct = self.joint_speed_pct_default
+
+        # $args: "axis step_deg [speed_pct]"
+        cmd = f"JOGJ {axis} {step_deg:.3f} {speed_pct:.1f}"
+        return cmd
+
+    def _make_jogc_cmd_from_twist(self, msg: TwistStamped) -> str | None:
+        """
+        Erwartung (REAL-Backend):
+          - twist.linear.{x,y,z}  = Schritt in mm
+          - twist.angular.{x,y,z} = Schritt in Grad
+          - Speed (mm/s) aus cart_speed_mmps_default
+
+        Frame (WORLD/TOOL) ist bereits in Servo/MoveIt berücksichtigt
+        und wird NICHT mehr an Omron übergeben.
+        """
+        dx = msg.twist.linear.x
+        dy = msg.twist.linear.y
+        dz = msg.twist.linear.z
+        drx = msg.twist.angular.x
+        dry = msg.twist.angular.y
+        drz = msg.twist.angular.z
+
+        # wenn alles 0 → nichts senden
+        if (abs(dx) < 1e-6 and abs(dy) < 1e-6 and abs(dz) < 1e-6 and
+                abs(drx) < 1e-6 and abs(dry) < 1e-6 and abs(drz) < 1e-6):
+            return None
+
+        speed_mmps = self.cart_speed_mmps_default
+
+        # Neues Format: "JOGC <Speed> dx dy dz drx dry drz"
+        cmd = (
+            f"JOGC {speed_mmps:.1f} "
+            f"{dx:.3f} {dy:.3f} {dz:.3f} "
+            f"{drx:.3f} {dry:.3f} {drz:.3f}"
+        )
+        return cmd
+
+    # ------------------------------------------------------------
+    # Mode / Frame
+    # ------------------------------------------------------------
+
     def _on_set_mode(self, msg: String) -> None:
         raw = (msg.data or "").strip().upper()
         if raw not in self.MODE_MAP:
@@ -168,10 +330,24 @@ class ServoBridge(Node):
         self._switch_mode(cmd_type, raw)
 
     def _switch_mode(self, cmd_type: int, label: str = "") -> None:
-        """Interne Hilfsfunktion: CommandType-Service synchron aufrufen."""
+        """Interne Hilfsfunktion: CommandType-Service synchron aufrufen (nur SIM/Fake)."""
+        if not self.use_servo_service:
+            self.current_mode = cmd_type
+            self.get_logger().info(
+                f"[{self.backend}] (real) Servo-Mode lokal auf '{label}' gesetzt – "
+                f"kein CommandType-Service aktiv."
+            )
+            return
+
         if self.current_mode == cmd_type:
             self.get_logger().info(
                 f"[{self.backend}] Servo-Mode bereits '{label}' – kein Servicecall nötig."
+            )
+            return
+
+        if self.servo_client is None:
+            self.get_logger().warning(
+                f"[{self.backend}] Servo-Client nicht initialisiert – kann Mode '{label}' nicht setzen."
             )
             return
 
@@ -213,7 +389,6 @@ class ServoBridge(Node):
             self.get_logger().warning(f"[{self.backend}] set_frame: Leerstring ignoriert.")
             return
 
-        # Nur diese zwei Frames sind erlaubt
         allowed = ("world", "tcp")
         if raw not in allowed:
             self.get_logger().warning(
@@ -224,7 +399,6 @@ class ServoBridge(Node):
             )
             return
 
-        # Frame aus frames.yaml auflösen
         resolved = self._F(self.frames_cfg.get(raw, raw))
 
         old = self.current_frame

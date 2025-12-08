@@ -5,12 +5,13 @@
 # Schlanke Bridge:
 #   - SUB:  omron.command          (/spraycoater/omron/command)
 #   - PUB:  omron.raw_tx           (/spraycoater/omron/raw_tx)
-#          omron.raw_rx           (/spraycoater/omron/raw_rx)
-#          omron.connectionStatus (/spraycoater/omron/connection_status)
+#           omron.raw_rx           (/spraycoater/omron/raw_rx)
+#           omron.connectionStatus (/spraycoater/omron/connection_status)
 #
 # Design:
 #   - Kein Dauer-Reader-Thread.
-#   - Pro Command: send_line() + recv_line().
+#   - Pro Command: nur Senden.
+#   - Antworten + JOINTS/STATE kommen über einen RX-Poll-Timer rein.
 #   - Wenn Server schließt → beim nächsten Command reconnect.
 #   - connectionStatus wird bei State-Wechsel UND periodisch gepublished,
 #     damit das Qt-Widget den Status sicher mitbekommt.
@@ -94,6 +95,11 @@ class OmronTcpBridge(Node):
         # 🔁 Periodischer Status-Tick, damit das UI immer einen frischen Wert bekommt
         self._conn_timer = self.create_timer(1.0, self._publish_connection_status)
 
+        # 🔁 Periodischer RX-Poll: holt JOINTS/STATE und Antworten vom ACE-Server
+        # Hinweis: dafür sollte OmronTcpClient.recv_line() einen sinnvollen (kurzen)
+        # Timeout haben und bei "kein Data" None oder eine Exception liefern.
+        self._rx_timer = self.create_timer(0.05, self._poll_rx)
+
     # ------------------------------------------------------------------
     # Verbindung / State
     # ------------------------------------------------------------------
@@ -150,7 +156,7 @@ class OmronTcpBridge(Node):
         else:
             raise RuntimeError("OmronTcpClient hat weder send_line() noch _send_line().")
 
-    def _recv_line(self) -> str:
+    def _recv_line(self) -> str | None:
         """Wrapper für recv_line(), optional _recv_line()."""
         if hasattr(self._client, "recv_line"):
             return self._client.recv_line()
@@ -159,7 +165,39 @@ class OmronTcpBridge(Node):
         raise RuntimeError("OmronTcpClient hat weder recv_line() noch _recv_line().")
 
     # ------------------------------------------------------------------
-    # Command von UI -> TCP (Request/Response)
+    # RX-Poll: liest periodisch alle verfügbaren Zeilen vom Server
+    # ------------------------------------------------------------------
+    def _poll_rx(self) -> None:
+        """Periodisch (Timer) alle verfügbaren Zeilen vom ACE-Server lesen."""
+        if not self._connected:
+            return
+
+        # Mehrere Zeilen pro Tick einsammeln, aber nicht endlos
+        max_lines_per_tick = 10
+        count = 0
+
+        while count < max_lines_per_tick:
+            try:
+                line = self._recv_line()
+            except Exception as e:
+                # Bei harten Fehlern Verbindung als getrennt markieren
+                self.get_logger().warning(f"⚠️ RX poll Fehler: {e}")
+                self._set_connection(False)
+                break
+
+            if line is None:
+                break
+
+            text = line.strip()
+            if not text:
+                break
+
+            self.get_logger().info(f"⬅️ RECV (poll): {text}")
+            self.pub_raw_rx.publish(String(data=text))
+            count += 1
+
+    # ------------------------------------------------------------------
+    # Command von UI -> TCP (nur Senden, RX läuft über _poll_rx)
     # ------------------------------------------------------------------
     def _on_command(self, msg: String) -> None:
         cmd = (msg.data or "").strip()
@@ -178,25 +216,11 @@ class OmronTcpBridge(Node):
             # Befehl schicken (mit CR/LF in OmronTcpClient implementieren!)
             self._send_line(cmd)
 
-            # Antwort (eine Zeile) lesen – falls der Server sie sendet
-            try:
-                reply = self._recv_line()
-            except Exception as e:
-                # Wenn der Server die Verbindung schließt → beim nächsten Command reconnect
-                self.get_logger().warning(f"⚠️ recv_line Fehler: {e}")
-                self._set_connection(False)
-                return
-
-            if reply is None:
-                return
-
-            text = reply.strip()
-            if text:
-                self.get_logger().info(f"⬅️ RECV: {text}")
-                self.pub_raw_rx.publish(String(data=text))
+            # KEIN recv_line() mehr hier!
+            # Antworten + JOINTS/STATE werden über _poll_rx() gelesen.
 
         except Exception as e:
-            self.get_logger().error(f"❌ Send/Receive error: {e}")
+            self.get_logger().error(f"❌ Send error: {e}")
             self._set_connection(False)
 
     # ------------------------------------------------------------------

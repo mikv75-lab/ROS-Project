@@ -80,42 +80,32 @@ topics:
         qos: default
 
       # 6) Planner + Params als JSON-String
-      #    z.B. {
-      #      "pipeline": "ompl",
-      #      "planner_id": "RRTConnectkConfigDefault",
-      #      "params": { "range": 0.2, "goal_bias": 0.05 }
-      #    }
       - id: set_planner_cfg
         name: /spraycoater/motion/set_planner_cfg
         type: std_msgs/msg/String
         qos: default
 
     publish:
-      # An den Controller gesendete Soll-Trajektorie
       - id: target_trajectory
         name: /spraycoater/motion/target_trajectory
         type: trajectory_msgs/msg/JointTrajectory
         qos: default
 
-      # MoveIt: geplante Trajektorie (UI/Analyse)
       - id: planned_trajectory_rt
         name: /spraycoater/motion/trajectory_planned
         type: moveit_msgs/msg/RobotTrajectory
         qos: latched
 
-      # MoveIt: ausgeführte Trajektorie (UI/Analyse)
       - id: executed_trajectory_rt
         name: /spraycoater/motion/trajectory_executed
         type: moveit_msgs/msg/RobotTrajectory
         qos: latched
 
-      # RViz/Foxglove Preview-Pfade
       - id: preview_markers
         name: /spraycoater/motion/preview/markers
         type: visualization_msgs/msg/MarkerArray
         qos: latched
 
-      # Text-Status (PLANNED:OK, EXECUTED:OK, ERROR:...)
       - id: motion_result
         name: /spraycoater/motion/result
         type: std_msgs/msg/String
@@ -297,21 +287,34 @@ topics:
 
   omron:
     subscribe:
-      - id: command              # z.B. vom PyQt-OmronTerminal
+      - id: command              # z.B. vom PyQt-OmronTerminal / OmronRobot
         name: /spraycoater/omron/command
         type: std_msgs/msg/String
         qos: default
 
+      # Verbindungstatus auch als subscribe, damit OmronRobot ihn lesen kann
+      - id: connectionStatus
+        name: /spraycoater/omron/connection_status
+        type: std_msgs/msg/Bool
+        qos: default
+
     publish:
-      - id: raw_tx               # alles, was der Driver an den TCP-Server sendet
+      # OmronTcpBridge -> Debug / UI
+      - id: raw_tx
         name: /spraycoater/omron/raw_tx
         type: std_msgs/msg/String
         qos: default
-      - id: raw_rx               # alles, was vom TCP-Server zurückkommt
+      - id: raw_rx
         name: /spraycoater/omron/raw_rx
         type: std_msgs/msg/String
         qos: default
-      - id: connectionStatus     # TCP-Verbindungsstatus OmronTcpBridge -> UI
+      - id: connectionStatus
         name: /spraycoater/omron/connection_status
         type: std_msgs/msg/Bool
+        qos: default
+
+      # OmronRobot publisht auch Commands (gleicher Topicname)
+      - id: command
+        name: /spraycoater/omron/command
+        type: std_msgs/msg/String
         qos: default
