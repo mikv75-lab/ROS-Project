@@ -73,6 +73,12 @@ def generate_launch_description():
         description="RViz mit starten?",
     )
 
+    namespace_arg = DeclareLaunchArgument(
+        "namespace",
+        default_value="shadow",
+        description="ROS-Namespace für diese Instanz (z.B. 'shadow')",
+    )
+
     # ----------------- LaunchConfigurations -----------------
     mount_parent = LaunchConfiguration("mount_parent")
     mount_child = LaunchConfiguration("mount_child")
@@ -86,7 +92,8 @@ def generate_launch_description():
     mount_qw = LaunchConfiguration("mount_qw")
 
     use_sim_time = LaunchConfiguration("use_sim_time")
-    rviz = LaunchConfiguration("rviz")  # aktuell noch nicht als Condition genutzt
+    rviz = LaunchConfiguration("rviz")
+    namespace = LaunchConfiguration("namespace")
 
     # ----------------- MoveIt-Konfiguration (gemeinsam!) -----------------
     moveit_config = create_omron_moveit_config()
@@ -96,6 +103,7 @@ def generate_launch_description():
         package="tf2_ros",
         executable="static_transform_publisher",
         name="tf_world_to_omron_mount",
+        namespace=namespace,  # nur Node-Name im Namespace, Frames bleiben global
         arguments=[
             "--x",
             mount_x,
@@ -124,6 +132,7 @@ def generate_launch_description():
         package="robot_state_publisher",
         executable="robot_state_publisher",
         name="robot_state_publisher",
+        namespace=namespace,
         output="screen",
         parameters=[
             moveit_config.robot_description,
@@ -135,6 +144,7 @@ def generate_launch_description():
     ros2_control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
+        namespace=namespace,
         parameters=[
             moveit_config.robot_description,
             ros2_controllers_path,
@@ -147,7 +157,9 @@ def generate_launch_description():
     jsb_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["joint_state_broadcaster", "--controller-manager", "/controller_manager"],
+        namespace=namespace,
+        # WICHTIG: ohne führenden Slash, damit der Namespace greift
+        arguments=["joint_state_broadcaster", "--controller-manager", "controller_manager"],
         output="screen",
     )
 
@@ -155,7 +167,9 @@ def generate_launch_description():
     arm_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["omron_arm_controller", "--controller-manager", "/controller_manager"],
+        namespace=namespace,
+        # dito hier
+        arguments=["omron_arm_controller", "--controller-manager", "controller_manager"],
         output="screen",
     )
 
@@ -164,9 +178,10 @@ def generate_launch_description():
         package="moveit_ros_move_group",
         executable="move_group",
         name="move_group",
+        namespace=namespace,
         output="screen",
         parameters=[
-            moveit_config.to_dict(),       # robot_description*, kinematics, planning_pipelines, controllers, ...
+            moveit_config.to_dict(),
             {"use_sim_time": use_sim_time},
         ],
     )
@@ -176,6 +191,7 @@ def generate_launch_description():
         package="rviz2",
         executable="rviz2",
         name="rviz2",
+        namespace=namespace,
         arguments=["-d", rviz_cfg],
         parameters=[
             moveit_config.to_dict(),
@@ -197,6 +213,7 @@ def generate_launch_description():
             mount_qw_arg,
             use_sim_time_arg,
             rviz_arg,
+            namespace_arg,
             static_tf,
             robot_state_pub,
             ros2_control_node,

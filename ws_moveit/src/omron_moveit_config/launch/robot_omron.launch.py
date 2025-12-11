@@ -17,6 +17,7 @@
 #   * use_sim_time
 #   * rviz
 #   * omron_host, omron_port, omron_timeout
+#   * namespace
 
 import os
 import sys
@@ -78,7 +79,7 @@ def generate_launch_description():
 
     use_sim_time_arg = DeclareLaunchArgument(
         "use_sim_time",
-        default_value="false",
+        default_value="true",
         description="Sim-Time verwenden (normalerweise false beim echten Roboter)",
     )
     rviz_arg = DeclareLaunchArgument(
@@ -104,6 +105,12 @@ def generate_launch_description():
         description="TCP-Timeout in Sekunden",
     )
 
+    namespace_arg = DeclareLaunchArgument(
+        "namespace",
+        default_value="live",
+        description="ROS-Namespace für diese Instanz (z.B. 'live')",
+    )
+
     # ----------------- LaunchConfigurations -----------------
     mount_parent = LaunchConfiguration("mount_parent")
     mount_child = LaunchConfiguration("mount_child")
@@ -123,6 +130,8 @@ def generate_launch_description():
     omron_port = LaunchConfiguration("omron_port")
     omron_timeout = LaunchConfiguration("omron_timeout")
 
+    namespace = LaunchConfiguration("namespace")
+
     # ----------------- MoveIt-Konfiguration -----------------
     moveit_config = create_omron_moveit_config()
 
@@ -131,6 +140,7 @@ def generate_launch_description():
         package="tf2_ros",
         executable="static_transform_publisher",
         name="tf_world_to_omron_mount",
+        namespace=namespace,
         arguments=[
             "--x",
             mount_x,
@@ -160,6 +170,7 @@ def generate_launch_description():
         package="robot_state_publisher",
         executable="robot_state_publisher",
         name="robot_state_publisher",
+        namespace=namespace,
         output="screen",
         parameters=[
             moveit_config.robot_description,
@@ -172,6 +183,7 @@ def generate_launch_description():
         package="spraycoater_nodes_py",
         executable="omron_tcp_bridge",
         name="omron_tcp_bridge",
+        namespace=namespace,
         output="screen",
         parameters=[
             {
@@ -187,9 +199,10 @@ def generate_launch_description():
         package="moveit_ros_move_group",
         executable="move_group",
         name="move_group",
+        namespace=namespace,
         output="screen",
         parameters=[
-            moveit_config.to_dict(),       # robot_description*, kinematics, planning_pipelines, controllers, ...
+            moveit_config.to_dict(),
             {"use_sim_time": use_sim_time},
         ],
     )
@@ -199,6 +212,7 @@ def generate_launch_description():
         package="rviz2",
         executable="rviz2",
         name="rviz2",
+        namespace=namespace,
         arguments=["-d", rviz_cfg],
         parameters=[
             moveit_config.to_dict(),
@@ -223,6 +237,7 @@ def generate_launch_description():
             omron_host_arg,
             omron_port_arg,
             omron_timeout_arg,
+            namespace_arg,
             static_tf,
             robot_state_pub,
             omron_tcp_bridge,
