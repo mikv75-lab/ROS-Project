@@ -9,11 +9,12 @@ from pathlib import Path
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
+from launch.conditions import IfCondition
 
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
-# 🔹 Launch-Ordner auf sys.path setzen, damit moveit_common importierbar ist
+# Launch-Ordner auf sys.path setzen
 _current_dir = Path(__file__).resolve().parent
 if str(_current_dir) not in sys.path:
     sys.path.insert(0, str(_current_dir))
@@ -39,7 +40,6 @@ def generate_launch_description():
         description="Child Frame für robot_mount",
     )
 
-    # Pose des robot_mount relativ zu mount_parent
     mount_x_arg = DeclareLaunchArgument(
         "mount_x", default_value="0.0", description="X-Offset von mount_parent"
     )
@@ -65,7 +65,7 @@ def generate_launch_description():
     use_sim_time_arg = DeclareLaunchArgument(
         "use_sim_time",
         default_value="false",
-        description="Sim-Time verwenden (Gazebo etc.)",
+        description="Sim-Time verwenden",
     )
     rviz_arg = DeclareLaunchArgument(
         "rviz",
@@ -76,13 +76,12 @@ def generate_launch_description():
     namespace_arg = DeclareLaunchArgument(
         "namespace",
         default_value="shadow",
-        description="ROS-Namespace für diese Instanz (z.B. 'shadow')",
+        description="ROS-Namespace für diese Instanz",
     )
 
     # ----------------- LaunchConfigurations -----------------
     mount_parent = LaunchConfiguration("mount_parent")
     mount_child = LaunchConfiguration("mount_child")
-
     mount_x = LaunchConfiguration("mount_x")
     mount_y = LaunchConfiguration("mount_y")
     mount_z = LaunchConfiguration("mount_z")
@@ -90,12 +89,11 @@ def generate_launch_description():
     mount_qy = LaunchConfiguration("mount_qy")
     mount_qz = LaunchConfiguration("mount_qz")
     mount_qw = LaunchConfiguration("mount_qw")
-
     use_sim_time = LaunchConfiguration("use_sim_time")
     rviz = LaunchConfiguration("rviz")
     namespace = LaunchConfiguration("namespace")
 
-    # ----------------- MoveIt-Konfiguration (gemeinsam!) -----------------
+    # ----------------- MoveIt-Konfiguration -----------------
     moveit_config = create_omron_moveit_config()
 
     # ----------------- static TF: world → robot_mount -----------------
@@ -103,26 +101,17 @@ def generate_launch_description():
         package="tf2_ros",
         executable="static_transform_publisher",
         name="tf_world_to_omron_mount",
-        namespace=namespace,  # nur Node-Name im Namespace, Frames bleiben global
+        namespace=namespace,
         arguments=[
-            "--x",
-            mount_x,
-            "--y",
-            mount_y,
-            "--z",
-            mount_z,
-            "--qx",
-            mount_qx,
-            "--qy",
-            mount_qy,
-            "--qz",
-            mount_qz,
-            "--qw",
-            mount_qw,
-            "--frame-id",
-            mount_parent,
-            "--child-frame-id",
-            mount_child,
+            "--x", mount_x,
+            "--y", mount_y,
+            "--z", mount_z,
+            "--qx", mount_qx,
+            "--qy", mount_qy,
+            "--qz", mount_qz,
+            "--qw", mount_qw,
+            "--frame-id", mount_parent,
+            "--child-frame-id", mount_child,
         ],
         output="screen",
     )
@@ -140,7 +129,7 @@ def generate_launch_description():
         ],
     )
 
-    # 2) ros2_control_node
+    # 2) ros2_control_node (controller_manager + Hardware)
     ros2_control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
@@ -153,27 +142,35 @@ def generate_launch_description():
         output="screen",
     )
 
-    # 3) JointStateBroadcaster
+    # 3) JointStateBroadcaster spawner
+    # WICHTIG: --param-file explizit angeben!
     jsb_spawner = Node(
         package="controller_manager",
         executable="spawner",
         namespace=namespace,
-        # WICHTIG: ohne führenden Slash, damit der Namespace greift
-        arguments=["joint_state_broadcaster", "--controller-manager", "controller_manager"],
+        arguments=[
+            "joint_state_broadcaster",
+            "--controller-manager", "controller_manager",
+            "--param-file", ros2_controllers_path,
+        ],
         output="screen",
     )
 
-    # 4) Arm-Controller
+    # 4) Arm-Controller spawner
+    # WICHTIG: --param-file explizit angeben!
     arm_spawner = Node(
         package="controller_manager",
         executable="spawner",
         namespace=namespace,
-        # dito hier
-        arguments=["omron_arm_controller", "--controller-manager", "controller_manager"],
+        arguments=[
+            "omron_arm_controller",
+            "--controller-manager", "controller_manager",
+            "--param-file", ros2_controllers_path,
+        ],
         output="screen",
     )
 
-    # 5) MoveIt: move_group (Planning + PlanningSceneService)
+    # 5) MoveIt: move_group
     move_group_node = Node(
         package="moveit_ros_move_group",
         executable="move_group",
@@ -186,7 +183,7 @@ def generate_launch_description():
         ],
     )
 
-    # 6) RViz (MoveIt Motion Planning Plugin)
+    # 6) RViz (optional)
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
@@ -198,28 +195,27 @@ def generate_launch_description():
             {"use_sim_time": use_sim_time},
         ],
         output="screen",
+        condition=IfCondition(rviz),
     )
 
-    return LaunchDescription(
-        [
-            mount_parent_arg,
-            mount_child_arg,
-            mount_x_arg,
-            mount_y_arg,
-            mount_z_arg,
-            mount_qx_arg,
-            mount_qy_arg,
-            mount_qz_arg,
-            mount_qw_arg,
-            use_sim_time_arg,
-            rviz_arg,
-            namespace_arg,
-            static_tf,
-            robot_state_pub,
-            ros2_control_node,
-            jsb_spawner,
-            arm_spawner,
-            move_group_node,
-            rviz_node,
-        ]
-    )
+    return LaunchDescription([
+        mount_parent_arg,
+        mount_child_arg,
+        mount_x_arg,
+        mount_y_arg,
+        mount_z_arg,
+        mount_qx_arg,
+        mount_qy_arg,
+        mount_qz_arg,
+        mount_qw_arg,
+        use_sim_time_arg,
+        rviz_arg,
+        namespace_arg,
+        static_tf,
+        robot_state_pub,
+        ros2_control_node,
+        jsb_spawner,
+        arm_spawner,
+        move_group_node,
+        rviz_node,
+    ])
