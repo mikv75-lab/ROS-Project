@@ -1,4 +1,3 @@
-# src/ros/bridge/motion_bridge.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 from typing import Optional, Dict, Any
@@ -103,11 +102,16 @@ class MotionBridge(BaseBridge):
           UI/ProcessThread → moveToPoseRequested(pose)
           → plan_pose(pose)
           → bei "PLANNED:OK pose" wird automatisch execute(True) gesetzt.
+
+    Namespace:
+      - Der Namespace wird an BaseBridge (und damit an rclpy.Node) durchgereicht.
+        In Kombination mit root_ns aus topics.yaml bekommst du z. B.
+        /shadow/spraycoater/motion/... und /live/spraycoater/motion/...
     """
 
     GROUP = "motion"
 
-    def __init__(self, content: AppContent):
+    def __init__(self, content: AppContent, *, namespace: str = ""):
         # Signale VOR super().__init__, analog SceneBridge
         self.signals = MotionSignals()
 
@@ -121,7 +125,7 @@ class MotionBridge(BaseBridge):
         self._last_planned_traj: Optional[RobotTrajectoryMsg] = None
         self._last_executed_traj: Optional[RobotTrajectoryMsg] = None
 
-        super().__init__("motion_bridge", content)
+        super().__init__("motion_bridge", content, namespace=namespace)
 
         # UI-/Thread-Signale verdrahten
         s = self.signals
@@ -141,9 +145,10 @@ class MotionBridge(BaseBridge):
         s.motionSpeedChanged.connect(self._on_motion_speed_changed)
         s.plannerCfgChanged.connect(self._on_planner_cfg_changed)
 
+        ns_info = f"ns='{self.namespace}'" if self.namespace else "ns='<default>'"
         self.get_logger().info(
             "[motion] MotionBridge initialisiert "
-            "(plan_named/plan_pose + Auto-Execute + Speed/Planner-Topics)."
+            f"(plan_named/plan_pose + Auto-Execute + Speed/Planner-Topics, {ns_info})."
         )
 
     # ------------------------------------------------------------------

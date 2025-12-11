@@ -1,10 +1,10 @@
+# src/ros/bridge/scene_bridge.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from typing import List, Optional, Callable
+from typing import List, Optional
 
-import rclpy  # (optional nutzbar für Logs etc.)
 from std_msgs.msg import String
-from PyQt6 import QtCore  # Qt-Signale direkt im Bridge-Node
+from PyQt6 import QtCore
 
 from config.startup import AppContent
 from .base_bridge import BaseBridge, sub_handler
@@ -46,6 +46,29 @@ class SceneSignals(QtCore.QObject):
     setMountRequested = QtCore.pyqtSignal(str)
     setSubstrateRequested = QtCore.pyqtSignal(str)
 
+    def __init__(self, parent: Optional[QtCore.QObject] = None) -> None:
+        super().__init__(parent)
+        # Spiegel-Attribute
+        self.cage_list: List[str] = []
+        self.mount_list: List[str] = []
+        self.substrate_list: List[str] = []
+        self.cage_current: str = ""
+        self.mount_current: str = ""
+        self.substrate_current: str = ""
+
+    @QtCore.pyqtSlot()
+    def reemit_cached(self) -> None:
+        """
+        Emittiert alle zuletzt bekannten Werte erneut.
+        Wird von der UIBridge nach dem Connect verwendet, falls vorhanden.
+        """
+        self.cageListChanged.emit(list(self.cage_list))
+        self.mountListChanged.emit(list(self.mount_list))
+        self.substrateListChanged.emit(list(self.substrate_list))
+        self.cageCurrentChanged.emit(self.cage_current)
+        self.mountCurrentChanged.emit(self.mount_current)
+        self.substrateCurrentChanged.emit(self.substrate_current)
+
 
 class SceneBridge(BaseBridge):
     """
@@ -59,7 +82,7 @@ class SceneBridge(BaseBridge):
     """
     GROUP = "scene"
 
-    def __init__(self, content: AppContent):
+    def __init__(self, content: AppContent, namespace: str = ""):
         # WICHTIG: Signale *vor* super().__init__() anlegen, damit bereits
         # empfangene latched-Nachrichten in den Handlern sicher Signale besitzen.
         self.signals = SceneSignals()
@@ -72,17 +95,8 @@ class SceneBridge(BaseBridge):
         self.mount_current: str = ""
         self.substrate_current: str = ""
 
-        # Spiegel-Attribute auf dem Signals-Objekt (für initialen UI-Sync)
-        # (QObject erlaubt dynamische Attribute in Python.)
-        self.signals.cage_list = []
-        self.signals.mount_list = []
-        self.signals.substrate_list = []
-        self.signals.cage_current = ""
-        self.signals.mount_current = ""
-        self.signals.substrate_current = ""
-
         # Jetzt BaseBridge initialisieren (Publisher/Subscriber gemäß topics.yaml)
-        super().__init__("scene_bridge", content)
+        super().__init__("scene_bridge", content, namespace=namespace)
 
         # Outbound Qt -> ROS wiring (UI drückt Buttons im ServiceTab)
         self.signals.setCageRequested.connect(self.set_cage)

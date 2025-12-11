@@ -1,4 +1,4 @@
-# src/ros/omron_bridge.py
+# src/ros/bridge/omron_bridge.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 from typing import Optional
@@ -41,6 +41,7 @@ class OmronSignals(QtCore.QObject):
         self.last_raw_rx: str = ""
         self.last_connection: bool = False
 
+    @QtCore.pyqtSlot()
     def reemit_cached(self) -> None:
         """Re-emittiert letzte Werte (wird von UIBridge._try_reemit_cached() genutzt)."""
         if self.last_raw_tx:
@@ -78,7 +79,7 @@ class OmronBridge(BaseBridge):
 
     GROUP = "omron"
 
-    def __init__(self, content: AppContent):
+    def __init__(self, content: AppContent, namespace: str = ""):
         # Qt-Signale anlegen, bevor BaseBridge wiring macht
         self.signals = OmronSignals()
 
@@ -86,7 +87,8 @@ class OmronBridge(BaseBridge):
         self.raw_tx: str = ""
         self.raw_rx: str = ""
 
-        super().__init__("omron_bridge", content)
+        # Node ggf. im Namespace (z.B. /live) anlegen
+        super().__init__("omron_bridge", content, namespace=namespace)
 
         # Outbound: UI → ROS
         self.signals.commandRequested.connect(self.send_command)

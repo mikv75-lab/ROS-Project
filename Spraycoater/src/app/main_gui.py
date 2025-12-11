@@ -190,9 +190,9 @@ def main():
     splash = _make_splash()
     app.processEvents()
 
+    # NEU: StartupMachine ohne logging_yaml_path
     fsm = StartupMachine(
         startup_yaml_path=_startup_path_strict(),
-        logging_yaml_path=resource_path("config", "logging.yaml"),
         abort_on_error=False,
     )
 
@@ -201,11 +201,13 @@ def main():
     fsm.warning.connect(lambda w: splash_msg(f"⚠ {w}"))
     fsm.error.connect(lambda e: splash_msg(f"✖ {e}"))
 
-    # ready liefert jetzt (ctx, bridge, plc)
-    def _on_ready(ctx, bridge, plc):
+    # ready liefert jetzt (ctx, bridge_shadow, bridge_live, plc)
+    def _on_ready(ctx, bridge_shadow, bridge_live, plc):
         if ctx is None:
             QMessageBox.critical(None, "Startup fehlgeschlagen", "Kein gültiger AppContext. Siehe Log.")
             return
+        # fürs erste kannst du z.B. nur shadow in die MainWindow geben
+        bridge = bridge_shadow or bridge_live
         win = MainWindow(ctx=ctx, bridge=bridge, plc=plc)
         splash.finish(win)
         win.show()

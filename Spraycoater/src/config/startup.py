@@ -8,7 +8,7 @@ import io
 import yaml
 import warnings
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 
 # ============================================================
@@ -92,38 +92,69 @@ class AppPaths:
 
 
 @dataclass(frozen=True)
-class ROSConfig:
-    launch_ros: bool
-    sim_robot: bool
+class ROSConfigPaths:
+    topics_file: str
+    qos_file: str
+    frames_file: str
+    scene_file: str
+    robot_file: str
+    servo_file: str
+    poses_file: str
+    tools_file: str
 
 
 @dataclass(frozen=True)
-class RobotConfig:
-    mode: str                   # "sim", "emu", "real"
-    connect_on_start: bool
-    real_ip: Optional[str] = None
-    real_port: Optional[int] = None
-    emulator_ip: Optional[str] = None
-    emulator_port: Optional[int] = None
+class ROSRoleConfig:
+    enabled: bool
+    use_sim_time: bool
+
+
+@dataclass(frozen=True)
+class ROSLiveOmronConfig:
+    mode: str                  # "emu" oder "real"
+    real_ip: Optional[str]
+    real_port: Optional[int]
+    emulator_ip: Optional[str]
+    emulator_port: Optional[int]
+
+
+@dataclass(frozen=True)
+class ROSLiveConfig(ROSRoleConfig):
+    omron: Optional[ROSLiveOmronConfig] = None
+
+
+@dataclass(frozen=True)
+class ROSConfig:
+    launch_ros: bool
+    bringup_launch: str
+    namespace: str
+    robot_type: str
+    configs: ROSConfigPaths
+    shadow: ROSRoleConfig
+    live: ROSLiveConfig
+
+
+@dataclass(frozen=True)
+class PlcEndpoint:
+    ams_net_id: Optional[str]
+    ip: Optional[str]
+    port: Optional[int]
 
 
 @dataclass(frozen=True)
 class PlcConfig:
-    # nur noch "ads" (Beckhoff SPS via PyADS)
-    mode: str
-    connect_on_start: bool
-    ads_ams_net_id: Optional[str]
-    ads_ip: Optional[str]
-    ads_port: Optional[int]
+    sim: bool                   # true → keine Verbindung
+    mode: str                   # "ads" oder "umrt"
+    ads: Optional[PlcEndpoint]
+    umrt: Optional[PlcEndpoint]
     spec_file: str              # absoluter Pfad zu plc.yaml
-    spec: Optional[Dict[str, Any]] = None  # optional geladene plc.yaml
+    spec: Optional[Dict[str, Any]] = None  # optional geladene Spezifikation
 
 
 @dataclass(frozen=True)
 class AppContext:
     paths: AppPaths
     ros: ROSConfig
-    robot: RobotConfig
     plc: PlcConfig
 
     recipes_yaml: Dict[str, Any]
@@ -143,6 +174,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
 
     - Pfade werden relativ zu startup.yaml bzw. via package:// aufgelöst
     - PLC-Spezifikation wird aus plc.spec_file (plc.yaml) geladen
+    - ROS-Konfiguration nutzt das neue Format mit ros.configs, ros.shadow, ros.live
     """
     if not startup_yaml_path:
         _err("startup_yaml_path ist leer.")
@@ -200,29 +232,101 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     # ----- ROS -----
     r = su.get("ros") or {}
     if not isinstance(r, dict):
-        _err("startup.yaml: Abschnitt 'ros' fehlt oder ungültig.")
-    if "launch_ros" not in r or "sim_robot" not in r:
-        _err("startup.yaml: ros.launch_ros und ros.sim_robot sind Pflichtfelder.")
-    ros_cfg = ROSConfig(bool(r["launch_ros"]), bool(r["sim_robot"]))
+        _err("startup.yaml: Abschnitt 'ros' fehlt oder ist ungültig.")
 
-    # ----- ROBOT -----
-    robot_yaml = su.get("robot") or {}
-    if not isinstance(robot_yaml, dict):
-        _err("startup.yaml: Abschnitt 'robot' fehlt oder ist ungültig.")
+    if "launch_ros" not in r:
+        _err("startup.yaml: ros.launch_ros ist Pflichtfeld.")
 
-    mode = str(robot_yaml.get("mode", "sim"))
-    connect_on_start = bool(robot_yaml.get("connect_on_start", True))
+    launch_ros = bool(r["launch_ros"])
+    bringup_launch = str(r.get("bringup_launch", "")).strip()
+    namespace = str(r.get("namespace", "")).strip()
 
-    real_cfg = robot_yaml.get("real") or {}
-    emu_cfg = robot_yaml.get("emulator") or {}
+    if not bringup_launch:
+        _err("startup.yaml: ros.bringup_launch fehlt oder ist leer.")
+    if not namespace:
+        _err("startup.yaml: ros.namespace fehlt oder ist leer.")
 
-    robot_cfg = RobotConfig(
-        mode=mode,
-        connect_on_start=connect_on_start,
-        real_ip=real_cfg.get("ip"),
-        real_port=real_cfg.get("port"),
-        emulator_ip=emu_cfg.get("ip"),
-        emulator_port=emu_cfg.get("port"),
+    robot_type = str(r.get("robot_type", "")).strip()
+    if not robot_type:
+        _err("startup.yaml: ros.robot_type fehlt oder ist leer.")
+
+    # ros.configs.{topics_file,qos_file,frames_file,...}
+    rcfg = r.get("configs") or {}
+    if not isinstance(rcfg, dict):
+        _err("startup.yaml: ros.configs fehlt oder ist ungültig.")
+
+    req_cfg = (
+        "topics_file",
+        "qos_file",
+        "frames_file",
+        "scene_file",
+        "robot_file",
+        "servo_file",
+        "poses_file",
+        "tools_file",
+    )
+    for key in req_cfg:
+        if key not in rcfg:
+            _err(f"startup.yaml: ros.configs.{key} fehlt.")
+
+    ros_paths = ROSConfigPaths(
+        topics_file=_abspath_rel_to(base, rcfg["topics_file"]),
+        qos_file=_abspath_rel_to(base, rcfg["qos_file"]),
+        frames_file=_abspath_rel_to(base, rcfg["frames_file"]),
+        scene_file=_abspath_rel_to(base, rcfg["scene_file"]),
+        robot_file=_abspath_rel_to(base, rcfg["robot_file"]),
+        servo_file=_abspath_rel_to(base, rcfg["servo_file"]),
+        poses_file=_abspath_rel_to(base, rcfg["poses_file"]),
+        tools_file=_abspath_rel_to(base, rcfg["tools_file"]),
+    )
+
+    # ros.shadow
+    shadow_yaml = r.get("shadow") or {}
+    if not isinstance(shadow_yaml, dict):
+        _err("startup.yaml: ros.shadow fehlt oder ist ungültig.")
+    shadow_cfg = ROSRoleConfig(
+        enabled=bool(shadow_yaml.get("enabled", False)),
+        use_sim_time=bool(shadow_yaml.get("use_sim_time", True)),
+    )
+
+    # ros.live
+    live_yaml = r.get("live") or {}
+    if not isinstance(live_yaml, dict):
+        _err("startup.yaml: ros.live fehlt oder ist ungültig.")
+
+    live_enabled = bool(live_yaml.get("enabled", False))
+    live_use_sim_time = bool(live_yaml.get("use_sim_time", False))
+    live_mode = str(live_yaml.get("mode", "emu")).strip().lower()
+
+    omron_yaml = live_yaml.get("omron") or {}
+    if not isinstance(omron_yaml, dict):
+        omron_yaml = {}
+
+    real_yaml = omron_yaml.get("real") or {}
+    emu_yaml = omron_yaml.get("emulator") or {}
+
+    omron_cfg = ROSLiveOmronConfig(
+        mode=live_mode,
+        real_ip=real_yaml.get("ip"),
+        real_port=real_yaml.get("port"),
+        emulator_ip=emu_yaml.get("ip"),
+        emulator_port=emu_yaml.get("port"),
+    ) if omron_yaml else None
+
+    live_cfg = ROSLiveConfig(
+        enabled=live_enabled,
+        use_sim_time=live_use_sim_time,
+        omron=omron_cfg,
+    )
+
+    ros_cfg = ROSConfig(
+        launch_ros=launch_ros,
+        bringup_launch=bringup_launch,
+        namespace=namespace,
+        robot_type=robot_type,
+        configs=ros_paths,
+        shadow=shadow_cfg,
+        live=live_cfg,
     )
 
     # ----- PLC -----
@@ -230,24 +334,35 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not isinstance(plc_yaml, dict):
         _err("startup.yaml: Abschnitt 'plc' fehlt oder ist ungültig.")
 
+    plc_sim = bool(plc_yaml.get("sim", True))
     plc_mode = str(plc_yaml.get("mode", "ads")).strip().lower()
-    if plc_mode != "ads":
-        _err(f"startup.yaml: plc.mode muss 'ads' sein (ist {plc_mode!r}).")
-
-    plc_connect_on_start = bool(plc_yaml.get("connect_on_start", True))
+    if plc_mode not in ("ads", "umrt"):
+        _err(f"startup.yaml: plc.mode muss 'ads' oder 'umrt' sein (ist {plc_mode!r}).")
 
     ads_cfg = plc_yaml.get("ads") or {}
+    umrt_cfg = plc_yaml.get("umrt") or {}
+
+    ads_ep = PlcEndpoint(
+        ams_net_id=ads_cfg.get("ams_net_id"),
+        ip=ads_cfg.get("ip"),
+        port=ads_cfg.get("port"),
+    ) if ads_cfg else None
+
+    umrt_ep = PlcEndpoint(
+        ams_net_id=umrt_cfg.get("ams_net_id"),
+        ip=umrt_cfg.get("ip"),
+        port=umrt_cfg.get("port"),
+    ) if umrt_cfg else None
+
     spec_rel = plc_yaml.get("spec_file", "plc.yaml")
     spec_abs = _abspath_rel_to(base, spec_rel)
-
     plc_spec = _load_yaml(spec_abs, strict=False)
 
     plc_cfg = PlcConfig(
+        sim=plc_sim,
         mode=plc_mode,
-        connect_on_start=plc_connect_on_start,
-        ads_ams_net_id=ads_cfg.get("ams_net_id"),
-        ads_ip=ads_cfg.get("ip"),
-        ads_port=ads_cfg.get("port"),
+        ads=ads_ep,
+        umrt=umrt_ep,
         spec_file=spec_abs,
         spec=plc_spec,
     )
@@ -276,7 +391,6 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     ctx = AppContext(
         paths=paths,
         ros=ros_cfg,
-        robot=robot_cfg,
         plc=plc_cfg,
         recipes_yaml=ry,
         recipes=recipes_list,
@@ -322,13 +436,17 @@ class PathsLite:
 
 
 class AppContent:
-    """Frames / QoS / Topics aus startup.yaml.configs.* laden."""
+    """Frames / QoS / Topics aus startup.yaml.ros.configs.* laden."""
 
     def __init__(self, startup_yaml_path: str):
         su = _load_yaml(startup_yaml_path, strict=True) or {}
-        cfg = su.get("configs") or {}
+
+        r = su.get("ros") or {}
+        if not isinstance(r, dict):
+            raise ValueError("startup.yaml: Abschnitt 'ros' fehlt oder ist ungültig.")
+        cfg = r.get("configs") or {}
         if not isinstance(cfg, dict) or not cfg:
-            raise ValueError("configs.{frames,qos,topics} fehlt.")
+            raise ValueError("ros.configs.{frames,qos,topics} fehlt.")
 
         base = os.path.dirname(os.path.abspath(startup_yaml_path))
 

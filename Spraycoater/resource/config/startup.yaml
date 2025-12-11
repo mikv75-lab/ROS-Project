@@ -14,67 +14,80 @@ paths:
   bringup_log:  "../../data/logs/bringup.log"
 
 # ===================================================================
-# ROS / Bringup
+# ROS / Bringup + Roboterauswahl
 # ===================================================================
 ros:
-  launch_ros: true        # ROS-Backend beim Start mit hochfahren
-  sim_robot:  false       # ggf. weiterhin für Legacy-Code genutzt
-
-  # Optional: Name des MoveIt-Bringup-Launchfiles etc.
+  launch_ros: true
   bringup_launch: "omron_bringup.launch.py"
-  namespace:      "spraycoater"
+  namespace: "spraycoater"
 
-configs:
-  # Zentrale YAMLs im bringup/config
-  topics_file: "package://spraycoater_bringup/config/topics.yaml"
-  qos_file:    "package://spraycoater_bringup/config/qos.yaml"
-  frames_file: "package://spraycoater_bringup/config/frames.yaml"
-  scene_file:  "package://spraycoater_bringup/config/scene.yaml"
-  robot_file:  "package://spraycoater_bringup/config/robot.yaml"
-  servo_file:  "package://spraycoater_bringup/config/servo.yaml"
-  poses_file:  "package://spraycoater_bringup/config/poses.yaml"
-  tools_file:  "package://spraycoater_bringup/config/tools.yaml"
+  configs:
+    # Zentrale YAMLs im bringup/config
+    topics_file: "package://spraycoater_bringup/config/topics.yaml"
+    qos_file:    "package://spraycoater_bringup/config/qos.yaml"
+    frames_file: "package://spraycoater_bringup/config/frames.yaml"
+    scene_file:  "package://spraycoater_bringup/config/scene.yaml"
+    robot_file:  "package://spraycoater_bringup/config/robot.yaml"
+    servo_file:  "package://spraycoater_bringup/config/servo.yaml"
+    poses_file:  "package://spraycoater_bringup/config/poses.yaml"
+    tools_file:  "package://spraycoater_bringup/config/tools.yaml"
 
-# ===================================================================
-# Roboter-Anbindung (Omron Viper / Emulator / Fake)
-# ===================================================================
-robot:
-  # Modus der Roboteranbindung:
-  #  - "sim"  : reiner FakeController (nur RViz / Trajektorien)
-  #  - "emu"  : Omron-Emulator (ACE, SmartController-Emulation)
-  #  - "real" : echter Omron-Controller über TCP
-  mode: "sim"
+  # Welcher Robotertyp in robot.yaml / MoveIt verwendet wird
+  # (Auswahl weiterhin über robot.yaml: z.B. meca500, omron_viper_650, ...)
+  robot_type: "omron_viper_650"
 
-  # Ob beim Start automatisch versucht werden soll, eine Verbindung
-  # zum gewählten Roboter-Backend aufzubauen
-  connect_on_start: true
+  # -----------------------------------------------------------------
+  # Zwei Rollen: shadow (Sim/Planung) und live (echtes System)
+  # -----------------------------------------------------------------
+  shadow:
+    enabled: true
+    use_sim_time: true    # typischerweise mit Gazebo / FakeController
 
-  # TCP-Parameter für den echten Robotercontroller
-  real:
-    ip:   "192.168.10.20"    # IP-Adresse des echten Omron-Controllers
-    port: 5000               # Port für deinen tcp_server / V+-Schnittstelle
+  live:
+    enabled: false
+    use_sim_time: false
 
-  # TCP-Parameter für die Emulator-Variante (ACE / V+ Emulator)
-  emulator:
-    ip:   "127.0.0.1"        # typischerweise lokal, wenn Emulator auf selbem PC
-    port: 5000               # Port wie im V+-tcp_server am Emulator
+    # Betriebsmodus der LIVE-Rolle:
+    #  - "emu"  : Omron-Emulator (ACE, SmartController-Emulation)
+    #  - "real" : echter Omron-Controller über TCP
+    mode: "emu"
+
+    omron:
+      # TCP-Parameter für den echten Robotercontroller
+      real:
+        ip:   "192.168.10.20"    # IP-Adresse des echten Omron-Controllers
+        port: 5000               # Port für deinen tcp_server / V+-Schnittstelle
+
+      # TCP-Parameter für die Emulator-Variante (ACE / V+ Emulator)
+      emulator:
+        ip:   "127.0.0.1"        # typischerweise lokal, wenn Emulator auf selbem PC
+        port: 5000               # Port wie im V+-tcp_server am Emulator
 
 # ===================================================================
 # SPS / PLC-Anbindung (nur über PyQt, NICHT über ROS)
 # ===================================================================
 plc:
+  # Simulationsmodus:
+  #  - true  : PLC wird im Startup komplett übersprungen (kein Connect)
+  #  - false : es wird eine echte ADS-Verbindung aufgebaut
+  sim: true
+
   # Modus:
-  #  - "ads" : Verbindung zur Beckhoff-SPS via PyADS
+  #  - "ads"  : echte Beckhoff-SPS / IPC im Feldnetz
+  #  - "umrt" : TwinCAT-Laufzeitsimulation unter Windows (192.168.4.1)
   mode: "ads"
 
-  # Ob beim Start automatisch versucht werden soll, die PLC zu verbinden
-  connect_on_start: true
-
-  # Konkrete Verbindungsparameter für PyADS im Realbetrieb
+  # Konkrete Verbindungsparameter für PyADS – Profil "ads"
   ads:
-    ams_net_id: "1.2.3.4.5.6"   # AMS-Net-ID der SPS
-    ip:         "192.168.10.30" # IP-Adresse der SPS
-    port:       851             # Standard TwinCAT-ADS-Port
+    ams_net_id: "1.2.3.4.5.6"     # AMS-Net-ID der echten SPS (Platzhalter)
+    ip:         "192.168.10.30"   # IP-Adresse der SPS
+    port:       851               # Standard TwinCAT-ADS-Port
+
+  # Konkrete Verbindungsparameter für PyADS – Profil "umrt" (Runtime-Sim)
+  umrt:
+    ams_net_id: "192.168.4.1.1.1" # typische AMS-Net-ID für UMRT auf dem PC
+    ip:         "192.168.4.1"     # virtuelle UMRT-IP
+    port:       851               # auch hier Standard-Port
 
   # Pfad zur Spezifikationsdatei mit Typen/Min/Max etc.
   spec_file: "plc.yaml"

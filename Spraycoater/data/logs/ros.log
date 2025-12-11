@@ -1640,3 +1640,8 @@
 2025-12-11 15:25:51 INFO [93023] ros.ui_bridge:389 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion/omron states ready
 2025-12-11 15:25:51 INFO [93023] ros:230 - UIBridge verbunden (node=scene_bridge).
 2025-12-11 15:30:54 INFO [93023] ros.ui_bridge:473 - UIBridge disconnect()
+2025-12-11 16:53:32 INFO [149125] ros.kill_all_ros:112 - [kill] nothing to stop.
+2025-12-11 16:53:34 INFO [149125] ros.ui_bridge:451 - UIBridge: MotionBridge verdrahtet (Signals + Trajectory-Cache).
+2025-12-11 16:53:34 INFO [149125] ros.ui_bridge:461 - UIBridge: OmronBridge verdrahtet (TCP-Client-Schnittstelle).
+2025-12-11 16:53:34 INFO [149125] ros.ui_bridge:389 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion/omron states ready
+2025-12-11 16:53:34 INFO [149125] ros:230 - UIBridge verbunden (node=scene_bridge).

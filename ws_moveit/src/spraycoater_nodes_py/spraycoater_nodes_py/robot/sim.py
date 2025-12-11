@@ -23,9 +23,9 @@ class SimRobot(BaseRobot):
     """
     Simulation:
 
-    - Kommandos: /spraycoater/robot/init|stop|power_on|...
+    - Kommandos: robot.init|stop|power_on|... (topics.yaml.robot.subscribe)
     - TCP-Pose aus TF (world → tool_mount/tcp)
-    - Joints aus /joint_states
+    - Joints aus joint_states (Fake-Controller / ros2_control)
     """
 
     def __init__(self) -> None:
@@ -58,17 +58,18 @@ class SimRobot(BaseRobot):
         self.sub_servo_on = self._make_sub(Empty, "servo_on", self._on_servo_on)
         self.sub_servo_off = self._make_sub(Empty, "servo_off", self._on_servo_off)
 
-        # /joint_states vom joint_state_broadcaster
+        # joint_states vom joint_state_broadcaster (Fake-Controller)
+        # WICHTIG: relativ, damit der Namespace (shadow/live) greift!
         self.sub_joint_states = self.create_subscription(
             JointState,
-            "/joint_states",
+            "joint_states",      # ← vorher "/joint_states"
             self._on_joint_states,
             10,
         )
 
         self.get_logger().info(
             f"🤖 SimRobot gestartet: tcp_pose = Pose({self.tool_frame} in {self.world_frame}), "
-            "Joints aus /joint_states"
+            "Joints aus joint_states (Fake-Controller)"
         )
 
     # ---------------------------------------------------------

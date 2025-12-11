@@ -1,3 +1,4 @@
+# src/ros/bridge/servo_bridge.py
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from __future__ import annotations
@@ -72,7 +73,7 @@ class ServoBridge(BaseBridge):
         "pose": 2,         # POSE
     }
 
-    def __init__(self, content: AppContent):
+    def __init__(self, content: AppContent, namespace: str = ""):
         # Qt-Signale
         self.signals = ServoSignals()
 
@@ -97,7 +98,8 @@ class ServoBridge(BaseBridge):
         self._cmd_type_lock = threading.Lock()
         self._current_command_type: Optional[int] = None  # 0=JOINT_JOG,1=TWIST,2=POSE
 
-        super().__init__("servo_bridge", content)
+        # Node (ggf. im Namespace, z.B. /shadow, /live)
+        super().__init__("servo_bridge", content, namespace=namespace)
 
         # -----------------------------
         # Publisher (→ moveit_servo)
@@ -236,12 +238,6 @@ class ServoBridge(BaseBridge):
         Interpretation:
           - delta_deg: Schrittweite in Grad (±)
           - speed_pct: 0..100 (Skalierung einer Basisgeschwindigkeit)
-
-        Aktuelle, einfache Abbildung:
-          - dt = 0.5 s, delta_rad = deg→rad
-          - v = (delta_rad / dt) * (speed_pct / 100)
-
-        → Das ist bewusst simpel, kannst du später mit echten Limits verfeinern.
         """
         if self.pub_joint is None:
             self.get_logger().error("[servo] joint_jog publish failed: publisher not initialized")
@@ -283,17 +279,6 @@ class ServoBridge(BaseBridge):
     ) -> None:
         """
         Wird vom CartesianJogWidget ausgelöst.
-
-        Interpretation:
-          - axis: 'x','y','z'  -> linear (mm)
-          - axis: 'rx','ry','rz' -> rot. (deg)
-          - delta: Schritt (mm bzw. Grad) – Vorzeichen gibt Richtung an
-          - speed_mm_s: Translationsgeschwindigkeit (mm/s) für Linearachsen
-          - frame_ui: 'wrf' / 'trf' (Widget-Sicht)
-
-        Aktuelle Abbildung:
-          - Linear: Twist.linear = ± speed_mm_s (in m/s)
-          - Rot:    Twist.angular = delta_rad / dt   (dt=0.5 s)
         """
         if self.pub_cartesian is None:
             self.get_logger().error("[servo] cartesian_mm publish failed: publisher not initialized")
@@ -346,9 +331,6 @@ class ServoBridge(BaseBridge):
     # ======================================================
 
     def _on_frame_changed(self, frame_ui: str) -> None:
-        """
-        Wird vom Widget gefeuert, wenn WRF/TRF umgeschaltet wird.
-        """
         self._set_frame_from_ui(frame_ui)
 
     def _set_frame_from_ui(self, frame_ui: str) -> None:
@@ -364,8 +346,4 @@ class ServoBridge(BaseBridge):
             self.get_logger().info(f"[servo] frame changed: {old} -> {self.current_frame}")
 
     def _on_params_changed(self, cfg: Dict[str, Any]) -> None:
-        """
-        Optional: Widget-Parameter-Änderungen (Step, Speed, ...) landen hier.
-        Aktuell nur Logging.
-        """
         self.get_logger().debug(f"[servo] paramsChanged: {cfg!r}")

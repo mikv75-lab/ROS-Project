@@ -1,20 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# spraycoater_nodes_py/omron_tcp_bridge.py
+# spraycoater_nodes_py/robot/omron_tcp_bridge.py
 #
 # Schlanke Bridge:
-#   - SUB:  omron.command          (/spraycoater/omron/command)
-#   - PUB:  omron.raw_tx           (/spraycoater/omron/raw_tx)
-#           omron.raw_rx           (/spraycoater/omron/raw_rx)
-#           omron.connectionStatus (/spraycoater/omron/connection_status)
-#
-# Design:
-#   - Kein Dauer-Reader-Thread.
-#   - Pro Command: nur Senden.
-#   - Antworten + JOINTS/STATE kommen über einen RX-Poll-Timer rein.
-#   - Wenn Server schließt → beim nächsten Command reconnect.
-#   - connectionStatus wird bei State-Wechsel UND periodisch gepublished,
-#     damit das Qt-Widget den Status sicher mitbekommt.
+#   - SUB:  omron.command          (/.../omron/command)
+#   - PUB:  omron.raw_tx           (/.../omron/raw_tx)
+#           omron.raw_rx           (/.../omron/raw_rx)
+#           omron.connectionStatus (/.../omron/connectionStatus)
 
 from __future__ import annotations
 
@@ -23,7 +15,7 @@ from rclpy.node import Node
 from std_msgs.msg import String, Bool
 
 from spraycoater_nodes_py.utils.config_hub import topics
-from spraycoater_nodes_py.utils.omron_tcp_client import OmronTcpClient
+from .omron_tcp_client import OmronTcpClient   # <--- HIER: relativer Import!
 
 
 class OmronTcpBridge(Node):
@@ -92,19 +84,16 @@ class OmronTcpBridge(Node):
         self.get_logger().info("🌐 Initialer Verbindungsversuch zum Omron-Server ...")
         self._ensure_connected()
 
-        # 🔁 Periodischer Status-Tick, damit das UI immer einen frischen Wert bekommt
+        # 🔁 Periodischer Status-Tick
         self._conn_timer = self.create_timer(1.0, self._publish_connection_status)
 
-        # 🔁 Periodischer RX-Poll: holt JOINTS/STATE und Antworten vom ACE-Server
-        # Hinweis: dafür sollte OmronTcpClient.recv_line() einen sinnvollen (kurzen)
-        # Timeout haben und bei "kein Data" None oder eine Exception liefern.
+        # 🔁 Periodischer RX-Poll
         self._rx_timer = self.create_timer(0.05, self._poll_rx)
 
     # ------------------------------------------------------------------
     # Verbindung / State
     # ------------------------------------------------------------------
     def _set_connection(self, connected: bool) -> None:
-        """Setzt internen State und published connectionStatus (sofort)."""
         connected = bool(connected)
         self._connected = connected
 
@@ -121,7 +110,6 @@ class OmronTcpBridge(Node):
             self.get_logger().info("⚠️ connectionStatus = False (TCP getrennt)")
 
     def _publish_connection_status(self) -> None:
-        """Periodisches Re-Publish des aktuellen Verbindungsstatus."""
         try:
             msg = Bool()
             msg.data = self._connected
@@ -130,7 +118,6 @@ class OmronTcpBridge(Node):
             self.get_logger().error(f"❌ connectionStatus periodic publish failed: {e}")
 
     def _ensure_connected(self) -> bool:
-        """Sorgt dafür, dass der TCP-Socket verbunden ist (lazy + Reconnect)."""
         if self._connected:
             return True
         try:
@@ -145,19 +132,17 @@ class OmronTcpBridge(Node):
             return False
 
     # ------------------------------------------------------------------
-    # Hilfsfunktionen auf OmronTcpClient (API-kompatibel abfangen)
+    # Helper für OmronTcpClient
     # ------------------------------------------------------------------
     def _send_line(self, line: str) -> None:
-        """Wrapper, damit sowohl send_line als auch _send_line unterstützt werden."""
         if hasattr(self._client, "send_line"):
             self._client.send_line(line)
         elif hasattr(self._client, "_send_line"):
-            self._client._send_line(line)  # ältere Variante
+            self._client._send_line(line)
         else:
             raise RuntimeError("OmronTcpClient hat weder send_line() noch _send_line().")
 
     def _recv_line(self) -> str | None:
-        """Wrapper für recv_line(), optional _recv_line()."""
         if hasattr(self._client, "recv_line"):
             return self._client.recv_line()
         if hasattr(self._client, "_recv_line"):
@@ -165,14 +150,12 @@ class OmronTcpBridge(Node):
         raise RuntimeError("OmronTcpClient hat weder recv_line() noch _recv_line().")
 
     # ------------------------------------------------------------------
-    # RX-Poll: liest periodisch alle verfügbaren Zeilen vom Server
+    # RX-Poll
     # ------------------------------------------------------------------
     def _poll_rx(self) -> None:
-        """Periodisch (Timer) alle verfügbaren Zeilen vom ACE-Server lesen."""
         if not self._connected:
             return
 
-        # Mehrere Zeilen pro Tick einsammeln, aber nicht endlos
         max_lines_per_tick = 10
         count = 0
 
@@ -180,7 +163,6 @@ class OmronTcpBridge(Node):
             try:
                 line = self._recv_line()
             except Exception as e:
-                # Bei harten Fehlern Verbindung als getrennt markieren
                 self.get_logger().warning(f"⚠️ RX poll Fehler: {e}")
                 self._set_connection(False)
                 break
@@ -197,7 +179,7 @@ class OmronTcpBridge(Node):
             count += 1
 
     # ------------------------------------------------------------------
-    # Command von UI -> TCP (nur Senden, RX läuft über _poll_rx)
+    # Command von UI -> TCP
     # ------------------------------------------------------------------
     def _on_command(self, msg: String) -> None:
         cmd = (msg.data or "").strip()
@@ -209,16 +191,9 @@ class OmronTcpBridge(Node):
             return
 
         try:
-            # Debug-Ausgabe + raw_tx
             self.get_logger().info(f"➡️ SEND: {cmd}")
             self.pub_raw_tx.publish(String(data=cmd))
-
-            # Befehl schicken (mit CR/LF in OmronTcpClient implementieren!)
             self._send_line(cmd)
-
-            # KEIN recv_line() mehr hier!
-            # Antworten + JOINTS/STATE werden über _poll_rx() gelesen.
-
         except Exception as e:
             self.get_logger().error(f"❌ Send error: {e}")
             self._set_connection(False)
@@ -227,7 +202,6 @@ class OmronTcpBridge(Node):
     # Shutdown
     # ------------------------------------------------------------------
     def destroy_node(self):
-        # beim Shutdown explizit "false" senden
         self._set_connection(False)
         try:
             self._client.close()

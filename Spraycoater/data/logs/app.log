@@ -5890,3 +5890,13 @@ TypeError: load_plc_config() missing 1 required positional argument: 'startup_ya
 2025-12-11 15:25:51 INFO [93023] app.startup:243 - StartupMachine finished (ctx=True, bridge=True, plc=False)
 2025-12-11 15:25:52 INFO [93023] app.tabs.signals_tab:61 - ServiceSignalsTab: PLC nicht vorhanden oder nicht verbunden.
 2025-12-11 15:25:52 INFO [93023] app.tabs.syringe_tab:88 - SyringeTab: PLC nicht vorhanden oder nicht verbunden.
+2025-12-11 16:53:32 INFO [149125] app:53 - Logging konfiguriert (yaml=/root/Spraycoater/resource/config/logging.yaml, LOG_DIR=/root/Spraycoater/data/logs)
+2025-12-11 16:53:32 INFO [149125] app.startup:156 - logging configured
+2025-12-11 16:53:32 INFO [149125] app.startup:161 - warnings enabled
+2025-12-11 16:53:33 ERROR [149125] app.startup:198 - load_plc_config() failed
+Traceback (most recent call last):
+  File "/root/Spraycoater/src/app/startup_fsm.py", line 195, in _step_plc
+    plc_cfg: PlcConfig = load_plc_config()
+                         ^^^^^^^^^^^^^^^^^
+TypeError: load_plc_config() missing 1 required positional argument: 'startup_yaml_path'
+2025-12-11 16:53:34 INFO [149125] app.startup:243 - StartupMachine finished (ctx=True, bridge=True, plc=False)

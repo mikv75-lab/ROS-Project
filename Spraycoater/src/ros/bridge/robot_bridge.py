@@ -1,10 +1,10 @@
+# src/ros/bridge/robot_bridge.py
 # -*- coding: utf-8 -*-
-# spraycoater_nodes_py/robot_bridge.py
 from __future__ import annotations
 from typing import Optional
 
 from PyQt6 import QtCore
-from std_msgs.msg import Bool, String, Empty
+from std_msgs.msg import Bool, String
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
 
@@ -116,7 +116,7 @@ class RobotBridge(BaseBridge):
 
     GROUP = "robot"
 
-    def __init__(self, content: AppContent):
+    def __init__(self, content: AppContent, namespace: str = ""):
         # Signale VOR super().__init__ anlegen (wie bei SceneBridge/PosesBridge)
         self.signals = RobotSignals()
 
@@ -132,7 +132,7 @@ class RobotBridge(BaseBridge):
         self.tcp_pose: Optional[PoseStamped] = None
         self.joints: Optional[JointState] = None
 
-        super().__init__("robot_bridge", content)
+        super().__init__("robot_bridge", content, namespace=namespace)
 
         # Outbound: Widget-Signale -> Bridge-Methoden
         self.signals.initRequested.connect(self.do_init)

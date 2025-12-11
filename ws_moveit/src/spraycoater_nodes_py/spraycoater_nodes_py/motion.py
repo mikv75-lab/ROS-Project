@@ -10,17 +10,6 @@ import json
 from typing import Optional, Dict, Any
 import os
 
-# ---------------------------------------------------------------------------
-# WICHTIGER WORKAROUND:
-# ROS2 Rolling / rcl akzeptiert keine YAML-Aliase in --params-file mehr.
-# Launch hängt aber für den motion-Node /tmp/launch_params_*.yaml an, in denen
-# Aliase drinstecken → rcl scheitert schon VOR unserem Code.
-#
-# Deswegen: global alle zusätzlichen CLI-Args wegschneiden, damit weder
-# rclpy noch MoveItPy / rclcpp irgendwelche --params-file sehen.
-# ---------------------------------------------------------------------------
-sys.argv = sys.argv[:1]
-
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
@@ -128,6 +117,7 @@ class Motion(Node):
         cfg_dict = moveit_cfg.to_dict()
 
         # --- MoveItPy mit config_dict initialisieren
+        # Kein sys.argv-Workaround mehr - lass ROS2 die Parameter normal laden
         self.robot = MoveItPy(
             node_name=f"{self.get_name()}_moveit",
             config_dict=cfg_dict,
@@ -589,7 +579,6 @@ class Motion(Node):
 # ------------------------ main ------------------------
 
 def main(args=None):
-    # KEINE zusätzliche Arg-Manipulation hier – das haben wir oben global gemacht.
     rclpy.init(args=args)
     node = Motion()
     rclpy.spin(node)

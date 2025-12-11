@@ -13,12 +13,12 @@ from .spray_path_bridge import SprayPathBridge
 from .servo_bridge import ServoBridge
 from .robot_bridge import RobotBridge
 from .motion_bridge import MotionBridge
-from .omron_bridge import OmronBridge  # ⬅️ NEU
+from .omron_bridge import OmronBridge  # optional
 
 from geometry_msgs.msg import PoseStamped, PoseArray
 from sensor_msgs.msg import JointState
 from visualization_msgs.msg import MarkerArray
-from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg  # NEU
+from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg
 
 _LOG = logging.getLogger("ros.ui_bridge")
 
@@ -313,8 +313,15 @@ class UIBridge:
       - hält zusätzlich OmronBridge in self._omron für TCP-Client-Widget (optional)
     """
 
-    def __init__(self, startup_yaml_path: Optional[str] = None):
+    def __init__(
+        self,
+        startup_yaml_path: Optional[str] = None,
+        namespace: str = "",
+    ):
         self._startup_yaml = startup_yaml_path or os.environ.get("SC_STARTUP_YAML") or ""
+        # Namespace für diese Bridge-Instanz (z. B. "shadow" oder "live")
+        self._namespace = (namespace or "").strip().strip("/")
+
         self._bridge: Optional[RosBridge] = None
 
         # States (signal-frei)
@@ -329,16 +336,21 @@ class UIBridge:
         self._pb: Optional[PosesBridge] = None
         self._spb: Optional[SprayPathBridge] = None
         self._sev: Optional[ServoBridge] = None   # intern
-        self._servo: Optional[ServoBridge] = None # öffentliches Attribut für Widgets (_servo)
+        self._servo: Optional[ServoBridge] = None # öffentliches Attribut für Widgets
         self._rb: Optional[RobotBridge] = None    # intern
-        self._robot: Optional[RobotBridge] = None # öffentliches Attribut für Widgets (_robot)
+        self._robot: Optional[RobotBridge] = None # öffentliches Attribut für Widgets
         self._mb: Optional[MotionBridge] = None   # intern
-        self._motion: Optional[MotionBridge] = None  # öffentliches Attribut für Widgets (_motion)
+        self._motion: Optional[MotionBridge] = None  # öffentliches Attribut für Widgets
 
-        self._ob: Optional[OmronBridge] = None    # intern  ⬅️ NEU
-        self._omron: Optional[OmronBridge] = None # öffentlich für Widgets (_omron) ⬅️ NEU
+        self._ob: Optional[OmronBridge] = None    # intern
+        self._omron: Optional[OmronBridge] = None # öffentlich für Widgets
 
     # ---------- Lifecycle ----------
+
+    @property
+    def namespace(self) -> str:
+        """Namespace dieser UI-Bridge (z. B. 'shadow' oder 'live')."""
+        return self._namespace
 
     @property
     def is_connected(self) -> bool:
@@ -360,7 +372,9 @@ class UIBridge:
                 return self._bridge.primary_node.get_name()  # type: ignore[attr-defined]
             except Exception:
                 pass
-        return "ui_bridge"
+        # Namespace im Namen mitführen, damit man im Log erkennt, wer wer ist
+        ns_suffix = f"_{self._namespace}" if self._namespace else ""
+        return f"ui_bridge{ns_suffix}"
 
     def ensure_connected(self) -> None:
         """Idempotent verbinden."""
@@ -377,7 +391,11 @@ class UIBridge:
         if not self._startup_yaml:
             raise RuntimeError("SC_STARTUP_YAML nicht gesetzt/übergeben.")
 
-        self._bridge = RosBridge(self._startup_yaml)
+        # RosBridge mit Namespace anlegen
+        self._bridge = RosBridge(
+            startup_yaml_path=self._startup_yaml,
+            namespace=self._namespace,
+        )
         self._bridge.start()
 
         # Subnodes holen + Signale verbinden
@@ -387,8 +405,9 @@ class UIBridge:
         self._try_reemit_cached()
 
         _LOG.info(
-            "UIBridge connected (node=%s) – scene/poses/spraypath/servo/robot/motion/omron states ready",
+            "UIBridge connected (node=%s, namespace=%r) – scene/poses/spraypath/servo/robot/motion/omron states ready",
             self.node_name,
+            self._namespace,
         )
 
     def _ensure_subnodes_and_wiring(self) -> None:
@@ -470,7 +489,7 @@ class UIBridge:
                 pass
 
     def disconnect(self) -> None:
-        _LOG.info("UIBridge disconnect()")
+        _LOG.info("UIBridge disconnect() [namespace=%r]", self._namespace)
         self._sb = None
         self._pb = None
         self._spb = None
@@ -480,8 +499,8 @@ class UIBridge:
         self._robot = None
         self._mb = None
         self._motion = None
-        self._ob = None          # NEU
-        self._omron = None       # NEU
+        self._ob = None
+        self._omron = None
         if self._bridge is None:
             return
         try:
@@ -731,12 +750,17 @@ class UIBridge:
         sig.executedTrajectoryChanged.connect(lambda msg: self.motion._set_executed(msg))
 
 
-def get_ui_bridge(_ctx) -> UIBridge:
+def get_ui_bridge(_ctx, namespace: str = "") -> UIBridge:
     """
     Factory für die Startup-FSM:
       - Erstellt die Bridge
       - Verbindet sofort (idempotent)
+
+    Namespace:
+      - ""        → kein zusätzlicher ROS-Namespace
+      - "shadow"  → /shadow/...
+      - "live"    → /live/...
     """
-    b = UIBridge()
+    b = UIBridge(namespace=namespace)
     b.ensure_connected()
     return b

@@ -13,8 +13,8 @@ from .poses_bridge import PosesBridge
 from .spray_path_bridge import SprayPathBridge
 from .servo_bridge import ServoBridge
 from .robot_bridge import RobotBridge
-from .motion_bridge import MotionBridge  # ⬅️ MotionBridge
-from .omron_bridge import OmronBridge    # ⬅️ NEU
+from .motion_bridge import MotionBridge
+from .omron_bridge import OmronBridge
 
 T = TypeVar("T")
 
@@ -22,15 +22,15 @@ T = TypeVar("T")
 class RosBridge:
     """
     Betreibt alle Bridge-Nodes (SceneBridge, PosesBridge, SprayPathBridge,
-    ServoBridge, RobotBridge, MotionBridge, OmronBridge) in einem eigenen Executor-Thread.
-
-    - Executor wird NACH rclpy.init() erzeugt (Crash-Vermeidung).
-    - stop() räumt deterministisch auf; danach ist start() erneut möglich.
+    ServoBridge, RobotBridge, MotionBridge und optional OmronBridge) in einem
+    eigenen Executor-Thread.
     """
 
-    def __init__(self, startup_yaml_path: str):
+    def __init__(self, startup_yaml_path: str, *, enable_omron: bool = False):
         self._startup_yaml_path = startup_yaml_path
         self._content = AppContent(startup_yaml_path)
+
+        self._enable_omron = bool(enable_omron)
 
         self._exec: Optional[SingleThreadedExecutor] = None
         self._nodes: List[Any] = []
@@ -68,19 +68,22 @@ class RosBridge:
             if not rclpy.ok():
                 rclpy.init(args=None)
 
-            # Executor erst nach init() erzeugen
             self._exec = SingleThreadedExecutor(context=rclpy.get_default_context())
 
-            # --- Bridges erzeugen ---
+            # --- Bridges erzeugen (immer) ---
             scene = SceneBridge(self._content)
             poses = PosesBridge(self._content)
             spray = SprayPathBridge(self._content)
             servo = ServoBridge(self._content)
             robot = RobotBridge(self._content)
             motion = MotionBridge(self._content)
-            omron = OmronBridge(self._content)  # ⬅️ NEU
 
-            self._nodes.extend([scene, poses, spray, servo, robot, motion, omron])
+            self._nodes.extend([scene, poses, spray, servo, robot, motion])
+
+            # --- Omron nur, wenn explizit aktiviert (live) ---
+            if self._enable_omron:
+                omron = OmronBridge(self._content)
+                self._nodes.append(omron)
 
             # dem Executor hinzufügen
             for n in self._nodes:
@@ -99,7 +102,7 @@ class RosBridge:
             if self._exec is not None:
                 self._exec.spin()
         except Exception:
-            # Logging kannst du hier nach Bedarf ergänzen
+            # optional: logging
             pass
         finally:
             with self._lock:
@@ -107,7 +110,6 @@ class RosBridge:
 
     def stop(self) -> None:
         with self._lock:
-            # Falls bereits gestoppt, aber Thread existiert noch: sauber beenden
             if not self._running:
                 if self._thread and self._thread.is_alive():
                     try:
@@ -117,11 +119,9 @@ class RosBridge:
                         pass
                     self._thread.join(timeout=1.0)
                     self._thread = None
-                # Zustand bereinigen
                 self._exec = None
                 return
 
-            # Normaler Shutdown-Pfad
             try:
                 if self._exec is not None:
                     self._exec.shutdown()
@@ -151,7 +151,7 @@ class RosBridge:
             if self._thread and self._thread.is_alive():
                 self._thread.join(timeout=1.0)
             self._thread = None
-            self._exec = None  # wichtig: Referenz kappen
+            self._exec = None
 
     def add_node(self, node: Any) -> None:
         with self._lock:

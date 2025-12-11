@@ -1,3 +1,4 @@
+# src/ros/bridge/poses_bridge.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 from typing import Optional
@@ -28,6 +29,22 @@ class PosesSignals(QtCore.QObject):
     setHomeRequested = QtCore.pyqtSignal()
     setServiceRequested = QtCore.pyqtSignal()
 
+    def __init__(self, parent: Optional[QtCore.QObject] = None) -> None:
+        super().__init__(parent)
+        self.last_home: Optional[PoseStamped] = None
+        self.last_service: Optional[PoseStamped] = None
+
+    @QtCore.pyqtSlot()
+    def reemit_cached(self) -> None:
+        """
+        Erneutes Aussenden der letzten bekannten Home/Service-Posen.
+        Wird von UIBridge._try_reemit_cached() verwendet.
+        """
+        if self.last_home is not None:
+            self.homePoseChanged.emit(self.last_home)
+        if self.last_service is not None:
+            self.servicePoseChanged.emit(self.last_service)
+
 
 class PosesBridge(BaseBridge):
     """
@@ -43,7 +60,7 @@ class PosesBridge(BaseBridge):
     """
     GROUP = "poses"
 
-    def __init__(self, content: AppContent):
+    def __init__(self, content: AppContent, namespace: str = ""):
         # Qt-Signale zuerst
         self.signals = PosesSignals()
 
@@ -51,7 +68,8 @@ class PosesBridge(BaseBridge):
         self.home_pose: Optional[PoseStamped] = None
         self.service_pose: Optional[PoseStamped] = None
 
-        super().__init__("poses_bridge", content)
+        # Node inkl. Namespace anlegen
+        super().__init__("poses_bridge", content, namespace=namespace)
 
         # Publisher für set_home / set_service aus subscribe-Spec ableiten (ohne Fallbacks)
         self._pub_set_home = None
@@ -60,7 +78,9 @@ class PosesBridge(BaseBridge):
             spec_home = self.spec("subscribe", "set_home")
             MsgHome = spec_home.resolve_type()
             qos_home = getattr(spec_home, "qos_profile", None)
-            self._pub_set_home = self.create_publisher(MsgHome, spec_home.name, qos_home if qos_home is not None else 10)
+            self._pub_set_home = self.create_publisher(
+                MsgHome, spec_home.name, qos_home if qos_home is not None else 10
+            )
         except Exception as e:
             self.get_logger().error(f"[poses] set_home publisher init failed: {e}")
             self._pub_set_home = None
@@ -69,7 +89,9 @@ class PosesBridge(BaseBridge):
             spec_serv = self.spec("subscribe", "set_service")
             MsgServ = spec_serv.resolve_type()
             qos_serv = getattr(spec_serv, "qos_profile", None)
-            self._pub_set_service = self.create_publisher(MsgServ, spec_serv.name, qos_serv if qos_serv is not None else 10)
+            self._pub_set_service = self.create_publisher(
+                MsgServ, spec_serv.name, qos_serv if qos_serv is not None else 10
+            )
         except Exception as e:
             self.get_logger().error(f"[poses] set_service publisher init failed: {e}")
             self._pub_set_service = None
@@ -83,12 +105,14 @@ class PosesBridge(BaseBridge):
     @sub_handler("poses", "home_pose")
     def _on_home_pose(self, msg: PoseStamped):
         self.home_pose = msg
+        self.signals.last_home = msg
         self.signals.homePoseChanged.emit(msg)
         self.get_logger().info("[poses] home_pose received")
 
     @sub_handler("poses", "service_pose")
     def _on_service_pose(self, msg: PoseStamped):
         self.service_pose = msg
+        self.signals.last_service = msg
         self.signals.servicePoseChanged.emit(msg)
         self.get_logger().info("[poses] service_pose received")
 

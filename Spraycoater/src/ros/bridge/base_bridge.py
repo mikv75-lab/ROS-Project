@@ -33,13 +33,24 @@ class BaseBridge(Node):
 
     - Subklassen setzen GROUP und definieren @sub_handler-Methoden für
       eingehende Nachrichten (aus den "publish"-Topics des ROS-Nodes).
+
+    - Namespace:
+        Alle Topics dieser Bridge laufen unter demselben ROS-Namespace, z. B.
+        'shadow' oder 'live'. In Kombination mit root_ns aus topics.yaml
+        ergibt das z. B. /shadow/spraycoater/...
     """
     GROUP: str = ""  # in Subklassen setzen
 
-    def __init__(self, node_name: str, content: AppContent):
-        super().__init__(node_name)
+    def __init__(self, node_name: str, content: AppContent, *, namespace: str = ""):
+        # Namespace sauber normalisieren: "" oder "shadow"/"live"
+        ns = (namespace or "").strip().strip("/")
+        # rclpy.Node akzeptiert namespace="", das ist ok
+        super().__init__(node_name, namespace=ns or None)
+
         if not self.GROUP:
             raise RuntimeError("GROUP muss in der Subklasse gesetzt sein.")
+
+        self._namespace = ns
         self._content = content
         self._pubs: Dict[str, any] = {}
         self._subs: Dict[str, any] = {}
@@ -48,7 +59,21 @@ class BaseBridge(Node):
         self._init_publishers_from_node_subscribe()
         self._init_subscriptions_from_node_publish()
 
-        self.get_logger().info(f"✅ {node_name} ready (group={self.GROUP})")
+        full_name = self.get_fully_qualified_name()
+        self.get_logger().info(
+            f"✅ {node_name} ready (group={self.GROUP}, ns='{self._namespace}', fqdn='{full_name}')"
+        )
+
+    # --- Properties ---
+
+    @property
+    def namespace(self) -> str:
+        """Roh-Namespace der Bridge (ohne führenden '/')."""
+        return self._namespace
+
+    @property
+    def content(self) -> AppContent:
+        return self._content
 
     # --- Init ---
 
@@ -60,9 +85,15 @@ class BaseBridge(Node):
         try:
             for spec in self._content.topics(self.GROUP, "subscribe"):
                 msg_type = spec.resolve_type()
-                pub = self.create_publisher(msg_type, spec.name, self._content.qos(spec.qos_key))
+                pub = self.create_publisher(
+                    msg_type,
+                    spec.name,
+                    self._content.qos(spec.qos_key),
+                )
                 self._pubs[spec.id] = pub
-                self.get_logger().debug(f"[PUB] {spec.id} -> {spec.name} ({spec.type_str})")
+                self.get_logger().debug(
+                    f"[PUB] {spec.id} -> {spec.name} ({spec.type_str}) [ns={self._namespace}]"
+                )
         except KeyError:
             # Gruppe ohne 'subscribe' Block -> ok
             pass
@@ -76,9 +107,16 @@ class BaseBridge(Node):
             for spec in self._content.topics(self.GROUP, "publish"):
                 cb = self._resolve_handler(self.GROUP, spec.id) or (lambda _msg: None)
                 msg_type = spec.resolve_type()
-                sub = self.create_subscription(msg_type, spec.name, cb, self._content.qos(spec.qos_key))
+                sub = self.create_subscription(
+                    msg_type,
+                    spec.name,
+                    cb,
+                    self._content.qos(spec.qos_key),
+                )
                 self._subs[spec.id] = sub
-                self.get_logger().debug(f"[SUB] {spec.id} <- {spec.name} ({spec.type_str})")
+                self.get_logger().debug(
+                    f"[SUB] {spec.id} <- {spec.name} ({spec.type_str}) [ns={self._namespace}]"
+                )
         except KeyError:
             # Gruppe ohne 'publish' Block -> ok
             pass
@@ -104,7 +142,3 @@ class BaseBridge(Node):
         direction: 'publish' oder 'subscribe' (Node-Perspektive).
         """
         return self._content.topic_by_id(self.GROUP, direction, topic_id)
-
-    @property
-    def content(self) -> AppContent:
-        return self._content
