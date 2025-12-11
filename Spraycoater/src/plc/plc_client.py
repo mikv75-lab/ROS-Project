@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-# src/app/plc_client.py
+# src/plc/plc_client.py
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Callable
 
-from plc.plc_config import PlcConfig
+from config.startup import PlcConfig  # <– kommt jetzt aus config.startup
 
 LOG = logging.getLogger(__name__)
 
@@ -272,10 +272,10 @@ class AdsPlcClient(PlcClientBase):
     """
     Echte Beckhoff-SPS via PyADS.
 
-    Erwartet:
-      - cfg.ads_ams_net_id
-      - cfg.ads_ip
-      - cfg.ads_port (standard 851)
+    Erwartet cfg aus config.startup.PlcConfig:
+
+      - cfg.mode: "ads" oder "umrt"
+      - cfg.ads / cfg.umrt: PlcEndpoint mit ams_net_id, ip, port
       - cfg.spec mit:
           * ads_mapping.* aus plc.yaml
           * io.inputs/outputs, common, error, ... (frei definierbar)
@@ -286,12 +286,27 @@ class AdsPlcClient(PlcClientBase):
             raise RuntimeError("pyads ist nicht verfügbar, AdsPlcClient kann nicht verwendet werden.")
         super().__init__(cfg)
 
-        if not cfg.ads_ams_net_id or not cfg.ads_ip:
-            raise ValueError("AdsPlcClient: AMS-Net-ID oder IP in PlcConfig fehlen.")
+        # Endpunkt anhand des Modus auswählen
+        mode = getattr(cfg, "mode", "ads")
+        ep = None
+        if mode == "ads":
+            ep = cfg.ads
+        elif mode == "umrt":
+            ep = cfg.umrt
 
-        self._net_id = cfg.ads_ams_net_id
-        self._ip = cfg.ads_ip
-        self._port = cfg.ads_port or 851
+        if ep is None:
+            raise ValueError(
+                f"AdsPlcClient: kein Endpoint für Modus '{mode}' definiert (ads/umrt)."
+            )
+
+        if not ep.ams_net_id or not ep.ip:
+            raise ValueError(
+                "AdsPlcClient: AMS-Net-ID oder IP im ausgewählten Endpoint fehlen."
+            )
+
+        self._net_id = ep.ams_net_id
+        self._ip = ep.ip
+        self._port = ep.port or 851
         self._conn: Optional[pyads.Connection] = None
 
         # Notification-Handles nach key (inputs-keys aus ads_mapping.inputs)

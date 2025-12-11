@@ -13,7 +13,7 @@ from std_msgs.msg import String
 from geometry_msgs.msg import Pose, TransformStamped, Point
 from tf2_ros import StaticTransformBroadcaster
 from shape_msgs.msg import Mesh, MeshTriangle
-from moveit_msgs.msg import CollisionObject, PlanningSceneComponents
+from moveit_msgs.msg import CollisionObject
 from moveit_msgs.srv import GetPlanningScene
 
 from spraycoater_nodes_py.utils.utils import rpy_deg_to_quat
@@ -26,7 +26,8 @@ import trimesh
 # -----------------------
 # Konstanten
 # -----------------------
-SCENE_TOPIC = "/collision_object"
+# WICHTIG: KEIN führender Slash → Node-Namespace wird benutzt (z.B. /shadow/collision_object)
+SCENE_TOPIC = "collision_object"
 MAX_SCENE_WAIT = 30.0
 
 # Logischer Name (Topics/UI) -> tatsächliche Objekt-ID in scene.yaml
@@ -103,14 +104,14 @@ def _rot_apply(R, v):
 
 class Scene(Node):
     """
-    Scene-Node (config_hub-only):
+    Scene-Node:
 
       - Liest scene.yaml / robot.yaml ausschließlich aus <share(spraycoater_bringup)>/config via config_hub
       - Keine Launch-Parameter.
       - Szene (Static TFs + CollisionObjects) wird EINMAL initial gesendet,
         und bei cage/mount/substrate-Wechsel aktualisiert.
-      - /collision_object hat TRANSIENT_LOCAL-QoS -> Late Joiner (RViz etc.)
-        bekommen immer den letzten Stand, ohne 1 Hz-Republish.
+      - 'collision_object' wird relativ zum Node-Namespace publiziert
+        (z.B. /shadow/collision_object).
       - Änderungen (cage/mount/substrate) werden zurück in scene.yaml geschrieben.
 
       Backend-Parameter:
@@ -121,25 +122,19 @@ class Scene(Node):
     def __init__(self):
         super().__init__("scene")
 
-        # ------------------------
-        # Backend-Parameter (omron_sim, omron_real, ...)
-        # ------------------------
+        # Parameter
         self.declare_parameter("backend", "default")
         self.backend: str = (
             self.get_parameter("backend").get_parameter_value().string_value or "default"
         )
 
-        # ------------------------
         # Loader (Topics/QoS + Frames) aus ROS-Paket
-        # ------------------------
         self.loader = topics()              # Topics/QoS (lazy)
         node_key = "scene"
         self.frames = frames()             # Frames-Resolver (lazy)
         self._F = self.frames.resolve      # Kurzform
 
-        # ------------------------
         # Szene + Robot-Config laden (fixe Orte via Hub)
-        # ------------------------
         scene_yaml = config_path("scene.yaml")
         robot_cfg = load_yaml("robot.yaml")
 
@@ -163,10 +158,7 @@ class Scene(Node):
         self._roots_mount = resolve_resource_dirs(r.get("mount_dirs", []))
         self._roots_substrate = resolve_resource_dirs(r.get("substrate_dirs", []))
 
-        # ------------------------
         # ROS I/O – via TopicsLoader (aus Paket)
-        # ------------------------
-        # Publisher (String)
         self.pub_cage_current = self.create_publisher(
             String,
             self.loader.publish_topic(node_key, "cage_current"),
@@ -183,7 +175,6 @@ class Scene(Node):
             self.loader.qos_by_id("publish", node_key, "substrate_current"),
         )
 
-        # Publisher (Listen)
         self.pub_cage_list = self.create_publisher(
             String,
             self.loader.publish_topic(node_key, "cage_list"),
@@ -200,7 +191,6 @@ class Scene(Node):
             self.loader.qos_by_id("publish", node_key, "substrate_list"),
         )
 
-        # Subscriber (String)
         self.sub_cage_set = self.create_subscription(
             String,
             self.loader.subscribe_topic(node_key, "cage_set"),
@@ -223,7 +213,7 @@ class Scene(Node):
         # MoveIt / TF
         self.static_tf = StaticTransformBroadcaster(self)
 
-        # 💡 WICHTIG: /collision_object jetzt mit TRANSIENT_LOCAL (latched)
+        # /shadow/collision_object – durch Namespace des Nodes
         scene_qos = QoSProfile(
             depth=10,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -235,7 +225,7 @@ class Scene(Node):
         self.final_scene_sent = False
         self.initial_state_published = False
 
-        # Aktueller State (nur Namen) – initial aus YAML (Dateiname aus 'mesh', sonst "")
+        # Aktueller State (nur Namen) – initial aus YAML
         self.current_cage: str = self._initial_current_from_yaml("cage")
         self.current_mount: str = self._initial_current_from_yaml("substrate_mount")
         self.current_substrate: str = self._initial_current_from_yaml("substrate")
@@ -245,7 +235,7 @@ class Scene(Node):
         self._publish_current_once()
 
         self.get_logger().info(
-            f"⏳ SceneNode aktiv (backend='{self.backend}', robot='{sel or 'unknown'}') – "
+            f"⏳ SceneNode aktiv (backend='{self.backend}', ns='{self.get_namespace() or '/'}') – "
             "warte auf MoveIt; Szene wird einmalig gesendet, "
             "CollisionObjects sind latched (TRANSIENT_LOCAL)."
         )
@@ -263,17 +253,15 @@ class Scene(Node):
             for _, _, files in os.walk(root):
                 for f in files:
                     if f.lower().endswith(".stl"):
-                        out.append(f)  # Nur Dateiname
+                        out.append(f)
         out = sorted(set(out))
         return out
 
     @staticmethod
     def _list_to_string(names):
-        """Liste -> kommagetrennter String (a.stl,b.stl)."""
         return ",".join(names)
 
     def _publish_lists_once(self):
-        """Listen exakt einmal initial publizieren."""
         if self.initial_state_published:
             return
         cages = self._scan_assets(self._roots_cage)
@@ -285,7 +273,6 @@ class Scene(Node):
         self.pub_substrate_list.publish(String(data=self._list_to_string(subs)))
 
     def _publish_current_once(self):
-        """Current exakt einmal initial publizieren."""
         if self.initial_state_published:
             return
         self.pub_cage_current.publish(String(data=self.current_cage))
@@ -294,7 +281,6 @@ class Scene(Node):
         self.initial_state_published = True
 
     def _save_scene_yaml(self):
-        """Aktuelle scene_objects zurück in scene.yaml schreiben."""
         try:
             if not hasattr(self, "_scene_yaml_path") or not hasattr(self, "_scene_yaml_data"):
                 self.get_logger().error("❌ _save_scene_yaml: YAML-Metadaten fehlen, nichts gespeichert.")
@@ -339,7 +325,7 @@ class Scene(Node):
     def _resolve_mesh_path(self, mesh_rel: str) -> str:
         p = (mesh_rel or "").strip()
         if not p:
-            return ""  # leer → kein Mesh
+            return ""
         cand = os.path.join(self.base_dir, p)
         if os.path.exists(cand):
             return cand
@@ -350,7 +336,6 @@ class Scene(Node):
         raise FileNotFoundError(f"Mesh nicht gefunden: {p} (base={self.base_dir})")
 
     def _resolve_asset_candidate(self, name: str, roots: list[str]) -> str | None:
-        """Ermittle absoluten Pfad für reinen Dateinamen aus roots; absolute Pfade | package:// bleiben."""
         if not name:
             return None
         name = name.strip()
@@ -442,28 +427,25 @@ class Scene(Node):
         return (name in avail)
 
     def _handle_set(self, *, kind: str, name: str, roots: list[str], pub, state_attr: str):
-        """Set/Replace/Delete Mesh für {cage|mount|substrate} bei gleichbleibender Pose aus YAML."""
         oid = _logical_to_oid(kind)
         obj = self._find_scene_object(oid)
         if obj is None:
             self.get_logger().error(f"YAML-Objekt mit id='{oid}' nicht gefunden – Abbruch.")
             return
 
-        # --- Fall 1: Löschen ---
+        # Löschen
         if name == "":
             self._remove_object(oid)
             setattr(self, state_attr, "")
             pub.publish(String(data=""))
 
-            # YAML: mesh leeren
             obj["mesh"] = ""
             self._save_scene_yaml()
 
             self.get_logger().info(f"✅ {kind}: mesh entfernt (current='').")
             return
 
-        # --- Fall 2: Neues Mesh setzen ---
-        # Mesh finden (Dateiname in roots | absolute Pfade | package://...)
+        # Neues Mesh setzen
         if not self._exists_in(name, roots):
             self.get_logger().error(f"{kind}: Mesh '{name}' nicht gefunden in {roots} (oder ungültig).")
             return
@@ -473,20 +455,17 @@ class Scene(Node):
             self.get_logger().error(f"{kind}: Mesh '{name}' konnte nicht aufgelöst werden.")
             return
 
-        # Ersetzen: zuerst REMOVE, dann ADD mit neuem Mesh
         self._remove_object(oid)
         co = self._make_co_from_obj_and_mesh(obj, mesh_path)
         self.scene_pub.publish(co)
 
-        # State + Current-Topic updaten
         setattr(self, state_attr, name)
         pub.publish(String(data=name))
 
-        # YAML aktualisieren: relativer Pfad zur config-Datei (wie in deiner YAML)
         try:
             new_rel = os.path.relpath(mesh_path, self.base_dir)
         except Exception:
-            new_rel = mesh_path  # Fallback: absoluter Pfad
+            new_rel = mesh_path
 
         obj["mesh"] = new_rel
         self._save_scene_yaml()
@@ -521,7 +500,7 @@ class Scene(Node):
         )
 
     # ------------------------
-    # Scene publication (Initial aus YAML – unverändert)
+    # Scene publication (Initial aus YAML)
     # ------------------------
     def _publish_scene(self):
         if self.final_scene_sent:
@@ -550,7 +529,7 @@ class Scene(Node):
             pos = _require_vec3(obj, "position")
             rpy = _require_vec3(obj, "rpy_deg")
 
-            mesh_rel = _require_str(obj, "mesh")  # leer → kein Mesh
+            mesh_rel = _require_str(obj, "mesh")
             if mesh_rel.strip() == "":
                 continue
 
@@ -579,10 +558,10 @@ class Scene(Node):
             self.scene_pub.publish(co)
 
         self.get_logger().info(
-            f"🎯 Szene FINAL & EINMALIG an MoveIt gesendet (latched, backend='{self.backend}')."
+            f"🎯 Szene FINAL & EINMALIG an MoveIt gesendet "
+            f"(latched, backend='{self.backend}', ns='{self.get_namespace() or '/'}')."
         )
 
-        # Sicherstellen, dass Listen/Current mindestens einmal gesendet wurden
         self._publish_lists_once()
         self._publish_current_once()
 
@@ -605,10 +584,14 @@ class Scene(Node):
             return
 
         if not hasattr(self, "ps_client"):
-            self.ps_client = self.create_client(GetPlanningScene, "/get_planning_scene")
+            # WICHTIG: kein Slash → Namespace-Variante, z.B. /shadow/get_planning_scene
+            self.ps_client = self.create_client(GetPlanningScene, "get_planning_scene")
 
         if not self.ps_client.wait_for_service(timeout_sec=0.5):
-            self.get_logger().info("⏳ Warte auf MoveIt PlanningScene Service (/get_planning_scene)...")
+            self.get_logger().info(
+                "⏳ Warte auf MoveIt PlanningScene Service "
+                f"('{self.get_namespace()}/get_planning_scene')..."
+            )
             return
 
         self.get_logger().info("✅ MoveIt PlanningScene Service verfügbar – sende Szene.")

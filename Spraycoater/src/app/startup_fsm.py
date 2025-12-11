@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# src/app/startup_fsm.py
 import os
 import logging
 from typing import Optional, Callable, Any
@@ -6,7 +7,7 @@ from typing import Optional, Callable, Any
 from PyQt6 import QtCore, QtStateMachine  # StateMachine unter PyQt6
 
 # Projekt-Helfer
-from config.startup import load_startup
+from config.startup import load_startup, PlcConfig
 from app.utils.logging_setup import init_logging
 from app.utils.warnings_setup import enable_all_warnings
 from ros.ros_launcher import (
@@ -16,9 +17,8 @@ from ros.ros_launcher import (
 )
 from ros.bridge.ui_bridge import get_ui_bridge, UIBridge
 
-# PLC – liegt bei dir unter src/plc
-from plc.plc_config import PlcConfig, load_plc_config
-from plc.plc_client import PlcClientBase, PlcClient
+# PLC – Implementierung
+from plc.plc_client import PlcClientBase, create_plc_client
 
 
 class _StepState(QtStateMachine.QState):
@@ -197,28 +197,36 @@ class StartupMachine(QtCore.QObject):
 
     def _step_plc(self) -> None:
         """
-        Initialisiert das PLC-Backend anhand der PLC-Konfiguration (nur echter Client).
+        Initialisiert das PLC-Backend anhand der PLC-Konfiguration aus ctx.plc.
 
         Ergebnis:
           - self.plc = PlcClientBase-Instanz oder None
           - NICHT in ctx speichern.
         """
-        try:
-            plc_cfg: PlcConfig = load_plc_config()
-        except Exception as e:
-            self.warning.emit(f"PLC-Konfiguration konnte nicht geladen werden: {e}")
-            self._log.exception("load_plc_config() failed")
+        # Kontext MUSS geladen sein
+        if self.ctx is None:
+            self.warning.emit("PLC-Setup übersprungen: ctx ist None.")
+            self._log.error("SetupPLC: ctx ist None")
             self.plc = None
             return
 
-        # Wenn im startup.yaml plc.sim: true → kein Connect
+        # PlcConfig direkt aus dem AppContext nehmen
+        plc_cfg: Optional[PlcConfig] = getattr(self.ctx, "plc", None)
+        if plc_cfg is None:
+            self.warning.emit("PLC-Konfiguration fehlt in ctx (ctx.plc ist None).")
+            self._log.error("SetupPLC: ctx.plc fehlt")
+            self.plc = None
+            return
+
+        # Simulationsmodus: keine Verbindung aufbauen
         if getattr(plc_cfg, "sim", False):
-            self._log.info("PLC im Simulationsmodus (sim=true) -> keine ADS-Verbindung")
+            self._log.info("PLC im Simulationsmodus (sim=true) -> keine ADS-Verbindung.")
             self.plc = None
             return
 
+        # Echte Verbindung über Fabrikfunktion
         try:
-            self.plc = PlcClient(plc_cfg)
+            self.plc = create_plc_client(plc_cfg)
             self.plc.connect()
             self._log.info(
                 "PLC-Backend initialisiert (%s, connected=%s)",

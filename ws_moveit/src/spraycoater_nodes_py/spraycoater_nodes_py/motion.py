@@ -9,6 +9,7 @@ import time
 import json
 from typing import Optional, Dict, Any
 import os
+import math
 
 import rclpy
 from rclpy.node import Node
@@ -37,6 +38,7 @@ GROUP_NAME  = "omron_arm_group"
 EE_LINK     = "tcp"
 WORLD_FRAME = "world"
 
+
 # ----------------- Planner Defaults (hart kodiert) -----------------
 
 DEFAULT_PLANNER_CFG: Dict[str, Any] = {
@@ -51,7 +53,7 @@ DEFAULT_PLANNER_CFG: Dict[str, Any] = {
 
 # ----------------- QoS -----------------
 
-def latched():
+def latched() -> QoSProfile:
     return QoSProfile(
         reliability=ReliabilityPolicy.RELIABLE,
         durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -63,7 +65,7 @@ def latched():
 
 class Motion(Node):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("motion")
 
         self.log = self.get_logger()
@@ -104,7 +106,6 @@ class Motion(Node):
         # ------------------------------------------------------------------
         # MoveIt-Konfiguration:
         #  - identisch zur robot_sim.launch.py / move_group-Konfiguration
-        #  - minimale, funktionierende OMPL-Pipeline für MoveItPy/MoveItCpp
         # ------------------------------------------------------------------
         cfg_pkg = get_package_share_directory("omron_moveit_config")
         launch_dir = os.path.join(cfg_pkg, "launch")
@@ -117,12 +118,13 @@ class Motion(Node):
         cfg_dict = moveit_cfg.to_dict()
 
         # --- MoveItPy mit config_dict initialisieren
-        # Kein sys.argv-Workaround mehr - lass ROS2 die Parameter normal laden
         self.robot = MoveItPy(
             node_name=f"{self.get_name()}_moveit",
             config_dict=cfg_dict,
         )
+        # kleiner Delay, bis MoveItPy sauber hochgefahren ist
         time.sleep(0.5)
+
         self.arm = self.robot.get_planning_component(GROUP_NAME)
         self.robot_model = self.robot.get_robot_model()
         self.log.info(f"MoveItPy ready (group={GROUP_NAME}, backend='{self.backend}')")
@@ -134,15 +136,13 @@ class Motion(Node):
         # Planner-Konfiguration (immer mit Default vorbelegt)
         self._planner_cfg: Dict[str, Any] = DEFAULT_PLANNER_CFG.copy()
 
-        # Starttoleranz (für später, wenn du sie z.B. als Rezeptwert durchreichen willst)
-        self._allowed_start_tolerance: float = 0.01  # aktuell nur dokumentarisch
+        # Starttoleranz – aktuell nur dokumentarisch
+        self._allowed_start_tolerance: float = 0.01
 
-        # PlanRequestParameters – Try; bei Fehler planen wir ohne spezielle Params
+        # PlanRequestParameters – wenn möglich
         self._plan_params: Optional[PlanRequestParameters] = None
         try:
-            # Basis-Parameter-Objekt holen
             self._plan_params = PlanRequestParameters(self.robot, "plan_request_params")
-            # Hart kodierte Defaults anwenden
             self._apply_planner_cfg_to_params()
         except Exception as e:
             self._plan_params = None
@@ -261,7 +261,7 @@ class Motion(Node):
     # emit helper
     # ----------------------------------------------------------
 
-    def _emit(self, text: str):
+    def _emit(self, text: str) -> None:
         self.pub_result.publish(MsgString(data=text))
         self.log.info(text)
 
@@ -279,17 +279,24 @@ class Motion(Node):
         pipeline = (cfg.get("pipeline") or DEFAULT_PLANNER_CFG["pipeline"]).strip()
         planner_id = (cfg.get("planner_id") or DEFAULT_PLANNER_CFG["planner_id"]).strip()
 
-        # Pipeline für MoveItPy setzen
-        try:
-            self.robot.set_pipelines([pipeline])
-        except Exception as e:
-            self.log.warning(f"[config] set_pipelines('{pipeline}') failed: {e}")
+        # Pipeline explizit setzen – nur, wenn die API existiert
+        if hasattr(self.robot, "set_pipelines"):
+            try:
+                self.robot.set_pipelines([pipeline])  # type: ignore[attr-defined]
+            except Exception as e:
+                self.log.warning(f"[config] set_pipelines('{pipeline}') failed: {e}")
+        else:
+            # Deine Version von MoveItPy kümmert sich über die Config um die Pipeline
+            self.log.debug("[config] MoveItPy hat keine set_pipelines()-Methode – Pipeline kommt aus YAML-Config.")
 
         # Planner-ID, falls Attribut vorhanden
         try:
-            p.planner_id = planner_id
+            p.planner_id = planner_id  # type: ignore[attr-defined]
         except AttributeError:
-            self.log.warning("[config] PlanRequestParameters hat kein Attribut 'planner_id'; ignoriere Planner-ID.")
+            self.log.warning(
+                "[config] PlanRequestParameters hat kein Attribut 'planner_id'; "
+                "Planner-ID wird nur über die Pipeline-Konfiguration gewählt."
+            )
 
         # Zeit / Versuche / Scaling aus Config
         p.planning_time = float(cfg.get("planning_time", DEFAULT_PLANNER_CFG["planning_time"]))
@@ -303,7 +310,7 @@ class Motion(Node):
 
         self.log.info(
             f"[config] Planner applied: pipeline='{pipeline}', "
-            f"planner_id='{getattr(p, 'planner_id', '<n/a>')}', "
+            f"planner_id='{getattr(p, 'planner_id', planner_id)}', "
             f"time={p.planning_time:.2f}s, "
             f"attempts={p.planning_attempts}, "
             f"vel_scale={p.max_velocity_scaling_factor:.2f}, "
@@ -314,7 +321,7 @@ class Motion(Node):
     # CONFIG: Speed + Planner (Topic-Callbacks)
     # ----------------------------------------------------------
 
-    def _on_set_speed_mm_s(self, msg: MsgFloat64):
+    def _on_set_speed_mm_s(self, msg: MsgFloat64) -> None:
         v = float(msg.data)
         if v <= 0.0:
             self.log.warning(f"[config] set_speed_mm_s ignoriert (<= 0): {v}")
@@ -322,7 +329,7 @@ class Motion(Node):
         self._speed_mm_s = v
         self.log.info(f"[config] Motion speed set to {self._speed_mm_s:.1f} mm/s")
 
-    def _on_set_planner_cfg(self, msg: MsgString):
+    def _on_set_planner_cfg(self, msg: MsgString) -> None:
         raw = msg.data or ""
         try:
             cfg = json.loads(raw)
@@ -340,7 +347,7 @@ class Motion(Node):
     # PLAN POSE
     # ----------------------------------------------------------
 
-    def _on_plan_pose(self, msg: PoseStamped):
+    def _on_plan_pose(self, msg: PoseStamped) -> None:
         if self._busy:
             self._emit("ERROR:BUSY")
             return
@@ -400,10 +407,10 @@ class Motion(Node):
             self._emit(f"ERROR:EX {e}")
 
     # ----------------------------------------------------------
-    # PLAN NAMED (home/service)
+    # PLAN NAMED (home/service via TF-Frame)
     # ----------------------------------------------------------
 
-    def _on_plan_named(self, msg: MsgString):
+    def _on_plan_named(self, msg: MsgString) -> None:
         if self._busy:
             self._emit("ERROR:BUSY")
             return
@@ -456,7 +463,7 @@ class Motion(Node):
     # EXECUTE – je nach Backend: MoveIt-Exec (SIM) oder Omron MOVEJ
     # ----------------------------------------------------------
 
-    def _on_execute(self, msg: MsgBool):
+    def _on_execute(self, msg: MsgBool) -> None:
         if not msg.data:
             self._on_stop(MsgEmpty())
             return
@@ -527,7 +534,6 @@ class Motion(Node):
         j_rad = positions[:6]
 
         # rad -> deg
-        import math
         j_deg = [p * 180.0 / math.pi for p in j_rad]
 
         # mm/s -> %
@@ -556,13 +562,13 @@ class Motion(Node):
     # STOP
     # ----------------------------------------------------------
 
-    def _on_stop(self, _msg: MsgEmpty):
+    def _on_stop(self, _msg: MsgEmpty) -> None:
         self._cancel = True
         self._emit("STOP:REQ")
 
     # ----------------------------------------------------------
 
-    def _publish_preview(self, goal: PoseStamped):
+    def _publish_preview(self, goal: PoseStamped) -> None:
         m = Marker()
         m.header.frame_id = goal.header.frame_id
         m.header.stamp = self.get_clock().now().to_msg()
@@ -578,7 +584,7 @@ class Motion(Node):
 
 # ------------------------ main ------------------------
 
-def main(args=None):
+def main(args=None) -> None:
     rclpy.init(args=args)
     node = Motion()
     rclpy.spin(node)

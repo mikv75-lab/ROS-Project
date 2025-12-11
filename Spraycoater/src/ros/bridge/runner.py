@@ -26,11 +26,24 @@ class RosBridge:
     eigenen Executor-Thread.
     """
 
-    def __init__(self, startup_yaml_path: str, *, enable_omron: bool = False):
+    def __init__(
+        self,
+        startup_yaml_path: str,
+        *,
+        enable_omron: bool = False,
+        namespace: str | None = None,
+    ):
+        """
+        namespace wird aktuell nur gespeichert, damit der Konstruktor mit
+        namespace=... aus get_ui_bridge aufgerufen werden kann. Falls du
+        später echte ROS-Namespaces für die Nodes brauchst, kannst du
+        self._namespace in den Bridge-Klassen weiterreichen.
+        """
         self._startup_yaml_path = startup_yaml_path
         self._content = AppContent(startup_yaml_path)
 
         self._enable_omron = bool(enable_omron)
+        self._namespace = (namespace or "").strip()
 
         self._exec: Optional[SingleThreadedExecutor] = None
         self._nodes: List[Any] = []

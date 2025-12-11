@@ -1,8 +1,0 @@
-Traceback (most recent call last):
-  File "/root/Spraycoater/src/app/main_gui.py", line 209, in _on_ready
-    win = MainWindow(ctx=ctx, bridge=bridge, plc=plc)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/root/Spraycoater/src/app/main_window.py", line 47, in __init__
-    self.processTab = ProcessTab(ctx=self.ctx, bridge=self.bridge, plc=self.plc)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-TypeError: ProcessTab.__init__() got an unexpected keyword argument 'plc'

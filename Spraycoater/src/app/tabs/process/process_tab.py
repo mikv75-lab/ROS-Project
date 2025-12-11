@@ -59,10 +59,18 @@ class ProcessTab(QWidget):
                           (Servo-Run eines Run-YAML, z.B. aus data/runs)
     """
 
-    def __init__(self, *, ctx, bridge, parent: Optional[QWidget] = None):
+    def __init__(
+        self,
+        *,
+        ctx,
+        bridge,
+        plc=None,                       # 👈 neu
+        parent: Optional[QWidget] = None,
+    ):
         super().__init__(parent)
         self.ctx = ctx
         self.bridge = bridge
+        self.plc = plc
 
         # Bridges (fest gecacht)
         self._rb = bridge._rb if bridge is not None else None
