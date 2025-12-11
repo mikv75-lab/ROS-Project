@@ -1622,3 +1622,21 @@
 2025-12-08 19:55:07 INFO [1440786] ros.ui_bridge:461 - UIBridge: OmronBridge verdrahtet (TCP-Client-Schnittstelle).
 2025-12-08 19:55:07 INFO [1440786] ros.ui_bridge:389 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion/omron states ready
 2025-12-08 19:55:07 INFO [1440786] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-12-09 17:22:05 INFO [1746908] ros.kill_all_ros:115 - [kill] stopping 7 ROS-related processes…
+2025-12-09 17:22:05 DEBUG [1746908] ros.kill_all_ros:119 -  -> TERM pid=1440920: /usr/bin/python3 /opt/ros/rolling/bin/ros2 launch spraycoater_bringup bringup.launch.py sim:=false
+2025-12-09 17:22:05 DEBUG [1746908] ros.kill_all_ros:119 -  -> TERM pid=1440935: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/omron_tcp_bridge --ros-args -r __node:=omron_tcp_bridge --params-file /tmp/launch_params_5lcehxnn
+2025-12-09 17:22:05 DEBUG [1746908] ros.kill_all_ros:119 -  -> TERM pid=1440936: /root/ws_moveit/install/moveit_ros_move_group/lib/moveit_ros_move_group/move_group --ros-args -r __node:=move_group --params-file /tmp/launch_params_59nu_5n9 --params-file /tmp/launch_params_lar0mo47
+2025-12-09 17:22:05 DEBUG [1746908] ros.kill_all_ros:119 -  -> TERM pid=1441374: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/scene --ros-args --log-level error --ros-args -r __node:=scene --params-file /tmp/launch_params_a09nanke
+2025-12-09 17:22:05 DEBUG [1746908] ros.kill_all_ros:119 -  -> TERM pid=1441375: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/poses --ros-args --log-level error --ros-args -r __node:=poses --params-file /tmp/launch_params_s7bwknkz
+2025-12-09 17:22:05 DEBUG [1746908] ros.kill_all_ros:119 -  -> TERM pid=1441376: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/spray_path --ros-args --log-level error --ros-args -r __node:=spray_path --params-file /tmp/launch_params_w6yjn5rh
+2025-12-09 17:22:05 DEBUG [1746908] ros.kill_all_ros:119 -  -> TERM pid=1441377: /usr/bin/python3 /root/ws_moveit/install/spraycoater_nodes_py/lib/spraycoater_nodes_py/servo --ros-args --log-level info --ros-args -r __node:=servo --params-file /tmp/launch_params_virmdi_3
+2025-12-09 17:22:07 INFO [1746908] ros.ui_bridge:451 - UIBridge: MotionBridge verdrahtet (Signals + Trajectory-Cache).
+2025-12-09 17:22:07 INFO [1746908] ros.ui_bridge:461 - UIBridge: OmronBridge verdrahtet (TCP-Client-Schnittstelle).
+2025-12-09 17:22:07 INFO [1746908] ros.ui_bridge:389 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion/omron states ready
+2025-12-09 17:22:07 INFO [1746908] ros:186 - UIBridge verbunden (node=scene_bridge).
+2025-12-11 15:25:49 INFO [93023] ros.kill_all_ros:112 - [kill] nothing to stop.
+2025-12-11 15:25:51 INFO [93023] ros.ui_bridge:451 - UIBridge: MotionBridge verdrahtet (Signals + Trajectory-Cache).
+2025-12-11 15:25:51 INFO [93023] ros.ui_bridge:461 - UIBridge: OmronBridge verdrahtet (TCP-Client-Schnittstelle).
+2025-12-11 15:25:51 INFO [93023] ros.ui_bridge:389 - UIBridge connected (node=scene_bridge) – scene/poses/spraypath/servo/robot/motion/omron states ready
+2025-12-11 15:25:51 INFO [93023] ros:230 - UIBridge verbunden (node=scene_bridge).
+2025-12-11 15:30:54 INFO [93023] ros.ui_bridge:473 - UIBridge disconnect()

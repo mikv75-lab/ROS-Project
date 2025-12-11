@@ -1,0 +1,108 @@
+version: 1
+
+# ===================================================================
+# Digitale Signale: Prozess-Start, Medien, Interlocks, Status
+# Diese werden über PyQt gesteuert.
+# ===================================================================
+io:
+
+  outputs:
+    # UI → SPS: Prozesssteuerung / Medien
+    process_start:
+      type: bool
+      description: "Startanforderung für Spray-Rezept."
+      ads_symbol: "MAIN.bProcessStart"
+
+    process_abort:
+      type: bool
+      description: "Abbruchanforderung vom UI."
+      ads_symbol: "MAIN.bProcessAbort"
+
+    media_n2_on:
+      type: bool
+      description: "N2 Spray EIN (entspricht z.B. n2sprayein)."
+      ads_symbol: "MAIN.bN2SprayOn"
+
+    media_us_on:
+      type: bool
+      description: "Ultraschall/Megasonic EIN (us)."
+      ads_symbol: "MAIN.bUltrasonicOn"
+
+    media_syringe_start:
+      type: bool
+      description: "Kartusche START (kartuschestart)."
+      ads_symbol: "MAIN.bSyringeStart"
+
+    media_syringe_stop:
+      type: bool
+      description: "Kartusche STOP (kartuschestop)."
+      ads_symbol: "MAIN.bSyringeStop"
+
+  inputs:
+    # SPS → UI: Status / Interlocks
+    process_active:
+      type: bool
+      description: "SPS meldet aktiven Sprayprozess."
+      ads_symbol: "MAIN.bProcessActive"
+
+    process_done:
+      type: bool
+      description: "Sprayprozess erfolgreich abgeschlossen."
+      ads_symbol: "MAIN.bProcessDone"
+
+    process_error:
+      type: bool
+      description: "Allgemeiner Fehler im SPS-Prozess."
+      ads_symbol: "MAIN.bProcessError"
+
+    interlock_ok:
+      type: bool
+      description: "Sicherheits- / Tür- / Vakuum-Interlocks erfüllt."
+      ads_symbol: "MAIN.bInterlockOk"
+
+    vacuum_ok:
+      type: bool
+      description: "Substrat-Vakuum in Ordnung."
+      ads_symbol: "MAIN.bVacuumOk"
+
+    alarm_code:
+      type: int
+      min: 0
+      max: 65535
+      description: "Numerischer Alarm-/Fehlercode der SPS."
+      ads_symbol: "MAIN.nAlarmCode"
+
+# ===================================================================
+# ADS-Mapping:
+# Hier werden die logischen recipe_params und IO-Signale auf
+# konkrete ADS-Symbole gemappt. Der Python-Client kann diese
+# Tabelle später direkt auswerten.
+# ===================================================================
+ads_mapping:
+
+  recipe_params:
+    n2_pressure_bar:      "MAIN.stRecipe.fN2PressureBar"
+    us_power_percent:     "MAIN.stRecipe.fUltrasonicPowerPercent"
+    syringe_flow_ml_min:  "MAIN.stRecipe.fSyringeFlow"
+    nozzle_on_delay_s:    "MAIN.stRecipe.fNozzleOnDelay"
+    syringe_on_delay_s:   "MAIN.stRecipe.fSyringeOnDelay"
+    nozzle_off_delay_s:   "MAIN.stRecipe.fNozzleOffDelay"
+    syringe_off_delay_s:  "MAIN.stRecipe.fSyringeOffDelay"
+    dryrun:               "MAIN.stRecipe.bDryRun"
+    syringe_only:         "MAIN.stRecipe.bSyringeOnly"
+
+  outputs:
+    process_start:        "MAIN.bProcessStart"
+    process_abort:        "MAIN.bProcessAbort"
+    media_n2_on:          "MAIN.bN2SprayOn"
+    media_us_on:          "MAIN.bUltrasonicOn"
+    media_syringe_start:  "MAIN.bSyringeStart"
+    media_syringe_stop:   "MAIN.bSyringeStop"
+
+  inputs:
+    process_active:       "MAIN.bProcessActive"
+    process_done:         "MAIN.bProcessDone"
+    process_error:        "MAIN.bProcessError"
+    interlock_ok:         "MAIN.bInterlockOk"
+    vacuum_ok:            "MAIN.bVacuumOk"
+    alarm_code:           "MAIN.nAlarmCode"

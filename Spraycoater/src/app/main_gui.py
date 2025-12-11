@@ -132,7 +132,7 @@ logging.getLogger(__name__).info("VTK log -> %s", vtk_log)
 
 # ==== App-Imports ====
 from app.startup_fsm import StartupMachine
-from app.main_window import MainWindow   # MainWindow nutzt Splitter (RViz-Placeholder rechts) & PyVista nur im RecipeTab
+from app.main_window import MainWindow   # MainWindow nutzt Splitter & PyVista nur im RecipeTab
 
 
 def resource_path(*parts: str) -> str:
@@ -201,12 +201,12 @@ def main():
     fsm.warning.connect(lambda w: splash_msg(f"⚠ {w}"))
     fsm.error.connect(lambda e: splash_msg(f"✖ {e}"))
 
-    # bleibt bei (ctx, bridge)
-    def _on_ready(ctx, bridge):
+    # ready liefert jetzt (ctx, bridge, plc)
+    def _on_ready(ctx, bridge, plc):
         if ctx is None:
             QMessageBox.critical(None, "Startup fehlgeschlagen", "Kein gültiger AppContext. Siehe Log.")
             return
-        win = MainWindow(ctx=ctx, bridge=bridge)  # zeigt Splitter (RViz Placeholder rechts) + PyVista nur im RecipeTab
+        win = MainWindow(ctx=ctx, bridge=bridge, plc=plc)
         splash.finish(win)
         win.show()
 

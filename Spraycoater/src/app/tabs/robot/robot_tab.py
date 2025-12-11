@@ -12,29 +12,31 @@ from app.model.recipe.recipe_store import RecipeStore
 
 from ...widgets.robot_command_box import RobotCommandButtonsBox
 from ...widgets.robot_status_box import RobotStatusInfoBox
-from ...widgets.omron_tcp_widget import OmronTcpWidget   # ⬅️ NEU
+from ...widgets.omron_tcp_widget import OmronTcpWidget
 
 from .scene_box import SceneGroupBox
 from .poses_box import PosesGroupBox
 from .tool_box import ToolGroupBox
 from .motion_widget import MotionWidget
-
 from .servo_widgets import JointJogWidget, CartesianJogWidget
 
-_LOG = logging.getLogger("app.tabs.service")
+_LOG = logging.getLogger("app.tabs.service.robot")
 
 
-class ServiceTab(QWidget):
+class ServiceRobotTab(QWidget):
+    """
+    Service-Tab für Roboterfunktionen (Jogging, Posen, Scene, Omron-TCP).
+    """
 
     def __init__(self, *, ctx, store: RecipeStore, bridge, parent: Optional[QWidget] = None):
         super().__init__(parent)
 
-        # 🔥 Zentral: AppContext mit content (frames,qos,topics)
+        # AppContext + Store + ROS-Bridge
         self.ctx = ctx
         self.store = store
         self.bridge = bridge
 
-        # RobotBridge + Signals
+        # RobotBridge + Signals (nur Robotik, keine SPS)
         self._rb = getattr(self.bridge, "_rb", None)
         self._sig = getattr(self._rb, "signals", None) if self._rb else None
 
@@ -51,7 +53,7 @@ class ServiceTab(QWidget):
 
         self.commandBox = RobotCommandButtonsBox(self, title="Commands")
         self.statusBox  = RobotStatusInfoBox(self, title="Robot Status")
-        self.omronWidget = OmronTcpWidget(self.bridge, self)   # ⬅️ NEU
+        self.omronWidget = OmronTcpWidget(self.bridge, self)
 
         for w in (self.commandBox, self.statusBox, self.omronWidget):
             sp = w.sizePolicy()
@@ -121,13 +123,13 @@ class ServiceTab(QWidget):
         self._wire_bridge_inbound()
         self._wire_outbound()
 
-        # Tab-Change → Servo + Correct Mode
+        # Tab-Change → Servo + Command-Modus setzen
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self._on_tab_changed(self.tabs.currentIndex())
 
-    # ======================================================================
+    # ==================================================================
     # Bridge INBOUND: ROS → UI
-    # ======================================================================
+    # ==================================================================
     @QtCore.pyqtSlot(object)
     def _on_joints(self, js):
         if js is None or not hasattr(js, "position"):
@@ -163,9 +165,9 @@ class ServiceTab(QWidget):
         if hasattr(sig, "jointsChanged"):
             sig.jointsChanged.connect(self._on_joints)
 
-    # ======================================================================
+    # ==================================================================
     # Bridge OUTBOUND: UI → ROS
-    # ======================================================================
+    # ==================================================================
     def _wire_outbound(self):
         if not self._sig:
             return
@@ -181,14 +183,14 @@ class ServiceTab(QWidget):
         cb.servoEnableRequested.connect(sig.servoEnableRequested.emit)
         cb.servoDisableRequested.connect(sig.servoDisableRequested.emit)
 
-    # ======================================================================
+    # ==================================================================
     # Tab-Wechsel → Servo an + Command-Modus setzen
-    # ======================================================================
+    # ==================================================================
     def _on_tab_changed(self, idx: int) -> None:
         page = self.tabs.widget(idx)
 
         try:
-            if hasattr(self.bridge, "robot_servo_on"):
+            if self.bridge and hasattr(self.bridge, "robot_servo_on"):
                 self.bridge.robot_servo_on()
         except Exception as e:
             _LOG.error("robot_servo_on() failed: %s", e)
@@ -206,9 +208,9 @@ class ServiceTab(QWidget):
             except Exception as e:
                 _LOG.error("servo_set_command_type(%s) failed: %s", mode, e)
 
-    # ======================================================================
-    # Forwarder-API
-    # ======================================================================
+    # ==================================================================
+    # Forwarder-API (für andere Tabs/Modelle)
+    # ==================================================================
     def get_planner(self) -> str:
         return self.motionWidget.get_planner()
 

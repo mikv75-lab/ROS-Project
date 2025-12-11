@@ -18,6 +18,12 @@ class Recipe:
       - paths_compiled: gespeicherte Posen (Quaternionen) + Meta (für Export/Save)
       - info:           abgeleitete Kennzahlen (Längen, Punkte etc.) – wird von
                         Recipe selbst gepflegt und im YAML gespeichert.
+
+      PLC-Bezug:
+      - Welche parameters nach Laden/Speichern an die SPS gesendet werden sollen,
+        ist in recipe_params.globals.* über das Flag "plc: true/false" markiert.
+      - Über plc_payload_from_schema(...) kann eine passende Payload aus den
+        aktuellen parameters gebaut werden.
     """
     # Meta / Auswahl
     id: str
@@ -148,6 +154,28 @@ class Recipe:
         if missing:
             raise ValueError(f"Recipe: Missing required globals in parameters: {missing} (kein Fallback).")
         return {k: g[k] for k in required}
+
+    # ------- PLC: Payload aus aktuellen parameters bauen -------
+    def plc_payload_from_schema(self, plc_globals_schema: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Erzeugt ein reines Dict {name: value} mit allen aktuellen Global-Parametern,
+        die im übergebenen Schema als PLC-relevant markiert sind.
+
+        Erwartung:
+          - plc_globals_schema kommt typischerweise von RecipeStore.plc_globals_schema()
+            und enthält nur die Keys, die in recipe_params.globals.* als plc: true
+            markiert sind.
+          - self.parameters sind die aktuellen Instanzwerte des Rezepts.
+
+        Rückgabe:
+          - nur Parameter, die sowohl im Schema als auch in self.parameters existieren.
+        """
+        out: Dict[str, Any] = {}
+        params = self.parameters or {}
+        for name in plc_globals_schema.keys():
+            if name in params:
+                out[name] = params[name]
+        return out
 
     # ------- Pfad-Cache -------
     def _side_list(self, sides: Optional[Iterable[str]]) -> List[str]:

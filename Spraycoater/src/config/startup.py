@@ -2,6 +2,7 @@
 # /root/Spraycoater/src/config/startup.py
 # Minimaler Startup-Loader + AppContent (Frames/QoS/Topics)
 from __future__ import annotations
+
 import os
 import io
 import yaml
@@ -48,7 +49,11 @@ def _abspath_rel_to(base_dir: str, p: str) -> str:
 def _load_yaml(path_or_uri: str, *, strict: bool = True) -> Optional[Dict[str, Any]]:
     """Yaml laden. strict=True → Fehler; sonst: None."""
     try:
-        path = resolve_package_uri(path_or_uri) if isinstance(path_or_uri, str) and path_or_uri.startswith("package://") else path_or_uri
+        path = (
+            resolve_package_uri(path_or_uri)
+            if isinstance(path_or_uri, str) and path_or_uri.startswith("package://")
+            else path_or_uri
+        )
         path = os.path.abspath(os.path.normpath(path))
         if not os.path.exists(path):
             if strict:
@@ -87,26 +92,45 @@ class AppPaths:
 
 
 @dataclass(frozen=True)
-class TFWorldToMecaMount:
-    xyz: Tuple[float, float, float] = (0.0, 0.0, 0.0)
-    rpy_deg: Tuple[float, float, float] = (0.0, 0.0, 0.0)
-
-
-@dataclass(frozen=True)
 class ROSConfig:
     launch_ros: bool
     sim_robot: bool
 
 
 @dataclass(frozen=True)
+class RobotConfig:
+    mode: str                   # "sim", "emu", "real"
+    connect_on_start: bool
+    real_ip: Optional[str] = None
+    real_port: Optional[int] = None
+    emulator_ip: Optional[str] = None
+    emulator_port: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class PlcConfig:
+    # nur noch "ads" (Beckhoff SPS via PyADS)
+    mode: str
+    connect_on_start: bool
+    ads_ams_net_id: Optional[str]
+    ads_ip: Optional[str]
+    ads_port: Optional[int]
+    spec_file: str              # absoluter Pfad zu plc.yaml
+    spec: Optional[Dict[str, Any]] = None  # optional geladene plc.yaml
+
+
+@dataclass(frozen=True)
 class AppContext:
     paths: AppPaths
     ros: ROSConfig
+    robot: RobotConfig
+    plc: PlcConfig
+
     recipes_yaml: Dict[str, Any]
     recipes: List[Dict[str, Any]]
     recipe_params: Dict[str, Any]
     mounts_yaml: Optional[Dict[str, Any]] = None
-    content: Optional["AppContent"] = None   # ✔ hinzugefügt, frozen-safe wenn im ctor gesetzt!
+    content: Optional["AppContent"] = None
 
 
 # ============================================================
@@ -114,7 +138,12 @@ class AppContext:
 # ============================================================
 
 def load_startup(startup_yaml_path: str) -> AppContext:
-    """startup.yaml einlesen + recipes.yaml + frames/qos/topics via AppContent."""
+    """
+    startup.yaml einlesen + recipes.yaml + substrate_mounts + Frames/QoS/Topics.
+
+    - Pfade werden relativ zu startup.yaml bzw. via package:// aufgelöst
+    - PLC-Spezifikation wird aus plc.spec_file (plc.yaml) geladen
+    """
     if not startup_yaml_path:
         _err("startup_yaml_path ist leer.")
     startup_yaml_path = os.path.abspath(os.path.normpath(startup_yaml_path))
@@ -122,6 +151,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         _err(f"startup.yaml nicht gefunden: {startup_yaml_path}")
 
     su = _load_yaml(startup_yaml_path, strict=True)
+    base = os.path.dirname(startup_yaml_path)
 
     # ----- PATHS -----
     p = su.get("paths") or {}
@@ -133,7 +163,6 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         if key not in p:
             _err(f"startup.yaml: 'paths.{key}' fehlt.")
 
-    base = os.path.dirname(startup_yaml_path)
     recipe_file_abs = _abspath_rel_to(base, p["recipe_file"])
     recipe_dir_abs = _abspath_rel_to(base, p["recipe_dir"])
     log_dir_abs = _abspath_rel_to(base, p["log_dir"])
@@ -148,8 +177,25 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not os.path.isdir(bl_parent):
         _err(f"Verzeichnis für bringup_log existiert nicht: {bl_parent}")
 
-    mounts_dir_abs = _abspath_rel_to(base, p["substrate_mounts_dir"]) if p.get("substrate_mounts_dir") else None
-    mounts_file_abs = _abspath_rel_to(base, p["substrate_mounts_file"]) if p.get("substrate_mounts_file") else None
+    mounts_dir_abs = (
+        _abspath_rel_to(base, p["substrate_mounts_dir"])
+        if p.get("substrate_mounts_dir")
+        else None
+    )
+    mounts_file_abs = (
+        _abspath_rel_to(base, p["substrate_mounts_file"])
+        if p.get("substrate_mounts_file")
+        else None
+    )
+
+    paths = AppPaths(
+        recipe_file=recipe_file_abs,
+        recipe_dir=recipe_dir_abs,
+        log_dir=log_dir_abs,
+        bringup_log=bringup_log_abs,
+        substrate_mounts_dir=mounts_dir_abs,
+        substrate_mounts_file=mounts_file_abs,
+    )
 
     # ----- ROS -----
     r = su.get("ros") or {}
@@ -158,6 +204,53 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if "launch_ros" not in r or "sim_robot" not in r:
         _err("startup.yaml: ros.launch_ros und ros.sim_robot sind Pflichtfelder.")
     ros_cfg = ROSConfig(bool(r["launch_ros"]), bool(r["sim_robot"]))
+
+    # ----- ROBOT -----
+    robot_yaml = su.get("robot") or {}
+    if not isinstance(robot_yaml, dict):
+        _err("startup.yaml: Abschnitt 'robot' fehlt oder ist ungültig.")
+
+    mode = str(robot_yaml.get("mode", "sim"))
+    connect_on_start = bool(robot_yaml.get("connect_on_start", True))
+
+    real_cfg = robot_yaml.get("real") or {}
+    emu_cfg = robot_yaml.get("emulator") or {}
+
+    robot_cfg = RobotConfig(
+        mode=mode,
+        connect_on_start=connect_on_start,
+        real_ip=real_cfg.get("ip"),
+        real_port=real_cfg.get("port"),
+        emulator_ip=emu_cfg.get("ip"),
+        emulator_port=emu_cfg.get("port"),
+    )
+
+    # ----- PLC -----
+    plc_yaml = su.get("plc") or {}
+    if not isinstance(plc_yaml, dict):
+        _err("startup.yaml: Abschnitt 'plc' fehlt oder ist ungültig.")
+
+    plc_mode = str(plc_yaml.get("mode", "ads")).strip().lower()
+    if plc_mode != "ads":
+        _err(f"startup.yaml: plc.mode muss 'ads' sein (ist {plc_mode!r}).")
+
+    plc_connect_on_start = bool(plc_yaml.get("connect_on_start", True))
+
+    ads_cfg = plc_yaml.get("ads") or {}
+    spec_rel = plc_yaml.get("spec_file", "plc.yaml")
+    spec_abs = _abspath_rel_to(base, spec_rel)
+
+    plc_spec = _load_yaml(spec_abs, strict=False)
+
+    plc_cfg = PlcConfig(
+        mode=plc_mode,
+        connect_on_start=plc_connect_on_start,
+        ads_ams_net_id=ads_cfg.get("ams_net_id"),
+        ads_ip=ads_cfg.get("ip"),
+        ads_port=ads_cfg.get("port"),
+        spec_file=spec_abs,
+        spec=plc_spec,
+    )
 
     # ----- recipes.yaml -----
     ry = _load_yaml(recipe_file_abs, strict=True)
@@ -179,22 +272,17 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     # ----- AppContent erzeugen -----
     content = AppContent(startup_yaml_path)
 
-    # ----- AppContext konstruieren (frozen=True, aber content via ctor erlaubt) -----
+    # ----- AppContext konstruieren -----
     ctx = AppContext(
-        paths=AppPaths(
-            recipe_file=recipe_file_abs,
-            recipe_dir=recipe_dir_abs,
-            log_dir=log_dir_abs,
-            bringup_log=bringup_log_abs,
-            substrate_mounts_dir=mounts_dir_abs,
-            substrate_mounts_file=mounts_file_abs,
-        ),
+        paths=paths,
         ros=ros_cfg,
+        robot=robot_cfg,
+        plc=plc_cfg,
         recipes_yaml=ry,
         recipes=recipes_list,
         recipe_params=recipe_params,
         mounts_yaml=mounts_yaml,
-        content=content,    # ✔ korrekt gesetzt
+        content=content,
     )
 
     return ctx
@@ -235,6 +323,7 @@ class PathsLite:
 
 class AppContent:
     """Frames / QoS / Topics aus startup.yaml.configs.* laden."""
+
     def __init__(self, startup_yaml_path: str):
         su = _load_yaml(startup_yaml_path, strict=True) or {}
         cfg = su.get("configs") or {}
@@ -264,8 +353,16 @@ class AppContent:
 
         # optional Mounts:
         p = su.get("paths") or {}
-        mounts_dir_abs = _abspath_rel_to(base, p["substrate_mounts_dir"]) if p.get("substrate_mounts_dir") else None
-        mounts_file_abs = _abspath_rel_to(base, p["substrate_mounts_file"]) if p.get("substrate_mounts_file") else None
+        mounts_dir_abs = (
+            _abspath_rel_to(base, p["substrate_mounts_dir"])
+            if p.get("substrate_mounts_dir")
+            else None
+        )
+        mounts_file_abs = (
+            _abspath_rel_to(base, p["substrate_mounts_file"])
+            if p.get("substrate_mounts_file")
+            else None
+        )
 
         self.paths = PathsLite(substrate_mounts_dir=mounts_dir_abs)
 
@@ -302,7 +399,7 @@ class AppContent:
         if not isinstance(profiles, dict) or not profiles:
             raise ValueError("qos.yaml: profiles fehlt.")
 
-        out = {}
+        out: Dict[str, QoSProfile] = {}
         for key, spec in profiles.items():
             if not isinstance(spec, dict):
                 raise ValueError(f"Ungültiges QoS-Profil: {key}")
@@ -334,7 +431,7 @@ class AppContent:
     def topics(self, group: str, direction: str) -> List[TopicSpec]:
         if group not in self._topics_root:
             raise KeyError(f"Topic-Gruppe '{group}' fehlt.")
-        block = self._topics_root[group].get(direction) or {}
+        block = self._topics_root[group].get(direction) or []
         if not isinstance(block, list):
             raise ValueError(f"topics[{group}][{direction}] ist kein Array.")
 
@@ -363,4 +460,6 @@ class AppContent:
     def create_subscription_from_id(self, node, group: str, topic_id: str, callback):
         spec = self.topic_by_id(group, "subscribe", topic_id)
         msg_type = spec.resolve_type()
-        return node.create_subscription(msg_type, spec.name, callback, self.qos(spec.qos_key))
+        return node.create_subscription(
+            msg_type, spec.name, callback, self.qos(spec.qos_key)
+        )

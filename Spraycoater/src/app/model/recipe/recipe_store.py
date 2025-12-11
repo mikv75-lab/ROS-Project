@@ -12,7 +12,15 @@ class RecipeStore:
     Erwartete YAML-Struktur (vereinfacht):
 
         recipe_params:
-          globals: ...
+          globals:
+            speed_mm_s:
+              type: number
+              min: ...
+              max: ...
+              step: ...
+              unit: "mm/s"
+              default: 200
+              plc: true/false      # <-- PLC-Flag
           path.meander.plane: ...
           path.spiral.plane: ...
           path.spiral.cylinder: ...
@@ -69,6 +77,7 @@ class RecipeStore:
     - Path-Schemata:    recipe_params["path.*"]
     - Planner-Rollen + Path-Typ-Mapping: planner_settings.*
     - Planner-Definitionen (Beschreibung/Parameter): planner_pipeline.*
+    - PLC-Relevanz:     recipe_params.globals.*.plc: true/false
     """
 
     # ------------------------------------------------------------------ #
@@ -144,6 +153,52 @@ class RecipeStore:
         for key, spec in self.globals_schema().items():
             if isinstance(spec, dict) and "default" in spec:
                 out[key] = spec["default"]
+        return out
+
+    # ------------------------ PLC-Globals ------------------------------ #
+    def plc_globals_schema(self) -> Dict[str, Any]:
+        """
+        Liefert ein Dict derjenigen globalen Parameter-Specs, die in
+        recipe_params.globals.* mit plc: true markiert sind, z.B.:
+
+            {
+              "speed_mm_s": {
+                "type": "number",
+                "min": 10,
+                "max": 2000,
+                "step": 10,
+                "unit": "mm/s",
+                "default": 200,
+                "plc": true
+              },
+              ...
+            }
+
+        Parameter ohne plc-Flag oder mit plc: false werden gefiltert.
+        """
+        out: Dict[str, Any] = {}
+        for name, spec in self.globals_schema().items():
+            if not isinstance(spec, dict):
+                continue
+            if spec.get("plc", False):
+                out[name] = spec
+        return out
+
+    def plc_param_names(self) -> List[str]:
+        """
+        Liefert nur die Namen der PLC-relevanten Global-Parameter.
+        """
+        return list(self.plc_globals_schema().keys())
+
+    def collect_plc_defaults(self) -> Dict[str, Any]:
+        """
+        Defaults nur für PLC-relevante Parameter, falls du z.B. eine
+        SPS-Initialisierung mit Default-Werten machen willst.
+        """
+        out: Dict[str, Any] = {}
+        for name, spec in self.plc_globals_schema().items():
+            if isinstance(spec, dict) and "default" in spec:
+                out[name] = spec["default"]
         return out
 
     # ------------------------------------------------------------------ #

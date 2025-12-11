@@ -6,15 +6,150 @@ version: 1
 recipe_params:
 
   globals:
-    speed_mm_s:       { type: number, min: 10,   max: 2000, step: 10,  unit: "mm/s",  default: 200 }
-    stand_off_mm:     { type: number, min: 0.1,  max: 200,  step: 0.1, unit: "mm",    default: 10 }
-    sample_step_mm:   { type: number, min: 0.05, max: 50, step: 0.05, unit: "mm", default: 1.0 }
-    max_points:       { type: number, min: 100,  max: 1000, step: 100, default: 500 }
-    max_angle_deg:    { type: number, min: 0,    max: 45, step: 0.5, default: 0 }
+    speed_mm_s:
+      type: number
+      min: 10
+      max: 2000
+      step: 10
+      unit: "mm/s"
+      default: 200
+      plc: false
 
-    flow_ml_min:      { type: number, min: 0.0,  max: 100.0,step: 0.1, unit: "ml/min",default: 5.0 }
-    pre_dispense_s:   { type: number, min: 0.0,  max: 10.0, step: 0.1, unit: "s",     default: 0.2 }
-    post_dispense_s:  { type: number, min: 0.0,  max: 10.0, step: 0.1, unit: "s",     default: 0.1 }
+    stand_off_mm:
+      type: number
+      min: 0.1
+      max: 200
+      step: 0.1
+      unit: "mm"
+      default: 10
+      plc: false
+
+    sample_step_mm:
+      type: number
+      min: 0.05
+      max: 50
+      step: 0.05
+      unit: "mm"
+      default: 1.0
+      plc: false
+
+    max_points:
+      type: number
+      min: 100
+      max: 1000
+      step: 100
+      default: 500
+      plc: false
+
+    max_angle_deg:
+      type: number
+      min: 0
+      max: 45
+      step: 0.5
+      default: 0
+      plc: false
+
+    pre_dispense_s:
+      type: number
+      min: 0.0
+      max: 10.0
+      step: 0.1
+      unit: "s"
+      default: 0.2
+      plc: false
+
+    post_dispense_s:
+      type: number
+      min: 0.0
+      max: 10.0
+      step: 0.1
+      unit: "s"
+      default: 0.1
+      plc: false
+
+    # -------- PLC-gebundene Prozessparameter (plc: true) --------
+    n2_pressure_bar:
+      type: number
+      min: 0.0
+      max: 6.0
+      step: 0.05
+      unit: "bar"
+      default: 1.5
+      plc: true
+      description: "Soll-N2-Sprühdruck für den Sprayprozess."
+
+    us_power_percent:
+      type: number
+      min: 0.0
+      max: 100.0
+      step: 1.0
+      unit: "%"
+      default: 60.0
+      plc: true
+      description: "Megasonic-/Ultraschallleistung in Prozent."
+
+    syringe_flow_ml_min:
+      type: number
+      min: 0.0
+      max: 50.0
+      step: 0.1
+      unit: "ml/min"
+      default: 5.0
+      plc: true
+      description: "Kartuschen-/Spritzenförderstrom (für Dosierung)."
+
+    nozzle_on_delay_s:
+      type: number
+      min: 0.0
+      max: 5.0
+      step: 0.05
+      unit: "s"
+      default: 0.3
+      plc: true
+      description: "Verzögerung von N2 EIN bis Düse als 'stabil' gilt."
+
+    syringe_on_delay_s:
+      type: number
+      min: 0.0
+      max: 5.0
+      step: 0.05
+      unit: "s"
+      default: 0.5
+      plc: true
+      description: "Verzögerung bis Kartusche/Spritze als stabil gilt."
+
+    nozzle_off_delay_s:
+      type: number
+      min: 0.0
+      max: 5.0
+      step: 0.05
+      unit: "s"
+      default: 0.2
+      plc: true
+      description: "Nachlaufzeit von N2 nach Sprühende."
+
+    syringe_off_delay_s:
+      type: number
+      min: 0.0
+      max: 5.0
+      step: 0.05
+      unit: "s"
+      default: 0.2
+      plc: true
+      description: "Nachlaufzeit Kartusche/Spritze nach Sprühende."
+
+    dryrun:
+      type: boolean
+      default: false
+      plc: true
+      description: "Trockenlauf ohne Medien (nur Roboterbewegung)."
+
+    syringe_only:
+      type: boolean
+      default: false
+      plc: true
+      description: "Test Kartusche ohne Medienpfad (nur Ansteuerung Kartusche)."
+
 
   # --- Meander (Ebene) ---
   path.meander.plane:
