@@ -1,0 +1,12 @@
+# omron_moveit_config/config/initial_positions.yaml
+#
+# Gelenk-Startpositionen für den FakeSystem (in RAD)
+# (werden im ros2_control-Xacro per xacro.load_yaml() geladen)
+
+initial_positions:
+  joint_1: 0.0                 # 0°
+  joint_2: -1.57079632679      # -90°
+  joint_3: 3.14159265359       # 180°
+  joint_4: 0.0                 # 0°
+  joint_5: 0.0                 # 0°
+  joint_6: 0.0                 # 0°

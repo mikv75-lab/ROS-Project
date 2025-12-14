@@ -1,0 +1,28 @@
+servo:
+  ros__parameters:
+    servo.default_mode: cartesian
+    servo.default_frame: tcp
+    move_group_name: meca_arm_group
+    command_out_topic: /meca_arm_position_controller/commands
+
+    publish_joint_positions: true
+    publish_joint_velocities: false
+    publish_joint_accelerations: false
+    servo.speed_limits.cart_linear_mm_s: 100.0
+    servo.speed_limits.cart_angular_deg_s: 30.0
+    servo.speed_limits.joint_scale: 0.5
+    # Singularity-Handhabung
+    lower_singularity_threshold: 80.0           # Beginn der linearen Drossel
+    hard_stop_singularity_threshold: 250.0      # erst hier harter Stopp
+
+    # optional glätten, reduziert „Zappeln“ um den Grenzbereich
+    low_pass_filter_coeff: 2.0
+
+    # bei Stop einige Halt-Msgs publizieren (hilft bei Nachlauf)
+    num_outgoing_halt_msgs_to_publish: 5
+
+    # (falls vorhanden in eurer Version)
+    halt_at_joint_limits: true
+    # optional: Geschwindigkeit kleiner
+    linear_scale: 1
+    rotational_scale: 1
