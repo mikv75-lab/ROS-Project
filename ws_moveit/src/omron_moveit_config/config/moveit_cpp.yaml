@@ -1,0 +1,22 @@
+# omron_moveit_config/config/moveit_cpp.yaml
+
+planning_scene_monitor_options:
+  name: "planning_scene_monitor"
+  robot_description: "robot_description"
+  joint_state_topic: "joint_states"
+  publish_geometry_updates: true
+  publish_state_updates: true
+  publish_transforms_updates: true
+  publish_robot_description: false
+  publish_robot_description_semantic: false
+
+planning_pipelines:
+  pipeline_names:
+    - ompl
+    - pilz_industrial_motion_planner
+    - chomp
+    - stomp
+  default_planning_pipeline: ompl
+
+move_group_name: "omron_arm_group"
+robot_model_type: "robot_description"
