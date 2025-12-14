@@ -181,20 +181,14 @@ def generate_launch_description():
     )
 
     # 6) RViz (optional) -> global (kein namespace)
-    # 6) RViz (optional) -> im Namespace "shadow", aber TF global remappen
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
         name="rviz2",
-        namespace=namespace,   # <-- DAS ist der Namespace
         arguments=["-d", rviz_cfg],
         parameters=[
             moveit_config.to_dict(),
             {"use_sim_time": use_sim_time_bool},
-        ],
-        remappings=[
-            ("/tf", "tf"),
-            ("/tf_static", "tf_static"),
         ],
         output="screen",
         condition=IfCondition(rviz),
