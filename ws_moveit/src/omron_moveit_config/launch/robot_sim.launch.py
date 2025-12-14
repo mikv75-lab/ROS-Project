@@ -28,7 +28,7 @@ def generate_launch_description():
     cfg_pkg = get_package_share_directory("omron_moveit_config")
 
     ros2_controllers_path = os.path.join(cfg_pkg, "config", "ros2_controllers.yaml")
-    rviz_cfg = os.path.join(cfg_pkg, "config", "moveit.rviz")
+    rviz_cfg = os.path.join(cfg_pkg, "config", "moveit_shadow.rviz")
 
     # ----------------- Launch-Argumente -----------------
     mount_parent_arg = DeclareLaunchArgument(
@@ -181,14 +181,20 @@ def generate_launch_description():
     )
 
     # 6) RViz (optional) -> global (kein namespace)
+    # 6) RViz (optional) -> im Namespace "shadow", aber TF global remappen
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
         name="rviz2",
+        namespace=namespace,   # <-- DAS ist der Namespace
         arguments=["-d", rviz_cfg],
         parameters=[
             moveit_config.to_dict(),
             {"use_sim_time": use_sim_time_bool},
+        ],
+        remappings=[
+            ("/tf", "tf"),
+            ("/tf_static", "tf_static"),
         ],
         output="screen",
         condition=IfCondition(rviz),

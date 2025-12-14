@@ -5,9 +5,11 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /MotionPlanning1
+        - /MotionPlanning1/Status1
         - /MotionPlanning1/Scene Geometry1
         - /MotionPlanning1/Scene Robot1
         - /MotionPlanning1/Planning Request1
+        - /TF1
         - /TF1/Frames1
       Splitter Ratio: 0.5
     Tree Height: 288
@@ -42,7 +44,7 @@ Visualization Manager:
     - Acceleration_Scaling_Factor: 0.1
       Class: moveit_rviz_plugin/MotionPlanning
       Enabled: true
-      Move Group Namespace: ""
+      Move Group Namespace: /shadow
       MoveIt_Allow_Approximate_IK: false
       MoveIt_Allow_External_Program: false
       MoveIt_Allow_Replanning: false
@@ -163,63 +165,11 @@ Visualization Manager:
       Scene Robot:
         Attached Body Color: 150; 50; 150
         Links:
-          Adept_Viper_650_Interface_Plate:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link1:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link2:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link3:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link4:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link5:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link6:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
           All Links Enabled: true
           Expand Joint Details: false
           Expand Link Details: false
           Expand Tree: false
           Link Tree Style: Links in Alphabetic Order
-          robot_mount:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-          sonotek_vortex:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          tcp:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-          tool_mount:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
         Robot Alpha: 1
         Show Robot Collision: false
         Show Robot Visual: true
@@ -232,40 +182,28 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         Adept_Viper_650_Interface_Plate:
-          Value: false
+          Value: true
         Adept_Viper_s650_Link1:
-          Value: false
+          Value: true
         Adept_Viper_s650_Link2:
-          Value: false
+          Value: true
         Adept_Viper_s650_Link3:
-          Value: false
+          Value: true
         Adept_Viper_s650_Link4:
-          Value: false
+          Value: true
         Adept_Viper_s650_Link5:
-          Value: false
+          Value: true
         Adept_Viper_s650_Link6:
-          Value: false
-        All Enabled: false
-        cage:
-          Value: false
-        home:
           Value: true
+        All Enabled: true
         robot_mount:
-          Value: false
-        scene:
-          Value: true
-        service:
           Value: true
         sonotek_vortex:
-          Value: false
-        substrate:
-          Value: false
-        substrate_mount:
-          Value: false
+          Value: true
         tcp:
           Value: true
         tool_mount:
-          Value: false
+          Value: true
         world:
           Value: true
       Marker Scale: 0.25
@@ -275,10 +213,6 @@ Visualization Manager:
       Show Names: true
       Tree:
         world:
-          cage:
-            {}
-          home:
-            {}
           robot_mount:
             Adept_Viper_s650_Link1:
               Adept_Viper_s650_Link2:
@@ -291,12 +225,6 @@ Visualization Manager:
                             sonotek_vortex:
                               tcp:
                                 {}
-          service:
-            {}
-          substrate_mount:
-            scene:
-              substrate:
-                {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -381,7 +309,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.3636350631713867
+      Distance: 2.9649436473846436
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -396,10 +324,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5597959160804749
+      Pitch: 0.25479593873023987
       Target Frame: scene
       Value: Orbit (rviz_default_plugins)
-      Yaw: 0.06040005758404732
+      Yaw: 0.8953999876976013
     Saved:
       - Class: rviz_default_plugins/Orbit
         Distance: 1.543152093887329
@@ -433,9 +361,9 @@ Window Geometry:
     collapsed: false
   MotionPlanning - Trajectory Slider:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000002b4000004f1fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb000000100044006900730070006c006100790073010000003b000001a1000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e006701000001e2000002400000016900fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a00560069006500770073010000042800000104000000a000ffffff00000734000004f100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000100000000000002b4000004f1fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb000000100044006900730070006c006100790073010000003b000001a1000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e006701000001e2000002400000017500fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a00560069006500770073010000042800000104000000a000ffffff00000734000004f100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
   Width: 2542
-  X: 1929
-  Y: 32
+  X: 870
+  Y: 606
