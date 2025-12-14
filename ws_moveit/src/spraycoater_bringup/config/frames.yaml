@@ -1,0 +1,15 @@
+# spraycoater_bringup/config/frames.yaml
+version: 1
+frames:
+  world:           "world"
+  robot_mount:     "robot_mount"
+  tool_mount:      "tool_mount"
+  tcp:             "tcp"
+
+  cage:            "cage"
+  substrate_mount: "substrate_mount"
+  scene:           "scene"
+  substrate:       "substrate"
+
+  home:            "home"
+  service:         "service"

@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>spraycoater_bringup</name>
+  <version>0.1.0</version>
+  <description>Bringup package for Mecademic robot integration: scene, tf, tools, spray paths.</description>
+
+  <maintainer email="miklv75@googlemail.com">miklv</maintainer>
+  <license>Apache-2.0</license>
+
+  <!-- Rein ament_python, kein CMake -->
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <!-- Bringup startet nur Launches; keine rclcpp/rclpy nötig -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <!-- Optional: sicherstellen, dass die Nodes-Pakete vorhanden sind
+  <exec_depend>spraycoater_nodes_py</exec_depend>
+  <exec_depend>spraycoater_nodes_cpp</exec_depend>
+   -->
+  
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
