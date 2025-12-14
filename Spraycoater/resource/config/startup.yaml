@@ -60,7 +60,7 @@ ros:
 
       # TCP-Parameter für die Emulator-Variante (ACE / V+ Emulator)
       emulator:
-        ip:   "127.0.0.1"        # typischerweise lokal, wenn Emulator auf selbem PC
+        ip:   "host.docker.internal"        # typischerweise lokal, wenn Emulator auf selbem PC
         port: 5000               # Port wie im V+-tcp_server am Emulator
 
 # ===================================================================

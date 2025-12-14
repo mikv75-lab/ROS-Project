@@ -44,23 +44,21 @@ def generate_launch_description():
         description="Rolle/Namespace für diese Instanz (z.B. 'shadow' oder 'live')",
     )
 
-    # Sim-Flag (für Auswahl robot_sim / robot_omron)
-    sim_arg = DeclareLaunchArgument(
-        "sim", default_value="true", description="Simulationsmodus (true|false)"
-    )
-
-    # Backend (z.B. default/omron)
+    # Backend (z.B. sim|real|omron ...)
     backend_arg = DeclareLaunchArgument(
         "backend",
-        default_value="default",
-        description="Backend für Spraycoater-Nodes (z.B. 'default' oder 'omron')",
+        default_value="sim",
+        description="Backend für Robot + Spraycoater-Nodes (z.B. 'sim' oder 'real')",
     )
 
-    # use_sim_time
+    # use_sim_time:
+    #  - "" (leer)  -> automatisch: shadow=True, live=False
+    #  - "true"     -> erzwinge True
+    #  - "false"    -> erzwinge False
     use_sim_time_arg = DeclareLaunchArgument(
         "use_sim_time",
-        default_value="false",
-        description="Simulated Time nutzen (true|false)",
+        default_value="",
+        description="Simulated Time nutzen (''=auto: shadow→true, live→false)",
     )
 
     def _setup(context):
@@ -68,10 +66,19 @@ def generate_launch_description():
         robot_yaml = os.path.join(bringup_share, "config", "robot.yaml")
 
         # LaunchConfigs abrufen
-        role = LaunchConfiguration("role")           # Namespace für alle Nodes
-        backend = LaunchConfiguration("backend")
-        use_sim_time = LaunchConfiguration("use_sim_time")
-        sim = LaunchConfiguration("sim").perform(context)
+        role_lc = LaunchConfiguration("role")
+        backend_lc = LaunchConfiguration("backend")
+        use_sim_time_lc = LaunchConfiguration("use_sim_time")
+
+        role_str = role_lc.perform(context).strip()
+        use_sim_time_raw = use_sim_time_lc.perform(context).strip().lower()
+
+        # ---- use_sim_time automatisch aus role ableiten (falls nicht explizit gesetzt) ----
+        if use_sim_time_raw in ("true", "false"):
+            use_sim_time_val = (use_sim_time_raw == "true")
+        else:
+            # Auto: shadow → True, live → False, sonst default False
+            use_sim_time_val = (role_str == "shadow")
 
         # robot.yaml laden
         with open(robot_yaml, "r", encoding="utf-8") as f:
@@ -123,12 +130,9 @@ def generate_launch_description():
         roll, pitch, yaw = map(lambda d: radians(float(d)), rpydeg)
         qx, qy, qz, qw = _rpy_rad_to_quat(roll, pitch, yaw)
 
-        # --------- MoveIt robot launch file einbinden ---------
+        # --------- MoveIt robot.launch.py einbinden (sim/real via backend) ---------
         moveit_share = FindPackageShare(moveit_pkg).perform(context)
-
-        # Je nach sim-Flag: robot_sim.launch.py oder robot_omron.launch.py
-        robot_launch_file = "robot_sim.launch.py" if sim.lower() == "true" else "robot_omron.launch.py"
-        robot_launch = os.path.join(moveit_share, "launch", robot_launch_file)
+        robot_launch = os.path.join(moveit_share, "launch", "robot.launch.py")
 
         if not os.path.exists(robot_launch):
             raise FileNotFoundError(f"[bringup] MoveIt launch fehlt: {robot_launch}")
@@ -146,9 +150,12 @@ def generate_launch_description():
                 "mount_qy": str(qy),
                 "mount_qz": str(qz),
                 "mount_qw": str(qw),
-                "use_sim_time": LaunchConfiguration("use_sim_time"),
-                # 🔁 Namespace -> kommt in robot_sim/robot_omron als LaunchArgument("namespace")
-                "namespace": role,
+                # use_sim_time als 'true'/'false' String
+                "use_sim_time": "true" if use_sim_time_val else "false",
+                # Namespace
+                "namespace": role_lc,
+                # Backend an robot.launch.py durchreichen (sim/real/…)
+                "backend": backend_lc,
             }.items(),
         )
 
@@ -179,17 +186,19 @@ def generate_launch_description():
                 raise FileNotFoundError(f"[bringup] fehlt: {p}")
 
         # --------- Spraycoater-Nodes mit backend + use_sim_time + Namespace ---------
+        # role_lc (LaunchConfiguration) bleibt Namespace;
+        # use_sim_time_val ist bereits zu bool aufgelöst.
 
         # Scene-Node
         scene_node = Node(
             package="spraycoater_nodes_py",
             executable="scene",
             name="scene",
-            namespace=role,
+            namespace=role_lc,
             output="log",
             emulate_tty=False,
             arguments=["--ros-args", "--log-level", "error"],
-            parameters=[{"backend": backend, "use_sim_time": use_sim_time}],
+            parameters=[{"backend": backend_lc, "use_sim_time": use_sim_time_val}],
         )
         scene_after_robot = TimerAction(period=10.0, actions=[scene_node])
 
@@ -198,11 +207,11 @@ def generate_launch_description():
             package="spraycoater_nodes_py",
             executable="poses",
             name="poses",
-            namespace=role,
+            namespace=role_lc,
             output="log",
             emulate_tty=False,
             arguments=["--ros-args", "--log-level", "error"],
-            parameters=[{"backend": backend, "use_sim_time": use_sim_time}],
+            parameters=[{"backend": backend_lc, "use_sim_time": use_sim_time_val}],
         )
         poses_after_robot = TimerAction(period=10.0, actions=[poses_node])
 
@@ -211,11 +220,11 @@ def generate_launch_description():
             package="spraycoater_nodes_py",
             executable="spray_path",
             name="spray_path",
-            namespace=role,
+            namespace=role_lc,
             output="log",
             emulate_tty=False,
             arguments=["--ros-args", "--log-level", "error"],
-            parameters=[{"backend": backend, "use_sim_time": use_sim_time}],
+            parameters=[{"backend": backend_lc, "use_sim_time": use_sim_time_val}],
         )
         spray_after_robot = TimerAction(period=10.0, actions=[spray_node])
 
@@ -224,11 +233,11 @@ def generate_launch_description():
             package="spraycoater_nodes_py",
             executable="servo",
             name="servo",
-            namespace=role,
+            namespace=role_lc,
             output="log",
             emulate_tty=False,
             arguments=["--ros-args", "--log-level", "info"],
-            parameters=[{"backend": backend, "use_sim_time": use_sim_time}],
+            parameters=[{"backend": backend_lc, "use_sim_time": use_sim_time_val}],
         )
         servo_after_robot = TimerAction(period=10.0, actions=[servo_node])
 
@@ -237,13 +246,13 @@ def generate_launch_description():
             package="spraycoater_nodes_py",
             executable="motion",
             name="motion",
-            namespace=role,
+            namespace=role_lc,
             output="log",
             emulate_tty=False,
             arguments=["--ros-args", "--log-level", "info"],
             parameters=[
                 moveit_cfg_dict_clean,  # ← Bereinigte Version ohne YAML-Aliase
-                {"backend": backend, "use_sim_time": use_sim_time},
+                {"backend": backend_lc, "use_sim_time": use_sim_time_val},
             ],
         )
         motion_after_robot = TimerAction(period=10.0, actions=[motion_node])
@@ -262,7 +271,6 @@ def generate_launch_description():
         [
             quiet_env,
             role_arg,
-            sim_arg,
             backend_arg,
             use_sim_time_arg,
             OpaqueFunction(function=_setup),
