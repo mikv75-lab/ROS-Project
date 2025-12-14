@@ -1,17 +1,15 @@
 # omron_moveit_config/config/moveit_cpp.yaml
 
-# Optionen für den PlanningSceneMonitor (MoveItCpp-intern)
 planning_scene_monitor_options:
   name: "planning_scene_monitor"
   robot_description: "robot_description"
-  joint_state_topic: "/joint_states"
+  joint_state_topic: "joint_states"
   publish_geometry_updates: true
   publish_state_updates: true
   publish_transforms_updates: true
   publish_robot_description: false
   publish_robot_description_semantic: false
 
-# Welche Pipelines MoveItCpp benutzen soll
 planning_pipelines:
   pipeline_names:
     - ompl
@@ -20,6 +18,5 @@ planning_pipelines:
     - stomp
   default_planning_pipeline: ompl
 
-# Allgemeine MoveItCpp-Optionen
 move_group_name: "omron_arm_group"
 robot_model_type: "robot_description"
