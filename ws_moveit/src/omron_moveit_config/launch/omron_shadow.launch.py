@@ -7,15 +7,15 @@ from pathlib import Path
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
 from launch.conditions import IfCondition
+from launch.substitutions import LaunchConfiguration
 
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 from ament_index_python.packages import get_package_share_directory
 
-# Launch-Ordner auf sys.path setzen
+# Launch-Ordner auf sys.path setzen, damit moveit_common importierbar ist
 _current_dir = Path(__file__).resolve().parent
 if str(_current_dir) not in sys.path:
     sys.path.insert(0, str(_current_dir))
@@ -25,9 +25,10 @@ from moveit_common import create_omron_moveit_config  # noqa: E402
 
 def generate_launch_description():
     cfg_pkg = get_package_share_directory("omron_moveit_config")
-
     ros2_controllers_path = os.path.join(cfg_pkg, "config", "ros2_controllers.yaml")
-    rviz_cfg = os.path.join(cfg_pkg, "config", "moveit_shadow.rviz")
+
+    # ✅ nur noch EIN RViz-File
+    rviz_cfg = os.path.join(cfg_pkg, "config", "shadow_moveit.rviz")
 
     # ----------------- Launch-Argumente -----------------
     namespace_arg = DeclareLaunchArgument(
@@ -48,6 +49,7 @@ def generate_launch_description():
         description="Start RViz",
     )
 
+    # Mount TF args
     mount_parent_arg = DeclareLaunchArgument("mount_parent", default_value="world")
     mount_child_arg = DeclareLaunchArgument("mount_child", default_value="robot_mount")
 
@@ -132,7 +134,7 @@ def generate_launch_description():
         ],
     )
 
-    # ----------------- move_group -----------------
+    # ✅ move_group IMMER starten (sonst keine PlanningScene/CollisionObjects)
     move_group_node = Node(
         package="moveit_ros_move_group",
         executable="move_group",
@@ -144,17 +146,14 @@ def generate_launch_description():
         ],
     )
 
-    # ----------------- RViz -----------------
+    # ✅ RViz optional per launch arg
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
         name="rviz",
         namespace=namespace,
         arguments=["-d", rviz_cfg],
-        parameters=[
-            moveit_config.to_dict(),
-            {"use_sim_time": use_sim_time},
-        ],
+        parameters=[moveit_config.to_dict(), {"use_sim_time": use_sim_time}],
         condition=IfCondition(rviz),
     )
 
@@ -162,6 +161,7 @@ def generate_launch_description():
         namespace_arg,
         use_sim_time_arg,
         rviz_arg,
+
         mount_parent_arg,
         mount_child_arg,
         mount_x_arg,
@@ -171,11 +171,13 @@ def generate_launch_description():
         mount_qy_arg,
         mount_qz_arg,
         mount_qw_arg,
+
         static_tf,
         robot_state_pub,
         ros2_control_node,
         jsb_spawner,
         arm_spawner,
+
         move_group_node,
         rviz_node,
     ])

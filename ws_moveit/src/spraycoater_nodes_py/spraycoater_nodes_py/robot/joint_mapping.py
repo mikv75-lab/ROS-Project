@@ -1,9 +1,23 @@
 # -*- coding: utf-8 -*-
 # spraycoater_nodes_py/utils/joint_mapping.py
-
 from __future__ import annotations
 
-from typing import List
+from typing import Dict, List
+
+
+def _index_map(names: List[str], label: str) -> Dict[str, int]:
+    if not names:
+        raise ValueError(f"{label} ist leer.")
+    if len(set(names)) != len(names):
+        # Duplikate sauber ausgeben
+        seen = set()
+        dups = []
+        for n in names:
+            if n in seen and n not in dups:
+                dups.append(n)
+            seen.add(n)
+        raise ValueError(f"{label} enthält Duplikate: {dups}")
+    return {n: i for i, n in enumerate(names)}
 
 
 def ros_to_omron_positions(
@@ -12,20 +26,8 @@ def ros_to_omron_positions(
     joint_order_ros_names: List[str],
 ) -> List[float]:
     """
-    Mappt Joint-Werte aus der ROS-Reihenfolge (z.B. JointTrajectory.joint_names)
-    in die Omron-Reihenfolge (J1..J6).
-
-    Args:
-        ros_joint_names: Joint-Namen in der Reihenfolge der ros_positions.
-        ros_positions:  Positionswerte (selbe Länge wie ros_joint_names).
-        joint_order_ros_names: Zielreihenfolge als ROS-Namen, z.B.
-            ["joint_1","joint_2","joint_3","joint_4","joint_5","joint_6"]
-
-    Returns:
-        Liste der Positionen in Omron-Reihenfolge (entspricht joint_order_ros_names).
-
-    Raises:
-        ValueError: Bei Längenfehlern oder fehlenden Joint-Namen.
+    Mappt Joint-Werte aus der ROS-Reihenfolge (ros_joint_names/ros_positions)
+    in die Zielreihenfolge joint_order_ros_names (typisch joint_1..joint_6).
     """
     if len(ros_joint_names) != len(ros_positions):
         raise ValueError(
@@ -33,19 +35,18 @@ def ros_to_omron_positions(
             f"!= len(ros_positions)={len(ros_positions)}"
         )
 
-    if not joint_order_ros_names:
-        raise ValueError("ros_to_omron_positions: joint_order_ros_names ist leer.")
+    ros_idx = _index_map(ros_joint_names, "ros_joint_names")
+    _index_map(joint_order_ros_names, "joint_order_ros_names")  # nur Duplikat-Check
 
     out: List[float] = [0.0] * len(joint_order_ros_names)
+    missing = [n for n in joint_order_ros_names if n not in ros_idx]
+    if missing:
+        raise ValueError(
+            f"ros_to_omron_positions: Joint(s) fehlen in ros_joint_names: {missing}"
+        )
 
-    for om_idx, name in enumerate(joint_order_ros_names):
-        try:
-            ros_idx = ros_joint_names.index(name)
-        except ValueError as exc:
-            raise ValueError(
-                f"ros_to_omron_positions: ROS-Jointname '{name}' nicht in ros_joint_names vorhanden."
-            ) from exc
-        out[om_idx] = float(ros_positions[ros_idx])
+    for out_i, name in enumerate(joint_order_ros_names):
+        out[out_i] = float(ros_positions[ros_idx[name]])
 
     return out
 
@@ -56,19 +57,8 @@ def omron_to_ros_positions(
     joint_order_ros_names: List[str],
 ) -> List[float]:
     """
-    Mappt Joint-Werte aus Omron-Reihenfolge (J1..J6) in eine ROS-Reihenfolge
-    passend zu ros_joint_names.
-
-    Args:
-        omron_positions: Positionen in Omron-Reihenfolge (selbe Länge wie joint_order_ros_names).
-        ros_joint_names: gewünschte ROS-Reihenfolge (Output-Order).
-        joint_order_ros_names: Reihenfolge, die zu omron_positions gehört (typisch joint_1..joint_6).
-
-    Returns:
-        Positionen in der Reihenfolge von ros_joint_names.
-
-    Raises:
-        ValueError: Bei Längenfehlern oder fehlenden Joint-Namen.
+    Mappt Joint-Werte aus joint_order_ros_names-Reihenfolge (omron_positions)
+    in die ROS-Reihenfolge ros_joint_names.
     """
     if len(omron_positions) != len(joint_order_ros_names):
         raise ValueError(
@@ -76,21 +66,18 @@ def omron_to_ros_positions(
             f"!= len(joint_order_ros_names)={len(joint_order_ros_names)}"
         )
 
-    if len(set(ros_joint_names)) != len(ros_joint_names):
-        raise ValueError("omron_to_ros_positions: ros_joint_names enthält Duplikate.")
+    ros_idx = _index_map(ros_joint_names, "ros_joint_names")
+    src_idx = _index_map(joint_order_ros_names, "joint_order_ros_names")
 
-    if len(set(joint_order_ros_names)) != len(joint_order_ros_names):
-        raise ValueError("omron_to_ros_positions: joint_order_ros_names enthält Duplikate.")
+    # sicherstellen dass src joint names auch in ros_joint_names existieren
+    missing = [n for n in src_idx.keys() if n not in ros_idx]
+    if missing:
+        raise ValueError(
+            f"omron_to_ros_positions: Joint(s) fehlen in ros_joint_names: {missing}"
+        )
 
     positions_ros: List[float] = [0.0] * len(ros_joint_names)
-
-    for om_idx, name in enumerate(joint_order_ros_names):
-        try:
-            ros_idx = ros_joint_names.index(name)
-        except ValueError as exc:
-            raise ValueError(
-                f"omron_to_ros_positions: ROS-Jointname '{name}' nicht in ros_joint_names vorhanden."
-            ) from exc
-        positions_ros[ros_idx] = float(omron_positions[om_idx])
+    for name, src_i in src_idx.items():
+        positions_ros[ros_idx[name]] = float(omron_positions[src_i])
 
     return positions_ros

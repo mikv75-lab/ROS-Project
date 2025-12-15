@@ -30,7 +30,7 @@ class SimRobot(BaseRobot):
     - TCP-Pose aus TF (world → tcp)
     - Joints aus JointState-Topic (joint_state_broadcaster / ros2_control)
 
-    Erwartete topics.yaml Ergänzung:
+    topics.yaml muss enthalten:
       topics:
         robot:
           subscribe:
@@ -38,9 +38,6 @@ class SimRobot(BaseRobot):
               name: joint_states
               type: sensor_msgs/msg/JointState
               qos: sensor_data
-
-    (Wichtig: ohne führenden Slash, damit Namespace greift:
-     /shadow/joint_states bzw. /live/joint_states)
     """
 
     def __init__(self) -> None:
@@ -73,24 +70,35 @@ class SimRobot(BaseRobot):
         self.sub_servo_on = self._make_sub(Empty, "servo_on", self._on_servo_on)
         self.sub_servo_off = self._make_sub(Empty, "servo_off", self._on_servo_off)
 
-        # joint_states (AUS config_hub, keine Hardcodes)
-        topic_js = self.loader.subscribe_topic("robot", "joint_states_in")
-        qos_js = self.loader.qos_by_id("subscribe", "robot", "joint_states_in")
-
-        self.sub_joint_states = self.create_subscription(
-            JointState,
-            topic_js,
-            self._on_joint_states,
-            qos_js,
+        # joint_states (aus topics.yaml via config_hub)
+        self.sub_joint_states = self._make_sub(
+            JointState, "joint_states_in", self._on_joint_states
         )
 
+        js_topic = self.cfg.subscribe_topic("robot", "joint_states_in")
         self.get_logger().info(
             f"🤖 SimRobot gestartet: tcp_pose = TF({self.world_frame}->{self.tool_frame}), "
-            f"JointStates subscribe='{topic_js}' (via config_hub)"
+            f"JointStates subscribe='{js_topic}' (via config_hub)"
         )
+
+    # ----------------------------------------------------------
+    # Hook (BaseRobot)
+    # ----------------------------------------------------------
+
+    def on_tick(self, now: Time) -> None:
+        # TF updaten (Pose), Joints kommen asynchron über JointState-Callback
+        self._update_tcp_pose()
+
+    # ----------------------------------------------------------
+    # Subscriptions
+    # ----------------------------------------------------------
 
     def _on_joint_states(self, msg: JointState):
         self._joints = msg
+
+        # optional: wenn JointStates kommen, sind wir "connected"
+        if not self._connected:
+            self._connected = True
 
     def _on_init(self, _msg: Empty):
         if self._estop:
@@ -105,10 +113,7 @@ class SimRobot(BaseRobot):
 
     def _on_stop(self, _msg: Empty):
         self._moving = False
-        if self._power:
-            self._set_mode("STOPPED")
-        else:
-            self._set_mode("POWERED_OFF")
+        self._set_mode("STOPPED" if self._power else "POWERED_OFF")
 
     def _on_clear_error(self, _msg: Empty):
         self._last_error = ""
@@ -117,10 +122,7 @@ class SimRobot(BaseRobot):
     def _on_power_on(self, _msg: Empty):
         self._power = True
         self._connected = True
-        if not self._initialized:
-            self._set_mode("POWERED_ON")
-        else:
-            self._set_mode("IDLE")
+        self._set_mode("IDLE" if self._initialized else "POWERED_ON")
 
     def _on_power_off(self, _msg: Empty):
         self._power = False
@@ -138,12 +140,13 @@ class SimRobot(BaseRobot):
     def _on_servo_off(self, _msg: Empty):
         self._servo_enabled = False
         self._moving = False
-        if self._power:
-            self._set_mode("POWERED_ON")
-        else:
-            self._set_mode("POWERED_OFF")
+        self._set_mode("POWERED_ON" if self._power else "POWERED_OFF")
 
-    def _update_tcp_pose(self):
+    # ----------------------------------------------------------
+    # TF -> tcp_pose
+    # ----------------------------------------------------------
+
+    def _update_tcp_pose(self) -> None:
         try:
             tf = self.tf_buffer.lookup_transform(
                 self.world_frame,
@@ -153,24 +156,18 @@ class SimRobot(BaseRobot):
             )
         except (LookupException, ConnectivityException, ExtrapolationException) as ex:
             now = self.get_clock().now()
-            if (
-                not self._tf_warned
-                and (now - self._startup_time) > self._tf_grace_duration
-            ):
+            if (not self._tf_warned) and ((now - self._startup_time) > self._tf_grace_duration):
                 self.get_logger().warning(
-                    f"⚠️ Kein TF {self.world_frame} -> {self.tool_frame} verfügbar – "
-                    f"tcp_pose bleibt 0. ({ex})"
+                    f"⚠️ Kein TF {self.world_frame} -> {self.tool_frame} verfügbar ({ex})"
                 )
                 self._tf_warned = True
             return
 
         if self._tf_warned:
-            self.get_logger().info(
-                f"✅ TF {self.world_frame} -> {self.tool_frame} jetzt verfügbar."
-            )
+            self.get_logger().info(f"✅ TF {self.world_frame} -> {self.tool_frame} jetzt verfügbar.")
             self._tf_warned = False
 
-        self._tcp_pose.header.stamp = tf.header.stamp
+        # Pose füllen (Stamp setzt BaseRobot im Publish!)
         self._tcp_pose.header.frame_id = self.world_frame
         self._tcp_pose.pose.position.x = tf.transform.translation.x
         self._tcp_pose.pose.position.y = tf.transform.translation.y

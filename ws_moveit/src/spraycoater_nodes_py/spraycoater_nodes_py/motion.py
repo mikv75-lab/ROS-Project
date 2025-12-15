@@ -37,7 +37,6 @@ GROUP_NAME  = "omron_arm_group"
 EE_LINK     = "tcp"
 WORLD_FRAME = "world"
 
-
 # ----------------- Planner Defaults (noch im Code) -----------------
 
 DEFAULT_PLANNER_CFG: Dict[str, Any] = {
@@ -102,16 +101,28 @@ class Motion(Node):
         moveit_cfg = create_omron_moveit_config()
         cfg_dict = moveit_cfg.to_dict()
 
-        # --- MoveItPy mit config_dict initialisieren
+        # ------------------------------------------------------------------
+        # ✅ KRITISCHER FIX:
+        # MoveItPy API: name_space (nicht namespace / node_namespace)
+        # - Node läuft z.B. unter "/shadow"
+        # - MoveItPy erwartet typischerweise "" oder "shadow" (ohne führenden '/')
+        # ------------------------------------------------------------------
+        ns = self.get_namespace() or "/"
+        name_space = "" if ns == "/" else ns.strip("/")
+        self.log.info(f"[moveitpy] init: node_ns='{ns}', name_space='{name_space}'")
+
         self.robot = MoveItPy(
             node_name=f"{self.get_name()}_moveit",
+            name_space=name_space,           # ✅ korrekt
             config_dict=cfg_dict,
+            provide_planning_service=True,   # ✅ stellt /<ns>/get_planning_scene bereit
         )
+
         time.sleep(0.5)
 
         self.arm = self.robot.get_planning_component(GROUP_NAME)
         self.robot_model = self.robot.get_robot_model()
-        self.log.info(f"MoveItPy ready (group={GROUP_NAME}, backend='{self.backend}')")
+        self.log.info(f"MoveItPy ready (group={GROUP_NAME}, backend='{self.backend}', ns='{ns}')")
 
         # ---------------- intern: Motion-Config (Speed + Planner) ----------------
         self._speed_mm_s: float = 100.0
@@ -316,7 +327,6 @@ class Motion(Node):
         self.log.info(f"[plan_pose] in_frame={in_frame} → world={self.frame_world}")
 
         try:
-            # ✅ korrekt: PoseStamped transformieren
             if in_frame != self.frame_world:
                 tf = self._lookup_tf(self.frame_world, in_frame)
                 goal = do_transform_pose(msg, tf)  # PoseStamped -> PoseStamped

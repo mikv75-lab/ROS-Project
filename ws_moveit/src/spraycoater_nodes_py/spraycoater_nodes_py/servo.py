@@ -49,7 +49,6 @@ class ServoBridge(Node):
             self.get_parameter("backend").get_parameter_value().string_value or "default"
         )
         backend_lower = self.backend.lower()
-
         self.is_real_backend = "real" in backend_lower
 
         # moveit_servo-Service nur in SIM / default
@@ -83,17 +82,19 @@ class ServoBridge(Node):
                 "Das ignoriert Namespace. Besser ohne führenden '/'."
             )
 
+        # ✅ Auto-Mode: Bridge schaltet CommandType abhängig vom Input
+        self.declare_parameter("auto_mode", True)
+        self.auto_mode = bool(self.get_parameter("auto_mode").get_parameter_value().bool_value)
+
         # Config-Loader / Frames
         self.loader = topics()
         self.frames_cfg = frames()
         self._F = self.frames_cfg.resolve
 
         # Default-Frame (tcp aus frames.yaml, sonst "world")
-        # (frames.yaml keys: world/tcp etc. -> resolve() mappt ggf. Prefix)
         self.current_frame = self._F(self.frames_cfg.get("tcp", "world"))
 
         # ---- Topics aus config_hub ----
-        # SUB (UI → ServoBridge)
         topic_twist_in = self.loader.subscribe_topic(NODE_KEY, "twist_out")
         qos_twist_in = self.loader.qos_by_id("subscribe", NODE_KEY, "twist_out")
 
@@ -106,15 +107,12 @@ class ServoBridge(Node):
         topic_set_frame = self.loader.subscribe_topic(NODE_KEY, "set_frame")
         qos_set_frame = self.loader.qos_by_id("subscribe", NODE_KEY, "set_frame")
 
-        # PUB (ServoBridge → moveit_servo) [SIM]
         topic_cartesian_cmd = self.loader.publish_topic(NODE_KEY, "cartesian_mm")
         qos_cartesian_cmd = self.loader.qos_by_id("publish", NODE_KEY, "cartesian_mm")
 
         topic_joint_cmd = self.loader.publish_topic(NODE_KEY, "joint_jog")
         qos_joint_cmd = self.loader.qos_by_id("publish", NODE_KEY, "joint_jog")
 
-        # PUB (ServoBridge → OmronTcpBridge) [REAL]
-        # ✅ topics.yaml: group 'omron', publish-id ist 'command' (nicht 'command_out')
         topic_omron_cmd = self.loader.publish_topic("omron", "command")
         qos_omron_cmd = self.loader.qos_by_id("publish", "omron", "command")
 
@@ -122,12 +120,8 @@ class ServoBridge(Node):
         self.pub_cartesian = None
         self.pub_joint = None
         if not self.is_real_backend:
-            self.pub_cartesian = self.create_publisher(
-                TwistStamped, topic_cartesian_cmd, qos_cartesian_cmd
-            )
-            self.pub_joint = self.create_publisher(
-                JointJog, topic_joint_cmd, qos_joint_cmd
-            )
+            self.pub_cartesian = self.create_publisher(TwistStamped, topic_cartesian_cmd, qos_cartesian_cmd)
+            self.pub_joint = self.create_publisher(JointJog, topic_joint_cmd, qos_joint_cmd)
 
         self.pub_omron_cmd = None
         if self.is_real_backend:
@@ -140,16 +134,25 @@ class ServoBridge(Node):
         self.create_subscription(String, topic_set_frame, self._on_set_frame, qos_set_frame)
 
         # ---- Service-Client für CommandType (nur SIM/Fake) ----
+        self.servo_client = None
         if self.use_servo_service:
             self.servo_client = self.create_client(ServoCommandType, self.servo_service_name)
             self.get_logger().info(
                 f"[{self.backend}] ServoBridge: benutze CommandType-Service '{self.servo_service_name}'"
             )
         else:
-            self.servo_client = None
             self.get_logger().info(f"[{self.backend}] ServoBridge: KEIN CommandType-Service aktiv")
 
+        # ✅ Mode-State + Retry-Mechanik (nicht blockierend)
         self.current_mode: int | None = None
+        self._desired_mode: int | None = None
+        self._desired_label: str = ""
+        self._mode_switch_inflight: bool = False
+
+        if self.use_servo_service and self.auto_mode:
+            self._retry_timer = self.create_timer(0.5, self._retry_set_mode)
+        else:
+            self._retry_timer = None
 
         self.get_logger().info(
             f"✅ ServoBridge aktiv (backend='{self.backend}', ns='{self.get_namespace() or '/'}') – "
@@ -157,6 +160,64 @@ class ServoBridge(Node):
             f"SIM publish: {topic_cartesian_cmd}, {topic_joint_cmd}, "
             f"REAL publish: {topic_omron_cmd}"
         )
+
+    # ------------------------------------------------------------
+    # SIM: Mode sicherstellen (nicht blockierend)
+    # ------------------------------------------------------------
+    def _ensure_mode(self, cmd_type: int, label: str) -> None:
+        if not self.use_servo_service or not self.auto_mode:
+            return
+        if self.current_mode == cmd_type:
+            return
+        self._desired_mode = cmd_type
+        self._desired_label = label
+        # Sofort versuchen (falls Service schon da ist)
+        self._retry_set_mode()
+
+    def _retry_set_mode(self) -> None:
+        if not self.use_servo_service or self.servo_client is None:
+            return
+        if self._desired_mode is None:
+            return
+        if self.current_mode == self._desired_mode:
+            self._desired_mode = None
+            self._desired_label = ""
+            return
+        if self._mode_switch_inflight:
+            return
+        if not self.servo_client.service_is_ready():
+            # kein Spam auf INFO – nur debug
+            self.get_logger().debug(
+                f"[{self.backend}] warte auf Service '{self.servo_service_name}'..."
+            )
+            return
+
+        req = ServoCommandType.Request()
+        req.command_type = int(self._desired_mode)
+        self._mode_switch_inflight = True
+        future = self.servo_client.call_async(req)
+
+        def _done(_fut):
+            self._mode_switch_inflight = False
+            try:
+                resp = _fut.result()
+            except Exception as e:
+                self.get_logger().warning(f"[{self.backend}] switch_command_type Exception: {e}")
+                return
+
+            if resp and getattr(resp, "success", False):
+                self.current_mode = int(req.command_type)
+                self.get_logger().info(
+                    f"[{self.backend}] ✅ Servo-Mode gesetzt: '{self._desired_label}' (command_type={self.current_mode})"
+                )
+                self._desired_mode = None
+                self._desired_label = ""
+            else:
+                self.get_logger().warning(
+                    f"[{self.backend}] ❌ switch_command_type fehlgeschlagen (command_type={req.command_type})"
+                )
+
+        future.add_done_callback(_done)
 
     # ------------------------------------------------------------
     # Callbacks
@@ -177,6 +238,9 @@ class ServoBridge(Node):
 
         if self.pub_cartesian is None:
             return
+
+        # ✅ Auto: stelle sicher, dass Servo im TWIST-Modus ist
+        self._ensure_mode(ServoCommandType.Request.TWIST, "TWIST")
 
         out = TwistStamped()
         out.twist = msg.twist
@@ -200,6 +264,9 @@ class ServoBridge(Node):
 
         if self.pub_joint is None:
             return
+
+        # ✅ Auto: stelle sicher, dass Servo im JOINT_JOG-Modus ist
+        self._ensure_mode(ServoCommandType.Request.JOINT_JOG, "JOINT_JOG")
 
         out = JointJog()
         out.header.frame_id = msg.header.frame_id or self.current_frame
@@ -265,7 +332,7 @@ class ServoBridge(Node):
         )
 
     # ------------------------------------------------------------
-    # Mode / Frame
+    # Mode / Frame (optional UI overrides)
     # ------------------------------------------------------------
     def _on_set_mode(self, msg: String) -> None:
         raw = (msg.data or "").strip().upper()
@@ -274,46 +341,10 @@ class ServoBridge(Node):
                 f"[{self.backend}] Unbekannter Servo-Mode '{msg.data}' – erwartet JOINT_JOG, TWIST oder POSE."
             )
             return
-        self._switch_mode(self.MODE_MAP[raw], raw)
-
-    def _switch_mode(self, cmd_type: int, label: str = "") -> None:
-        if not self.use_servo_service:
-            self.current_mode = cmd_type
-            self.get_logger().info(
-                f"[{self.backend}] (real) Servo-Mode lokal auf '{label}' gesetzt – kein Service aktiv."
-            )
-            return
-
-        if self.current_mode == cmd_type:
-            return
-
-        if self.servo_client is None:
-            self.get_logger().warning(
-                f"[{self.backend}] Servo-Client nicht initialisiert – kann Mode '{label}' nicht setzen."
-            )
-            return
-
-        if not self.servo_client.wait_for_service(timeout_sec=5.0):
-            self.get_logger().warning(
-                f"[{self.backend}] Service '{self.servo_service_name}' nicht verfügbar."
-            )
-            return
-
-        req = ServoCommandType.Request()
-        req.command_type = cmd_type
-        future = self.servo_client.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-
-        resp = future.result()
-        if resp and resp.success:
-            self.current_mode = cmd_type
-            self.get_logger().info(
-                f"[{self.backend}] ✅ Servo-Mode geändert auf '{label}' (command_type={cmd_type})"
-            )
-        else:
-            self.get_logger().warning(
-                f"[{self.backend}] ❌ switch_command_type fehlgeschlagen (command_type={cmd_type})"
-            )
+        # UI override -> desired mode setzen
+        self._desired_mode = int(self.MODE_MAP[raw])
+        self._desired_label = raw
+        self._retry_set_mode()
 
     def _on_set_frame(self, msg: String) -> None:
         raw = (msg.data or "").strip().lower()

@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from typing import Optional
+from abc import ABC, abstractmethod
 
-import rclpy
 from rclpy.node import Node
+from rclpy.time import Time
 
 from std_msgs.msg import Bool, String
 from geometry_msgs.msg import PoseStamped
@@ -16,16 +16,16 @@ from spraycoater_nodes_py.utils.config_hub import topics
 NODE_KEY = "robot"
 
 
-class BaseRobot(Node):
+class BaseRobot(Node, ABC):
     """
     Gemeinsame Basis für:
       - SimRobot
       - OmronRobot (real)
 
-    Aufgaben:
-      - Statusverwaltung
-      - Statuspublishing (topics.yaml!)
-      - gemeinsame Helfer
+    Clean (kein Backwards/Fallback):
+      - topics.yaml ist Source-of-Truth
+      - keine self.loader, keine alten APIs
+      - Sim/Real implementieren nur die Hooks
     """
 
     def __init__(self, node_name: str = "robot") -> None:
@@ -37,20 +37,21 @@ class BaseRobot(Node):
         # --------------------------
         # interner Zustand
         # --------------------------
-        self._connected = False
-        self._initialized = False
-        self._power = False
-        self._servo_enabled = False
-        self._moving = False
-        self._estop = False
-        self._mode = "UNKNOWN"
+        self._connected: bool = False
+        self._initialized: bool = False
+        self._power: bool = False
+        self._servo_enabled: bool = False
+        self._moving: bool = False
+        self._estop: bool = False
+        self._mode: str = "UNKNOWN"
         self._last_error: str = ""
 
-        self._tcp_pose = PoseStamped()
-        self._joints = JointState()
+        # Daten, die publisht werden
+        self._tcp_pose: PoseStamped = PoseStamped()
+        self._joints: JointState = JointState()
 
         # --------------------------
-        # Publisher (aus topics.yaml)
+        # Publisher (topics.yaml)
         # --------------------------
         self.pub_connection = self._make_pub(Bool, "connection")
         self.pub_mode = self._make_pub(String, "mode")
@@ -60,18 +61,19 @@ class BaseRobot(Node):
         self.pub_power = self._make_pub(Bool, "power")
         self.pub_estop = self._make_pub(Bool, "estop")
         self.pub_errors = self._make_pub(String, "errors")
+
         self.pub_tcp_pose = self._make_pub(PoseStamped, "tcp_pose")
         self.pub_joints = self._make_pub(JointState, "joints")
 
         # --------------------------
-        # zyklisches Publishen
+        # zyklischer Tick (20 Hz)
         # --------------------------
-        self._timer = self.create_timer(0.05, self._publish_state)
+        self._timer = self.create_timer(0.05, self._tick)
 
         self.log.info("🤖 BaseRobot initialisiert")
 
     # ==========================================================
-    # Helpers: Publisher / Subscriber
+    # Helpers: Pub/Sub via config_hub
     # ==========================================================
 
     def _make_pub(self, msg_type, topic_id: str):
@@ -90,24 +92,46 @@ class BaseRobot(Node):
         )
 
     # ==========================================================
-    # Status Setter
+    # Clean Hooks (Sim/Real)
     # ==========================================================
 
-    def _set_error(self, text: str):
-        self._last_error = text
-        self.log.error(text)
-
-    def _set_mode(self, mode: str):
-        self._mode = mode
-        self.log.info(f"[robot] mode → {mode}")
+    @abstractmethod
+    def on_tick(self, now: Time) -> None:
+        """
+        Wird alle 50ms aufgerufen, bevor publisht wird.
+        Sim/Real soll hier:
+          - Status updaten (_connected/_moving/...)
+          - _tcp_pose und _joints setzen (falls neue Daten)
+        """
+        raise NotImplementedError
 
     # ==========================================================
-    # Publish Loop
+    # Status Setter (nur intern benutzen)
     # ==========================================================
 
-    def _publish_state(self):
-        now = self.get_clock().now().to_msg()
+    def _set_error(self, text: str) -> None:
+        self._last_error = str(text or "")
+        if self._last_error:
+            self.log.error(self._last_error)
 
+    def _set_mode(self, mode: str) -> None:
+        self._mode = str(mode or "UNKNOWN")
+
+    # ==========================================================
+    # Tick + Publish
+    # ==========================================================
+
+    def _tick(self) -> None:
+        now = self.get_clock().now()
+
+        # Hook: Sim/Real aktualisiert seinen Zustand
+        try:
+            self.on_tick(now)
+        except Exception as e:
+            # Backend-Fehler soll den Node nicht killen
+            self._set_error(f"[robot] on_tick failed: {type(e).__name__}: {e}")
+
+        # Status publishen
         self.pub_connection.publish(Bool(data=self._connected))
         self.pub_initialized.publish(Bool(data=self._initialized))
         self.pub_power.publish(Bool(data=self._power))
@@ -117,9 +141,9 @@ class BaseRobot(Node):
         self.pub_mode.publish(String(data=self._mode))
         self.pub_errors.publish(String(data=self._last_error))
 
-        # TCP Pose
-        self._tcp_pose.header.stamp = now
+        # TCP Pose publishen (Stamp wird IMMER hier gesetzt)
+        self._tcp_pose.header.stamp = now.to_msg()
         self.pub_tcp_pose.publish(self._tcp_pose)
 
-        # Joints
+        # JointState publishen
         self.pub_joints.publish(self._joints)

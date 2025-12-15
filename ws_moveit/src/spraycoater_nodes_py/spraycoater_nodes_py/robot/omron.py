@@ -8,10 +8,11 @@ import math
 from typing import List
 
 import rclpy
+from rclpy.time import Time
 from std_msgs.msg import String
 
 from .base import BaseRobot
-from .joint_mapping import omron_to_ros_positions
+from spraycoater_nodes_py.utils.joint_mapping import omron_to_ros_positions
 from .omron_interpreter import OmronInterpreter
 
 
@@ -19,12 +20,12 @@ class OmronRobot(BaseRobot):
     """
     Robot-Node für den echten Omron-Viper:
 
-    - Liest Textstatus vom OmronTcpBridge (z.B. "STATUS J ...") als raw_rx.
+    - Liest Textstatus vom OmronTcpBridge als raw_rx.
     - Parsen via OmronInterpreter.
-    - Mappt Omron-Reihenfolge (J1..J6) in URDF/ROS-Reihenfolge.
+    - Mappt Omron-Reihenfolge (J1..J6) -> ROS/URDF Joint-Reihenfolge.
     - Publiziert JointStates + Zustände über BaseRobot.
 
-    Erwartete topics.yaml Ergänzung:
+    topics.yaml muss enthalten:
       topics:
         omron:
           subscribe:
@@ -35,13 +36,12 @@ class OmronRobot(BaseRobot):
     """
 
     def __init__(self) -> None:
-        super().__init__(node_name="omron_robot")
+        # gleicher Node-Name wie SimRobot (Namespace trennt shadow/live)
+        super().__init__(node_name="robot")
 
-        # Interpreter für Textzeilen
         self._interp = OmronInterpreter()
 
-        # ROS-Jointnamen in Omron-Reihenfolge (J1..J6)
-        # -> MUSS zu URDF/MoveIt Jointnamen passen!
+        # Diese Liste MUSS zu deinen URDF/MoveIt Joint-Namen passen!
         self._joint_order_ros_names: List[str] = [
             "Adept_Viper_s650_Link1",  # J1
             "Adept_Viper_s650_Link2",  # J2
@@ -51,7 +51,6 @@ class OmronRobot(BaseRobot):
             "Adept_Viper_s650_Link6",  # J6
         ]
 
-        # Zielreihenfolge für JointState
         self._joints.name = list(self._joint_order_ros_names)
         self._joints.position = [0.0] * len(self._joints.name)
 
@@ -63,10 +62,11 @@ class OmronRobot(BaseRobot):
         self._servo_enabled = False
         self._moving = False
         self._mode = "DISCONNECTED"
+        self._last_error = ""
 
-        # raw_rx abonnieren (AUS config_hub)
-        topic_raw_rx = self.loader.subscribe_topic("omron", "raw_rx")
-        qos_raw_rx = self.loader.qos_by_id("subscribe", "omron", "raw_rx")
+        # raw_rx abonnieren (aus config_hub)
+        topic_raw_rx = self.cfg.subscribe_topic("omron", "raw_rx")
+        qos_raw_rx = self.cfg.qos_by_id("subscribe", "omron", "raw_rx")
 
         self._sub_raw_rx = self.create_subscription(
             String,
@@ -78,6 +78,15 @@ class OmronRobot(BaseRobot):
         self.get_logger().info(
             f"🤖 OmronRobot gestartet – subscribe raw_rx='{topic_raw_rx}' (via config_hub)"
         )
+
+    # ----------------------------------------------------------
+    # Hook (BaseRobot)
+    # ----------------------------------------------------------
+
+    def on_tick(self, now: Time) -> None:
+        # Real-Robot wird eventbasiert über raw_rx aktualisiert.
+        # Hier nichts tun (aber Hook muss existieren).
+        return
 
     # ------------------------------------------------------------------
     # RX-Handler (Text vom OmronTcpBridge)
@@ -93,20 +102,18 @@ class OmronRobot(BaseRobot):
 
         etype = ev.get("type")
 
-        # STATUS J j1..j6
         if etype == "status_joints":
             joints = ev.get("joints", [])
             if len(joints) != 6:
                 return
 
-            # Controller liefert Grad -> rad
-            joints_rad = [j * math.pi / 180.0 for j in joints]
+            joints_rad = [float(j) * math.pi / 180.0 for j in joints]
 
             try:
                 positions_ros = omron_to_ros_positions(
-                    self._joint_order_ros_names,
-                    self._joints.name,
-                    joints_rad,
+                    omron_positions=joints_rad,
+                    ros_joint_names=self._joints.name,
+                    joint_order_ros_names=self._joint_order_ros_names,
                 )
             except ValueError as exc:
                 self._set_error(f"Joint-Mapping-Fehler: {exc}")
@@ -114,7 +121,6 @@ class OmronRobot(BaseRobot):
 
             self._joints.position = positions_ros
 
-            # Minimaler Status-Set (du kannst das später noch feiner machen)
             self._connected = True
             self._power = True
             self._initialized = True
@@ -131,8 +137,6 @@ class OmronRobot(BaseRobot):
             cmd = ev.get("cmd", "")
             rest = ev.get("rest", "")
             self._set_error(f"NACK {cmd}: {rest}")
-
-        # andere Types ignorieren wir vorerst
 
 
 def main(args=None):
