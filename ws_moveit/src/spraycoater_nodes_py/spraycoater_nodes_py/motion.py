@@ -13,7 +13,6 @@ import math
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from rclpy.time import Time as RclpyTime
 from rclpy.duration import Duration
 
@@ -39,7 +38,7 @@ EE_LINK     = "tcp"
 WORLD_FRAME = "world"
 
 
-# ----------------- Planner Defaults (hart kodiert) -----------------
+# ----------------- Planner Defaults (noch im Code) -----------------
 
 DEFAULT_PLANNER_CFG: Dict[str, Any] = {
     "pipeline": "ompl",
@@ -51,23 +50,9 @@ DEFAULT_PLANNER_CFG: Dict[str, Any] = {
 }
 
 
-# ----------------- QoS -----------------
-
-def latched() -> QoSProfile:
-    return QoSProfile(
-        reliability=ReliabilityPolicy.RELIABLE,
-        durability=DurabilityPolicy.TRANSIENT_LOCAL,
-        depth=1,
-    )
-
-
-# ----------------- MotionNode -----------------
-
 class Motion(Node):
-
     def __init__(self) -> None:
         super().__init__("motion")
-
         self.log = self.get_logger()
 
         self.cfg_topics = topics()
@@ -122,7 +107,6 @@ class Motion(Node):
             node_name=f"{self.get_name()}_moveit",
             config_dict=cfg_dict,
         )
-        # kleiner Delay, bis MoveItPy sauber hochgefahren ist
         time.sleep(0.5)
 
         self.arm = self.robot.get_planning_component(GROUP_NAME)
@@ -130,16 +114,10 @@ class Motion(Node):
         self.log.info(f"MoveItPy ready (group={GROUP_NAME}, backend='{self.backend}')")
 
         # ---------------- intern: Motion-Config (Speed + Planner) ----------------
-        # Globale "Rezept-Geschwindigkeit" in mm/s (wird für REAL in % gemappt)
         self._speed_mm_s: float = 100.0
-
-        # Planner-Konfiguration (immer mit Default vorbelegt)
         self._planner_cfg: Dict[str, Any] = DEFAULT_PLANNER_CFG.copy()
-
-        # Starttoleranz – aktuell nur dokumentarisch
         self._allowed_start_tolerance: float = 0.01
 
-        # PlanRequestParameters – wenn möglich
         self._plan_params: Optional[PlanRequestParameters] = None
         try:
             self._plan_params = PlanRequestParameters(self.robot, "plan_request_params")
@@ -151,93 +129,84 @@ class Motion(Node):
                 "Nutze arm.plan() ohne explizite Parameter."
             )
 
-        # ---------------- Publishers ----------------
-
+        # ---------------- Publishers (alle Topics/QoS via config_hub) ----------------
         self.pub_target_traj = self.create_publisher(
             JointTrajectory,
             self.cfg_topics.publish_topic(NODE_KEY, "target_trajectory"),
-            self.cfg_topics.qos_by_id("publish", NODE_KEY, "target_trajectory")
+            self.cfg_topics.qos_by_id("publish", NODE_KEY, "target_trajectory"),
         )
 
         self.pub_planned = self.create_publisher(
             RobotTrajectoryMsg,
             self.cfg_topics.publish_topic(NODE_KEY, "planned_trajectory_rt"),
-            latched()
+            self.cfg_topics.qos_by_id("publish", NODE_KEY, "planned_trajectory_rt"),
         )
 
         self.pub_executed = self.create_publisher(
             RobotTrajectoryMsg,
             self.cfg_topics.publish_topic(NODE_KEY, "executed_trajectory_rt"),
-            latched()
+            self.cfg_topics.qos_by_id("publish", NODE_KEY, "executed_trajectory_rt"),
         )
 
         self.pub_preview = self.create_publisher(
             MarkerArray,
             self.cfg_topics.publish_topic(NODE_KEY, "preview_markers"),
-            latched()
+            self.cfg_topics.qos_by_id("publish", NODE_KEY, "preview_markers"),
         )
 
         self.pub_result = self.create_publisher(
             MsgString,
             self.cfg_topics.publish_topic(NODE_KEY, "motion_result"),
-            self.cfg_topics.qos_by_id("publish", NODE_KEY, "motion_result")
+            self.cfg_topics.qos_by_id("publish", NODE_KEY, "motion_result"),
         )
 
-        # Omron-Command-Publisher (MOVEJ etc.) – genutzt im Real-Backend
-        self.pub_omron_cmd = self.create_publisher(
-            MsgString,
-            "/omron/command",
-            10,
-        )
+        # ✅ Omron-Command-Publisher (REAL) – NICHT hardcoded, aus topics.yaml
+        topic_omron_cmd = self.cfg_topics.publish_topic("omron", "command")
+        qos_omron_cmd = self.cfg_topics.qos_by_id("publish", "omron", "command")
+        self.pub_omron_cmd = self.create_publisher(MsgString, topic_omron_cmd, qos_omron_cmd)
+        self.log.info(f"[{self.backend}] Omron cmd topic: {topic_omron_cmd}")
 
         # --------------- Subscribers ----------------
-
-        # freie Pose planen
         self.create_subscription(
             PoseStamped,
             self.cfg_topics.subscribe_topic(NODE_KEY, "plan_pose"),
             self._on_plan_pose,
-            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "plan_pose")
+            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "plan_pose"),
         )
 
-        # named Pose planen (home/service)
         self.create_subscription(
             MsgString,
             self.cfg_topics.subscribe_topic(NODE_KEY, "plan_named"),
             self._on_plan_named,
-            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "plan_named")
+            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "plan_named"),
         )
 
-        # geplanten Plan ausführen
         self.create_subscription(
             MsgBool,
             self.cfg_topics.subscribe_topic(NODE_KEY, "execute"),
             self._on_execute,
-            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "execute")
+            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "execute"),
         )
 
-        # Bewegung stoppen
         self.create_subscription(
             MsgEmpty,
             self.cfg_topics.subscribe_topic(NODE_KEY, "stop"),
             self._on_stop,
-            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "stop")
+            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "stop"),
         )
 
-        # Motion-Speed (mm/s) setzen
         self.create_subscription(
             MsgFloat64,
             self.cfg_topics.subscribe_topic(NODE_KEY, "set_speed_mm_s"),
             self._on_set_speed_mm_s,
-            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "set_speed_mm_s")
+            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "set_speed_mm_s"),
         )
 
-        # Planner-Konfiguration (Pipeline + Planner-ID + Params) setzen
         self.create_subscription(
             MsgString,
             self.cfg_topics.subscribe_topic(NODE_KEY, "set_planner_cfg"),
             self._on_set_planner_cfg,
-            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "set_planner_cfg")
+            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "set_planner_cfg"),
         )
 
         # state
@@ -251,7 +220,6 @@ class Motion(Node):
     # ----------------------------------------------------------
     # TF Helper
     # ----------------------------------------------------------
-
     def _lookup_tf(self, target: str, source: str):
         if not self.tf_buffer.can_transform(target, source, RclpyTime(), Duration(seconds=1.0)):
             raise RuntimeError(f"TF not available {target} <- {source}")
@@ -260,7 +228,6 @@ class Motion(Node):
     # ----------------------------------------------------------
     # emit helper
     # ----------------------------------------------------------
-
     def _emit(self, text: str) -> None:
         self.pub_result.publish(MsgString(data=text))
         self.log.info(text)
@@ -268,7 +235,6 @@ class Motion(Node):
     # ----------------------------------------------------------
     # CONFIG: Planner-Defaults in PlanRequestParameters schreiben
     # ----------------------------------------------------------
-
     def _apply_planner_cfg_to_params(self) -> None:
         if self._plan_params is None:
             return
@@ -279,17 +245,14 @@ class Motion(Node):
         pipeline = (cfg.get("pipeline") or DEFAULT_PLANNER_CFG["pipeline"]).strip()
         planner_id = (cfg.get("planner_id") or DEFAULT_PLANNER_CFG["planner_id"]).strip()
 
-        # Pipeline explizit setzen – nur, wenn die API existiert
         if hasattr(self.robot, "set_pipelines"):
             try:
                 self.robot.set_pipelines([pipeline])  # type: ignore[attr-defined]
             except Exception as e:
                 self.log.warning(f"[config] set_pipelines('{pipeline}') failed: {e}")
         else:
-            # Deine Version von MoveItPy kümmert sich über die Config um die Pipeline
             self.log.debug("[config] MoveItPy hat keine set_pipelines()-Methode – Pipeline kommt aus YAML-Config.")
 
-        # Planner-ID, falls Attribut vorhanden
         try:
             p.planner_id = planner_id  # type: ignore[attr-defined]
         except AttributeError:
@@ -298,7 +261,6 @@ class Motion(Node):
                 "Planner-ID wird nur über die Pipeline-Konfiguration gewählt."
             )
 
-        # Zeit / Versuche / Scaling aus Config
         p.planning_time = float(cfg.get("planning_time", DEFAULT_PLANNER_CFG["planning_time"]))
         p.planning_attempts = int(cfg.get("planning_attempts", DEFAULT_PLANNER_CFG["planning_attempts"]))
         p.max_velocity_scaling_factor = float(
@@ -320,7 +282,6 @@ class Motion(Node):
     # ----------------------------------------------------------
     # CONFIG: Speed + Planner (Topic-Callbacks)
     # ----------------------------------------------------------
-
     def _on_set_speed_mm_s(self, msg: MsgFloat64) -> None:
         v = float(msg.data)
         if v <= 0.0:
@@ -335,18 +296,14 @@ class Motion(Node):
             cfg = json.loads(raw)
             if not isinstance(cfg, dict):
                 raise ValueError("planner_cfg JSON ist kein Objekt (dict).")
-
-            # vorhandene Defaults überschreiben
             self._planner_cfg.update(cfg)
             self._apply_planner_cfg_to_params()
-
         except Exception as e:
             self.log.error(f"[config] set_planner_cfg: invalid JSON '{raw}': {e}")
 
     # ----------------------------------------------------------
     # PLAN POSE
     # ----------------------------------------------------------
-
     def _on_plan_pose(self, msg: PoseStamped) -> None:
         if self._busy:
             self._emit("ERROR:BUSY")
@@ -358,28 +315,18 @@ class Motion(Node):
         in_frame = msg.header.frame_id or self.frame_world
         self.log.info(f"[plan_pose] in_frame={in_frame} → world={self.frame_world}")
 
-        pose_in = msg.pose
-        self.log.info(
-            f"[plan_pose] incoming (m) in '{in_frame}': "
-            f"({pose_in.position.x:.3f}, {pose_in.position.y:.3f}, {pose_in.position.z:.3f})"
-        )
-
         try:
+            # ✅ korrekt: PoseStamped transformieren
             if in_frame != self.frame_world:
                 tf = self._lookup_tf(self.frame_world, in_frame)
-                pose_world = do_transform_pose(pose_in, tf)
+                goal = do_transform_pose(msg, tf)  # PoseStamped -> PoseStamped
+                goal.header.frame_id = self.frame_world
+                goal.header.stamp = self.get_clock().now().to_msg()
             else:
-                pose_world = pose_in
-
-            self.log.info(
-                f"[plan_pose] world pose (m): "
-                f"({pose_world.position.x:.3f}, {pose_world.position.y:.3f}, {pose_world.position.z:.3f})"
-            )
-
-            goal = PoseStamped()
-            goal.header.frame_id = self.frame_world
-            goal.header.stamp = self.get_clock().now().to_msg()
-            goal.pose = pose_world
+                goal = PoseStamped()
+                goal.header.frame_id = self.frame_world
+                goal.header.stamp = self.get_clock().now().to_msg()
+                goal.pose = msg.pose
 
             self.arm.set_start_state_to_current_state()
             self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
@@ -409,7 +356,6 @@ class Motion(Node):
     # ----------------------------------------------------------
     # PLAN NAMED (home/service via TF-Frame)
     # ----------------------------------------------------------
-
     def _on_plan_named(self, msg: MsgString) -> None:
         if self._busy:
             self._emit("ERROR:BUSY")
@@ -462,7 +408,6 @@ class Motion(Node):
     # ----------------------------------------------------------
     # EXECUTE – je nach Backend: MoveIt-Exec (SIM) oder Omron MOVEJ
     # ----------------------------------------------------------
-
     def _on_execute(self, msg: MsgBool) -> None:
         if not msg.data:
             self._on_stop(MsgEmpty())
@@ -482,10 +427,8 @@ class Motion(Node):
             msg_traj = self._planned.get_robot_trajectory_msg()
 
             if self.is_real_backend:
-                # → Trajektorie via OmronTcpBridge ausführen
                 ok = self._execute_via_omron(msg_traj)
             else:
-                # → normale MoveIt-Execution (Sim/Fake)
                 ok = self.robot.execute(self._planned, controllers=[])
 
             if self._cancel:
@@ -507,20 +450,12 @@ class Motion(Node):
     # ----------------------------------------------------------
     # REAL-Backend: Trajektorie via Omron MOVEJ
     # ----------------------------------------------------------
-
     def _execute_via_omron(self, traj_msg: RobotTrajectoryMsg) -> bool:
-        """
-        Führt eine geplante Trajektorie im REAL-Backend über den Omron-TCP-Client aus.
-
-        V1: nur Endpunkt -> ein MOVEJ-Kommando.
-        Später: hier kann man auf "viele MOVEJ" oder echtes Streaming erweitern.
-        """
         jt = traj_msg.joint_trajectory
         if not jt.points:
             self.log.error("[omron] Trajektorie hat keine Punkte.")
             return False
 
-        # Nur Endpunkt nehmen (letzter Punkt)
         last = jt.points[-1]
         names = list(jt.joint_names)
         positions = list(last.positions)
@@ -532,42 +467,29 @@ class Motion(Node):
             return False
 
         j_rad = positions[:6]
-
-        # rad -> deg
         j_deg = [p * 180.0 / math.pi for p in j_rad]
 
-        # mm/s -> %
         v_mm_s = float(self._speed_mm_s)
         if v_mm_s <= 0.0:
-            v_mm_s = 50.0  # fallback
+            v_mm_s = 50.0
 
         max_tcp = float(self.max_tcp_speed_mm_s) if self.max_tcp_speed_mm_s > 0.0 else 300.0
         speed_pct = 100.0 * v_mm_s / max_tcp
-        if speed_pct > 100.0:
-            speed_pct = 100.0
-        if speed_pct < 5.0:
-            speed_pct = 5.0
+        speed_pct = max(5.0, min(100.0, speed_pct))
 
-        # MOVEJ j1 j2 j3 j4 j5 j6 speed_pct
         cmd = "MOVEJ " + " ".join(f"{a:.3f}" for a in j_deg) + f" {speed_pct:.1f}"
-
         self.log.info(f"[omron] MOVEJ via TCP: {cmd}")
         self.pub_omron_cmd.publish(MsgString(data=cmd))
-
-        # V1: wir gehen davon aus, dass das Senden ok ist.
-        # Später kann hier ein ACK/Status-Topic ausgewertet werden.
         return True
 
     # ----------------------------------------------------------
     # STOP
     # ----------------------------------------------------------
-
     def _on_stop(self, _msg: MsgEmpty) -> None:
         self._cancel = True
         self._emit("STOP:REQ")
 
     # ----------------------------------------------------------
-
     def _publish_preview(self, goal: PoseStamped) -> None:
         m = Marker()
         m.header.frame_id = goal.header.frame_id
@@ -581,8 +503,6 @@ class Motion(Node):
         m.color.r, m.color.g, m.color.b, m.color.a = 0.2, 1.0, 0.2, 1.0
         self.pub_preview.publish(MarkerArray(markers=[m]))
 
-
-# ------------------------ main ------------------------
 
 def main(args=None) -> None:
     rclpy.init(args=args)

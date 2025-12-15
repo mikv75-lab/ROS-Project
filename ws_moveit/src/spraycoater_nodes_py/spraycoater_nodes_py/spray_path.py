@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 
 from std_msgs.msg import String
 from geometry_msgs.msg import Pose, PoseArray, Point
@@ -19,24 +18,22 @@ class SprayPath(Node):
     SprayPath-Manager.
 
     SUB:
-      - spray_path.set               (MarkerArray)
-      - spray_path.executed_poses_in (PoseArray)
+      - spraycoater/spray_path/set               (MarkerArray)
+      - spraycoater/spray_path/executed_poses_in (PoseArray)
 
-    PUB (alle TRANSIENT_LOCAL / latched + 1 Hz republish):
-      - spray_path.poses
-      - spray_path.markers
-      - spray_path.current
-      - spray_path.executed_poses
-      - spray_path.executed_markers
+    PUB (QoS via config_hub, i.d.R. latched/TRANSIENT_LOCAL + 1 Hz republish):
+      - spraycoater/spray_path/poses
+      - spraycoater/spray_path/markers
+      - spraycoater/spray_path/current
+      - spraycoater/spray_path/executed_poses
+      - spraycoater/spray_path/executed_markers
 
-    Backend:
-      - Parameter 'backend' (z.B. 'omron_sim', 'omron_real', 'meca_sim')
-        aktuell nur für Logging / Debug
+    Namespace kommt ausschließlich über den Node (Launchfile).
     """
 
     GROUP = "spray_path"
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("spraypath_manager")
 
         # ---------------- Backend-Parameter ----------------
@@ -50,32 +47,36 @@ class SprayPath(Node):
         self.frames = frames()
         self._F = self.frames.resolve
 
-        # Topics & QoS aus config_hub
+        # ---------------- Topics & QoS via config_hub ----------------
+        # SUB
         topic_set = self.loader.subscribe_topic(self.GROUP, "set")
         qos_set = self.loader.qos_by_id("subscribe", self.GROUP, "set")
 
         topic_exec_in = self.loader.subscribe_topic(self.GROUP, "executed_poses_in")
         qos_exec_in = self.loader.qos_by_id("subscribe", self.GROUP, "executed_poses_in")
 
-        # Latched QoS für unsere Publisher
-        latched_qos = QoSProfile(
-            depth=10,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            reliability=ReliabilityPolicy.RELIABLE,
-        )
-
+        # PUB (QoS kommt aus qos.yaml über die IDs)
         topic_current = self.loader.publish_topic(self.GROUP, "current")
-        topic_poses = self.loader.publish_topic(self.GROUP, "poses")
-        topic_markers = self.loader.publish_topic(self.GROUP, "markers")
-        topic_exec_poses = self.loader.publish_topic(self.GROUP, "executed_poses")
-        topic_exec_markers = self.loader.publish_topic(self.GROUP, "executed_markers")
+        qos_current = self.loader.qos_by_id("publish", self.GROUP, "current")
 
-        # Publisher / Subscriber
-        self.pub_current = self.create_publisher(String, topic_current, latched_qos)
-        self.pub_poses = self.create_publisher(PoseArray, topic_poses, latched_qos)
-        self.pub_markers = self.create_publisher(MarkerArray, topic_markers, latched_qos)
-        self.pub_exec_poses = self.create_publisher(PoseArray, topic_exec_poses, latched_qos)
-        self.pub_exec_markers = self.create_publisher(MarkerArray, topic_exec_markers, latched_qos)
+        topic_poses = self.loader.publish_topic(self.GROUP, "poses")
+        qos_poses = self.loader.qos_by_id("publish", self.GROUP, "poses")
+
+        topic_markers = self.loader.publish_topic(self.GROUP, "markers")
+        qos_markers = self.loader.qos_by_id("publish", self.GROUP, "markers")
+
+        topic_exec_poses = self.loader.publish_topic(self.GROUP, "executed_poses")
+        qos_exec_poses = self.loader.qos_by_id("publish", self.GROUP, "executed_poses")
+
+        topic_exec_markers = self.loader.publish_topic(self.GROUP, "executed_markers")
+        qos_exec_markers = self.loader.qos_by_id("publish", self.GROUP, "executed_markers")
+
+        # ---------------- Publisher / Subscriber ----------------
+        self.pub_current = self.create_publisher(String, topic_current, qos_current)
+        self.pub_poses = self.create_publisher(PoseArray, topic_poses, qos_poses)
+        self.pub_markers = self.create_publisher(MarkerArray, topic_markers, qos_markers)
+        self.pub_exec_poses = self.create_publisher(PoseArray, topic_exec_poses, qos_exec_poses)
+        self.pub_exec_markers = self.create_publisher(MarkerArray, topic_exec_markers, qos_exec_markers)
 
         self.sub_set = self.create_subscription(
             MarkerArray,
@@ -91,7 +92,7 @@ class SprayPath(Node):
             qos_exec_in,
         )
 
-        # Interner Zustand
+        # ---------------- Interner Zustand ----------------
         self._last_frame = self.frames.get("scene", "scene")
         self._last_name: str = ""
         self._last_pa: PoseArray | None = None
@@ -106,7 +107,7 @@ class SprayPath(Node):
 
         self.get_logger().info(
             f"✅ SprayPathManager bereit (backend='{self.backend}'): "
-            f"set→poses/markers, exec_in→executed_*, TRANSIENT_LOCAL + 1Hz Republish."
+            f"set→poses/markers, exec_in→executed_*, QoS via config_hub + 1Hz Republish."
         )
 
     # ----------------------------------------------------------------------
@@ -209,7 +210,7 @@ class SprayPath(Node):
         self._last_markers = out_ma
         self._last_name = name
 
-        # One-Shot + latched
+        # One-Shot + latched (über QoS aus config_hub)
         self.pub_poses.publish(pa)
         self.pub_markers.publish(out_ma)
         self._publish_current_name(name)
@@ -247,7 +248,7 @@ class SprayPath(Node):
             )
             return
 
-        # MarkerArray (Istpfad)
+        # MarkerArray (Istpfad) – Marker Properties sind ok, QoS kommt vom Publisher
         m = Marker()
         m.header.frame_id = frame
         m.header.stamp = now
@@ -287,7 +288,7 @@ class SprayPath(Node):
     # 1 Hz REPUBLISH
     # ----------------------------------------------------------------------
 
-    def _republish_all(self):
+    def _republish_all(self) -> None:
         if self._last_pa is not None:
             self.pub_poses.publish(self._last_pa)
         if self._last_markers is not None:

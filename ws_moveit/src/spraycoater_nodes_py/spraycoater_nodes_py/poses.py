@@ -1,7 +1,8 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # spraycoater_nodes_py/poses.py
-#!/usr/bin/env python3
 from __future__ import annotations
+
 import os
 import yaml
 import math
@@ -10,6 +11,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
 from rclpy.duration import Duration
+
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from std_msgs.msg import Empty
 from tf2_ros import (
@@ -39,27 +41,8 @@ def rpy_deg_to_quat(roll_deg: float, pitch_deg: float, yaw_deg: float):
     qx = cx * cy * sz - cz * sy * sx
     qy = cz * sx * cy + sz * cx * sy
     qz = cz * cx * sy - sz * cy * sx
-    # normieren
     n = math.sqrt(qw * qw + qx * qx + qy * qy + qz * qz) or 1.0
     return (qx / n, qy / n, qz / n, qw / n)
-
-
-def quat_to_rpy_deg(qx: float, qy: float, qz: float, qw: float):
-    # Roll
-    sinr_cosp = 2.0 * (qw * qx + qy * qz)
-    cosr_cosp = 1.0 - 2.0 * (qx * qx + qy * qy)
-    roll = math.atan2(sinr_cosp, cosr_cosp)
-    # Pitch
-    sinp = 2.0 * (qw * qy - qz * qx)
-    if abs(sinp) >= 1:
-        pitch = math.copysign(math.pi / 2.0, sinp)
-    else:
-        pitch = math.asin(sinp)
-    # Yaw
-    siny_cosp = 2.0 * (qw * qz + qx * qy)
-    cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz)
-    yaw = math.atan2(siny_cosp, cosy_cosp)
-    return (math.degrees(roll), math.degrees(pitch), math.degrees(yaw))
 
 
 def _normalize_quat(qx: float, qy: float, qz: float, qw: float):
@@ -69,25 +52,12 @@ def _normalize_quat(qx: float, qy: float, qz: float, qw: float):
 
 class Poses(Node):
     """
-    Nur statische TFs.
+    Statische Named-Poses (home/service) + Speicherung aus world->tcp TF.
 
-    Topics:
-      subscribe:
-        - poses.set_home     (std_msgs/Empty)
-        - poses.set_service  (std_msgs/Empty)
-      publish:
-        - poses.home_pose    (geometry_msgs/PoseStamped, latched)
-        - poses.service_pose (geometry_msgs/PoseStamped, latched)
-
-    Verhalten:
-      - set_home/set_service:
-          * world->tcp per TF lesen
-          * Pose (im world-Frame) mit EXAKTEM Quaternion (quat_xyzw) in YAML schreiben
-          * ALLE Posen als /tf_static neu aussenden (inkl. home/service)
-          * passende Pose gelatched publizieren
-      - Startup:
-          * ALLE Posen als /tf_static aussenden
-          * vorhandene home/service zusätzlich als Pose publishen
+    WICHTIG:
+      - TF ist global (/tf_static). Namespace wirkt NICHT.
+      - Daher werden child_frame_ids automatisch mit Namespace prefix versehen
+        (z.B. 'shadow/home', 'shadow/service'), damit shadow/live parallel geht.
     """
 
     NAMED = ("home", "service")
@@ -95,9 +65,6 @@ class Poses(Node):
     def __init__(self):
         super().__init__("poses")
 
-        # -----------------------------------------
-        # Backend-Parameter (omron_sim, omron_real, ...)
-        # -----------------------------------------
         self.declare_parameter("backend", "default")
         self.backend: str = (
             self.get_parameter("backend").get_parameter_value().string_value or "default"
@@ -108,8 +75,11 @@ class Poses(Node):
         self.frames = frames()
         self._F = self.frames.resolve
         self.frame_world = self._F(self.frames.get("world", "world"))
-        # Home/Service beziehen sich jetzt auf das TCP-Frame
         self.frame_tcp = self._F(self.frames.get("tcp", "tcp"))
+
+        # TF child prefix (aus Node-Namespace)
+        ns = (self.get_namespace() or "").strip("/")
+        self.tf_prefix = ns  # "" oder "shadow" oder "live"
 
         # YAML laden
         poses_yaml = config_path("poses.yaml")
@@ -119,7 +89,7 @@ class Poses(Node):
             self.poses = yaml.safe_load(f) or {}
         if not isinstance(self.poses, dict):
             raise ValueError(
-                "poses.yaml muss ein Mapping {name: {frame, xyz, quat_xyzw?(x,y,z,w) | rpy_deg?}} enthalten."
+                "poses.yaml muss ein Mapping {name: {frame, xyz, quat_xyzw | rpy_deg}} enthalten."
             )
         self.yaml_path = poses_yaml
 
@@ -137,27 +107,31 @@ class Poses(Node):
         # TF
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=False)
-        self.tf_static  = StaticTransformBroadcaster(self)  # nur statisch
+        self.tf_static = StaticTransformBroadcaster(self)
 
         # Publisher
-        self.pub_home_pose    = self.create_publisher(PoseStamped, topic_home_pose, qos_home_pose)
+        self.pub_home_pose = self.create_publisher(PoseStamped, topic_home_pose, qos_home_pose)
         self.pub_service_pose = self.create_publisher(PoseStamped, topic_service_pose, qos_service_pose)
 
         # Subscriber
         self.create_subscription(Empty, topic_set_home, self._on_set_home, qos_set_home)
         self.create_subscription(Empty, topic_set_service, self._on_set_service, qos_set_service)
 
-        # Initial: alle statischen TFs senden + evtl. Pose publishen
+        # Initial: alle statischen TFs senden + Pose publishen
         self._send_all_static_tfs()
         self._publish_named_pose_if_exists("home")
         self._publish_named_pose_if_exists("service")
 
         self.get_logger().info(
-            f"✅ PosesManager aktiv (backend='{self.backend}') – "
-            f"{len(self.poses)} Posen (world='{self.frame_world}', tcp='{self.frame_tcp}') – nur /tf_static"
+            f"✅ Poses aktiv (backend='{self.backend}', ns='{self.get_namespace() or '/'}') – "
+            f"world='{self.frame_world}', tcp='{self.frame_tcp}', tf_prefix='{self.tf_prefix or '(none)'}'"
         )
 
-    # ---------- TF/Publish Utilities ----------
+    # ---------- Helpers ----------
+
+    def _tf_child_name(self, name: str) -> str:
+        # TF ist global -> namespacen, damit shadow/live parallel möglich ist
+        return f"{self.tf_prefix}/{name}" if self.tf_prefix else name
 
     def _send_all_static_tfs(self) -> None:
         tfs = []
@@ -177,7 +151,6 @@ class Poses(Node):
         self._publish_named_pose(name, pose)
 
     def _publish_named_pose(self, name: str, pose_dict: dict) -> None:
-        # Pose gelatched publishen (Frame world)
         msg, tf = self._compose_pose_and_tf(name, pose_dict, force_parent_world=True)
         now = self.get_clock().now().to_msg()
         msg.header.stamp = now
@@ -188,10 +161,10 @@ class Poses(Node):
         elif name == "service":
             self.pub_service_pose.publish(msg)
 
-        # Nur statisch senden (einzeln zusätzlich ok)
         self.tf_static.sendTransform([tf])
+
         self.get_logger().info(
-            f"🧭 /tf_static aktualisiert für '{name}' (parent={tf.header.frame_id}) + Pose gepublished"
+            f"🧭 /tf_static aktualisiert '{tf.child_frame_id}' (parent={tf.header.frame_id}) + Pose gepublished"
         )
 
     def _compose_pose_and_tf(
@@ -200,12 +173,12 @@ class Poses(Node):
         parent_frame = self.frame_world if force_parent_world else self._F(
             pose.get("frame", self.frame_world)
         )
+
         x, y, z = pose.get("xyz", [0.0, 0.0, 0.0])
 
         if "quat_xyzw" in pose:
             qx, qy, qz, qw = pose["quat_xyzw"]
         else:
-            # Legacy-Fallback (rpy_deg)
             r_deg, p_deg, y_deg = pose.get("rpy_deg", [0.0, 0.0, 0.0])
             qx, qy, qz, qw = rpy_deg_to_quat(r_deg, p_deg, y_deg)
 
@@ -223,7 +196,7 @@ class Poses(Node):
 
         tf = TransformStamped()
         tf.header.frame_id = parent_frame
-        tf.child_frame_id  = name
+        tf.child_frame_id = self._tf_child_name(name)
         tf.transform.translation.x = float(x)
         tf.transform.translation.y = float(y)
         tf.transform.translation.z = float(z)
@@ -231,6 +204,7 @@ class Poses(Node):
         tf.transform.rotation.y = qy
         tf.transform.rotation.z = qz
         tf.transform.rotation.w = qw
+
         return msg, tf
 
     # ---------- Core: tcp → world speichern (EXAKT) ----------
@@ -257,26 +231,21 @@ class Poses(Node):
         qx, qy, qz, qw = _normalize_quat(q.x, q.y, q.z, q.w)
 
         return {
-            "frame": target,  # explizit 'world'
+            "frame": target,
             "xyz": [float(t.x), float(t.y), float(t.z)],
             "quat_xyzw": [float(qx), float(qy), float(qz), float(qw)],
-            # optional: nur zur menschlichen Lesbarkeit
-            # "rpy_deg": list(quat_to_rpy_deg(qx, qy, qz, qw)),
         }
 
     def _save_pose_and_publish(self, name: str) -> None:
         pose_dict = self._lookup_tcp_in_world()
         if pose_dict is None:
-            self.get_logger().warning(
-                f"{name}: Abbruch – kein world→tcp TF vorhanden."
-            )
+            self.get_logger().warning(f"{name}: Abbruch – kein world→tcp TF vorhanden.")
             return
 
-        # YAML persistieren (immer frame='world', mit exaktem quat_xyzw)
         self.poses[name] = pose_dict
         try:
             with open(self.yaml_path, "w", encoding="utf-8") as f:
-                yaml.dump(self.poses, f, sort_keys=False)
+                yaml.safe_dump(self.poses, f, sort_keys=False, allow_unicode=True)
             self.get_logger().info(
                 f"💾 {name}: YAML aktualisiert (frame=world, quat_xyzw) aus TF world→tcp"
             )
@@ -284,7 +253,6 @@ class Poses(Node):
             self.get_logger().error(f"{name}: YAML schreiben fehlgeschlagen: {e}")
             return
 
-        # ALLE statisch neu senden (robust) + Pose publishen
         self._send_all_static_tfs()
         self._publish_named_pose(name, pose_dict)
 

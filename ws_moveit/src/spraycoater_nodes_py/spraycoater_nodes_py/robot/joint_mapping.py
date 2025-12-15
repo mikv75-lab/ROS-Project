@@ -15,77 +15,74 @@ def ros_to_omron_positions(
     Mappt Joint-Werte aus der ROS-Reihenfolge (z.B. JointTrajectory.joint_names)
     in die Omron-Reihenfolge (J1..J6).
 
-    Parameter:
-      ros_joint_names:
-        Reihenfolge der Joints in der eingehenden ROS-Nachricht
-        (z.B. JointTrajectory.joint_names).
+    Args:
+        ros_joint_names: Joint-Namen in der Reihenfolge der ros_positions.
+        ros_positions:  Positionswerte (selbe Länge wie ros_joint_names).
+        joint_order_ros_names: Zielreihenfolge als ROS-Namen, z.B.
+            ["joint_1","joint_2","joint_3","joint_4","joint_5","joint_6"]
 
-      ros_positions:
-        Positionswerte (rad) in GENAU derselben Reihenfolge wie ros_joint_names.
+    Returns:
+        Liste der Positionen in Omron-Reihenfolge (entspricht joint_order_ros_names).
 
-      joint_order_ros_names:
-        Liste von ROS-Jointnamen in Omron-Reihenfolge.
-        Beispiel:
-          [
-            "Adept_Viper_s650_Link1",  # J1
-            "Adept_Viper_s650_Link2",  # J2
-            "Adept_Viper_s650_Link3",  # J3
-            "Adept_Viper_s650_Link4",  # J4
-            "Adept_Viper_s650_Link5",  # J5
-            "Adept_Viper_s650_Link6",  # J6
-          ]
-
-    Rückgabe:
-      Liste von Positionswerten (rad) in Omron-Reihenfolge (J1..J6).
+    Raises:
+        ValueError: Bei Längenfehlern oder fehlenden Joint-Namen.
     """
     if len(ros_joint_names) != len(ros_positions):
         raise ValueError(
-            f"ros_to_omron_positions: ros_joint_names ({len(ros_joint_names)}) "
-            f"und ros_positions ({len(ros_positions)}) müssen gleich lang sein."
+            f"ros_to_omron_positions: len(ros_joint_names)={len(ros_joint_names)} "
+            f"!= len(ros_positions)={len(ros_positions)}"
         )
 
-    out: List[float] = []
-    for name in joint_order_ros_names:
+    if not joint_order_ros_names:
+        raise ValueError("ros_to_omron_positions: joint_order_ros_names ist leer.")
+
+    out: List[float] = [0.0] * len(joint_order_ros_names)
+
+    for om_idx, name in enumerate(joint_order_ros_names):
         try:
-            idx = ros_joint_names.index(name)
+            ros_idx = ros_joint_names.index(name)
         except ValueError as exc:
             raise ValueError(
                 f"ros_to_omron_positions: ROS-Jointname '{name}' nicht in ros_joint_names vorhanden."
             ) from exc
-        out.append(ros_positions[idx])
+        out[om_idx] = float(ros_positions[ros_idx])
+
     return out
 
 
 def omron_to_ros_positions(
-    joint_order_ros_names: List[str],
-    ros_joint_names: List[str],
     omron_positions: List[float],
+    ros_joint_names: List[str],
+    joint_order_ros_names: List[str],
 ) -> List[float]:
     """
-    Mappt Joint-Werte aus Omron-Reihenfolge (J1..J6) zurück in eine beliebige
-    ROS-Reihenfolge (z.B. sensor_msgs/JointState.name).
+    Mappt Joint-Werte aus Omron-Reihenfolge (J1..J6) in eine ROS-Reihenfolge
+    passend zu ros_joint_names.
 
-    Parameter:
-      joint_order_ros_names:
-        ROS-Jointnamen in Omron-Reihenfolge (wie oben beschrieben).
+    Args:
+        omron_positions: Positionen in Omron-Reihenfolge (selbe Länge wie joint_order_ros_names).
+        ros_joint_names: gewünschte ROS-Reihenfolge (Output-Order).
+        joint_order_ros_names: Reihenfolge, die zu omron_positions gehört (typisch joint_1..joint_6).
 
-      ros_joint_names:
-        Ziel-Reihenfolge, in der die Werte ausgegeben werden sollen
-        (z.B. JointState.name / URDF-Reihenfolge).
+    Returns:
+        Positionen in der Reihenfolge von ros_joint_names.
 
-      omron_positions:
-        Joint-Werte (rad) in Omron-Reihenfolge (entspricht joint_order_ros_names).
-
-    Rückgabe:
-      Liste von Positionswerten (rad) in derselben Reihenfolge wie ros_joint_names.
+    Raises:
+        ValueError: Bei Längenfehlern oder fehlenden Joint-Namen.
     """
-    if len(joint_order_ros_names) != len(omron_positions):
+    if len(omron_positions) != len(joint_order_ros_names):
         raise ValueError(
-            f"omron_to_ros_positions: joint_order_ros_names ({len(joint_order_ros_names)}) "
-            f"und omron_positions ({len(omron_positions)}) müssen gleich lang sein."
+            f"omron_to_ros_positions: len(omron_positions)={len(omron_positions)} "
+            f"!= len(joint_order_ros_names)={len(joint_order_ros_names)}"
         )
 
-    positions_ros = [0.0] * len(ros_joint_names)
+    if len(set(ros_joint_names)) != len(ros_joint_names):
+        raise ValueError("omron_to_ros_positions: ros_joint_names enthält Duplikate.")
+
+    if len(set(joint_order_ros_names)) != len(joint_order_ros_names):
+        raise ValueError("omron_to_ros_positions: joint_order_ros_names enthält Duplikate.")
+
+    positions_ros: List[float] = [0.0] * len(ros_joint_names)
 
     for om_idx, name in enumerate(joint_order_ros_names):
         try:
@@ -94,6 +91,6 @@ def omron_to_ros_positions(
             raise ValueError(
                 f"omron_to_ros_positions: ROS-Jointname '{name}' nicht in ros_joint_names vorhanden."
             ) from exc
-        positions_ros[ros_idx] = omron_positions[om_idx]
+        positions_ros[ros_idx] = float(omron_positions[om_idx])
 
     return positions_ros

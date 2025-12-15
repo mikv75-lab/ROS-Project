@@ -1,205 +1,139 @@
-# spraycoater_nodes_py/utils/omron_tcp_client.py
+# spraycoater_nodes_py/robot/omron_tcp_client.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import socket
 import threading
-from typing import Optional
+import time
+from typing import Callable, Optional
 
 
 class OmronTcpClient:
     """
-    Sehr schlanker TCP-Client für den Omron ACE/eV+ Server.
+    Reiner TCP-Client für den Omron V+-Controller.
 
-    Features:
-      - connect() / close()
-      - _send_line(text): schickt "text" mit CRLF als Zeilenende
-      - send_line(text): public Alias für _send_line()
-      - recv_line(): liest blockierend bis '\\n' oder Timeout / Verbindungsabbruch
-      - recv_line_nowait(): kurz-blockierendes Polling, gibt "" zurück, wenn keine
-                            vollständige Zeile verfügbar ist
-      - recv_line_poll(): public Alias für recv_line_nowait()
-
-    Threading:
-      - 1 Sender-Thread (Bridge _on_command)
-      - 1 Reader-Thread (Bridge Poll-Loop)
+    - KEINE ROS-Abhängigkeit
+    - KEINE Topics
+    - KEIN Namespace
+    - Callback-basiert (RX)
     """
 
     def __init__(
         self,
         host: str,
         port: int,
-        timeout: float = 3.0,
-        poll_timeout: float = 0.01,
+        *,
+        timeout_s: float = 2.0,
+        on_rx: Optional[Callable[[str], None]] = None,
+        on_disconnect: Optional[Callable[[], None]] = None,
     ) -> None:
-        """
-        :param host: ACE-Host
-        :param port: ACE-Port (z.B. 5000)
-        :param timeout: Standard-Timeout für blockierende Operationen (recv_line)
-        :param poll_timeout: kurzer Timeout für recv_line_nowait() (Polling)
-        """
-        self._host = host
-        self._port = int(port)
-        self._timeout = float(timeout)
-        self._poll_timeout = float(poll_timeout)
+        self.host = host
+        self.port = port
+        self.timeout_s = float(timeout_s)
+
+        self._on_rx = on_rx
+        self._on_disconnect = on_disconnect
 
         self._sock: Optional[socket.socket] = None
-        self._sock_lock = threading.RLock()
-        self._rx_lock = threading.RLock()
-        self._rx_buffer = b""
+        self._rx_thread: Optional[threading.Thread] = None
+        self._alive = threading.Event()
+        self._lock = threading.Lock()
 
-    # ------------------------------------------------------------------
-    # Verbindung
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------
+
     def connect(self) -> None:
-        """Baut eine neue TCP-Verbindung auf. Schließt ggf. vorherige."""
-        with self._sock_lock:
+        with self._lock:
             if self._sock is not None:
+                return
+
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self.timeout_s)
+            sock.connect((self.host, self.port))
+            sock.settimeout(None)  # danach blocking
+
+            self._sock = sock
+            self._alive.set()
+
+            self._rx_thread = threading.Thread(
+                target=self._rx_loop,
+                name="OmronTcpClientRx",
+                daemon=True,
+            )
+            self._rx_thread.start()
+
+    def disconnect(self) -> None:
+        with self._lock:
+            self._alive.clear()
+            if self._sock is not None:
+                try:
+                    self._sock.shutdown(socket.SHUT_RDWR)
+                except Exception:
+                    pass
                 try:
                     self._sock.close()
                 except Exception:
                     pass
                 self._sock = None
 
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(self._timeout)
-            s.connect((self._host, self._port))
-            self._sock = s
+        if self._on_disconnect:
+            try:
+                self._on_disconnect()
+            except Exception:
+                pass
 
-            # RX-Puffer leeren
-            with self._rx_lock:
-                self._rx_buffer = b""
+    def is_connected(self) -> bool:
+        return self._sock is not None
 
-    def close(self) -> None:
-        """Verbindung sauber schließen."""
-        with self._sock_lock:
-            if self._sock is not None:
-                try:
-                    self._sock.close()
-                except Exception:
-                    pass
-                self._sock = None
-        with self._rx_lock:
-            self._rx_buffer = b""
+    # ------------------------------------------------------------
+    # TX / RX
+    # ------------------------------------------------------------
 
-    def _ensure_socket(self) -> socket.socket:
-        """Interner Helper: wirft Exception, wenn keine Verbindung besteht."""
-        with self._sock_lock:
+    def send_line(self, line: str) -> None:
+        """
+        Sendet genau eine Textzeile (LF wird automatisch angehängt).
+        """
+        data = (line.rstrip() + "\n").encode("utf-8")
+        with self._lock:
             if self._sock is None:
-                raise ConnectionError("OmronTcpClient: socket is not connected")
-            return self._sock
+                raise RuntimeError("TCP socket not connected")
+            self._sock.sendall(data)
 
-    # ------------------------------------------------------------------
-    # Senden
-    # ------------------------------------------------------------------
-    def _send_line(self, text: str) -> None:
-        """
-        Schickt eine Zeile mit CRLF als Terminator.
+    def _rx_loop(self) -> None:
+        buf = b""
+        try:
+            while self._alive.is_set():
+                if self._sock is None:
+                    break
 
-        Hinweis:
-          - text wird am Ende von CR/LF befreit, dann wird '\\r\\n' angehängt.
-        """
-        if text is None:
-            text = ""
-        line = text.rstrip("\r\n") + "\r\n"
-        data = line.encode("ascii", errors="ignore")
-
-        sock = self._ensure_socket()
-        with self._sock_lock:
-            sock.sendall(data)
-
-    def send_line(self, text: str) -> None:
-        """Public Alias für _send_line()."""
-        self._send_line(text)
-
-    # ------------------------------------------------------------------
-    # Empfangen (blockierend)
-    # ------------------------------------------------------------------
-    def recv_line(self) -> str:
-        """
-        Liest eine Zeile vom Socket, endet bei '\\n'.
-
-        Rückgabe:
-          - String inklusive evtl. '\\r\\n' am Ende (Bridge macht .strip()).
-          - "" bei socket.timeout (keine komplette Zeile im Timeout)
-        Exceptions:
-          - ConnectionError bei Verbindungsabbruch (recv() == b"")
-          - andere socket-Fehler werden weitergereicht.
-        """
-        sock = self._ensure_socket()
-
-        with self._rx_lock:
-            while True:
-                idx = self._rx_buffer.find(b"\n")
-                if idx != -1:
-                    chunk = self._rx_buffer[: idx + 1]
-                    self._rx_buffer = self._rx_buffer[idx + 1 :]
-                    return chunk.decode("ascii", errors="ignore")
-
-                try:
-                    data = sock.recv(4096)
-                except socket.timeout:
-                    return ""
+                data = self._sock.recv(4096)
                 if not data:
-                    raise ConnectionError("OmronTcpClient: peer closed connection")
+                    break
 
-                self._rx_buffer += data
+                buf += data
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    text = line.decode("utf-8", errors="ignore").strip()
+                    if not text:
+                        continue
+                    if self._on_rx:
+                        try:
+                            self._on_rx(text)
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+        finally:
+            self.disconnect()
 
-    # ------------------------------------------------------------------
-    # Empfangen (kurz blockierend / Polling)
-    # ------------------------------------------------------------------
-    def recv_line_nowait(self) -> str:
-        """
-        Kurzes Poll-Read:
-          - prüft zuerst, ob bereits eine komplette Zeile im internen Puffer liegt
-          - falls nicht, versucht mit kurzem Timeout (poll_timeout) nachzuladen
-          - gibt eine komplette Zeile zurück, falls vorhanden
-          - gibt "" zurück, wenn keine vollständige Zeile verfügbar ist
+    # ------------------------------------------------------------
+    # Context-Manager (optional)
+    # ------------------------------------------------------------
 
-        Exceptions:
-          - ConnectionError bei Verbindungsabbruch
-        """
-        sock = self._ensure_socket()
+    def __enter__(self) -> "OmronTcpClient":
+        self.connect()
+        return self
 
-        with self._rx_lock:
-            # 1) Erst schauen, ob schon ein '\n' im Puffer liegt
-            idx = self._rx_buffer.find(b"\n")
-            if idx != -1:
-                chunk = self._rx_buffer[: idx + 1]
-                self._rx_buffer = self._rx_buffer[idx + 1 :]
-                return chunk.decode("ascii", errors="ignore")
-
-            # 2) Kurz versuchen, neue Daten zu holen (poll_timeout)
-            with self._sock_lock:
-                try:
-                    old_timeout = sock.gettimeout()
-                except Exception:
-                    old_timeout = self._timeout
-
-                try:
-                    sock.settimeout(self._poll_timeout)
-                    try:
-                        data = sock.recv(4096)
-                    except socket.timeout:
-                        return ""
-                    if not data:
-                        raise ConnectionError("OmronTcpClient: peer closed connection")
-                    self._rx_buffer += data
-                finally:
-                    try:
-                        sock.settimeout(old_timeout)
-                    except Exception:
-                        pass
-
-            # 3) Nochmal nach '\n' suchen
-            idx = self._rx_buffer.find(b"\n")
-            if idx != -1:
-                chunk = self._rx_buffer[: idx + 1]
-                self._rx_buffer = self._rx_buffer[idx + 1 :]
-                return chunk.decode("ascii", errors="ignore")
-
-            return ""
-
-    def recv_line_poll(self) -> str:
-        """Public Alias für recv_line_nowait()."""
-        return self.recv_line_nowait()
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.disconnect()

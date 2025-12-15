@@ -1,4 +1,7 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 # spraycoater_nodes_py/robot/sim.py
+
 from __future__ import annotations
 
 from rclpy.time import Time
@@ -24,8 +27,20 @@ class SimRobot(BaseRobot):
     Simulation:
 
     - Kommandos: robot.init|stop|power_on|... (topics.yaml.robot.subscribe)
-    - TCP-Pose aus TF (world → tool_mount/tcp)
-    - Joints aus joint_states (Fake-Controller / ros2_control)
+    - TCP-Pose aus TF (world → tcp)
+    - Joints aus JointState-Topic (joint_state_broadcaster / ros2_control)
+
+    Erwartete topics.yaml Ergänzung:
+      topics:
+        robot:
+          subscribe:
+            - id: joint_states_in
+              name: joint_states
+              type: sensor_msgs/msg/JointState
+              qos: sensor_data
+
+    (Wichtig: ohne führenden Slash, damit Namespace greift:
+     /shadow/joint_states bzw. /live/joint_states)
     """
 
     def __init__(self) -> None:
@@ -58,18 +73,20 @@ class SimRobot(BaseRobot):
         self.sub_servo_on = self._make_sub(Empty, "servo_on", self._on_servo_on)
         self.sub_servo_off = self._make_sub(Empty, "servo_off", self._on_servo_off)
 
-        # joint_states vom joint_state_broadcaster (Fake-Controller)
-        # WICHTIG: relativ, damit der Namespace (shadow/live) greift!
+        # joint_states (AUS config_hub, keine Hardcodes)
+        topic_js = self.loader.subscribe_topic("robot", "joint_states_in")
+        qos_js = self.loader.qos_by_id("subscribe", "robot", "joint_states_in")
+
         self.sub_joint_states = self.create_subscription(
             JointState,
-            "joint_states",
+            topic_js,
             self._on_joint_states,
-            10,
+            qos_js,
         )
 
         self.get_logger().info(
-            f"🤖 SimRobot gestartet: tcp_pose = Pose({self.tool_frame} in {self.world_frame}), "
-            "Joints aus joint_states (Fake-Controller)"
+            f"🤖 SimRobot gestartet: tcp_pose = TF({self.world_frame}->{self.tool_frame}), "
+            f"JointStates subscribe='{topic_js}' (via config_hub)"
         )
 
     def _on_joint_states(self, msg: JointState):
@@ -161,12 +178,16 @@ class SimRobot(BaseRobot):
         self._tcp_pose.pose.orientation = tf.transform.rotation
 
 
-def main():
+def main(args=None):
     import rclpy
-    rclpy.init()
+    rclpy.init(args=args)
     node = SimRobot()
     try:
         rclpy.spin(node)
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

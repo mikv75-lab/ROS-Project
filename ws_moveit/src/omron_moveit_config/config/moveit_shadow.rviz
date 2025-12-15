@@ -1,6 +1,6 @@
 Panels:
   - Class: rviz_common/Displays
-    Help Height: 70
+    Help Height: 0
     Name: Displays
     Property Tree Widget:
       Expanded:
@@ -11,7 +11,7 @@ Panels:
         - /TF1
         - /TF1/Frames1
       Splitter Ratio: 0.5
-    Tree Height: 288
+    Tree Height: 679
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -147,7 +147,7 @@ Visualization Manager:
         Interactive Marker Size: 0
         Joint Violation Color: 255; 0; 255
         Planning Group: omron_arm_group
-        Query Goal State: false
+        Query Goal State: true
         Query Start State: false
         Show Workspace: false
         Start State Alpha: 1
@@ -247,9 +247,21 @@ Visualization Manager:
         Adept_Viper_s650_Link6:
           Value: true
         All Enabled: true
+        cage:
+          Value: true
+        home:
+          Value: true
         robot_mount:
           Value: true
+        scene:
+          Value: true
+        service:
+          Value: true
         sonotek_vortex:
+          Value: true
+        substrate:
+          Value: true
+        substrate_mount:
           Value: true
         tcp:
           Value: true
@@ -264,6 +276,10 @@ Visualization Manager:
       Show Names: true
       Tree:
         world:
+          cage:
+            {}
+          home:
+            {}
           robot_mount:
             Adept_Viper_s650_Link1:
               Adept_Viper_s650_Link2:
@@ -276,6 +292,12 @@ Visualization Manager:
                             sonotek_vortex:
                               tcp:
                                 {}
+          service:
+            {}
+          substrate_mount:
+            scene:
+              substrate:
+                {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -297,7 +319,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /spraycoater/spray_path/poses
+        Value: /shadow/spraycoater/spray_path/poses
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
@@ -308,7 +330,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /spraycoater/spray_path/markers
+        Value: /shadow/spraycoater/spray_path/markers
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
@@ -319,7 +341,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /spraycoater/spray_path/executed_markers
+        Value: /shadow/spraycoater/spray_path/executed_markers
       Value: true
     - Alpha: 1
       Arrow Length: 0.30000001192092896
@@ -340,7 +362,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /spraycoater/spray_path/executed_poses
+        Value: /shadow/spraycoater/spray_path/executed_poses
       Value: true
   Enabled: true
   Global Options:
@@ -375,10 +397,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.6247959733009338
+      Pitch: 0.3597959876060486
       Target Frame: scene
       Value: Orbit (rviz_default_plugins)
-      Yaw: 6.268585681915283
+      Yaw: 5.878585338592529
     Saved:
       - Class: rviz_default_plugins/Orbit
         Distance: 1.543152093887329
@@ -403,7 +425,7 @@ Visualization Manager:
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1351
+  Height: 1369
   Help:
     collapsed: false
   Hide Left Dock: false
@@ -412,9 +434,9 @@ Window Geometry:
     collapsed: false
   MotionPlanning - Trajectory Slider:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000002b4000004f1fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb000000100044006900730070006c006100790073010000003b000001a1000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e006701000001e2000002400000016900fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a00560069006500770073010000042800000104000000a000ffffff00000734000004f100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000503fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c0069006400650072000000003b000001500000001600000016fb000000100044006900730070006c006100790073010000003b000002e2000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e00670100000323000001750000016a00fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a00560069006500770073010000049e000000a0000000a000ffffff000007460000050300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
-  Width: 2542
-  X: 1888
-  Y: 370
+  Width: 2560
+  X: 1920
+  Y: 23

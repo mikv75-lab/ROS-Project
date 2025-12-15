@@ -36,6 +36,7 @@ topics:
         name: spraycoater/tool/select
         type: std_msgs/msg/String
         qos: default
+
     publish:
       - id: tool_state
         name: spraycoater/tool/state
@@ -109,10 +110,7 @@ topics:
         name: spraycoater/scene/substrate/list
         type: std_msgs/msg/String
         qos: latched
-      - id: tool_list
-        name: spraycoater/tool/list
-        type: std_msgs/msg/String
-        qos: latched
+
       - id: cage_current
         name: spraycoater/scene/cage/current
         type: std_msgs/msg/String
@@ -124,6 +122,12 @@ topics:
       - id: substrate_current
         name: spraycoater/scene/substrate/current
         type: std_msgs/msg/String
+        qos: latched
+
+      # ✅ CollisionObjects relativ (kein führender Slash) -> Node-Namespace greift
+      - id: collision_object
+        name: collision_object
+        type: moveit_msgs/msg/CollisionObject
         qos: latched
 
     subscribe:
@@ -150,6 +154,7 @@ topics:
         name: spraycoater/poses/set_service
         type: std_msgs/msg/Empty
         qos: default
+
     publish:
       - id: home_pose
         name: spraycoater/poses/home
@@ -224,6 +229,12 @@ topics:
         type: std_msgs/msg/Empty
         qos: default
 
+      # ✅ NEU: SimRobot joint_states Input (relativ -> Namespace greift)
+      - id: joint_states_in
+        name: joint_states
+        type: sensor_msgs/msg/JointState
+        qos: sensor_data
+
     publish:
       - id: connection
         name: spraycoater/robot/connection
@@ -268,16 +279,26 @@ topics:
 
   omron:
     subscribe:
+      # UI/Nodes -> OmronTcpBridge (Command rein)
       - id: command_in
         name: spraycoater/omron/command
         type: std_msgs/msg/String
         qos: default
+
+      # ✅ NEU: OmronRobot liest raw_rx vom Bridge
+      - id: raw_rx
+        name: spraycoater/omron/raw_rx
+        type: std_msgs/msg/String
+        qos: default
+
+      # optional: falls jemand extern connection_status setzen will
       - id: connection_status_in
         name: spraycoater/omron/connection_status
         type: std_msgs/msg/Bool
         qos: default
 
     publish:
+      # OmronTcpBridge -> UI/Debug
       - id: raw_tx
         name: spraycoater/omron/raw_tx
         type: std_msgs/msg/String
@@ -286,11 +307,14 @@ topics:
         name: spraycoater/omron/raw_rx
         type: std_msgs/msg/String
         qos: default
+
       - id: connection_status
         name: spraycoater/omron/connection_status
         type: std_msgs/msg/Bool
         qos: default
-      - id: command_out
+
+      # ✅ wichtig: ID heißt "command" (damit publish_topic("omron","command") klappt)
+      - id: command
         name: spraycoater/omron/command
         type: std_msgs/msg/String
         qos: default

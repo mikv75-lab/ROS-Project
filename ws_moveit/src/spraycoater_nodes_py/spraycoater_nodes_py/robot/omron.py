@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# spraycoater_nodes_py/robot/omron.py
+
 from __future__ import annotations
 
 import math
@@ -7,7 +9,6 @@ from typing import List
 
 import rclpy
 from std_msgs.msg import String
-from sensor_msgs.msg import JointState
 
 from .base import BaseRobot
 from .joint_mapping import omron_to_ros_positions
@@ -18,10 +19,19 @@ class OmronRobot(BaseRobot):
     """
     Robot-Node für den echten Omron-Viper:
 
-    - Liest Textstatus vom OmronTcpBridge (Topic: omron.raw_rx).
-    - Nutzt OmronInterpreter zum Parsen von STATUS J j1..j6.
-    - Mappt Omron-Reihenfolge (J1..J6) in URDF/ROS-Jointreihenfolge.
+    - Liest Textstatus vom OmronTcpBridge (z.B. "STATUS J ...") als raw_rx.
+    - Parsen via OmronInterpreter.
+    - Mappt Omron-Reihenfolge (J1..J6) in URDF/ROS-Reihenfolge.
     - Publiziert JointStates + Zustände über BaseRobot.
+
+    Erwartete topics.yaml Ergänzung:
+      topics:
+        omron:
+          subscribe:
+            - id: raw_rx
+              name: spraycoater/omron/raw_rx
+              type: std_msgs/msg/String
+              qos: default
     """
 
     def __init__(self) -> None:
@@ -30,8 +40,8 @@ class OmronRobot(BaseRobot):
         # Interpreter für Textzeilen
         self._interp = OmronInterpreter()
 
-        # ROS-Jointnamen in Omron-Reihenfolge (joint_order_ros_names)
-        # → Diese Namen müssen den URDF/MoveIt-Jointnamen entsprechen!
+        # ROS-Jointnamen in Omron-Reihenfolge (J1..J6)
+        # -> MUSS zu URDF/MoveIt Jointnamen passen!
         self._joint_order_ros_names: List[str] = [
             "Adept_Viper_s650_Link1",  # J1
             "Adept_Viper_s650_Link2",  # J2
@@ -41,7 +51,7 @@ class OmronRobot(BaseRobot):
             "Adept_Viper_s650_Link6",  # J6
         ]
 
-        # Zielreihenfolge für JointState (Standard: URDF-Reihenfolge)
+        # Zielreihenfolge für JointState
         self._joints.name = list(self._joint_order_ros_names)
         self._joints.position = [0.0] * len(self._joints.name)
 
@@ -54,15 +64,19 @@ class OmronRobot(BaseRobot):
         self._moving = False
         self._mode = "DISCONNECTED"
 
-        # Topic-Namen + QoS für raw_rx aus der Omron-Section
-        topic_raw_rx = self.loader.publish_topic("omron", "raw_rx")
-        qos_raw_rx = self.loader.qos_by_id("publish", "omron", "raw_rx")
+        # raw_rx abonnieren (AUS config_hub)
+        topic_raw_rx = self.loader.subscribe_topic("omron", "raw_rx")
+        qos_raw_rx = self.loader.qos_by_id("subscribe", "omron", "raw_rx")
 
         self._sub_raw_rx = self.create_subscription(
             String,
             topic_raw_rx,
             self._on_raw_rx,
             qos_raw_rx,
+        )
+
+        self.get_logger().info(
+            f"🤖 OmronRobot gestartet – subscribe raw_rx='{topic_raw_rx}' (via config_hub)"
         )
 
     # ------------------------------------------------------------------
@@ -85,8 +99,7 @@ class OmronRobot(BaseRobot):
             if len(joints) != 6:
                 return
 
-            # Falls der Controller in Grad liefert → in rad umwandeln
-            # Wenn du schon in rad sendest, diesen Block auskommentieren.
+            # Controller liefert Grad -> rad
             joints_rad = [j * math.pi / 180.0 for j in joints]
 
             try:
@@ -100,15 +113,16 @@ class OmronRobot(BaseRobot):
                 return
 
             self._joints.position = positions_ros
+
+            # Minimaler Status-Set (du kannst das später noch feiner machen)
             self._connected = True
             self._power = True
             self._initialized = True
             self._mode = "READY"
 
         elif etype == "ack":
-            # ACK PING, ACK TRAJSTART, ...
-            cmd = ev.get("cmd", "")
-            if cmd.upper() == "PING":
+            cmd = (ev.get("cmd", "") or "").upper()
+            if cmd == "PING":
                 self._connected = True
                 if self._mode == "DISCONNECTED":
                     self._mode = "IDLE"
@@ -118,12 +132,7 @@ class OmronRobot(BaseRobot):
             rest = ev.get("rest", "")
             self._set_error(f"NACK {cmd}: {rest}")
 
-        # andere Types (other/status_unknown) ignorieren wir erst mal
-
-    # Optional könntest du hier _update_tcp_pose überschreiben, wenn du
-    # später eine TCP-Pose aus STATUS T ... ableitest.
-    # def _update_tcp_pose(self):
-    #     ...
+        # andere Types ignorieren wir vorerst
 
 
 def main(args=None):
