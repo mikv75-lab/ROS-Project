@@ -180,9 +180,9 @@ class StartupMachine(QtCore.QObject):
 
         os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
 
-        # make_bringup_cmd muss intern aus ctx.ros (shadow/live) ableiten,
-        # wie viele Launches (shadow/live) gestartet werden.
-        cmd, extra = make_bringup_cmd(self.ctx.ros)
+        # ✅ cmd + args aus ctx.ros bauen (inkl. bringup_launch, sim, use_sim_time, robot_type)
+        cmd, extra = make_bringup_cmd(self.ctx.ros, startup_yaml_path=self.startup_yaml_path)
+
         env = {
             "SPRAY_LOG_DIR": self.ctx.paths.log_dir,
         }
@@ -241,9 +241,7 @@ class StartupMachine(QtCore.QObject):
     def _step_bridge(self) -> None:
         """
         Bridges für shadow + live nur verbinden, wenn ROS-Launch aktiv ist.
-
-        Erwartet, dass ctx.ros die Struktur aus startup.yaml hat:
-
+        Erwartet:
           ros.shadow.enabled: bool
           ros.live.enabled:   bool
         """
@@ -263,9 +261,8 @@ class StartupMachine(QtCore.QObject):
             shadow_cfg = getattr(self.ctx.ros, "shadow", None)
             shadow_enabled = bool(getattr(shadow_cfg, "enabled", False)) if shadow_cfg else False
             if shadow_enabled:
-                # get_ui_bridge muss Rolle 'shadow' verstehen
+                # get_ui_bridge() verbindet bereits (ensure_connected)
                 self.bridge_shadow = get_ui_bridge(self.ctx, namespace="shadow")
-                self.bridge_shadow.connect()
                 logging.getLogger("ros").info(
                     "UIBridge SHADOW verbunden (node=%s).",
                     getattr(self.bridge_shadow, "node_name", "ui_bridge_shadow"),
@@ -282,9 +279,7 @@ class StartupMachine(QtCore.QObject):
             live_cfg = getattr(self.ctx.ros, "live", None)
             live_enabled = bool(getattr(live_cfg, "enabled", False)) if live_cfg else False
             if live_enabled:
-                # get_ui_bridge muss Rolle 'live' verstehen
                 self.bridge_live = get_ui_bridge(self.ctx, namespace="live")
-                self.bridge_live.connect()
                 logging.getLogger("ros").info(
                     "UIBridge LIVE verbunden (node=%s).",
                     getattr(self.bridge_live, "node_name", "ui_bridge_live"),
@@ -310,5 +305,4 @@ class StartupMachine(QtCore.QObject):
         )
         if self.ctx is None:
             self.warning.emit("Startup finished without valid ctx (ctx=None).")
-        # ctx, bridge_shadow, bridge_live, plc an die GUI geben
         self.ready.emit(self.ctx, self.bridge_shadow, self.bridge_live, self.plc)

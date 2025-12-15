@@ -18,7 +18,7 @@ paths:
 # ===================================================================
 ros:
   launch_ros: true
-  bringup_launch: "omron_bringup.launch.py"
+  bringup_launch: "bringup.launch.py"
 
   # Gemeinsamer Namespace für das Gesamtsystem
   namespace: "spraycoater"

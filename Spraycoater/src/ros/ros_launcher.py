@@ -8,7 +8,7 @@ import signal
 import subprocess
 import time
 import threading
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Any
 
 import logging
 from ros.kill_all_ros import kill_all_ros  # gleicher Ordner
@@ -51,21 +51,54 @@ def tail_log(lines: int = 80) -> None:
 # Command Helper
 # -----------------------------------------------------------------------------
 def make_bringup_cmd(
-    sim: bool,
+    ros_cfg: Any,
     *,
     package: str = "spraycoater_bringup",
-    launch_file: str = "bringup.launch.py",
+    launch_file: Optional[str] = None,
+    startup_yaml_path: Optional[str] = None,
 ) -> Tuple[List[str], List[str]]:
     """
-    Baue den 'ros2 launch' Aufruf + einziges Launch-Argument 'sim'.
-    Rückgabe:
-      (cmd, extra_args)
-      cmd = ["ros2","launch", package, launch_file]
-      extra_args = ["sim:=true" | "sim:=false"]
+    Baut 'ros2 launch ...' + Launch-Args aus ctx.ros (startup.yaml).
+
+    Erwartet ros_cfg mit Feldern:
+      - bringup_launch: str
+      - use_sim_time: bool
+      - robot_type: str
+      - shadow.enabled: bool
+      - live.enabled: bool
     """
-    cmd = ["ros2", "launch", package, launch_file]
-    extra_args: List[str] = [f"sim:={'true' if sim else 'false'}"]
-    return cmd, extra_args
+
+    lf = (launch_file or getattr(ros_cfg, "bringup_launch", "") or "").strip()
+    if not lf:
+        lf = "bringup.launch.py"
+
+    cmd = ["ros2", "launch", package, lf]
+
+    shadow_enabled = bool(getattr(getattr(ros_cfg, "shadow", None), "enabled", False))
+    live_enabled   = bool(getattr(getattr(ros_cfg, "live", None), "enabled", False))
+
+    # "sim" bedeutet: Fake/Shadow stack (ros2_control + fake hw)
+    sim = shadow_enabled and not live_enabled
+
+    use_sim_time = bool(getattr(ros_cfg, "use_sim_time", False))
+    robot_type   = str(getattr(ros_cfg, "robot_type", "") or "").strip()
+
+    extra: List[str] = []
+    extra.append(f"sim:={'true' if sim else 'false'}")
+    extra.append(f"use_sim_time:={'true' if use_sim_time else 'false'}")
+
+    if robot_type:
+        extra.append(f"robot_type:={robot_type}")
+
+    # Startup YAML explizit ans Launchfile (optional)
+    if startup_yaml_path:
+        extra.append(f"startup_yaml:={startup_yaml_path}")
+
+    # Rollen als Args (optional nützlich)
+    extra.append(f"shadow:={'true' if shadow_enabled else 'false'}")
+    extra.append(f"live:={'true' if live_enabled else 'false'}")
+
+    return cmd, extra
 
 # -----------------------------------------------------------------------------
 # Internals
@@ -126,7 +159,7 @@ def ensure_clean_graph_then_launch(
     env: Optional[Dict[str, str]] = None,
 ) -> None:
     """
-    1) existierende ROS-Prozesse killen
+    1) existierende ROS-Prozesse killen (inkl. ros2 daemon restart)
     2) ros2 launch starten (eigene Prozessgruppe)
     3) stdout/stderr des Launchers live nach Logger 'ros.launch' streamen
     4) optional weiterhin nach bringup_log spiegeln
@@ -137,8 +170,8 @@ def ensure_clean_graph_then_launch(
         _LAUNCH_LOG.info("bringup already running -> shutting it down first…")
         shutdown_bringup()
 
-    # Harte Bereinigung des Graphen (eigener Helper)
-    kill_all_ros()
+    # Harte Bereinigung des Graphen (inkl. ros2-daemon restart)
+    kill_all_ros(restart_daemon=True)
 
     if log_path:
         _LOG = log_path
@@ -161,11 +194,13 @@ def ensure_clean_graph_then_launch(
         _STOP_STREAM.clear()
         _BRINGUP_PROC = subprocess.Popen(
             launch_cmd,
-            stdout=subprocess.PIPE,                 # wir lesen hier ab
-            stderr=subprocess.STDOUT,               # stderr -> stdout
-            text=True, encoding="utf-8", errors="replace",
-            bufsize=1,                              # line buffered
-            preexec_fn=os.setsid,                   # eigene Prozessgruppe
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            preexec_fn=os.setsid,  # eigene Prozessgruppe
             env=env_merged,
         )
     except FileNotFoundError as e:
