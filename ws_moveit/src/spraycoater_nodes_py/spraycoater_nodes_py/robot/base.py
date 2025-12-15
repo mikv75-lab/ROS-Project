@@ -6,12 +6,16 @@ import logging
 from rclpy.node import Node
 
 from config.startup import AppContent, TopicSpec
-from app.utils.logging_setup import add_file_logger  # ✅ DIREKT HIERHER
+from app.utils.logging_setup import add_file_logger
 
+# (group, topic_id) -> method name
 _SUB_HANDLERS: Dict[Tuple[str, str], str] = {}
 
 
 def sub_handler(group: str, topic_id: str):
+    """
+    Decorator für Callback-Handler eingehender Nachrichten.
+    """
     def _wrap(fn: Callable):
         _SUB_HANDLERS[(group, topic_id)] = fn.__name__
         return fn
@@ -21,10 +25,21 @@ def sub_handler(group: str, topic_id: str):
 class BaseBridge(Node):
     """
     UI-Bridge-Basis.
+
+    - Namespace: "shadow" | "live" | ""
+    - Topics kommen RELATIV aus topics.yaml (z.B. spraycoater/robot/...)
+    - Effektive Topics: /<namespace>/spraycoater/...
+
+    Logging:
+      - pro Namespace genau eine Datei:
+          shadow.bridge.log
+          live.bridge.log
     """
-    GROUP: str = ""
+
+    GROUP: str = ""   # MUSS in Subklassen gesetzt sein
 
     def __init__(self, node_name: str, content: AppContent, *, namespace: str = ""):
+        # Namespace normalisieren
         ns = (namespace or "").strip().strip("/")
         super().__init__(node_name, namespace=ns or None)
 
@@ -36,40 +51,48 @@ class BaseBridge(Node):
         self._pubs: Dict[str, any] = {}
         self._subs: Dict[str, any] = {}
 
-        # ------------------------------------------------------------
-        # ✅ File-Logger für diese Bridge aktivieren (aus logging_setup.py)
-        # ------------------------------------------------------------
-        # Logger-Name so wählen, dass er sinnvoll pro GROUP geloggt wird
-        self._logger_name = f"ros.bridge.{self.GROUP}"
+        # ============================================================
+        # Logging: eine Datei pro Namespace
+        # ============================================================
+        ns_key = self._namespace if self._namespace else "root"
+        self._logger_name = f"ros.{ns_key}.bridge"
+
         try:
-            add_file_logger(self._logger_name)  # erstellt RotatingFileHandler
-        except Exception as e:
-            # nicht hart failen – Node soll trotzdem laufen
-            logging.getLogger("stderr").error("add_file_logger(%s) failed: %s", self._logger_name, e)
+            self._pylog = add_file_logger(
+                self._logger_name,
+                file_name=f"{ns_key}.bridge.log",
+                level=logging.DEBUG,
+            )
+        except Exception:
+            logging.getLogger().exception(
+                "add_file_logger failed for namespace=%r", ns_key
+            )
+            self._pylog = logging.getLogger(self._logger_name)
 
-        self._pylog = logging.getLogger(self._logger_name)
-
-        # ------------------------------------------------------------
-        # Init pubs/subs
-        # ------------------------------------------------------------
+        # ============================================================
+        # Topics initialisieren
+        # ============================================================
         self._init_publishers_from_node_subscribe()
         self._init_subscriptions_from_node_publish()
 
-        full_name = self.get_fully_qualified_name()
+        fqdn = self.get_fully_qualified_name()
         self.get_logger().info(
-            f"✅ {node_name} ready (group={self.GROUP}, ns='{self._namespace}', fqdn='{full_name}')"
+            "✅ %s ready (group=%s, ns=%r, fqdn=%s)",
+            node_name, self.GROUP, self._namespace, fqdn
         )
         self._pylog.info(
             "Bridge ready: node=%s group=%s ns=%r pubs=%d subs=%d fqdn=%s",
-            node_name, self.GROUP, self._namespace, len(self._pubs), len(self._subs), full_name
+            node_name, self.GROUP, self._namespace,
+            len(self._pubs), len(self._subs), fqdn
         )
 
-    # --- Helpers ---
+    # ============================================================
+    # Helpers
+    # ============================================================
 
     def _full_topic(self, name: str) -> str:
         """
-        Effektiver Topic inkl. Node-Namespace (shadow/live).
-        spec.name ist relativ: 'spraycoater/...'
+        Effektiver Topic-Name inkl. Namespace.
         """
         node_ns = (self.get_namespace() or "/").rstrip("/")
         if node_ns == "" or node_ns == "/":
@@ -80,7 +103,9 @@ class BaseBridge(Node):
         name = _SUB_HANDLERS.get((group, topic_id))
         return getattr(self, name, None) if name else None
 
-    # --- Init ---
+    # ============================================================
+    # Init: Publisher (UI → ROS)
+    # ============================================================
 
     def _init_publishers_from_node_subscribe(self) -> None:
         try:
@@ -89,18 +114,29 @@ class BaseBridge(Node):
             specs = []
 
         for spec in specs:
-            msg_type = spec.resolve_type()
-            pub = self.create_publisher(msg_type, spec.name, self._content.qos(spec.qos_key))
+            pub = self.create_publisher(
+                spec.resolve_type(),
+                spec.name,
+                self._content.qos(spec.qos_key),
+            )
             self._pubs[spec.id] = pub
 
-            # ✅ Start-Log: sichtbar + in Datei
             self._pylog.info(
-                "[PUB] id=%s -> %s (%s) qos=%s",
-                spec.id, self._full_topic(spec.name), spec.type_str, spec.qos_key
+                "[PUB] %-16s -> %s (%s) qos=%s",
+                spec.id,
+                self._full_topic(spec.name),
+                spec.type_str,
+                spec.qos_key,
             )
             self.get_logger().info(
-                f"[PUB] {spec.id} -> {self._full_topic(spec.name)} ({spec.type_str}) qos={spec.qos_key}"
+                "[PUB] %s -> %s",
+                spec.id,
+                self._full_topic(spec.name),
             )
+
+    # ============================================================
+    # Init: Subscriptions (ROS → UI)
+    # ============================================================
 
     def _init_subscriptions_from_node_publish(self) -> None:
         try:
@@ -110,22 +146,34 @@ class BaseBridge(Node):
 
         for spec in specs:
             cb = self._resolve_handler(self.GROUP, spec.id) or (lambda _msg: None)
-            msg_type = spec.resolve_type()
-            sub = self.create_subscription(msg_type, spec.name, cb, self._content.qos(spec.qos_key))
+
+            sub = self.create_subscription(
+                spec.resolve_type(),
+                spec.name,
+                cb,
+                self._content.qos(spec.qos_key),
+            )
             self._subs[spec.id] = sub
 
             cb_name = getattr(cb, "__name__", "lambda")
 
-            # ✅ Start-Log: sichtbar + in Datei
             self._pylog.info(
-                "[SUB] id=%s <- %s (%s) qos=%s cb=%s",
-                spec.id, self._full_topic(spec.name), spec.type_str, spec.qos_key, cb_name
+                "[SUB] %-16s <- %s (%s) qos=%s cb=%s",
+                spec.id,
+                self._full_topic(spec.name),
+                spec.type_str,
+                spec.qos_key,
+                cb_name,
             )
             self.get_logger().info(
-                f"[SUB] {spec.id} <- {self._full_topic(spec.name)} ({spec.type_str}) qos={spec.qos_key} cb={cb_name}"
+                "[SUB] %s <- %s",
+                spec.id,
+                self._full_topic(spec.name),
             )
 
-    # --- Public API ---
+    # ============================================================
+    # Public API
+    # ============================================================
 
     def pub(self, topic_id: str):
         if topic_id not in self._pubs:
