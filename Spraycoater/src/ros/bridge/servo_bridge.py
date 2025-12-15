@@ -53,9 +53,11 @@ class ServoBridge(BaseBridge):
             - /servo/joint_jog      (JointJog)
             - /servo/cartesian_mm   (TwistStamped)
         * setzt zusätzlich den moveit_servo-CommandType über
-            - /omron_servo_node/switch_command_type (moveit_msgs/srv/ServoCommandType)
+            - omron_servo_node/switch_command_type (moveit_msgs/srv/ServoCommandType)
 
-    Die Topic-Namen werden über AppContent / topics.yaml geholt.
+    WICHTIG:
+      - Service-Name OHNE führenden Slash, damit ROS2 Namespacing greift.
+        (z.B. Node ns='shadow' -> /shadow/omron_servo_node/switch_command_type)
     """
 
     GROUP = "servo"
@@ -132,13 +134,15 @@ class ServoBridge(BaseBridge):
         # Service-Client: CommandType
         # -----------------------------
         try:
-            # Hardcoded Service-Name für omron_servo_node – bei Bedarf später konfigurierbar machen
+            # ✅ OHNE führenden Slash -> Namespace funktioniert (shadow/live)
+            self._cmd_type_service_name = "omron_servo_node/switch_command_type"
             self._cmd_type_client = self.create_client(
-                ServoCommandType, "/omron_servo_node/switch_command_type"
+                ServoCommandType, self._cmd_type_service_name
             )
         except Exception as e:
             self.get_logger().error(f"[servo] CommandType client init failed: {e}")
             self._cmd_type_client = None
+            self._cmd_type_service_name = "omron_servo_node/switch_command_type"
 
         # -----------------------------
         # Qt-Signale ↔ Methoden
@@ -159,7 +163,8 @@ class ServoBridge(BaseBridge):
 
     def set_command_type(self, mode: str) -> None:
         """
-        Setzt den moveit_servo-CommandType über den Service /omron_servo_node/switch_command_type.
+        Setzt den moveit_servo-CommandType über den Service
+        'omron_servo_node/switch_command_type' (Namespaced).
 
         :param mode: z.B. "joint", "jog", "cart", "twist", "pose"
         """
@@ -182,20 +187,19 @@ class ServoBridge(BaseBridge):
             )
             return
 
+        # ⚠️ Wichtig: Nicht endgültig "merken", bevor Service-call geklappt hat.
+        # Sonst blockiert man spätere Versuche, wenn der Service noch nicht bereit war.
         with self._cmd_type_lock:
             if self._current_command_type == cmd_val:
-                # Nichts tun, wenn bereits gesetzt – vermeidet Spam
                 self.get_logger().debug(
                     f"[servo] set_command_type: bereits {cmd_val} (mode='{mode}') – übersprungen."
                 )
                 return
-            self._current_command_type = cmd_val
 
-        # Service-Verfügbarkeit kurz prüfen (non-blocking-ish)
+        # Service-Verfügbarkeit kurz prüfen
         if not self._cmd_type_client.service_is_ready():
-            # kurzer Versuch, aber nicht das ganze UI blockieren
             self.get_logger().info(
-                "[servo] set_command_type: warte kurz auf Service /omron_servo_node/switch_command_type"
+                f"[servo] set_command_type: warte kurz auf Service {self._cmd_type_service_name}"
             )
             if not self._cmd_type_client.wait_for_service(timeout_sec=0.2):
                 self.get_logger().warning(
@@ -215,15 +219,22 @@ class ServoBridge(BaseBridge):
                 self.get_logger().error(
                     f"[servo] set_command_type({mode}={cmd_val}) Service-Call Exception: {e}"
                 )
+                # keine Änderung am _current_command_type
                 return
+
             if not getattr(resp, "success", False):
                 self.get_logger().error(
                     f"[servo] set_command_type({mode}={cmd_val}) -> success=False"
                 )
-            else:
-                self.get_logger().info(
-                    f"[servo] CommandType gesetzt: mode='{mode}', value={cmd_val}"
-                )
+                return
+
+            # ✅ erst bei Erfolg merken
+            with self._cmd_type_lock:
+                self._current_command_type = cmd_val
+
+            self.get_logger().info(
+                f"[servo] CommandType gesetzt: mode='{mode}', value={cmd_val}"
+            )
 
         future.add_done_callback(_done)
 
