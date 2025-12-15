@@ -48,6 +48,10 @@ class BaseBridge(Node):
     LOG_SUB_ONLY_ON_CHANGE: bool = True    # nur loggen, wenn sich Wert ändert
     LOG_SUB_LEVEL: int = logging.INFO      # INFO ist gut für "changes", DEBUG wäre sehr chatty
 
+    # ✅ Topics, die NICHT in "SUB update ..." geloggt werden sollen (topic_id!)
+    # RobotBridge joint_states hat bei dir id="joints" (siehe Logs: "SUB update id=joints ...")
+    LOG_SUB_SKIP_IDS: set[str] = {"joints"}
+
     def __init__(self, node_name: str, content: AppContent, *, namespace: str = ""):
         # Namespace sauber normalisieren: "" oder "shadow"/"live"
         ns = (namespace or "").strip().strip("/")
@@ -243,12 +247,15 @@ class BaseBridge(Node):
         """
         Wrappt Subscription-Callback, loggt Updates (optional nur bei Änderung),
         und ruft danach den echten Handler auf.
+
+        ✅ JointState (id="joints") wird hier explizit NICHT geloggt,
+        damit das Log nicht vollgespammt wird.
         """
         resolved = self._resolved_topic(spec.name)
 
         def _cb(msg: Any):
             try:
-                if self.LOG_SUB_UPDATES:
+                if self.LOG_SUB_UPDATES and (topic_id not in self.LOG_SUB_SKIP_IDS):
                     fp = self._msg_fingerprint(msg)
                     changed = (self._last_msg_fingerprint.get(topic_id) != fp)
                     if (not self.LOG_SUB_ONLY_ON_CHANGE) or changed:
