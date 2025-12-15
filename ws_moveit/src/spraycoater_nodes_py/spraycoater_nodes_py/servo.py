@@ -89,6 +89,7 @@ class ServoBridge(Node):
         self._F = self.frames_cfg.resolve
 
         # Default-Frame (tcp aus frames.yaml, sonst "world")
+        # (frames.yaml keys: world/tcp etc. -> resolve() mappt ggf. Prefix)
         self.current_frame = self._F(self.frames_cfg.get("tcp", "world"))
 
         # ---- Topics aus config_hub ----
@@ -113,9 +114,9 @@ class ServoBridge(Node):
         qos_joint_cmd = self.loader.qos_by_id("publish", NODE_KEY, "joint_jog")
 
         # PUB (ServoBridge → OmronTcpBridge) [REAL]
-        # topics.yaml: group 'omron', publish-id 'command_out'
-        topic_omron_cmd = self.loader.publish_topic("omron", "command_out")
-        qos_omron_cmd = self.loader.qos_by_id("publish", "omron", "command_out")
+        # ✅ topics.yaml: group 'omron', publish-id ist 'command' (nicht 'command_out')
+        topic_omron_cmd = self.loader.publish_topic("omron", "command")
+        qos_omron_cmd = self.loader.qos_by_id("publish", "omron", "command")
 
         # ---- Publisher je Backend ----
         self.pub_cartesian = None

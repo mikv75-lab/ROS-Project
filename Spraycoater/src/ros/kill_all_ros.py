@@ -7,6 +7,7 @@ import signal
 import time
 import logging
 from typing import List
+from pathlib import Path
 
 _LOG = logging.getLogger("ros.kill_all_ros")
 
@@ -122,14 +123,52 @@ def _kill_pid(pid: int, sig=signal.SIGTERM) -> None:
         _LOG.debug("kill(%s, %s) failed: %s", pid, sig, e)
 
 
+def _cleanup_fastdds_shm() -> None:
+    """
+    Entspricht:
+      rm -f /dev/shm/{fastdds*,FastDDS*,fastrtps*,FastRTPS*,sem.fastdds*,sem.fastrtps*} 2>/dev/null || true
+
+    (ohne Shell / ohne Brace-Expansion, robust in Python)
+    """
+    shm = Path("/dev/shm")
+    if not shm.exists():
+        return
+
+    patterns = [
+        "fastdds*",
+        "FastDDS*",
+        "fastrtps*",
+        "FastRTPS*",
+        "sem.fastdds*",
+        "sem.fastrtps*",
+    ]
+
+    removed = 0
+    for pat in patterns:
+        for p in shm.glob(pat):
+            try:
+                p.unlink(missing_ok=True)
+                removed += 1
+            except Exception:
+                # bewusst leise wie 2>/dev/null || true
+                pass
+
+    if removed:
+        _LOG.info("[kill] cleaned %d FastDDS SHM files in /dev/shm", removed)
+
+
 def kill_all_ros(timeout: float = 2.0, *, restart_daemon: bool = True) -> None:
     """
     Killt *ALLE* ROS-relevanten Prozesse außer deiner UI.
     Zusätzlich:
+      - räumt FastDDS/RTPS SHM Reste in /dev/shm weg
       - stoppt ros2 daemon vor dem Kill
       - startet ros2 daemon optional wieder (restart_daemon=True)
     """
     import subprocess
+
+    # ✅ FastDDS SHM Locks/Files entfernen (hilft gegen "open_and_lock_file failed")
+    _cleanup_fastdds_shm()
 
     # ros2 daemon stoppen (nimmt oft "hängende" CLI-States weg)
     try:
@@ -234,6 +273,9 @@ def _kill_fallback(timeout: float, *, restart_daemon: bool) -> None:
     """
     import subprocess
 
+    # ✅ auch hier SHM cleanup
+    _cleanup_fastdds_shm()
+
     # ros2 daemon stoppen
     try:
         subprocess.run(["ros2", "daemon", "stop"], check=False)
@@ -259,6 +301,7 @@ def _kill_fallback(timeout: float, *, restart_daemon: bool) -> None:
         "robot --ros-args",
         "servo --ros-args",
         "motion --ros-args",
+        "omron_tcp_bridge",
     ]
 
     for pat in patterns:
