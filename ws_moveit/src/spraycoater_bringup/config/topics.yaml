@@ -3,29 +3,29 @@ version: 1
 topics:
   servo:
     subscribe:
-      - id: twist_out          # UI → ServoNode (delta-Twist)
+      - id: twist_out
         name: servo/delta_twist_cmds
         type: geometry_msgs/msg/TwistStamped
         qos: sensor_data
-      - id: joint_out          # UI → ServoNode (delta-Joint)
+      - id: joint_out
         name: servo/delta_joint_cmds
         type: control_msgs/msg/JointJog
         qos: sensor_data
-      - id: set_mode           # UI → ServoNode (JOINT_JOG / TWIST / POSE)
+      - id: set_mode
         name: servo/set_mode
         type: std_msgs/msg/String
         qos: default
-      - id: set_frame          # UI → ServoNode (world / tcp / ...)
+      - id: set_frame
         name: servo/set_frame
         type: std_msgs/msg/String
         qos: default
 
     publish:
-      - id: cartesian_mm       # ServoNode → moveit_servo
+      - id: cartesian_mm
         name: servo/cartesian_mm
         type: geometry_msgs/msg/TwistStamped
         qos: sensor_data
-      - id: joint_jog          # ServoNode → moveit_servo
+      - id: joint_jog
         name: servo/joint_jog
         type: control_msgs/msg/JointJog
         qos: sensor_data
@@ -48,37 +48,26 @@ topics:
 
   motion:
     subscribe:
-      # 1) Freie Pose planen
       - id: plan_pose
         name: spraycoater/motion/plan_pose
         type: geometry_msgs/msg/PoseStamped
         qos: default
-
-      # 2) Named-Pose planen ("home", "service")
       - id: plan_named
         name: spraycoater/motion/plan_named
         type: std_msgs/msg/String
         qos: default
-
-      # 3) Ausführen des letzten gültigen Plans
       - id: execute
         name: spraycoater/motion/execute
         type: std_msgs/msg/Bool
         qos: default
-
-      # 4) Bewegung sofort stoppen
       - id: stop
         name: spraycoater/motion/stop
         type: std_msgs/msg/Empty
         qos: default
-
-      # 5) Motion-Speed (mm/s) aus UI / Recipe
       - id: set_speed_mm_s
         name: spraycoater/motion/set_speed_mm_s
         type: std_msgs/msg/Float64
         qos: default
-
-      # 6) Planner + Params als JSON-String
       - id: set_planner_cfg
         name: spraycoater/motion/set_planner_cfg
         type: std_msgs/msg/String
@@ -89,22 +78,18 @@ topics:
         name: spraycoater/motion/target_trajectory
         type: trajectory_msgs/msg/JointTrajectory
         qos: default
-
       - id: planned_trajectory_rt
         name: spraycoater/motion/trajectory_planned
         type: moveit_msgs/msg/RobotTrajectory
         qos: latched
-
       - id: executed_trajectory_rt
         name: spraycoater/motion/trajectory_executed
         type: moveit_msgs/msg/RobotTrajectory
         qos: latched
-
       - id: preview_markers
         name: spraycoater/motion/preview/markers
         type: visualization_msgs/msg/MarkerArray
         qos: latched
-
       - id: motion_result
         name: spraycoater/motion/result
         type: std_msgs/msg/String
@@ -120,17 +105,14 @@ topics:
         name: spraycoater/scene/mount/list
         type: std_msgs/msg/String
         qos: latched
-
       - id: substrate_list
         name: spraycoater/scene/substrate/list
         type: std_msgs/msg/String
         qos: latched
-
       - id: tool_list
         name: spraycoater/tool/list
         type: std_msgs/msg/String
         qos: latched
-
       - id: cage_current
         name: spraycoater/scene/cage/current
         type: std_msgs/msg/String
@@ -286,19 +268,16 @@ topics:
 
   omron:
     subscribe:
-      - id: command              # z.B. vom PyQt-OmronTerminal / OmronRobot
+      - id: command_in
         name: spraycoater/omron/command
         type: std_msgs/msg/String
         qos: default
-
-      # Verbindungstatus auch als subscribe, damit OmronRobot ihn lesen kann
-      - id: connectionStatus
+      - id: connection_status_in
         name: spraycoater/omron/connection_status
         type: std_msgs/msg/Bool
         qos: default
 
     publish:
-      # OmronTcpBridge -> Debug / UI
       - id: raw_tx
         name: spraycoater/omron/raw_tx
         type: std_msgs/msg/String
@@ -307,13 +286,11 @@ topics:
         name: spraycoater/omron/raw_rx
         type: std_msgs/msg/String
         qos: default
-      - id: connectionStatus
+      - id: connection_status
         name: spraycoater/omron/connection_status
         type: std_msgs/msg/Bool
         qos: default
-
-      # OmronRobot publisht auch Commands (gleicher Topicname)
-      - id: command
+      - id: command_out
         name: spraycoater/omron/command
         type: std_msgs/msg/String
         qos: default

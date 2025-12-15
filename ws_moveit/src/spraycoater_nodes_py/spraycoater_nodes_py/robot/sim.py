@@ -35,8 +35,8 @@ class SimRobot(BaseRobot):
         self.frames = frames()
         self._F = self.frames.resolve
 
-        self.world_frame = "world"
-        self.tool_frame = "tcp"
+        self.world_frame = self._F("world")
+        self.tool_frame = self._F("tcp")
 
         self._tcp_pose.header.frame_id = self.world_frame
         self._joints = JointState()
@@ -47,9 +47,9 @@ class SimRobot(BaseRobot):
 
         self._tf_warned = False
         self._startup_time = self.get_clock().now()
-        self._tf_grace_duration = Duration(seconds=5.0)
+        self._tf_grace_duration = Duration(seconds=2.0)
 
-        # Robot-Kommandos (topics.yaml.robot.subscribe)
+        # Kommandos (aus topics.yaml)
         self.sub_init = self._make_sub(Empty, "init", self._on_init)
         self.sub_stop = self._make_sub(Empty, "stop", self._on_stop)
         self.sub_clear_error = self._make_sub(Empty, "clear_error", self._on_clear_error)
@@ -62,7 +62,7 @@ class SimRobot(BaseRobot):
         # WICHTIG: relativ, damit der Namespace (shadow/live) greift!
         self.sub_joint_states = self.create_subscription(
             JointState,
-            "joint_states",      # ← vorher "/joint_states"
+            "joint_states",
             self._on_joint_states,
             10,
         )
@@ -72,15 +72,9 @@ class SimRobot(BaseRobot):
             "Joints aus joint_states (Fake-Controller)"
         )
 
-    # ---------------------------------------------------------
-    # Joint-State Callback
-    # ---------------------------------------------------------
     def _on_joint_states(self, msg: JointState):
         self._joints = msg
 
-    # ---------------------------------------------------------
-    # Command-Handler (State-Maschine SIM)
-    # ---------------------------------------------------------
     def _on_init(self, _msg: Empty):
         if self._estop:
             self._set_error("INIT verweigert – E-Stop aktiv.")
@@ -119,13 +113,10 @@ class SimRobot(BaseRobot):
 
     def _on_servo_on(self, _msg: Empty):
         if not self._power:
-            self._set_error("Servo ON nur möglich, wenn Power an ist.")
+            self._set_error("SERVO_ON verweigert – Power OFF.")
             return
         self._servo_enabled = True
-        if self._initialized:
-            self._set_mode("READY")
-        else:
-            self._set_mode("POWERED_ON")
+        self._set_mode("IDLE")
 
     def _on_servo_off(self, _msg: Empty):
         self._servo_enabled = False
@@ -135,9 +126,6 @@ class SimRobot(BaseRobot):
         else:
             self._set_mode("POWERED_OFF")
 
-    # ---------------------------------------------------------
-    # Hooks aus BaseRobot
-    # ---------------------------------------------------------
     def _update_tcp_pose(self):
         try:
             tf = self.tf_buffer.lookup_transform(

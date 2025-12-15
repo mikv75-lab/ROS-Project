@@ -1,184 +1,146 @@
+# spraycoater_nodes_py/robot/base.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from typing import Callable, Dict, Tuple, Optional
 
-import logging
+import importlib
+from typing import Any, Callable, Dict, Optional, Type
+
 from rclpy.node import Node
 
-from config.startup import AppContent, TopicSpec
-from app.utils.logging_setup import add_file_logger
+from std_msgs.msg import Bool, String
+from geometry_msgs.msg import PoseStamped
+from sensor_msgs.msg import JointState
 
-# (group, topic_id) -> method name
-_SUB_HANDLERS: Dict[Tuple[str, str], str] = {}
+from spraycoater_nodes_py.utils.config_hub import topics
 
 
-def sub_handler(group: str, topic_id: str):
+def _resolve_msg_type(type_str: str) -> Type[Any]:
     """
-    Decorator für Callback-Handler eingehender Nachrichten.
+    'std_msgs/msg/Bool' -> std_msgs.msg.Bool
     """
-    def _wrap(fn: Callable):
-        _SUB_HANDLERS[(group, topic_id)] = fn.__name__
-        return fn
-    return _wrap
+    if not type_str or "/msg/" not in type_str:
+        raise ValueError(f"Ungültiger msg-Typ: {type_str!r}")
+    pkg, rest = type_str.split("/", 1)          # std_msgs, msg/Bool
+    _, cls = rest.split("/", 1)                 # msg, Bool
+    mod = importlib.import_module(f"{pkg}.msg")
+    return getattr(mod, cls)
 
 
-class BaseBridge(Node):
+class BaseRobot(Node):
     """
-    UI-Bridge-Basis.
+    Gemeinsame Basis für Robot-Status-Nodes (Sim + Real/Omron).
 
-    - Namespace: "shadow" | "live" | ""
-    - Topics kommen RELATIV aus topics.yaml (z.B. spraycoater/robot/...)
-    - Effektive Topics: /<namespace>/spraycoater/...
-
-    Logging:
-      - pro Namespace genau eine Datei:
-          shadow.bridge.log
-          live.bridge.log
+    - Publiziert alle Status-Topics aus topics.yaml -> group 'robot' / publish
+    - Bietet _make_sub(...) zum Abonnieren der Kommandos aus group 'robot' / subscribe
+    - Hält interne State-Variablen (_connected/_mode/...) und publisht sie periodisch
+      (damit UI nach Connect sofort Daten sieht, auch wenn nichts 'changed' triggert).
     """
 
-    GROUP: str = ""   # MUSS in Subklassen gesetzt sein
+    GROUP = "robot"
 
-    def __init__(self, node_name: str, content: AppContent, *, namespace: str = ""):
-        # Namespace normalisieren
-        ns = (namespace or "").strip().strip("/")
-        super().__init__(node_name, namespace=ns or None)
+    def __init__(self, node_name: str = "robot") -> None:
+        super().__init__(node_name)
 
-        if not self.GROUP:
-            raise RuntimeError("GROUP muss in der Subklasse gesetzt sein.")
+        self.loader = topics()
 
-        self._namespace = ns
-        self._content = content
-        self._pubs: Dict[str, any] = {}
-        self._subs: Dict[str, any] = {}
+        # -----------------------------
+        # interne Robot-State-Variablen
+        # -----------------------------
+        self._connected: bool = False
+        self._mode: str = "DISCONNECTED"
+        self._initialized: bool = False
+        self._moving: bool = False
+        self._servo_enabled: bool = False
+        self._power: bool = False
+        self._estop: bool = False
+        self._last_error: str = ""
 
-        # ============================================================
-        # Logging: eine Datei pro Namespace
-        # ============================================================
-        ns_key = self._namespace if self._namespace else "root"
-        self._logger_name = f"ros.{ns_key}.bridge"
+        self._tcp_pose: PoseStamped = PoseStamped()
+        self._joints: JointState = JointState()
 
-        try:
-            self._pylog = add_file_logger(
-                self._logger_name,
-                file_name=f"{ns_key}.bridge.log",
-                level=logging.DEBUG,
-            )
-        except Exception:
-            logging.getLogger().exception(
-                "add_file_logger failed for namespace=%r", ns_key
-            )
-            self._pylog = logging.getLogger(self._logger_name)
+        # -----------------------------
+        # Publisher aus topics.yaml
+        # -----------------------------
+        self._pubs: Dict[str, Any] = {}
 
-        # ============================================================
-        # Topics initialisieren
-        # ============================================================
-        self._init_publishers_from_node_subscribe()
-        self._init_subscriptions_from_node_publish()
-
-        fqdn = self.get_fully_qualified_name()
-        self.get_logger().info(
-            "✅ %s ready (group=%s, ns=%r, fqdn=%s)",
-            node_name, self.GROUP, self._namespace, fqdn
-        )
-        self._pylog.info(
-            "Bridge ready: node=%s group=%s ns=%r pubs=%d subs=%d fqdn=%s",
-            node_name, self.GROUP, self._namespace,
-            len(self._pubs), len(self._subs), fqdn
-        )
-
-    # ============================================================
-    # Helpers
-    # ============================================================
-
-    def _full_topic(self, name: str) -> str:
-        """
-        Effektiver Topic-Name inkl. Namespace.
-        """
-        node_ns = (self.get_namespace() or "/").rstrip("/")
-        if node_ns == "" or node_ns == "/":
-            return f"/{name.lstrip('/')}"
-        return f"{node_ns}/{name.lstrip('/')}"
-
-    def _resolve_handler(self, group: str, topic_id: str) -> Optional[Callable]:
-        name = _SUB_HANDLERS.get((group, topic_id))
-        return getattr(self, name, None) if name else None
-
-    # ============================================================
-    # Init: Publisher (UI → ROS)
-    # ============================================================
-
-    def _init_publishers_from_node_subscribe(self) -> None:
-        try:
-            specs = self._content.topics(self.GROUP, "subscribe")
-        except KeyError:
-            specs = []
-
-        for spec in specs:
-            pub = self.create_publisher(
-                spec.resolve_type(),
-                spec.name,
-                self._content.qos(spec.qos_key),
-            )
+        for spec in self.loader.publish_specs(self.GROUP):
+            MsgT = _resolve_msg_type(spec.type)
+            qos = self.loader.qos_by_id("publish", self.GROUP, spec.id)
+            pub = self.create_publisher(MsgT, spec.name, qos)
             self._pubs[spec.id] = pub
+            # als Attribut (z.B. self.pub_errors)
+            setattr(self, f"pub_{spec.id}", pub)
 
-            self._pylog.info(
-                "[PUB] %-16s -> %s (%s) qos=%s",
-                spec.id,
-                self._full_topic(spec.name),
-                spec.type_str,
-                spec.qos_key,
-            )
-            self.get_logger().info(
-                "[PUB] %s -> %s",
-                spec.id,
-                self._full_topic(spec.name),
-            )
+        # Timer: Status regelmäßig publishen (UI kann jederzeit subscriben)
+        self._state_timer = self.create_timer(0.2, self._publish_state_once)
 
-    # ============================================================
-    # Init: Subscriptions (ROS → UI)
-    # ============================================================
+        # initial publish
+        self._publish_state_once()
 
-    def _init_subscriptions_from_node_publish(self) -> None:
-        try:
-            specs = self._content.topics(self.GROUP, "publish")
-        except KeyError:
-            specs = []
+    # -----------------------------
+    # Subscribe helper (Kommandos)
+    # -----------------------------
+    def _make_sub(self, msg_type: Type[Any], topic_id: str, cb: Callable[[Any], None]):
+        topic = self.loader.subscribe_topic(self.GROUP, topic_id)
+        qos = self.loader.qos_by_id("subscribe", self.GROUP, topic_id)
+        return self.create_subscription(msg_type, topic, cb, qos)
 
-        for spec in specs:
-            cb = self._resolve_handler(self.GROUP, spec.id) or (lambda _msg: None)
+    # -----------------------------
+    # State setter helpers
+    # -----------------------------
+    def _set_mode(self, mode: str) -> None:
+        mode = (mode or "").strip() or "UNKNOWN"
+        self._mode = mode
+        if "pub_mode" in dir(self):
+            self.pub_mode.publish(String(data=mode))
 
-            sub = self.create_subscription(
-                spec.resolve_type(),
-                spec.name,
-                cb,
-                self._content.qos(spec.qos_key),
-            )
-            self._subs[spec.id] = sub
+    def _set_connection(self, connected: bool) -> None:
+        self._connected = bool(connected)
+        if "pub_connection" in dir(self):
+            self.pub_connection.publish(Bool(data=self._connected))
 
-            cb_name = getattr(cb, "__name__", "lambda")
+    def _set_error(self, text: str) -> None:
+        self._last_error = (text or "").strip()
+        if "pub_errors" in dir(self):
+            self.pub_errors.publish(String(data=self._last_error))
 
-            self._pylog.info(
-                "[SUB] %-16s <- %s (%s) qos=%s cb=%s",
-                spec.id,
-                self._full_topic(spec.name),
-                spec.type_str,
-                spec.qos_key,
-                cb_name,
-            )
-            self.get_logger().info(
-                "[SUB] %s <- %s",
-                spec.id,
-                self._full_topic(spec.name),
-            )
+    # -----------------------------
+    # Publish all current state
+    # -----------------------------
+    def _publish_state_once(self) -> None:
+        # bool/status topics
+        if "pub_connection" in dir(self):
+            self.pub_connection.publish(Bool(data=self._connected))
+        if "pub_mode" in dir(self):
+            self.pub_mode.publish(String(data=self._mode))
+        if "pub_initialized" in dir(self):
+            self.pub_initialized.publish(Bool(data=self._initialized))
+        if "pub_moving" in dir(self):
+            self.pub_moving.publish(Bool(data=self._moving))
+        if "pub_servo_enabled" in dir(self):
+            self.pub_servo_enabled.publish(Bool(data=self._servo_enabled))
+        if "pub_power" in dir(self):
+            self.pub_power.publish(Bool(data=self._power))
+        if "pub_estop" in dir(self):
+            self.pub_estop.publish(Bool(data=self._estop))
+        if "pub_errors" in dir(self):
+            self.pub_errors.publish(String(data=self._last_error))
 
-    # ============================================================
-    # Public API
-    # ============================================================
+        # pose/joints (nur wenn gesetzt)
+        if "pub_tcp_pose" in dir(self) and self._tcp_pose is not None:
+            self.pub_tcp_pose.publish(self._tcp_pose)
+        if "pub_joints" in dir(self) and self._joints is not None:
+            self.pub_joints.publish(self._joints)
 
-    def pub(self, topic_id: str):
-        if topic_id not in self._pubs:
-            raise KeyError(f"Publisher '{topic_id}' unbekannt in {self.GROUP}")
-        return self._pubs[topic_id]
+    # -----------------------------
+    # Convenience update for derived classes
+    # -----------------------------
+    def update_tcp_pose(self, msg: PoseStamped) -> None:
+        self._tcp_pose = msg
+        if "pub_tcp_pose" in dir(self):
+            self.pub_tcp_pose.publish(msg)
 
-    def spec(self, direction: str, topic_id: str) -> TopicSpec:
-        return self._content.topic_by_id(self.GROUP, direction, topic_id)
+    def update_joints(self, msg: JointState) -> None:
+        self._joints = msg
+        if "pub_joints" in dir(self):
+            self.pub_joints.publish(msg)

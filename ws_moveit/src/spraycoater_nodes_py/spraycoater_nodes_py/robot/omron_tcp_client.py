@@ -14,16 +14,24 @@ class OmronTcpClient:
     Features:
       - connect() / close()
       - _send_line(text): schickt "text" mit CRLF als Zeilenende
+      - send_line(text): public Alias für _send_line()
       - recv_line(): liest blockierend bis '\\n' oder Timeout / Verbindungsabbruch
       - recv_line_nowait(): kurz-blockierendes Polling, gibt "" zurück, wenn keine
                             vollständige Zeile verfügbar ist
+      - recv_line_poll(): public Alias für recv_line_nowait()
 
-    Der Client ist thread-sicher genug für:
+    Threading:
       - 1 Sender-Thread (Bridge _on_command)
-      - 1 Reader-Thread  (Bridge _reader_loop / Poll-Loop)
+      - 1 Reader-Thread (Bridge Poll-Loop)
     """
 
-    def __init__(self, host: str, port: int, timeout: float = 3.0, poll_timeout: float = 0.01) -> None:
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        timeout: float = 3.0,
+        poll_timeout: float = 0.01,
+    ) -> None:
         """
         :param host: ACE-Host
         :param port: ACE-Port (z.B. 5000)
@@ -44,9 +52,7 @@ class OmronTcpClient:
     # Verbindung
     # ------------------------------------------------------------------
     def connect(self) -> None:
-        """
-        Baut eine neue TCP-Verbindung auf. Schließt ggf. vorherige.
-        """
+        """Baut eine neue TCP-Verbindung auf. Schließt ggf. vorherige."""
         with self._sock_lock:
             if self._sock is not None:
                 try:
@@ -65,9 +71,7 @@ class OmronTcpClient:
                 self._rx_buffer = b""
 
     def close(self) -> None:
-        """
-        Verbindung sauber schließen.
-        """
+        """Verbindung sauber schließen."""
         with self._sock_lock:
             if self._sock is not None:
                 try:
@@ -79,9 +83,7 @@ class OmronTcpClient:
             self._rx_buffer = b""
 
     def _ensure_socket(self) -> socket.socket:
-        """
-        Interner Helper: wirft Exception, wenn keine Verbindung besteht.
-        """
+        """Interner Helper: wirft Exception, wenn keine Verbindung besteht."""
         with self._sock_lock:
             if self._sock is None:
                 raise ConnectionError("OmronTcpClient: socket is not connected")
@@ -95,18 +97,20 @@ class OmronTcpClient:
         Schickt eine Zeile mit CRLF als Terminator.
 
         Hinweis:
-          - Bridge ruft diese Methode direkt auf.
           - text wird am Ende von CR/LF befreit, dann wird '\\r\\n' angehängt.
         """
         if text is None:
             text = ""
-        # vorhandene Zeilenenden entfernen und CRLF anhängen
         line = text.rstrip("\r\n") + "\r\n"
         data = line.encode("ascii", errors="ignore")
 
         sock = self._ensure_socket()
         with self._sock_lock:
             sock.sendall(data)
+
+    def send_line(self, text: str) -> None:
+        """Public Alias für _send_line()."""
+        self._send_line(text)
 
     # ------------------------------------------------------------------
     # Empfangen (blockierend)
@@ -126,21 +130,17 @@ class OmronTcpClient:
 
         with self._rx_lock:
             while True:
-                # Haben wir schon ein '\n' im Puffer?
                 idx = self._rx_buffer.find(b"\n")
                 if idx != -1:
                     chunk = self._rx_buffer[: idx + 1]
                     self._rx_buffer = self._rx_buffer[idx + 1 :]
                     return chunk.decode("ascii", errors="ignore")
 
-                # Sonst mehr Daten nachladen
                 try:
                     data = sock.recv(4096)
                 except socket.timeout:
-                    # Timeout -> keine Zeile komplett, Bridge kann "" als "nichts" behandeln
                     return ""
                 if not data:
-                    # 0 Bytes -> Verbindung vom Server geschlossen
                     raise ConnectionError("OmronTcpClient: peer closed connection")
 
                 self._rx_buffer += data
@@ -169,8 +169,7 @@ class OmronTcpClient:
                 self._rx_buffer = self._rx_buffer[idx + 1 :]
                 return chunk.decode("ascii", errors="ignore")
 
-            # 2) Kurz versuchen, neue Daten zu holen
-            #    -> poll_timeout, dann wieder auf ursprüngliches Timeout zurück
+            # 2) Kurz versuchen, neue Daten zu holen (poll_timeout)
             with self._sock_lock:
                 try:
                     old_timeout = sock.gettimeout()
@@ -182,10 +181,8 @@ class OmronTcpClient:
                     try:
                         data = sock.recv(4096)
                     except socket.timeout:
-                        # nichts Neues im Poll-Fenster
                         return ""
                     if not data:
-                        # Verbindung geschlossen
                         raise ConnectionError("OmronTcpClient: peer closed connection")
                     self._rx_buffer += data
                 finally:
@@ -201,5 +198,8 @@ class OmronTcpClient:
                 self._rx_buffer = self._rx_buffer[idx + 1 :]
                 return chunk.decode("ascii", errors="ignore")
 
-            # Noch immer keine komplette Zeile
             return ""
+
+    def recv_line_poll(self) -> str:
+        """Public Alias für recv_line_nowait()."""
+        return self.recv_line_nowait()
