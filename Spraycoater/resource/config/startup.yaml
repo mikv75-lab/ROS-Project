@@ -19,10 +19,14 @@ paths:
 ros:
   launch_ros: true
   bringup_launch: "omron_bringup.launch.py"
+
+  # Gemeinsamer Namespace für das Gesamtsystem
   namespace: "spraycoater"
 
+  # GILT GLOBAL für ALLE ROS-Nodes (shadow + live)
+  use_sim_time: false
+
   configs:
-    # Zentrale YAMLs im bringup/config
     topics_file: "package://spraycoater_bringup/config/topics.yaml"
     qos_file:    "package://spraycoater_bringup/config/qos.yaml"
     frames_file: "package://spraycoater_bringup/config/frames.yaml"
@@ -32,62 +36,52 @@ ros:
     poses_file:  "package://spraycoater_bringup/config/poses.yaml"
     tools_file:  "package://spraycoater_bringup/config/tools.yaml"
 
-  # Welcher Robotertyp in robot.yaml / MoveIt verwendet wird
-  # (Auswahl weiterhin über robot.yaml: z.B. meca500, omron_viper_650, ...)
+  # Robotertyp (MoveIt / URDF / ros2_control)
   robot_type: "omron_viper_650"
 
   # -----------------------------------------------------------------
-  # Zwei Rollen: shadow (Sim/Planung) und live (echtes System)
+  # Rollen
   # -----------------------------------------------------------------
   shadow:
     enabled: true
-    use_sim_time: true    # typischerweise mit Gazebo / FakeController
+    # nutzt FakeController / Planung
 
   live:
     enabled: false
-    use_sim_time: false
 
-    # Betriebsmodus der LIVE-Rolle:
-    #  - "emu"  : Omron-Emulator (ACE, SmartController-Emulation)
-    #  - "real" : echter Omron-Controller über TCP
-    mode: "emu"
+    # Betriebsmodus:
+    #   - "omron"    → echter Omron-Controller
+    #   - "emulator" → ACE / V+ Emulator
+    mode: "emulator"
 
     omron:
-      # TCP-Parameter für den echten Robotercontroller
-      real:
-        ip:   "192.168.10.20"    # IP-Adresse des echten Omron-Controllers
-        port: 5000               # Port für deinen tcp_server / V+-Schnittstelle
+      omron:
+        ip:   "192.168.10.20"
+        port: 5000
 
-      # TCP-Parameter für die Emulator-Variante (ACE / V+ Emulator)
       emulator:
-        ip:   "host.docker.internal"        # typischerweise lokal, wenn Emulator auf selbem PC
-        port: 5000               # Port wie im V+-tcp_server am Emulator
+        ip:   "host.docker.internal"
+        port: 5000
 
 # ===================================================================
-# SPS / PLC-Anbindung (nur über PyQt, NICHT über ROS)
+# SPS / PLC-Anbindung (NICHT über ROS)
 # ===================================================================
 plc:
-  # Simulationsmodus:
-  #  - true  : PLC wird im Startup komplett übersprungen (kein Connect)
-  #  - false : es wird eine echte ADS-Verbindung aufgebaut
+  # true  → komplette PLC-Anbindung überspringen
+  # false → echte ADS-Verbindung
   sim: true
 
-  # Modus:
-  #  - "ads"  : echte Beckhoff-SPS / IPC im Feldnetz
-  #  - "umrt" : TwinCAT-Laufzeitsimulation unter Windows (192.168.4.1)
+  # "ads" | "umrt"
   mode: "ads"
 
-  # Konkrete Verbindungsparameter für PyADS – Profil "ads"
   ads:
-    ams_net_id: "1.2.3.4.5.6"     # AMS-Net-ID der echten SPS (Platzhalter)
-    ip:         "192.168.10.30"   # IP-Adresse der SPS
-    port:       851               # Standard TwinCAT-ADS-Port
+    ams_net_id: "1.2.3.4.5.6"
+    ip:         "192.168.10.30"
+    port:       851
 
-  # Konkrete Verbindungsparameter für PyADS – Profil "umrt" (Runtime-Sim)
   umrt:
-    ams_net_id: "192.168.4.1.1.1" # typische AMS-Net-ID für UMRT auf dem PC
-    ip:         "192.168.4.1"     # virtuelle UMRT-IP
-    port:       851               # auch hier Standard-Port
+    ams_net_id: "192.168.4.1.1.1"
+    ip:         "192.168.4.1"
+    port:       851
 
-  # Pfad zur Spezifikationsdatei mit Typen/Min/Max etc.
   spec_file: "plc.yaml"

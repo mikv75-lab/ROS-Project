@@ -1,6 +1,7 @@
 # src/ros/bridge/runner.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
+
 import threading
 from typing import Optional, List, Any, Tuple, Type, TypeVar
 
@@ -24,6 +25,10 @@ class RosBridge:
     Betreibt alle Bridge-Nodes (SceneBridge, PosesBridge, SprayPathBridge,
     ServoBridge, RobotBridge, MotionBridge und optional OmronBridge) in einem
     eigenen Executor-Thread.
+
+    WICHTIG:
+      - namespace wird an alle Bridge-Nodes weitergereicht, damit diese auf
+        /<namespace>/... Topics arbeiten (z.B. /shadow/..., /live/...).
     """
 
     def __init__(
@@ -33,23 +38,23 @@ class RosBridge:
         enable_omron: bool = False,
         namespace: str | None = None,
     ):
-        """
-        namespace wird aktuell nur gespeichert, damit der Konstruktor mit
-        namespace=... aus get_ui_bridge aufgerufen werden kann. Falls du
-        später echte ROS-Namespaces für die Nodes brauchst, kannst du
-        self._namespace in den Bridge-Klassen weiterreichen.
-        """
         self._startup_yaml_path = startup_yaml_path
         self._content = AppContent(startup_yaml_path)
 
         self._enable_omron = bool(enable_omron)
-        self._namespace = (namespace or "").strip()
+
+        # Namespace normalisieren: "shadow" statt "/shadow/"
+        self._namespace = (namespace or "").strip().strip("/")
 
         self._exec: Optional[SingleThreadedExecutor] = None
         self._nodes: List[Any] = []
         self._thread: Optional[threading.Thread] = None
         self._running = False
         self._lock = threading.RLock()
+
+    @property
+    def namespace(self) -> str:
+        return self._namespace
 
     @property
     def is_running(self) -> bool:
@@ -83,19 +88,21 @@ class RosBridge:
 
             self._exec = SingleThreadedExecutor(context=rclpy.get_default_context())
 
+            ns = self._namespace  # "shadow" | "live" | ""
+
             # --- Bridges erzeugen (immer) ---
-            scene = SceneBridge(self._content)
-            poses = PosesBridge(self._content)
-            spray = SprayPathBridge(self._content)
-            servo = ServoBridge(self._content)
-            robot = RobotBridge(self._content)
-            motion = MotionBridge(self._content)
+            scene = SceneBridge(self._content, namespace=ns)
+            poses = PosesBridge(self._content, namespace=ns)
+            spray = SprayPathBridge(self._content, namespace=ns)
+            servo = ServoBridge(self._content, namespace=ns)
+            robot = RobotBridge(self._content, namespace=ns)
+            motion = MotionBridge(self._content, namespace=ns)
 
             self._nodes.extend([scene, poses, spray, servo, robot, motion])
 
-            # --- Omron nur, wenn explizit aktiviert (live) ---
+            # --- Omron nur, wenn explizit aktiviert (typisch: live) ---
             if self._enable_omron:
-                omron = OmronBridge(self._content)
+                omron = OmronBridge(self._content, namespace=ns)
                 self._nodes.append(omron)
 
             # dem Executor hinzufügen
@@ -105,7 +112,7 @@ class RosBridge:
             self._running = True
             self._thread = threading.Thread(
                 target=self._spin,
-                name="ros-bridge",
+                name=f"ros-bridge-{ns or 'root'}",
                 daemon=True,
             )
             self._thread.start()

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # /root/Spraycoater/src/config/startup.py
-# Minimaler Startup-Loader + AppContent (Frames/QoS/Topics)
+# Startup-Loader + AppContent (Frames/QoS/Topics)
 from __future__ import annotations
 
 import os
@@ -47,7 +47,7 @@ def _abspath_rel_to(base_dir: str, p: str) -> str:
 
 
 def _load_yaml(path_or_uri: str, *, strict: bool = True) -> Optional[Dict[str, Any]]:
-    """Yaml laden. strict=True → Fehler; sonst: None."""
+    """YAML laden. strict=True → Fehler; sonst: None."""
     try:
         path = (
             resolve_package_uri(path_or_uri)
@@ -106,28 +106,33 @@ class ROSConfigPaths:
 @dataclass(frozen=True)
 class ROSRoleConfig:
     enabled: bool
-    use_sim_time: bool
+
+
+@dataclass(frozen=True)
+class ROSLiveEndpoint:
+    ip: str
+    port: int
 
 
 @dataclass(frozen=True)
 class ROSLiveOmronConfig:
-    mode: str                  # "emu" oder "real"
-    real_ip: Optional[str]
-    real_port: Optional[int]
-    emulator_ip: Optional[str]
-    emulator_port: Optional[int]
+    mode: str  # "omron" | "emulator"
+    omron: ROSLiveEndpoint
+    emulator: ROSLiveEndpoint
 
 
 @dataclass(frozen=True)
 class ROSLiveConfig(ROSRoleConfig):
-    omron: Optional[ROSLiveOmronConfig] = None
+    mode: str
+    omron: ROSLiveOmronConfig
 
 
 @dataclass(frozen=True)
 class ROSConfig:
     launch_ros: bool
     bringup_launch: str
-    namespace: str
+    namespace: str               # z.B. "spraycoater" (Info, aber NICHT für Topic-Prefixing!)
+    use_sim_time: bool           # global
     robot_type: str
     configs: ROSConfigPaths
     shadow: ROSRoleConfig
@@ -143,12 +148,12 @@ class PlcEndpoint:
 
 @dataclass(frozen=True)
 class PlcConfig:
-    sim: bool                   # true → keine Verbindung
+    sim: bool
     mode: str                   # "ads" oder "umrt"
     ads: Optional[PlcEndpoint]
     umrt: Optional[PlcEndpoint]
-    spec_file: str              # absoluter Pfad zu plc.yaml
-    spec: Optional[Dict[str, Any]] = None  # optional geladene Spezifikation
+    spec_file: str
+    spec: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -169,20 +174,13 @@ class AppContext:
 # ============================================================
 
 def load_startup(startup_yaml_path: str) -> AppContext:
-    """
-    startup.yaml einlesen + recipes.yaml + substrate_mounts + Frames/QoS/Topics.
-
-    - Pfade werden relativ zu startup.yaml bzw. via package:// aufgelöst
-    - PLC-Spezifikation wird aus plc.spec_file (plc.yaml) geladen
-    - ROS-Konfiguration nutzt das neue Format mit ros.configs, ros.shadow, ros.live
-    """
     if not startup_yaml_path:
         _err("startup_yaml_path ist leer.")
     startup_yaml_path = os.path.abspath(os.path.normpath(startup_yaml_path))
     if not os.path.exists(startup_yaml_path):
         _err(f"startup.yaml nicht gefunden: {startup_yaml_path}")
 
-    su = _load_yaml(startup_yaml_path, strict=True)
+    su = _load_yaml(startup_yaml_path, strict=True) or {}
     base = os.path.dirname(startup_yaml_path)
 
     # ----- PATHS -----
@@ -190,14 +188,13 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not isinstance(p, dict):
         _err("startup.yaml: Abschnitt 'paths' fehlt oder ist ungültig.")
 
-    required = ("recipe_file", "recipe_dir", "log_dir", "bringup_log")
-    for key in required:
+    for key in ("recipe_file", "recipe_dir", "log_dir", "bringup_log"):
         if key not in p:
             _err(f"startup.yaml: 'paths.{key}' fehlt.")
 
     recipe_file_abs = _abspath_rel_to(base, p["recipe_file"])
-    recipe_dir_abs = _abspath_rel_to(base, p["recipe_dir"])
-    log_dir_abs = _abspath_rel_to(base, p["log_dir"])
+    recipe_dir_abs  = _abspath_rel_to(base, p["recipe_dir"])
+    log_dir_abs     = _abspath_rel_to(base, p["log_dir"])
     bringup_log_abs = _abspath_rel_to(base, p["bringup_log"])
 
     if not os.path.isdir(recipe_dir_abs):
@@ -209,16 +206,8 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not os.path.isdir(bl_parent):
         _err(f"Verzeichnis für bringup_log existiert nicht: {bl_parent}")
 
-    mounts_dir_abs = (
-        _abspath_rel_to(base, p["substrate_mounts_dir"])
-        if p.get("substrate_mounts_dir")
-        else None
-    )
-    mounts_file_abs = (
-        _abspath_rel_to(base, p["substrate_mounts_file"])
-        if p.get("substrate_mounts_file")
-        else None
-    )
+    mounts_dir_abs = _abspath_rel_to(base, p["substrate_mounts_dir"]) if p.get("substrate_mounts_dir") else None
+    mounts_file_abs = _abspath_rel_to(base, p["substrate_mounts_file"]) if p.get("substrate_mounts_file") else None
 
     paths = AppPaths(
         recipe_file=recipe_file_abs,
@@ -240,6 +229,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     launch_ros = bool(r["launch_ros"])
     bringup_launch = str(r.get("bringup_launch", "")).strip()
     namespace = str(r.get("namespace", "")).strip()
+    use_sim_time = bool(r.get("use_sim_time", False))
 
     if not bringup_launch:
         _err("startup.yaml: ros.bringup_launch fehlt oder ist leer.")
@@ -250,22 +240,11 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not robot_type:
         _err("startup.yaml: ros.robot_type fehlt oder ist leer.")
 
-    # ros.configs.{topics_file,qos_file,frames_file,...}
     rcfg = r.get("configs") or {}
     if not isinstance(rcfg, dict):
         _err("startup.yaml: ros.configs fehlt oder ist ungültig.")
 
-    req_cfg = (
-        "topics_file",
-        "qos_file",
-        "frames_file",
-        "scene_file",
-        "robot_file",
-        "servo_file",
-        "poses_file",
-        "tools_file",
-    )
-    for key in req_cfg:
+    for key in ("topics_file", "qos_file", "frames_file", "scene_file", "robot_file", "servo_file", "poses_file", "tools_file"):
         if key not in rcfg:
             _err(f"startup.yaml: ros.configs.{key} fehlt.")
 
@@ -280,42 +259,45 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         tools_file=_abspath_rel_to(base, rcfg["tools_file"]),
     )
 
-    # ros.shadow
     shadow_yaml = r.get("shadow") or {}
     if not isinstance(shadow_yaml, dict):
         _err("startup.yaml: ros.shadow fehlt oder ist ungültig.")
-    shadow_cfg = ROSRoleConfig(
-        enabled=bool(shadow_yaml.get("enabled", False)),
-        use_sim_time=bool(shadow_yaml.get("use_sim_time", True)),
-    )
+    shadow_cfg = ROSRoleConfig(enabled=bool(shadow_yaml.get("enabled", False)))
 
-    # ros.live
     live_yaml = r.get("live") or {}
     if not isinstance(live_yaml, dict):
         _err("startup.yaml: ros.live fehlt oder ist ungültig.")
-
     live_enabled = bool(live_yaml.get("enabled", False))
-    live_use_sim_time = bool(live_yaml.get("use_sim_time", False))
-    live_mode = str(live_yaml.get("mode", "emu")).strip().lower()
 
-    omron_yaml = live_yaml.get("omron") or {}
+    mode = str(live_yaml.get("mode", "")).strip().lower()
+    if mode not in ("omron", "emulator"):
+        _err(f"startup.yaml: ros.live.mode muss 'omron' oder 'emulator' sein (ist {mode!r}).")
+
+    omron_yaml = live_yaml.get("omron")
     if not isinstance(omron_yaml, dict):
-        omron_yaml = {}
+        _err("startup.yaml: ros.live.omron fehlt oder ist ungültig.")
 
-    real_yaml = omron_yaml.get("real") or {}
-    emu_yaml = omron_yaml.get("emulator") or {}
+    def _endpoint(name: str) -> ROSLiveEndpoint:
+        b = omron_yaml.get(name)
+        if not isinstance(b, dict):
+            _err(f"startup.yaml: ros.live.omron.{name} fehlt oder ist ungültig.")
+        ip = str(b.get("ip", "")).strip()
+        port = b.get("port", None)
+        if not ip:
+            _err(f"startup.yaml: ros.live.omron.{name}.ip fehlt/leer.")
+        if port is None:
+            _err(f"startup.yaml: ros.live.omron.{name}.port fehlt.")
+        return ROSLiveEndpoint(ip=ip, port=int(port))
 
     omron_cfg = ROSLiveOmronConfig(
-        mode=live_mode,
-        real_ip=real_yaml.get("ip"),
-        real_port=real_yaml.get("port"),
-        emulator_ip=emu_yaml.get("ip"),
-        emulator_port=emu_yaml.get("port"),
-    ) if omron_yaml else None
+        mode=mode,
+        omron=_endpoint("omron"),
+        emulator=_endpoint("emulator"),
+    )
 
     live_cfg = ROSLiveConfig(
         enabled=live_enabled,
-        use_sim_time=live_use_sim_time,
+        mode=mode,
         omron=omron_cfg,
     )
 
@@ -323,6 +305,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         launch_ros=launch_ros,
         bringup_launch=bringup_launch,
         namespace=namespace,
+        use_sim_time=use_sim_time,
         robot_type=robot_type,
         configs=ros_paths,
         shadow=shadow_cfg,
@@ -368,9 +351,10 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     )
 
     # ----- recipes.yaml -----
-    ry = _load_yaml(recipe_file_abs, strict=True)
+    ry = _load_yaml(recipe_file_abs, strict=True) or {}
     recipe_params = ry.get("recipe_params")
     recipes_list = ry.get("recipes")
+
     if not isinstance(recipe_params, dict) or not recipe_params:
         _err("recipes.yaml: recipe_params fehlt oder ist leer.")
     if not isinstance(recipes_list, list) or not recipes_list:
@@ -387,8 +371,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     # ----- AppContent erzeugen -----
     content = AppContent(startup_yaml_path)
 
-    # ----- AppContext konstruieren -----
-    ctx = AppContext(
+    return AppContext(
         paths=paths,
         ros=ros_cfg,
         plc=plc_cfg,
@@ -398,8 +381,6 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         mounts_yaml=mounts_yaml,
         content=content,
     )
-
-    return ctx
 
 
 # ============================================================
@@ -436,23 +417,34 @@ class PathsLite:
 
 
 class AppContent:
-    """Frames / QoS / Topics aus startup.yaml.ros.configs.* laden."""
+    """
+    Frames / QoS / Topics aus startup.yaml.ros.configs.* laden.
+
+    WICHTIG für deinen Fall:
+      - topics.yaml enthält bereits "spraycoater/..."
+      - daher wird HIER NICHTS geprefixt (kein root_ns)
+      - Node-Namespace (shadow/live) kommt allein aus RosBridge / rclpy Node
+    """
 
     def __init__(self, startup_yaml_path: str):
         su = _load_yaml(startup_yaml_path, strict=True) or {}
+        base = os.path.dirname(os.path.abspath(startup_yaml_path))
 
         r = su.get("ros") or {}
         if not isinstance(r, dict):
             raise ValueError("startup.yaml: Abschnitt 'ros' fehlt oder ist ungültig.")
         cfg = r.get("configs") or {}
         if not isinstance(cfg, dict) or not cfg:
-            raise ValueError("ros.configs.{frames,qos,topics} fehlt.")
+            raise ValueError("startup.yaml: ros.configs fehlt oder ist ungültig.")
 
-        base = os.path.dirname(os.path.abspath(startup_yaml_path))
+        # ✅ configs sauber auflösen (package:// + relativ)
+        frames_path = _abspath_rel_to(base, cfg.get("frames_file", ""))
+        qos_path    = _abspath_rel_to(base, cfg.get("qos_file", ""))
+        topics_path = _abspath_rel_to(base, cfg.get("topics_file", ""))
 
-        self._frames = _load_yaml(cfg.get("frames_file", ""), strict=True) or {}
-        self._qos = _load_yaml(cfg.get("qos_file", ""), strict=True) or {}
-        self._topics = _load_yaml(cfg.get("topics_file", ""), strict=True) or {}
+        self._frames = _load_yaml(frames_path, strict=True) or {}
+        self._qos    = _load_yaml(qos_path, strict=True) or {}
+        self._topics = _load_yaml(topics_path, strict=True) or {}
 
         # ---- Frames ----
         self._frames_map = self._frames.get("frames") or {}
@@ -467,20 +459,13 @@ class AppContent:
         if not isinstance(self._topics_root, dict):
             raise ValueError("topics.yaml: topics fehlt.")
 
-        self._root_ns = (self._topics.get("root_ns") or "").rstrip("/")
+        # ❗ Für deinen Fall: kein root_ns, kein Prefixing
+        self._root_ns = ""
 
         # optional Mounts:
         p = su.get("paths") or {}
-        mounts_dir_abs = (
-            _abspath_rel_to(base, p["substrate_mounts_dir"])
-            if p.get("substrate_mounts_dir")
-            else None
-        )
-        mounts_file_abs = (
-            _abspath_rel_to(base, p["substrate_mounts_file"])
-            if p.get("substrate_mounts_file")
-            else None
-        )
+        mounts_dir_abs = _abspath_rel_to(base, p["substrate_mounts_dir"]) if p.get("substrate_mounts_dir") else None
+        mounts_file_abs = _abspath_rel_to(base, p["substrate_mounts_file"]) if p.get("substrate_mounts_file") else None
 
         self.paths = PathsLite(substrate_mounts_dir=mounts_dir_abs)
 
@@ -542,9 +527,8 @@ class AppContent:
 
     # ---------------- Topics -----------------
     def _with_root_ns(self, name: str) -> str:
-        if name.startswith("/") or not self._root_ns:
-            return name
-        return f"{self._root_ns}/{name.lstrip('/')}"
+        # Für deinen Fall: NICHT prefixen, aber absolute Topics respektieren
+        return name
 
     def topics(self, group: str, direction: str) -> List[TopicSpec]:
         if group not in self._topics_root:
@@ -553,15 +537,23 @@ class AppContent:
         if not isinstance(block, list):
             raise ValueError(f"topics[{group}][{direction}] ist kein Array.")
 
-        return [
-            TopicSpec(
-                id=str(e["id"]),
-                name=self._with_root_ns(str(e["name"])),
-                type_str=str(e["type"]),
-                qos_key=str(e.get("qos", "default")),
+        out: List[TopicSpec] = []
+        for e in block:
+            name = str(e["name"])
+            if name.startswith("/"):
+                raise ValueError(
+                    f"topics.yaml: Topic '{name}' darf NICHT mit '/' anfangen "
+                    f"(sonst ignoriert ROS den Node-Namespace)."
+                )
+            out.append(
+                TopicSpec(
+                    id=str(e["id"]),
+                    name=self._with_root_ns(name),
+                    type_str=str(e["type"]),
+                    qos_key=str(e.get("qos", "default")),
+                )
             )
-            for e in block
-        ]
+        return out
 
     def topic_by_id(self, group: str, direction: str, topic_id: str) -> TopicSpec:
         for t in self.topics(group, direction):
@@ -578,6 +570,4 @@ class AppContent:
     def create_subscription_from_id(self, node, group: str, topic_id: str, callback):
         spec = self.topic_by_id(group, "subscribe", topic_id)
         msg_type = spec.resolve_type()
-        return node.create_subscription(
-            msg_type, spec.name, callback, self.qos(spec.qos_key)
-        )
+        return node.create_subscription(msg_type, spec.name, callback, self.qos(spec.qos_key))
