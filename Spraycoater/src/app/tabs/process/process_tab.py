@@ -263,7 +263,6 @@ class ProcessTab(QWidget):
                 home_timeout_s=60.0,
                 pos_tol_mm=1.0,
             )
-            # RobotInitThread.notifyFinished ist idealerweise pyqtSignal() (ohne Arg)
             self._robot_init_thread.notifyFinished.connect(self._on_robot_init_finished)
             self._robot_init_thread.notifyError.connect(self._on_robot_init_error)
 
@@ -296,7 +295,6 @@ class ProcessTab(QWidget):
     # =====================================================================
 
     def _info_set_all(self, values: Optional[Dict[str, Any]]) -> None:
-        """Gesamten Info-Cache ersetzen und InfoBox updaten."""
         self._info_values = dict(values or {})
         try:
             if self._info_values:
@@ -307,7 +305,6 @@ class ProcessTab(QWidget):
             pass
 
     def _info_update(self, key: str, value: Any | None) -> None:
-        """Einzelnen Key im Info-Cache setzen/löschen und InfoBox updaten."""
         if value is None:
             self._info_values.pop(key, None)
         else:
@@ -322,7 +319,6 @@ class ProcessTab(QWidget):
             pass
 
     def _append_process_log(self, text: str) -> None:
-        """Text in die Process-Logbox anhängen."""
         if not text:
             return
         try:
@@ -332,8 +328,52 @@ class ProcessTab(QWidget):
 
     @QtCore.pyqtSlot(str)
     def _on_process_log_message(self, msg: str) -> None:
-        """Slot für ProcessThread.logMessage."""
         self._append_process_log(msg)
+
+    # =====================================================================
+    # 🆕 Delayed SprayPath publish (Variante 4)
+    # =====================================================================
+
+    def _publish_recipe_to_spraypath_delayed(
+        self,
+        recipe: Recipe,
+        *,
+        delay_ms: int = 1000,
+    ) -> None:
+        """
+        Publisht den Sollpfad absichtlich verzögert, um Race Conditions zu vermeiden.
+        """
+        if recipe is None or self.bridge is None:
+            return
+
+        def _do_publish():
+            try:
+                ma: MarkerArray = recipe_markers.build_marker_array_from_recipe(
+                    recipe,
+                    sides=None,
+                    frame_id="scene",
+                )
+
+                if ma and isinstance(ma, MarkerArray) and ma.markers:
+                    try:
+                        self.bridge.set_spraypath(ma)
+                        _LOG.info(
+                            "ProcessTab: MarkerArray mit %d Markern an SprayPath gesendet (frame=scene, delayed=%dms)",
+                            len(ma.markers),
+                            delay_ms,
+                        )
+                    except Exception:
+                        _LOG.exception("ProcessTab: bridge.set_spraypath failed (delayed)")
+                else:
+                    _LOG.warning(
+                        "ProcessTab: delayed publish: build_marker_array_from_recipe lieferte kein/nur leeres MarkerArray"
+                    )
+            except Exception:
+                _LOG.exception(
+                    "ProcessTab: Fehler beim Erzeugen/Publizieren des MarkerArray für SprayPath (delayed)"
+                )
+
+        QtCore.QTimer.singleShot(delay_ms, _do_publish)
 
     # =====================================================================
     # Trajektorien-Metriken / Score
@@ -343,16 +383,6 @@ class ProcessTab(QWidget):
     def _compute_trajectory_metrics_from_ps_list(
         poses: List[PoseStamped]
     ) -> Dict[str, Any]:
-        """
-        Berechnet einfache Metriken für eine Trajektorie:
-
-          - traj_points      : Anzahl Posen
-          - traj_length_mm   : Gesamtweg in mm (Annahme: x/y/z in mm)
-          - traj_min_x/y/z   : Bounding-Box-Minima
-          - traj_max_x/y/z   : Bounding-Box-Maxima
-
-        Ist die Liste leer oder zu kurz, werden sinnvolle Defaults gesetzt.
-        """
         metrics: Dict[str, Any] = {
             "traj_points": 0,
             "traj_length_mm": 0.0,
@@ -367,7 +397,6 @@ class ProcessTab(QWidget):
         if not poses:
             return metrics
 
-        # Bounding-Box initialisieren
         first = poses[0]
         try:
             x0 = float(first.pose.position.x)
@@ -391,7 +420,6 @@ class ProcessTab(QWidget):
             except Exception:
                 continue
 
-            # Bounding-Box
             min_x = min(min_x, x)
             max_x = max(max_x, x)
             min_y = min(min_y, y)
@@ -409,7 +437,7 @@ class ProcessTab(QWidget):
             last_x, last_y, last_z = x, y, z
 
         metrics["traj_points"] = len(poses)
-        metrics["traj_length_mm"] = total_len  # Annahme: Koordinaten sind in mm
+        metrics["traj_length_mm"] = total_len
 
         metrics["traj_min_x"] = min_x
         metrics["traj_min_y"] = min_y
@@ -422,16 +450,6 @@ class ProcessTab(QWidget):
 
     @staticmethod
     def _compute_trajectory_score(metrics: Dict[str, Any]) -> Optional[float]:
-        """
-        Einfache, heuristische Score-Funktion:
-          - 0 .. 100
-          - kürzerer Gesamtweg => höherer Score
-
-        Idee:
-          score = clamp(100000 / (traj_length_mm + 1), 0, 100)
-
-        Absolutwerte sind egal – es geht darum, Runs miteinander vergleichen zu können.
-        """
         try:
             total_mm = float(metrics.get("traj_length_mm", 0.0) or 0.0)
         except Exception:
@@ -453,9 +471,6 @@ class ProcessTab(QWidget):
         metrics: Dict[str, Any],
         score: Optional[float],
     ) -> None:
-        """
-        Schreibt die berechneten Metriken + Score in die InfoBox.
-        """
         pts = int(metrics.get("traj_points", 0) or 0)
         total_mm = float(metrics.get("traj_length_mm", 0.0) or 0.0)
 
@@ -470,7 +485,6 @@ class ProcessTab(QWidget):
         else:
             self._info_update("traj_score", None)
 
-        # Bounding-Box optional, nur wenn sinnvoll
         for axis in ("x", "y", "z"):
             mn = metrics.get(f"traj_min_{axis}")
             mx = metrics.get(f"traj_max_{axis}")
@@ -485,9 +499,6 @@ class ProcessTab(QWidget):
         metrics: Dict[str, Any],
         score: Optional[float],
     ) -> None:
-        """
-        Schreibt eine kurze Zusammenfassung der Metriken/Score ins Process-Log.
-        """
         pts = int(metrics.get("traj_points", 0) or 0)
         total_mm = float(metrics.get("traj_length_mm", 0.0) or 0.0)
 
@@ -505,7 +516,6 @@ class ProcessTab(QWidget):
                 "(kürzerer Weg ⇒ höherer Score)."
             )
 
-        # Bounding-Box optional zusätzlich loggen
         mn_x = metrics.get("traj_min_x")
         mx_x = metrics.get("traj_max_x")
         mn_y = metrics.get("traj_min_y")
@@ -526,21 +536,11 @@ class ProcessTab(QWidget):
     # =====================================================================
 
     def _get_runs_dir(self) -> Path:
-        """
-        Bestimmt den Ordner 'data/runs'.
-
-        Annahme:
-          ctx.paths.recipe_dir -> /root/Spraycoater/data/recipes
-          => runs-dir          -> /root/Spraycoater/data/runs
-
-        Fallback: ./runs im aktuellen Arbeitsverzeichnis.
-        """
         base_dir: Path | None = None
 
         try:
             recipe_dir = getattr(getattr(self.ctx, "paths", None), "recipe_dir", None)
             if recipe_dir:
-                # .../data/recipes -> .../data
                 base_dir = Path(recipe_dir).resolve().parent
         except Exception:
             base_dir = None
@@ -553,21 +553,11 @@ class ProcessTab(QWidget):
         return runs_dir
 
     def _get_run_filename_for_recipe(self) -> Path:
-        """
-        Gibt den vollständigen Pfad zur Run-Datei für das aktuelle Rezept zurück.
-
-        Schema:  <data>/runs/<recipe_name>.yaml
-
-        - recipe_name basiert auf Recipe.id oder dem im ProcessTab gesetzten Rezeptnamen.
-        - vorhandene Datei wird später überschrieben.
-        """
-        # bevorzugt die Recipe-ID
         rec_id = None
         if self._recipe_model is not None:
             rec_id = (self._recipe_model.id or "").strip()
 
         name = rec_id or (self._recipe_name or "unnamed_recipe")
-        # Dateinamen-safe machen
         safe_name = "".join(
             c if c.isalnum() or c in ("-", "_") else "_"
             for c in name
@@ -581,19 +571,12 @@ class ProcessTab(QWidget):
         metrics: Dict[str, Any],
         score: Optional[float],
     ) -> None:
-        """
-        Speichert die TCP-Trajektorie + Metriken als YAML in data/runs/<recipe>.yaml.
-
-        - überschreibt vorhandene Datei
-        - zeigt nach Erfolg ein kleines Popup „Run gespeichert“
-        """
         if not poses:
             _LOG.info("ProcessTab: _save_trajectory_yaml: keine Posen -> nichts zu speichern.")
             return
 
         frame = poses[0].header.frame_id or "scene"
 
-        # Basis-Struct
         data: Dict[str, Any] = {
             "version": 1,
             "recipe_id": self._recipe_model.id if self._recipe_model else self._recipe_name,
@@ -605,7 +588,6 @@ class ProcessTab(QWidget):
         if score is not None:
             data["metrics"]["score"] = float(score)
 
-        # Posen als einfache Dicts ablegen (x,y,z,qx,qy,qz,qw)
         pose_list: List[Dict[str, float]] = []
         for p in poses:
             try:
@@ -621,7 +603,6 @@ class ProcessTab(QWidget):
                     }
                 )
             except Exception:
-                # einzelne kaputte Pose überspringen
                 continue
 
         data["poses"] = pose_list
@@ -644,7 +625,6 @@ class ProcessTab(QWidget):
             )
             self._append_process_log(f"Trajektorie-Log gespeichert: {out_path.name}")
 
-            # kleines Popup
             try:
                 QMessageBox.information(
                     self,
@@ -652,7 +632,6 @@ class ProcessTab(QWidget):
                     f"Trajektorie für Rezept wurde gespeichert:\n{out_path.name}",
                 )
             except RuntimeError:
-                # UI evtl. schon zu
                 pass
 
         except Exception:
@@ -764,7 +743,6 @@ class ProcessTab(QWidget):
             return False
 
         dist = math.sqrt(dx * dx + dy * dy + dz * dz)
-        # Annahme: Koordinaten sind in mm
         dist_mm = dist
         return dist_mm <= pos_tol_mm
 
@@ -798,19 +776,11 @@ class ProcessTab(QWidget):
             pass
 
     def _setup_process_thread_for_recipe(self, recipe: Recipe) -> None:
-        """
-        Erstellt einen neuen ProcessThread im "recipe"-Modus für das aktuelle Rezept.
-        Wird bei jedem 'Load Recipe' aufgerufen.
-        """
         self._cleanup_process_thread()
-
-        # neuer Lauf-Kontext -> Outcome zurücksetzen
         self._process_outcome = None
 
         thr = ProcessThread(recipe=recipe, bridge=self.bridge)
 
-        # notifyFinished(object) → Slot mit Arg via Lambda einbinden,
-        # damit die Signaturen sauber passen.
         thr.notifyFinished.connect(
             lambda result_obj, self=self: self._on_process_finished_success(result_obj)
         )
@@ -823,20 +793,12 @@ class ProcessTab(QWidget):
 
         self._process_thread = thr
 
-        # Beim Laden eines neuen Rezepts das Log leeren
         try:
             self.txtProcessLog.clear()
         except RuntimeError:
             pass
 
     def _setup_process_thread_for_run(self, run_yaml_path: str) -> None:
-        """
-        Erstellt einen neuen ProcessThread im "run"-Modus, der ein Run-YAML
-        (Servo-/Joint-Trajektorie) abfährt.
-
-        run_yaml_path:
-          - Pfad zu einer YAML-Datei, die von ProcessRunStatemachine verstanden wird.
-        """
         self._cleanup_process_thread()
         self._process_outcome = None
 
@@ -865,7 +827,7 @@ class ProcessTab(QWidget):
         self._append_process_log("Run-Recipe geladen (Servo-Playback).")
 
     # =====================================================================
-    # SprayPath-Ansteuerung (Soll-Pfad)
+    # SprayPath-Ansteuerung (Soll-Pfad) - alte direkte Variante bleibt drin
     # =====================================================================
 
     def _send_recipe_to_spraypath(self, recipe: Recipe) -> None:
@@ -915,15 +877,9 @@ class ProcessTab(QWidget):
             pass
 
         self._info_update("process", "Robot-Init läuft (Init + Home via Pose-Vergleich)...")
-
         self._robot_init_thread.startSignal.emit()
 
     def _on_load_recipe_clicked(self) -> None:
-        """
-        Teil 1: Datei auswählen + Rezeptmodell laden.
-        Der eigentliche UI-/Thread-/SprayPath-Kram passiert danach
-        in _apply_loaded_recipe(), optional verzögert.
-        """
         start_dir = getattr(getattr(self.ctx, "paths", None), "recipe_dir", os.getcwd())
 
         fname, _ = QFileDialog.getOpenFileName(
@@ -936,7 +892,6 @@ class ProcessTab(QWidget):
             return
 
         try:
-            # *** Nur Laden + Model-Erstellung ***
             model = Recipe.load_yaml(fname)
         except Exception as e:
             QMessageBox.critical(self, "Ladefehler", f"Rezept konnte nicht geladen werden:\n{e}")
@@ -944,20 +899,12 @@ class ProcessTab(QWidget):
 
         _LOG.info("ProcessTab: Rezept '%s' geladen, wende nun auf UI/Threads an.", fname)
 
-        # leicht verzögert im nächsten Eventloop-Tick
         QtCore.QTimer.singleShot(
             0,
             lambda m=model, f=fname, self=self: self._apply_loaded_recipe(m, f)
         )
 
     def _on_load_run_recipe_clicked(self) -> None:
-        """
-        Wählt eine Run-Recipe-Datei (Servo-/Joint-YAML) aus data/runs aus
-        und setzt den ProcessThread in den MODE_RUN (Servo-Statemachine).
-
-        Das genaue Format der Run-Datei wird in ProcessRunStatemachine
-        interpretiert (z.B. joints/segments/...).
-        """
         runs_dir = self._get_runs_dir()
         start_dir = str(runs_dir)
 
@@ -977,7 +924,6 @@ class ProcessTab(QWidget):
 
         _LOG.info("ProcessTab: Run-Recipe-Datei '%s' ausgewählt.", fname)
 
-        # ProcessThread im Servo-/Run-Modus vorbereiten
         self._setup_process_thread_for_run(fname)
 
         try:
@@ -988,38 +934,32 @@ class ProcessTab(QWidget):
         self._append_process_log(f"Run-Recipe geladen: {base}")
 
     def _apply_loaded_recipe(self, model: Recipe, fname: str) -> None:
-        """
-        Teil 2: Das fertig geladene Rezept-Model in den UI- und
-        Prozesszustand übernehmen, ProcessThread/SprayPath anstoßen.
-        """
         if model is None:
             return
 
-        # 1) Model & Name setzen
+        # 1) Model & Name
         self._recipe_model = model
-
         name = (model.id or "").strip() or os.path.basename(fname)
         self.set_recipe_name(name)
 
-        # 2) Recipe-Textfelder aktualisieren
+        # 2) Recipe-Textfelder
         try:
             self._update_recipe_info_text()
         except RuntimeError:
-            # UI evtl. schon zerstört (z.B. beim Schließen) -> einfach abbrechen
             return
 
-        # 3) ProcessThread vorbereiten (neuer Thread pro Load, "recipe"-Modus)
+        # 3) ProcessThread vorbereiten
         try:
             self._setup_process_thread_for_recipe(model)
         except Exception:
             _LOG.exception("ProcessTab: _setup_process_thread_for_recipe() hat eine Exception geworfen")
             return
 
-        # 4) SprayPath (MarkerArray) an Bridge schicken (Soll-Pfad)
+        # ✅ VARIANTE 4: Publish strikt entkoppelt und 1s verzögert
         try:
-            self._send_recipe_to_spraypath(model)
+            self._publish_recipe_to_spraypath_delayed(model, delay_ms=1000)
         except Exception:
-            _LOG.exception("ProcessTab: _send_recipe_to_spraypath() hat eine Exception geworfen")
+            _LOG.exception("ProcessTab: delayed spraypath publish scheduling failed")
 
         # 5) Setup/Scene prüfen
         try:
@@ -1028,13 +968,13 @@ class ProcessTab(QWidget):
         except Exception:
             _LOG.exception("ProcessTab: Szene-/Setup-Update nach Rezeptladen fehlgeschlagen")
 
-        # 6) Status/Log zurücksetzen
+        # 6) Status
         try:
             self.lblProcessState.setText("Kein Prozess aktiv.")
         except RuntimeError:
             pass
 
-        _LOG.info("ProcessTab: Rezept '%s' erfolgreich angewendet (id=%r).", fname, model.id)
+        _LOG.info("ProcessTab: Rezept '%s' erfolgreich angewendet (id=%r, spraypath delayed).", fname, model.id)
 
     def _on_start_clicked(self) -> None:
         try:
@@ -1047,10 +987,8 @@ class ProcessTab(QWidget):
             QMessageBox.warning(self, "Kein Prozess", "Es ist kein Rezept/Run geladen.")
             return
 
-        # Ergebnis-Status für diesen Lauf zurücksetzen
         self._process_outcome = None
 
-        # Safety: für den "recipe"-Modus sicherstellen, dass Thread das aktuelle Model kennt
         if self._recipe_model is not None and getattr(self._process_thread, "recipe", None) is not self._recipe_model:
             try:
                 self._process_thread.set_recipe(self._recipe_model)
@@ -1073,12 +1011,6 @@ class ProcessTab(QWidget):
             self.set_process_active(False)
 
     def _on_stop_clicked(self) -> None:
-        """
-        Stop-Button:
-          - setzt das Stop-Flag im ProcessThread direkt,
-          - schickt zusätzlich das stopSignal,
-          - stoppt ggf. auch den RobotInitThread.
-        """
         self._append_process_log("=== Stop angefordert ===")
 
         thr = self._process_thread
@@ -1131,30 +1063,10 @@ class ProcessTab(QWidget):
     # ---------------------------------------------------------------------
 
     def _on_process_finished_success(self, result_obj: object) -> None:
-        """
-        Wird vom ProcessThread.notifyFinished(...) gerufen.
-
-        result_obj kann sein:
-          - Dict:
-              {
-                "poses": List[PoseStamped],
-                "planned_traj": List[RobotTrajectoryMsg] | RobotTrajectoryMsg | None,
-                "executed_traj": List[RobotTrajectoryMsg] | RobotTrajectoryMsg | None,
-              }
-          - oder (rückwärtskompatibel) eine List[PoseStamped]
-
-        Neu:
-          - Executed-TCP-Pfad als PoseArray an SprayPath senden
-          - Metriken + Score berechnen
-          - InfoBox + Log damit updaten
-          - Trajektorie als YAML in data/runs/<recipe>.yaml speichern
-        """
-
         if self._process_outcome == "error":
             _LOG.info("ProcessTab: notifyFinished ignoriert, da bereits ein Fehler gemeldet wurde.")
             return
 
-        # Nur setzen, wenn noch nichts feststeht
         if self._process_outcome is None:
             self._process_outcome = "success"
 
@@ -1162,9 +1074,6 @@ class ProcessTab(QWidget):
         planned_traj: Any = None
         executed_traj: Any = None
 
-        # -------------------------
-        # Result-Objekt auswerten
-        # -------------------------
         if isinstance(result_obj, dict):
             raw_poses = result_obj.get("poses") or result_obj.get("tcp_poses") or []
             if isinstance(raw_poses, list):
@@ -1173,7 +1082,6 @@ class ProcessTab(QWidget):
             planned_traj = result_obj.get("planned_traj", None)
             executed_traj = result_obj.get("executed_traj", None)
 
-            # Nur Infos loggen – ob das Listen oder einzelne sind, ist uns hier egal
             if planned_traj is not None:
                 if isinstance(planned_traj, list):
                     self._append_process_log(
@@ -1190,7 +1098,6 @@ class ProcessTab(QWidget):
                 else:
                     self._append_process_log("Ausgeführte Trajektorie (executed_traj) vom Motion-Node empfangen.")
         elif isinstance(result_obj, list):
-            # Rückwärtskompatibel: alte Variante, nur Pose-Liste
             poses = [p for p in result_obj if isinstance(p, PoseStamped)]
         else:
             _LOG.warning(
@@ -1199,7 +1106,6 @@ class ProcessTab(QWidget):
                 type(result_obj),
             )
 
-        # 1) Executed-Pfad an SprayPath senden
         if poses:
             try:
                 pa = PoseArray()
@@ -1230,22 +1136,17 @@ class ProcessTab(QWidget):
         else:
             _LOG.info("ProcessTab: notifyFinished ohne gültige PoseListe oder Liste leer.")
 
-        # 2) Trajektorien-Metriken + Score berechnen (auf Basis der TCP-Posen)
         try:
             metrics = self._compute_trajectory_metrics_from_ps_list(poses)
             score = self._compute_trajectory_score(metrics)
 
-            # InfoBox aktualisieren
             self._update_info_with_trajectory_metrics(metrics, score)
-            # Log-Ausgabe
             self._log_trajectory_metrics(metrics, score)
-            # YAML-Log speichern (nur wenn wir ein Rezept haben)
             if self._recipe_model or self._recipe_name:
                 self._save_trajectory_yaml(poses, metrics, score)
         except Exception:
             _LOG.exception("ProcessTab: Fehler bei Berechnung/Anzeige/Speicherung der Trajektorien-Metriken")
 
-        # Rest wie gehabt
         self.set_process_active(False)
         self._info_update("process", "Prozess erfolgreich abgeschlossen.")
         self._append_process_log("=== Prozess erfolgreich abgeschlossen ===")
@@ -1257,12 +1158,6 @@ class ProcessTab(QWidget):
 
     @QtCore.pyqtSlot(str)
     def _on_process_finished_error(self, msg: str) -> None:
-        """
-        Wird vom ProcessThread.notifyError(msg) gerufen.
-
-        - Wenn bereits Erfolg gesetzt war, gewinnt der Fehler und überschreibt.
-        - Wenn bereits ein Fehler verarbeitet wurde, wird der zweite ignoriert.
-        """
         if self._process_outcome == "error":
             _LOG.info("ProcessTab: zusätzlicher Fehler-Callback ignoriert: %s", msg)
             return
@@ -1435,8 +1330,6 @@ class ProcessTab(QWidget):
             if not self._robot_at_home:
                 missing.append("Roboter nicht in Home-Position (TCP ≉ Home-Pose)")
 
-            # Für Run-Playback / Servo-Run reicht theoretisch ein geladener Run,
-            # wir behalten hier aber die Logik bei: es muss mind. ein Name gesetzt sein.
             if not self._recipe_name:
                 missing.append("Kein Rezept/Run geladen")
 
@@ -1445,10 +1338,6 @@ class ProcessTab(QWidget):
 
             if not self._mount_ok:
                 missing.append("Mount-Konfiguration stimmt nicht mit dem Rezept überein")
-
-            # Tool-Check könnte später ergänzt werden
-            # if not self._tool_ok:
-            #     missing.append("Tool-Konfiguration stimmt nicht mit dem Rezept überein")
 
             can_start = (len(missing) == 0)
 

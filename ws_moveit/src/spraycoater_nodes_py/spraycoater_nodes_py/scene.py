@@ -26,6 +26,12 @@ import trimesh
 
 MAX_SCENE_WAIT = 30.0
 
+# ✅ Republish, aber ohne Spam:
+# - nur CollisionObjects republishen
+# - TF_STATIC nicht republishen (latched)
+# - Period nicht zu klein wählen, sonst spammt MoveIt logmäßig
+REPUBLISH_PERIOD_S = 15.0
+
 OID_ALIAS = {
     "cage": "cage",
     "mount": "substrate_mount",
@@ -98,6 +104,7 @@ class Scene(Node):
       - publisht Cage/Mount/Substrate Listen+Current via topics.yaml
       - publisht CollisionObjects via topics.yaml (collision_object)
       - wartet auf MoveIt get_planning_scene (Service) und sendet dann die Szene
+      - republished CollisionObjects periodisch (für Late-Joiner), ohne TF-Spam
     """
 
     GROUP = "scene"
@@ -204,6 +211,11 @@ class Scene(Node):
         self.current_cage: str = self._initial_current_from_yaml("cage")
         self.current_mount: str = self._initial_current_from_yaml("mount")
         self.current_substrate: str = self._initial_current_from_yaml("substrate")
+
+        # Cache für Republish (wird nach _publish_scene gefüllt)
+        self._cached_cos: dict[str, CollisionObject] = {}
+        self._republish_timer = None
+        self._last_republish_log = 0.0
 
         self._publish_lists_once()
         self._publish_current_once()
@@ -377,6 +389,10 @@ class Scene(Node):
         co.id = oid
         co.operation = CollisionObject.REMOVE
         self.scene_pub.publish(co)
+
+        # Cache sauber halten (für Republish)
+        self._cached_cos.pop(oid, None)
+
         self.get_logger().info(f"🧹 REMOVE CollisionObject id={oid}")
 
     def _exists_in(self, name: str, roots):
@@ -416,6 +432,9 @@ class Scene(Node):
         co = self._make_co_from_obj_and_mesh(obj, mesh_path)
         self.scene_pub.publish(co)
 
+        # Cache aktualisieren (Republish soll genau das wieder senden)
+        self._cached_cos[oid] = co
+
         setattr(self, state_attr, name)
         pub.publish(String(data=name))
 
@@ -449,6 +468,7 @@ class Scene(Node):
         self.final_scene_sent = True
         F = self._F
 
+        # TFs nur einmal senden (StaticTransformBroadcaster ist latched)
         tfs = []
         for obj in self.scene_objects:
             if "id" not in obj:
@@ -462,6 +482,8 @@ class Scene(Node):
             self.static_tf.sendTransform(tfs)
         self.get_logger().info(f"✅ Static TFs veröffentlicht ({len(tfs)})")
 
+        # CollisionObjects senden + Cache füllen
+        self._cached_cos = {}
         for obj in self.scene_objects:
             mesh_rel = _require_str(obj, "mesh")
             if mesh_rel.strip() == "":
@@ -469,12 +491,34 @@ class Scene(Node):
             mesh_path = self._resolve_mesh_path(mesh_rel)
             co = self._make_co_from_obj_and_mesh(obj, mesh_path)
             self.scene_pub.publish(co)
+            self._cached_cos[str(obj["id"])] = co
 
         ns = self.get_namespace() or "/"
         self.get_logger().info(f"🎯 Szene FINAL gesendet (backend='{self.backend}', ns='{ns}').")
 
         self._publish_lists_once()
         self._publish_current_once()
+
+        # ✅ Republish-Timer starten (nur CO, nicht TF)
+        if self._republish_timer is None and REPUBLISH_PERIOD_S > 0.0:
+            self._republish_timer = self.create_timer(REPUBLISH_PERIOD_S, self._republish_collision_objects)
+            self.get_logger().info(f"🔁 Republish aktiv: CollisionObjects alle {REPUBLISH_PERIOD_S:.1f}s")
+
+    def _republish_collision_objects(self):
+        """Republished CollisionObjects für Late-Joiner, ohne Log-Spam."""
+        if not self.final_scene_sent:
+            return
+        if not self._cached_cos:
+            return
+
+        for co in self._cached_cos.values():
+            self.scene_pub.publish(co)
+
+        # optional: sehr selten loggen (z.B. alle 60s), damit man sieht, dass es läuft
+        now = time.time()
+        if now - self._last_republish_log > 60.0:
+            self._last_republish_log = now
+            self.get_logger().debug(f"🔁 Republished {len(self._cached_cos)} CollisionObjects")
 
     # ------------------------
     # MoveIt readiness wait
