@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC
+from typing import Optional, Sequence
 
 from rclpy.node import Node
 from rclpy.time import Time
@@ -22,11 +23,16 @@ class BaseRobot(Node, ABC):
       - SimRobot
       - OmronRobot (real)
 
-    Clean (kein Backwards/Fallback):
-      - topics.yaml ist Source-of-Truth
-      - keine self.loader, keine alten APIs
-      - Sim/Real implementieren nur die Hooks
+    ✅ Event-driven / onChange:
+      - Kein Timer, kein Polling
+      - Publish nur bei Änderung
+      - tcp_pose/joints werden explizit über publish_*() publisht (on events)
     """
+
+    # Toleranzen für "ändert sich wirklich?" (damit Joint/TCP nicht wegen Float-Rauschen spammt)
+    JOINT_EPS: float = 1e-6
+    POSE_POS_EPS: float = 1e-6
+    POSE_QUAT_EPS: float = 1e-6
 
     def __init__(self, node_name: str = "robot") -> None:
         super().__init__(node_name)
@@ -35,7 +41,7 @@ class BaseRobot(Node, ABC):
         self.cfg = topics()
 
         # --------------------------
-        # interner Zustand
+        # interner Zustand (letzter publizierter Wert)
         # --------------------------
         self._connected: bool = False
         self._initialized: bool = False
@@ -46,9 +52,9 @@ class BaseRobot(Node, ABC):
         self._mode: str = "UNKNOWN"
         self._last_error: str = ""
 
-        # Daten, die publisht werden
-        self._tcp_pose: PoseStamped = PoseStamped()
-        self._joints: JointState = JointState()
+        # letzte publizierte Messages (für onChange)
+        self._tcp_pose_last: Optional[PoseStamped] = None
+        self._joints_last: Optional[JointState] = None
 
         # --------------------------
         # Publisher (topics.yaml)
@@ -65,12 +71,7 @@ class BaseRobot(Node, ABC):
         self.pub_tcp_pose = self._make_pub(PoseStamped, "tcp_pose")
         self.pub_joints = self._make_pub(JointState, "joints")
 
-        # --------------------------
-        # zyklischer Tick (20 Hz)
-        # --------------------------
-        self._timer = self.create_timer(0.05, self._tick)
-
-        self.log.info("🤖 BaseRobot initialisiert")
+        self.log.info("🤖 BaseRobot initialisiert (onChange, no timer)")
 
     # ==========================================================
     # Helpers: Pub/Sub via config_hub
@@ -92,58 +93,178 @@ class BaseRobot(Node, ABC):
         )
 
     # ==========================================================
-    # Clean Hooks (Sim/Real)
+    # OnChange Setter -> Publish
     # ==========================================================
 
-    @abstractmethod
-    def on_tick(self, now: Time) -> None:
+    def set_connected(self, v: bool, *, force: bool = False) -> None:
+        v = bool(v)
+        if force or (v != self._connected):
+            self._connected = v
+            self.pub_connection.publish(Bool(data=v))
+
+    def set_initialized(self, v: bool, *, force: bool = False) -> None:
+        v = bool(v)
+        if force or (v != self._initialized):
+            self._initialized = v
+            self.pub_initialized.publish(Bool(data=v))
+
+    def set_power(self, v: bool, *, force: bool = False) -> None:
+        v = bool(v)
+        if force or (v != self._power):
+            self._power = v
+            self.pub_power.publish(Bool(data=v))
+
+    def set_servo_enabled(self, v: bool, *, force: bool = False) -> None:
+        v = bool(v)
+        if force or (v != self._servo_enabled):
+            self._servo_enabled = v
+            self.pub_servo_enabled.publish(Bool(data=v))
+
+    def set_moving(self, v: bool, *, force: bool = False) -> None:
+        v = bool(v)
+        if force or (v != self._moving):
+            self._moving = v
+            self.pub_moving.publish(Bool(data=v))
+
+    def set_estop(self, v: bool, *, force: bool = False) -> None:
+        v = bool(v)
+        if force or (v != self._estop):
+            self._estop = v
+            self.pub_estop.publish(Bool(data=v))
+
+    def set_mode(self, mode: str, *, force: bool = False) -> None:
+        mode = (mode or "UNKNOWN").strip() or "UNKNOWN"
+        if force or (mode != self._mode):
+            self._mode = mode
+            self.pub_mode.publish(String(data=mode))
+
+    def set_error(self, text: str, *, force: bool = False, log_on_set: bool = True) -> None:
         """
-        Wird alle 50ms aufgerufen, bevor publisht wird.
-        Sim/Real soll hier:
-          - Status updaten (_connected/_moving/...)
-          - _tcp_pose und _joints setzen (falls neue Daten)
+        Setzt Fehlertext. Publisht nur bei Änderung.
+        - text == "" -> cleared
         """
-        raise NotImplementedError
+        text = str(text or "")
+        if force or (text != self._last_error):
+            self._last_error = text
+            self.pub_errors.publish(String(data=text))
+            if log_on_set and text:
+                self.log.error(text)
 
     # ==========================================================
-    # Status Setter (nur intern benutzen)
+    # Publish helpers for Pose / Joints (onChange)
     # ==========================================================
 
-    def _set_error(self, text: str) -> None:
-        self._last_error = str(text or "")
-        if self._last_error:
-            self.log.error(self._last_error)
+    def publish_tcp_pose(self, msg: PoseStamped, *, now: Optional[Time] = None, force: bool = False) -> None:
+        """
+        Publisht tcp_pose nur bei Änderung (oder force=True).
+        Stamp wird beim Publish gesetzt (now oder Clock.now()).
+        """
+        if msg is None:
+            return
 
-    def _set_mode(self, mode: str) -> None:
-        self._mode = str(mode or "UNKNOWN")
+        if not force and self._tcp_pose_last is not None:
+            if self._pose_equal(self._tcp_pose_last, msg):
+                return
+
+        # stamp setzen
+        t = now or self.get_clock().now()
+        msg.header.stamp = t.to_msg()
+
+        self.pub_tcp_pose.publish(msg)
+        self._tcp_pose_last = self._copy_pose(msg)
+
+    def publish_joints(self, msg: JointState, *, now: Optional[Time] = None, force: bool = False) -> None:
+        """
+        Publisht JointState nur bei Änderung (oder force=True).
+        Stamp wird übernommen/gesetzt, wenn leer.
+        """
+        if msg is None:
+            return
+
+        if not force and self._joints_last is not None:
+            if self._joints_equal(self._joints_last, msg):
+                return
+
+        # stamp optional setzen (nur wenn nicht gesetzt)
+        if msg.header.stamp.sec == 0 and msg.header.stamp.nanosec == 0:
+            t = now or self.get_clock().now()
+            msg.header.stamp = t.to_msg()
+
+        self.pub_joints.publish(msg)
+        self._joints_last = self._copy_joints(msg)
+
+    def publish_all_once(self) -> None:
+        """
+        Einmaliger Snapshot, z.B. beim Start.
+        """
+        self.set_connected(self._connected, force=True)
+        self.set_initialized(self._initialized, force=True)
+        self.set_power(self._power, force=True)
+        self.set_servo_enabled(self._servo_enabled, force=True)
+        self.set_moving(self._moving, force=True)
+        self.set_estop(self._estop, force=True)
+        self.set_mode(self._mode, force=True)
+        self.set_error(self._last_error, force=True, log_on_set=False)
+
+        # Pose/Joints nur wenn vorhanden
+        if self._tcp_pose_last is not None:
+            self.publish_tcp_pose(self._copy_pose(self._tcp_pose_last), force=True)
+        if self._joints_last is not None:
+            self.publish_joints(self._copy_joints(self._joints_last), force=True)
 
     # ==========================================================
-    # Tick + Publish
+    # Equality helpers
     # ==========================================================
 
-    def _tick(self) -> None:
-        now = self.get_clock().now()
-
-        # Hook: Sim/Real aktualisiert seinen Zustand
+    def _pose_equal(self, a: PoseStamped, b: PoseStamped) -> bool:
         try:
-            self.on_tick(now)
-        except Exception as e:
-            # Backend-Fehler soll den Node nicht killen
-            self._set_error(f"[robot] on_tick failed: {type(e).__name__}: {e}")
+            ap, aq = a.pose.position, a.pose.orientation
+            bp, bq = b.pose.position, b.pose.orientation
+            if abs(ap.x - bp.x) > self.POSE_POS_EPS: return False
+            if abs(ap.y - bp.y) > self.POSE_POS_EPS: return False
+            if abs(ap.z - bp.z) > self.POSE_POS_EPS: return False
+            if abs(aq.x - bq.x) > self.POSE_QUAT_EPS: return False
+            if abs(aq.y - bq.y) > self.POSE_QUAT_EPS: return False
+            if abs(aq.z - bq.z) > self.POSE_QUAT_EPS: return False
+            if abs(aq.w - bq.w) > self.POSE_QUAT_EPS: return False
+            if (a.header.frame_id or "") != (b.header.frame_id or ""): return False
+            return True
+        except Exception:
+            return False
 
-        # Status publishen
-        self.pub_connection.publish(Bool(data=self._connected))
-        self.pub_initialized.publish(Bool(data=self._initialized))
-        self.pub_power.publish(Bool(data=self._power))
-        self.pub_servo_enabled.publish(Bool(data=self._servo_enabled))
-        self.pub_moving.publish(Bool(data=self._moving))
-        self.pub_estop.publish(Bool(data=self._estop))
-        self.pub_mode.publish(String(data=self._mode))
-        self.pub_errors.publish(String(data=self._last_error))
+    def _joints_equal(self, a: JointState, b: JointState) -> bool:
+        try:
+            if list(a.name) != list(b.name):
+                return False
+            ap = list(a.position or [])
+            bp = list(b.position or [])
+            if len(ap) != len(bp):
+                return False
+            for x, y in zip(ap, bp):
+                if abs(float(x) - float(y)) > self.JOINT_EPS:
+                    return False
+            return True
+        except Exception:
+            return False
 
-        # TCP Pose publishen (Stamp wird IMMER hier gesetzt)
-        self._tcp_pose.header.stamp = now.to_msg()
-        self.pub_tcp_pose.publish(self._tcp_pose)
+    def _copy_pose(self, src: PoseStamped) -> PoseStamped:
+        out = PoseStamped()
+        out.header.frame_id = src.header.frame_id
+        out.header.stamp = src.header.stamp
+        out.pose.position.x = src.pose.position.x
+        out.pose.position.y = src.pose.position.y
+        out.pose.position.z = src.pose.position.z
+        out.pose.orientation.x = src.pose.orientation.x
+        out.pose.orientation.y = src.pose.orientation.y
+        out.pose.orientation.z = src.pose.orientation.z
+        out.pose.orientation.w = src.pose.orientation.w
+        return out
 
-        # JointState publishen
-        self.pub_joints.publish(self._joints)
+    def _copy_joints(self, src: JointState) -> JointState:
+        out = JointState()
+        out.header = src.header
+        out.name = list(src.name or [])
+        out.position = list(src.position or [])
+        out.velocity = list(src.velocity or [])
+        out.effort = list(src.effort or [])
+        return out

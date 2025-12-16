@@ -43,14 +43,18 @@ class BaseBridge(Node):
 
     GROUP: str = ""  # in Subklassen setzen
 
-    # --- Logging options ---
-    LOG_SUB_UPDATES: bool = True           # Runtime-Logs für eingehende SUB-Messages
-    LOG_SUB_ONLY_ON_CHANGE: bool = True    # nur loggen, wenn sich Wert ändert
-    LOG_SUB_LEVEL: int = logging.INFO      # INFO ist gut für "changes", DEBUG wäre sehr chatty
+    # ============================================================
+    # ✅ Konstante(n) für "SUB changed" Logging
+    #
+    # - Startup-Report (Topic summary) bleibt IMMER aktiv.
+    # - "SUB update ..." (changed logs) sind DEFAULT OFF.
+    # - Hier im File togglen.
+    # ============================================================
 
-    # ✅ Topics, die NICHT in "SUB update ..." geloggt werden sollen (topic_id!)
-    # RobotBridge joint_states hat bei dir id="joints" (siehe Logs: "SUB update id=joints ...")
-    LOG_SUB_SKIP_IDS: set[str] = {"joints"}
+    ENABLE_SUB_CHANGED_LOGGING: bool = False        # <- DEFAULT OFF (dein Wunsch)
+    SUB_CHANGED_ONLY_ON_CHANGE: bool = False         # nur bei Änderung loggen
+    SUB_CHANGED_LEVEL: int = logging.INFO           # INFO/DEBUG
+    SUB_CHANGED_SKIP_IDS: set[str] = {"joints"}     # nie loggen (spam)
 
     def __init__(self, node_name: str, content: AppContent, *, namespace: str = ""):
         # Namespace sauber normalisieren: "" oder "shadow"/"live"
@@ -90,7 +94,18 @@ class BaseBridge(Node):
             "Bridge started: node=%s group=%s ns=%s fqdn=%s",
             node_name, self.GROUP, self._namespace or "(root)", fqdn
         )
+
+        # Startup-Report bleibt OK:
         self._log_topic_summary()
+
+        # optional: merken, ob runtime changed logging an/aus ist
+        self._pylog.info(
+            "SUB changed logging: enabled=%s only_on_change=%s level=%s skip_ids=%s",
+            self.ENABLE_SUB_CHANGED_LOGGING,
+            self.SUB_CHANGED_ONLY_ON_CHANGE,
+            logging.getLevelName(self.SUB_CHANGED_LEVEL),
+            sorted(self.SUB_CHANGED_SKIP_IDS),
+        )
 
     # --- Properties ---
 
@@ -196,7 +211,7 @@ class BaseBridge(Node):
 
         self._pylog.info("=== End topic summary ===")
 
-    # --- Runtime SUB logging (updates) ---
+    # --- Runtime SUB changed logging (updates) ---
 
     def _msg_fingerprint(self, msg: Any) -> str:
         """
@@ -227,7 +242,7 @@ class BaseBridge(Node):
                     f"frame={getattr(msg.header, 'frame_id', '')!r}"
                 )
 
-            # JointState
+            # JointState (brief bleibt, auch wenn wir id=joints skippen)
             if hasattr(msg, "name") and hasattr(msg, "position"):
                 n = len(getattr(msg, "name", []) or [])
                 pos = getattr(msg, "position", []) or []
@@ -245,31 +260,34 @@ class BaseBridge(Node):
 
     def _make_logged_callback(self, *, topic_id: str, spec: TopicSpec, user_cb: Optional[Callable]) -> Callable:
         """
-        Wrappt Subscription-Callback, loggt Updates (optional nur bei Änderung),
-        und ruft danach den echten Handler auf.
-
-        ✅ JointState (id="joints") wird hier explizit NICHT geloggt,
-        damit das Log nicht vollgespammt wird.
+        Wrappt Subscription-Callback:
+          - Startup-Report ist separat (Topic summary)
+          - "SUB update ..." nur, wenn ENABLE_SUB_CHANGED_LOGGING == True
+          - plus Skip-IDs (z.B. joints)
         """
         resolved = self._resolved_topic(spec.name)
 
         def _cb(msg: Any):
-            try:
-                if self.LOG_SUB_UPDATES and (topic_id not in self.LOG_SUB_SKIP_IDS):
+            # --- optional changed logging ---
+            if self.ENABLE_SUB_CHANGED_LOGGING and (topic_id not in self.SUB_CHANGED_SKIP_IDS):
+                try:
                     fp = self._msg_fingerprint(msg)
                     changed = (self._last_msg_fingerprint.get(topic_id) != fp)
-                    if (not self.LOG_SUB_ONLY_ON_CHANGE) or changed:
+
+                    if (not self.SUB_CHANGED_ONLY_ON_CHANGE) or changed:
                         self._last_msg_fingerprint[topic_id] = fp
                         brief = self._msg_brief(msg)
                         self._pylog.log(
-                            self.LOG_SUB_LEVEL,
+                            self.SUB_CHANGED_LEVEL,
                             "SUB update id=%s name=%s resolved=%s -> %s",
                             topic_id, spec.name, resolved, brief,
                         )
-            except Exception as e:
-                self._pylog.exception("SUB logging failed (id=%s, topic=%s): %s", topic_id, spec.name, e)
+                except Exception as e:
+                    self._pylog.exception(
+                        "SUB logging failed (id=%s, topic=%s): %s", topic_id, spec.name, e
+                    )
 
-            # eigentlicher Handler
+            # --- echter Handler ---
             if user_cb is not None:
                 try:
                     user_cb(msg)
@@ -295,7 +313,6 @@ class BaseBridge(Node):
                 )
                 self._pubs[spec.id] = pub
 
-                # ROS2 logger: nur EINEN String
                 self.get_logger().debug(
                     f"[PUB] id={spec.id} name={spec.name} resolved={self._resolved_topic(spec.name)} "
                     f"type={spec.type_str} qos={getattr(spec, 'qos_key', None)} ns={self._namespace}"
@@ -312,7 +329,6 @@ class BaseBridge(Node):
             for spec in self._content.topics(self.GROUP, "publish"):
                 user_cb = self._resolve_handler(self.GROUP, spec.id)
 
-                # wenn kein Handler existiert: trotzdem loggen (GUI kann trotzdem anderswo drauf reagieren)
                 cb = self._make_logged_callback(topic_id=spec.id, spec=spec, user_cb=user_cb)
 
                 msg_type = spec.resolve_type()

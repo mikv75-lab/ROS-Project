@@ -47,7 +47,7 @@ topics:
         type: std_msgs/msg/String
         qos: latched
 
-  motion:
+  moveit_py:
     subscribe:
       - id: plan_pose
         name: spraycoater/motion/plan_pose
@@ -204,74 +204,92 @@ topics:
         name: spraycoater/robot/init
         type: std_msgs/msg/Empty
         qos: default
+
       - id: stop
         name: spraycoater/robot/stop
         type: std_msgs/msg/Empty
         qos: default
+
       - id: clear_error
         name: spraycoater/robot/clear_error
         type: std_msgs/msg/Empty
         qos: default
+
       - id: power_on
         name: spraycoater/robot/power_on
         type: std_msgs/msg/Empty
         qos: default
+
       - id: power_off
         name: spraycoater/robot/power_off
         type: std_msgs/msg/Empty
         qos: default
+
       - id: servo_on
         name: spraycoater/robot/servo_enable
         type: std_msgs/msg/Empty
         qos: default
+
       - id: servo_off
         name: spraycoater/robot/servo_disable
         type: std_msgs/msg/Empty
         qos: default
 
-      # ✅ NEU: SimRobot joint_states Input (relativ -> Namespace greift)
+      # SimRobot joint_states Input (relativ -> Namespace greift)
       - id: joint_states_in
         name: joint_states
         type: sensor_msgs/msg/JointState
         qos: sensor_data
 
     publish:
+      # ✅ Status/Snapshot Topics: latched (TransientLocal) damit Late-Joiner (UIBridge)
+      #    den letzten Stand sofort bekommen.
       - id: connection
         name: spraycoater/robot/connection
         type: std_msgs/msg/Bool
-        qos: default
+        qos: latched
+
       - id: mode
         name: spraycoater/robot/mode
         type: std_msgs/msg/String
-        qos: default
+        qos: latched
+
       - id: initialized
         name: spraycoater/robot/initialized
         type: std_msgs/msg/Bool
-        qos: default
+        qos: latched
+
       - id: moving
         name: spraycoater/robot/moving
         type: std_msgs/msg/Bool
-        qos: default
+        qos: latched
+
       - id: servo_enabled
         name: spraycoater/robot/servo_enabled
         type: std_msgs/msg/Bool
-        qos: default
+        qos: latched
+
       - id: power
         name: spraycoater/robot/power
         type: std_msgs/msg/Bool
-        qos: default
+        qos: latched
+
       - id: estop
         name: spraycoater/robot/estop
         type: std_msgs/msg/Bool
-        qos: default
+        qos: latched
+
       - id: errors
         name: spraycoater/robot/errors
         type: std_msgs/msg/String
-        qos: default
+        qos: latched
+
+      # ✅ High-rate Streams: sensor_data (BestEffort, volatile)
       - id: tcp_pose
         name: spraycoater/robot/tcp_pose
         type: geometry_msgs/msg/PoseStamped
         qos: sensor_data
+
       - id: joints
         name: spraycoater/robot/joint_states
         type: sensor_msgs/msg/JointState

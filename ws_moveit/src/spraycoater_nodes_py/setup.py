@@ -53,13 +53,11 @@ setup(
             "scene = spraycoater_nodes_py.scene:main",
             "poses = spraycoater_nodes_py.poses:main",
             "spray_path = spraycoater_nodes_py.spray_path:main",
-            "motion = spraycoater_nodes_py.motion:main",
+            "moveit_py = spraycoater_nodes_py.moveitpy_node:main",
             "servo = spraycoater_nodes_py.servo:main",
-
             # Robot-Backends
             "robot_sim = spraycoater_nodes_py.robot.sim:main",
             "robot_omron = spraycoater_nodes_py.robot.omron:main",
-
             # Omron TCP Bridge
             "omron_tcp_bridge = spraycoater_nodes_py.robot.omron_tcp_bridge:main",
         ],

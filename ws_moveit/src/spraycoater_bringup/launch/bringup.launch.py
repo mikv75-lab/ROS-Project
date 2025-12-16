@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
 import yaml
 from math import radians, sin, cos
 
@@ -18,10 +19,6 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
-
-# -----------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------
 
 def _rpy_rad_to_quat(roll, pitch, yaw):
     cr = cos(roll * 0.5)
@@ -55,46 +52,21 @@ def _get_world_to_mount(cfg: dict) -> dict:
     )
 
 
-# -----------------------------------------------------------
-# Launch
-# -----------------------------------------------------------
-
 def generate_launch_description():
     quiet_env = SetEnvironmentVariable(
         name="RCUTILS_LOGGING_SEVERITY",
         value="ERROR",
     )
 
-    role_arg = DeclareLaunchArgument(
-        "role",
-        default_value="shadow",
-        description="shadow | live",
-    )
-
-    use_sim_time_arg = DeclareLaunchArgument(
-        "use_sim_time",
-        default_value="false",
-        description="Use simulated time",
-    )
+    role_arg = DeclareLaunchArgument("role", default_value="shadow", description="shadow | live")
+    use_sim_time_arg = DeclareLaunchArgument("use_sim_time", default_value="false", description="Use simulated time")
 
     def _setup(context):
         role = LaunchConfiguration("role").perform(context).strip()
-        use_sim_time = (
-            LaunchConfiguration("use_sim_time")
-            .perform(context)
-            .strip()
-            .lower() == "true"
-        )
+        use_sim_time = LaunchConfiguration("use_sim_time").perform(context).strip().lower() == "true"
 
-        # ---------------------------------------------------
-        # Load robot.yaml
-        # ---------------------------------------------------
         bringup_share = FindPackageShare("spraycoater_bringup").perform(context)
-        with open(
-            os.path.join(bringup_share, "config", "robot.yaml"),
-            "r",
-            encoding="utf-8",
-        ) as f:
+        with open(os.path.join(bringup_share, "config", "robot.yaml"), "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
 
         sel = cfg.get("selected")
@@ -103,14 +75,10 @@ def generate_launch_description():
             raise KeyError("[bringup] robot.yaml: 'selected' fehlt/ungültig")
 
         robot = robots[sel]
-
         moveit_pkg = robot.get("moveit_pkg")
         if not isinstance(moveit_pkg, str) or not moveit_pkg:
             raise KeyError("[bringup] robot.yaml: robots[selected].moveit_pkg fehlt")
 
-        # ---------------------------------------------------
-        # World → robot_mount TF
-        # ---------------------------------------------------
         tf_cfg = _get_world_to_mount(cfg)
         for k in ("parent", "child", "xyz", "rpy_deg"):
             if k not in tf_cfg:
@@ -122,24 +90,30 @@ def generate_launch_description():
 
         moveit_share = FindPackageShare(moveit_pkg).perform(context)
 
-        # ---------------------------------------------------
-        # Role → Robot Launch + Backend
-        # ---------------------------------------------------
+        # ✅ moveit_common.py aus dem moveit_pkg/launch laden
+        moveit_launch_dir = os.path.join(moveit_share, "launch")
+        if moveit_launch_dir not in sys.path:
+            sys.path.insert(0, moveit_launch_dir)
+
+        from moveit_common import create_omron_moveit_config  # noqa: E402
+
+        moveit_config = create_omron_moveit_config()
+
+        # ✅ Kein JSON. MoveIt-Konfig als YAML-String weiterreichen.
+        moveit_cfg_yaml = yaml.safe_dump(moveit_config.to_dict())
+
         if role == "live":
             robot_launch = os.path.join(moveit_share, "launch", "omron_live.launch.py")
             backend = "omron_real"
-            robot_exec = "robot_omron"   # ✅ entry_point aus setup.py
+            robot_exec = "robot_omron"
         else:
             robot_launch = os.path.join(moveit_share, "launch", "omron_shadow.launch.py")
             backend = "omron_sim"
-            robot_exec = "robot_sim"    # ✅ entry_point aus setup.py
+            robot_exec = "robot_sim"
 
         if not os.path.exists(robot_launch):
             raise FileNotFoundError(f"[bringup] robot launch fehlt: {robot_launch}")
 
-        # ---------------------------------------------------
-        # Include robot launch (move_group + RViz laufen dort immer)
-        # ---------------------------------------------------
         include_robot = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(robot_launch),
             launch_arguments={
@@ -157,19 +131,12 @@ def generate_launch_description():
             }.items(),
         )
 
-        # ---------------------------------------------------
-        # Spraycoater Nodes
-        # ---------------------------------------------------
-        common_params = {
-            "backend": backend,
-            "use_sim_time": use_sim_time,
-        }
+        common_params = {"backend": backend, "use_sim_time": use_sim_time}
 
-        # ✅ RobotNode (publisht tcp_pose + joints für GUI)
         robot_node = Node(
             package="spraycoater_nodes_py",
-            executable=robot_exec,     # ✅ robot_sim / robot_omron
-            name="robot",             # ✅ Node-Name bleibt stabil "robot"
+            executable=robot_exec,
+            name="robot",
             namespace=role,
             parameters=[common_params],
             output="screen",
@@ -181,6 +148,8 @@ def generate_launch_description():
             executable="scene",
             namespace=role,
             parameters=[common_params],
+            output="screen",
+            emulate_tty=True,
         )
 
         poses = Node(
@@ -188,6 +157,8 @@ def generate_launch_description():
             executable="poses",
             namespace=role,
             parameters=[common_params],
+            output="screen",
+            emulate_tty=True,
         )
 
         spray = Node(
@@ -195,6 +166,8 @@ def generate_launch_description():
             executable="spray_path",
             namespace=role,
             parameters=[common_params],
+            output="screen",
+            emulate_tty=True,
         )
 
         servo_bridge = Node(
@@ -202,15 +175,23 @@ def generate_launch_description():
             executable="servo",
             namespace=role,
             parameters=[common_params],
+            output="screen",
+            emulate_tty=True,
         )
 
-        motion = Node(
+        moveitpy_node = Node(
             package="spraycoater_nodes_py",
-            executable="motion",
+            executable="moveit_py",
+            name="moveit_py",
             namespace=role,
-            parameters=[common_params],
+            parameters=[
+                moveit_config.to_dict(),  # robot_description, pipelines, ...
+                common_params,
+            ],
+            output="screen",
+            emulate_tty=True,
         )
-
+                
         return [
             include_robot,
             TimerAction(period=6.0, actions=[robot_node]),
@@ -218,14 +199,7 @@ def generate_launch_description():
             TimerAction(period=8.0, actions=[poses]),
             TimerAction(period=9.0, actions=[spray]),
             TimerAction(period=10.0, actions=[servo_bridge]),
-            TimerAction(period=12.0, actions=[motion]),
+            TimerAction(period=12.0, actions=[moveitpy_node]),
         ]
 
-    return LaunchDescription(
-        [
-            quiet_env,
-            role_arg,
-            use_sim_time_arg,
-            OpaqueFunction(function=_setup),
-        ]
-    )
+    return LaunchDescription([quiet_env, role_arg, use_sim_time_arg, OpaqueFunction(function=_setup)])

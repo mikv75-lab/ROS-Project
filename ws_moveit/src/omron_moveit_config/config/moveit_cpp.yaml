@@ -1,56 +1,67 @@
 # omron_moveit_config/config/moveit_cpp.yaml
-# Clean + kompatibel für MoveItCpp UND MoveItPy-PlanRequestParameters
+# (kompatibel zur "alten" funktionierenden Struktur + Ergänzungen)
 
-moveit_cpp:
-  planning_scene_monitor_options:
-    name: "planning_scene_monitor"
-    robot_description: "robot_description"
-    robot_description_semantic: "robot_description_semantic"   # ✅ wichtig
-    joint_state_topic: "joint_states"
+planning_scene_monitor_options:
+  name: "planning_scene_monitor"
+  robot_description: "robot_description"
+  joint_state_topic: "joint_states"
+  publish_geometry_updates: true
+  publish_state_updates: true
+  publish_transforms_updates: true
+  publish_robot_description: false
+  publish_robot_description_semantic: false
 
-    publish_geometry_updates: true
-    publish_state_updates: true
-    publish_transforms_updates: true
+planning_pipelines:
+  pipeline_names:
+    - ompl
+    - pilz_industrial_motion_planner
+    - chomp
+    - stomp
+  default_planning_pipeline: ompl
 
-    publish_robot_description: false
-    publish_robot_description_semantic: false
-
-  planning_pipelines:
-    pipeline_names:
-      - ompl
-      - pilz_industrial_motion_planner
-      - chomp
-      - stomp
-    default_planning_pipeline: ompl
-
-  move_group_name: "omron_arm_group"
-  robot_model_type: "robot_description"
-
-  # Optional: maintained planning scene topic (RViz)
-  planning_scene_monitor:
-    publish_planning_scene: true
-    publish_planning_scene_hz: 10.0
-    monitored_planning_scene_topic: "monitored_planning_scene"
-
+move_group_name: "omron_arm_group"
+robot_model_type: "robot_description"
 
 # -------------------------------------------------------------------
-# ✅ MoveItPy: PlanRequestParameters
-# Wird von deinem Code so gelesen:
-#   PlanRequestParameters(self.robot, "plan_request_params")
+# ✅ Ergänzung 1: PlanRequestParameters für MoveItPy
+# Deine Warnung sucht nach:
+#   plan_request_params.plan_request_params.<key>
+# Daher: einmal flach + einmal doppelt verschachtelt (robust gegen API/Versionen)
 # -------------------------------------------------------------------
 plan_request_params:
+  # flach (falls deine MoveItPy-Version so liest)
   planner_id: "RRTConnectkConfigDefault"
-  planning_pipeline: "ompl"                  # ok als info/standard
+  planning_pipeline: "ompl"
   planning_time: 10.0
   planning_attempts: 100
   max_velocity_scaling_factor: 0.10
   max_acceleration_scaling_factor: 0.10
 
+  # doppelt (passt zu deinem Log: plan_request_params.plan_request_params.*)
+  plan_request_params:
+    planner_id: "RRTConnectkConfigDefault"
+    planning_pipeline: "ompl"
+    planning_time: 10.0
+    planning_attempts: 100
+    max_velocity_scaling_factor: 0.10
+    max_acceleration_scaling_factor: 0.10
 
 # -------------------------------------------------------------------
-# Optional: execution defaults (SIM relevant)
+# ✅ Ergänzung 2 (optional): trajectory_execution Defaults
+# Wird relevant, wenn du über MoveIt (SIM) ausführst.
+# (Für REAL machst du ja MOVEJ via TCP, da ist es egal.)
 # -------------------------------------------------------------------
 trajectory_execution:
   allowed_execution_duration_scaling: 1.2
   allowed_goal_duration_margin: 0.5
   allowed_start_tolerance: 0.01
+
+# -------------------------------------------------------------------
+# ✅ Ergänzung 3 (optional): publish topic fürs maintained planning scene
+# RViz hört typischerweise auf "monitored_planning_scene".
+# Wenn du das nicht willst, kannst du den Block weglassen.
+# -------------------------------------------------------------------
+planning_scene_monitor:
+  publish_planning_scene: true
+  publish_planning_scene_hz: 10.0
+  monitored_planning_scene_topic: "monitored_planning_scene"
