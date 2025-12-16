@@ -1,13 +1,15 @@
 Panels:
   - Class: rviz_common/Displays
-    Help Height: 70
+    Help Height: 0
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /MotionPlanning1
-        - /MotionPlanning1/Planned Path1
+        - /TF1
+        - /TF1/Frames1
+        - /PlanningScene1
+        - /PlanningScene1/Scene Geometry1
       Splitter Ratio: 0.5
-    Tree Height: 163
+    Tree Height: 946
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -36,114 +38,153 @@ Visualization Manager:
       Plane Cell Count: 10
       Reference Frame: <Fixed Frame>
       Value: true
-    - Acceleration_Scaling_Factor: 0.1
-      Class: moveit_rviz_plugin/MotionPlanning
+    - Class: rviz_default_plugins/TF
       Enabled: true
-      Move Group Namespace: ""
-      MoveIt_Allow_Approximate_IK: false
-      MoveIt_Allow_External_Program: false
-      MoveIt_Allow_Replanning: false
-      MoveIt_Allow_Sensor_Positioning: false
-      MoveIt_Planning_Attempts: 10
-      MoveIt_Planning_Time: 5
-      MoveIt_Use_Cartesian_Path: false
-      MoveIt_Use_Constraint_Aware_IK: false
-      MoveIt_Workspace:
-        Center:
-          X: 0
-          Y: 0
-          Z: 0
-        Size:
-          X: 2
-          Y: 2
-          Z: 2
-      Name: MotionPlanning
-      Planned Path:
-        Color Enabled: false
-        Interrupt Display: false
-        Links:
-          Adept_Viper_650_Interface_Plate:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link1:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link2:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link3:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link4:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link5:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link6:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          All Links Enabled: true
-          Expand Joint Details: false
-          Expand Link Details: false
-          Expand Tree: false
-          Link Tree Style: Links in Alphabetic Order
+      Filter (blacklist): ""
+      Filter (whitelist): ""
+      Frame Timeout: 15
+      Frames:
+        Adept_Viper_650_Interface_Plate:
+          Value: true
+        Adept_Viper_s650_Link1:
+          Value: true
+        Adept_Viper_s650_Link2:
+          Value: true
+        Adept_Viper_s650_Link3:
+          Value: true
+        Adept_Viper_s650_Link4:
+          Value: true
+        Adept_Viper_s650_Link5:
+          Value: true
+        Adept_Viper_s650_Link6:
+          Value: true
+        All Enabled: true
+        cage:
+          Value: true
+        robot_mount:
+          Value: true
+        scene:
+          Value: true
+        shadow/home:
+          Value: true
+        shadow/service:
+          Value: true
+        sonotek_vortex:
+          Value: true
+        substrate:
+          Value: true
+        substrate_mount:
+          Value: true
+        tcp:
+          Value: true
+        tool_mount:
+          Value: true
+        world:
+          Value: true
+      Marker Scale: 0.25
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Tree:
+        world:
+          cage:
+            {}
           robot_mount:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-          tool_mount:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-        Loop Animation: false
-        Robot Alpha: 0.5
-        Robot Color: 150; 50; 150
-        Show Robot Collision: false
-        Show Robot Visual: true
-        Show Trail: false
-        State Display Time: 0.05 s
-        Trail Step Size: 1
-        Trajectory Topic: display_planned_path
-        Use Sim Time: false
-      Planning Metrics:
-        Payload: 1
-        Show Joint Torques: false
-        Show Manipulability: false
-        Show Manipulability Index: false
-        Show Weight Limit: false
-        TextHeight: 0.07999999821186066
-      Planning Request:
-        Colliding Link Color: 255; 0; 0
-        Goal State Alpha: 1
-        Goal State Color: 250; 128; 0
-        Interactive Marker Size: 0
-        Joint Violation Color: 255; 0; 255
-        Planning Group: omron_arm_group
-        Query Goal State: true
-        Query Start State: false
-        Show Workspace: false
-        Start State Alpha: 1
-        Start State Color: 0; 255; 0
-      Planning Scene Topic: monitored_planning_scene
+            Adept_Viper_s650_Link1:
+              Adept_Viper_s650_Link2:
+                Adept_Viper_s650_Link3:
+                  Adept_Viper_s650_Link4:
+                    Adept_Viper_s650_Link5:
+                      Adept_Viper_s650_Link6:
+                        Adept_Viper_650_Interface_Plate:
+                          tool_mount:
+                            sonotek_vortex:
+                              tcp:
+                                {}
+          shadow/home:
+            {}
+          shadow/service:
+            {}
+          substrate_mount:
+            scene:
+              substrate:
+                {}
+      Update Interval: 0
+      Value: true
+    - Alpha: 1
+      Arrow Length: 0
+      Axes Length: 0.0024999999441206455
+      Axes Radius: 0.0002500000118743628
+      Class: rviz_default_plugins/PoseArray
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0
+      Head Radius: 0
+      Name: paPlanned
+      Shaft Length: 0
+      Shaft Radius: 0
+      Shape: Axes
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /shadow/spraycoater/spray_path/poses
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: maPlanned
+      Namespaces: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /shadow/spraycoater/spray_path/markers
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: maExecuted
+      Namespaces: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /shadow/spraycoater/spray_path/executed_markers
+      Value: true
+    - Alpha: 1
+      Arrow Length: 0.30000001192092896
+      Axes Length: 0.0024999999441206455
+      Axes Radius: 0.0002500000118743628
+      Class: rviz_default_plugins/PoseArray
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.07000000029802322
+      Head Radius: 0.029999999329447746
+      Name: paExecuted
+      Shaft Length: 0.23000000417232513
+      Shaft Radius: 0.009999999776482582
+      Shape: Axes
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /shadow/spraycoater/spray_path/executed_poses
+      Value: true
+    - Class: moveit_rviz_plugin/PlanningScene
+      Enabled: true
+      Move Group Namespace: /shadow
+      Name: PlanningScene
+      Planning Scene Topic: /monitored_planning_scene
       Robot Description: robot_description
       Scene Geometry:
-        Scene Alpha: 1
-        Scene Color: 50; 230; 50
+        Scene Alpha: 0.8999999761581421
+        Scene Color: 255; 255; 255
         Scene Display Time: 0.009999999776482582
         Show Scene Geometry: true
         Voxel Coloring: Z-Axis
@@ -195,15 +236,23 @@ Visualization Manager:
             Alpha: 1
             Show Axes: false
             Show Trail: false
+          sonotek_vortex:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          tcp:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
           tool_mount:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-        Robot Alpha: 0.5
+        Robot Alpha: 1
         Show Robot Collision: false
         Show Robot Visual: true
       Value: true
-      Velocity_Scaling_Factor: 0.1
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -222,41 +271,57 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2
+      Distance: 3.0800766944885254
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.10000000149011612
-        Y: 0.25
-        Z: 0.30000001192092896
-      Focal Shape Fixed Size: true
+        X: 0
+        Y: 0
+        Z: 0
+      Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.3800000846385956
-      Target Frame: robot_mount
+      Pitch: 0.28479576110839844
+      Target Frame: scene
       Value: Orbit (rviz_default_plugins)
-      Yaw: 5.435184001922607
-    Saved: ~
+      Yaw: 0.21040084958076477
+    Saved:
+      - Class: rviz_default_plugins/Orbit
+        Distance: 1.543152093887329
+        Enable Stereo Rendering:
+          Stereo Eye Separation: 0.05999999865889549
+          Stereo Focal Distance: 1
+          Swap Stereo Eyes: false
+          Value: false
+        Focal Point:
+          X: -0.7000000476837158
+          Y: 0.25
+          Z: 0.25
+        Focal Shape Fixed Size: true
+        Focal Shape Size: 0.05000000074505806
+        Invert Z Axis: false
+        Name: Orbit
+        Near Clip Distance: 0.009999999776482582
+        Pitch: 0.10500019043684006
+        Target Frame: scene
+        Value: Orbit (rviz_default_plugins)
+        Yaw: 6.005184173583984
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 975
+  Height: 1369
   Help:
     collapsed: false
   Hide Left Dock: false
   Hide Right Dock: false
-  MotionPlanning:
-    collapsed: false
-  MotionPlanning - Trajectory Slider:
-    collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000379fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb000000100044006900730070006c006100790073010000003b00000124000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e00670100000165000001930000016900fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a0056006900650077007301000002fe000000b6000000a000ffffff000001f60000037900000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000503fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c0069006400650072000000003b000001500000000000000000fb000000100044006900730070006c006100790073010000003b000003ed000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e00670100000323000001750000000000000000fb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a00560069006500770073010000042e00000110000000a000ffffff000007460000050300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
-  Width: 1200
-  X: 2589
-  Y: 212
+  Width: 2560
+  X: 1928
+  Y: 31

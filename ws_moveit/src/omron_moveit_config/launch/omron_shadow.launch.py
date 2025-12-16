@@ -177,7 +177,6 @@ def generate_launch_description():
         ros2_control_node,
         jsb_spawner,
         arm_spawner,
-
-        move_group_node,
+        #move_group_node,
         rviz_node,
     ])
