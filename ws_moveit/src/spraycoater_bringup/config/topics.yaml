@@ -48,53 +48,64 @@ topics:
         qos: latched
 
   moveit_py:
-    subscribe:
+    subscribe:  # Node subscribt -> UI publisht hierhin
       - id: plan_pose
-        name: spraycoater/motion/plan_pose
+        name: spraycoater/moveit_py/plan_pose
         type: geometry_msgs/msg/PoseStamped
         qos: default
+
       - id: plan_named
-        name: spraycoater/motion/plan_named
-        type: std_msgs/msg/String
-        qos: default
-      - id: execute
-        name: spraycoater/motion/execute
-        type: std_msgs/msg/Bool
-        qos: default
-      - id: stop
-        name: spraycoater/motion/stop
-        type: std_msgs/msg/Empty
-        qos: default
-      - id: set_speed_mm_s
-        name: spraycoater/motion/set_speed_mm_s
-        type: std_msgs/msg/Float64
-        qos: default
-      - id: set_planner_cfg
-        name: spraycoater/motion/set_planner_cfg
+        name: spraycoater/moveit_py/plan_named
         type: std_msgs/msg/String
         qos: default
 
-    publish:
-      - id: target_trajectory
-        name: spraycoater/motion/target_trajectory
-        type: trajectory_msgs/msg/JointTrajectory
+      - id: execute
+        name: spraycoater/moveit_py/execute
+        type: std_msgs/msg/Bool
         qos: default
-      - id: planned_trajectory_rt
-        name: spraycoater/motion/trajectory_planned
-        type: moveit_msgs/msg/RobotTrajectory
-        qos: latched
-      - id: executed_trajectory_rt
-        name: spraycoater/motion/trajectory_executed
-        type: moveit_msgs/msg/RobotTrajectory
-        qos: latched
-      - id: preview_markers
-        name: spraycoater/motion/preview/markers
-        type: visualization_msgs/msg/MarkerArray
-        qos: latched
-      - id: motion_result
-        name: spraycoater/motion/result
+
+      - id: stop
+        name: spraycoater/moveit_py/stop
+        type: std_msgs/msg/Empty
+        qos: default
+
+      - id: set_speed_mm_s
+        name: spraycoater/moveit_py/set_speed_mm_s
+        type: std_msgs/msg/Float64
+        qos: default
+
+      - id: set_planner_cfg
+        name: spraycoater/moveit_py/set_planner_cfg
         type: std_msgs/msg/String
         qos: default
+
+    publish:   # Node publisht -> UI subscribt hier
+      - id: target_trajectory
+        name: spraycoater/moveit_py/target_trajectory
+        type: trajectory_msgs/msg/JointTrajectory
+        qos: default
+
+      - id: planned_trajectory_rt
+        name: spraycoater/moveit_py/planned_trajectory_rt
+        type: moveit_msgs/msg/RobotTrajectory
+        qos: default
+
+      - id: executed_trajectory_rt
+        name: spraycoater/moveit_py/executed_trajectory_rt
+        type: moveit_msgs/msg/RobotTrajectory
+        qos: default
+
+      - id: preview_markers
+        name: spraycoater/moveit_py/preview_markers
+        type: visualization_msgs/msg/MarkerArray
+        qos: default
+
+      - id: motion_result
+        name: spraycoater/moveit_py/motion_result
+        type: std_msgs/msg/String
+        qos: default
+
+
 
   scene:
     publish:

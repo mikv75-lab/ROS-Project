@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-# File: app/widgets/motion_box.py
+# File: app/widgets/moveitpy_widget.py
 from __future__ import annotations
+
 from typing import Optional, Dict, Any
 
 from PyQt6 import QtCore
@@ -13,9 +14,9 @@ from app.model.recipe.recipe_store import RecipeStore
 from app.widgets.planner_groupbox import PlannerGroupBox
 
 
-class MotionWidget(QWidget):
+class MoveItPyWidget(QWidget):
     """
-    Service-Motion-Widget:
+    Service-MoveItPy-Widget:
 
       1) PlannerGroupBox (role="service")
       2) Motion-Geschwindigkeit (mm/s)
@@ -41,7 +42,7 @@ class MotionWidget(QWidget):
         parent: Optional[QWidget] = None
     ):
         if store is None:
-            raise ValueError("MotionWidget: RecipeStore ist Pflicht (store=None).")
+            raise ValueError("MoveItPyWidget: RecipeStore ist Pflicht (store=None).")
         super().__init__(parent)
         self.bridge = bridge
         self.store: RecipeStore = store
@@ -101,17 +102,18 @@ class MotionWidget(QWidget):
     # ------------------------------------------------------------------ Bridge-Wiring
     def _wire_outbound_to_bridge_if_present(self):
         """
-        Verdrahtet die Widget-Signale direkt mit der MotionBridge,
-        wenn eine UIBridge mit MotionBridge (_motion) übergeben wurde.
+        Verdrahtet die Widget-Signale direkt mit der MoveItPyBridge,
+        wenn eine UIBridge mit MoveItPyBridge (_motion) übergeben wurde.
         """
         if self.bridge is None:
             return
 
-        motion_bridge = getattr(self.bridge, "_motion", None)
-        if motion_bridge is None:
+        # bleibt absichtlich "_motion", damit bestehende Widgets/ServiceTab nicht brechen
+        moveitpy_bridge = getattr(self.bridge, "_motion", None)
+        if moveitpy_bridge is None:
             return
 
-        sig = getattr(motion_bridge, "signals", None)
+        sig = getattr(moveitpy_bridge, "signals", None)
         if sig is None:
             return
 
@@ -125,7 +127,7 @@ class MotionWidget(QWidget):
         if hasattr(sig, "moveToServiceRequestedWithSpeed"):
             self.moveServiceRequestedWithSpeed.connect(sig.moveToServiceRequestedWithSpeed)
 
-        # Planner-Konfiguration (als Dict) → MotionBridge
+        # Planner-Konfiguration (als Dict) → MoveItPyBridge
         if hasattr(sig, "plannerCfgChanged"):
             self.plannerCfgChanged.connect(sig.plannerCfgChanged)
 
@@ -136,7 +138,7 @@ class MotionWidget(QWidget):
     def set_store(self, store: RecipeStore):
         """Store wechseln (z. B. nach Reload). Lädt sofort die Store-Defaults in den Planner."""
         if store is None:
-            raise ValueError("MotionWidget.set_store: store=None ist nicht erlaubt.")
+            raise ValueError("MoveItPyWidget.set_store: store=None ist nicht erlaubt.")
         self.store = store
         self.planner.set_store(store)
         self.planner.apply_store_defaults()

@@ -14,7 +14,7 @@ from .poses_bridge import PosesBridge
 from .spray_path_bridge import SprayPathBridge
 from .servo_bridge import ServoBridge
 from .robot_bridge import RobotBridge
-from .motion_bridge import MotionBridge
+from .moveitpy_bridge import MoveItPyBridge
 from .omron_bridge import OmronBridge
 
 T = TypeVar("T")
@@ -23,7 +23,7 @@ T = TypeVar("T")
 class RosBridge:
     """
     Betreibt alle Bridge-Nodes (SceneBridge, PosesBridge, SprayPathBridge,
-    ServoBridge, RobotBridge, MotionBridge und optional OmronBridge) in einem
+    ServoBridge, RobotBridge, MoveItPyBridge und optional OmronBridge) in einem
     eigenen Executor-Thread.
 
     WICHTIG:
@@ -96,9 +96,9 @@ class RosBridge:
             spray = SprayPathBridge(self._content, namespace=ns)
             servo = ServoBridge(self._content, namespace=ns)
             robot = RobotBridge(self._content, namespace=ns)
-            motion = MotionBridge(self._content, namespace=ns)
+            moveitpy = MoveItPyBridge(self._content, namespace=ns)
 
-            self._nodes.extend([scene, poses, spray, servo, robot, motion])
+            self._nodes.extend([scene, poses, spray, servo, robot, moveitpy])
 
             # --- Omron nur, wenn explizit aktiviert (typisch: live) ---
             if self._enable_omron:

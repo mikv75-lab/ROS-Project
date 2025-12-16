@@ -48,7 +48,7 @@ PYTHON_NODE_MATCHES = [
     "spray_path --ros-args",
     "robot --ros-args",
     "servo --ros-args",
-    "motion --ros-args",
+    "moveitpy_node --ros-args",
 
     # Real-Bridge
     "omron_tcp_bridge",

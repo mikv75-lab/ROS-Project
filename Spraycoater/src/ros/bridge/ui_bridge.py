@@ -1,6 +1,7 @@
 # src/ros/bridge/ui_bridge.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
+
 import os
 import logging
 import threading
@@ -12,7 +13,7 @@ from .poses_bridge import PosesBridge
 from .spray_path_bridge import SprayPathBridge
 from .servo_bridge import ServoBridge
 from .robot_bridge import RobotBridge
-from .motion_bridge import MotionBridge
+from .moveitpy_bridge import MoveItPyBridge
 from .omron_bridge import OmronBridge  # optional
 
 from geometry_msgs.msg import PoseStamped, PoseArray
@@ -263,7 +264,7 @@ class RobotState:
             return self._joints
 
 
-# ------------------------------ State: Motion ------------------------------
+# ------------------------------ State: Motion (Trajectory Cache) ------------------------------
 
 class MotionState:
     """
@@ -309,7 +310,7 @@ class UIBridge:
       - Stellt Set-APIs bereit (UI -> ROS) via Bridge-Knoten
       - hält zusätzlich ServoBridge in self._servo für den ServiceTab
       - hält zusätzlich RobotBridge in self._robot für Service/Status-UI
-      - hält zusätzlich MotionBridge in self._motion für Motion/Process-UI
+      - hält zusätzlich MoveItPyBridge in self._motion für Motion/Process-UI
       - hält zusätzlich OmronBridge in self._omron für TCP-Client-Widget (optional)
     """
 
@@ -319,7 +320,6 @@ class UIBridge:
         namespace: str = "",
     ):
         self._startup_yaml = startup_yaml_path or os.environ.get("SC_STARTUP_YAML") or ""
-        # Namespace für diese Bridge-Instanz (z. B. "shadow" oder "live")
         self._namespace = (namespace or "").strip().strip("/")
 
         self._bridge: Optional[RosBridge] = None
@@ -329,21 +329,26 @@ class UIBridge:
         self.poses = PosesState()
         self.spraypath = SprayPathState()
         self.robot = RobotState()
-        self.motion = MotionState()  # Trajectory-Cache
+        self.motion = MotionState()
 
         # gehaltene Bridge-Referenzen
         self._sb: Optional[SceneBridge] = None
         self._pb: Optional[PosesBridge] = None
         self._spb: Optional[SprayPathBridge] = None
-        self._sev: Optional[ServoBridge] = None   # intern
-        self._servo: Optional[ServoBridge] = None # öffentliches Attribut für Widgets
-        self._rb: Optional[RobotBridge] = None    # intern
-        self._robot: Optional[RobotBridge] = None # öffentliches Attribut für Widgets
-        self._mb: Optional[MotionBridge] = None   # intern
-        self._motion: Optional[MotionBridge] = None  # öffentliches Attribut für Widgets
 
-        self._ob: Optional[OmronBridge] = None    # intern
-        self._omron: Optional[OmronBridge] = None # öffentlich für Widgets
+        self._sev: Optional[ServoBridge] = None
+        self._servo: Optional[ServoBridge] = None
+
+        self._rb: Optional[RobotBridge] = None
+        self._robot: Optional[RobotBridge] = None
+
+        # MoveItPy
+        self._mb: Optional[MoveItPyBridge] = None     # intern
+        self._motion: Optional[MoveItPyBridge] = None # öffentliches Attribut für Widgets
+
+        # Omron
+        self._ob: Optional[OmronBridge] = None
+        self._omron: Optional[OmronBridge] = None
 
     # ---------- Lifecycle ----------
 
@@ -354,7 +359,6 @@ class UIBridge:
 
     @property
     def is_connected(self) -> bool:
-        # OmronBridge ist optional, deshalb NICHT mit in diese Bedingung
         return (
             self._bridge is not None
             and self._sb is not None
@@ -372,7 +376,6 @@ class UIBridge:
                 return self._bridge.primary_node.get_name()  # type: ignore[attr-defined]
             except Exception:
                 pass
-        # Namespace im Namen mitführen, damit man im Log erkennt, wer wer ist
         ns_suffix = f"_{self._namespace}" if self._namespace else ""
         return f"ui_bridge{ns_suffix}"
 
@@ -384,28 +387,23 @@ class UIBridge:
 
     def connect(self) -> None:
         if self._bridge is not None:
-            # bereits verbunden (oder im Aufbau) -> sicherstellen, dass Bridges gesetzt sind
             self._ensure_subnodes_and_wiring()
             return
 
         if not self._startup_yaml:
             raise RuntimeError("SC_STARTUP_YAML nicht gesetzt/übergeben.")
 
-        # RosBridge mit Namespace anlegen
         self._bridge = RosBridge(
             startup_yaml_path=self._startup_yaml,
             namespace=self._namespace,
         )
         self._bridge.start()
 
-        # Subnodes holen + Signale verbinden
         self._ensure_subnodes_and_wiring()
-
-        # Optional: gecachte Werte re-emittieren (falls vorhanden)
         self._try_reemit_cached()
 
         _LOG.info(
-            "UIBridge connected (node=%s, namespace=%r) – scene/poses/spraypath/servo/robot/motion/omron states ready",
+            "UIBridge connected (node=%s, namespace=%r) – scene/poses/spraypath/servo/robot/moveitpy/omron states ready",
             self.node_name,
             self._namespace,
         )
@@ -444,7 +442,6 @@ class UIBridge:
             if sev is None:
                 raise RuntimeError("ServoBridge nicht gefunden – wurde sie gestartet?")
             self._sev = sev
-            # wichtig: öffentliches Attribut, damit servo_widgets.py es findet
             self._servo = sev
 
         # Robot
@@ -454,22 +451,19 @@ class UIBridge:
                 raise RuntimeError("RobotBridge nicht gefunden – wurde sie gestartet?")
             self._rb = rb
             self._wire_robot_into_state(rb)
-            # öffentliches Attribut, falls Widgets direkten Zugriff brauchen
             self._robot = rb
 
-        # Motion
+        # MoveItPy
         if self._mb is None:
-            mb = self._bridge.get_node(MotionBridge)
+            mb = self._bridge.get_node(MoveItPyBridge)
             if mb is None:
-                raise RuntimeError("MotionBridge nicht gefunden – wurde sie gestartet?")
+                raise RuntimeError("MoveItPyBridge nicht gefunden – wurde sie gestartet?")
             self._mb = mb
-            # Bridge direkt durchreichen (für Widgets als bridge._motion)
             self._motion = mb
-            # Trajectory-Cache versorgen
             self._wire_motion_into_state(mb)
-            _LOG.info("UIBridge: MotionBridge verdrahtet (Signals + Trajectory-Cache).")
+            _LOG.info("UIBridge: MoveItPyBridge verdrahtet (Signals + Trajectory-Cache).")
 
-        # Omron (TCP-Client / ACE) – OPTIONAL
+        # Omron (optional)
         if self._ob is None:
             ob = self._bridge.get_node(OmronBridge)
             if ob is None:
@@ -480,7 +474,6 @@ class UIBridge:
                 _LOG.info("UIBridge: OmronBridge verdrahtet (TCP-Client-Schnittstelle).")
 
     def _try_reemit_cached(self) -> None:
-        # Falls die Bridges eine reemit_cached()-Hilfsfunktion besitzen, nutzen wir sie.
         for b in (self._sb, self._pb, self._spb, self._rb, self._mb, self._ob):
             try:
                 if b is not None and hasattr(b, "signals") and hasattr(b.signals, "reemit_cached"):
@@ -508,13 +501,11 @@ class UIBridge:
         finally:
             self._bridge = None
 
-    # Alias für MainWindow.closeEvent
     def shutdown(self) -> None:
         self.disconnect()
 
     # ---------- Scene: Set-API (UI -> ROS) ----------
     def set_cage(self, name: str) -> None:
-        """Setzt das Cage-Mesh über die SceneBridge."""
         if not self._sb:
             _LOG.error("set_cage: SceneBridge nicht verfügbar.")
             return
@@ -543,7 +534,6 @@ class UIBridge:
 
     # ---------- Poses: Set-API (UI -> ROS) ----------
     def set_pose_by_name(self, name: str) -> None:
-        """Publisht exakt 'home' oder 'service' über PosesBridge."""
         if not self._pb:
             _LOG.error("set_pose_by_name: PosesBridge nicht verfügbar.")
             return
@@ -560,10 +550,6 @@ class UIBridge:
 
     # ---------- SprayPath: Set-API (UI -> ROS) ----------
     def set_spraypath(self, marker_array: MarkerArray) -> None:
-        """
-        Publisht ein MarkerArray unverändert auf spray_path.set.
-        Wird typischerweise aus dem Recipe-Tab (Update Preview) aufgerufen.
-        """
         if not self._spb:
             _LOG.error("set_spraypath: SprayPathBridge nicht verfügbar.")
             return
@@ -573,13 +559,6 @@ class UIBridge:
             _LOG.error("set_spraypath failed: %s", e)
 
     def set_executed_path(self, pose_array: PoseArray) -> None:
-        """
-        Publisht den tatsächlich gefahrenen Pfad (Istpfad) als PoseArray.
-        Wird vom ProcessTab nach notifyFinished(...) aufgerufen.
-
-        Der SprayPath-Node erzeugt daraus wiederum MarkerArray für RViz,
-        analog zum Rezeptpfad.
-        """
         if not self._spb:
             _LOG.error("set_executed_path: SprayPathBridge nicht verfügbar.")
             return
@@ -590,7 +569,6 @@ class UIBridge:
 
     # ---------- Robot: Set-API (UI -> ROS) ----------
     def robot_init(self) -> None:
-        """Sendet ein INIT-Kommando an den Robot-Node."""
         if not self._rb:
             _LOG.error("robot_init: RobotBridge nicht verfügbar.")
             return
@@ -655,9 +633,6 @@ class UIBridge:
 
     # ---------- Servo: CommandType-API (UI -> ROS) ----------
     def servo_set_command_type(self, mode: str) -> None:
-        """
-        Dünner Forwarder auf ServoBridge.set_command_type(mode).
-        """
         if not self._sev:
             _LOG.error("servo_set_command_type: ServoBridge nicht verfügbar.")
             return
@@ -666,10 +641,10 @@ class UIBridge:
         except Exception as e:
             _LOG.error("servo_set_command_type failed: %s", e)
 
-    # ---------- Motion: High-Level-API (UI -> MotionBridge) ----------
+    # ---------- MoveItPy: High-Level-API (UI -> MoveItPyBridge) ----------
     def motion_move_home(self) -> None:
         if not self._mb or not getattr(self._mb, "signals", None):
-            _LOG.error("motion_move_home: MotionBridge nicht verfügbar.")
+            _LOG.error("motion_move_home: MoveItPyBridge nicht verfügbar.")
             return
         try:
             self._mb.signals.moveToHomeRequested.emit()
@@ -678,7 +653,7 @@ class UIBridge:
 
     def motion_move_service(self) -> None:
         if not self._mb or not getattr(self._mb, "signals", None):
-            _LOG.error("motion_move_service: MotionBridge nicht verfügbar.")
+            _LOG.error("motion_move_service: MoveItPyBridge nicht verfügbar.")
             return
         try:
             self._mb.signals.moveToServiceRequested.emit()
@@ -690,7 +665,7 @@ class UIBridge:
             _LOG.error("motion_move_to_pose: pose is None.")
             return
         if not self._mb or not getattr(self._mb, "signals", None):
-            _LOG.error("motion_move_to_pose: MotionBridge nicht verfügbar.")
+            _LOG.error("motion_move_to_pose: MoveItPyBridge nicht verfügbar.")
             return
         try:
             self._mb.signals.moveToPoseRequested.emit(pose)
@@ -744,7 +719,7 @@ class UIBridge:
         sig.tcpPoseChanged.connect(lambda msg: self.robot._set_tcp_pose(msg))
         sig.jointsChanged.connect(lambda msg: self.robot._set_joints(msg))
 
-    def _wire_motion_into_state(self, mb: MotionBridge) -> None:
+    def _wire_motion_into_state(self, mb: MoveItPyBridge) -> None:
         sig = mb.signals
         sig.plannedTrajectoryChanged.connect(lambda msg: self.motion._set_planned(msg))
         sig.executedTrajectoryChanged.connect(lambda msg: self.motion._set_executed(msg))

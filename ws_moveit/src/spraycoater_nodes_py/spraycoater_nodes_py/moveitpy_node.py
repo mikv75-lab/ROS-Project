@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import math
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 
 import rclpy
 from rclpy.node import Node
@@ -215,6 +215,44 @@ class MoveItPyNode(Node):
             raise RuntimeError(f"TF not available {target} <- {source}")
         return self.tf_buffer.lookup_transform(target, source, RclpyTime())
 
+    def _ns_prefix(self) -> str:
+        """
+        ROS Namespace ohne Slashes:
+          "/"       -> ""
+          "/shadow" -> "shadow"
+          "/live"   -> "live"
+        """
+        ns = (self.get_namespace() or "/").strip().strip("/")
+        return ns
+
+    def _resolve_named_candidates(self, name: str) -> List[str]:
+        """
+        Kandidaten für TF-Frame-Name:
+          - "home"
+          - "shadow/home" (falls Namespace vorhanden)
+        """
+        name = (name or "").strip().strip("/")
+        if not name:
+            return []
+        cand = [name]
+        ns = self._ns_prefix()
+        if ns:
+            cand.append(f"{ns}/{name}")
+        return cand
+
+    def _lookup_tf_named(self, name: str):
+        """
+        Try TF world<-name, dann fallback auf world<-<ns>/name.
+        Gibt (transform, resolved_name) zurück.
+        """
+        last_err: Optional[Exception] = None
+        for cand in self._resolve_named_candidates(name):
+            try:
+                return self._lookup_tf(self.frame_world, cand), cand
+            except Exception as e:
+                last_err = e
+        raise RuntimeError(str(last_err) if last_err else f"TF not available {self.frame_world} <- {name}")
+
     def _emit(self, text: str) -> None:
         self.pub_result.publish(MsgString(data=text))
         self.log.info(text)
@@ -332,7 +370,9 @@ class MoveItPyNode(Node):
         self._last_goal_pose = None
 
         try:
-            tf = self._lookup_tf(self.frame_world, name)
+            tf, resolved = self._lookup_tf_named(name)
+            if resolved != name:
+                self.log.info(f"[plan_named] resolved '{name}' -> '{resolved}'")
 
             goal = PoseStamped()
             goal.header.frame_id = self.frame_world
@@ -357,6 +397,8 @@ class MoveItPyNode(Node):
 
             self.pub_planned.publish(msg_traj)
             self._publish_preview(goal)
+
+            # Wichtig: weiterhin 'name' (home/service) emittieren, damit die Bridge-Autologik passt.
             self._emit(f"PLANNED:OK named='{name}'")
 
         except Exception as e:

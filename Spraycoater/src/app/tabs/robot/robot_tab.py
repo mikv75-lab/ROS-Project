@@ -10,14 +10,14 @@ from PyQt6.QtWidgets import (
 
 from app.model.recipe.recipe_store import RecipeStore
 
-from ...widgets.robot_command_box import RobotCommandButtonsBox
-from ...widgets.robot_status_box import RobotStatusInfoBox
-from ...widgets.omron_tcp_widget import OmronTcpWidget
+from app.widgets.robot_command_box import RobotCommandButtonsBox
+from app.widgets.robot_status_box import RobotStatusInfoBox
+from app.widgets.omron_tcp_widget import OmronTcpWidget
 
 from .scene_box import SceneGroupBox
 from .poses_box import PosesGroupBox
 from .tool_box import ToolGroupBox
-from .motion_widget import MotionWidget
+from .moveitpy_widget import MoveItPyWidget
 from .servo_widgets import JointJogWidget, CartesianJogWidget
 
 _LOG = logging.getLogger("app.tabs.service.robot")
@@ -61,7 +61,6 @@ class ServiceRobotTab(QWidget):
             sp.setVerticalPolicy(QSizePolicy.Preferred)
             w.setSizePolicy(sp)
 
-        # Commands | Status | TCP-Client (rechts)
         topRow.addWidget(self.commandBox, 1)
         topRow.addWidget(self.statusBox, 2)
         topRow.addWidget(self.omronWidget, 2)
@@ -82,18 +81,18 @@ class ServiceRobotTab(QWidget):
         root.addLayout(rowBottom)
 
         # ================================================================
-        # [1] SUBTABS: Motion | Joint Jog | Cartesian Jog
+        # [1] SUBTABS: MoveItPy | Joint Jog | Cartesian Jog
         # ================================================================
         self.tabs = QTabWidget(self)
         root.addWidget(self.tabs)
 
-        # (a) Motion
-        self.motionWidget = MotionWidget(
+        # (a) MoveItPy / Motion
+        self.moveitpyWidget = MoveItPyWidget(
             store=self.store,
             bridge=self.bridge,
             parent=self.tabs
         )
-        self.tabs.addTab(self.motionWidget, "Motion")
+        self.tabs.addTab(self.moveitpyWidget, "Motion")
 
         # (b) Joint Jog
         self.jointJogWidget = JointJogWidget(self.ctx, self.bridge, self.tabs)
@@ -105,7 +104,7 @@ class ServiceRobotTab(QWidget):
 
         # Size Policies vereinheitlichen
         for w in (
-            self.motionWidget,
+            self.moveitpyWidget,
             self.jointJogWidget,
             self.cartJogWidget,
             self.posesBox,
@@ -144,26 +143,16 @@ class ServiceRobotTab(QWidget):
         sig = self._sig
         sb  = self.statusBox
 
-        if hasattr(sig, "connectionChanged"):
-            sig.connectionChanged.connect(sb.set_connection)
-        if hasattr(sig, "modeChanged"):
-            sig.modeChanged.connect(sb.set_mode)
-        if hasattr(sig, "initializedChanged"):
-            sig.initializedChanged.connect(sb.set_initialized)
-        if hasattr(sig, "movingChanged"):
-            sig.movingChanged.connect(sb.set_moving)
-        if hasattr(sig, "powerChanged"):
-            sig.powerChanged.connect(sb.set_power)
-        if hasattr(sig, "servoEnabledChanged"):
-            sig.servoEnabledChanged.connect(sb.set_servo_enabled)
-        if hasattr(sig, "estopChanged"):
-            sig.estopChanged.connect(sb.set_estop)
-        if hasattr(sig, "errorsChanged"):
-            sig.errorsChanged.connect(sb.set_errors)
-        if hasattr(sig, "tcpPoseChanged"):
-            sig.tcpPoseChanged.connect(sb.set_tcp_from_ps)
-        if hasattr(sig, "jointsChanged"):
-            sig.jointsChanged.connect(self._on_joints)
+        sig.connectionChanged.connect(sb.set_connection)
+        sig.modeChanged.connect(sb.set_mode)
+        sig.initializedChanged.connect(sb.set_initialized)
+        sig.movingChanged.connect(sb.set_moving)
+        sig.powerChanged.connect(sb.set_power)
+        sig.servoEnabledChanged.connect(sb.set_servo_enabled)
+        sig.estopChanged.connect(sb.set_estop)
+        sig.errorsChanged.connect(sb.set_errors)
+        sig.tcpPoseChanged.connect(sb.set_tcp_from_ps)
+        sig.jointsChanged.connect(self._on_joints)
 
     # ==================================================================
     # Bridge OUTBOUND: UI → ROS
@@ -212,16 +201,16 @@ class ServiceRobotTab(QWidget):
     # Forwarder-API (für andere Tabs/Modelle)
     # ==================================================================
     def get_planner(self) -> str:
-        return self.motionWidget.get_planner()
+        return self.moveitpyWidget.get_planner()
 
     def get_planner_params(self) -> Dict[str, Any]:
-        return self.motionWidget.get_params()
+        return self.moveitpyWidget.get_params()
 
     def set_planner(self, name: str) -> None:
-        self.motionWidget.set_planner(name)
+        self.moveitpyWidget.set_planner(name)
 
     def set_planner_params(self, cfg: Dict[str, Any]) -> None:
-        self.motionWidget.set_params(cfg)
+        self.moveitpyWidget.set_params(cfg)
 
     def get_joint_jog_params(self) -> Dict[str, float]:
         return self.jointJogWidget.get_params()
