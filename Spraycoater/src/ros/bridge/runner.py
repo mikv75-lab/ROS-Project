@@ -22,13 +22,7 @@ T = TypeVar("T")
 
 class RosBridge:
     """
-    Betreibt alle Bridge-Nodes (SceneBridge, PosesBridge, SprayPathBridge,
-    ServoBridge, RobotBridge, MoveItPyBridge und optional OmronBridge) in einem
-    eigenen Executor-Thread.
-
-    WICHTIG:
-      - namespace wird an alle Bridge-Nodes weitergereicht, damit diese auf
-        /<namespace>/... Topics arbeiten (z.B. /shadow/..., /live/...).
+    Betreibt alle Bridge-Nodes in einem eigenen Executor-Thread.
     """
 
     def __init__(
@@ -42,8 +36,6 @@ class RosBridge:
         self._content = AppContent(startup_yaml_path)
 
         self._enable_omron = bool(enable_omron)
-
-        # Namespace normalisieren: "shadow" statt "/shadow/"
         self._namespace = (namespace or "").strip().strip("/")
 
         self._exec: Optional[SingleThreadedExecutor] = None
@@ -51,6 +43,9 @@ class RosBridge:
         self._thread: Optional[threading.Thread] = None
         self._running = False
         self._lock = threading.RLock()
+
+        # wichtig: nur shutdown() wenn WIR init gemacht haben
+        self._did_init_rclpy = False
 
     @property
     def namespace(self) -> str:
@@ -85,12 +80,12 @@ class RosBridge:
 
             if not rclpy.ok():
                 rclpy.init(args=None)
+                self._did_init_rclpy = True
 
             self._exec = SingleThreadedExecutor(context=rclpy.get_default_context())
+            ns = self._namespace
 
-            ns = self._namespace  # "shadow" | "live" | ""
-
-            # --- Bridges erzeugen (immer) ---
+            # Bridges erzeugen (immer)
             scene = SceneBridge(self._content, namespace=ns)
             poses = PosesBridge(self._content, namespace=ns)
             spray = SprayPathBridge(self._content, namespace=ns)
@@ -98,14 +93,12 @@ class RosBridge:
             robot = RobotBridge(self._content, namespace=ns)
             moveitpy = MoveItPyBridge(self._content, namespace=ns)
 
-            self._nodes.extend([scene, poses, spray, servo, robot, moveitpy])
+            self._nodes = [scene, poses, spray, servo, robot, moveitpy]
 
-            # --- Omron nur, wenn explizit aktiviert (typisch: live) ---
             if self._enable_omron:
-                omron = OmronBridge(self._content, namespace=ns)
-                self._nodes.append(omron)
+                self._nodes.append(OmronBridge(self._content, namespace=ns))
 
-            # dem Executor hinzufügen
+            # Nodes in Executor
             for n in self._nodes:
                 self._exec.add_node(n)
 
@@ -118,70 +111,56 @@ class RosBridge:
             self._thread.start()
 
     def _spin(self) -> None:
+        # absichtlich keine "silent" errors: wenn das crasht, willst du es sehen
         try:
-            if self._exec is not None:
-                self._exec.spin()
-        except Exception:
-            # optional: logging
-            pass
+            assert self._exec is not None
+            self._exec.spin()
         finally:
             with self._lock:
                 self._running = False
 
     def stop(self) -> None:
         with self._lock:
-            if not self._running:
-                if self._thread and self._thread.is_alive():
-                    try:
-                        if self._exec is not None:
-                            self._exec.shutdown()
-                    except Exception:
-                        pass
-                    self._thread.join(timeout=1.0)
-                    self._thread = None
-                self._exec = None
+            if not self._running and self._exec is None and not self._nodes:
+                # bereits sauber gestoppt
                 return
 
-            try:
-                if self._exec is not None:
-                    self._exec.shutdown()
-            except Exception:
-                pass
+            exec_ = self._exec
+            thread = self._thread
+            nodes = list(self._nodes)
+            did_init = self._did_init_rclpy
 
-            for n in list(self._nodes):
-                try:
-                    if self._exec is not None:
-                        self._exec.remove_node(n)
-                except Exception:
-                    pass
-                try:
-                    n.destroy_node()
-                except Exception:
-                    pass
-            self._nodes.clear()
-
-            try:
-                if rclpy.ok():
-                    rclpy.shutdown()
-            except Exception:
-                pass
-
-            self._running = False
-
-            if self._thread and self._thread.is_alive():
-                self._thread.join(timeout=1.0)
-            self._thread = None
+            # lokale Felder sofort leeren (damit re-entrancy safe ist)
             self._exec = None
+            self._thread = None
+            self._nodes = []
+            self._running = False
+            self._did_init_rclpy = False
+
+        # 1) Executor stoppen
+        if exec_ is not None:
+            exec_.shutdown()
+
+        # 2) Nodes entfernen + destroy
+        if exec_ is not None:
+            for n in nodes:
+                exec_.remove_node(n)
+
+        for n in nodes:
+            n.destroy_node()
+
+        # 3) Thread join
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=1.0)
+
+        # 4) rclpy shutdown nur wenn wir init gemacht haben
+        if did_init and rclpy.ok():
+            rclpy.shutdown()
 
     def add_node(self, node: Any) -> None:
         with self._lock:
+            if self._exec is None:
+                raise RuntimeError("RosBridge läuft nicht (Executor ist None).")
+
             self._nodes.append(node)
-            if self._running and self._exec is not None:
-                try:
-                    self._exec.add_node(node)
-                except Exception:
-                    try:
-                        self._nodes.remove(node)
-                    except ValueError:
-                        pass
-                    raise
+            self._exec.add_node(node)

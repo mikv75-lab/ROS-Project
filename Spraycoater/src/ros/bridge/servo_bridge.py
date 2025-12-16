@@ -1,292 +1,265 @@
-# src/ros/bridge/servo_bridge.py
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from typing import Optional, Dict, Any
 
+from typing import Optional, Dict, Any, Callable, Type
 import math
-import threading
 
 from PyQt6 import QtCore
 
+from rclpy.qos import (
+    QoSProfile,
+    ReliabilityPolicy,
+    DurabilityPolicy,
+    qos_profile_sensor_data,
+)
+
+from std_msgs.msg import String as MsgString
 from geometry_msgs.msg import TwistStamped
 from control_msgs.msg import JointJog
-from moveit_msgs.srv import ServoCommandType
 
 from config.startup import AppContent
 from .base_bridge import BaseBridge
 
 
 class ServoSignals(QtCore.QObject):
+    """
+    Qt-Signale (UI → ServoBridge)
+    """
+    # UI Widgets pushen Parameter in Bridge (optional)
     paramsChanged = QtCore.pyqtSignal(dict)
+
+    # Joint jog: joint_name, delta_deg, speed_pct
     jointJogRequested = QtCore.pyqtSignal(str, float, float)
-    cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)  # axis, delta, speed, frame_ui ("wrf"/"trf")
+
+    # Cartesian jog: axis ("x","y","z","rx","ry","rz"), delta(mm|deg), speed(mm/s), frame_ui("wrf"/"trf")
+    cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)
+
+    # UI Frame selector: "wrf"/"trf"
     frameChanged = QtCore.pyqtSignal(str)
+
+    def __init__(self, parent: Optional[QtCore.QObject] = None) -> None:
+        super().__init__(parent)
+
+    @QtCore.pyqtSlot()
+    def reemit_cached(self) -> None:
+        # Servo hat typischerweise keinen Cache, aber Contract muss existieren
+        return
 
 
 class ServoBridge(BaseBridge):
     """
-    UI <-> ServoBridge <-> moveit_servo
+    UI-ServoBridge:
 
-    Publisht:
-      - /servo/joint_jog    (JointJog)
-      - /servo/cartesian_mm (TwistStamped)
+    UI → Node Topics (Node subscribt):
+      - cartesian_mm  (TwistStamped)
+      - joint_jog     (JointJog)
+      - set_mode      (String)   # z.B. "JOINT_JOG" / "TWIST"
+      - set_frame     (String)   # z.B. "world" / "tcp" / "wrf"/"trf" (dein Servo-Node mappt das)
 
-    Schaltet CommandType via Service:
-      - omron_servo_node/switch_command_type  (namespaced)
+    WICHTIG:
+      - NICHT twist_out/joint_out publishen! Das macht der ROS-Servo-Node selbst.
     """
 
     GROUP = "servo"
 
-    _COMMAND_TYPE_MAP = {
-        "joint": 0,        # JOINT_JOG
-        "joint_jog": 0,
-        "jog": 0,
-        "joints": 0,
-        "twist": 1,        # TWIST
-        "cart": 1,
-        "cartesian": 1,
-        "tcp": 1,
-        "pose": 2,         # POSE
-    }
-
-    def __init__(self, content: AppContent, namespace: str = ""):
+    def __init__(self, content: AppContent, *, namespace: str = ""):
         self.signals = ServoSignals()
 
-        # Frames aus AppContent
-        frames_cfg = getattr(content, "frames", None)
-        if frames_cfg is not None:
-            try:
-                self.world_frame = frames_cfg.resolve(frames_cfg.get("world", "world"))
-                self.tcp_frame = frames_cfg.resolve(frames_cfg.get("tool_mount", "tool_mount"))
-            except Exception:
-                self.world_frame = "world"
-                self.tcp_frame = "tool_mount"
-        else:
-            self.world_frame = "world"
-            self.tcp_frame = "tool_mount"
+        # eigene, korrekt gedrehte Verdrahtung
+        self._ui_to_node_pubs: Dict[str, Any] = {}
 
-        self.current_frame: str = self.world_frame
+        # Params (aus UI)
+        self._cart_lin_step_mm: float = 1.0
+        self._cart_ang_step_deg: float = 2.0
+        self._cart_speed_mm_s: float = 50.0
+        self._joint_step_deg: float = 2.0
+        self._joint_speed_pct: float = 40.0
 
-        # CommandType-State
-        self._cmd_type_client = None
-        self._cmd_type_lock = threading.Lock()
-        self._current_command_type: Optional[int] = None
-        self._desired_command_type: Optional[int] = None
-        self._cmd_type_inflight: bool = False
+        # Frame (world/tool)
+        self._frame_ui: str = "wrf"  # "wrf"|"trf"
 
-        # Node (ggf. im Namespace)
         super().__init__("servo_bridge", content, namespace=namespace)
 
-        # -----------------------------
-        # Publisher
-        # -----------------------------
-        try:
-            spec_cart = self.spec("publish", "cartesian_mm")
-            MsgCart = spec_cart.resolve_type()
-            qos_cart = getattr(spec_cart, "qos_profile", None)
-            self.pub_cartesian = self.create_publisher(
-                MsgCart, spec_cart.name, qos_cart if qos_cart is not None else 10
-            )
-        except Exception as e:
-            self.get_logger().error(f"[servo] cartesian_mm publisher init failed: {e}")
-            self.pub_cartesian = None
+        s = self.signals
+        s.paramsChanged.connect(self._on_params_changed)
+        s.frameChanged.connect(self._on_frame_changed)
+        s.jointJogRequested.connect(self._on_joint_jog_requested)
+        s.cartesianJogRequested.connect(self._on_cart_jog_requested)
 
-        try:
-            spec_joint = self.spec("publish", "joint_jog")
-            MsgJoint = spec_joint.resolve_type()
-            qos_joint = getattr(spec_joint, "qos_profile", None)
-            self.pub_joint = self.create_publisher(
-                MsgJoint, spec_joint.name, qos_joint if qos_joint is not None else 10
-            )
-        except Exception as e:
-            self.get_logger().error(f"[servo] joint_jog publisher init failed: {e}")
-            self.pub_joint = None
-
-        # -----------------------------
-        # Service-Client: CommandType
-        # -----------------------------
-        self._cmd_type_service_name = "omron_servo_node/switch_command_type"  # RELATIV lassen!
-        try:
-            self._cmd_type_client = self.create_client(ServoCommandType, self._cmd_type_service_name)
-        except Exception as e:
-            self.get_logger().error(f"[servo] CommandType client init failed: {e}")
-            self._cmd_type_client = None
-
-        # Timer: stiller Retry für gewünschten CommandType
-        self._cmd_type_timer = self.create_timer(0.2, self._cmd_type_retry_tick)
-
-        # -----------------------------
-        # Qt-Signale ↔ Methoden
-        # -----------------------------
-        self.signals.jointJogRequested.connect(self._on_joint_jog_requested)
-        self.signals.cartesianJogRequested.connect(self._on_cartesian_jog_requested)
-        self.signals.frameChanged.connect(self._on_frame_changed)
-        self.signals.paramsChanged.connect(self._on_params_changed)
+        # --- UI -> Node publishers (Node subscribt) ---
+        self._ensure_pub("cartesian_mm", TwistStamped)
+        self._ensure_pub("joint_jog", JointJog)
+        self._ensure_pub("set_mode", MsgString)
+        self._ensure_pub("set_frame", MsgString)
 
         self.get_logger().info(
-            f"[servo] ServoBridge aktiv, ns='{self.get_namespace() or '/'}', "
-            f"world_frame='{self.world_frame}', tcp_frame='{self.tcp_frame}', current='{self.current_frame}', "
-            f"cmd_type_srv='{self._cmd_type_service_name}'"
+            f"[servo] ServoBridge bereit (ns='{self.namespace or '/'}'): "
+            "UI->Node pubs: cartesian_mm, joint_jog, set_mode, set_frame"
         )
 
-    # ======================================================
-    # CommandType Switching (robust, non-blocking)
-    # ======================================================
+    # ─────────────────────────────────────────────────────────────
+    # Helpers: YAML spec → topic name + QoS
+    # ─────────────────────────────────────────────────────────────
+
+    def _resolve_ns_topic(self, name: str) -> str:
+        name = (name or "").strip()
+        if not name:
+            return name
+        if name.startswith("/"):
+            return name
+
+        ns = (self.namespace or "").strip().strip("/")
+        if not ns:
+            return "/" + name
+        return f"/{ns}/{name}".replace("//", "/")
+
+    def _qos_from_spec(self, spec: Any) -> QoSProfile:
+        qos_id = getattr(spec, "qos", None) or getattr(spec, "qos_id", None) or "default"
+        qos_id = str(qos_id).lower()
+
+        if qos_id == "sensor_data":
+            return qos_profile_sensor_data
+
+        if qos_id == "latched":
+            return QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            )
+
+        return QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+
+    def _spec_from_content(self, direction: str, topic_id: str) -> Any:
+        return self._content.topic_by_id(self.GROUP, direction, topic_id)
+
+    def _topic_name_from_content(self, direction: str, topic_id: str) -> str:
+        spec = self._spec_from_content(direction, topic_id)
+        raw_name = getattr(spec, "name", None) or getattr(spec, "topic", None) or ""
+        return self._resolve_ns_topic(str(raw_name))
+
+    def _ensure_pub(self, topic_id: str, msg_type: Type) -> None:
+        # UI -> Node: Publisher auf YAML 'subscribe'
+        if topic_id in self._ui_to_node_pubs:
+            return
+        spec = self._spec_from_content("subscribe", topic_id)
+        topic = self._topic_name_from_content("subscribe", topic_id)
+        qos = self._qos_from_spec(spec)
+        self._ui_to_node_pubs[topic_id] = self.create_publisher(msg_type, topic, qos)
+        self.get_logger().info(f"[servo] PUB ui->node id={topic_id} topic={topic}")
+
+    def _pub(self, topic_id: str):
+        p = self._ui_to_node_pubs.get(topic_id)
+        if p is None:
+            raise KeyError(f"[servo] Publisher '{topic_id}' fehlt (ensure_pub nicht gelaufen?)")
+        return p
+
+    # ─────────────────────────────────────────────────────────────
+    # Public API (von UIBridge genutzt)
+    # ─────────────────────────────────────────────────────────────
 
     def set_command_type(self, mode: str) -> None:
-        if self._cmd_type_client is None:
-            return
-
-        key = (mode or "").strip().lower()
-        cmd_val = self._COMMAND_TYPE_MAP.get(key)
-        if cmd_val is None:
-            return
-
-        with self._cmd_type_lock:
-            if self._current_command_type == cmd_val:
-                return
-            self._desired_command_type = cmd_val
-
-        self._try_set_command_type_once()
-
-    def _cmd_type_retry_tick(self) -> None:
-        with self._cmd_type_lock:
-            pending = self._desired_command_type
-        if pending is None:
-            return
-        self._try_set_command_type_once()
-
-    def _try_set_command_type_once(self) -> None:
-        if self._cmd_type_client is None:
-            return
-        if self._cmd_type_inflight:
-            return
-
-        with self._cmd_type_lock:
-            desired = self._desired_command_type
-
-        if desired is None:
-            return
-
-        if not self._cmd_type_client.service_is_ready():
-            return
-
-        req = ServoCommandType.Request()
-        req.command_type = int(desired)
-
-        self._cmd_type_inflight = True
-        future = self._cmd_type_client.call_async(req)
-
-        def _done(fut):
-            self._cmd_type_inflight = False
-            try:
-                resp = fut.result()
-            except Exception:
-                return
-
-            if not resp or not getattr(resp, "success", False):
-                return
-
-            with self._cmd_type_lock:
-                self._current_command_type = int(req.command_type)
-                if self._desired_command_type == self._current_command_type:
-                    self._desired_command_type = None
-
-        future.add_done_callback(_done)
-
-    # ======================================================
-    # UI → JointJog (JOINT_JOG)
-    # ======================================================
-
-    def _on_joint_jog_requested(self, joint_name: str, delta_deg: float, speed_pct: float) -> None:
-        self.get_logger().info(f"[servo] UI jointJogRequested: joint='{joint_name}', delta_deg={delta_deg}, speed_pct={speed_pct}")
-        if self.pub_joint is None:
-            return
-        if not joint_name:
-            return
-
-        self.set_command_type("joint")
-
-        dt = 0.5
-        delta_rad = math.radians(delta_deg)
-        scale = max(0.0, min(1.0, float(speed_pct) / 100.0))
-        vel = (delta_rad / dt) * scale
-
-        msg = JointJog()
-        msg.header.frame_id = self.current_frame
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.joint_names = [joint_name]
-        msg.velocities = [vel]
-        msg.displacements = []
-        msg.duration = dt
-
-        self.pub_joint.publish(msg)
-
-    # ======================================================
-    # UI → Cartesian Jog (TWIST)
-    # ======================================================
-
-    def _on_cartesian_jog_requested(
-        self,
-        axis: str,
-        delta: float,
-        speed_mm_s: float,
-        frame_ui: str,  # "wrf"/"trf"
-    ) -> None:
-        self.get_logger().info(f"[servo] UI cartesianJogRequested: axis='{axis}', delta={delta}, speed_mm_s={speed_mm_s}, frame_ui='{frame_ui}'")
-        if self.pub_cartesian is None:
-            return
-
-        axis = (axis or "").lower()
-        if axis not in ("x", "y", "z", "rx", "ry", "rz"):
-            return
-
-        # Frame entsprechend UI umschalten ("wrf"/"trf")
-        self._set_frame_from_ui(frame_ui)
-
-        self.set_command_type("twist")
-
-        msg = TwistStamped()
-        msg.header.frame_id = self.current_frame
-        msg.header.stamp = self.get_clock().now().to_msg()
-
-        speed_m_s = float(speed_mm_s) / 1000.0
-        sign = 1.0 if float(delta) >= 0.0 else -1.0
-
-        if axis in ("x", "y", "z"):
-            v = sign * speed_m_s
-            if axis == "x":
-                msg.twist.linear.x = v
-            elif axis == "y":
-                msg.twist.linear.y = v
-            else:
-                msg.twist.linear.z = v
+        """
+        UIBridge.servo_set_command_type("joint"|"cart") ruft das.
+        Wir publishen auf set_mode als String.
+        """
+        raw = (mode or "").strip().lower()
+        if raw in ("joint", "j", "joint_jog"):
+            txt = "JOINT_JOG"
+        elif raw in ("cart", "cartesian", "twist", "t"):
+            txt = "TWIST"
         else:
-            dt = 0.5
-            omega = math.radians(float(delta)) / dt
-            if axis == "rx":
-                msg.twist.angular.x = omega
-            elif axis == "ry":
-                msg.twist.angular.y = omega
-            else:
-                msg.twist.angular.z = omega
+            txt = mode.strip() or "JOINT_JOG"
 
-        self.pub_cartesian.publish(msg)
+        self._pub("set_mode").publish(MsgString(data=txt))
 
-    # ======================================================
-    # Frame / Params
-    # ======================================================
+    # ─────────────────────────────────────────────────────────────
+    # UI inbound (Signals aus Widgets)
+    # ─────────────────────────────────────────────────────────────
+
+    def _on_params_changed(self, cfg: dict) -> None:
+        cfg = cfg or {}
+
+        # Joint params
+        if "joint_step_deg" in cfg:
+            self._joint_step_deg = float(cfg["joint_step_deg"])
+        if "joint_speed_pct" in cfg:
+            self._joint_speed_pct = float(cfg["joint_speed_pct"])
+
+        # Cart params
+        if "cart_lin_step_mm" in cfg:
+            self._cart_lin_step_mm = float(cfg["cart_lin_step_mm"])
+        if "cart_ang_step_deg" in cfg:
+            self._cart_ang_step_deg = float(cfg["cart_ang_step_deg"])
+        if "cart_speed_mm_s" in cfg:
+            self._cart_speed_mm_s = float(cfg["cart_speed_mm_s"])
+
+        # Frame
+        if "frame" in cfg:
+            self._frame_ui = str(cfg["frame"]).strip().lower() or self._frame_ui
 
     def _on_frame_changed(self, frame_ui: str) -> None:
-        self._set_frame_from_ui(frame_ui)
+        self._frame_ui = (frame_ui or "").strip().lower() or "wrf"
 
-    def _set_frame_from_ui(self, frame_ui: str) -> None:
-        f = (frame_ui or "").strip().lower()
-        if f == "trf":
-            self.current_frame = self.tcp_frame
+        # an den ROS-Servo Node: "world"/"tcp" (oder du lässt "wrf"/"trf" durch)
+        # dein Servo-Node kann world/tcp – wir mappen:
+        txt = "world" if self._frame_ui == "wrf" else "tcp"
+        self._pub("set_frame").publish(MsgString(data=txt))
+
+    def _on_joint_jog_requested(self, joint_name: str, delta_deg: float, speed_pct: float) -> None:
+        # Mode auf JOINT_JOG setzen
+        self.set_command_type("joint")
+
+        # JointJog message
+        msg = JointJog()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.joint_names = [str(joint_name)]
+        # velocity = speed_pct/100 (als einfache Normierung)
+        v = max(0.0, min(1.0, float(speed_pct) / 100.0))
+        msg.velocities = [v]
+        # displacement in rad
+        msg.displacements = [math.radians(float(delta_deg))]
+        self._pub("joint_jog").publish(msg)
+
+    def _on_cart_jog_requested(self, axis: str, delta: float, speed: float, frame_ui: str) -> None:
+        # Mode auf TWIST setzen
+        self.set_command_type("cart")
+
+        # Frame setzen (wrf/trf)
+        self._on_frame_changed(frame_ui)
+
+        a = (axis or "").strip().lower()
+        d = float(delta)
+        s = float(speed)
+
+        # TwistStamped in m/s bzw rad/s:
+        # - Linear delta ist mm pro step -> wir senden "velocity-like" proportional zu speed
+        # - Rot delta ist deg pro step -> wir senden angular proportional
+        msg = TwistStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = ""  # ServoNode setzt falls leer seinen current_frame
+
+        # Linear: mm -> m
+        lin_v = (s / 1000.0)  # mm/s -> m/s
+        ang_v = math.radians(max(0.0, s))  # grob: speed als deg/s interpretiert
+
+        if a == "x":
+            msg.twist.linear.x = math.copysign(lin_v, d)
+        elif a == "y":
+            msg.twist.linear.y = math.copysign(lin_v, d)
+        elif a == "z":
+            msg.twist.linear.z = math.copysign(lin_v, d)
+        elif a == "rx":
+            msg.twist.angular.x = math.copysign(ang_v, d)
+        elif a == "ry":
+            msg.twist.angular.y = math.copysign(ang_v, d)
+        elif a == "rz":
+            msg.twist.angular.z = math.copysign(ang_v, d)
         else:
-            self.current_frame = self.world_frame
+            self.get_logger().warning(f"[servo] unknown cart axis: {axis!r}")
+            return
 
-    def _on_params_changed(self, cfg: Dict[str, Any]) -> None:
-        pass
+        self._pub("cartesian_mm").publish(msg)

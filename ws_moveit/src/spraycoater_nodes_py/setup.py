@@ -7,13 +7,17 @@ package_name = "spraycoater_nodes_py"
 
 def files(*patterns: str):
     """
-    Helper, der eine Liste von Dateien zu mehreren Patterns zurückgibt.
-    Falls nichts gefunden wird, kommt einfach eine leere Liste zurück.
+    Helper: sammelt Dateien für data_files.
+    - recursive glob
+    - filtert Verzeichnisse raus (data_files darf nur Dateien enthalten)
+    - sortiert stabil (damit Builds reproduzierbar sind)
     """
     paths = []
     for pattern in patterns:
-        paths.extend(glob(pattern, recursive=True))
-    return paths
+        for p in glob(pattern, recursive=True):
+            if os.path.isfile(p):
+                paths.append(p)
+    return sorted(set(paths))
 
 
 setup(
@@ -28,13 +32,13 @@ setup(
         ),
         (os.path.join("share", package_name), ["package.xml"]),
 
-        # ✅ alle Launch-Files (inkl. launch/common, falls vorhanden)
+        # ✅ alle Launch-Files (inkl. Unterordner)
         (
             os.path.join("share", package_name, "launch"),
             files("launch/*.py", "launch/**/*.py"),
         ),
 
-        # ✅ common-Verzeichnis (z.B. YAMLs, Configs, …)
+        # ✅ common-Verzeichnis (YAMLs, Configs, usw.) inkl. Unterordner
         (
             os.path.join("share", package_name, "common"),
             files("common/*", "common/**/*"),

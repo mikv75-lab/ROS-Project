@@ -17,7 +17,6 @@ from app.tabs.syringe_tab import SyringeTab
 from app.tabs.system.system_tab import SystemTab
 from app.model.recipe.recipe_store import RecipeStore
 
-# PLC kommt aus src/plc
 from plc.plc_client import PlcClientBase
 
 _LOG = logging.getLogger(__name__)
@@ -29,15 +28,13 @@ class MainWindow(QMainWindow):
         if ctx is None:
             raise RuntimeError("AppContext ist None – Startup fehlgeschlagen?")
         self.ctx = ctx
-        self.bridge = bridge
+        self.bridge = bridge   # darf None sein
         self.plc: PlcClientBase | None = plc
 
         self.setWindowTitle("SprayCoater UI")
 
-        # zentraler RecipeStore
         self.store = RecipeStore.from_ctx(self.ctx)
 
-        # persistenter PyVista-Interactor (Preview), im MainWindow gehostet
         self.previewPlot = QtInteractor(self)
         self.previewPlot.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 
@@ -56,15 +53,15 @@ class MainWindow(QMainWindow):
         )
         tabs.addTab(self.recipeTab, "Recipe")
 
-        # 3) Service – Robot (alter ServiceTab-Inhalt)
+        # 3) Robot
         self.serviceRobotTab = ServiceRobotTab(
             ctx=self.ctx,
             store=self.store,
-            bridge=self.bridge,
+            bridge=self.bridge,   # kann None sein -> Tab handled das
         )
         tabs.addTab(self.serviceRobotTab, "Robot")
 
-        # 4) Service – SPS-Signale
+        # 4) Signale
         self.serviceSignalsTab = ServiceSignalsTab(
             ctx=self.ctx,
             store=self.store,
@@ -73,7 +70,7 @@ class MainWindow(QMainWindow):
         )
         tabs.addTab(self.serviceSignalsTab, "Signale")
 
-        # 5) Service – Syringe / Dispenser
+        # 5) Syringe
         self.syringeTab = SyringeTab(
             ctx=self.ctx,
             store=self.store,
@@ -91,9 +88,6 @@ class MainWindow(QMainWindow):
         self._centered_once = False
         QTimer.singleShot(0, self.center_on_primary)
 
-    # ------------------------------------------------------------------
-    # Preview-Host einhängen (vom RecipeTab aufgerufen)
-    # ------------------------------------------------------------------
     def attach_preview_widget(self, host_widget):
         try:
             ly = host_widget.layout()
@@ -122,9 +116,6 @@ class MainWindow(QMainWindow):
         except Exception:
             _LOG.exception("Attach preview widget failed")
 
-    # ------------------------------------------------------------------
-    # Window-Handling
-    # ------------------------------------------------------------------
     def showEvent(self, event):
         super().showEvent(event)
         if not self._centered_once:
@@ -144,21 +135,18 @@ class MainWindow(QMainWindow):
             _LOG.exception("center_on_primary failed")
 
     def closeEvent(self, event):
-        # ROS-Bridge sauber runterfahren
         try:
             if self.bridge and getattr(self.bridge, "is_connected", False):
                 self.bridge.shutdown()
         except Exception:
             pass
 
-        # PLC sauber trennen
         try:
             if self.plc is not None and self.plc.is_connected:
                 self.plc.disconnect()
         except Exception:
             pass
 
-        # Bringup ggf. stoppen
         try:
             from ros.ros_launcher import BRINGUP_RUNNING, shutdown_bringup
             if BRINGUP_RUNNING():

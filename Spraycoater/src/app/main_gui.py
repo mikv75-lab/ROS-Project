@@ -10,10 +10,7 @@ os.environ.setdefault("QT_X11_NO_MITSHM", "1")
 os.environ["MPLBACKEND"] = "Agg"
 
 # OpenGL:
-# - Software-Rendering erzwingen (kein GLX/ANGLE-Stress mit Xming)
 os.environ["QT_OPENGL"] = "software"
-
-# Klassisches X11 im Container
 os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
 HERE         = os.path.abspath(os.path.dirname(__file__))
@@ -29,7 +26,6 @@ LOG_DIR = os.path.join(PROJECT_ROOT, "data", "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 CRASH_PATH = os.path.join(LOG_DIR, "crash.dump")
 
-# Vorhandenen Crashdump (vom letzten Lauf) einmal ausgeben, dann löschen
 try:
     if os.path.exists(CRASH_PATH):
         try:
@@ -46,7 +42,6 @@ try:
 except Exception:
     pass
 
-# Neuen Crashdump-Filehandler anlegen
 try:
     _CRASH_FH = open(CRASH_PATH, "w", buffering=1, encoding="utf-8")
     faulthandler.enable(file=_CRASH_FH, all_threads=True)
@@ -60,7 +55,6 @@ except Exception:
 
 
 def _excepthook(exc_type, exc, tb):
-    # 1) Immer direkt in die Konsole (STDERR) drucken
     try:
         print("\n=== UNCAUGHT EXCEPTION ===", file=sys.stderr)
         traceback.print_exception(exc_type, exc, tb, file=sys.stderr)
@@ -68,13 +62,11 @@ def _excepthook(exc_type, exc, tb):
     except Exception:
         pass
 
-    # 2) Zusätzlich über logging-Subsystem
     try:
         logging.critical("UNCAUGHT EXCEPTION", exc_info=(exc_type, exc, tb))
     except Exception:
         pass
 
-    # 3) Und in crash.dump schreiben
     try:
         if _CRASH_FH:
             traceback.print_exception(exc_type, exc, tb, file=_CRASH_FH)
@@ -112,13 +104,11 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QApplication, QSplashScreen, QMessageBox
 
-# Qt runtime dir
 if "XDG_RUNTIME_DIR" not in os.environ:
     tmp_run = f"/tmp/runtime-{os.getuid()}"
     os.makedirs(tmp_run, exist_ok=True)
     os.environ["XDG_RUNTIME_DIR"] = tmp_run
 
-# FastDDS SHM off
 os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
 
 from vtkmodules.vtkCommonCore import vtkFileOutputWindow, vtkOutputWindow
@@ -132,7 +122,7 @@ logging.getLogger(__name__).info("VTK log -> %s", vtk_log)
 
 # ==== App-Imports ====
 from app.startup_fsm import StartupMachine
-from app.main_window import MainWindow   # MainWindow nutzt Splitter & PyVista nur im RecipeTab
+from app.main_window import MainWindow
 
 
 def resource_path(*parts: str) -> str:
@@ -168,29 +158,21 @@ def _nonblocking_logging_shutdown():
 
 
 class ExceptionApp(QApplication):
-    """
-    QApplication-Subklasse, damit Exceptions in Qt-Events
-    (Slots, Timer, QThreads, Signals) NICHT still verschluckt werden,
-    sondern über _excepthook in Konsole + crash.dump landen.
-    """
     def notify(self, receiver, event):
         try:
             return super().notify(receiver, event)
         except Exception:
             _excepthook(*sys.exc_info())
-            # False zurückgeben, damit Qt das Event als "nicht handled" sieht
             return False
 
 
 def main():
-    # ExceptionApp statt "normaler" QApplication verwenden
     app = ExceptionApp(sys.argv)
     app.aboutToQuit.connect(lambda: QTimer.singleShot(0, _nonblocking_logging_shutdown))
 
     splash = _make_splash()
     app.processEvents()
 
-    # NEU: StartupMachine ohne logging_yaml_path
     fsm = StartupMachine(
         startup_yaml_path=_startup_path_strict(),
         abort_on_error=False,
@@ -201,13 +183,19 @@ def main():
     fsm.warning.connect(lambda w: splash_msg(f"⚠ {w}"))
     fsm.error.connect(lambda e: splash_msg(f"✖ {e}"))
 
-    # ready liefert jetzt (ctx, bridge_shadow, bridge_live, plc)
+    # ready liefert (ctx, bridge_shadow, bridge_live, plc)
     def _on_ready(ctx, bridge_shadow, bridge_live, plc):
         if ctx is None:
             QMessageBox.critical(None, "Startup fehlgeschlagen", "Kein gültiger AppContext. Siehe Log.")
             return
-        # fürs erste kannst du z.B. nur shadow in die MainWindow geben
+
+        # Shadow bevorzugt (UI default), dann Live, sonst None (UI läuft trotzdem)
         bridge = bridge_shadow or bridge_live
+
+        if bridge is None:
+            # Kein Crash: UI startet, Robot-Tab zeigt dann "ROS disabled / not connected"
+            splash_msg("⚠ Keine ROS-Bridge verfügbar (shadow/live beide fehlgeschlagen).")
+
         win = MainWindow(ctx=ctx, bridge=bridge, plc=plc)
         splash.finish(win)
         win.show()

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # File: tabs/service/servo_widgets.py
 from __future__ import annotations
+
 from typing import Optional, List, Tuple, Dict, Any
 import math
 
@@ -19,11 +20,11 @@ class JointJogWidget(QWidget):
     paramsChanged = QtCore.pyqtSignal(dict)
     jointJogRequested = QtCore.pyqtSignal(str, float, float)
 
-    def __init__(self, ctx, bridge=None, parent: Optional[QWidget] = None):
+    def __init__(self, ctx, bridge, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
         self.content = ctx.content
-        self.bridge = bridge
+        self.bridge = bridge  # UIBridge (connected)
 
         self._joint_names: List[str] = []
         self._joint_lims_deg: List[Tuple[float, float]] = []
@@ -31,7 +32,7 @@ class JointJogWidget(QWidget):
 
         self._build_ui()
         self._wire_signals()
-        self._try_bind_to_bridge()
+        self._bind_to_servo_bridge()
 
         # Default parameters
         self.set_params({"joint_step_deg": 2.0, "joint_speed_pct": 40.0})
@@ -82,7 +83,7 @@ class JointJogWidget(QWidget):
         self.grid.addWidget(self._bold("Value (°)"), 0, 4)
 
         root.addLayout(self.grid)
-        root.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        root.addItem(QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
     def _bold(self, txt: str) -> QLabel:
         l = QLabel(txt, self)
@@ -94,23 +95,16 @@ class JointJogWidget(QWidget):
         self.spinStepDeg.valueChanged.connect(lambda _: self._emit_params())
         self.spinSpeedPct.valueChanged.connect(lambda _: self._emit_params())
 
-    def _try_bind_to_bridge(self):
+    def _bind_to_servo_bridge(self) -> None:
         """
-        WICHTIG: Nur an ServoBridge binden (bridge._servo), nie an _motion.
+        Hard contract:
+          - bridge ist UIBridge
+          - bridge.ensure_connected() wurde vorher gemacht
+          - bridge.servo_bridge.signals existiert
         """
-        if not self.bridge:
-            return
-
-        servo = getattr(self.bridge, "_servo", None)
-        if not servo or not getattr(servo, "signals", None):
-            return
-
-        target = servo.signals
-
-        if hasattr(target, "paramsChanged"):
-            self.paramsChanged.connect(target.paramsChanged.emit)
-        if hasattr(target, "jointJogRequested"):
-            self.jointJogRequested.connect(target.jointJogRequested.emit)
+        target = self.bridge.servo_bridge.signals
+        self.paramsChanged.connect(target.paramsChanged.emit)
+        self.jointJogRequested.connect(target.jointJogRequested.emit)
 
     # ---------------- Public API -----------------
     def set_params(self, cfg: Dict[str, Any]):
@@ -203,7 +197,7 @@ class JointJogWidget(QWidget):
         if not msg:
             return
         names = getattr(msg, "name", None)
-        pos   = getattr(msg, "position", None)
+        pos = getattr(msg, "position", None)
         if not names or not pos:
             return
 
@@ -226,7 +220,7 @@ class JointJogWidget(QWidget):
 
     def _on_slider_changed(self, idx):
         _, sld, _, lbl = self._rows[idx]
-        lbl.setText(f"{sld.value()/10.0:.2f}")
+        lbl.setText(f"{sld.value() / 10.0:.2f}")
 
     def _apply_vertical_max(self):
         for w in [self] + self.findChildren(QWidget):
@@ -237,22 +231,22 @@ class JointJogWidget(QWidget):
 
 
 # =============================================================================
-# CartesianJogWidget – sendet frame_ui als "wrf"/"trf" (für UI-ServoBridge)
+# CartesianJogWidget – sendet frame_ui als "wrf"/"trf"
 # =============================================================================
 class CartesianJogWidget(QWidget):
     frameChanged = QtCore.pyqtSignal(str)                  # "wrf"/"trf"
     paramsChanged = QtCore.pyqtSignal(dict)
     cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)  # axis, delta, speed, frame_ui
 
-    def __init__(self, ctx, bridge=None, parent: Optional[QWidget] = None):
+    def __init__(self, ctx, bridge, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
         self.content = ctx.content
-        self.bridge = bridge
+        self.bridge = bridge  # UIBridge (connected)
 
         self._build_ui()
         self._wire_signals()
-        self._try_bind_to_bridge()
+        self._bind_to_servo_bridge()
 
         # Default params
         self.set_params({
@@ -343,7 +337,7 @@ class CartesianJogWidget(QWidget):
             b.setAutoRepeatDelay(300)
             b.setAutoRepeatInterval(80)
 
-        root.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        root.addItem(QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
     def _bold(self, txt):
         lbl = QLabel(txt, self)
@@ -375,25 +369,17 @@ class CartesianJogWidget(QWidget):
         self.btnRzm.clicked.connect(lambda: self._emit_rot("rz", -self.spinAngStep.value()))
         self.btnRzp.clicked.connect(lambda: self._emit_rot("rz",  self.spinAngStep.value()))
 
-    def _try_bind_to_bridge(self):
+    def _bind_to_servo_bridge(self) -> None:
         """
-        WICHTIG: Nur an ServoBridge binden (bridge._servo), nie an _motion.
+        Hard contract:
+          - bridge ist UIBridge
+          - bridge.ensure_connected() wurde vorher gemacht
+          - bridge.servo_bridge.signals existiert
         """
-        if not self.bridge:
-            return
-
-        servo = getattr(self.bridge, "_servo", None)
-        if not servo or not getattr(servo, "signals", None):
-            return
-
-        target = servo.signals
-
-        if hasattr(target, "frameChanged"):
-            self.frameChanged.connect(target.frameChanged.emit)
-        if hasattr(target, "paramsChanged"):
-            self.paramsChanged.connect(target.paramsChanged.emit)
-        if hasattr(target, "cartesianJogRequested"):
-            self.cartesianJogRequested.connect(target.cartesianJogRequested.emit)
+        target = self.bridge.servo_bridge.signals
+        self.frameChanged.connect(target.frameChanged.emit)
+        self.paramsChanged.connect(target.paramsChanged.emit)
+        self.cartesianJogRequested.connect(target.cartesianJogRequested.emit)
 
     # ---------------- Public API ----------------
     def set_params(self, cfg):
@@ -422,7 +408,6 @@ class CartesianJogWidget(QWidget):
             self.rbWRF.setChecked(True)
 
     def get_frame(self) -> str:
-        # genau das erwartet deine UI-ServoBridge
         return "trf" if self.rbTRF.isChecked() else "wrf"
 
     # ---------------- intern ----------------
@@ -434,18 +419,18 @@ class CartesianJogWidget(QWidget):
         self._emit_params()
 
     def _emit_cart(self, axis: str, delta_mm: float):
-        frame_ui = self.get_frame()  # "wrf"/"trf"
+        frame_ui = self.get_frame()
         speed = float(self.spinSpeed.value())
         self.cartesianJogRequested.emit(axis, float(delta_mm), speed, frame_ui)
 
     def _emit_rot(self, axis: str, delta_deg: float):
-        frame_ui = self.get_frame()  # "wrf"/"trf"
+        frame_ui = self.get_frame()
         speed = float(self.spinSpeed.value())
         self.cartesianJogRequested.emit(axis, float(delta_deg), speed, frame_ui)
 
     def _apply_vertical_max(self):
         for w in [self] + self.findChildren(QWidget):
             sp = w.sizePolicy()
-            sp.setVerticalPolicy(QSizePolicy.Maximum)
-            sp.setHorizontalPolicy(QSizePolicy.Expanding)
+            sp.setVerticalPolicy(QSizePolicy.Policy.Maximum)
+            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
             w.setSizePolicy(sp)

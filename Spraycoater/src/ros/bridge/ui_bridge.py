@@ -27,11 +27,6 @@ _LOG = logging.getLogger("ros.ui_bridge")
 # ------------------------------ State: Scene ------------------------------
 
 class SceneState:
-    """
-    Leichter, signal-freier State-Container:
-      - hält die zuletzt bekannten Werte aus der SceneBridge
-      - thread-sicher per RLock
-    """
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._cage_list: List[str] = []
@@ -41,32 +36,30 @@ class SceneState:
         self._mount_current: str = ""
         self._substrate_current: str = ""
 
-    # ------- Setter (intern, nur UIBridge nutzt die) -------
     def _set_cage_list(self, items: List[str]) -> None:
         with self._lock:
-            self._cage_list = list(items or [])
+            self._cage_list = list(items)
 
     def _set_mount_list(self, items: List[str]) -> None:
         with self._lock:
-            self._mount_list = list(items or [])
+            self._mount_list = list(items)
 
     def _set_substrate_list(self, items: List[str]) -> None:
         with self._lock:
-            self._substrate_list = list(items or [])
+            self._substrate_list = list(items)
 
     def _set_cage_current(self, v: str) -> None:
         with self._lock:
-            self._cage_current = (v or "").strip()
+            self._cage_current = v.strip()
 
     def _set_mount_current(self, v: str) -> None:
         with self._lock:
-            self._mount_current = (v or "").strip()
+            self._mount_current = v.strip()
 
     def _set_substrate_current(self, v: str) -> None:
         with self._lock:
-            self._substrate_current = (v or "").strip()
+            self._substrate_current = v.strip()
 
-    # ------- Getter (öffentlich) -------
     def cage_list(self) -> List[str]:
         with self._lock:
             return list(self._cage_list)
@@ -95,17 +88,11 @@ class SceneState:
 # ------------------------------ State: Poses ------------------------------
 
 class PosesState:
-    """
-    Signal-freier State-Container für Poses:
-      - hält Home/Service (PoseStamped) exakt wie empfangen (oder None)
-      - thread-sicher per RLock
-    """
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._home: Optional[PoseStamped] = None
         self._service: Optional[PoseStamped] = None
 
-    # Setter
     def _set_home(self, msg: PoseStamped) -> None:
         with self._lock:
             self._home = msg
@@ -114,7 +101,6 @@ class PosesState:
         with self._lock:
             self._service = msg
 
-    # Getter
     def home(self) -> Optional[PoseStamped]:
         with self._lock:
             return self._home
@@ -127,28 +113,19 @@ class PosesState:
 # ------------------------------ State: SprayPath ------------------------------
 
 class SprayPathState:
-    """
-    Signal-freier State-Container für SprayPath:
-      - current_name (str)
-      - poses (PoseArray|None)  [Sollpfad]
-      - marker-Visualisierung passiert ausschließlich im RViz/Preview
-      - thread-sicher per RLock
-    """
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._current_name: str = ""
         self._poses: Optional[PoseArray] = None
 
-    # Setter
     def _set_current_name(self, name: str) -> None:
         with self._lock:
-            self._current_name = name or ""
+            self._current_name = name
 
     def _set_poses(self, pa: PoseArray) -> None:
         with self._lock:
             self._poses = pa
 
-    # Getter
     def current_name(self) -> str:
         with self._lock:
             return self._current_name
@@ -161,13 +138,6 @@ class SprayPathState:
 # ------------------------------ State: Robot ------------------------------
 
 class RobotState:
-    """
-    Signal-freier State-Container für Robot-Zustände:
-      - connection/mode/initialized/moving/servo_enabled/power/estop/errors
-      - tcp_pose (PoseStamped|None) im world-Frame (tool_mount in world)
-      - joints (JointState|None)
-      - alles thread-sicher per RLock
-    """
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._connection: bool = False
@@ -181,14 +151,13 @@ class RobotState:
         self._tcp_pose: Optional[PoseStamped] = None
         self._joints: Optional[JointState] = None
 
-    # Setter
     def _set_connection(self, v: bool) -> None:
         with self._lock:
             self._connection = bool(v)
 
     def _set_mode(self, v: str) -> None:
         with self._lock:
-            self._mode = (v or "").strip() or "DISCONNECTED"
+            self._mode = v.strip() or "DISCONNECTED"
 
     def _set_initialized(self, v: bool) -> None:
         with self._lock:
@@ -212,7 +181,7 @@ class RobotState:
 
     def _set_errors(self, v: str) -> None:
         with self._lock:
-            self._errors = (v or "").strip()
+            self._errors = v.strip()
 
     def _set_tcp_pose(self, msg: Optional[PoseStamped]) -> None:
         with self._lock:
@@ -222,7 +191,6 @@ class RobotState:
         with self._lock:
             self._joints = msg
 
-    # Getter
     def connection(self) -> bool:
         with self._lock:
             return self._connection
@@ -264,24 +232,14 @@ class RobotState:
             return self._joints
 
 
-# ------------------------------ State: Motion (Trajectory Cache) ------------------------------
+# ------------------------------ State: Motion ------------------------------
 
 class MotionState:
-    """
-    Signal-freier State-Container für Motion:
-      - planned (RobotTrajectoryMsg|None)
-      - executed (RobotTrajectoryMsg|None)
-      - thread-sicher per RLock
-
-    Dient als einfacher Cache, damit UI / ProcessTab bei Bedarf
-    auf die letzte geplante/ausgeführte Trajektorie zugreifen kann.
-    """
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._planned: Optional[RobotTrajectoryMsg] = None
         self._executed: Optional[RobotTrajectoryMsg] = None
 
-    # Setter
     def _set_planned(self, msg: RobotTrajectoryMsg) -> None:
         with self._lock:
             self._planned = msg
@@ -290,7 +248,6 @@ class MotionState:
         with self._lock:
             self._executed = msg
 
-    # Getter
     def planned(self) -> Optional[RobotTrajectoryMsg]:
         with self._lock:
             return self._planned
@@ -303,24 +260,9 @@ class MotionState:
 # ============================== UIBridge ==============================
 
 class UIBridge:
-    """
-    Dünne UI-Bridge:
-      - Start/Stop RosBridge
-      - Cacht Zustände in `scene`, `poses`, `spraypath`, `robot`, `motion` (signal-frei)
-      - Stellt Set-APIs bereit (UI -> ROS) via Bridge-Knoten
-      - hält zusätzlich ServoBridge in self._servo für den ServiceTab
-      - hält zusätzlich RobotBridge in self._robot für Service/Status-UI
-      - hält zusätzlich MoveItPyBridge in self._motion für Motion/Process-UI
-      - hält zusätzlich OmronBridge in self._omron für TCP-Client-Widget (optional)
-    """
-
-    def __init__(
-        self,
-        startup_yaml_path: Optional[str] = None,
-        namespace: str = "",
-    ):
-        self._startup_yaml = startup_yaml_path or os.environ.get("SC_STARTUP_YAML") or ""
-        self._namespace = (namespace or "").strip().strip("/")
+    def __init__(self, startup_yaml_path: Optional[str] = None, namespace: str = ""):
+        self._startup_yaml = startup_yaml_path or os.environ["SC_STARTUP_YAML"]
+        self._namespace = namespace.strip().strip("/")
 
         self._bridge: Optional[RosBridge] = None
 
@@ -331,216 +273,146 @@ class UIBridge:
         self.robot = RobotState()
         self.motion = MotionState()
 
-        # gehaltene Bridge-Referenzen
-        self._sb: Optional[SceneBridge] = None
-        self._pb: Optional[PosesBridge] = None
-        self._spb: Optional[SprayPathBridge] = None
-
-        self._sev: Optional[ServoBridge] = None
+        # konkrete Nodes (nach connect() immer gesetzt)
+        self._scene: Optional[SceneBridge] = None
+        self._poses: Optional[PosesBridge] = None
+        self._spray: Optional[SprayPathBridge] = None
         self._servo: Optional[ServoBridge] = None
-
-        self._rb: Optional[RobotBridge] = None
         self._robot: Optional[RobotBridge] = None
+        self._moveit: Optional[MoveItPyBridge] = None
 
-        # MoveItPy
-        self._mb: Optional[MoveItPyBridge] = None     # intern
-        self._motion: Optional[MoveItPyBridge] = None # öffentliches Attribut für Widgets
-
-        # Omron
-        self._ob: Optional[OmronBridge] = None
+        # optional
         self._omron: Optional[OmronBridge] = None
 
-    # ---------- Lifecycle ----------
+    # ---------- Public accessors (clean contract) ----------
 
     @property
     def namespace(self) -> str:
-        """Namespace dieser UI-Bridge (z. B. 'shadow' oder 'live')."""
         return self._namespace
 
     @property
     def is_connected(self) -> bool:
         return (
             self._bridge is not None
-            and self._sb is not None
-            and self._pb is not None
-            and self._spb is not None
-            and self._sev is not None
-            and self._rb is not None
-            and self._mb is not None
+            and self._scene is not None
+            and self._poses is not None
+            and self._spray is not None
+            and self._servo is not None
+            and self._robot is not None
+            and self._moveit is not None
         )
 
     @property
-    def node_name(self) -> str:
-        if self._bridge and self._bridge.primary_node:
-            try:
-                return self._bridge.primary_node.get_name()  # type: ignore[attr-defined]
-            except Exception:
-                pass
-        ns_suffix = f"_{self._namespace}" if self._namespace else ""
-        return f"ui_bridge{ns_suffix}"
+    def scene_bridge(self) -> SceneBridge:
+        assert self._scene is not None
+        return self._scene
+
+    @property
+    def poses_bridge(self) -> PosesBridge:
+        assert self._poses is not None
+        return self._poses
+
+    @property
+    def spray_path_bridge(self) -> SprayPathBridge:
+        assert self._spray is not None
+        return self._spray
+
+    @property
+    def servo_bridge(self) -> ServoBridge:
+        assert self._servo is not None
+        return self._servo
+
+    @property
+    def robot_bridge(self) -> RobotBridge:
+        assert self._robot is not None
+        return self._robot
+
+    @property
+    def moveitpy_bridge(self) -> MoveItPyBridge:
+        assert self._moveit is not None
+        return self._moveit
+
+    @property
+    def omron_bridge(self) -> Optional[OmronBridge]:
+        return self._omron
+
+    # ---------- Lifecycle ----------
 
     def ensure_connected(self) -> None:
-        """Idempotent verbinden."""
-        if self.is_connected:
-            return
-        self.connect()
+        if not self.is_connected:
+            self.connect()
 
     def connect(self) -> None:
-        if self._bridge is not None:
-            self._ensure_subnodes_and_wiring()
-            return
-
-        if not self._startup_yaml:
-            raise RuntimeError("SC_STARTUP_YAML nicht gesetzt/übergeben.")
-
-        self._bridge = RosBridge(
-            startup_yaml_path=self._startup_yaml,
-            namespace=self._namespace,
-        )
-        self._bridge.start()
-
-        self._ensure_subnodes_and_wiring()
-        self._try_reemit_cached()
-
-        _LOG.info(
-            "UIBridge connected (node=%s, namespace=%r) – scene/poses/spraypath/servo/robot/moveitpy/omron states ready",
-            self.node_name,
-            self._namespace,
-        )
-
-    def _ensure_subnodes_and_wiring(self) -> None:
         if self._bridge is None:
-            raise RuntimeError("RosBridge nicht aktiv.")
+            self._bridge = RosBridge(startup_yaml_path=self._startup_yaml, namespace=self._namespace)
+            self._bridge.start()
 
-        # Scene
-        if self._sb is None:
-            sb = self._bridge.get_node(SceneBridge)
-            if sb is None:
-                raise RuntimeError("SceneBridge nicht gefunden – wurde sie gestartet?")
-            self._sb = sb
-            self._wire_scene_into_state(sb)
+        # harte Contracts: existieren müssen sie, sonst Exception
+        self._scene = self._bridge.get_node(SceneBridge)
+        self._poses = self._bridge.get_node(PosesBridge)
+        self._spray = self._bridge.get_node(SprayPathBridge)
+        self._servo = self._bridge.get_node(ServoBridge)
+        self._robot = self._bridge.get_node(RobotBridge)
+        self._moveit = self._bridge.get_node(MoveItPyBridge)
 
-        # Poses
-        if self._pb is None:
-            pb = self._bridge.get_node(PosesBridge)
-            if pb is None:
-                raise RuntimeError("PosesBridge nicht gefunden – wurde sie gestartet?")
-            self._pb = pb
-            self._wire_poses_into_state(pb)
+        if self._scene is None: raise RuntimeError("SceneBridge nicht gefunden.")
+        if self._poses is None: raise RuntimeError("PosesBridge nicht gefunden.")
+        if self._spray is None: raise RuntimeError("SprayPathBridge nicht gefunden.")
+        if self._servo is None: raise RuntimeError("ServoBridge nicht gefunden.")
+        if self._robot is None: raise RuntimeError("RobotBridge nicht gefunden.")
+        if self._moveit is None: raise RuntimeError("MoveItPyBridge nicht gefunden.")
 
-        # SprayPath
-        if self._spb is None:
-            spb = self._bridge.get_node(SprayPathBridge)
-            if spb is None:
-                raise RuntimeError("SprayPathBridge nicht gefunden – wurde sie gestartet?")
-            self._spb = spb
-            self._wire_spraypath_into_state(spb)
+        self._wire_scene_into_state(self._scene)
+        self._wire_poses_into_state(self._poses)
+        self._wire_spraypath_into_state(self._spray)
+        self._wire_robot_into_state(self._robot)
+        self._wire_motion_into_state(self._moveit)
 
-        # Servo
-        if self._sev is None:
-            sev = self._bridge.get_node(ServoBridge)
-            if sev is None:
-                raise RuntimeError("ServoBridge nicht gefunden – wurde sie gestartet?")
-            self._sev = sev
-            self._servo = sev
+        # optional: Omron
+        self._omron = self._bridge.get_node(OmronBridge)
 
-        # Robot
-        if self._rb is None:
-            rb = self._bridge.get_node(RobotBridge)
-            if rb is None:
-                raise RuntimeError("RobotBridge nicht gefunden – wurde sie gestartet?")
-            self._rb = rb
-            self._wire_robot_into_state(rb)
-            self._robot = rb
+        # reemit_cached ist ein Contract: wenn du’s willst, implementier’s in allen Bridges konsistent
+        self._scene.signals.reemit_cached()
+        self._poses.signals.reemit_cached()
+        self._spray.signals.reemit_cached()
+        self._robot.signals.reemit_cached()
+        self._moveit.signals.reemit_cached()
+        if self._omron is not None:
+            self._omron.signals.reemit_cached()
 
-        # MoveItPy
-        if self._mb is None:
-            mb = self._bridge.get_node(MoveItPyBridge)
-            if mb is None:
-                raise RuntimeError("MoveItPyBridge nicht gefunden – wurde sie gestartet?")
-            self._mb = mb
-            self._motion = mb
-            self._wire_motion_into_state(mb)
-            _LOG.info("UIBridge: MoveItPyBridge verdrahtet (Signals + Trajectory-Cache).")
-
-        # Omron (optional)
-        if self._ob is None:
-            ob = self._bridge.get_node(OmronBridge)
-            if ob is None:
-                _LOG.warning("OmronBridge nicht gefunden – Omron-TCP-Widget bleibt passiv.")
-            else:
-                self._ob = ob
-                self._omron = ob
-                _LOG.info("UIBridge: OmronBridge verdrahtet (TCP-Client-Schnittstelle).")
-
-    def _try_reemit_cached(self) -> None:
-        for b in (self._sb, self._pb, self._spb, self._rb, self._mb, self._ob):
-            try:
-                if b is not None and hasattr(b, "signals") and hasattr(b.signals, "reemit_cached"):
-                    b.signals.reemit_cached()
-            except Exception:
-                pass
+        _LOG.info("UIBridge connected (namespace=%r)", self._namespace)
 
     def disconnect(self) -> None:
-        _LOG.info("UIBridge disconnect() [namespace=%r]", self._namespace)
-        self._sb = None
-        self._pb = None
-        self._spb = None
-        self._sev = None
-        self._servo = None
-        self._rb = None
-        self._robot = None
-        self._mb = None
-        self._motion = None
-        self._ob = None
-        self._omron = None
         if self._bridge is None:
             return
         try:
             self._bridge.stop()
         finally:
             self._bridge = None
+            self._scene = None
+            self._poses = None
+            self._spray = None
+            self._servo = None
+            self._robot = None
+            self._moveit = None
+            self._omron = None
 
     def shutdown(self) -> None:
         self.disconnect()
 
-    # ---------- Scene: Set-API (UI -> ROS) ----------
+    # ---------- Scene: Set-API ----------
     def set_cage(self, name: str) -> None:
-        if not self._sb:
-            _LOG.error("set_cage: SceneBridge nicht verfügbar.")
-            return
-        try:
-            self._sb.set_cage(name)
-        except Exception as e:
-            _LOG.error("set_cage failed: %s", e)
+        self.scene_bridge.set_cage(name)
 
     def set_mount(self, name: str) -> None:
-        if not self._sb:
-            _LOG.error("set_mount: SceneBridge nicht verfügbar.")
-            return
-        try:
-            self._sb.set_mount(name)
-        except Exception as e:
-            _LOG.error("set_mount failed: %s", e)
+        self.scene_bridge.set_mount(name)
 
     def set_substrate(self, name: str) -> None:
-        if not self._sb:
-            _LOG.error("set_substrate: SceneBridge nicht verfügbar.")
-            return
-        try:
-            self._sb.set_substrate(name)
-        except Exception as e:
-            _LOG.error("set_substrate failed: %s", e)
+        self.scene_bridge.set_substrate(name)
 
-    # ---------- Poses: Set-API (UI -> ROS) ----------
+    # ---------- Poses: Set-API ----------
     def set_pose_by_name(self, name: str) -> None:
-        if not self._pb:
-            _LOG.error("set_pose_by_name: PosesBridge nicht verfügbar.")
-            return
-        try:
-            self._pb.set_pose_by_name(name)
-        except Exception as e:
-            _LOG.error("set_pose_by_name failed: %s", e)
+        self.poses_bridge.set_pose_by_name(name)
 
     def set_home(self) -> None:
         self.set_pose_by_name("home")
@@ -548,137 +420,51 @@ class UIBridge:
     def set_service(self) -> None:
         self.set_pose_by_name("service")
 
-    # ---------- SprayPath: Set-API (UI -> ROS) ----------
+    # ---------- SprayPath: Set-API ----------
     def set_spraypath(self, marker_array: MarkerArray) -> None:
-        if not self._spb:
-            _LOG.error("set_spraypath: SprayPathBridge nicht verfügbar.")
-            return
-        try:
-            self._spb.publish_set(marker_array)
-        except Exception as e:
-            _LOG.error("set_spraypath failed: %s", e)
+        self.spray_path_bridge.publish_set(marker_array)
 
     def set_executed_path(self, pose_array: PoseArray) -> None:
-        if not self._spb:
-            _LOG.error("set_executed_path: SprayPathBridge nicht verfügbar.")
-            return
-        try:
-            self._spb.publish_executed_path(pose_array)
-        except Exception as e:
-            _LOG.error("set_executed_path failed: %s", e)
+        self.spray_path_bridge.publish_executed_path(pose_array)
 
-    # ---------- Robot: Set-API (UI -> ROS) ----------
+    # ---------- Robot: Set-API ----------
     def robot_init(self) -> None:
-        if not self._rb:
-            _LOG.error("robot_init: RobotBridge nicht verfügbar.")
-            return
-        try:
-            self._rb.do_init()
-        except Exception as e:
-            _LOG.error("robot_init failed: %s", e)
+        self.robot_bridge.do_init()
 
     def robot_stop(self) -> None:
-        if not self._rb:
-            _LOG.error("robot_stop: RobotBridge nicht verfügbar.")
-            return
-        try:
-            self._rb.do_stop()
-        except Exception as e:
-            _LOG.error("robot_stop failed: %s", e)
+        self.robot_bridge.do_stop()
 
     def robot_clear_error(self) -> None:
-        if not self._rb:
-            _LOG.error("robot_clear_error: RobotBridge nicht verfügbar.")
-            return
-        try:
-            self._rb.do_clear_error()
-        except Exception as e:
-            _LOG.error("robot_clear_error failed: %s", e)
+        self.robot_bridge.do_clear_error()
 
     def robot_power_on(self) -> None:
-        if not self._rb:
-            _LOG.error("robot_power_on: RobotBridge nicht verfügbar.")
-            return
-        try:
-            self._rb.do_power_on()
-        except Exception as e:
-            _LOG.error("robot_power_on failed: %s", e)
+        self.robot_bridge.do_power_on()
 
     def robot_power_off(self) -> None:
-        if not self._rb:
-            _LOG.error("robot_power_off: RobotBridge nicht verfügbar.")
-            return
-        try:
-            self._rb.do_power_off()
-        except Exception as e:
-            _LOG.error("robot_power_off failed: %s", e)
+        self.robot_bridge.do_power_off()
 
     def robot_servo_on(self) -> None:
-        if not self._rb:
-            _LOG.error("robot_servo_on: RobotBridge nicht verfügbar.")
-            return
-        try:
-            self._rb.do_servo_on()
-        except Exception as e:
-            _LOG.error("robot_servo_on failed: %s", e)
+        self.robot_bridge.do_servo_on()
 
     def robot_servo_off(self) -> None:
-        if not self._rb:
-            _LOG.error("robot_servo_off: RobotBridge nicht verfügbar.")
-            return
-        try:
-            self._rb.do_servo_off()
-        except Exception as e:
-            _LOG.error("robot_servo_off failed: %s", e)
+        self.robot_bridge.do_servo_off()
 
-    # ---------- Servo: CommandType-API (UI -> ROS) ----------
+    # ---------- Servo: CommandType-API ----------
     def servo_set_command_type(self, mode: str) -> None:
-        if not self._sev:
-            _LOG.error("servo_set_command_type: ServoBridge nicht verfügbar.")
-            return
-        try:
-            self._sev.set_command_type(mode)
-        except Exception as e:
-            _LOG.error("servo_set_command_type failed: %s", e)
+        self.servo_bridge.set_command_type(mode)
 
-    # ---------- MoveItPy: High-Level-API (UI -> MoveItPyBridge) ----------
+    # ---------- MoveItPy: High-Level-API ----------
     def motion_move_home(self) -> None:
-        if not self._mb or not getattr(self._mb, "signals", None):
-            _LOG.error("motion_move_home: MoveItPyBridge nicht verfügbar.")
-            return
-        try:
-            self._mb.signals.moveToHomeRequested.emit()
-        except Exception as e:
-            _LOG.error("motion_move_home failed: %s", e)
+        self.moveitpy_bridge.signals.moveToHomeRequested.emit()
 
     def motion_move_service(self) -> None:
-        if not self._mb or not getattr(self._mb, "signals", None):
-            _LOG.error("motion_move_service: MoveItPyBridge nicht verfügbar.")
-            return
-        try:
-            self._mb.signals.moveToServiceRequested.emit()
-        except Exception as e:
-            _LOG.error("motion_move_service failed: %s", e)
+        self.moveitpy_bridge.signals.moveToServiceRequested.emit()
 
     def motion_move_to_pose(self, pose: PoseStamped) -> None:
-        if pose is None:
-            _LOG.error("motion_move_to_pose: pose is None.")
-            return
-        if not self._mb or not getattr(self._mb, "signals", None):
-            _LOG.error("motion_move_to_pose: MoveItPyBridge nicht verfügbar.")
-            return
-        try:
-            self._mb.signals.moveToPoseRequested.emit(pose)
-        except Exception as e:
-            _LOG.error("motion_move_to_pose failed: %s", e)
+        self.moveitpy_bridge.signals.moveToPoseRequested.emit(pose)
 
     def motion_last_result(self) -> str:
-        if not self._mb or not getattr(self._mb, "signals", None):
-            return ""
-        try:
-            return getattr(self._mb.signals, "last_result", "") or ""
-        except Exception:
-            return ""
+        return self.moveitpy_bridge.signals.last_result
 
     def motion_planned_trajectory(self) -> Optional[RobotTrajectoryMsg]:
         return self.motion.planned()
@@ -686,56 +472,46 @@ class UIBridge:
     def motion_executed_trajectory(self) -> Optional[RobotTrajectoryMsg]:
         return self.motion.executed()
 
-    # ---------- Intern: Wiring von Qt-Signalen -> States ----------
+    # ---------- Wiring: Qt-Signale -> States ----------
     def _wire_scene_into_state(self, sb: SceneBridge) -> None:
         sig = sb.signals
-        sig.cageListChanged.connect(lambda items: self.scene._set_cage_list(items))
-        sig.mountListChanged.connect(lambda items: self.scene._set_mount_list(items))
-        sig.substrateListChanged.connect(lambda items: self.scene._set_substrate_list(items))
-        sig.cageCurrentChanged.connect(lambda v: self.scene._set_cage_current(v))
-        sig.mountCurrentChanged.connect(lambda v: self.scene._set_mount_current(v))
-        sig.substrateCurrentChanged.connect(lambda v: self.scene._set_substrate_current(v))
+        sig.cageListChanged.connect(self.scene._set_cage_list)
+        sig.mountListChanged.connect(self.scene._set_mount_list)
+        sig.substrateListChanged.connect(self.scene._set_substrate_list)
+        sig.cageCurrentChanged.connect(self.scene._set_cage_current)
+        sig.mountCurrentChanged.connect(self.scene._set_mount_current)
+        sig.substrateCurrentChanged.connect(self.scene._set_substrate_current)
 
     def _wire_poses_into_state(self, pb: PosesBridge) -> None:
         sig = pb.signals
-        sig.homePoseChanged.connect(lambda msg: self.poses._set_home(msg))
-        sig.servicePoseChanged.connect(lambda msg: self.poses._set_service(msg))
+        sig.homePoseChanged.connect(self.poses._set_home)
+        sig.servicePoseChanged.connect(self.poses._set_service)
 
     def _wire_spraypath_into_state(self, spb: SprayPathBridge) -> None:
         sig = spb.signals
-        sig.currentNameChanged.connect(lambda name: self.spraypath._set_current_name(name))
-        sig.posesChanged.connect(lambda pa: self.spraypath._set_poses(pa))
+        sig.currentNameChanged.connect(self.spraypath._set_current_name)
+        sig.posesChanged.connect(self.spraypath._set_poses)
 
     def _wire_robot_into_state(self, rb: RobotBridge) -> None:
         sig = rb.signals
-        sig.connectionChanged.connect(lambda v: self.robot._set_connection(v))
-        sig.modeChanged.connect(lambda v: self.robot._set_mode(v))
-        sig.initializedChanged.connect(lambda v: self.robot._set_initialized(v))
-        sig.movingChanged.connect(lambda v: self.robot._set_moving(v))
-        sig.servoEnabledChanged.connect(lambda v: self.robot._set_servo_enabled(v))
-        sig.powerChanged.connect(lambda v: self.robot._set_power(v))
-        sig.estopChanged.connect(lambda v: self.robot._set_estop(v))
-        sig.errorsChanged.connect(lambda v: self.robot._set_errors(v))
-        sig.tcpPoseChanged.connect(lambda msg: self.robot._set_tcp_pose(msg))
-        sig.jointsChanged.connect(lambda msg: self.robot._set_joints(msg))
+        sig.connectionChanged.connect(self.robot._set_connection)
+        sig.modeChanged.connect(self.robot._set_mode)
+        sig.initializedChanged.connect(self.robot._set_initialized)
+        sig.movingChanged.connect(self.robot._set_moving)
+        sig.servoEnabledChanged.connect(self.robot._set_servo_enabled)
+        sig.powerChanged.connect(self.robot._set_power)
+        sig.estopChanged.connect(self.robot._set_estop)
+        sig.errorsChanged.connect(self.robot._set_errors)
+        sig.tcpPoseChanged.connect(self.robot._set_tcp_pose)
+        sig.jointsChanged.connect(self.robot._set_joints)
 
     def _wire_motion_into_state(self, mb: MoveItPyBridge) -> None:
         sig = mb.signals
-        sig.plannedTrajectoryChanged.connect(lambda msg: self.motion._set_planned(msg))
-        sig.executedTrajectoryChanged.connect(lambda msg: self.motion._set_executed(msg))
+        sig.plannedTrajectoryChanged.connect(self.motion._set_planned)
+        sig.executedTrajectoryChanged.connect(self.motion._set_executed)
 
 
 def get_ui_bridge(_ctx, namespace: str = "") -> UIBridge:
-    """
-    Factory für die Startup-FSM:
-      - Erstellt die Bridge
-      - Verbindet sofort (idempotent)
-
-    Namespace:
-      - ""        → kein zusätzlicher ROS-Namespace
-      - "shadow"  → /shadow/...
-      - "live"    → /live/...
-    """
     b = UIBridge(namespace=namespace)
     b.ensure_connected()
     return b

@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
+
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING
 
 from PyQt6 import QtCore
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QSizePolicy
+    QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QSizePolicy, QLabel
 )
 
 from app.model.recipe.recipe_store import RecipeStore
-
 from app.widgets.robot_command_box import RobotCommandButtonsBox
 from app.widgets.robot_status_box import RobotStatusInfoBox
 from app.widgets.omron_tcp_widget import OmronTcpWidget
@@ -20,30 +20,47 @@ from .tool_box import ToolGroupBox
 from .moveitpy_widget import MoveItPyWidget
 from .servo_widgets import JointJogWidget, CartesianJogWidget
 
+if TYPE_CHECKING:
+    from ros.bridge.ui_bridge import UIBridge
+
 _LOG = logging.getLogger("app.tabs.service.robot")
 
 
 class ServiceRobotTab(QWidget):
     """
     Service-Tab für Roboterfunktionen (Jogging, Posen, Scene, Omron-TCP).
+
+    Contract:
+      - bridge darf None sein -> disabled UI
+      - sonst: bridge ist UIBridge und connected (wir rufen ensure_connected() hier einmal)
     """
 
-    def __init__(self, *, ctx, store: RecipeStore, bridge, parent: Optional[QWidget] = None):
+    def __init__(self, *, ctx, store: RecipeStore, bridge: Optional["UIBridge"], parent: Optional[QWidget] = None):
         super().__init__(parent)
 
-        # AppContext + Store + ROS-Bridge
         self.ctx = ctx
         self.store = store
         self.bridge = bridge
 
-        # RobotBridge + Signals (nur Robotik, keine SPS)
-        self._rb = getattr(self.bridge, "_rb", None)
-        self._sig = getattr(self._rb, "signals", None) if self._rb else None
+        self._rb = None   # RobotBridge (konkret)
+        self._sig = None  # RobotBridge.signals
 
-        # Root-Layout
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
+
+        # Wenn keine Bridge da ist: minimaler Hinweis + return (kein Crash)
+        if self.bridge is None:
+            hint = QLabel("ROS-Bridge nicht verbunden (shadow/live fehlgeschlagen). Robot-Tab ist deaktiviert.", self)
+            hint.setStyleSheet("color: orange; font-weight: 600;")
+            root.addWidget(hint)
+            root.addStretch(1)
+            return
+
+        # harter Vertrag: connected + Nodes vorhanden
+        self.bridge.ensure_connected()
+        self._rb = self.bridge.robot_bridge
+        self._sig = self._rb.signals
 
         # ================================================================
         # [0] TOP ROW: COMMANDS + STATUS + OMRON TCP
@@ -52,13 +69,13 @@ class ServiceRobotTab(QWidget):
         topRow.setSpacing(8)
 
         self.commandBox = RobotCommandButtonsBox(self, title="Commands")
-        self.statusBox  = RobotStatusInfoBox(self, title="Robot Status")
+        self.statusBox = RobotStatusInfoBox(self, title="Robot Status")
         self.omronWidget = OmronTcpWidget(self.bridge, self)
 
         for w in (self.commandBox, self.statusBox, self.omronWidget):
             sp = w.sizePolicy()
-            sp.setHorizontalPolicy(QSizePolicy.Expanding)
-            sp.setVerticalPolicy(QSizePolicy.Preferred)
+            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+            sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
             w.setSizePolicy(sp)
 
         topRow.addWidget(self.commandBox, 1)
@@ -70,7 +87,7 @@ class ServiceRobotTab(QWidget):
         # [2] BOTTOM ROW: Poses | Tools | Scene
         # ================================================================
         self.posesBox = PosesGroupBox(self.bridge, self)
-        self.toolBox  = ToolGroupBox(self.bridge, self)
+        self.toolBox = ToolGroupBox(self.bridge, self)
         self.sceneBox = SceneGroupBox(self.bridge, self)
 
         rowBottom = QHBoxLayout()
@@ -86,23 +103,15 @@ class ServiceRobotTab(QWidget):
         self.tabs = QTabWidget(self)
         root.addWidget(self.tabs)
 
-        # (a) MoveItPy / Motion
-        self.moveitpyWidget = MoveItPyWidget(
-            store=self.store,
-            bridge=self.bridge,
-            parent=self.tabs
-        )
+        self.moveitpyWidget = MoveItPyWidget(store=self.store, bridge=self.bridge, parent=self.tabs)
         self.tabs.addTab(self.moveitpyWidget, "Motion")
 
-        # (b) Joint Jog
         self.jointJogWidget = JointJogWidget(self.ctx, self.bridge, self.tabs)
         self.tabs.addTab(self.jointJogWidget, "Joint Jog")
 
-        # (c) Cartesian Jog
         self.cartJogWidget = CartesianJogWidget(self.ctx, self.bridge, self.tabs)
         self.tabs.addTab(self.cartJogWidget, "Cartesian Jog")
 
-        # Size Policies vereinheitlichen
         for w in (
             self.moveitpyWidget,
             self.jointJogWidget,
@@ -112,17 +121,14 @@ class ServiceRobotTab(QWidget):
             self.sceneBox,
         ):
             sp = w.sizePolicy()
-            sp.setHorizontalPolicy(QSizePolicy.Expanding)
-            sp.setVerticalPolicy(QSizePolicy.Preferred)
+            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+            sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
             w.setSizePolicy(sp)
 
-        # ================================================================
-        # Bridge inbound/outbound wiring
-        # ================================================================
+        # wiring
         self._wire_bridge_inbound()
         self._wire_outbound()
 
-        # Tab-Change → Servo + Command-Modus setzen
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self._on_tab_changed(self.tabs.currentIndex())
 
@@ -136,12 +142,9 @@ class ServiceRobotTab(QWidget):
             return
         self.statusBox.set_joints(list(js.position or []))
 
-    def _wire_bridge_inbound(self):
-        if not self._sig:
-            return
-
+    def _wire_bridge_inbound(self) -> None:
         sig = self._sig
-        sb  = self.statusBox
+        sb = self.statusBox
 
         sig.connectionChanged.connect(sb.set_connection)
         sig.modeChanged.connect(sb.set_mode)
@@ -157,12 +160,12 @@ class ServiceRobotTab(QWidget):
     # ==================================================================
     # Bridge OUTBOUND: UI → ROS
     # ==================================================================
-    def _wire_outbound(self):
-        if not self._sig:
-            return
-
+    def _wire_outbound(self) -> None:
+        # du kannst hier entweder direkt die Signals nutzen (wie bisher)
+        # oder die UIBridge wrapper (robot_init(), robot_stop(), ...).
+        # Ich lasse es im exakt gleichen Stil wie du es hattest – nur korrekt referenziert.
         sig = self._sig
-        cb  = self.commandBox
+        cb = self.commandBox
 
         cb.initRequested.connect(sig.initRequested.emit)
         cb.stopRequested.connect(sig.stopRequested.emit)
@@ -178,11 +181,8 @@ class ServiceRobotTab(QWidget):
     def _on_tab_changed(self, idx: int) -> None:
         page = self.tabs.widget(idx)
 
-        try:
-            if self.bridge and hasattr(self.bridge, "robot_servo_on"):
-                self.bridge.robot_servo_on()
-        except Exception as e:
-            _LOG.error("robot_servo_on() failed: %s", e)
+        # Hard contract: bridge ist da und connected
+        self.bridge.robot_servo_on()
 
         if page is self.jointJogWidget:
             mode = "joint"
@@ -191,14 +191,10 @@ class ServiceRobotTab(QWidget):
         else:
             mode = "joint"
 
-        if hasattr(self.bridge, "servo_set_command_type"):
-            try:
-                self.bridge.servo_set_command_type(mode)
-            except Exception as e:
-                _LOG.error("servo_set_command_type(%s) failed: %s", mode, e)
+        self.bridge.servo_set_command_type(mode)
 
     # ==================================================================
-    # Forwarder-API (für andere Tabs/Modelle)
+    # Forwarder-API
     # ==================================================================
     def get_planner(self) -> str:
         return self.moveitpyWidget.get_planner()

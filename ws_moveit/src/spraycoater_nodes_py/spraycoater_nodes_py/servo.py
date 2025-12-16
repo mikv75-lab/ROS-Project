@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# spraycoater_nodes_py/servo.py
 from __future__ import annotations
-
-import math
-from typing import Optional
 
 import rclpy
 from rclpy.node import Node
@@ -21,20 +17,11 @@ NODE_KEY = "servo"
 
 class Servo(Node):
     """
-    ROS-Servo-Node (config_hub-only)
+    ROS-Servo-Node (läuft im ROS graph):
+      UI -> (servo/cartesian_mm, servo/joint_jog)
+      -> moveit_servo input: (servo/delta_twist_cmds, servo/delta_joint_cmds)
 
-    Input (UI -> Node):
-      - servo/delta_twist_cmds (TwistStamped)
-      - servo/delta_joint_cmds (JointJog)
-      - servo/set_mode         (String)   optional
-      - servo/set_frame        (String)   optional
-
-    Output (Node -> moveit_servo):
-      - servo/cartesian_mm (TwistStamped)
-      - servo/joint_jog    (JointJog)
-
-    Optional Service (namespaced):
-      - omron_servo_node/switch_command_type (ServoCommandType)
+    Zusätzlich: set_mode/set_frame + optional switch_command_type.
     """
 
     MODE_MAP = {
@@ -48,204 +35,115 @@ class Servo(Node):
         "P":         ServoCommandType.Request.POSE,
     }
 
-    AXIS_ORDER = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
-
     def __init__(self) -> None:
-        # ✅ NICHT "servo_bridge" nennen (das ist UI-seitig oft schon vergeben)
         super().__init__("servo")
 
-        # ---------------- Parameters ----------------
         self.declare_parameter("backend", "default")
-        self.backend: str = self.get_parameter("backend").value or "default"
-        backend_lower = str(self.backend).lower()
+        self.backend = self.get_parameter("backend").get_parameter_value().string_value or "default"
 
-        # "real" nur wenn explizit real
-        self.is_real_backend = "real" in backend_lower
-
-        # Service nur in SIM/default nutzen (du kannst das über backend steuern)
-        self.use_servo_service = (not self.is_real_backend) and (
-            ("sim" in backend_lower) or (backend_lower == "default") or ("omron_sim" in backend_lower)
+        # relativ, damit Namespace greift -> /shadow/omron_servo_node/switch_command_type
+        self.declare_parameter("servo_command_type_service", "omron_servo_node/switch_command_type")
+        self.servo_service_name = (
+            self.get_parameter("servo_command_type_service").get_parameter_value().string_value
+            or "omron_servo_node/switch_command_type"
         )
 
-        # Defaults (falls REAL mal aktiv wird)
-        self.declare_parameter("joint_speed_pct_default", 30.0)
-        self.declare_parameter("cart_speed_mmps_default", 50.0)
-        self.joint_speed_pct_default = float(self.get_parameter("joint_speed_pct_default").value)
-        self.cart_speed_mmps_default = float(self.get_parameter("cart_speed_mmps_default").value)
-
-        # Service-Name RELATIV lassen → Namespace greift automatisch
-        # Bei dir existiert: /shadow/omron_servo_node/switch_command_type
-        self.declare_parameter("servo_command_type_service", "omron_servo_node/switch_command_type")
-        self.servo_service_name = str(self.get_parameter("servo_command_type_service").value or "omron_servo_node/switch_command_type")
-
         self.declare_parameter("auto_mode", True)
-        self.auto_mode = bool(self.get_parameter("auto_mode").value)
+        self.auto_mode = bool(self.get_parameter("auto_mode").get_parameter_value().bool_value)
 
-        # ---------------- config_hub ----------------
         self.loader = topics()
         self.frames_cfg = frames()
         self._F = self.frames_cfg.resolve
+        self.current_frame = self._F(self.frames_cfg.get("tcp", "tcp"))
 
-        self.frame_world = self._F(self.frames_cfg.get("world", "world"))
-        # du hast in poses.py "tcp" als Key – bleib konsistent:
-        self.frame_tcp = self._F(self.frames_cfg.get("tcp", "tcp"))
-        self.current_frame = self.frame_world
+        # --- subscribe: UI topics ---
+        t_ui_twist = self.loader.subscribe_topic(NODE_KEY, "cartesian_mm")
+        q_ui_twist = self.loader.qos_by_id("subscribe", NODE_KEY, "cartesian_mm")
 
-        # Topics + QoS
-        topic_twist_in = self.loader.subscribe_topic(NODE_KEY, "twist_out")
-        qos_twist_in   = self.loader.qos_by_id("subscribe", NODE_KEY, "twist_out")
+        t_ui_joint = self.loader.subscribe_topic(NODE_KEY, "joint_jog")
+        q_ui_joint = self.loader.qos_by_id("subscribe", NODE_KEY, "joint_jog")
 
-        topic_joint_in = self.loader.subscribe_topic(NODE_KEY, "joint_out")
-        qos_joint_in   = self.loader.qos_by_id("subscribe", NODE_KEY, "joint_out")
+        t_set_mode = self.loader.subscribe_topic(NODE_KEY, "set_mode")
+        q_set_mode = self.loader.qos_by_id("subscribe", NODE_KEY, "set_mode")
 
-        topic_set_mode = self.loader.subscribe_topic(NODE_KEY, "set_mode")
-        qos_set_mode   = self.loader.qos_by_id("subscribe", NODE_KEY, "set_mode")
+        t_set_frame = self.loader.subscribe_topic(NODE_KEY, "set_frame")
+        q_set_frame = self.loader.qos_by_id("subscribe", NODE_KEY, "set_frame")
 
-        topic_set_frame = self.loader.subscribe_topic(NODE_KEY, "set_frame")
-        qos_set_frame   = self.loader.qos_by_id("subscribe", NODE_KEY, "set_frame")
+        # --- publish: moveit_servo inputs (delta_*) ---
+        t_twist_out = self.loader.publish_topic(NODE_KEY, "twist_out")
+        q_twist_out = self.loader.qos_by_id("publish", NODE_KEY, "twist_out")
 
-        topic_cartesian_cmd = self.loader.publish_topic(NODE_KEY, "cartesian_mm")
-        qos_cartesian_cmd   = self.loader.qos_by_id("publish", NODE_KEY, "cartesian_mm")
+        t_joint_out = self.loader.publish_topic(NODE_KEY, "joint_out")
+        q_joint_out = self.loader.qos_by_id("publish", NODE_KEY, "joint_out")
 
-        topic_joint_cmd = self.loader.publish_topic(NODE_KEY, "joint_jog")
-        qos_joint_cmd   = self.loader.qos_by_id("publish", NODE_KEY, "joint_jog")
+        self.pub_twist = self.create_publisher(TwistStamped, t_twist_out, q_twist_out)
+        self.pub_joint = self.create_publisher(JointJog, t_joint_out, q_joint_out)
 
-        topic_omron_cmd = self.loader.publish_topic("omron", "command")
-        qos_omron_cmd   = self.loader.qos_by_id("publish", "omron", "command")
+        self.create_subscription(TwistStamped, t_ui_twist, self._on_ui_twist, q_ui_twist)
+        self.create_subscription(JointJog, t_ui_joint, self._on_ui_joint, q_ui_joint)
+        self.create_subscription(String, t_set_mode, self._on_set_mode, q_set_mode)
+        self.create_subscription(String, t_set_frame, self._on_set_frame, q_set_frame)
 
-        # ---------------- Publishers ----------------
-        self.pub_cartesian = None
-        self.pub_joint = None
-        self.pub_omron_cmd = None
-
-        if not self.is_real_backend:
-            self.pub_cartesian = self.create_publisher(TwistStamped, topic_cartesian_cmd, qos_cartesian_cmd)
-            self.pub_joint = self.create_publisher(JointJog, topic_joint_cmd, qos_joint_cmd)
-        else:
-            self.pub_omron_cmd = self.create_publisher(String, topic_omron_cmd, qos_omron_cmd)
-
-        # ---------------- Subscribers ----------------
-        self.create_subscription(TwistStamped, topic_twist_in, self._on_twist_cmd, qos_twist_in)
-        self.create_subscription(JointJog, topic_joint_in, self._on_joint_cmd, qos_joint_in)
-        self.create_subscription(String, topic_set_mode, self._on_set_mode, qos_set_mode)
-        self.create_subscription(String, topic_set_frame, self._on_set_frame, qos_set_frame)
-
-        # ---------------- Service Client (SIM) ----------------
-        self.servo_client = None
-        if self.use_servo_service:
-            self.servo_client = self.create_client(ServoCommandType, self.servo_service_name)
-
-        self.current_mode: Optional[int] = None
-        self._desired_mode: Optional[int] = None
-        self._desired_label: str = ""
-        self._mode_switch_inflight: bool = False
-
-        if self.use_servo_service and self.auto_mode:
-            self._retry_timer = self.create_timer(0.5, self._retry_set_mode)
-        else:
-            self._retry_timer = None
-
-        # Einmal-Flags: sofort sehen ob Inputs überhaupt ankommen
-        self._seen_twist = False
-        self._seen_joint = False
+        self.servo_client = self.create_client(ServoCommandType, self.servo_service_name)
+        self.current_mode: int | None = None
+        self._desired_mode: int | None = None
+        self._inflight = False
 
         self.get_logger().info(
-            f"✅ Servo Node aktiv (backend='{self.backend}', ns='{self.get_namespace() or '/'}') | "
-            f"world='{self.frame_world}', tcp='{self.frame_tcp}', current_frame='{self.current_frame}' | "
-            f"in: twist='{topic_twist_in}', joint='{topic_joint_in}' | "
-            f"out(sim): cart='{topic_cartesian_cmd}', joint='{topic_joint_cmd}' | "
-            f"service(sim): '{self.servo_service_name}' (use={self.use_servo_service})"
+            f"✅ Servo aktiv (backend='{self.backend}', ns='{self.get_namespace() or '/'}') "
+            f"UI in: {t_ui_twist}, {t_ui_joint} -> moveit_servo in: {t_twist_out}, {t_joint_out} "
+            f"switch_service='{self.servo_service_name}'"
         )
 
-    # ------------------------------------------------------------
-    # SIM: Mode switching (non-blocking)
-    # ------------------------------------------------------------
-    def _ensure_mode(self, cmd_type: int, label: str) -> None:
-        if not self.use_servo_service or not self.auto_mode:
+    def _ensure_mode(self, cmd_type: int) -> None:
+        if not self.auto_mode:
             return
         if self.current_mode == cmd_type:
             return
         self._desired_mode = cmd_type
-        self._desired_label = label
-        self._retry_set_mode()
+        self._try_switch_mode()
 
-    def _retry_set_mode(self) -> None:
-        if not self.use_servo_service or self.servo_client is None:
-            return
-        if self._desired_mode is None:
-            return
-        if self.current_mode == self._desired_mode:
-            self._desired_mode = None
-            self._desired_label = ""
-            return
-        if self._mode_switch_inflight:
+    def _try_switch_mode(self) -> None:
+        if self._desired_mode is None or self._inflight:
             return
         if not self.servo_client.service_is_ready():
-            return  # still, no spam
-
+            return
         req = ServoCommandType.Request()
         req.command_type = int(self._desired_mode)
 
-        self._mode_switch_inflight = True
-        future = self.servo_client.call_async(req)
+        self._inflight = True
+        fut = self.servo_client.call_async(req)
 
-        def _done(fut):
-            self._mode_switch_inflight = False
+        def _done(_f):
+            self._inflight = False
             try:
-                resp = fut.result()
-            except Exception:
+                resp = _f.result()
+            except Exception as e:
+                self.get_logger().warning(f"switch_command_type exception: {e}")
                 return
             if resp and getattr(resp, "success", False):
                 self.current_mode = int(req.command_type)
                 self._desired_mode = None
-                self._desired_label = ""
+            else:
+                self.get_logger().warning(f"switch_command_type failed (type={req.command_type})")
 
-        future.add_done_callback(_done)
+        fut.add_done_callback(_done)
 
-    # ------------------------------------------------------------
-    # Callbacks
-    # ------------------------------------------------------------
-    def _on_twist_cmd(self, msg: TwistStamped) -> None:
-        if not self._seen_twist:
-            self._seen_twist = True
-            self.get_logger().info("📥 First Twist input received on servo/delta_twist_cmds")
-
-        if self.is_real_backend:
-            cmd = self._make_jogc_cmd_from_twist(msg)
-            if cmd and self.pub_omron_cmd:
-                self.pub_omron_cmd.publish(String(data=cmd))
-            return
-
-        if self.pub_cartesian is None:
-            return
-
-        self._ensure_mode(ServoCommandType.Request.TWIST, "TWIST")
+    def _on_ui_twist(self, msg: TwistStamped) -> None:
+        self._ensure_mode(ServoCommandType.Request.TWIST)
 
         out = TwistStamped()
-        out.twist = msg.twist
-        out.header.frame_id = self.current_frame
         out.header.stamp = self.get_clock().now().to_msg()
-        self.pub_cartesian.publish(out)
+        out.header.frame_id = msg.header.frame_id or self.current_frame
+        out.twist = msg.twist
+        self.pub_twist.publish(out)
 
-    def _on_joint_cmd(self, msg: JointJog) -> None:
-        if not self._seen_joint:
-            self._seen_joint = True
-            self.get_logger().info("📥 First Joint input received on servo/delta_joint_cmds")
-
-        if self.is_real_backend:
-            cmd = self._make_jogj_cmd_from_joint(msg)
-            if cmd and self.pub_omron_cmd:
-                self.pub_omron_cmd.publish(String(data=cmd))
-            return
-
-        if self.pub_joint is None:
-            return
-
-        self._ensure_mode(ServoCommandType.Request.JOINT_JOG, "JOINT_JOG")
+    def _on_ui_joint(self, msg: JointJog) -> None:
+        self._ensure_mode(ServoCommandType.Request.JOINT_JOG)
 
         out = JointJog()
-        out.header.frame_id = msg.header.frame_id or self.current_frame
         out.header.stamp = self.get_clock().now().to_msg()
+        out.header.frame_id = msg.header.frame_id or self.current_frame
         out.joint_names = list(msg.joint_names)
         out.velocities = list(msg.velocities)
         out.displacements = list(msg.displacements)
@@ -253,65 +151,18 @@ class Servo(Node):
         self.pub_joint.publish(out)
 
     def _on_set_mode(self, msg: String) -> None:
-        if not self.use_servo_service or self.servo_client is None:
-            return
         raw = (msg.data or "").strip().upper()
         if raw not in self.MODE_MAP:
+            self.get_logger().warning(f"Unbekannter Mode: {msg.data!r}")
             return
         self._desired_mode = int(self.MODE_MAP[raw])
-        self._desired_label = raw
-        self._retry_set_mode()
+        self._try_switch_mode()
 
     def _on_set_frame(self, msg: String) -> None:
         raw = (msg.data or "").strip().lower()
-        if raw == "tcp":
-            self.current_frame = self.frame_tcp
-        elif raw == "world":
-            self.current_frame = self.frame_world
-
-    # ------------------------------------------------------------
-    # REAL helpers (falls später)
-    # ------------------------------------------------------------
-    def _make_jogj_cmd_from_joint(self, msg: JointJog) -> Optional[str]:
-        if not msg.joint_names:
-            return None
-
-        jname = msg.joint_names[0].lower()
-        try:
-            axis = self.AXIS_ORDER.index(jname) + 1
-        except ValueError:
-            try:
-                axis = int(jname[-1])
-            except Exception:
-                return None
-
-        step_deg = msg.displacements[0] if msg.displacements else 0.0
-        if abs(step_deg) < 1e-6:
-            return None
-
-        speed_pct = msg.velocities[0] if msg.velocities else self.joint_speed_pct_default
-        return f"JOGJ {axis} {step_deg:.3f} {speed_pct:.1f}"
-
-    def _make_jogc_cmd_from_twist(self, msg: TwistStamped) -> Optional[str]:
-        dx = msg.twist.linear.x
-        dy = msg.twist.linear.y
-        dz = msg.twist.linear.z
-        drx = msg.twist.angular.x
-        dry = msg.twist.angular.y
-        drz = msg.twist.angular.z
-
-        if (
-            abs(dx) < 1e-6 and abs(dy) < 1e-6 and abs(dz) < 1e-6 and
-            abs(drx) < 1e-6 and abs(dry) < 1e-6 and abs(drz) < 1e-6
-        ):
-            return None
-
-        speed_mmps = self.cart_speed_mmps_default
-        return (
-            f"JOGC {speed_mmps:.1f} "
-            f"{dx:.3f} {dy:.3f} {dz:.3f} "
-            f"{drx:.3f} {dry:.3f} {drz:.3f}"
-        )
+        if raw in ("world", "tcp"):
+            self.current_frame = self._F(self.frames_cfg.get(raw, raw))
+            self.get_logger().info(f"Frame gesetzt: {raw} -> {self.current_frame}")
 
 
 def main(args=None):
