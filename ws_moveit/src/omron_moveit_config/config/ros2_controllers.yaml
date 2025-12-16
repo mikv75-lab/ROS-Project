@@ -10,7 +10,15 @@
         type: joint_trajectory_controller/JointTrajectoryController
   
   joint_state_broadcaster:
-    ros__parameters: {}
+    ros__parameters:
+      # ✅ QoS Override hinzufügen
+      qos_overrides:
+        /shadow/joint_states:
+          publisher:
+            durability: volatile
+            reliability: reliable
+            history: keep_last
+            depth: 10
   
   omron_arm_controller:
     ros__parameters:

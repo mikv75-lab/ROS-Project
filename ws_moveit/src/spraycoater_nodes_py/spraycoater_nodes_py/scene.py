@@ -15,7 +15,6 @@ from geometry_msgs.msg import Pose, TransformStamped, Point
 from tf2_ros import StaticTransformBroadcaster
 from shape_msgs.msg import Mesh, MeshTriangle
 from moveit_msgs.msg import CollisionObject
-from moveit_msgs.srv import GetPlanningScene
 
 from spraycoater_nodes_py.utils.utils import rpy_deg_to_quat
 from spraycoater_nodes_py.utils.config_hub import (
@@ -26,11 +25,9 @@ import trimesh
 
 MAX_SCENE_WAIT = 30.0
 
-# ✅ Republish, aber ohne Spam:
-# - nur CollisionObjects republishen
-# - TF_STATIC nicht republishen (latched)
-# - Period nicht zu klein wählen, sonst spammt MoveIt logmäßig
-REPUBLISH_PERIOD_S = 15.0
+# ✅ Republish deaktiviert - verhindert "Moved backwards in time" Warning
+# Wenn du Republish brauchst, setze z.B. auf 300.0 (5 Minuten)
+REPUBLISH_PERIOD_S = 0.0
 
 OID_ALIAS = {
     "cage": "cage",
@@ -99,12 +96,14 @@ def _rot_apply(R, v):
 
 class Scene(Node):
     """
-    Scene-Node:
+    Scene-Node (MoveItPy-only):
+
       - liest scene.yaml / robot.yaml aus config_hub
       - publisht Cage/Mount/Substrate Listen+Current via topics.yaml
       - publisht CollisionObjects via topics.yaml (collision_object)
-      - wartet auf MoveIt get_planning_scene (Service) und sendet dann die Szene
-      - republished CollisionObjects periodisch (für Late-Joiner), ohne TF-Spam
+      - wartet NICHT auf move_group/get_planning_scene
+      - wartet stattdessen auf Subscriber (MoveItPy) auf collision_object und sendet dann die Szene
+      - republished CollisionObjects periodisch (für Late-Joiner), wenn REPUBLISH_PERIOD_S > 0
     """
 
     GROUP = "scene"
@@ -224,7 +223,7 @@ class Scene(Node):
         self.get_logger().info(
             f"⏳ SceneNode aktiv (backend='{self.backend}', ns='{ns}') – "
             f"publisht CollisionObjects auf '{topic_co}' (QoS via config_hub), "
-            "warte auf MoveIt; Szene wird einmalig gesendet."
+            "warte auf Subscriber (MoveItPy) und sende dann die Szene einmalig."
         )
         self._start_scene_wait()
 
@@ -499,10 +498,12 @@ class Scene(Node):
         self._publish_lists_once()
         self._publish_current_once()
 
-        # ✅ Republish-Timer starten (nur CO, nicht TF)
+        # ✅ Republish-Timer starten (nur CO, nicht TF) - nur wenn REPUBLISH_PERIOD_S > 0
         if self._republish_timer is None and REPUBLISH_PERIOD_S > 0.0:
             self._republish_timer = self.create_timer(REPUBLISH_PERIOD_S, self._republish_collision_objects)
             self.get_logger().info(f"🔁 Republish aktiv: CollisionObjects alle {REPUBLISH_PERIOD_S:.1f}s")
+        elif REPUBLISH_PERIOD_S == 0.0:
+            self.get_logger().info("ℹ️  Republish deaktiviert (REPUBLISH_PERIOD_S = 0.0)")
 
     def _republish_collision_objects(self):
         """Republished CollisionObjects für Late-Joiner, ohne Log-Spam."""
@@ -514,42 +515,43 @@ class Scene(Node):
         for co in self._cached_cos.values():
             self.scene_pub.publish(co)
 
-        # optional: sehr selten loggen (z.B. alle 60s), damit man sieht, dass es läuft
-        #now = time.time()
-        #if now - self._last_republish_log > 60.0:
-        #    self._last_republish_log = now
-        #    self.get_logger().debug(f"🔁 Republished {len(self._cached_cos)} CollisionObjects")
+        # optional: sehr selten loggen (z.B. alle 60s)
+        # now = time.time()
+        # if now - self._last_republish_log > 60.0:
+        #     self._last_republish_log = now
+        #     self.get_logger().debug(f"🔁 Republished {len(self._cached_cos)} CollisionObjects")
 
     # ------------------------
-    # MoveIt readiness wait
+    # Readiness wait (MoveItPy-only)
     # ------------------------
     def _start_scene_wait(self):
         self.deadline = time.time() + MAX_SCENE_WAIT
-        self.wait_timer = self.create_timer(1.0, self._check_moveit_ready)
+        self.wait_timer = self.create_timer(0.5, self._check_ready_by_subscribers)
 
-    def _check_moveit_ready(self):
+    def _check_ready_by_subscribers(self):
         if self.final_scene_sent:
             self.wait_timer.cancel()
             return
 
-        if time.time() > self.deadline:
-            self.get_logger().warning("⚠️ Timeout – sende Szene trotzdem.")
-            self._publish_scene()
+        sub_count = self.scene_pub.get_subscription_count()
+        if sub_count > 0:
+            self.get_logger().info(f"✅ Subscriber auf collision_object erkannt (count={sub_count}) – sende Szene.")
             self.wait_timer.cancel()
+            self._publish_scene()
             return
 
-        if not hasattr(self, "ps_client"):
-            # relativ → Namespace funktioniert (z.B. /shadow/get_planning_scene)
-            self.ps_client = self.create_client(GetPlanningScene, "get_planning_scene")
-
-        if not self.ps_client.wait_for_service(timeout_sec=0.5):
-            ns = self.get_namespace() or "/"
-            self.get_logger().info(f"⏳ Warte auf MoveIt PlanningScene Service ('{ns}/get_planning_scene')...")
+        if time.time() > self.deadline:
+            self.get_logger().warning(
+                "⚠️ Timeout – kein Subscriber erkannt, sende Szene trotzdem (Republish fängt Late-Joiner)."
+            )
+            self.wait_timer.cancel()
+            self._publish_scene()
             return
 
-        self.get_logger().info("✅ MoveIt PlanningScene Service verfügbar – sende Szene.")
-        self.wait_timer.cancel()
-        self._publish_scene()
+        # Debug/Info (nicht zu spammy: 0.5s ist ok, aber du kannst hier auch drosseln)
+        ns = self.get_namespace() or "/"
+        topic_co = self.loader.publish_topic(self.GROUP, "collision_object")
+        self.get_logger().info(f"⏳ Warte auf Subscriber (MoveItPy) auf '{ns}/{topic_co}'... (subs={sub_count})")
 
 
 def main():

@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import math
 import time
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List
 
 import rclpy
 from rclpy.node import Node
@@ -73,8 +73,6 @@ class MoveItPyNode(Node):
 
         if not self.has_parameter("use_sim_time"):
             self.declare_parameter("use_sim_time", False)
-        # (optional lesen, aber nicht nötig)
-        # self.use_sim_time = bool(self.get_parameter("use_sim_time").value)
 
         if not self.has_parameter("max_tcp_speed_mm_s"):
             self.declare_parameter("max_tcp_speed_mm_s", 300.0)
@@ -178,18 +176,22 @@ class MoveItPyNode(Node):
             self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "set_planner_cfg"),
         )
 
-        # ---------------- MoveItPy init (wie dein "oberer" Node) ----------------
+        # ---------------- MoveItPy init ----------------
         name_space = "" if ns == "/" else ns.strip("/")
         self.log.info(f"[moveitpy] init: node_ns='{ns}', name_space='{name_space}'")
 
-        # Wichtig: gleicher Node-Name, damit MoveItPy die Parameters dieses Nodes sieht
-        # (robot_description, robot_description_semantic, planning_pipelines, ...)
+        # provide_planning_service=True ist ok (Plan-Service),
+        # aber RViz will i.d.R. auch get_planning_scene.
         self.moveit = MoveItPy(
             node_name=self.get_name(),   # == "moveit_py"
             name_space=name_space,
             provide_planning_service=True,
         )
 
+        # ✅ Versuch: PlanningSceneMonitor soll get_planning_scene bereitstellen
+        self._try_provide_get_planning_scene_service()
+
+        # kleine Pause für Initialisierung
         time.sleep(0.2)
 
         self.arm = self.moveit.get_planning_component(GROUP_NAME)
@@ -208,6 +210,73 @@ class MoveItPyNode(Node):
         self.log.info(f"MoveItPyMotionNode online (backend='{self.backend}').")
 
     # ----------------------------------------------------------
+    # ✅ Provide get_planning_scene (PlanningSceneMonitor)
+    # ----------------------------------------------------------
+    def _try_provide_get_planning_scene_service(self) -> None:
+        """
+        RViz' PlanningSceneDisplay / MotionPlanning ruft beim Start oft den Service 'get_planning_scene' auf.
+        Normalerweise liefert move_group diesen Service.
+
+        Hier versuchen wir, den PlanningSceneMonitor aus MoveItPy/MoveItCpp zu erreichen
+        und providePlanningSceneService() aufzurufen.
+
+        Hinweis: Python-Bindings variieren je nach MoveIt2-Rolling Stand, deshalb mehrere Pfade.
+        """
+        ns = self.get_namespace() or "/"
+        srv_name = f"{ns.rstrip('/')}/get_planning_scene" if ns != "/" else "/get_planning_scene"
+
+        try:
+            # Pfad A: MoveItPy bietet evtl. direkt Zugriff
+            psm = None
+
+            # 1) get_planning_scene_monitor()
+            if hasattr(self.moveit, "get_planning_scene_monitor"):
+                psm = self.moveit.get_planning_scene_monitor()
+
+            # 2) moveit_cpp / get_moveit_cpp()
+            if psm is None and hasattr(self.moveit, "get_moveit_cpp"):
+                mc = self.moveit.get_moveit_cpp()
+                if hasattr(mc, "get_planning_scene_monitor"):
+                    psm = mc.get_planning_scene_monitor()
+
+            # 3) interne Attribute (Rolling-abhängig)
+            if psm is None:
+                for attr in ("moveit_cpp", "_moveit_cpp", "moveit_cpp_ptr", "_moveit_cpp_ptr"):
+                    if hasattr(self.moveit, attr):
+                        mc = getattr(self.moveit, attr)
+                        if hasattr(mc, "get_planning_scene_monitor"):
+                            psm = mc.get_planning_scene_monitor()
+                            break
+
+            if psm is None:
+                self.log.warning(
+                    f"[psm] Konnte PlanningSceneMonitor nicht erreichen – "
+                    f"RViz get_planning_scene ({srv_name}) wird ohne move_group evtl. nicht funktionieren."
+                )
+                return
+
+            # providePlanningSceneService() kann unterschiedlich heißen
+            if hasattr(psm, "providePlanningSceneService"):
+                psm.providePlanningSceneService()
+                self.log.info(f"[psm] providePlanningSceneService() aktiviert (Service: {srv_name})")
+                return
+
+            if hasattr(psm, "provide_planning_scene_service"):
+                psm.provide_planning_scene_service()
+                self.log.info(f"[psm] provide_planning_scene_service() aktiviert (Service: {srv_name})")
+                return
+
+            self.log.warning(
+                f"[psm] PlanningSceneMonitor gefunden, aber keine providePlanningSceneService()-Methode verfügbar – "
+                f"RViz get_planning_scene ({srv_name}) könnte fehlen."
+            )
+
+        except Exception as e:
+            self.log.warning(
+                f"[psm] Exception beim Aktivieren von get_planning_scene ({srv_name}): {e!r}"
+            )
+
+    # ----------------------------------------------------------
     # TF Helper
     # ----------------------------------------------------------
     def _lookup_tf(self, target: str, source: str):
@@ -216,21 +285,10 @@ class MoveItPyNode(Node):
         return self.tf_buffer.lookup_transform(target, source, RclpyTime())
 
     def _ns_prefix(self) -> str:
-        """
-        ROS Namespace ohne Slashes:
-          "/"       -> ""
-          "/shadow" -> "shadow"
-          "/live"   -> "live"
-        """
         ns = (self.get_namespace() or "/").strip().strip("/")
         return ns
 
     def _resolve_named_candidates(self, name: str) -> List[str]:
-        """
-        Kandidaten für TF-Frame-Name:
-          - "home"
-          - "shadow/home" (falls Namespace vorhanden)
-        """
         name = (name or "").strip().strip("/")
         if not name:
             return []
@@ -241,10 +299,6 @@ class MoveItPyNode(Node):
         return cand
 
     def _lookup_tf_named(self, name: str):
-        """
-        Try TF world<-name, dann fallback auf world<-<ns>/name.
-        Gibt (transform, resolved_name) zurück.
-        """
         last_err: Optional[Exception] = None
         for cand in self._resolve_named_candidates(name):
             try:
@@ -397,8 +451,6 @@ class MoveItPyNode(Node):
 
             self.pub_planned.publish(msg_traj)
             self._publish_preview(goal)
-
-            # Wichtig: weiterhin 'name' (home/service) emittieren, damit die Bridge-Autologik passt.
             self._emit(f"PLANNED:OK named='{name}'")
 
         except Exception as e:
@@ -486,7 +538,6 @@ class MoveItPyNode(Node):
         m.action = Marker.ADD
         m.pose = goal.pose
 
-        # Safety: gültige Quaternion erzwingen (falls mal 0,0,0,0)
         if (
             m.pose.orientation.x == 0.0 and
             m.pose.orientation.y == 0.0 and

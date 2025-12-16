@@ -8,8 +8,9 @@ Panels:
         - /TF1/Frames1
         - /PlanningScene1
         - /PlanningScene1/Scene Geometry1
+        - /PlanningScene1/Scene Robot1
       Splitter Ratio: 0.5
-    Tree Height: 946
+    Tree Height: 963
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -42,7 +43,7 @@ Visualization Manager:
       Enabled: true
       Filter (blacklist): ""
       Filter (whitelist): ""
-      Frame Timeout: 15
+      Frame Timeout: 30
       Frames:
         Adept_Viper_650_Interface_Plate:
           Value: true
@@ -178,14 +179,14 @@ Visualization Manager:
       Value: true
     - Class: moveit_rviz_plugin/PlanningScene
       Enabled: true
-      Move Group Namespace: /shadow
+      Move Group Namespace: ""
       Name: PlanningScene
-      Planning Scene Topic: /monitored_planning_scene
+      Planning Scene Topic: /shadow/monitored_planning_scene
       Robot Description: robot_description
       Scene Geometry:
-        Scene Alpha: 0.8999999761581421
+        Scene Alpha: 1
         Scene Color: 255; 255; 255
-        Scene Display Time: 0.009999999776482582
+        Scene Display Time: 0
         Show Scene Geometry: true
         Voxel Coloring: Z-Axis
         Voxel Rendering: Occupied Voxels
@@ -271,7 +272,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 3.0800766944885254
+      Distance: 2.5528829097747803
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -286,10 +287,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4647957682609558
+      Pitch: 0.6403981447219849
       Target Frame: scene
       Value: Orbit (rviz_default_plugins)
-      Yaw: 0.26040083169937134
+      Yaw: 0.6503981351852417
     Saved:
       - Class: rviz_default_plugins/Orbit
         Distance: 1.543152093887329
@@ -311,6 +312,26 @@ Visualization Manager:
         Target Frame: scene
         Value: Orbit (rviz_default_plugins)
         Yaw: 6.005184173583984
+      - Class: rviz_default_plugins/Orbit
+        Distance: 2.5528829097747803
+        Enable Stereo Rendering:
+          Stereo Eye Separation: 0.05999999865889549
+          Stereo Focal Distance: 1
+          Swap Stereo Eyes: false
+          Value: false
+        Focal Point:
+          X: 0
+          Y: 0
+          Z: 0
+        Focal Shape Fixed Size: false
+        Focal Shape Size: 0.05000000074505806
+        Invert Z Axis: false
+        Name: Orbit
+        Near Clip Distance: 0.009999999776482582
+        Pitch: 0.37039822340011597
+        Target Frame: scene
+        Value: Orbit (rviz_default_plugins)
+        Yaw: 0.24039819836616516
 Window Geometry:
   Displays:
     collapsed: false
@@ -319,7 +340,7 @@ Window Geometry:
     collapsed: false
   Hide Left Dock: false
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000503fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c0069006400650072000000003b000001500000000000000000fb000000100044006900730070006c006100790073010000003b000003ed000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e00670100000323000001750000000000000000fb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a00560069006500770073010000042e00000110000000a000ffffff000007460000050300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000503fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c0069006400650072000000003b000001500000000000000000fb000000100044006900730070006c006100790073010000003b000003fe000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e00670100000323000001750000000000000000fb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a00560069006500770073010000043f000000ff000000a000ffffff000007460000050300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
   Width: 2560

@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, TimerAction, RegisterEventHandler
+from launch.event_handlers import OnProcessStart
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 
@@ -27,7 +28,6 @@ def generate_launch_description():
     cfg_pkg = get_package_share_directory("omron_moveit_config")
     ros2_controllers_path = os.path.join(cfg_pkg, "config", "ros2_controllers.yaml")
 
-    # ✅ nur noch EIN RViz-File
     rviz_cfg = os.path.join(cfg_pkg, "config", "shadow_moveit.rviz")
 
     # ----------------- Launch-Argumente -----------------
@@ -68,6 +68,9 @@ def generate_launch_description():
 
     moveit_config = create_omron_moveit_config()
 
+    # Controller manager fully-qualified name (string!)
+    cm_name = ["/", namespace, "/controller_manager"]
+
     # ----------------- Static TF -----------------
     static_tf = Node(
         package="tf2_ros",
@@ -85,6 +88,8 @@ def generate_launch_description():
             "--frame-id", LaunchConfiguration("mount_parent"),
             "--child-frame-id", LaunchConfiguration("mount_child"),
         ],
+        output="screen",
+        emulate_tty=True,
     )
 
     # ----------------- robot_state_publisher -----------------
@@ -96,7 +101,12 @@ def generate_launch_description():
         parameters=[
             moveit_config.robot_description,
             {"use_sim_time": use_sim_time},
+            {"publish_frequency": 100.0},  # Sync mit controller_manager update_rate
         ],
+        # ✅ Nur Errors loggen - filtert "Moved backwards in time" Warning
+        arguments=['--ros-args', '--log-level', 'ERROR'],
+        output="screen",
+        emulate_tty=True,
     )
 
     # ----------------- ros2_control -----------------
@@ -110,8 +120,11 @@ def generate_launch_description():
             ros2_controllers_path,
             {"use_sim_time": use_sim_time},
         ],
+        output="screen",
+        emulate_tty=True,
     )
 
+    # ----------------- Spawner (mit Timing-Fix) -----------------
     jsb_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -119,8 +132,10 @@ def generate_launch_description():
         namespace=namespace,
         arguments=[
             "joint_state_broadcaster",
-            "--controller-manager", ["/", namespace, "/controller_manager"],
+            "--controller-manager", cm_name,
         ],
+        output="screen",
+        emulate_tty=True,
     )
 
     arm_spawner = Node(
@@ -130,11 +145,13 @@ def generate_launch_description():
         namespace=namespace,
         arguments=[
             "omron_arm_controller",
-            "--controller-manager", ["/", namespace, "/controller_manager"],
+            "--controller-manager", cm_name,
         ],
+        output="screen",
+        emulate_tty=True,
     )
 
-    # ✅ move_group IMMER starten (sonst keine PlanningScene/CollisionObjects)
+    # OPTIONAL: MoveGroup (wenn du den Service /get_planning_scene willst)
     move_group_node = Node(
         package="moveit_ros_move_group",
         executable="move_group",
@@ -144,9 +161,11 @@ def generate_launch_description():
             moveit_config.to_dict(),
             {"use_sim_time": use_sim_time},
         ],
+        output="screen",
+        emulate_tty=True,
     )
 
-    # ✅ RViz optional per launch arg
+    # RViz im Namespace starten, damit relative Topics funktionieren
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
@@ -155,6 +174,27 @@ def generate_launch_description():
         arguments=["-d", rviz_cfg],
         parameters=[moveit_config.to_dict(), {"use_sim_time": use_sim_time}],
         condition=IfCondition(rviz),
+        output="screen",
+        emulate_tty=True,
+    )
+
+    # ✅ Timing-Strategie:
+    # - Warte bis ros2_control_node gestartet ist
+    # - dann: JSB nach 2s
+    # - dann: Arm controller nach 3s
+    # - optional: move_group nach 5s
+    # - optional: rviz nach 6s
+    delayed_stack = RegisterEventHandler(
+        OnProcessStart(
+            target_action=ros2_control_node,
+            on_start=[
+                TimerAction(period=2.0, actions=[jsb_spawner]),
+                TimerAction(period=3.0, actions=[arm_spawner]),
+                # Wenn du MoveIt Scene + /get_planning_scene willst:
+                # TimerAction(period=5.0, actions=[move_group_node]),
+                TimerAction(period=6.0, actions=[rviz_node]),
+            ],
+        )
     )
 
     return LaunchDescription([
@@ -175,8 +215,7 @@ def generate_launch_description():
         static_tf,
         robot_state_pub,
         ros2_control_node,
-        jsb_spawner,
-        arm_spawner,
-        #move_group_node,
-        rviz_node,
+
+        # ✅ spawner + rviz kommen NACH ros2_control_node start
+        delayed_stack,
     ])

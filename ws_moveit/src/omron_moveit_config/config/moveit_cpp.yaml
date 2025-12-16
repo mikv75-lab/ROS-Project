@@ -8,8 +8,8 @@ planning_scene_monitor_options:
   publish_geometry_updates: true
   publish_state_updates: true
   publish_transforms_updates: true
-  publish_robot_description: false
-  publish_robot_description_semantic: false
+  publish_robot_description: true
+  publish_robot_description_semantic: true
 
 planning_pipelines:
   pipeline_names:

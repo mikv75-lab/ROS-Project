@@ -11,7 +11,7 @@ from PyQt6 import QtCore
 
 from geometry_msgs.msg import TwistStamped
 from control_msgs.msg import JointJog
-from moveit_msgs.srv import ServoCommandType  # Service für CommandType
+from moveit_msgs.srv import ServoCommandType
 
 from config.startup import AppContent
 from .base_bridge import BaseBridge
@@ -20,7 +20,7 @@ from .base_bridge import BaseBridge
 class ServoSignals(QtCore.QObject):
     paramsChanged = QtCore.pyqtSignal(dict)
     jointJogRequested = QtCore.pyqtSignal(str, float, float)
-    cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)
+    cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)  # axis, delta, speed, frame_ui ("wrf"/"trf")
     frameChanged = QtCore.pyqtSignal(str)
 
 
@@ -71,7 +71,7 @@ class ServoBridge(BaseBridge):
         # CommandType-State
         self._cmd_type_client = None
         self._cmd_type_lock = threading.Lock()
-        self._current_command_type: Optional[int] = None  # 0=JOINT_JOG,1=TWIST,2=POSE
+        self._current_command_type: Optional[int] = None
         self._desired_command_type: Optional[int] = None
         self._cmd_type_inflight: bool = False
 
@@ -135,9 +135,6 @@ class ServoBridge(BaseBridge):
     # ======================================================
 
     def set_command_type(self, mode: str) -> None:
-        """
-        Non-blocking: merkt sich gewünschten Mode und versucht im Hintergrund zu setzen.
-        """
         if self._cmd_type_client is None:
             return
 
@@ -151,11 +148,9 @@ class ServoBridge(BaseBridge):
                 return
             self._desired_command_type = cmd_val
 
-        # Sofort versuchen (falls ready)
         self._try_set_command_type_once()
 
     def _cmd_type_retry_tick(self) -> None:
-        # Timer tick: wenn Wunsch offen ist, versuchen
         with self._cmd_type_lock:
             pending = self._desired_command_type
         if pending is None:
@@ -174,7 +169,6 @@ class ServoBridge(BaseBridge):
         if desired is None:
             return
 
-        # Service noch nicht da → später erneut (kein wait_for_service, kein block)
         if not self._cmd_type_client.service_is_ready():
             return
 
@@ -189,14 +183,13 @@ class ServoBridge(BaseBridge):
             try:
                 resp = fut.result()
             except Exception:
-                return  # still retry later
+                return
 
             if not resp or not getattr(resp, "success", False):
-                return  # still retry later
+                return
 
             with self._cmd_type_lock:
                 self._current_command_type = int(req.command_type)
-                # nur löschen, wenn es noch derselbe Wunsch war
                 if self._desired_command_type == self._current_command_type:
                     self._desired_command_type = None
 
@@ -207,12 +200,12 @@ class ServoBridge(BaseBridge):
     # ======================================================
 
     def _on_joint_jog_requested(self, joint_name: str, delta_deg: float, speed_pct: float) -> None:
+        self.get_logger().info(f"[servo] UI jointJogRequested: joint='{joint_name}', delta_deg={delta_deg}, speed_pct={speed_pct}")
         if self.pub_joint is None:
             return
         if not joint_name:
             return
 
-        # ✅ WICHTIG: CommandType passend setzen
         self.set_command_type("joint")
 
         dt = 0.5
@@ -239,8 +232,9 @@ class ServoBridge(BaseBridge):
         axis: str,
         delta: float,
         speed_mm_s: float,
-        frame_ui: str,
+        frame_ui: str,  # "wrf"/"trf"
     ) -> None:
+        self.get_logger().info(f"[servo] UI cartesianJogRequested: axis='{axis}', delta={delta}, speed_mm_s={speed_mm_s}, frame_ui='{frame_ui}'")
         if self.pub_cartesian is None:
             return
 
@@ -248,10 +242,9 @@ class ServoBridge(BaseBridge):
         if axis not in ("x", "y", "z", "rx", "ry", "rz"):
             return
 
-        # Frame entsprechend UI umschalten
+        # Frame entsprechend UI umschalten ("wrf"/"trf")
         self._set_frame_from_ui(frame_ui)
 
-        # ✅ WICHTIG: CommandType passend setzen
         self.set_command_type("twist")
 
         msg = TwistStamped()
@@ -296,5 +289,4 @@ class ServoBridge(BaseBridge):
             self.current_frame = self.world_frame
 
     def _on_params_changed(self, cfg: Dict[str, Any]) -> None:
-        # params aktuell nicht benutzt – ok
         pass
