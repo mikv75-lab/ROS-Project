@@ -515,10 +515,10 @@ class Scene(Node):
             self.scene_pub.publish(co)
 
         # optional: sehr selten loggen (z.B. alle 60s), damit man sieht, dass es läuft
-        now = time.time()
-        if now - self._last_republish_log > 60.0:
-            self._last_republish_log = now
-            self.get_logger().debug(f"🔁 Republished {len(self._cached_cos)} CollisionObjects")
+        #now = time.time()
+        #if now - self._last_republish_log > 60.0:
+        #    self._last_republish_log = now
+        #    self.get_logger().debug(f"🔁 Republished {len(self._cached_cos)} CollisionObjects")
 
     # ------------------------
     # MoveIt readiness wait

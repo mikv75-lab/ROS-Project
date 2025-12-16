@@ -141,24 +141,7 @@ class ServoBridge(Node):
         self.servo_client = None
         if self.use_servo_service:
             self.servo_client = self.create_client(ServoCommandType, self.servo_service_name)
-
-            # Hilfreiches Log: zeigt dir sofort, ob relativ oder absolut genutzt wird
-            # (Die tatsächliche Auflösung macht ROS, aber du siehst den Input + Namespace)
-            self.get_logger().info(
-                f"[{self.backend}] ServoBridge: CommandType-Service param='{self.servo_service_name}', "
-                f"node_ns='{self.get_namespace() or '/'}'"
-            )
-
-            if self.servo_service_name.startswith("/"):
-                self.get_logger().info(
-                    f"[{self.backend}] servo_command_type_service ist ABSOLUT → '{self.servo_service_name}'"
-                )
-            else:
-                self.get_logger().info(
-                    f"[{self.backend}] servo_command_type_service ist RELATIV → wird unter Namespace aufgelöst"
-                )
-        else:
-            self.get_logger().info(f"[{self.backend}] ServoBridge: KEIN CommandType-Service aktiv")
+        # else: kein Service im REAL-Backend
 
         # ✅ Mode-State + Retry-Mechanik (nicht blockierend)
         self.current_mode: int | None = None
@@ -167,6 +150,7 @@ class ServoBridge(Node):
         self._mode_switch_inflight: bool = False
 
         if self.use_servo_service and self.auto_mode:
+            # regelmäßig versuchen, aber komplett ohne Spam
             self._retry_timer = self.create_timer(0.5, self._retry_set_mode)
         else:
             self._retry_timer = None
@@ -188,6 +172,7 @@ class ServoBridge(Node):
             return
         self._desired_mode = cmd_type
         self._desired_label = label
+        # NICHT loggen, Timer übernimmt retries
         self._retry_set_mode()
 
     def _retry_set_mode(self) -> None:
@@ -201,10 +186,11 @@ class ServoBridge(Node):
             return
         if self._mode_switch_inflight:
             return
+
+        # Service nicht ready → absolut still (kein warn/info)
         if not self.servo_client.service_is_ready():
-            self.get_logger().debug(
-                f"[{self.backend}] warte auf Service '{self.servo_service_name}'..."
-            )
+            # optional debug:
+            # self.get_logger().debug(f"[{self.backend}] warte auf Service '{self.servo_service_name}'...")
             return
 
         req = ServoCommandType.Request()
@@ -217,21 +203,19 @@ class ServoBridge(Node):
             self._mode_switch_inflight = False
             try:
                 resp = _fut.result()
-            except Exception as e:
-                self.get_logger().warning(f"[{self.backend}] switch_command_type Exception: {e}")
+            except Exception:
+                # absolut still (kein spam)
                 return
 
             if resp and getattr(resp, "success", False):
                 self.current_mode = int(req.command_type)
-                self.get_logger().info(
-                    f"[{self.backend}] ✅ Servo-Mode gesetzt: '{self._desired_label}' (command_type={self.current_mode})"
-                )
+                # optional: nur EINMAL loggen wenn du willst:
+                # self.get_logger().info(f"[{self.backend}] Servo-Mode gesetzt: {self._desired_label}")
                 self._desired_mode = None
                 self._desired_label = ""
             else:
-                self.get_logger().warning(
-                    f"[{self.backend}] ❌ switch_command_type fehlgeschlagen (command_type={req.command_type})"
-                )
+                # absolut still (kein spam)
+                return
 
         future.add_done_callback(_done)
 
@@ -249,7 +233,6 @@ class ServoBridge(Node):
             if cmd is None or self.pub_omron_cmd is None:
                 return
             self.pub_omron_cmd.publish(String(data=cmd))
-            self.get_logger().debug(f"[{self.backend}] JOGC → '{cmd}'")
             return
 
         if self.pub_cartesian is None:
@@ -274,7 +257,6 @@ class ServoBridge(Node):
             if cmd is None or self.pub_omron_cmd is None:
                 return
             self.pub_omron_cmd.publish(String(data=cmd))
-            self.get_logger().debug(f"[{self.backend}] JOGJ → '{cmd}'")
             return
 
         if self.pub_joint is None:
@@ -296,7 +278,6 @@ class ServoBridge(Node):
     # ------------------------------------------------------------
     def _make_jogj_cmd_from_joint(self, msg: JointJog) -> str | None:
         if not msg.joint_names:
-            self.get_logger().warning(f"[{self.backend}] JOGJ: joint_names leer.")
             return None
 
         jname = msg.joint_names[0].lower()
@@ -306,15 +287,9 @@ class ServoBridge(Node):
             try:
                 axis = int(jname[-1])
             except Exception:
-                self.get_logger().warning(
-                    f"[{self.backend}] JOGJ: kann Achse aus '{msg.joint_names[0]}' nicht bestimmen."
-                )
                 return None
 
         if axis < 1 or axis > 6:
-            self.get_logger().warning(
-                f"[{self.backend}] JOGJ: ungültige Achse {axis} aus '{msg.joint_names[0]}'"
-            )
             return None
 
         step_deg = msg.displacements[0] if msg.displacements else 0.0
@@ -349,16 +324,11 @@ class ServoBridge(Node):
     # Mode / Frame (optional UI overrides)
     # ------------------------------------------------------------
     def _on_set_mode(self, msg: String) -> None:
-        # ✅ Kein Service? Dann ist set_mode in SIM nicht sinnvoll, und in REAL ohnehin irrelevant.
         if not self.use_servo_service or self.servo_client is None:
-            self.get_logger().debug(f"[{self.backend}] set_mode ignoriert (kein ServoCommandType-Service aktiv)")
             return
 
         raw = (msg.data or "").strip().upper()
         if raw not in self.MODE_MAP:
-            self.get_logger().warning(
-                f"[{self.backend}] Unbekannter Servo-Mode '{msg.data}' – erwartet JOINT_JOG, TWIST oder POSE."
-            )
             return
 
         self._desired_mode = int(self.MODE_MAP[raw])
@@ -372,18 +342,10 @@ class ServoBridge(Node):
 
         allowed = ("world", "tcp")
         if raw not in allowed:
-            self.get_logger().warning(
-                f"[{self.backend}] set_frame: Frame '{raw}' nicht erlaubt. "
-                f"Erlaubt: {allowed}. (frames.yaml: {list(self.frames_cfg.as_dict().keys())})"
-            )
             return
 
         resolved = self._F(self.frames_cfg.get(raw, raw))
-        old = self.current_frame
         self.current_frame = resolved
-        self.get_logger().info(
-            f"[{self.backend}] Servo-Frame geändert: {old} → {self.current_frame} (gewählt: {raw})"
-        )
 
 
 def main(args=None):

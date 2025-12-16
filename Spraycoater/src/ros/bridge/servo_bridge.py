@@ -11,27 +11,13 @@ from PyQt6 import QtCore
 
 from geometry_msgs.msg import TwistStamped
 from control_msgs.msg import JointJog
-from moveit_msgs.srv import ServoCommandType  # ⬅️ Service für CommandType
+from moveit_msgs.srv import ServoCommandType  # Service für CommandType
 
 from config.startup import AppContent
 from .base_bridge import BaseBridge
 
 
 class ServoSignals(QtCore.QObject):
-    """
-    Qt-Signale für Servo-Jogging.
-
-    Werden von den Widgets in tabs/service/servo_widgets.py erwartet:
-
-      - paramsChanged(dict)
-      - jointJogRequested(str, float, float)        # joint_name, delta_deg, speed_pct
-      - cartesianJogRequested(str, float, float, str)
-            axis: 'x','y','z','rx','ry','rz'
-            delta: mm (linear) oder deg (rot.)
-            speed: mm/s (für linear; bei rot nur mitgegeben)
-            frame: 'wrf' / 'trf'
-      - frameChanged(str)                           # 'wrf' / 'trf'
-    """
     paramsChanged = QtCore.pyqtSignal(dict)
     jointJogRequested = QtCore.pyqtSignal(str, float, float)
     cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)
@@ -40,29 +26,18 @@ class ServoSignals(QtCore.QObject):
 
 class ServoBridge(BaseBridge):
     """
-    Bridge für Servo-Jogging:
+    UI <-> ServoBridge <-> moveit_servo
 
-      UI <-> ServoBridge <-> moveit_servo
+    Publisht:
+      - /servo/joint_jog    (JointJog)
+      - /servo/cartesian_mm (TwistStamped)
 
-    - UI-Seite:
-        * angebunden über ServoSignals (s.o.)
-        * die Widgets rufen über ihre Signals diese Bridge-Callbacks auf
-
-    - ROS-Seite:
-        * publisht direkt auf:
-            - /servo/joint_jog      (JointJog)
-            - /servo/cartesian_mm   (TwistStamped)
-        * setzt zusätzlich den moveit_servo-CommandType über
-            - omron_servo_node/switch_command_type (moveit_msgs/srv/ServoCommandType)
-
-    WICHTIG:
-      - Service-Name OHNE führenden Slash, damit ROS2 Namespacing greift.
-        (z.B. Node ns='shadow' -> /shadow/omron_servo_node/switch_command_type)
+    Schaltet CommandType via Service:
+      - omron_servo_node/switch_command_type  (namespaced)
     """
 
     GROUP = "servo"
 
-    # interne Mapping-Tabelle (siehe moveit_servo::CommandType)
     _COMMAND_TYPE_MAP = {
         "joint": 0,        # JOINT_JOG
         "joint_jog": 0,
@@ -76,14 +51,12 @@ class ServoBridge(BaseBridge):
     }
 
     def __init__(self, content: AppContent, namespace: str = ""):
-        # Qt-Signale
         self.signals = ServoSignals()
 
-        # Frame-Konfiguration aus AppContent.frames (falls vorhanden)
+        # Frames aus AppContent
         frames_cfg = getattr(content, "frames", None)
         if frames_cfg is not None:
             try:
-                # frames.yaml z.B.: world: base_link, tcp: tool0, ...
                 self.world_frame = frames_cfg.resolve(frames_cfg.get("world", "world"))
                 self.tcp_frame = frames_cfg.resolve(frames_cfg.get("tool_mount", "tool_mount"))
             except Exception:
@@ -95,18 +68,19 @@ class ServoBridge(BaseBridge):
 
         self.current_frame: str = self.world_frame
 
-        # CommandType-Status
+        # CommandType-State
         self._cmd_type_client = None
         self._cmd_type_lock = threading.Lock()
         self._current_command_type: Optional[int] = None  # 0=JOINT_JOG,1=TWIST,2=POSE
+        self._desired_command_type: Optional[int] = None
+        self._cmd_type_inflight: bool = False
 
-        # Node (ggf. im Namespace, z.B. /shadow, /live)
+        # Node (ggf. im Namespace)
         super().__init__("servo_bridge", content, namespace=namespace)
 
         # -----------------------------
-        # Publisher (→ moveit_servo)
+        # Publisher
         # -----------------------------
-        # /servo/cartesian_mm
         try:
             spec_cart = self.spec("publish", "cartesian_mm")
             MsgCart = spec_cart.resolve_type()
@@ -118,7 +92,6 @@ class ServoBridge(BaseBridge):
             self.get_logger().error(f"[servo] cartesian_mm publisher init failed: {e}")
             self.pub_cartesian = None
 
-        # /servo/joint_jog
         try:
             spec_joint = self.spec("publish", "joint_jog")
             MsgJoint = spec_joint.resolve_type()
@@ -133,16 +106,15 @@ class ServoBridge(BaseBridge):
         # -----------------------------
         # Service-Client: CommandType
         # -----------------------------
+        self._cmd_type_service_name = "omron_servo_node/switch_command_type"  # RELATIV lassen!
         try:
-            # ✅ OHNE führenden Slash -> Namespace funktioniert (shadow/live)
-            self._cmd_type_service_name = "omron_servo_node/switch_command_type"
-            self._cmd_type_client = self.create_client(
-                ServoCommandType, self._cmd_type_service_name
-            )
+            self._cmd_type_client = self.create_client(ServoCommandType, self._cmd_type_service_name)
         except Exception as e:
             self.get_logger().error(f"[servo] CommandType client init failed: {e}")
             self._cmd_type_client = None
-            self._cmd_type_service_name = "omron_servo_node/switch_command_type"
+
+        # Timer: stiller Retry für gewünschten CommandType
+        self._cmd_type_timer = self.create_timer(0.2, self._cmd_type_retry_tick)
 
         # -----------------------------
         # Qt-Signale ↔ Methoden
@@ -153,88 +125,80 @@ class ServoBridge(BaseBridge):
         self.signals.paramsChanged.connect(self._on_params_changed)
 
         self.get_logger().info(
-            f"[servo] ServoBridge aktiv, world_frame='{self.world_frame}', "
-            f"tcp_frame='{self.tcp_frame}', current='{self.current_frame}'"
+            f"[servo] ServoBridge aktiv, ns='{self.get_namespace() or '/'}', "
+            f"world_frame='{self.world_frame}', tcp_frame='{self.tcp_frame}', current='{self.current_frame}', "
+            f"cmd_type_srv='{self._cmd_type_service_name}'"
         )
 
     # ======================================================
-    # CommandType (JOINT_JOG / TWIST / POSE)
+    # CommandType Switching (robust, non-blocking)
     # ======================================================
 
     def set_command_type(self, mode: str) -> None:
         """
-        Setzt den moveit_servo-CommandType über den Service
-        'omron_servo_node/switch_command_type' (Namespaced).
-
-        :param mode: z.B. "joint", "jog", "cart", "twist", "pose"
+        Non-blocking: merkt sich gewünschten Mode und versucht im Hintergrund zu setzen.
         """
         if self._cmd_type_client is None:
-            self.get_logger().error(
-                "[servo] set_command_type: Service-Client nicht initialisiert."
-            )
             return
 
         key = (mode or "").strip().lower()
-        if not key:
-            self.get_logger().warning("[servo] set_command_type: leerer mode")
-            return
-
         cmd_val = self._COMMAND_TYPE_MAP.get(key)
         if cmd_val is None:
-            self.get_logger().warning(
-                f"[servo] set_command_type: unbekannter mode '{mode}' – "
-                f"erwarte z.B. 'joint', 'cart', 'pose'"
-            )
             return
 
-        # ⚠️ Wichtig: Nicht endgültig "merken", bevor Service-call geklappt hat.
-        # Sonst blockiert man spätere Versuche, wenn der Service noch nicht bereit war.
         with self._cmd_type_lock:
             if self._current_command_type == cmd_val:
-                self.get_logger().debug(
-                    f"[servo] set_command_type: bereits {cmd_val} (mode='{mode}') – übersprungen."
-                )
                 return
+            self._desired_command_type = cmd_val
 
-        # Service-Verfügbarkeit kurz prüfen
+        # Sofort versuchen (falls ready)
+        self._try_set_command_type_once()
+
+    def _cmd_type_retry_tick(self) -> None:
+        # Timer tick: wenn Wunsch offen ist, versuchen
+        with self._cmd_type_lock:
+            pending = self._desired_command_type
+        if pending is None:
+            return
+        self._try_set_command_type_once()
+
+    def _try_set_command_type_once(self) -> None:
+        if self._cmd_type_client is None:
+            return
+        if self._cmd_type_inflight:
+            return
+
+        with self._cmd_type_lock:
+            desired = self._desired_command_type
+
+        if desired is None:
+            return
+
+        # Service noch nicht da → später erneut (kein wait_for_service, kein block)
         if not self._cmd_type_client.service_is_ready():
-            self.get_logger().info(
-                f"[servo] set_command_type: warte kurz auf Service {self._cmd_type_service_name}"
-            )
-            if not self._cmd_type_client.wait_for_service(timeout_sec=0.2):
-                self.get_logger().warning(
-                    "[servo] set_command_type: Service nicht verfügbar – CommandType nicht gesetzt."
-                )
-                return
+            return
 
         req = ServoCommandType.Request()
-        req.command_type = cmd_val
+        req.command_type = int(desired)
 
+        self._cmd_type_inflight = True
         future = self._cmd_type_client.call_async(req)
 
         def _done(fut):
+            self._cmd_type_inflight = False
             try:
                 resp = fut.result()
-            except Exception as e:
-                self.get_logger().error(
-                    f"[servo] set_command_type({mode}={cmd_val}) Service-Call Exception: {e}"
-                )
-                # keine Änderung am _current_command_type
-                return
+            except Exception:
+                return  # still retry later
 
-            if not getattr(resp, "success", False):
-                self.get_logger().error(
-                    f"[servo] set_command_type({mode}={cmd_val}) -> success=False"
-                )
-                return
+            if not resp or not getattr(resp, "success", False):
+                return  # still retry later
 
-            # ✅ erst bei Erfolg merken
             with self._cmd_type_lock:
-                self._current_command_type = cmd_val
-
-            self.get_logger().info(
-                f"[servo] CommandType gesetzt: mode='{mode}', value={cmd_val}"
-            )
+                self._current_command_type = int(req.command_type)
+                # nur löschen, wenn es noch derselbe Wunsch war
+                if self._desired_command_type == self._current_command_type:
+                    self._desired_command_type = None
 
         future.add_done_callback(_done)
 
@@ -243,24 +207,17 @@ class ServoBridge(BaseBridge):
     # ======================================================
 
     def _on_joint_jog_requested(self, joint_name: str, delta_deg: float, speed_pct: float) -> None:
-        """
-        Wird vom JointJogWidget ausgelöst.
-
-        Interpretation:
-          - delta_deg: Schrittweite in Grad (±)
-          - speed_pct: 0..100 (Skalierung einer Basisgeschwindigkeit)
-        """
         if self.pub_joint is None:
-            self.get_logger().error("[servo] joint_jog publish failed: publisher not initialized")
+            return
+        if not joint_name:
             return
 
-        if not joint_name:
-            self.get_logger().warning("[servo] joint_jog: empty joint_name")
-            return
+        # ✅ WICHTIG: CommandType passend setzen
+        self.set_command_type("joint")
 
         dt = 0.5
         delta_rad = math.radians(delta_deg)
-        scale = max(0.0, min(1.0, speed_pct / 100.0))
+        scale = max(0.0, min(1.0, float(speed_pct) / 100.0))
         vel = (delta_rad / dt) * scale
 
         msg = JointJog()
@@ -268,14 +225,10 @@ class ServoBridge(BaseBridge):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.joint_names = [joint_name]
         msg.velocities = [vel]
-        msg.displacements = []   # bei command_in_type = speed_units unbenutzt
+        msg.displacements = []
         msg.duration = dt
 
         self.pub_joint.publish(msg)
-        self.get_logger().debug(
-            f"[servo] JointJog: joint={joint_name}, delta_deg={delta_deg:.2f}, "
-            f"speed_pct={speed_pct:.1f}, vel_rad_s={vel:.4f}, dt={dt:.2f}, frame={self.current_frame}"
-        )
 
     # ======================================================
     # UI → Cartesian Jog (TWIST)
@@ -288,28 +241,25 @@ class ServoBridge(BaseBridge):
         speed_mm_s: float,
         frame_ui: str,
     ) -> None:
-        """
-        Wird vom CartesianJogWidget ausgelöst.
-        """
         if self.pub_cartesian is None:
-            self.get_logger().error("[servo] cartesian_mm publish failed: publisher not initialized")
             return
 
         axis = (axis or "").lower()
         if axis not in ("x", "y", "z", "rx", "ry", "rz"):
-            self.get_logger().warning(f"[servo] cartesian_jog: unknown axis '{axis}'")
             return
 
         # Frame entsprechend UI umschalten
         self._set_frame_from_ui(frame_ui)
 
+        # ✅ WICHTIG: CommandType passend setzen
+        self.set_command_type("twist")
+
         msg = TwistStamped()
         msg.header.frame_id = self.current_frame
         msg.header.stamp = self.get_clock().now().to_msg()
 
-        # Linear: mm/s → m/s
         speed_m_s = float(speed_mm_s) / 1000.0
-        sign = 1.0 if delta >= 0.0 else -1.0
+        sign = 1.0 if float(delta) >= 0.0 else -1.0
 
         if axis in ("x", "y", "z"):
             v = sign * speed_m_s
@@ -320,10 +270,8 @@ class ServoBridge(BaseBridge):
             else:
                 msg.twist.linear.z = v
         else:
-            # Rotationsgeschwindigkeit grob aus delta (deg) abgeleitet
             dt = 0.5
-            delta_rad = math.radians(delta)
-            omega = delta_rad / dt
+            omega = math.radians(float(delta)) / dt
             if axis == "rx":
                 msg.twist.angular.x = omega
             elif axis == "ry":
@@ -332,10 +280,6 @@ class ServoBridge(BaseBridge):
                 msg.twist.angular.z = omega
 
         self.pub_cartesian.publish(msg)
-        self.get_logger().debug(
-            f"[servo] Twist: axis={axis}, delta={delta:.2f}, speed_mm_s={speed_mm_s:.1f}, "
-            f"frame={self.current_frame}"
-        )
 
     # ======================================================
     # Frame / Params
@@ -346,15 +290,11 @@ class ServoBridge(BaseBridge):
 
     def _set_frame_from_ui(self, frame_ui: str) -> None:
         f = (frame_ui or "").strip().lower()
-        old = self.current_frame
-
         if f == "trf":
             self.current_frame = self.tcp_frame
         else:
             self.current_frame = self.world_frame
 
-        if self.current_frame != old:
-            self.get_logger().info(f"[servo] frame changed: {old} -> {self.current_frame}")
-
     def _on_params_changed(self, cfg: Dict[str, Any]) -> None:
-        self.get_logger().debug(f"[servo] paramsChanged: {cfg!r}")
+        # params aktuell nicht benutzt – ok
+        pass
