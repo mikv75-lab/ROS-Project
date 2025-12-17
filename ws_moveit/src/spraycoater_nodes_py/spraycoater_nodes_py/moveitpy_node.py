@@ -44,11 +44,13 @@ DEFAULT_PLANNER_CFG: Dict[str, Any] = {
 
 class MoveItPyNode(Node):
     """
-    Node, der MoveItPy initialisiert und das Motion-Interface (Topics) implementiert.
+    Wrapper-Node (rclpy), der MoveItPy initialisiert.
 
-    Erwartung:
-      - Launch übergibt MoveIt-Params (robot_description, robot_description_semantic, planning_pipelines, etc.)
-        an DIESEN rclpy-Node. Dafür muss rclpy diese Overrides automatisch deklarieren.
+    WICHTIG (wie beim alten Setup):
+    - MoveIt-Konfig (planning_pipelines, kinematics, robot_description, SRDF, ...) wird vom BRINGUP
+      an diesen Node übergeben (moveit_config.to_dict()).
+    - Der interne MoveItPy (C++) Node heißt wieder "moveit_py" -> bekommt die Parameter wie früher.
+    - Kein Laden/Publishen von SRDF in Python.
     """
 
     def __init__(self) -> None:
@@ -65,7 +67,7 @@ class MoveItPyNode(Node):
         self.frame_scene = self.cfg_frames.resolve(self.cfg_frames.get("scene", "scene"))
 
         # -------------------------------------------------
-        # Parameters: bei auto-declare NICHT doppelt deklarieren
+        # App-Params (werden im bringup gesetzt)
         # -------------------------------------------------
         if not self.has_parameter("backend"):
             self.declare_parameter("backend", "default")
@@ -132,11 +134,18 @@ class MoveItPyNode(Node):
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "motion_result"),
         )
 
-        # Omron cmd topic (auch in SIM ok, wird halt nicht benutzt)
-        topic_omron_cmd = self.cfg_topics.publish_topic("omron", "command")
-        qos_omron_cmd = self.cfg_topics.qos_by_id("publish", "omron", "command")
-        self.pub_omron_cmd = self.create_publisher(MsgString, topic_omron_cmd, qos_omron_cmd)
-        self.log.info(f"[{self.backend}] Omron cmd topic: {topic_omron_cmd}")
+        # ✅ Option: Omron Topics nur im REAL-Backend erzeugen
+        self.pub_omron_cmd: Optional[Any] = None
+        self._topic_omron_cmd: Optional[str] = None
+
+        if self.is_real_backend:
+            topic_omron_cmd = self.cfg_topics.publish_topic("omron", "command")
+            qos_omron_cmd = self.cfg_topics.qos_by_id("publish", "omron", "command")
+            self.pub_omron_cmd = self.create_publisher(MsgString, topic_omron_cmd, qos_omron_cmd)
+            self._topic_omron_cmd = topic_omron_cmd
+            self.log.info(f"[{self.backend}] Omron cmd topic enabled: {topic_omron_cmd}")
+        else:
+            self.log.info(f"[{self.backend}] Omron cmd topic disabled (sim/shadow backend)")
 
         # --------------- Subscribers ----------------
         self.create_subscription(
@@ -176,22 +185,21 @@ class MoveItPyNode(Node):
             self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "set_planner_cfg"),
         )
 
-        # ---------------- MoveItPy init ----------------
+        # ---------------- MoveItPy init (WIE FRÜHER) ----------------
         name_space = "" if ns == "/" else ns.strip("/")
         self.log.info(f"[moveitpy] init: node_ns='{ns}', name_space='{name_space}'")
 
-        # provide_planning_service=True ist ok (Plan-Service),
-        # aber RViz will i.d.R. auch get_planning_scene.
+        # ✅ WIE ALT: interner C++ Node heißt ebenfalls "moveit_py"
+        # -> bekommt planning_pipelines/kinematics/etc. aus bringup (moveit_config.to_dict()).
         self.moveit = MoveItPy(
-            node_name=self.get_name(),   # == "moveit_py"
+            node_name=self.get_name(),   # "moveit_py"
             name_space=name_space,
             provide_planning_service=True,
         )
 
-        # ✅ Versuch: PlanningSceneMonitor soll get_planning_scene bereitstellen
+        # optional: get_planning_scene versuchen (falls du ohne move_group arbeiten willst)
         self._try_provide_get_planning_scene_service()
 
-        # kleine Pause für Initialisierung
         time.sleep(0.2)
 
         self.arm = self.moveit.get_planning_component(GROUP_NAME)
@@ -213,49 +221,27 @@ class MoveItPyNode(Node):
     # ✅ Provide get_planning_scene (PlanningSceneMonitor)
     # ----------------------------------------------------------
     def _try_provide_get_planning_scene_service(self) -> None:
-        """
-        RViz' PlanningSceneDisplay / MotionPlanning ruft beim Start oft den Service 'get_planning_scene' auf.
-        Normalerweise liefert move_group diesen Service.
-
-        Hier versuchen wir, den PlanningSceneMonitor aus MoveItPy/MoveItCpp zu erreichen
-        und providePlanningSceneService() aufzurufen.
-
-        Hinweis: Python-Bindings variieren je nach MoveIt2-Rolling Stand, deshalb mehrere Pfade.
-        """
         ns = self.get_namespace() or "/"
         srv_name = f"{ns.rstrip('/')}/get_planning_scene" if ns != "/" else "/get_planning_scene"
 
         try:
-            # Pfad A: MoveItPy bietet evtl. direkt Zugriff
             psm = None
 
-            # 1) get_planning_scene_monitor()
             if hasattr(self.moveit, "get_planning_scene_monitor"):
                 psm = self.moveit.get_planning_scene_monitor()
 
-            # 2) moveit_cpp / get_moveit_cpp()
             if psm is None and hasattr(self.moveit, "get_moveit_cpp"):
                 mc = self.moveit.get_moveit_cpp()
                 if hasattr(mc, "get_planning_scene_monitor"):
                     psm = mc.get_planning_scene_monitor()
 
-            # 3) interne Attribute (Rolling-abhängig)
-            if psm is None:
-                for attr in ("moveit_cpp", "_moveit_cpp", "moveit_cpp_ptr", "_moveit_cpp_ptr"):
-                    if hasattr(self.moveit, attr):
-                        mc = getattr(self.moveit, attr)
-                        if hasattr(mc, "get_planning_scene_monitor"):
-                            psm = mc.get_planning_scene_monitor()
-                            break
-
             if psm is None:
                 self.log.warning(
-                    f"[psm] Konnte PlanningSceneMonitor nicht erreichen – "
-                    f"RViz get_planning_scene ({srv_name}) wird ohne move_group evtl. nicht funktionieren."
+                    f"[psm] PlanningSceneMonitor nicht erreichbar – "
+                    f"get_planning_scene ({srv_name}) evtl. nicht verfügbar."
                 )
                 return
 
-            # providePlanningSceneService() kann unterschiedlich heißen
             if hasattr(psm, "providePlanningSceneService"):
                 psm.providePlanningSceneService()
                 self.log.info(f"[psm] providePlanningSceneService() aktiviert (Service: {srv_name})")
@@ -268,13 +254,11 @@ class MoveItPyNode(Node):
 
             self.log.warning(
                 f"[psm] PlanningSceneMonitor gefunden, aber keine providePlanningSceneService()-Methode verfügbar – "
-                f"RViz get_planning_scene ({srv_name}) könnte fehlen."
+                f"get_planning_scene ({srv_name}) könnte fehlen."
             )
 
         except Exception as e:
-            self.log.warning(
-                f"[psm] Exception beim Aktivieren von get_planning_scene ({srv_name}): {e!r}"
-            )
+            self.log.warning(f"[psm] Exception beim Aktivieren von get_planning_scene ({srv_name}): {e!r}")
 
     # ----------------------------------------------------------
     # TF Helper
@@ -499,6 +483,10 @@ class MoveItPyNode(Node):
             self._busy = False
 
     def _execute_via_omron(self, traj_msg: RobotTrajectoryMsg) -> bool:
+        if not self.is_real_backend or self.pub_omron_cmd is None:
+            self.log.error("[omron] _execute_via_omron called but omron publisher is disabled (not real backend).")
+            return False
+
         jt = traj_msg.joint_trajectory
         if not jt.points:
             self.log.error("[omron] Trajektorie hat keine Punkte.")

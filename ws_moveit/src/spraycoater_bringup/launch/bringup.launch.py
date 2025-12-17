@@ -58,8 +58,16 @@ def generate_launch_description():
         value="ERROR",
     )
 
-    role_arg = DeclareLaunchArgument("role", default_value="shadow", description="shadow | live")
-    use_sim_time_arg = DeclareLaunchArgument("use_sim_time", default_value="false", description="Use simulated time")
+    role_arg = DeclareLaunchArgument(
+        "role",
+        default_value="shadow",
+        description="Instanz-Name/Namespace (z.B. shadow oder live)",
+    )
+    use_sim_time_arg = DeclareLaunchArgument(
+        "use_sim_time",
+        default_value="false",
+        description="Use simulated time",
+    )
 
     def _setup(context):
         role = LaunchConfiguration("role").perform(context).strip()
@@ -90,17 +98,13 @@ def generate_launch_description():
 
         moveit_share = FindPackageShare(moveit_pkg).perform(context)
 
-        # ✅ moveit_common.py aus dem moveit_pkg/launch laden
+        # moveit_common.py aus dem moveit_pkg/launch laden
         moveit_launch_dir = os.path.join(moveit_share, "launch")
         if moveit_launch_dir not in sys.path:
             sys.path.insert(0, moveit_launch_dir)
-
         from moveit_common import create_omron_moveit_config  # noqa: E402
 
         moveit_config = create_omron_moveit_config()
-
-        # ✅ Kein JSON. MoveIt-Konfig als YAML-String weiterreichen.
-        moveit_cfg_yaml = yaml.safe_dump(moveit_config.to_dict())
 
         if role == "live":
             robot_launch = os.path.join(moveit_share, "launch", "omron_live.launch.py")
@@ -133,12 +137,19 @@ def generate_launch_description():
 
         common_params = {"backend": backend, "use_sim_time": use_sim_time}
 
+        # TF GLOBAL lassen
+        tf_remaps_global = [
+            ("tf", "/tf"),
+            ("tf_static", "/tf_static"),
+        ]
+
         robot_node = Node(
             package="spraycoater_nodes_py",
             executable=robot_exec,
             name="robot",
             namespace=role,
             parameters=[common_params],
+            remappings=tf_remaps_global,
             output="screen",
             emulate_tty=True,
         )
@@ -146,8 +157,10 @@ def generate_launch_description():
         scene = Node(
             package="spraycoater_nodes_py",
             executable="scene",
+            name="scene",
             namespace=role,
             parameters=[common_params],
+            remappings=tf_remaps_global,
             output="screen",
             emulate_tty=True,
         )
@@ -155,8 +168,10 @@ def generate_launch_description():
         poses = Node(
             package="spraycoater_nodes_py",
             executable="poses",
+            name="poses",
             namespace=role,
             parameters=[common_params],
+            remappings=tf_remaps_global,
             output="screen",
             emulate_tty=True,
         )
@@ -164,8 +179,10 @@ def generate_launch_description():
         spray = Node(
             package="spraycoater_nodes_py",
             executable="spray_path",
+            name="spray_path",
             namespace=role,
             parameters=[common_params],
+            remappings=tf_remaps_global,
             output="screen",
             emulate_tty=True,
         )
@@ -173,25 +190,29 @@ def generate_launch_description():
         servo_bridge = Node(
             package="spraycoater_nodes_py",
             executable="servo",
+            name="servo",
             namespace=role,
             parameters=[common_params],
+            remappings=tf_remaps_global,
             output="screen",
             emulate_tty=True,
         )
 
+        # ✅ WIE ALT: MoveIt-Konfig kommt vom bringup via moveit_config.to_dict()
         moveitpy_node = Node(
             package="spraycoater_nodes_py",
             executable="moveit_py",
             name="moveit_py",
             namespace=role,
             parameters=[
-                moveit_config.to_dict(),  # robot_description, pipelines, ...
+                moveit_config.to_dict(),  # planning_pipelines, kinematics, robot_description, SRDF, ...
                 common_params,
             ],
+            remappings=tf_remaps_global,
             output="screen",
             emulate_tty=True,
         )
-                
+
         return [
             include_robot,
             TimerAction(period=6.0, actions=[robot_node]),
@@ -202,4 +223,9 @@ def generate_launch_description():
             TimerAction(period=12.0, actions=[moveitpy_node]),
         ]
 
-    return LaunchDescription([quiet_env, role_arg, use_sim_time_arg, OpaqueFunction(function=_setup)])
+    return LaunchDescription([
+        quiet_env,
+        role_arg,
+        use_sim_time_arg,
+        OpaqueFunction(function=_setup),
+    ])

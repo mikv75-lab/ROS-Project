@@ -34,7 +34,6 @@ topics:
         type: control_msgs/msg/JointJog
         qos: sensor_data
 
-
   tool:
     subscribe:
       - id: tool_select
@@ -47,71 +46,74 @@ topics:
         name: spraycoater/tool/state
         type: std_msgs/msg/String
         qos: latched
+
       - id: tool_list
         name: spraycoater/tool/list
         type: std_msgs/msg/String
         qos: latched
 
   moveit_py:
-    subscribe:  # Node subscribt -> UI publisht hierhin
+    subscribe:
       - id: plan_pose
-        name: spraycoater/moveit_py/plan_pose
+        name: moveit_py/plan_pose
         type: geometry_msgs/msg/PoseStamped
         qos: default
 
       - id: plan_named
-        name: spraycoater/moveit_py/plan_named
+        name: moveit_py/plan_named
         type: std_msgs/msg/String
         qos: default
 
       - id: execute
-        name: spraycoater/moveit_py/execute
+        name: moveit_py/execute
         type: std_msgs/msg/Bool
         qos: default
 
       - id: stop
-        name: spraycoater/moveit_py/stop
+        name: moveit_py/stop
         type: std_msgs/msg/Empty
         qos: default
 
       - id: set_speed_mm_s
-        name: spraycoater/moveit_py/set_speed_mm_s
+        name: moveit_py/set_speed_mm_s
         type: std_msgs/msg/Float64
         qos: default
 
       - id: set_planner_cfg
-        name: spraycoater/moveit_py/set_planner_cfg
+        name: moveit_py/set_planner_cfg
         type: std_msgs/msg/String
         qos: default
 
-    publish:   # Node publisht -> UI subscribt hier
+    publish:
       - id: target_trajectory
-        name: spraycoater/moveit_py/target_trajectory
+        name: moveit_py/target_trajectory
         type: trajectory_msgs/msg/JointTrajectory
         qos: default
 
       - id: planned_trajectory_rt
-        name: spraycoater/moveit_py/planned_trajectory_rt
+        name: moveit_py/planned_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
         qos: default
 
       - id: executed_trajectory_rt
-        name: spraycoater/moveit_py/executed_trajectory_rt
+        name: moveit_py/executed_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
         qos: default
 
       - id: preview_markers
-        name: spraycoater/moveit_py/preview_markers
+        name: moveit_py/preview_markers
         type: visualization_msgs/msg/MarkerArray
         qos: default
 
       - id: motion_result
-        name: spraycoater/moveit_py/motion_result
+        name: moveit_py/motion_result
         type: std_msgs/msg/String
         qos: default
-
-
-
+        
+      - id: robot_description_semantic
+        name: robot_description_semantic
+        type: std_msgs/msg/String
+        qos: latched
   scene:
     publish:
       - id: cage_list
@@ -140,7 +142,6 @@ topics:
         type: std_msgs/msg/String
         qos: latched
 
-      # ✅ CollisionObjects relativ (kein führender Slash) -> Node-Namespace greift
       - id: collision_object
         name: collision_object
         type: moveit_msgs/msg/CollisionObject
@@ -251,15 +252,12 @@ topics:
         type: std_msgs/msg/Empty
         qos: default
 
-      # SimRobot joint_states Input (relativ -> Namespace greift)
       - id: joint_states_in
         name: joint_states
         type: sensor_msgs/msg/JointState
         qos: sensor_data
 
     publish:
-      # ✅ Status/Snapshot Topics: latched (TransientLocal) damit Late-Joiner (UIBridge)
-      #    den letzten Stand sofort bekommen.
       - id: connection
         name: spraycoater/robot/connection
         type: std_msgs/msg/Bool
@@ -300,7 +298,6 @@ topics:
         type: std_msgs/msg/String
         qos: latched
 
-      # ✅ High-rate Streams: sensor_data (BestEffort, volatile)
       - id: tcp_pose
         name: spraycoater/robot/tcp_pose
         type: geometry_msgs/msg/PoseStamped
@@ -313,26 +310,22 @@ topics:
 
   omron:
     subscribe:
-      # UI/Nodes -> OmronTcpBridge (Command rein)
       - id: command_in
         name: spraycoater/omron/command
         type: std_msgs/msg/String
         qos: default
 
-      # ✅ NEU: OmronRobot liest raw_rx vom Bridge
       - id: raw_rx
         name: spraycoater/omron/raw_rx
         type: std_msgs/msg/String
         qos: default
 
-      # optional: falls jemand extern connection_status setzen will
       - id: connection_status_in
         name: spraycoater/omron/connection_status
         type: std_msgs/msg/Bool
         qos: default
 
     publish:
-      # OmronTcpBridge -> UI/Debug
       - id: raw_tx
         name: spraycoater/omron/raw_tx
         type: std_msgs/msg/String
@@ -347,7 +340,6 @@ topics:
         type: std_msgs/msg/Bool
         qos: default
 
-      # ✅ wichtig: ID heißt "command" (damit publish_topic("omron","command") klappt)
       - id: command
         name: spraycoater/omron/command
         type: std_msgs/msg/String
