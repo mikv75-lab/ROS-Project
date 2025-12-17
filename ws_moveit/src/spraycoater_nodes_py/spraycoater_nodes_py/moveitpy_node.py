@@ -5,19 +5,22 @@ from __future__ import annotations
 
 import json
 import math
-import time
+from threading import Thread, Event, Lock
 from typing import Optional, Dict, Any, List
 
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time as RclpyTime
 from rclpy.duration import Duration
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 
 from std_msgs.msg import String as MsgString, Bool as MsgBool, Empty as MsgEmpty, Float64 as MsgFloat64
 from geometry_msgs.msg import PoseStamped
 from trajectory_msgs.msg import JointTrajectory
 from visualization_msgs.msg import Marker, MarkerArray
-from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg
+
+from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg, PlanningScene
+from moveit_msgs.srv import GetPlanningScene
 
 from moveit.planning import MoveItPy, PlanRequestParameters
 from moveit.core.robot_trajectory import RobotTrajectory as RobotTrajectoryCore
@@ -46,16 +49,14 @@ class MoveItPyNode(Node):
     """
     Wrapper-Node (rclpy), der MoveItPy initialisiert.
 
-    WICHTIG (wie beim alten Setup):
-    - MoveIt-Konfig (planning_pipelines, kinematics, robot_description, SRDF, ...) wird vom BRINGUP
-      an diesen Node übergeben (moveit_config.to_dict()).
-    - Der interne MoveItPy (C++) Node heißt wieder "moveit_py" -> bekommt die Parameter wie früher.
-    - Kein Laden/Publishen von SRDF in Python.
+    Fixes (nur 2 + 3):
+      (2) get_planning_scene Cache-Service SOFORT bereitstellen (RViz-safe)
+      (3) MoveItPy init im Background-Thread (damit rclpy sofort spinnen kann)
     """
 
     def __init__(self) -> None:
         super().__init__(
-            "moveit_py",
+            "moveit_py",  # ❗ bleibt so (topics hängen an moveit_py)
             automatically_declare_parameters_from_overrides=True,
         )
         self.log = self.get_logger()
@@ -185,80 +186,128 @@ class MoveItPyNode(Node):
             self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "set_planner_cfg"),
         )
 
-        # ---------------- MoveItPy init (WIE FRÜHER) ----------------
-        name_space = "" if ns == "/" else ns.strip("/")
-        self.log.info(f"[moveitpy] init: node_ns='{ns}', name_space='{name_space}'")
+        # ----------------------------------------------------------
+        # (2) get_planning_scene Cache-Service SOFORT bereitstellen
+        # ----------------------------------------------------------
+        self._gps_srv = None
+        self._gps_sub = None
+        self._last_scene: Optional[PlanningScene] = None
+        self._warned_no_scene = False
+        self._ensure_get_planning_scene_cache_service()
 
-        # ✅ WIE ALT: interner C++ Node heißt ebenfalls "moveit_py"
-        # -> bekommt planning_pipelines/kinematics/etc. aus bringup (moveit_config.to_dict()).
-        self.moveit = MoveItPy(
-            node_name=self.get_name(),   # "moveit_py"
-            name_space=name_space,
-            provide_planning_service=True,
-        )
+        # ----------------------------------------------------------
+        # (3) MoveItPy init im Background-Thread
+        # ----------------------------------------------------------
+        self.moveit: Optional[MoveItPy] = None
+        self.arm = None
+        self.robot_model = None
 
-        # optional: get_planning_scene versuchen (falls du ohne move_group arbeiten willst)
-        self._try_provide_get_planning_scene_service()
+        self._moveit_ready = Event()
+        self._moveit_failed = Event()
+        self._moveit_err: Optional[str] = None
+        self._moveit_lock = Lock()
 
-        time.sleep(0.2)
+        self._name_space = "" if ns == "/" else ns.strip("/")
+        self.log.info(f"[moveitpy] init async: node_ns='{ns}', name_space='{self._name_space}'")
 
-        self.arm = self.moveit.get_planning_component(GROUP_NAME)
-        self.robot_model = self.moveit.get_robot_model()
-        self.log.info(f"MoveItPy ready (group={GROUP_NAME}, ns='{ns}')")
+        Thread(target=self._init_moveitpy_background, daemon=True).start()
 
+        self.log.info("MoveItPyNode init done (MoveItPy is initializing in background).")
+
+    # ----------------------------------------------------------
+    # MoveItPy background init
+    # ----------------------------------------------------------
+    def _init_moveitpy_background(self) -> None:
         try:
-            self._plan_params = PlanRequestParameters(self.moveit, "plan_request_params")
-            self._apply_planner_cfg_to_params()
+            with self._moveit_lock:
+                self.moveit = MoveItPy(
+                    node_name=self.get_name(),   # bleibt "moveit_py" (Parameter kommen so rein wie bisher)
+                    name_space=self._name_space,
+                    provide_planning_service=True,
+                )
+
+                self.arm = self.moveit.get_planning_component(GROUP_NAME)
+                self.robot_model = self.moveit.get_robot_model()
+
+                try:
+                    self._plan_params = PlanRequestParameters(self.moveit, "plan_request_params")
+                    self._apply_planner_cfg_to_params()
+                except Exception as e:
+                    self._plan_params = None
+                    self.log.warning(
+                        f"[config] PlanRequestParameters nicht verfügbar ({e}). Nutze arm.plan() ohne explizite Parameter."
+                    )
+
+            self._moveit_ready.set()
+            self.log.info(f"MoveItPy ready (group={GROUP_NAME}, ns='{self.get_namespace() or '/'}')")
+            self.log.info(f"MoveItPyMotionNode online (backend='{self.backend}').")
+
         except Exception as e:
-            self._plan_params = None
-            self.log.warning(
-                f"[config] PlanRequestParameters nicht verfügbar ({e}). Nutze arm.plan() ohne explizite Parameter."
-            )
+            self._moveit_err = repr(e)
+            self._moveit_failed.set()
+            self.log.error(f"[moveitpy] INIT FAILED: {e!r}")
 
-        self.log.info(f"MoveItPyMotionNode online (backend='{self.backend}').")
+    def _require_moveit_ready(self) -> bool:
+        if self._moveit_ready.is_set():
+            return True
+        if self._moveit_failed.is_set():
+            self._emit(f"ERROR:MOVEIT_INIT_FAILED {self._moveit_err}")
+            return False
+        self._emit("ERROR:MOVEIT_NOT_READY")
+        return False
 
     # ----------------------------------------------------------
-    # ✅ Provide get_planning_scene (PlanningSceneMonitor)
+    # (2) Cache get_planning_scene Service (RViz-safe)
     # ----------------------------------------------------------
-    def _try_provide_get_planning_scene_service(self) -> None:
+    def _ensure_get_planning_scene_cache_service(self) -> None:
+        if self._gps_srv is not None:
+            return
+
         ns = self.get_namespace() or "/"
         srv_name = f"{ns.rstrip('/')}/get_planning_scene" if ns != "/" else "/get_planning_scene"
 
-        try:
-            psm = None
+        qos_scene = QoSProfile(depth=1)
+        qos_scene.history = HistoryPolicy.KEEP_LAST
+        qos_scene.reliability = ReliabilityPolicy.RELIABLE
+        qos_scene.durability = DurabilityPolicy.VOLATILE  # maximal kompatibel
 
-            if hasattr(self.moveit, "get_planning_scene_monitor"):
-                psm = self.moveit.get_planning_scene_monitor()
+        # relative -> /shadow/monitored_planning_scene
+        self._gps_sub = self.create_subscription(
+            PlanningScene,
+            "monitored_planning_scene",
+            self._on_monitored_planning_scene,
+            qos_scene,
+        )
 
-            if psm is None and hasattr(self.moveit, "get_moveit_cpp"):
-                mc = self.moveit.get_moveit_cpp()
-                if hasattr(mc, "get_planning_scene_monitor"):
-                    psm = mc.get_planning_scene_monitor()
+        # relative -> /shadow/get_planning_scene
+        self._gps_srv = self.create_service(
+            GetPlanningScene,
+            "get_planning_scene",
+            self._on_get_planning_scene,
+        )
 
-            if psm is None:
-                self.log.warning(
-                    f"[psm] PlanningSceneMonitor nicht erreichbar – "
-                    f"get_planning_scene ({srv_name}) evtl. nicht verfügbar."
-                )
-                return
+        self.log.info(f"[psm] ✅ Cache get_planning_scene Service aktiv: {srv_name}")
 
-            if hasattr(psm, "providePlanningSceneService"):
-                psm.providePlanningSceneService()
-                self.log.info(f"[psm] providePlanningSceneService() aktiviert (Service: {srv_name})")
-                return
+    def _on_monitored_planning_scene(self, msg: PlanningScene) -> None:
+        self._last_scene = msg
 
-            if hasattr(psm, "provide_planning_scene_service"):
-                psm.provide_planning_scene_service()
-                self.log.info(f"[psm] provide_planning_scene_service() aktiviert (Service: {srv_name})")
-                return
+    def _on_get_planning_scene(
+        self,
+        _req: GetPlanningScene.Request,
+        res: GetPlanningScene.Response,
+    ) -> GetPlanningScene.Response:
+        # Muss schnell sein (RViz ruft früh auf).
+        if self._last_scene is not None:
+            res.scene = self._last_scene
+            res.scene.is_diff = False
+            return res
 
-            self.log.warning(
-                f"[psm] PlanningSceneMonitor gefunden, aber keine providePlanningSceneService()-Methode verfügbar – "
-                f"get_planning_scene ({srv_name}) könnte fehlen."
-            )
-
-        except Exception as e:
-            self.log.warning(f"[psm] Exception beim Aktivieren von get_planning_scene ({srv_name}): {e!r}")
+        if not self._warned_no_scene:
+            self._warned_no_scene = True
+            self.log.warn("[psm] get_planning_scene requested, aber noch kein monitored_planning_scene empfangen.")
+        res.scene = PlanningScene()
+        res.scene.is_diff = False
+        return res
 
     # ----------------------------------------------------------
     # TF Helper
@@ -341,7 +390,9 @@ class MoveItPyNode(Node):
             if not isinstance(cfg, dict):
                 raise ValueError("planner_cfg JSON ist kein dict.")
             self._planner_cfg.update(cfg)
-            self._apply_planner_cfg_to_params()
+            # ggf. MoveIt schon ready -> direkt anwenden
+            if self._moveit_ready.is_set():
+                self._apply_planner_cfg_to_params()
         except Exception as e:
             self.log.error(f"[config] set_planner_cfg: invalid JSON '{raw}': {e}")
 
@@ -351,6 +402,8 @@ class MoveItPyNode(Node):
     def _on_plan_pose(self, msg: PoseStamped) -> None:
         if self._busy:
             self._emit("ERROR:BUSY")
+            return
+        if not self._require_moveit_ready():
             return
 
         self._planned = None
@@ -397,6 +450,8 @@ class MoveItPyNode(Node):
     def _on_plan_named(self, msg: MsgString) -> None:
         if self._busy:
             self._emit("ERROR:BUSY")
+            return
+        if not self._require_moveit_ready():
             return
 
         name = (msg.data or "").strip()
@@ -451,6 +506,8 @@ class MoveItPyNode(Node):
         if self._busy:
             self._emit("ERROR:BUSY")
             return
+        if not self._require_moveit_ready():
+            return
         if not self._planned:
             self._emit("ERROR:NO_PLAN")
             return
@@ -464,7 +521,8 @@ class MoveItPyNode(Node):
             if self.is_real_backend:
                 ok = self._execute_via_omron(msg_traj)
             else:
-                ok = self.moveit.execute(self._planned, controllers=[])
+                # MoveItPy execute
+                ok = self.moveit.execute(self._planned, controllers=[])  # type: ignore[union-attr]
 
             if self._cancel:
                 self._emit("STOPPED:USER")
