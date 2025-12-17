@@ -10,7 +10,7 @@ Panels:
         - /PlanningScene1/Scene Geometry1
         - /PlanningScene1/Scene Robot1
       Splitter Ratio: 0.5
-    Tree Height: 963
+    Tree Height: 526
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -18,7 +18,6 @@ Panels:
       - /Current View1
     Name: Views
     Splitter Ratio: 0.5
-
 Visualization Manager:
   Class: ""
   Displays:
@@ -32,27 +31,88 @@ Visualization Manager:
         Value: Lines
       Name: Grid
       Normal Cell Count: 0
-      Offset: {X: 0, Y: 0, Z: 0}
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
       Plane: XY
       Plane Cell Count: 10
       Reference Frame: <Fixed Frame>
       Value: true
-
     - Class: rviz_default_plugins/TF
       Enabled: true
       Filter (blacklist): ""
       Filter (whitelist): ""
       Frame Timeout: 30
       Frames:
+        Adept_Viper_650_Interface_Plate:
+          Value: true
+        Adept_Viper_s650_Link1:
+          Value: true
+        Adept_Viper_s650_Link2:
+          Value: true
+        Adept_Viper_s650_Link3:
+          Value: true
+        Adept_Viper_s650_Link4:
+          Value: true
+        Adept_Viper_s650_Link5:
+          Value: true
+        Adept_Viper_s650_Link6:
+          Value: true
         All Enabled: true
+        cage:
+          Value: true
+        robot_mount:
+          Value: true
+        scene:
+          Value: true
+        shadow/home:
+          Value: true
+        shadow/service:
+          Value: true
+        sonotek_vortex:
+          Value: true
+        substrate:
+          Value: true
+        substrate_mount:
+          Value: true
+        tcp:
+          Value: true
+        tool_mount:
+          Value: true
+        world:
+          Value: true
       Marker Scale: 0.25
       Name: TF
       Show Arrows: true
       Show Axes: true
       Show Names: true
+      Tree:
+        world:
+          cage:
+            {}
+          robot_mount:
+            Adept_Viper_s650_Link1:
+              Adept_Viper_s650_Link2:
+                Adept_Viper_s650_Link3:
+                  Adept_Viper_s650_Link4:
+                    Adept_Viper_s650_Link5:
+                      Adept_Viper_s650_Link6:
+                        Adept_Viper_650_Interface_Plate:
+                          tool_mount:
+                            sonotek_vortex:
+                              tcp:
+                                {}
+          shadow/home:
+            {}
+          shadow/service:
+            {}
+          substrate_mount:
+            scene:
+              substrate:
+                {}
       Update Interval: 0
       Value: true
-
     - Alpha: 1
       Arrow Length: 0
       Axes Length: 0.0024999999441206455
@@ -74,7 +134,6 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: spraycoater/spray_path/poses
       Value: true
-
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: maPlanned
@@ -86,7 +145,6 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: spraycoater/spray_path/markers
       Value: true
-
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: maExecuted
@@ -98,7 +156,6 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: spraycoater/spray_path/executed_markers
       Value: true
-
     - Alpha: 1
       Arrow Length: 0.30000001192092896
       Axes Length: 0.0024999999441206455
@@ -120,8 +177,6 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: spraycoater/spray_path/executed_poses
       Value: true
-
-    # ✅ FIX: MoveIt PlanningScene auf /shadow hängen
     - Class: moveit_rviz_plugin/PlanningScene
       Enabled: true
       Move Group Namespace: /shadow
@@ -131,17 +186,74 @@ Visualization Manager:
       Scene Geometry:
         Scene Alpha: 1
         Scene Color: 255; 255; 255
-        Scene Display Time: 0
+        Scene Display Time: 9.999999747378752e-05
         Show Scene Geometry: true
         Voxel Coloring: Z-Axis
         Voxel Rendering: Occupied Voxels
       Scene Robot:
         Attached Body Color: 150; 50; 150
+        Links:
+          Adept_Viper_650_Interface_Plate:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          Adept_Viper_s650_Link1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          Adept_Viper_s650_Link2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          Adept_Viper_s650_Link3:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          Adept_Viper_s650_Link4:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          Adept_Viper_s650_Link5:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          Adept_Viper_s650_Link6:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          All Links Enabled: true
+          Expand Joint Details: false
+          Expand Link Details: false
+          Expand Tree: false
+          Link Tree Style: Links in Alphabetic Order
+          robot_mount:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          sonotek_vortex:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          tcp:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          tool_mount:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
         Robot Alpha: 1
         Show Robot Collision: false
         Show Robot Visual: true
       Value: true
-
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -161,8 +273,15 @@ Visualization Manager:
     Current:
       Class: rviz_default_plugins/Orbit
       Distance: 2.5528829097747803
-      Enable Stereo Rendering: {Stereo Eye Separation: 0.05999999865889549, Stereo Focal Distance: 1, Swap Stereo Eyes: false, Value: false}
-      Focal Point: {X: 0, Y: 0, Z: 0}
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -172,14 +291,18 @@ Visualization Manager:
       Target Frame: scene
       Value: Orbit (rviz_default_plugins)
       Yaw: 0.6503981351852417
-
+    Saved: ~
 Window Geometry:
-  Displays: {collapsed: false}
+  Displays:
+    collapsed: false
   Height: 1369
-  Help: {collapsed: false}
+  Help:
+    collapsed: false
   Hide Left Dock: false
   Hide Right Dock: false
-  Views: {collapsed: false}
+  QMainWindow State: 000000ff00000000fd00000001000000000000019b00000503fc0200000003fb000000100044006900730070006c006100790073010000003b00000249000000c700fffffffb0000000800480065006c0070010000028a000001360000006e00fffffffb0000000a0056006900650077007301000003c600000178000000a000ffffff0000085f0000050300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Views:
+    collapsed: false
   Width: 2560
   X: 1928
   Y: 31

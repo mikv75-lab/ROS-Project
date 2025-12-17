@@ -6,24 +6,17 @@ import json
 
 from PyQt6 import QtCore
 
-from rclpy.qos import (
-    QoSProfile,
-    ReliabilityPolicy,
-    DurabilityPolicy,
-    qos_profile_sensor_data,
-)
-
 from std_msgs.msg import String as MsgString, Bool as MsgBool, Float64 as MsgFloat64, Empty as MsgEmpty
 from geometry_msgs.msg import PoseStamped
 from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg
 
-from config.startup import AppContent
+from config.startup import AppContent, TopicSpec
 from .base_bridge import BaseBridge
 
 
 class MoveItPySignals(QtCore.QObject):
     """
-    Qt-Signale für MoveItPy Motion Planning / Execution
+    Qt-Signale für MoveItPy Planning / Execution
     """
 
     motionSpeedChanged = QtCore.pyqtSignal(float)
@@ -56,11 +49,8 @@ class MoveItPySignals(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def reemit_cached(self) -> None:
-        # Ergebnistext
         if self.last_result:
             self.motionResultChanged.emit(self.last_result)
-
-        # Trajektorien
         if self._last_planned is not None:
             self.plannedTrajectoryChanged.emit(self._last_planned)
         if self._last_executed is not None:
@@ -69,15 +59,13 @@ class MoveItPySignals(QtCore.QObject):
 
 class MoveItPyBridge(BaseBridge):
     """
-    Bridge zwischen UI und MoveItPy Motion Node
+    Bridge zwischen UI und MoveItPy Node.
 
-    WICHTIG:
-      - YAML ist "node-sicht":
-          subscribe = Node subscribt (UI -> Node)
-          publish   = Node publisht (Node -> UI)
-
-      - Falls BaseBridge intern "spiegelt", ignorieren wir das hier komplett
-        und verdrahten sauber per _ensure_pub/_ensure_sub.
+    SINGLE SOURCE OF TRUTH:
+      - Topic-Namen kommen direkt aus topics.yaml (AppContent.topic_by_id)
+      - QoS kommt direkt aus qos.yaml (AppContent.qos)
+      - KEIN manuelles Namespace-Prefixing hier!
+        (Node-Namespace kommt ausschließlich über rclpy Node namespace / RosBridge)
     """
 
     GROUP = "moveit_py"
@@ -91,7 +79,6 @@ class MoveItPyBridge(BaseBridge):
         self._last_planned_traj: Optional[RobotTrajectoryMsg] = None
         self._last_executed_traj: Optional[RobotTrajectoryMsg] = None
 
-        # eigene Verdrahtung
         self._ui_to_node_pubs: Dict[str, Any] = {}
         self._node_to_ui_subs: Dict[str, Any] = {}
 
@@ -100,18 +87,13 @@ class MoveItPyBridge(BaseBridge):
         s = self.signals
         s.moveToHomeRequested.connect(self._on_move_home)
         s.moveToServiceRequested.connect(self._on_move_service)
-
         s.moveToHomeRequestedWithSpeed.connect(self._on_move_home_with_speed)
         s.moveToServiceRequestedWithSpeed.connect(self._on_move_service_with_speed)
-
         s.moveToPoseRequested.connect(self._on_move_to_pose)
-
         s.motionSpeedChanged.connect(self._on_motion_speed_changed)
         s.plannerCfgChanged.connect(self._on_planner_cfg_changed)
 
-        # ------------------------
         # UI -> Node (Node subscribt)
-        # ------------------------
         self._ensure_pub("plan_named", MsgString)
         self._ensure_pub("plan_pose", PoseStamped)
         self._ensure_pub("execute", MsgBool)
@@ -119,83 +101,53 @@ class MoveItPyBridge(BaseBridge):
         self._ensure_pub("set_speed_mm_s", MsgFloat64)
         self._ensure_pub("set_planner_cfg", MsgString)
 
-        # ------------------------
         # Node -> UI (Node publisht)
-        # ------------------------
         self._ensure_sub("motion_result", MsgString, self._on_motion_result)
         self._ensure_sub("planned_trajectory_rt", RobotTrajectoryMsg, self._on_planned_traj)
         self._ensure_sub("executed_trajectory_rt", RobotTrajectoryMsg, self._on_executed_traj)
 
         self.get_logger().info(
             "[moveitpy] MoveItPyBridge initialisiert "
-            f"(namespace='{self.namespace or 'default'}') – FIX wiring active."
+            f"(namespace='{self.namespace or 'default'}') – SSoT topics/qos active."
         )
 
     # ─────────────────────────────────────────────────────────────
-    # Helpers: YAML spec → topic name + QoS
+    # Helpers: TopicSpec aus AppContent
     # ─────────────────────────────────────────────────────────────
 
-    def _resolve_ns_topic(self, name: str) -> str:
-        name = (name or "").strip()
-        if not name:
-            return name
-        if name.startswith("/"):
-            return name
-
-        ns = (self.namespace or "").strip().strip("/")
-        if not ns:
-            return "/" + name
-        return f"/{ns}/{name}".replace("//", "/")
-
-    def _qos_from_spec(self, spec: Any) -> QoSProfile:
-        qos_id = getattr(spec, "qos", None) or getattr(spec, "qos_id", None) or "default"
-        qos_id = str(qos_id).lower()
-
-        if qos_id == "sensor_data":
-            return qos_profile_sensor_data
-
-        if qos_id == "latched":
-            return QoSProfile(
-                depth=1,
-                reliability=ReliabilityPolicy.RELIABLE,
-                durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            )
-
-        return QoSProfile(
-            depth=10,
-            reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.VOLATILE,
-        )
-
-    def _spec_from_content(self, direction: str, topic_id: str) -> Any:
+    def _spec(self, direction: str, topic_id: str) -> TopicSpec:
         return self._content.topic_by_id(self.GROUP, direction, topic_id)
 
-    def _topic_name_from_content(self, direction: str, topic_id: str) -> str:
-        spec = self._spec_from_content(direction, topic_id)
-        raw_name = getattr(spec, "name", None) or getattr(spec, "topic", None) or ""
-        return self._resolve_ns_topic(str(raw_name))
+    def _topic_and_qos(self, direction: str, topic_id: str) -> tuple[str, Any]:
+        spec = self._spec(direction, topic_id)
+
+        topic = str(spec.name)  # MUSS relativ sein (kein führendes "/")
+        if topic.startswith("/"):
+            raise ValueError(
+                f"[moveitpy] topics.yaml Fehler: '{topic}' beginnt mit '/', "
+                "damit würde ROS den Node-Namespace ignorieren."
+            )
+
+        qos = self._content.qos(str(spec.qos_key))
+        return topic, qos
 
     def _ensure_pub(self, topic_id: str, msg_type: Type) -> None:
         # UI -> Node: Publisher auf YAML 'subscribe'
         if topic_id in self._ui_to_node_pubs:
             return
-        spec = self._spec_from_content("subscribe", topic_id)
-        topic = self._topic_name_from_content("subscribe", topic_id)
-        qos = self._qos_from_spec(spec)
 
+        topic, qos = self._topic_and_qos("subscribe", topic_id)
         self._ui_to_node_pubs[topic_id] = self.create_publisher(msg_type, topic, qos)
-        self.get_logger().info(f"[moveitpy] PUB ui->node id={topic_id} topic={topic}")
+        self.get_logger().info(f"[moveitpy] PUB ui->node id={topic_id} topic={self._resolve_full(topic)} qos={self._qos_name(qos)}")
 
     def _ensure_sub(self, topic_id: str, msg_type: Type, cb: Callable) -> None:
         # Node -> UI: Subscription auf YAML 'publish'
         if topic_id in self._node_to_ui_subs:
             return
-        spec = self._spec_from_content("publish", topic_id)
-        topic = self._topic_name_from_content("publish", topic_id)
-        qos = self._qos_from_spec(spec)
 
+        topic, qos = self._topic_and_qos("publish", topic_id)
         self._node_to_ui_subs[topic_id] = self.create_subscription(msg_type, topic, cb, qos)
-        self.get_logger().info(f"[moveitpy] SUB node->ui id={topic_id} topic={topic}")
+        self.get_logger().info(f"[moveitpy] SUB node->ui id={topic_id} topic={self._resolve_full(topic)} qos={self._qos_name(qos)}")
 
     def _pub_ui_to_node(self, topic_id: str):
         p = self._ui_to_node_pubs.get(topic_id)
@@ -204,14 +156,32 @@ class MoveItPyBridge(BaseBridge):
         return p
 
     # ─────────────────────────────────────────────────────────────
-    # Inbound vom Motion Node (Node -> UI)
+    # kleine Log-Helfer (optional, aber praktisch)
+    # ─────────────────────────────────────────────────────────────
+
+    def _resolve_full(self, rel: str) -> str:
+        ns = (self.namespace or "").strip().strip("/")
+        return f"/{ns}/{rel}".replace("//", "/") if ns else f"/{rel}"
+
+    @staticmethod
+    def _qos_name(_qos: Any) -> str:
+        # nur fürs Logging – kein Hardcoding von Policies
+        try:
+            rel = getattr(_qos, "reliability", None)
+            dur = getattr(_qos, "durability", None)
+            dep = getattr(_qos, "depth", None)
+            return f"reliability={rel} durability={dur} depth={dep}"
+        except Exception:
+            return "qos=?"
+
+    # ─────────────────────────────────────────────────────────────
+    # Inbound vom MoveItPy Node (Node -> UI)
     # ─────────────────────────────────────────────────────────────
 
     def _on_motion_result(self, msg: MsgString) -> None:
         text = (msg.data or "").strip()
         self.signals.last_result = text
 
-        # Auto-execute bei plan_named/plan_pose
         if self._pending_named:
             if text.startswith("PLANNED:OK") and f"named='{self._pending_named}'" in text:
                 self._publish_execute(True)
@@ -286,7 +256,6 @@ class MoveItPyBridge(BaseBridge):
         self._pub_ui_to_node("execute").publish(MsgBool(data=bool(flag)))
 
     def publish_stop(self) -> None:
-        # optional: MotionNode muss "stop" subscribe haben
         self._pub_ui_to_node("stop").publish(MsgEmpty())
 
     # ─────────────────────────────────────────────────────────────

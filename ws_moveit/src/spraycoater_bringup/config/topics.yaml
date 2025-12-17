@@ -109,7 +109,7 @@ topics:
         name: moveit_py/motion_result
         type: std_msgs/msg/String
         qos: default
-        
+
       - id: robot_description_semantic
         name: robot_description_semantic
         type: std_msgs/msg/String
@@ -145,7 +145,7 @@ topics:
       - id: collision_object
         name: collision_object
         type: moveit_msgs/msg/CollisionObject
-        qos: latched
+        qos: scene_collision
 
     subscribe:
       - id: cage_set

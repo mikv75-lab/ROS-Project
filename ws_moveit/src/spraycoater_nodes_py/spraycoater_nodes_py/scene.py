@@ -27,7 +27,7 @@ MAX_SCENE_WAIT = 30.0
 
 # ✅ Republish deaktiviert - verhindert "Moved backwards in time" Warning
 # Wenn du Republish brauchst, setze z.B. auf 300.0 (5 Minuten)
-REPUBLISH_PERIOD_S = 0.0
+REPUBLISH_PERIOD_S = 10.0
 
 OID_ALIAS = {
     "cage": "cage",

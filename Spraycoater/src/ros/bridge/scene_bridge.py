@@ -1,38 +1,32 @@
-# src/ros/bridge/scene_bridge.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from typing import List, Optional
 
-from std_msgs.msg import String
+from typing import Optional, Dict, Any, Type, List
+
 from PyQt6 import QtCore
 
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+
+from std_msgs.msg import String as MsgString
+
 from config.startup import AppContent
-from .base_bridge import BaseBridge, sub_handler
+from .base_bridge import BaseBridge
 
 
 class SceneSignals(QtCore.QObject):
     """
-    Qt-Signalträger für die Scene-Bridge.
+    Qt-Signale für Scene-Widget.
 
-    Inbound (ROS -> UI):
-      - cageListChanged(list[str])
-      - mountListChanged(list[str])
-      - substrateListChanged(list[str])
-      - cageCurrentChanged(str)
-      - mountCurrentChanged(str)
-      - substrateCurrentChanged(str)
+    Node -> UI (Strings):
+      - cage_list, mount_list, substrate_list   (comma-separated)
+      - cage_current, mount_current, substrate_current
 
-    Outbound (UI -> ROS):
-      - setCageRequested(str)
-      - setMountRequested(str)
-      - setSubstrateRequested(str)
-
-    Zusätzlich spiegeln wir den aktuellen UI-State als Attribute auf diesem
-    QObject (cage_list, mount_list, substrate_list, cage_current, mount_current,
-    substrate_current), damit die UI initial synchronisieren kann, ohne auf
-    neue ROS-Nachrichten warten zu müssen.
+    UI -> Node:
+      - setCageRequested(name)
+      - setMountRequested(name)
+      - setSubstrateRequested(name)
     """
-    # Inbound
+
     cageListChanged = QtCore.pyqtSignal(list)
     mountListChanged = QtCore.pyqtSignal(list)
     substrateListChanged = QtCore.pyqtSignal(list)
@@ -41,145 +35,192 @@ class SceneSignals(QtCore.QObject):
     mountCurrentChanged = QtCore.pyqtSignal(str)
     substrateCurrentChanged = QtCore.pyqtSignal(str)
 
-    # Outbound
     setCageRequested = QtCore.pyqtSignal(str)
     setMountRequested = QtCore.pyqtSignal(str)
     setSubstrateRequested = QtCore.pyqtSignal(str)
 
     def __init__(self, parent: Optional[QtCore.QObject] = None) -> None:
         super().__init__(parent)
-        # Spiegel-Attribute
-        self.cage_list: List[str] = []
-        self.mount_list: List[str] = []
-        self.substrate_list: List[str] = []
-        self.cage_current: str = ""
-        self.mount_current: str = ""
-        self.substrate_current: str = ""
 
     @QtCore.pyqtSlot()
     def reemit_cached(self) -> None:
-        """
-        Emittiert alle zuletzt bekannten Werte erneut.
-        Wird von der UIBridge nach dem Connect verwendet, falls vorhanden.
-        """
-        self.cageListChanged.emit(list(self.cage_list))
-        self.mountListChanged.emit(list(self.mount_list))
-        self.substrateListChanged.emit(list(self.substrate_list))
-        self.cageCurrentChanged.emit(self.cage_current)
-        self.mountCurrentChanged.emit(self.mount_current)
-        self.substrateCurrentChanged.emit(self.substrate_current)
+        # Bridge macht das (weil Cache dort liegt)
+        return
 
 
 class SceneBridge(BaseBridge):
-    """
-    UI-Bridge für 'scene' mit eingebauten Qt-Signalen.
-
-    - Abonniert (vom ROS-Scene-Node publiziert): *_list, *_current
-      -> aktualisiert internen State + emittiert Qt-Signale
-
-    - Publiziert (vom ROS-Scene-Node abonniert): *_set
-      -> via set_cage/mount/substrate oder über die Qt-Outbound-Signale
-    """
     GROUP = "scene"
 
-    def __init__(self, content: AppContent, namespace: str = ""):
-        # WICHTIG: Signale *vor* super().__init__() anlegen, damit bereits
-        # empfangene latched-Nachrichten in den Handlern sicher Signale besitzen.
+    def __init__(self, content: AppContent, *, namespace: str = ""):
         self.signals = SceneSignals()
 
-        # Interner UI-State
-        self.cage_list: List[str] = []
-        self.mount_list: List[str] = []
-        self.substrate_list: List[str] = []
-        self.cage_current: str = ""
-        self.mount_current: str = ""
-        self.substrate_current: str = ""
+        # UI -> Node pubs (scene/subscribe)
+        self._ui_to_node_pubs: Dict[str, Any] = {}
 
-        # Jetzt BaseBridge initialisieren (Publisher/Subscriber gemäß topics.yaml)
+        # Node -> UI subs (scene/publish)
+        self._node_to_ui_subs: Dict[str, Any] = {}
+
+        # Cache
+        self._cage_list: List[str] = []
+        self._mount_list: List[str] = []
+        self._substrate_list: List[str] = []
+        self._cage_current: str = ""
+        self._mount_current: str = ""
+        self._substrate_current: str = ""
+
         super().__init__("scene_bridge", content, namespace=namespace)
 
-        # Outbound Qt -> ROS wiring (UI drückt Buttons im ServiceTab)
-        self.signals.setCageRequested.connect(self.set_cage)
-        self.signals.setMountRequested.connect(self.set_mount)
-        self.signals.setSubstrateRequested.connect(self.set_substrate)
+        s = self.signals
+        s.setCageRequested.connect(self.set_cage)
+        s.setMountRequested.connect(self.set_mount)
+        s.setSubstrateRequested.connect(self.set_substrate)
 
-    # -------- eingehende Nachrichten (vom ROS-Node 'publish') --------
+        # ---- UI -> Node publishers (IDs wie in topics.yaml: scene/subscribe) ----
+        self._ensure_pub("cage_set", MsgString)
+        self._ensure_pub("mount_set", MsgString)
+        self._ensure_pub("substrate_set", MsgString)
 
-    @sub_handler("scene", "cage_list")
-    def _on_cage_list(self, msg: String):
-        self.cage_list = self._parse_csv(getattr(msg, "data", ""))
-        # State auch in den Signals spiegeln, damit UI ihn pullen kann
-        self.signals.cage_list = list(self.cage_list)
-        # Event emittieren (UI kann push-basiert reagieren)
-        self.signals.cageListChanged.emit(self.cage_list)
-        self.get_logger().info(f"[scene] cage_list: {len(self.cage_list)} items")
+        # ---- Node -> UI subscriptions (IDs wie in topics.yaml: scene/publish) ----
+        self._ensure_sub("cage_list", MsgString, self._on_cage_list)
+        self._ensure_sub("mount_list", MsgString, self._on_mount_list)
+        self._ensure_sub("substrate_list", MsgString, self._on_substrate_list)
 
-    @sub_handler("scene", "mount_list")
-    def _on_mount_list(self, msg: String):
-        self.mount_list = self._parse_csv(getattr(msg, "data", ""))
-        self.signals.mount_list = list(self.mount_list)
-        self.signals.mountListChanged.emit(self.mount_list)
-        self.get_logger().info(f"[scene] mount_list: {len(self.mount_list)} items")
+        self._ensure_sub("cage_current", MsgString, self._on_cage_current)
+        self._ensure_sub("mount_current", MsgString, self._on_mount_current)
+        self._ensure_sub("substrate_current", MsgString, self._on_substrate_current)
 
-    @sub_handler("scene", "substrate_list")
-    def _on_substrate_list(self, msg: String):
-        self.substrate_list = self._parse_csv(getattr(msg, "data", ""))
-        self.signals.substrate_list = list(self.substrate_list)
-        self.signals.substrateListChanged.emit(self.substrate_list)
-        self.get_logger().info(f"[scene] substrate_list: {len(self.substrate_list)} items")
+        self.get_logger().info(
+            f"[scene] SceneBridge bereit (ns='{self.namespace or '/'}')"
+        )
 
-    @sub_handler("scene", "cage_current")
-    def _on_cage_current(self, msg: String):
-        self.cage_current = (getattr(msg, "data", "") or "").strip()
-        self.signals.cage_current = self.cage_current
-        self.signals.cageCurrentChanged.emit(self.cage_current)
-        self.get_logger().info(f"[scene] cage_current: {self.cage_current or '-'}")
+    # ─────────────────────────────────────────────────────────────
+    # YAML helpers (AppContent)
+    # ─────────────────────────────────────────────────────────────
 
-    @sub_handler("scene", "mount_current")
-    def _on_mount_current(self, msg: String):
-        self.mount_current = (getattr(msg, "data", "") or "").strip()
-        self.signals.mount_current = self.mount_current
-        self.signals.mountCurrentChanged.emit(self.mount_current)
-        self.get_logger().info(f"[scene] mount_current: {self.mount_current or '-'}")
+    def _resolve_ns_topic(self, name: str) -> str:
+        name = (name or "").strip()
+        if not name:
+            return name
+        if name.startswith("/"):
+            return name
+        ns = (self.namespace or "").strip().strip("/")
+        if not ns:
+            return "/" + name
+        return f"/{ns}/{name}".replace("//", "/")
 
-    @sub_handler("scene", "substrate_current")
-    def _on_substrate_current(self, msg: String):
-        self.substrate_current = (getattr(msg, "data", "") or "").strip()
-        self.signals.substrate_current = self.substrate_current
-        self.signals.substrateCurrentChanged.emit(self.substrate_current)
-        self.get_logger().info(f"[scene] substrate_current: {self.substrate_current or '-'}")
+    def _qos_from_spec(self, spec: Any) -> QoSProfile:
+        qos_id = getattr(spec, "qos", None) or getattr(spec, "qos_id", None) or "default"
+        qos_id = str(qos_id).lower()
 
-    # -------- Publish-API (UI -> ROS-Node 'subscribe') --------
+        if qos_id == "latched":
+            return QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            )
+
+        if qos_id == "sensor_data":
+            # minimal sensor-data profile (BEST_EFFORT) – reicht für Strings auch
+            return QoSProfile(
+                depth=5,
+                reliability=ReliabilityPolicy.BEST_EFFORT,
+                durability=DurabilityPolicy.VOLATILE,
+            )
+
+        return QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+
+    def _spec(self, direction: str, topic_id: str) -> Any:
+        return self._content.topic_by_id(self.GROUP, direction, topic_id)
+
+    def _topic(self, direction: str, topic_id: str) -> str:
+        spec = self._spec(direction, topic_id)
+        raw = getattr(spec, "name", None) or getattr(spec, "topic", None) or ""
+        return self._resolve_ns_topic(str(raw))
+
+    def _ensure_pub(self, topic_id: str, msg_type: Type) -> None:
+        if topic_id in self._ui_to_node_pubs:
+            return
+        spec = self._spec("subscribe", topic_id)
+        topic = self._topic("subscribe", topic_id)
+        qos = self._qos_from_spec(spec)
+        self._ui_to_node_pubs[topic_id] = self.create_publisher(msg_type, topic, qos)
+        self.get_logger().info(f"[scene] PUB ui->node id={topic_id} topic={topic}")
+
+    def _ensure_sub(self, topic_id: str, msg_type: Type, cb) -> None:
+        if topic_id in self._node_to_ui_subs:
+            return
+        spec = self._spec("publish", topic_id)
+        topic = self._topic("publish", topic_id)
+        qos = self._qos_from_spec(spec)
+        self._node_to_ui_subs[topic_id] = self.create_subscription(msg_type, topic, cb, qos)
+        self.get_logger().info(f"[scene] SUB node->ui id={topic_id} topic={topic}")
+
+    def _pub(self, topic_id: str):
+        p = self._ui_to_node_pubs.get(topic_id)
+        if p is None:
+            raise KeyError(f"[scene] Publisher '{topic_id}' fehlt")
+        return p
+
+    # ─────────────────────────────────────────────────────────────
+    # Public API
+    # ─────────────────────────────────────────────────────────────
 
     def set_cage(self, name: str) -> None:
-        self._publish_set("cage_set", name)
+        self._pub("cage_set").publish(MsgString(data=(name or "").strip()))
+        self.get_logger().debug(f"[scene_bridge] PUB cage_set -> {name!r}")
 
     def set_mount(self, name: str) -> None:
-        self._publish_set("mount_set", name)
+        self._pub("mount_set").publish(MsgString(data=(name or "").strip()))
+        self.get_logger().debug(f"[scene_bridge] PUB mount_set -> {name!r}")
 
     def set_substrate(self, name: str) -> None:
-        self._publish_set("substrate_set", name)
+        self._pub("substrate_set").publish(MsgString(data=(name or "").strip()))
+        self.get_logger().debug(f"[scene_bridge] PUB substrate_set -> {name!r}")
 
-    # -------- intern --------
+    def reemit_cached(self) -> None:
+        s = self.signals
+        s.cageListChanged.emit(list(self._cage_list))
+        s.mountListChanged.emit(list(self._mount_list))
+        s.substrateListChanged.emit(list(self._substrate_list))
+        s.cageCurrentChanged.emit(self._cage_current)
+        s.mountCurrentChanged.emit(self._mount_current)
+        s.substrateCurrentChanged.emit(self._substrate_current)
 
-    def _publish_set(self, topic_id: str, value: str) -> None:
-        """
-        Publisht eine std_msgs/String-Nachricht auf das Topic, das im Node
-        (Scene) als 'subscribe' definiert ist (invertierte Perspektive).
-        """
-        try:
-            Msg = self.spec("subscribe", topic_id).resolve_type()
-            pub = self.pub(topic_id)
-            msg = Msg()
-            if hasattr(msg, "data"):
-                msg.data = str(value)
-            self.get_logger().info(f"[scene] -> {topic_id}: {value}")
-            pub.publish(msg)
-        except Exception as e:
-            self.get_logger().error(f"[scene] publish {topic_id} failed: {e}")
+    # ─────────────────────────────────────────────────────────────
+    # Node -> UI callbacks
+    # ─────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _parse_csv(s: str) -> List[str]:
-        if not s:
+    def _parse_list(csv: str) -> List[str]:
+        csv = (csv or "").strip()
+        if not csv:
             return []
-        return [x.strip() for x in s.split(",") if x.strip()]
+        return [x.strip() for x in csv.split(",") if x.strip()]
+
+    def _on_cage_list(self, msg: MsgString) -> None:
+        self._cage_list = self._parse_list(msg.data)
+        self.signals.cageListChanged.emit(list(self._cage_list))
+
+    def _on_mount_list(self, msg: MsgString) -> None:
+        self._mount_list = self._parse_list(msg.data)
+        self.signals.mountListChanged.emit(list(self._mount_list))
+
+    def _on_substrate_list(self, msg: MsgString) -> None:
+        self._substrate_list = self._parse_list(msg.data)
+        self.signals.substrateListChanged.emit(list(self._substrate_list))
+
+    def _on_cage_current(self, msg: MsgString) -> None:
+        self._cage_current = (msg.data or "").strip()
+        self.signals.cageCurrentChanged.emit(self._cage_current)
+
+    def _on_mount_current(self, msg: MsgString) -> None:
+        self._mount_current = (msg.data or "").strip()
+        self.signals.mountCurrentChanged.emit(self._mount_current)
+
+    def _on_substrate_current(self, msg: MsgString) -> None:
+        self._substrate_current = (msg.data or "").strip()
+        self.signals.substrateCurrentChanged.emit(self._substrate_current)

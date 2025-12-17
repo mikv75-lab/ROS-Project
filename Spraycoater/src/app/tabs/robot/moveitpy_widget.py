@@ -100,16 +100,40 @@ class MoveItPyWidget(QWidget):
         )
 
     # ------------------------------------------------------------------ Bridge-Wiring
+    def _find_moveitpy_bridge(self):
+        """
+        Robust: findet MoveItPyBridge unabhängig davon ob alte (_motion) oder neue API genutzt wird.
+        """
+        if self.bridge is None:
+            return None
+
+        # 1) neue API
+        b = getattr(self.bridge, "moveitpy_bridge", None)
+        if b is not None:
+            try:
+                _ = b.signals
+                return b
+            except Exception:
+                pass
+
+        # 2) interne Felder (neu)
+        b = getattr(self.bridge, "_moveit", None)
+        if b is not None and getattr(b, "signals", None) is not None:
+            return b
+
+        # 3) backward compat (alt)
+        b = getattr(self.bridge, "_motion", None)
+        if b is not None and getattr(b, "signals", None) is not None:
+            return b
+
+        return None
+
     def _wire_outbound_to_bridge_if_present(self):
         """
         Verdrahtet die Widget-Signale direkt mit der MoveItPyBridge,
-        wenn eine UIBridge mit MoveItPyBridge (_motion) übergeben wurde.
+        wenn eine UIBridge übergeben wurde.
         """
-        if self.bridge is None:
-            return
-
-        # bleibt absichtlich "_motion", damit bestehende Widgets/ServiceTab nicht brechen
-        moveitpy_bridge = getattr(self.bridge, "_motion", None)
+        moveitpy_bridge = self._find_moveitpy_bridge()
         if moveitpy_bridge is None:
             return
 

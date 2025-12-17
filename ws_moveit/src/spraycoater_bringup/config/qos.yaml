@@ -1,4 +1,3 @@
-version: 1
 profiles:
   default:
     history: KEEP_LAST
@@ -18,9 +17,8 @@ profiles:
     reliability: BEST_EFFORT
     durability: VOLATILE
 
-  # optional:
-  # deadline_ms: 0
-  # lifespan_ms: 0
-  # liveliness: SYSTEM_DEFAULT     # SYSTEM_DEFAULT | AUTOMATIC | MANUAL_BY_TOPIC
-  # liveliness_lease_ms: 0
-  # avoid_ros_namespace_conventions: false
+  scene_collision:
+    history: KEEP_LAST
+    depth: 50          # nimm >= Anzahl collision objects, z.B. 50
+    reliability: RELIABLE
+    durability: TRANSIENT_LOCAL
