@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
+
 from typing import Optional, Callable, Tuple
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
-    QGroupBox, QWidget, QFormLayout, QHBoxLayout, QPushButton,
-    QSizePolicy, QLabel
-)
+from PyQt6.QtWidgets import QGroupBox, QWidget, QFormLayout, QHBoxLayout, QPushButton, QSizePolicy, QLabel
 
 from .views_2d.view_controller_2d import ViewController2D
 
@@ -17,7 +15,7 @@ def _set_policy(
     w: QWidget,
     *,
     h: QSizePolicy.Policy = QSizePolicy.Policy.Expanding,
-    v: QSizePolicy.Policy = QSizePolicy.Policy.Preferred
+    v: QSizePolicy.Policy = QSizePolicy.Policy.Preferred,
 ) -> None:
     sp = w.sizePolicy()
     sp.setHorizontalPolicy(h)
@@ -26,10 +24,8 @@ def _set_policy(
 
 
 class Views2DBox(QGroupBox):
-    """
-    2D-Controls (Matplotlib): Top / Front / Back / Left / Right
-    Ruft switch_2d(plane) – zusätzlich steht `controller` für programmatic use bereit.
-    """
+    """2D-Controls (Matplotlib): Top / Front / Back / Left / Right"""
+
     def __init__(
         self,
         *,
@@ -37,12 +33,12 @@ class Views2DBox(QGroupBox):
         refresh_callable: Optional[Callable[[], None]] = None,
         get_bounds: Optional[Callable[[], Bounds]] = None,
         set_bounds: Optional[Callable[[Bounds], None]] = None,
-        parent: Optional[QWidget] = None
+        parent: Optional[QWidget] = None,
     ):
         super().__init__("2D View", parent)
         self._switch_2d = switch_2d
 
-        # Optionaler Controller (falls refresh/bounds übergeben)
+        # Controller ist immer vorhanden; refresh ist ggf. No-Op.
         self.controller = ViewController2D(
             set_plane=self._switch_2d,
             refresh=(refresh_callable or (lambda: None)),
@@ -63,10 +59,10 @@ class Views2DBox(QGroupBox):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
 
-        self.btnTop   = QPushButton("Top", self)
+        self.btnTop = QPushButton("Top", self)
         self.btnFront = QPushButton("Front", self)
-        self.btnBack  = QPushButton("Back", self)
-        self.btnLeft  = QPushButton("Left", self)
+        self.btnBack = QPushButton("Back", self)
+        self.btnLeft = QPushButton("Left", self)
         self.btnRight = QPushButton("Right", self)
 
         for b in (self.btnTop, self.btnFront, self.btnBack, self.btnLeft, self.btnRight):
@@ -75,16 +71,11 @@ class Views2DBox(QGroupBox):
 
         form.addRow(QLabel("Plane", self), row)
 
-        # Wiring – wenn Controller existiert, nutze ihn; sonst direkt switch_2d
-        if refresh_callable:
-            self.btnTop.clicked.connect(self.controller.plane_top)
-            self.btnFront.clicked.connect(self.controller.plane_front)
-            self.btnBack.clicked.connect(self.controller.plane_back)
-            self.btnLeft.clicked.connect(self.controller.plane_left)
-            self.btnRight.clicked.connect(self.controller.plane_right)
-        else:
-            self.btnTop.clicked.connect(  lambda: self._switch_2d("top"))
-            self.btnFront.clicked.connect(lambda: self._switch_2d("front"))
-            self.btnBack.clicked.connect( lambda: self._switch_2d("back"))
-            self.btnLeft.clicked.connect( lambda: self._switch_2d("left"))
-            self.btnRight.clicked.connect(lambda: self._switch_2d("right"))
+        # Wiring: immer über den Controller (keine Fallback-Logik).
+        self.btnTop.clicked.connect(self.controller.plane_top)
+        self.btnFront.clicked.connect(self.controller.plane_front)
+        self.btnBack.clicked.connect(self.controller.plane_back)
+        self.btnLeft.clicked.connect(self.controller.plane_left)
+        self.btnRight.clicked.connect(self.controller.plane_right)
+
+        _set_policy(self, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)

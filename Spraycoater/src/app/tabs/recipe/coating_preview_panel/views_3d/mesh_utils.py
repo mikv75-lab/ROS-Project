@@ -14,17 +14,28 @@ _LOG = logging.getLogger("app.tabs.recipe.mesh_utils")
 
 # ---------- Kontextbasierte Pfad-Helfer ----------
 def _project_root(ctx) -> str:
+    # Liefert den Projekt-Root:
+    # - bevorzugt ctx.project_root (wenn vorhanden)
+    # - sonst relativ zum aktuellen File (4 Ebenen hoch)
     if ctx and getattr(ctx, "project_root", None):
         return os.path.abspath(ctx.project_root)
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 
 def _resource_root(ctx) -> str:
+    # Liefert den Resource-Root:
+    # - bevorzugt ctx.resource_root (wenn vorhanden)
+    # - sonst <project_root>/resource
     if ctx and getattr(ctx, "resource_root", None):
         return os.path.abspath(ctx.resource_root)
     return os.path.join(_project_root(ctx), "resource")
 
 # ---------- Pfad-Auflösung ----------
 def _resolve_mesh_path(uri_or_path: str, ctx=None) -> str:
+    # Nimmt einen URI/Path und versucht daraus einen existierenden Dateipfad zu machen:
+    # - absoluter Pfad (wenn existiert)
+    # - package://... via ament_index
+    # - resource/... relativ zum Projekt bzw. resource_root
+    # - sonst relativ zum project_root
     p = (uri_or_path or "").strip()
     if not p:
         raise FileNotFoundError("Leerer Mesh-Pfad")
@@ -45,18 +56,22 @@ def _resolve_mesh_path(uri_or_path: str, ctx=None) -> str:
         raise FileNotFoundError(f"package-URI nicht gefunden: {p}")
 
     if p.startswith("resource/"):
+        # 1) direkt relativ zum project_root
         cand = os.path.join(_project_root(ctx), p)
         if os.path.exists(cand):
             return cand
+        # 2) relativ zum expliziten resource_root
         cand2 = os.path.join(_resource_root(ctx), p[len("resource/"):])
         if os.path.exists(cand2):
             return cand2
         raise FileNotFoundError(f"resource-Pfad nicht gefunden: {p}")
 
+    # relative Pfade am Projekt-Root probieren
     cand = os.path.join(_project_root(ctx), p)
     if os.path.exists(cand):
         return cand
 
+    # zuletzt: ggf. ist p bereits relativ/normal, aber existiert im CWD
     if os.path.exists(p):
         return os.path.abspath(p)
 
@@ -64,6 +79,8 @@ def _resolve_mesh_path(uri_or_path: str, ctx=None) -> str:
 
 # ---------- Geometrie-Utils ----------
 def _rpy_deg_to_matrix(rpy_deg: Tuple[float, float, float]) -> np.ndarray:
+    # Konvertiert Roll/Pitch/Yaw in Grad zu einer 3x3 Rotationsmatrix.
+    # Reihenfolge: Rz(yaw) @ Ry(pitch) @ Rx(roll)
     r, p, y = [math.radians(v) for v in rpy_deg]
     Rx = np.array([[1, 0, 0],
                    [0, math.cos(r), -math.sin(r)],
@@ -82,13 +99,18 @@ def apply_transform(
     translate_mm: Tuple[float, float, float] = (0.0, 0.0, 0.0),
     rpy_deg: Tuple[float, float, float] = (0.0, 0.0, 0.0),
 ) -> pv.PolyData:
+    # Wendet Rotation (rpy_deg) und Translation (translate_mm) auf ein Mesh an.
+    # Rückgabe ist eine Kopie (deep copy), Original bleibt unverändert.
     out = mesh.copy(deep=True)
     R = _rpy_deg_to_matrix(rpy_deg)
     out.points[:] = (out.points @ R.T) + np.asarray(translate_mm, dtype=float)[None, :]
     return out
 
 def center_mesh_at_origin(mesh: pv.PolyData, *, mode: str = "geom_center") -> pv.PolyData:
-    """Mittelpunkt an (0,0,0). Nur für Spezialfälle – ersetzt NICHT die Mount-Floor-Logik."""
+    # Zentriert ein Mesh auf (0,0,0).
+    # - mode="bbox_center": Bounding-Box Mittelpunkt
+    # - sonst: geometrisches Zentrum (mesh.center)
+    # Hinweis: ist als Utility gedacht und ersetzt nicht die Mount-Floor-Normalisierung.
     m = mesh.copy()
     if mode == "bbox_center":
         xmin, xmax, ymin, ymax, zmin, zmax = m.bounds
@@ -102,12 +124,9 @@ def center_mesh_at_origin(mesh: pv.PolyData, *, mode: str = "geom_center") -> pv
     return m
 
 def mount_to_origin_floor(mesh: pv.PolyData, *, center_mode: str = "bbox_center") -> pv.PolyData:
-    """
-    Mount so normalisieren, dass:
-      - XY-Mitte bei (0,0) liegt (standard: BBox-Mitte, deterministisch)
-      - Unterseite (z_min) auf Z=0 liegt
-    => Mount-Frame am Ursprung, Boden bei z=0.
-    """
+    # Normalisiert ein Mount-Mesh in ein "Mount-Frame":
+    # - XY so verschieben, dass die Mitte bei (0,0) liegt (BBox-Mitte oder mesh.center)
+    # - Z so verschieben, dass die Unterseite (z_min) auf Z=0 liegt
     m = mesh.copy(deep=True)
     xmin, xmax, ymin, ymax, zmin, _ = m.bounds
     if center_mode == "bbox_center":
@@ -126,40 +145,43 @@ def place_substrate_on_mount_origin(
     rpy_deg: Tuple[float, float, float] = (0.0, 0.0, 0.0),
     triangulate: bool = True,
 ) -> pv.PolyData:
-    """
-    Mount liegt bereits am Ursprung (XY=0/0, Boden z=0).
-    Substrat:
-      1) Unterseite auf z=0
-      2) relativer scene_offset (xyz/rpy)
-    """
+    # Platziert ein Substrat relativ zum bereits normalisierten Mount-Frame:
+    # 1) Substrat-Unterseite (z_min) wird auf z=0 gesetzt
+    # 2) anschließend werden scene_offset (Translation + Rotation) angewendet
     m = sub_mesh.copy()
     if triangulate:
+        # optional triangulieren (falls Mesh nicht aus Dreiecken besteht)
         try:
             if hasattr(m, "is_all_triangles") and not m.is_all_triangles():
                 m = m.triangulate()
         except Exception:
             pass
 
+    # Unterseite auf z=0
     zmin = float(m.bounds[4])
     m.translate((0.0, 0.0, -zmin), inplace=True)
 
+    # scene_offset anwenden
     dx, dy = offset_xy
     dz = float(offset_z)
     m = apply_transform(m, translate_mm=(dx, dy, dz), rpy_deg=rpy_deg)
     return m
 
 def __load_mesh_meshio(path: str) -> pv.PolyData:
+    # Liest ein Mesh über meshio ein und baut daraus ein pv.PolyData.
+    # Erwartet Triangles (Nx3). Es wird bewusst kein clean()/Normals o.ä. gemacht.
     if not os.path.exists(path):
         raise FileNotFoundError(f"Mesh-Pfad existiert nicht: {path}")
 
     m = meshio.read(path)
 
+    # Punkte extrahieren (Nx3)
     pts = np.asarray(m.points, dtype=np.float64)
     if pts.ndim != 2 or pts.shape[1] < 3:
         raise RuntimeError(f"Ungültige Punktmatrix: shape={pts.shape}")
     pts = np.ascontiguousarray(pts[:, :3])
 
-    # Triangles holen
+    # Triangles holen: bevorzugt cells_dict["triangle"], ansonsten heuristisch aus m.cells
     cells = getattr(m, "cells_dict", None) or {}
     tri = cells.get("triangle", None)
     if tri is None or tri.size == 0:
@@ -178,28 +200,30 @@ def __load_mesh_meshio(path: str) -> pv.PolyData:
 
     tri = np.ascontiguousarray(tri, dtype=np.int64)
 
+    # Index-Range prüfen
     n_pts = pts.shape[0]
     if tri.min() < 0 or tri.max() >= n_pts:
         raise ValueError(f"Triangle-Index außerhalb 0..{n_pts-1}: min={tri.min()}, max={tri.max()} (n_pts={n_pts})")
 
-    # PyVista-Faces: [3,i,j,k, 3,i,j,k, ...]
+    # PyVista-Faces-Format: [3,i,j,k, 3,i,j,k, ...]
     faces = np.empty((tri.shape[0], 4), dtype=np.int64)
     faces[:, 0] = 3
     faces[:, 1:] = tri
     faces = faces.ravel(order="C")
 
-    # bewusst: kein clean()/triangulate()/Normals
     pv_mesh = pv.PolyData(pts, faces)
     return pv_mesh
 
 # ---------- Loader ----------
 def load_mesh(uri_or_path: str, ctx=None) -> pv.PolyData:
+    # Public Loader: löst zuerst den Pfad auf und lädt dann via meshio->pyvista.
     path = _resolve_mesh_path(uri_or_path, ctx)
     _LOG.debug("load_mesh: resolved path = %s", path)
     return __load_mesh_meshio(path)
 
 # ---------- Mounts: strikt aus substrate_mounts.yaml ----------
 def _get_mounts_yaml(ctx) -> Dict:
+    # Holt ctx.mounts_yaml (bereits als Dict geladen) und liefert den "mounts"-Block.
     my = getattr(ctx, "mounts_yaml", None)
     if not isinstance(my, dict):
         raise FileNotFoundError("ctx.mounts_yaml fehlt oder ist ungültig.")
@@ -209,6 +233,7 @@ def _get_mounts_yaml(ctx) -> Dict:
     return mounts
 
 def _get_mount_entry_strict(ctx, mount_key: str) -> Dict:
+    # Liefert den Mount-Entry für mount_key und wirft bei Fehlern klare Exceptions.
     key = (mount_key or "").strip()
     if not key:
         raise FileNotFoundError("Mount-Key ist leer.")
@@ -222,6 +247,7 @@ def _get_mount_entry_strict(ctx, mount_key: str) -> Dict:
     return entry
 
 def resolve_mount_mesh_path(ctx, mount_key: str) -> str:
+    # Liest aus mounts_yaml den Mesh-URI des Mounts und löst ihn zu einem Pfad auf.
     entry = _get_mount_entry_strict(ctx, mount_key)
     mesh_uri = entry.get("mesh")
     if not mesh_uri or not isinstance(mesh_uri, str):
@@ -231,12 +257,7 @@ def resolve_mount_mesh_path(ctx, mount_key: str) -> str:
     return path
 
 def load_mount_mesh_from_key(ctx, mount_key: str) -> pv.PolyData:
-    """
-    Mount laden und normalisieren:
-      - XY-Mitte → (0,0)
-      - Unterseite → Z=0
-    => Mount-Frame liegt exakt am Ursprung.
-    """
+    # Lädt ein Mount-Mesh per Key und normalisiert es in den Mount-Frame (Origin + Floor).
     path = resolve_mount_mesh_path(ctx, mount_key)
     _LOG.debug("load_mount_mesh_from_key: path = %s", path)
     mesh = __load_mesh_meshio(path)
@@ -246,9 +267,9 @@ def load_mount_mesh_from_key(ctx, mount_key: str) -> pv.PolyData:
 def get_mount_scene_offset_from_key(
     ctx, mount_key: str
 ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
-    """
-    RELATIVE Pose des SUBSTRATS gegenüber Mount-Frame (Mount am Ursprung).
-    """
+    # Liefert die relative Pose des Substrats gegenüber dem Mount-Frame:
+    # - xyz (Translation) in mm
+    # - rpy_deg (Rotation) in Grad
     entry = _get_mount_entry_strict(ctx, mount_key)
     so = entry.get("scene_offset")
     if not isinstance(so, dict):
@@ -259,6 +280,10 @@ def get_mount_scene_offset_from_key(
 
 # ---------- Substrate Loader (datei-basiert) ----------
 def load_substrate_mesh_from_key(ctx, substrate_key: str) -> pv.PolyData:
+    # Lädt ein Substrat-Mesh per Key:
+    # - Wenn substrate_key schon ein Pfad/URI ist -> direkt laden
+    # - sonst fallback: resource/substrates/<key>.stl im Projekt
+    # - sonst fallback: spraycoater_bringup share/resource/substrates/<key>.stl
     key = (substrate_key or "").strip()
     if not key:
         raise FileNotFoundError("Leerer Substrate-Key.")
@@ -282,12 +307,9 @@ def load_substrate_mesh_from_key(ctx, substrate_key: str) -> pv.PolyData:
 def place_substrate_on_mount(
     ctx, substrate_mesh: pv.PolyData, *, mount_key: Optional[str]
 ) -> pv.PolyData:
-    """
-    Mount ist am Ursprung (XY=0/0, z_min=0).
-    Substrat:
-      - z_min → 0
-      - relative Offsets/Rotationen aus YAML
-    """
+    # Platziert ein Substrat auf einem Mount, wobei der Mount-Frame bereits am Ursprung liegt.
+    # - mount_key wird genutzt, um scene_offset (xyz/rpy) aus mounts_yaml zu holen
+    # - das Substrat wird auf z=0 gesetzt und dann relativ verschoben/rotiert
     if not mount_key:
         raise FileNotFoundError("place_substrate_on_mount: mount_key ist erforderlich.")
 

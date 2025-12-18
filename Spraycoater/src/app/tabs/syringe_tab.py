@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from PyQt6 import QtCore
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget,
@@ -27,28 +28,9 @@ class SyringeTab(QWidget):
     """
     Service-Tab für Kartusche / Dispenser.
 
-    - PLC wird im __init__ übergeben (kann None sein).
-    - Keine hasattr/getattr-Magie, nur direkte Zugriffe auf bekannte Attribute.
-    - Der Tab:
-      * zeigt an, ob die Spritze läuft (Checkbox)
-      * zeigt einen Alarm-Text
-      * erlaubt Start/Stop/Spülen per Buttons
-
     WICHTIG:
-      - Dieser Tab ruft die PLC NICHT direkt zum Schreiben an.
-        Stattdessen werden Qt-Signale emittiert:
-          * start_syringe_requested
-          * stop_syringe_requested
-          * purge_syringe_requested
-          * set_speed_requested(speed_mm_s)
-        → Du kannst diese Signale im MainWindow oder einem Controller
-          mit konkreten PLC-Write-Methoden verbinden.
-
-      - Status-Updates kommen über PLC-Callbacks:
-          * syringe_running (bool)
-          * syringe_alarm_code (int)
-        → Diese Variablennamen müssen in deinem PlcClient/pyads
-          entsprechend gemappt werden.
+      PLC-Callbacks können aus einem Worker-Thread kommen.
+      UI-Updates müssen dann in den Qt-GUI-Thread gehoppt werden -> QTimer.singleShot(0, ...).
     """
 
     # ---- Commands → nach außen signalisieren ----
@@ -72,12 +54,24 @@ class SyringeTab(QWidget):
         self.bridge = bridge
         self._plc: Optional[PlcClientBase] = plc
 
+        self._dying: bool = False
+        self.destroyed.connect(lambda *_: setattr(self, "_dying", True))
+
         self._chk_running: QCheckBox | None = None
         self._lbl_alarm: QLabel | None = None
         self._speed_spin: QDoubleSpinBox | None = None
 
         self._build_ui()
         self._init_plc_callbacks()
+
+    # ------------------------------------------------------------------
+    # Thread-safe UI update helper
+    # ------------------------------------------------------------------
+    def _ui(self, fn) -> None:
+        """Hoppt sicher in den GUI-Thread (und ignoriert Updates beim Zerstören)."""
+        if self._dying:
+            return
+        QtCore.QTimer.singleShot(0, lambda: (None if self._dying else fn()))
 
     # ------------------------------------------------------------------
     # PLC-Callback Registrierung
@@ -141,6 +135,7 @@ class SyringeTab(QWidget):
         speed_spin.setRange(0.1, 100.0)
         speed_spin.setSingleStep(0.1)
         speed_spin.setValue(10.0)
+        speed_spin.setDecimals(2)
         row_speed.addWidget(lbl_speed)
         row_speed.addStretch(1)
         row_speed.addWidget(speed_spin)
@@ -185,20 +180,17 @@ class SyringeTab(QWidget):
             self._lbl_alarm.setText(text if text else "-")
 
     # ------------------------------------------------------------------
-    # PLC-Callbacks
+    # PLC-Callbacks (thread-safe via _ui)
     # ------------------------------------------------------------------
     def _cb_syringe_running(self, value: bool) -> None:
-        """
-        Wird von der PLC gerufen, wenn sich der Status 'syringe_running' ändert.
-        """
-        self._set_running(value)
+        """PLC → UI: syringe_running"""
+        self._ui(lambda: self._set_running(bool(value)))
 
     def _cb_syringe_alarm_code(self, code: int) -> None:
-        """
-        Wird von der PLC gerufen, wenn sich der Alarm-Code der Kartusche ändert.
-        """
-        text = f"Alarmcode: {code}" if code else ""
-        self._set_alarm_text(text)
+        """PLC → UI: syringe_alarm_code"""
+        c = int(code) if code else 0
+        text = f"Alarmcode: {c}" if c else ""
+        self._ui(lambda: self._set_alarm_text(text))
 
     # ------------------------------------------------------------------
     # Button-Handler → Qt-Signale nach außen
@@ -216,5 +208,6 @@ class SyringeTab(QWidget):
         self.purge_syringe_requested.emit()
 
     def _on_speed_changed(self, value: float) -> None:
-        LOG.info("SyringeTab: Geschwindigkeit gesetzt: %.3f mm/s", value)
-        self.set_speed_requested.emit(float(value))
+        v = float(value)
+        LOG.info("SyringeTab: Geschwindigkeit gesetzt: %.3f mm/s", v)
+        self.set_speed_requested.emit(v)

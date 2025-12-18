@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional, Dict
 
+from PyQt6 import QtCore
 from PyQt6.QtWidgets import (
     QWidget, QGridLayout, QGroupBox, QVBoxLayout, QHBoxLayout,
     QLabel, QCheckBox,
@@ -19,10 +20,9 @@ class ServiceSignalsTab(QWidget):
     """
     Service-Tab für SPS-Signale / Interlocks.
 
-    - PLC wird im __init__ übergeben (kann None sein).
-    - _init_plc(): prüft nur, ob PLC da + verbunden, dann read_status().
-    - _add_callbacks(): registriert bool/int-Callbacks beim PLC.
-    - Callback-Methoden (_cb_*) sind hier im Tab implementiert.
+    WICHTIG:
+      PLC-Callbacks kommen je nach Implementierung ggf. aus einem Worker-Thread.
+      UI-Updates müssen dann in den Qt-GUI-Thread gehoppt werden -> QTimer.singleShot(0, ...).
     """
 
     def __init__(
@@ -40,6 +40,10 @@ class ServiceSignalsTab(QWidget):
         self.bridge = bridge
         self._plc: Optional[PlcClientBase] = plc
 
+        # lifecycle guard
+        self._dying: bool = False
+        self.destroyed.connect(lambda *_: setattr(self, "_dying", True))
+
         # key -> Checkbox (nur Anzeige)
         self._inputs: Dict[str, QCheckBox] = {}
 
@@ -51,13 +55,8 @@ class ServiceSignalsTab(QWidget):
     # PLC-Initialisierung (einmaliger Read)
     # ------------------------------------------------------------------
     def _init_plc(self) -> None:
-        """
-        Nur:
-        - wenn PLC vorhanden UND verbunden → read_status()
-        - sonst: Default-Status (alles False)
-        """
         plc = self._plc
-        if plc is None or not plc.is_connected:
+        if plc is None or not getattr(plc, "is_connected", False):
             LOG.info("ServiceSignalsTab: PLC nicht vorhanden oder nicht verbunden.")
             self._apply_status_to_ui(PlcStatus(connected=False))
             return
@@ -75,7 +74,7 @@ class ServiceSignalsTab(QWidget):
     # ------------------------------------------------------------------
     def _add_callbacks(self) -> None:
         plc = self._plc
-        if plc is None or not plc.is_connected:
+        if plc is None or not getattr(plc, "is_connected", False):
             return
 
         try:
@@ -166,33 +165,50 @@ class ServiceSignalsTab(QWidget):
         return cb
 
     # ------------------------------------------------------------------
+    # Thread-safe UI update helper
+    # ------------------------------------------------------------------
+    def _ui(self, fn) -> None:
+        """Hoppt sicher in den GUI-Thread (und ignoriert Updates beim Zerstören)."""
+        if self._dying:
+            return
+        QtCore.QTimer.singleShot(0, lambda: (None if self._dying else fn()))
+
+    # ------------------------------------------------------------------
     # PlcStatus → UI (initial)
     # ------------------------------------------------------------------
     def _apply_status_to_ui(self, st: PlcStatus) -> None:
-        """
-        Grobe Initialisierung:
-        - vacuum_ok    → Vakuum-Checkboxen
-        - interlock_ok → tray_safe
-        - process_*    → Ampel
-        - alarm_code   → Tooltip
-        """
-        self._set_checked("vacuum_present", st.vacuum_ok)
-        self._set_checked("vacuum_on", st.vacuum_ok)
-        self._set_checked("tray_safe", st.interlock_ok)
+        def _do():
+            # 1) Best effort: alle gleichnamigen Felder übernehmen (wenn PlcStatus sie hat)
+            for key, cb in (self._inputs or {}).items():
+                try:
+                    if hasattr(st, key):
+                        cb.setChecked(bool(getattr(st, key)))
+                except Exception:
+                    pass
 
-        self._set_checked("lamp_green", st.process_active and not st.process_error)
-        self._set_checked("lamp_red", st.process_error)
-        self._set_checked("lamp_yellow", st.process_done)
-        self._set_checked("lamp_white", st.connected)
+            # 2) Grobe Mapping-Logik (wie vorher)
+            self._set_checked("vacuum_present", bool(getattr(st, "vacuum_ok", False)))
+            self._set_checked("vacuum_on", bool(getattr(st, "vacuum_ok", False)))
+            self._set_checked("tray_safe", bool(getattr(st, "interlock_ok", False)))
 
-        if st.alarm_code:
-            txt = f"Alarmcode: {st.alarm_code}"
-        else:
-            txt = ""
-        for key in ("lamp_red", "horn"):
-            cb = self._inputs.get(key)
-            if cb:
-                cb.setToolTip(txt)
+            proc_active = bool(getattr(st, "process_active", False))
+            proc_done = bool(getattr(st, "process_done", False))
+            proc_error = bool(getattr(st, "process_error", False))
+            connected = bool(getattr(st, "connected", False))
+
+            self._set_checked("lamp_green", proc_active and not proc_error)
+            self._set_checked("lamp_red", proc_error)
+            self._set_checked("lamp_yellow", proc_done)
+            self._set_checked("lamp_white", connected)
+
+            alarm_code = int(getattr(st, "alarm_code", 0) or 0)
+            txt = f"Alarmcode: {alarm_code}" if alarm_code else ""
+            for key in ("lamp_red", "horn"):
+                cb = self._inputs.get(key)
+                if cb:
+                    cb.setToolTip(txt)
+
+        self._ui(_do)
 
     def _set_checked(self, key: str, value: bool) -> None:
         cb = self._inputs.get(key)
@@ -203,26 +219,27 @@ class ServiceSignalsTab(QWidget):
     # Callbacks vom PLC (pyads-Notifications → Tab-Callbacks)
     # ------------------------------------------------------------------
     def _cb_vacuum_ok(self, value: bool) -> None:
-        self._set_checked("vacuum_present", value)
-        self._set_checked("vacuum_on", value)
+        self._ui(lambda: (
+            self._set_checked("vacuum_present", value),
+            self._set_checked("vacuum_on", value),
+        ))
 
     def _cb_interlock_ok(self, value: bool) -> None:
-        self._set_checked("tray_safe", value)
+        self._ui(lambda: self._set_checked("tray_safe", value))
 
     def _cb_process_active(self, value: bool) -> None:
-        self._set_checked("lamp_green", value)
+        self._ui(lambda: self._set_checked("lamp_green", value))
 
     def _cb_process_done(self, value: bool) -> None:
-        self._set_checked("lamp_yellow", value)
+        self._ui(lambda: self._set_checked("lamp_yellow", value))
 
     def _cb_process_error(self, value: bool) -> None:
-        self._set_checked("lamp_red", value)
-        if value:
-            self._set_checked("horn", True)
+        def _do():
+            self._set_checked("lamp_red", value)
+            if value:
+                self._set_checked("horn", True)
+        self._ui(_do)
 
     def _cb_alarm_code(self, code: int) -> None:
-        txt = f"Alarmcode: {code}" if code else ""
-        for key in ("lamp_red", "horn"):
-            cb = self._inputs.get(key)
-            if cb:
-                cb.setToolTip(txt)
+        txt = f"Alarmcode: {int(code)}" if code else ""
+        self._ui(lambda: [self._inputs[k].setToolTip(txt) for k in ("lamp_red", "horn") if k in self._inputs])

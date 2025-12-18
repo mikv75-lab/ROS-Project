@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
+
 from typing import Optional, Callable, Tuple
 import logging
 
@@ -9,9 +10,12 @@ Bounds = Tuple[float, float, float, float, float, float]
 
 
 def _pad_bounds(b: Bounds, pad: float) -> Bounds:
+    """Skaliert Bounds um ihren Mittelpunkt (pad>1.0 = mehr Luft)."""
     xmin, xmax, ymin, ymax, zmin, zmax = map(float, b)
     cx, cy, cz = (0.5 * (xmin + xmax), 0.5 * (ymin + ymax), 0.5 * (zmin + zmax))
-    sx, sy, sz = (max(xmax - xmin, 1e-6), max(ymax - ymin, 1e-6), max(zmax - zmin, 1e-6))
+    sx = max(xmax - xmin, 1e-6)
+    sy = max(ymax - ymin, 1e-6)
+    sz = max(zmax - zmin, 1e-6)
     k = float(pad)
     return (
         cx - 0.5 * sx * k, cx + 0.5 * sx * k,
@@ -21,7 +25,11 @@ def _pad_bounds(b: Bounds, pad: float) -> Bounds:
 
 
 class ViewController3D:
-    """Kamera-Controller für PyVista-QtInteractor mit optionalem Extra-Zoom nur für Iso."""
+    """
+    Kamera-Controller für PyVista-QtInteractor.
+    - Snap/Reset bevorzugt auf Substrat-Bounds (falls vorhanden), sonst Scene-Bounds.
+    - Optionaler Extra-Zoom nur für Isometric-View.
+    """
 
     def __init__(
         self,
@@ -35,16 +43,17 @@ class ViewController3D:
         iso_extra_zoom: float = 1.30,
     ):
         self._get_ia = interactor_getter
-        self._render_after = render_callable
+        self._render_after = render_callable  # bewusst nicht genutzt (ia.render() reicht hier)
         self._get_bounds = bounds_getter
         self._get_sub_bounds = substrate_bounds_getter
         self._cam_pad = float(cam_pad)
         self._zoom = float(zoom_after_reset)
         self._iso_extra_zoom = float(iso_extra_zoom)
 
-    # -------- intern --------
+    # ------------------- Internals -------------------
+
     def _target_bounds(self) -> Optional[Bounds]:
-        # bevorzugt Substrat, sonst gesamte Szene
+        """Substrat-Bounds bevorzugen, sonst Gesamt-Bounds."""
         try:
             if self._get_sub_bounds:
                 b = self._get_sub_bounds()
@@ -52,19 +61,22 @@ class ViewController3D:
                     return b
         except Exception:
             _LOG.exception("substrate_bounds_getter failed")
+
         try:
             return self._get_bounds() if self._get_bounds else None
         except Exception:
             _LOG.exception("bounds_getter failed")
             return None
 
-    def _snap_on_target(self, *, extra_zoom: float = 1.0):
+    def _snap_on_target(self, *, extra_zoom: float = 1.0) -> None:
+        """Reset/Center Kamera auf Target-Bounds + Zoom, dann rendern."""
         ia = self._get_ia()
         if ia is None:
             return
         try:
             if hasattr(ia, "reset_camera_clipping_range"):
                 ia.reset_camera_clipping_range()
+
             b = self._target_bounds()
             if b is not None:
                 try:
@@ -74,14 +86,12 @@ class ViewController3D:
             else:
                 ia.reset_camera()
 
-            # Basis-Zoom nach Reset
             if self._zoom and self._zoom != 1.0:
                 try:
                     ia.camera.zoom(self._zoom)
                 except Exception:
                     pass
 
-            # Optionaler Zusatz-Zoom (z. B. für Iso)
             if extra_zoom and extra_zoom != 1.0:
                 try:
                     ia.camera.zoom(extra_zoom)
@@ -92,8 +102,9 @@ class ViewController3D:
         except Exception:
             _LOG.exception("_snap_on_target failed")
 
-    # -------- Views (immer inkl. Zentrieren/Zoom) --------
-    def view_isometric(self):
+    # ------------------- Views -------------------
+
+    def view_isometric(self) -> None:
         ia = self._get_ia()
         if ia is None:
             return
@@ -101,10 +112,9 @@ class ViewController3D:
             ia.view_isometric()
         except Exception:
             _LOG.exception("view_isometric failed")
-        # nur Iso bekommt den Extra-Zoom
         self._snap_on_target(extra_zoom=self._iso_extra_zoom)
 
-    def view_top(self):
+    def view_top(self) -> None:
         ia = self._get_ia()
         if ia is None:
             return
@@ -114,7 +124,7 @@ class ViewController3D:
             _LOG.exception("view_top failed")
         self._snap_on_target()
 
-    def view_front(self):
+    def view_front(self) -> None:
         ia = self._get_ia()
         if ia is None:
             return
@@ -124,7 +134,7 @@ class ViewController3D:
             _LOG.exception("view_front failed")
         self._snap_on_target()
 
-    def view_left(self):
+    def view_left(self) -> None:
         ia = self._get_ia()
         if ia is None:
             return
@@ -134,7 +144,7 @@ class ViewController3D:
             _LOG.exception("view_left failed")
         self._snap_on_target()
 
-    def view_right(self):
+    def view_right(self) -> None:
         ia = self._get_ia()
         if ia is None:
             return
@@ -148,7 +158,7 @@ class ViewController3D:
             _LOG.exception("view_right failed")
         self._snap_on_target()
 
-    def view_back(self):
+    def view_back(self) -> None:
         ia = self._get_ia()
         if ia is None:
             return

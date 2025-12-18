@@ -1,12 +1,25 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
+
 from typing import Optional, Dict, Any, Tuple, List
 
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
-    QDoubleSpinBox, QSpinBox, QCheckBox, QComboBox, QFrame,
-    QLineEdit, QLabel, QTabBar, QSizePolicy, QStackedWidget
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGroupBox,
+    QFormLayout,
+    QDoubleSpinBox,
+    QSpinBox,
+    QCheckBox,
+    QComboBox,
+    QFrame,
+    QLineEdit,
+    QLabel,
+    QTabBar,
+    QSizePolicy,
+    QStackedWidget,
 )
 
 from app.model.recipe.recipe import Recipe
@@ -15,7 +28,10 @@ from app.widgets.planner_groupbox import PlannerGroupBox
 from .side_path_editor import SidePathEditor
 
 
-# ----------------------------- helpers -----------------------------
+Bounds = Tuple[float, float, float, float, float, float]
+
+
+# ----------------------------- UI helpers -----------------------------
 
 def _hline() -> QFrame:
     f = QFrame()
@@ -37,7 +53,7 @@ def _set_policy(
     w: QWidget,
     *,
     h: QSizePolicy.Policy = QSizePolicy.Policy.Expanding,
-    v: QSizePolicy.Policy = QSizePolicy.Policy.Preferred
+    v: QSizePolicy.Policy = QSizePolicy.Policy.Preferred,
 ) -> None:
     sp = w.sizePolicy()
     sp.setHorizontalPolicy(h)
@@ -45,25 +61,28 @@ def _set_policy(
     w.setSizePolicy(sp)
 
 
-# ----------------------- checkable tab widget ----------------------
+# ----------------------- checkable tab bar ----------------------
 
 class CheckableTabWidget(QTabBar):
-    """Nur der TabBar-Teil mit Checkboxes; wird in QTabWidget-ähnlicher Weise verwendet."""
+    """
+    QTabBar mit Checkbox pro Tab. Dient als TabBar-Teil eines "QTabWidget-ähnlichen" Aufbaus.
+    - currentChanged: wird wie üblich vom QTabBar gesendet
+    - checkedChanged(side_name, state): eigenes Signal für Checkbox-Status
+    """
+
     checkedChanged = pyqtSignal(str, bool)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setMovable(True)
-        self._side_names: List[str] = []
-        self._side_boxes: Dict[int, QCheckBox] = {}
-
         self.setExpanding(False)
         self.setDrawBase(True)
         _set_policy(self, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
 
-        self.setStyleSheet("""
-            QTabBar::tab { margin: 1px; padding: 3px 8px; }
-        """)
+        self._side_names: List[str] = []
+        self._side_boxes: Dict[int, QCheckBox] = {}
+
+        self.setStyleSheet("QTabBar::tab { margin: 1px; padding: 3px 8px; }")
 
         if hasattr(self, "tabMoved"):
             self.tabMoved.connect(self._on_tab_moved)  # type: ignore[attr-defined]
@@ -105,18 +124,20 @@ class CheckableTabWidget(QTabBar):
         out: List[str] = []
         for i in range(self.count()):
             cb = self._side_boxes.get(i)
-            if not cb or cb.isChecked():
+            if (cb is None) or cb.isChecked():
                 out.append(self.tabText(i))
         return out
 
     def _on_tab_moved(self, _from_idx: int, _to_idx: int) -> None:
+        # Rebuild index->checkbox map after drag & drop.
         new_map: Dict[int, QCheckBox] = {}
         for i in range(self.count()):
             btn = self.tabButton(i, QTabBar.ButtonPosition.LeftSide)
-            if btn:
-                cb = btn.findChild(QCheckBox)
-                if cb:
-                    new_map[i] = cb
+            if btn is None:
+                continue
+            cb = btn.findChild(QCheckBox)
+            if cb is not None:
+                new_map[i] = cb
         self._side_boxes = new_map
 
 
@@ -125,15 +146,16 @@ class CheckableTabWidget(QTabBar):
 class RecipeEditorContent(QWidget):
     """
     Layout:
-      Zeile 1:  Meta (Recipe + Name + Description) | Setup (tool/substrate/mount)
-      Zeile 2:  Globals | Move planner
-      darunter: Side-Tabs + Pages
+      Row 1: Meta | Setup
+      Row 2: Globals | Move planner
+      Below: Side tabs + Side pages
 
     Strikt:
-      - Tools/Substrates/Mounts kommen nur aus rec_def (recipes[..] in YAML).
-      - Globals-Keys kommen nur aus recipe_params.globals.
-      - Path-Typen/Schemata kommen nur aus recipe_params.path.* (via RecipeStore).
+      - tool/substrate/mount nur aus rec_def (recipes[..] in YAML)
+      - Globals nur aus recipe_params.globals
+      - Side-Path-Schemata nur aus recipe_params.path.* (via RecipeStore)
     """
+
     validateRequested = pyqtSignal()
     optimizeRequested = pyqtSignal()
     updatePreviewRequested = pyqtSignal(object)  # model: Recipe
@@ -165,22 +187,24 @@ class RecipeEditorContent(QWidget):
         self._rebuild_globals_from_schema()
         self.apply_defaults()
 
+    # ---------------- UI build ----------------
+
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(8)
         _set_policy(self, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Expanding)
 
-        # ===== Zeile 1: Meta | Setup =====
+        # ===== Row 1: Meta | Setup =====
         row1 = QHBoxLayout()
         row1.setContentsMargins(0, 0, 0, 0)
         row1.setSpacing(8)
 
-        # --- Meta: Recipe + Name + Description ---
+        # Meta
         self.gb_meta = QGroupBox("Meta")
         _set_policy(self.gb_meta, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
-        metaForm = QFormLayout(self.gb_meta)
-        _compact_form(metaForm)
+        meta_form = QFormLayout(self.gb_meta)
+        _compact_form(meta_form)
 
         self.sel_recipe = QComboBox(self.gb_meta)
         self.e_name = QLineEdit(self.gb_meta)
@@ -192,15 +216,15 @@ class RecipeEditorContent(QWidget):
         _set_policy(self.e_name)
         _set_policy(self.e_desc)
 
-        metaForm.addRow(QLabel("Recipe:", self.gb_meta), self.sel_recipe)
-        metaForm.addRow(QLabel("Name:", self.gb_meta), self.e_name)
-        metaForm.addRow(QLabel("Description:", self.gb_meta), self.e_desc)
+        meta_form.addRow(QLabel("Recipe:", self.gb_meta), self.sel_recipe)
+        meta_form.addRow(QLabel("Name:", self.gb_meta), self.e_name)
+        meta_form.addRow(QLabel("Description:", self.gb_meta), self.e_desc)
 
-        # --- Setup: tool/substrate/mount ---
+        # Setup (tool/substrate/mount)
         ctx_gb = QGroupBox("Setup")
         _set_policy(ctx_gb, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
-        sf = QFormLayout(ctx_gb)
-        _compact_form(sf)
+        setup_form = QFormLayout(ctx_gb)
+        _compact_form(setup_form)
 
         self.sel_tool = QComboBox()
         self.sel_substrate = QComboBox()
@@ -208,26 +232,24 @@ class RecipeEditorContent(QWidget):
         for c in (self.sel_tool, self.sel_substrate, self.sel_mount):
             _set_policy(c, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
 
-        sf.addRow("tool", self.sel_tool)
-        sf.addRow("substrate", self.sel_substrate)
-        sf.addRow("mount", self.sel_mount)
+        setup_form.addRow("tool", self.sel_tool)
+        setup_form.addRow("substrate", self.sel_substrate)
+        setup_form.addRow("mount", self.sel_mount)
 
         row1.addWidget(self.gb_meta, 1)
         row1.addWidget(ctx_gb, 1)
         root.addLayout(row1)
 
-        # ===== Zeile 2: Globals | Move planner =====
+        # ===== Row 2: Globals | Move planner =====
         row2 = QHBoxLayout()
         row2.setContentsMargins(0, 0, 0, 0)
         row2.setSpacing(8)
 
-        # Globals
         self.gb_globals = QGroupBox("Globals")
         _set_policy(self.gb_globals, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
         self.globals_form = QFormLayout(self.gb_globals)
         _compact_form(self.globals_form)
 
-        # Move planner (role="move")
         self.plannerWidget = PlannerGroupBox(
             store=self.store,
             parent=self,
@@ -240,7 +262,7 @@ class RecipeEditorContent(QWidget):
         row2.addWidget(self.plannerWidget, 1)
         root.addLayout(row2)
 
-        # ===== darunter: Sides =====
+        # ===== Sides (TabBar + Pages) =====
         self.sideTabsBar = CheckableTabWidget(self)
         _set_policy(self.sideTabsBar, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
         root.addWidget(self.sideTabsBar)
@@ -252,11 +274,11 @@ class RecipeEditorContent(QWidget):
         self.sideTabsBar.currentChanged.connect(self.sidePages.setCurrentIndex)
         self.sideTabsBar.checkedChanged.connect(self._on_side_checked_changed)
 
-    # ------------------------------------------------------------------
+    # ---------------- Globals UI from schema ----------------
+
     def _rebuild_globals_from_schema(self) -> None:
         """
-        Baut die Globals-Widgetliste strikt anhand von recipe_params.globals.
-        Keine Legacy-Keys mehr (kein predispense/retreat).
+        Baut Globals strikt anhand von recipe_params.globals (RecipeStore).
         """
         while self.globals_form.rowCount() > 0:
             self.globals_form.removeRow(0)
@@ -264,36 +286,46 @@ class RecipeEditorContent(QWidget):
 
         schema = self.store.globals_schema()
 
-        # Reihenfolge-Priorität für wichtige Felder
-        priority = [
-            "stand_off_mm",
-            "max_angle_deg",
-            "sample_step_mm",
-            "max_points",
-            "scene_z_offset_mm",
-        ]
+        priority = ["stand_off_mm", "max_angle_deg", "sample_step_mm", "max_points", "scene_z_offset_mm"]
         keys_all = list(schema.keys())
         first = [k for k in priority if k in schema]
         rest = sorted([k for k in keys_all if k not in set(first)])
 
-        from PyQt6.QtWidgets import QLineEdit as _QLineEdit
+        def _apply_default(w: QWidget, dv: Any) -> None:
+            if isinstance(w, QCheckBox):
+                w.setChecked(bool(dv))
+            elif isinstance(w, QComboBox):
+                ix = w.findText(str(dv))
+                if ix >= 0:
+                    w.setCurrentIndex(ix)
+            elif isinstance(w, QLineEdit):
+                w.setText(str(dv))
+            elif isinstance(w, QSpinBox):
+                w.setValue(int(dv))
+            elif isinstance(w, QDoubleSpinBox):
+                w.setValue(float(dv))
 
         def _add_row_for_key(key: str) -> None:
-            spec = dict(schema[key] or {})
-            t = (spec.get("type") or "").strip().lower()
+            spec = dict(schema.get(key) or {})
+            t = str(spec.get("type") or "").strip().lower()
             unit = str(spec.get("unit", "") or "")
             label = key
+
+            w: QWidget
 
             if t == "boolean":
                 w = QCheckBox(label)
                 self.globals_form.addRow("", w)
+
             elif t == "string":
-                w = _QLineEdit()
+                w = QLineEdit()
                 self.globals_form.addRow(label, w)
+
             elif t == "enum":
                 w = QComboBox()
                 w.addItems([str(v) for v in (spec.get("values") or [])])
                 self.globals_form.addRow(label, w)
+
             elif t == "number":
                 step = float(spec.get("step", 1.0))
                 minv = float(spec.get("min", 0.0))
@@ -306,49 +338,41 @@ class RecipeEditorContent(QWidget):
                     intish = False
 
                 if intish:
-                    w = QSpinBox()
-                    w.setMinimum(int(minv))
-                    w.setMaximum(int(maxv))
-                    w.setSingleStep(int(step))
+                    sb = QSpinBox()
+                    sb.setMinimum(int(minv))
+                    sb.setMaximum(int(maxv))
+                    sb.setSingleStep(int(step))
+                    w = sb
                 else:
-                    w = QDoubleSpinBox()
-                    w.setMinimum(minv)
-                    w.setMaximum(maxv)
-                    w.setSingleStep(step)
+                    dsb = QDoubleSpinBox()
+                    dsb.setMinimum(minv)
+                    dsb.setMaximum(maxv)
+                    dsb.setSingleStep(step)
+
                     s = str(spec.get("step", "1"))
                     decimals = 0 if "." not in s else min(6, max(1, len(s.split(".")[1])))
-                    w.setDecimals(decimals)
+                    dsb.setDecimals(decimals)
+                    w = dsb
 
                 if unit:
-                    if not unit.startswith(" "):
-                        unit = " " + unit
-                    w.setSuffix(unit)
+                    suf = unit if unit.startswith(" ") else f" {unit}"
+                    if hasattr(w, "setSuffix"):
+                        w.setSuffix(suf)  # type: ignore[attr-defined]
+
                 self.globals_form.addRow(label, w)
+
             else:
                 w = QLabel(f"(unsupported type: {t})")
                 self.globals_form.addRow(label, w)
 
-            field_widget = self.globals_form.itemAt(
-                self.globals_form.rowCount() - 1,
-                QFormLayout.ItemRole.FieldRole
-            ).widget()
+            # Policy auf Field-Widget (falls vorhanden)
+            field_item = self.globals_form.itemAt(self.globals_form.rowCount() - 1, QFormLayout.ItemRole.FieldRole)
+            field_widget = field_item.widget() if field_item else None
             if field_widget is not None:
                 _set_policy(field_widget)
 
             if "default" in spec:
-                dv = spec["default"]
-                if isinstance(w, QCheckBox):
-                    w.setChecked(bool(dv))
-                elif isinstance(w, QComboBox):
-                    ix = w.findText(str(dv))
-                    if ix >= 0:
-                        w.setCurrentIndex(ix)
-                elif isinstance(w, _QLineEdit):
-                    w.setText(str(dv))
-                elif isinstance(w, QSpinBox):
-                    w.setValue(int(dv))
-                elif isinstance(w, QDoubleSpinBox):
-                    w.setValue(float(dv))
+                _apply_default(w, spec["default"])
 
             self._globals_widgets[key] = w
 
@@ -358,6 +382,8 @@ class RecipeEditorContent(QWidget):
             self.globals_form.addRow(_hline())
         for k in rest:
             _add_row_for_key(k)
+
+    # ---------------- lifecycle / model ----------------
 
     def apply_defaults(self) -> None:
         self._clear_recipe_tabs()
@@ -375,7 +401,7 @@ class RecipeEditorContent(QWidget):
 
     def _disconnect_selectors(self) -> None:
         for combo in (self.sel_tool, self.sel_substrate, self.sel_mount):
-            if not combo:
+            if combo is None:
                 continue
             try:
                 combo.currentIndexChanged.disconnect(self._on_selectors_changed)
@@ -384,15 +410,15 @@ class RecipeEditorContent(QWidget):
 
     def apply_recipe_model(self, model: Recipe, rec_def: Dict[str, Any]) -> None:
         """
-        Füllt Setup, Globals und Side-Editoren anhand des Recipe-Modells.
-        Meta (Name/Description) wird NUR über set_meta() vom Panel gesetzt.
+        Setup/Globals/Sides aus dem Modell setzen.
+        Meta (Name/Description) wird extern via set_meta() gesetzt.
         """
         self._model = model
         self._rec_def = rec_def
 
         self._clear_recipe_tabs()
 
-        # Tools/Substrates/Mounts strikt aus rec_def
+        # tool/substrate/mount strikt aus rec_def
         tools = [str(t) for t in (rec_def.get("tools") or [])]
         substrates = [str(s) for s in (rec_def.get("substrates") or [])]
         mounts = [str(m) for m in (rec_def.get("substrate_mounts") or [])]
@@ -408,8 +434,6 @@ class RecipeEditorContent(QWidget):
         _fill(self.sel_mount, mounts)
 
         def _set_or_first(combo: QComboBox, value: Optional[str]) -> None:
-            if combo is None:
-                return
             if value:
                 idx = combo.findText(str(value))
                 if idx >= 0:
@@ -422,7 +446,7 @@ class RecipeEditorContent(QWidget):
         _set_or_first(self.sel_substrate, model.substrate)
         _set_or_first(self.sel_mount, model.substrate_mount)
 
-        # Sides strikt aus rec_def["sides"]
+        # sides strikt aus rec_def["sides"]
         sides_node = rec_def.get("sides") or {}
         if not isinstance(sides_node, dict):
             sides_node = {}
@@ -450,20 +474,21 @@ class RecipeEditorContent(QWidget):
             self.sideTabsBar.setCurrentIndex(0)
             self.sidePages.setCurrentIndex(0)
 
-        if self.sel_substrate:
+        # selectors wiring
+        if self.sel_substrate is not None:
             self.sel_substrate.currentIndexChanged.connect(self._on_selectors_changed)
-        if self.sel_mount:
+        if self.sel_mount is not None:
             self.sel_mount.currentIndexChanged.connect(self._on_selectors_changed)
-        if self.sel_tool:
+        if self.sel_tool is not None:
             self.sel_tool.currentIndexChanged.connect(self._on_selectors_changed)
 
         tool, sub, mnt = self.active_selectors_values()
-        if self._model:
+        if self._model is not None:
             self._model.tool = tool
             self._model.substrate = sub
             self._model.substrate_mount = mnt
 
-        # Globals aus dem Modell in die Widgets
+        # globals from model.parameters
         params = dict(model.parameters or {})
         for key, w in self._globals_widgets.items():
             if key not in params:
@@ -483,8 +508,10 @@ class RecipeEditorContent(QWidget):
             elif isinstance(w, QDoubleSpinBox):
                 w.setValue(float(val))
 
-        # Planner in Widget schreiben
+        # planner
         self.apply_planner_model(model.planner or {})
+
+    # ---------------- collect / getters ----------------
 
     def collect_globals(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
@@ -508,14 +535,14 @@ class RecipeEditorContent(QWidget):
         return out
 
     def active_selectors_values(self) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-        tool = (self.sel_tool.currentText().strip() if self.sel_tool and self.sel_tool.currentIndex() >= 0 else None)
-        sub = (self.sel_substrate.currentText().strip() if self.sel_substrate and self.sel_substrate.currentIndex() >= 0 else None)
-        mnt = (self.sel_mount.currentText().strip() if self.sel_mount and self.sel_mount.currentIndex() >= 0 else None)
+        tool = self.sel_tool.currentText().strip() if (self.sel_tool and self.sel_tool.currentIndex() >= 0) else None
+        sub = self.sel_substrate.currentText().strip() if (self.sel_substrate and self.sel_substrate.currentIndex() >= 0) else None
+        mnt = self.sel_mount.currentText().strip() if (self.sel_mount and self.sel_mount.currentIndex() >= 0) else None
         return tool or None, sub or None, mnt or None
 
     def meta_values(self) -> Tuple[str, str]:
-        name = (self.e_name.text().strip() if self.e_name else "")
-        desc = (self.e_desc.text().strip() if self.e_desc else "")
+        name = self.e_name.text().strip() if self.e_name else ""
+        desc = self.e_desc.text().strip() if self.e_desc else ""
         return name, desc
 
     def set_meta(self, *, name: str = "", desc: str = "") -> None:
@@ -524,10 +551,12 @@ class RecipeEditorContent(QWidget):
         if self.e_desc is not None:
             self.e_desc.setText(desc or "")
 
+    # ---------------- internal handlers ----------------
+
     def _current_ctx_key(self) -> str:
-        tool = self.sel_tool.currentText().strip() if self.sel_tool and self.sel_tool.currentIndex() >= 0 else ""
-        sub = self.sel_substrate.currentText().strip() if self.sel_substrate and self.sel_substrate.currentIndex() >= 0 else ""
-        mnt = self.sel_mount.currentText().strip() if self.sel_mount and self.sel_mount.currentIndex() >= 0 else ""
+        tool = self.sel_tool.currentText().strip() if (self.sel_tool and self.sel_tool.currentIndex() >= 0) else ""
+        sub = self.sel_substrate.currentText().strip() if (self.sel_substrate and self.sel_substrate.currentIndex() >= 0) else ""
+        mnt = self.sel_mount.currentText().strip() if (self.sel_mount and self.sel_mount.currentIndex() >= 0) else ""
         return f"{mnt}|{sub}|{tool}"
 
     def _on_selectors_changed(self, _idx: int = 0) -> None:
@@ -535,7 +564,7 @@ class RecipeEditorContent(QWidget):
         if key == self._last_ctx_key:
             return
         self._last_ctx_key = key
-        if self._model and hasattr(self._model, "on_context_changed"):
+        if self._model is not None and hasattr(self._model, "on_context_changed"):
             tool, sub, mnt = self.active_selectors_values()
             self._model.on_context_changed(tool, sub, mnt)
 
@@ -546,21 +575,14 @@ class RecipeEditorContent(QWidget):
     def checked_sides(self) -> List[str]:
         return self.sideTabsBar.checked_sides()
 
-    # ---------- Planner-Integration ----------
+    # ---------------- planner integration ----------------
 
     def apply_planner_model(self, planner_cfg: Dict[str, Any]) -> None:
-        """
-        Planner-Config → Move-planner-Box.
-        Erwartet eine flache Dict-Struktur entsprechend dem neuen planner-YAML.
-        """
         if self.plannerWidget is None:
             return
         self.plannerWidget.apply_planner_model(planner_cfg)
 
     def collect_planner(self) -> Dict[str, Any]:
-        """
-        Move-planner-Box → Dict (wird direkt in Recipe.planner geschrieben).
-        """
         if self.plannerWidget is None:
             return {}
         return dict(self.plannerWidget.collect_planner() or {})

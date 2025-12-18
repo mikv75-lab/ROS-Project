@@ -6,12 +6,14 @@ import numpy as np
 import pyvista as pv
 import logging
 
-from .raycast_projector import cast_rays_for_side  # falls altes Format genutzt wird
+from .raycast_projector import cast_rays_for_side  # Import für Raycast-Projektion (hier im Snippet noch ungenutzt)
 
 _LOG = logging.getLogger("app.tabs.recipe.preview.overlays")
 
 # -------- Helpers & Mathe ----------------------------------------------------
 def _safe_norm(v: np.ndarray, eps: float = 1e-9) -> np.ndarray:
+    # Normalisiert einen 3D-Vektor robust:
+    # - bei sehr kleiner Norm wird [0,0,1] als Fallback zurückgegeben
     v = np.asarray(v, dtype=float).reshape(3)
     n = float(np.linalg.norm(v))
     if n < eps:
@@ -19,6 +21,9 @@ def _safe_norm(v: np.ndarray, eps: float = 1e-9) -> np.ndarray:
     return v / n
 
 def _orthonormal_basis_from_z(z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    # Baut ein Orthonormal-Basis-System (x,y,z) aus einer gegebenen Z-Achse:
+    # - wählt eine Hilfsachse h, die nicht parallel zu z ist
+    # - x = normalize(cross(h, z)), y = normalize(cross(z, x))
     z = _safe_norm(z)
     h = np.array([1.0, 0.0, 0.0], dtype=float) if abs(z[0]) < 0.9 else np.array([0.0, 1.0, 0.0], dtype=float)
     x = _safe_norm(np.cross(h, z))
@@ -26,6 +31,8 @@ def _orthonormal_basis_from_z(z: np.ndarray) -> tuple[np.ndarray, np.ndarray, np
     return x, y, z
 
 def _quat_to_axes(qx: float, qy: float, qz: float, qw: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    # Rekonstruiert die Rotationsmatrix aus einem Quaternion (qx,qy,qz,qw)
+    # und gibt die normierten Achsenvektoren (X,Y,Z) zurück (Spalten von R).
     x2, y2, z2 = 2*qx, 2*qy, 2*qz
     xx, yy, zz = qx*x2, qy*y2, qz*z2
     xy, xz, yz = qx*y2, qx*z2, qy*z2
@@ -39,6 +46,11 @@ def _quat_to_axes(qx: float, qy: float, qz: float, qw: float) -> tuple[np.ndarra
     return _safe_norm(X), _safe_norm(Y), _safe_norm(Z)
 
 def _tangents_from_path(P: np.ndarray) -> np.ndarray:
+    # Berechnet Tangenten entlang eines Pfads (Nx3):
+    # - Enden via Vorwärts-/Rückwärtsdifferenz
+    # - innen via Zentrumsdifferenz
+    # - normalisiert je Punkt; fallback auf vorherigen Tangentenvektor
+    # - richtet Tangenten konsistent aus (kein "Flip" zwischen aufeinanderfolgenden Punkten)
     P = np.asarray(P, dtype=float).reshape(-1, 3)
     n = P.shape[0]
     if n == 0:
@@ -60,6 +72,9 @@ def _tangents_from_path(P: np.ndarray) -> np.ndarray:
 
 # -------- Side-Frame & Einbettung -------------------------------------------
 def _side_frame(bounds: Tuple[float, float, float, float, float, float]):
+    # Definiert für ein Bounding-Box-Setup:
+    # - Mittelpunkt (cx,cy,cz)
+    # - pro "side" eine Konfiguration mit Normalenrichtung, Anker (min/max) und Achsen-Mapping
     xmin, xmax, ymin, ymax, zmin, zmax = bounds
     cx = 0.5 * (xmin + xmax)
     cy = 0.5 * (ymin + ymax)
@@ -74,6 +89,9 @@ def _side_frame(bounds: Tuple[float, float, float, float, float, float]):
     return cfgs, (cx, cy, cz)
 
 def _embed_path_on_face(P0_local: np.ndarray, side: str, bounds) -> np.ndarray:
+    # Mappt lokale 2D/3D-Punkte (hier: P0_local[:,0:2] genutzt) auf eine bestimmte Bounding-Box-"Seite":
+    # - zwei Koordinaten werden um den Mittelpunkt (cx/cy/cz) herum platziert
+    # - die dritte Koordinate wird auf die jeweilige Face-Anker-Ebene (min/max) gesetzt
     (cfgs, (cx, cy, cz)) = _side_frame(bounds)
     cfg = cfgs.get(side, cfgs["top"])
     ax0, ax1 = cfg["axes"]
@@ -87,6 +105,7 @@ def _embed_path_on_face(P0_local: np.ndarray, side: str, bounds) -> np.ndarray:
     out = np.empty_like(P0)
 
     def place(axis_name: str, arr: np.ndarray):
+        # Verschiebt lokale Achsenwerte um den jeweiligen Achsenmittelpunkt
         if axis_name == "x":
             return cx + arr
         if axis_name == "y":
@@ -109,6 +128,10 @@ def _embed_path_on_face(P0_local: np.ndarray, side: str, bounds) -> np.ndarray:
     return out
 
 def _mk_poly_segments(starts: np.ndarray, dirs: np.ndarray, length: float) -> Optional[pv.PolyData]:
+    # Baut ein PolyData aus Liniensegmenten:
+    # - jedes Segment: start -> start + dir*length
+    # - gespeichert als PolyData mit line-cells
+    # Gibt None zurück, wenn keine Daten oder bei Fehlern.
     try:
         if starts is None or dirs is None or len(starts) == 0:
             return None
@@ -147,6 +170,7 @@ class OverlayRenderer:
         get_bounds: Callable[[], Any],
         yaml_out_fn: Optional[Callable[[str], None]] = None,
     ):
+        # Übergibt externe Render-/Layer-Funktionen (z.B. aus deinem 3D-View-Wrapper)
         self._add_mesh = add_mesh_fn
         self._clear_layer = clear_layer_fn
         self._add_path_polyline = add_path_polyline_fn
@@ -158,49 +182,59 @@ class OverlayRenderer:
         self._get_bounds = get_bounds
         self._yaml_out = yaml_out_fn
 
+        # Merkt sich, welche Overlays aktuell sichtbar sein sollen
         self._vis = {"mask": False, "path": True, "hits": False, "misses": False, "normals": False, "frames": False}
 
-        # Cache der letzten Kompilation (für Rebuild beim Aktivieren)
+        # Cache der letzten Render-Inputs, um einzelne Layer später neu aufzubauen
         self._cache: Dict[str, Any] = {}
 
     # ---- Sichtbarkeit ----
     def _L(self, name: str) -> str:
+        # Übersetzt einen logischen Layernamen (mask/path/...) auf den tatsächlichen Layer-Key
         return self._layers.get(name, name)
 
     def _set_vis_layer(self, layer: str, vis: bool, *, render: bool):
+        # Ruft set_layer_visible mit kompatibler Signatur auf (2 oder 3 Args)
         try:
             self._set_layer_visible(layer, vis, render)  # type: ignore[misc]
         except TypeError:
             self._set_layer_visible(layer, vis)          # type: ignore[misc]
 
     def set_mask_visible(self, vis: bool, *, render: bool = True):
+        # Aktiviert/Deaktiviert Mask-Layer (Linie + Marker)
         self._vis["mask"] = bool(vis)
         self._set_vis_layer(self._L("mask"), vis, render=render)
         self._set_vis_layer(self._L("mask_mrk"), vis, render=render)
 
     def set_path_visible(self, vis: bool, *, render: bool = True):
+        # Aktiviert/Deaktiviert Pfad-Layer (Linie + Marker)
         self._vis["path"] = bool(vis)
         self._set_vis_layer(self._L("path"), vis, render=render)
         self._set_vis_layer(self._L("path_mrk"), vis, render=render)
 
     def set_hits_visible(self, vis: bool, *, render: bool = True):
+        # Aktiviert/Deaktiviert Ray-Hit-Layer
         self._vis["hits"] = bool(vis)
         self._set_vis_layer(self._L("rays_hit"), vis, render=render)
 
     def set_misses_visible(self, vis: bool, *, render: bool = True):
+        # Aktiviert/Deaktiviert Ray-Miss-Layer
         self._vis["misses"] = bool(vis)
         self._set_vis_layer(self._L("rays_miss"), vis, render=render)
 
     def set_normals_visible(self, vis: bool, *, render: bool = True):
+        # Aktiviert/Deaktiviert Normalen-Layer
         self._vis["normals"] = bool(vis)
         self._set_vis_layer(self._L("normals"), vis, render=render)
 
     def set_frames_visible(self, vis: bool, *, render: bool = True):
+        # Aktiviert/Deaktiviert Frame-Achsen/Labels-Layer
         self._vis["frames"] = bool(vis)
         for lyr in ("frames_x", "frames_y", "frames_z", "frames_labels"):
             self._set_vis_layer(self._L(lyr), vis, render=render)
 
     def apply_visibility(self, vis: dict | None):
+        # Übernimmt Sichtbarkeits-Flags (optional) und setzt die Layer entsprechend.
         if vis is not None:
             self._vis.update({
                 "mask":    bool(vis.get("mask",    self._vis["mask"])),
@@ -210,6 +244,7 @@ class OverlayRenderer:
                 "normals": bool(vis.get("normals", self._vis["normals"])),
                 "frames":  bool(vis.get("frames",  self._vis["frames"])),
             })
+        # Erst ohne Rendern togglen, am Ende ggf. einmal rendern lassen
         self.set_path_visible(self._vis["path"], render=False)
         self.set_mask_visible(self._vis["mask"], render=False)
         self.set_hits_visible(self._vis["hits"], render=False)
@@ -219,6 +254,9 @@ class OverlayRenderer:
 
     # ---- Kompiliertes Zeichnen --------------------------------------------
     def _compiled_iter(self, compiled: dict, sides_filter: Optional[List[str]]) -> List[tuple[str, dict]]:
+        # Iteriert über kompilierten Output:
+        # - neues Format: compiled["sides"][side] = entry
+        # - altes Format: compiled["paths_by_side"][side] = entry
         if isinstance(compiled, dict) and "sides" in compiled:
             items = list((compiled.get("sides") or {}).items())
         else:
@@ -232,7 +270,13 @@ class OverlayRenderer:
     def _entry_to_tcp_and_dirs(side: str, entry: dict, bounds, *, default_mask_dir: np.ndarray) -> tuple[
         Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Optional[pv.PolyData]
     ]:
+        # Normalisiert verschiedene Entry-Formate auf:
+        # - tcp_points (Nx3)
+        # - x_dirs (Nx3) optional
+        # - z_dirs (Nx3) optional (Normalen-/Sprührichtung)
+        # - mask_poly (PolyData) optional
         if isinstance(entry, dict) and "poses_quat" in entry:
+            # Neues Format: pro Pose Position + Quaternion -> Achsen via _quat_to_axes
             poses = entry.get("poses_quat") or []
             if not poses:
                 return None, None, None, None
@@ -244,6 +288,8 @@ class OverlayRenderer:
                 X.append(x_axis); Z.append(z_axis)
             X = np.asarray(X, float)
             Z = np.asarray(Z, float)
+
+            # Maskenlinie: leicht "hinter" dem Pfad (default_mask_dir * 10mm)
             mask_poly = None
             try:
                 Pmask = P - default_mask_dir.reshape(1, 3) * 10.0
@@ -253,10 +299,13 @@ class OverlayRenderer:
             return P, X, Z, mask_poly
 
         if isinstance(entry, dict) and "points_mm" in entry:
+            # Altes Format: lokale Punkte -> in die jeweilige Bounding-Box-Seite einbetten
             P_local = np.asarray(entry.get("points_mm") or [], dtype=float).reshape(-1, 3)
             if P_local.size == 0:
                 return None, None, None, None
             P_world = _embed_path_on_face(P_local, side, bounds)
+
+            # Z-Richtung ist die Face-Normale, X aus Tangente projiziert in die Face-Ebene
             cfgs, _ = _side_frame(bounds)
             n = cfgs.get(side, cfgs["top"])["normal"]
             T = _tangents_from_path(P_world)
@@ -265,6 +314,8 @@ class OverlayRenderer:
                 if float(np.dot(X[i-1], X[i])) < 0.0:
                     X[i] = -X[i]
             Z = np.tile(_safe_norm(n), (len(P_world), 1))
+
+            # Maskenlinie analog: entlang -n um 10mm verschoben
             try:
                 Pmask = P_world - _safe_norm(n).reshape(1, 3) * 10.0
                 mask_poly = pv.lines_from_points(Pmask, close=False)
@@ -286,7 +337,8 @@ class OverlayRenderer:
         sides: Optional[List[str]] = None,
         only_selected: bool = True,
     ) -> Dict[str, Dict[str, Any]]:
-        # Cache ablegen (für späteren Rebuild)
+        # Rendert Overlays für ein kompiliertes Recipe/Path-Result auf ein Substrat.
+        # Speichert Inputs im Cache, damit rebuild_layers() gezielt neu zeichnen kann.
         self._cache = {
             "substrate_mesh": substrate_mesh,
             "compiled": compiled,
@@ -296,6 +348,7 @@ class OverlayRenderer:
             "sides": sides,
         }
 
+        # Welche Layer sollen diesmal sichtbar/gerendert werden?
         vis = visibility or {}
         show_mask    = bool(vis.get("mask", False))
         show_path    = bool(vis.get("path", True))
@@ -305,10 +358,12 @@ class OverlayRenderer:
         show_frames  = bool(vis.get("frames", False))
 
         def _clear_layer_if(name: str, cond: bool):
+            # Löscht einen Layer nur, wenn cond True ist (damit "only_selected" funktioniert)
             if cond:
                 self._clear_layer(self._L(name))
 
-        # WICHTIG: konsistente Keys zu layers{} (mask_mrk/path_mrk)
+        # Je nach Auswahl entweder nur die betroffenen Layer anfassen,
+        # oder "alles" räumen (wenn only_selected=False).
         _clear_layer_if("mask",         (show_mask or not only_selected))
         _clear_layer_if("mask_mrk",     (show_mask or not only_selected))
         _clear_layer_if("path",         (show_path or not only_selected))
@@ -321,6 +376,7 @@ class OverlayRenderer:
         _clear_layer_if("frames_z",     (show_frames or not only_selected))
         _clear_layer_if("frames_labels",(show_frames or not only_selected))
 
+        # Side-Konfiguration aus Bounding-Box des Substrats
         bounds = substrate_mesh.bounds
         (cfgs, _) = _side_frame(bounds)
 
@@ -330,6 +386,7 @@ class OverlayRenderer:
             self.apply_visibility(vis)
             return outputs_by_side
 
+        # Pro Side: Pfad/Mask/Normals/Frames hinzufügen (abhängig von visibility)
         for side, entry in items:
             cfg = cfgs.get(side, cfgs["top"])
             face_n = _safe_norm(cfg["normal"])
@@ -339,6 +396,7 @@ class OverlayRenderer:
             )
 
             if show_path and tcp_points is not None and len(tcp_points):
+                # Pfadlinie + (gedünnte) Marker
                 self._add_path_polyline(tcp_points, layer=self._L("path"), color="#2ecc71",
                                         line_width=2.0, lighting=False, render=False, reset_camera=False)
                 try:
@@ -350,6 +408,7 @@ class OverlayRenderer:
                     _LOG.exception("path markers failed (%s)", side)
 
             if show_normals and tcp_points is not None and z_dirs is not None:
+                # Normalen als kurze Liniensegmente
                 try:
                     normals_poly = _mk_poly_segments(tcp_points, z_dirs, length=10.0)
                     if normals_poly is not None:
@@ -359,6 +418,7 @@ class OverlayRenderer:
                     _LOG.exception("normals poly failed (%s)", side)
 
             if show_mask and mask_poly is not None:
+                # Maskenlinie (verschobene Linie zur Visualisierung)
                 try:
                     self._add_mesh(mask_poly, color="royalblue", layer=self._L("mask"),
                                    line_width=2.0, lighting=False, render=False, reset_camera=False)
@@ -366,6 +426,7 @@ class OverlayRenderer:
                     _LOG.exception("mask poly failed (%s)", side)
 
             if show_frames and tcp_points is not None and z_dirs is not None and len(tcp_points):
+                # Frames entlang des Pfads (gedünnt), ohne Labels
                 try:
                     step = max(1, int(round(max(1, tcp_points.shape[0] // 50))))
                     self._show_frames_at(
@@ -381,6 +442,7 @@ class OverlayRenderer:
                 except Exception:
                     _LOG.exception("frames render failed (%s)", side)
 
+            # Outputs sammeln (für spätere Nutzung, z.B. 2D-Preview / Export)
             outputs_by_side[side] = {
                 "tcp_points": tcp_points,
                 "mask_poly": mask_poly,
@@ -389,8 +451,10 @@ class OverlayRenderer:
                 "valid_mask": None,
             }
 
+        # Sichtbarkeit final anwenden (inkl. Render-Trigger am Ende)
         self.apply_visibility(vis)
 
+        # 2D-Preview mit erstem verfügbaren Side-Output aktualisieren
         try:
             tcp_for_2d: Optional[np.ndarray] = None
             mask_for_2d: Optional[pv.PolyData] = None
@@ -409,7 +473,8 @@ class OverlayRenderer:
 
     # ---- Rebuild einzelner Layer beim Aktivieren --------------------------
     def rebuild_layers(self, layer_names: List[str]) -> None:
-        """Rendert nur die angegebenen Overlays nach (path/mask/normals/frames)."""
+        # Baut ausgewählte Overlay-Layer anhand des letzten Cache neu auf.
+        # layer_names nutzt die logischen Keys: mask/path/hits/misses/normals/frames.
         if not self._cache:
             _LOG.debug("rebuild_layers: no cache yet; nothing to rebuild")
             return

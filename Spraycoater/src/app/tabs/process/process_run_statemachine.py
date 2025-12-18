@@ -17,6 +17,7 @@ _LOG = logging.getLogger("app.tabs.process.run_statemachine")
 
 
 class QStatemachine(QStateMachine):
+    # Nur ein Alias für bessere Lesbarkeit im Code (keine Logikänderung).
     """Nur für lesbareren Typnamen."""
     def __init__(self, parent: Optional[QtCore.QObject] = None) -> None:
         super().__init__(parent)
@@ -24,7 +25,8 @@ class QStatemachine(QStateMachine):
 
 class _QtSignalHandler(logging.Handler):
     """
-    Logging → Qt-Signal-Weiterleitung (für ProcessTab-Log).
+    Leitet Log-Messages aus diesem Modul als Qt-Signal weiter,
+    damit der ProcessTab sie anzeigen kann.
     """
     def __init__(self, owner: "ProcessRunStatemachine") -> None:
         super().__init__()
@@ -38,43 +40,32 @@ class _QtSignalHandler(logging.Handler):
         try:
             self._owner.logMessage.emit(msg)
         except Exception:
-            # beim Shutdown ggf. schon weg – ignorieren
+            # Kann beim Shutdown passieren, wenn das QObject schon weg ist.
             pass
 
 
 class ProcessRunStatemachine(QtCore.QObject):
     """
-    StateMachine-Worker für das Abspielen eines Run-YAML über Servo (JointJog).
+    Spielt ein Run-YAML in 4 Segmenten über JointJog ab.
 
     Erwartet:
-      - Eine Run-Datei im YAML-Format
-      - Eine Servo-Bridge im UI-Bridge-Objekt (bridge._servo),
-        die einen Publisher 'pub_joint' (JointJog) bereitstellt.
+      - YAML-Datei mit: joints + segments
+      - bridge._servo mit Publisher pub_joint (JointJog)
 
-    States (ähnlich wie Setup-Statemachine):
-      - MOVE_PREDISPENSE   -> spielt Segment "MOVE_PREDISPENSE"
-      - MOVE_RECIPE        -> spielt Segment "MOVE_RECIPE"
-      - MOVE_RETREAT       -> spielt Segment "MOVE_RETREAT"
-      - MOVE_HOME          -> spielt Segment "MOVE_HOME"
-      - FINISHED           -> Ende
-      - ERROR              -> Fehlerpfad
-
-    Signale (kompatibel zu ProcessSetupStatemachine):
-      - notifyFinished(object)   # { "poses": [], "planned_traj": [], "executed_traj": [] }
-      - notifyError(str)
-      - stateChanged(str)
-      - logMessage(str)
+    Ablauf:
+      MOVE_PREDISPENSE -> MOVE_RECIPE -> MOVE_RETREAT -> MOVE_HOME -> FINISHED
+      Bei Fehler/Stop -> ERROR
     """
 
     # Ergebnis / Fehler
     notifyFinished = QtCore.pyqtSignal(object)
     notifyError = QtCore.pyqtSignal(str)
 
-    # UI-Hilfssignale
+    # UI-Hilfssignale (Status + Log)
     stateChanged = QtCore.pyqtSignal(str)
     logMessage = QtCore.pyqtSignal(str)
 
-    # interne Transition-Signale
+    # interne Transition-Signale (treiben die Qt-StateMachine weiter)
     _sig_predispense_done = QtCore.pyqtSignal()
     _sig_recipe_done = QtCore.pyqtSignal()
     _sig_retreat_done = QtCore.pyqtSignal()
@@ -93,28 +84,30 @@ class ProcessRunStatemachine(QtCore.QObject):
         self._run_yaml_path = run_yaml_path
         self._bridge = bridge
 
+        # Laufzeitflags/Zustand
         self._stop_requested: bool = False
         self._error_msg: Optional[str] = None
         self._machine: Optional[QStatemachine] = None
 
-        # Servo-Bridge (UI-Variante)
+        # Servo-Bridge: hierüber wird JointJog publiziert
         self._servo = getattr(bridge, "_servo", None)
         if self._servo is None or not hasattr(self._servo, "pub_joint"):
             _LOG.error("ProcessRunStatemachine: ServoBridge (_servo) fehlt oder hat kein pub_joint.")
         else:
             _LOG.info("ProcessRunStatemachine: ServoBridge gefunden (%s).", type(self._servo).__name__)
 
-        # TCP-Logging via RobotBridge ist optional (für später)
+        # Optional: späteres TCP-Logging (aktuell ungenutzt)
         self._rb = getattr(bridge, "_rb", None)
         self._rb_signals = getattr(self._rb, "signals", None) if self._rb is not None else None
 
+        # (Platzhalter) Sammlung ausgeführter Posen – aktuell nicht befüllt
         self._executed_poses: List[PoseStamped] = []
 
-        # Run-Daten
+        # Run-Daten aus YAML
         self._joints: List[str] = []
         self._segments: Dict[str, List[Dict[str, Any]]] = {}
 
-        # Logging → Qt
+        # Logging → Qt-UI
         self._log_handler: Optional[_QtSignalHandler] = _QtSignalHandler(self)
         self._log_handler.setLevel(logging.INFO)
         formatter = logging.Formatter("%(message)s")
@@ -135,7 +128,7 @@ class ProcessRunStatemachine(QtCore.QObject):
     @QtCore.pyqtSlot()
     def start(self) -> None:
         """
-        Startet das Abspielen des Run-YAML im Worker-Thread.
+        Lädt das Run-YAML und startet die Qt-StateMachine.
         """
         _LOG.info("ProcessRunStatemachine.start: gestartet.")
 
@@ -143,14 +136,14 @@ class ProcessRunStatemachine(QtCore.QObject):
         self._error_msg = None
         self._executed_poses.clear()
 
-        # Run-YAML laden
+        # YAML einlesen + intern als joints/segments ablegen
         if not self._load_run_yaml(self._run_yaml_path):
             msg = self._error_msg or f"Run-YAML '{self._run_yaml_path}' konnte nicht geladen werden."
             _LOG.error("ProcessRunStatemachine.start: %s", msg)
             self.notifyError.emit(msg)
             return
 
-        # StateMachine aufbauen
+        # Qt-StateMachine aufbauen (4 Schritte + finished/error)
         machine = QStatemachine(self)
         self._machine = machine
 
@@ -163,7 +156,7 @@ class ProcessRunStatemachine(QtCore.QObject):
 
         machine.setInitialState(s_move_predisp)
 
-        # Transitions
+        # Übergänge: linearer Ablauf, Fehler führt jederzeit in ERROR
         s_move_predisp.addTransition(self._sig_predispense_done, s_move_recipe)
         s_move_recipe.addTransition(self._sig_recipe_done, s_move_retreat)
         s_move_retreat.addTransition(self._sig_retreat_done, s_move_home)
@@ -172,7 +165,7 @@ class ProcessRunStatemachine(QtCore.QObject):
         for st in (s_move_predisp, s_move_recipe, s_move_retreat, s_move_home):
             st.addTransition(self._sig_error, s_error)
 
-        # Callbacks
+        # State-Callbacks: beim Eintritt wird das jeweilige Segment abgespielt
         s_move_predisp.entered.connect(self._on_state_move_predispense)
         s_move_recipe.entered.connect(self._on_state_move_recipe)
         s_move_retreat.entered.connect(self._on_state_move_retreat)
@@ -180,7 +173,7 @@ class ProcessRunStatemachine(QtCore.QObject):
         s_error.entered.connect(self._on_state_error)
         s_finished.entered.connect(self._on_state_finished)
 
-        # UI-State-Namen
+        # UI-Statusausgabe (nur Namen)
         s_move_predisp.entered.connect(lambda: self._emit_state("MOVE_PREDISPENSE"))
         s_move_recipe.entered.connect(lambda: self._emit_state("MOVE_RECIPE"))
         s_move_retreat.entered.connect(lambda: self._emit_state("MOVE_RETREAT"))
@@ -196,7 +189,7 @@ class ProcessRunStatemachine(QtCore.QObject):
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
         """
-        Von außen aufgerufen (z. B. Stop-Button).
+        Setzt nur ein Flag. Das Abspielen wird an den Abbruchstellen beendet.
         """
         _LOG.info("ProcessRunStatemachine: request_stop()")
         self._stop_requested = True
@@ -206,6 +199,7 @@ class ProcessRunStatemachine(QtCore.QObject):
     # ------------------------------------------------------------------ #
 
     def _load_run_yaml(self, path: str) -> bool:
+        # Liest YAML und erwartet die Keys: joints (list), segments (list)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
@@ -223,6 +217,7 @@ class ProcessRunStatemachine(QtCore.QObject):
             self._error_msg = "Run-YAML enthält keine 'segments'-Liste."
             return False
 
+        # Segment-Namen werden auf 4 bekannte Names gemappt, alles andere wird ignoriert
         seg_map: Dict[str, List[Dict[str, Any]]] = {
             "MOVE_PREDISPENSE": [],
             "MOVE_RECIPE": [],
@@ -256,6 +251,7 @@ class ProcessRunStatemachine(QtCore.QObject):
         return self._stop_requested
 
     def _emit_state(self, name: str) -> None:
+        # Informiert UI über den aktuellen Schritt
         _LOG.info("ProcessRunStatemachine: State=%s", name)
         try:
             self.stateChanged.emit(name)
@@ -263,6 +259,7 @@ class ProcessRunStatemachine(QtCore.QObject):
             pass
 
     def _signal_error(self, msg: str) -> None:
+        # Merkt sich die Fehlermeldung und triggert den ERROR-Übergang
         if not msg:
             msg = "Unbekannter Servo-Run-Fehler."
         if not self._error_msg:
@@ -272,9 +269,9 @@ class ProcessRunStatemachine(QtCore.QObject):
 
     def _finish_state(self, success_sig: QtCore.pyqtSignal) -> None:
         """
-        Gemeinsames Ende eines States:
-          - Wenn Stop oder Fehler -> ERROR
-          - sonst -> success_sig
+        Gemeinsamer Abschluss eines Schritts:
+          - Bei Stop wird eine Fehlermeldung gesetzt und in ERROR verzweigt
+          - Sonst wird das "done"-Signal für den nächsten State emittiert
         """
         if self._should_stop() and not self._error_msg:
             self._error_msg = "Prozess durch Benutzer gestoppt."
@@ -287,16 +284,12 @@ class ProcessRunStatemachine(QtCore.QObject):
 
     def _play_segment_joint_traj(self, seg_name: str) -> None:
         """
-        Spielt ein Segment aus dem Run-YAML über JointJog ab.
+        Spielt ein Segment über JointJog ab:
+          - dt aus den Zeitstempeln
+          - vel aus Differenz der Joint-Positionen / dt
+          - publish + sleep(dt)
 
-        Hinweis:
-          - sehr einfache Umsetzung:
-              * für jedes Punkt-Paar (i, i+1):
-                  dt = t[i+1] - t[i]
-                  v = (q[i+1] - q[i]) / dt
-                  -> JointJog mit velocities=v, duration=dt
-                  -> QThread.msleep(dt*1000)
-          - keine Rückkopplung, keine Kollisionsprüfung – nur Sim/Fake-System!
+        Das ist ein "blindes" Abspielen ohne Feedback.
         """
         if self._servo is None or not hasattr(self._servo, "pub_joint"):
             _LOG.error("ProcessRunStatemachine: _play_segment_joint_traj: ServoBridge/Pub fehlt.")
@@ -318,6 +311,7 @@ class ProcessRunStatemachine(QtCore.QObject):
         )
 
         for i in range(len(pts) - 1):
+            # Abbruchbedingungen pro Schritt
             if self._should_stop():
                 _LOG.info("ProcessRunStatemachine: Stop während Segment '%s' erkannt.", seg_name)
                 return
@@ -342,6 +336,7 @@ class ProcessRunStatemachine(QtCore.QObject):
             pos0 = p0.get("positions") or []
             pos1 = p1.get("positions") or []
 
+            # Validierung: positions muss Liste sein und die gleiche Länge wie joints haben
             if not isinstance(pos0, list) or not isinstance(pos1, list):
                 _LOG.warning("ProcessRunStatemachine: Punkt %d/%d ohne positions-Liste – überspringe.", i, len(pts) - 1)
                 continue
@@ -349,11 +344,12 @@ class ProcessRunStatemachine(QtCore.QObject):
                 _LOG.warning("ProcessRunStatemachine: Punkt %d/%d hat falsche Dimensionszahl – überspringe.", i, len(pts) - 1)
                 continue
 
+            # Velocity-Schätzer aus Positionsdifferenzen
             vel = [(pos1[j] - pos0[j]) / dt for j in range(n_j)]
 
             msg = JointJog()
-            msg.header.frame_id = "world"  # oder frames.yaml tcp/world
-            # Zeitstempel aus rclpy-Node (ServoBridge ist ein BaseBridge/Node)
+            msg.header.frame_id = "world"  # (hier fest verdrahtet)
+            # Wenn möglich: Zeitstempel vom Servo-Node
             try:
                 now = self._servo.get_clock().now().to_msg()  # type: ignore[attr-defined]
                 msg.header.stamp = now
@@ -376,12 +372,12 @@ class ProcessRunStatemachine(QtCore.QObject):
                     self._error_msg = f"Servo publish failed: {e}"
                 return
 
-            # einfache Wartezeit – QThread.msleep blockiert nur den Worker-Thread
+            # Wartet die Segmentzeit ab (blockiert nur den Worker-Thread)
             ms = int(math.ceil(dt * 1000.0))
             if ms > 0:
                 QtCore.QThread.msleep(ms)
 
-        # Am Ende optional einen „Stopp“-Jog (vel=0) senden:
+        # Optional: am Ende eine Null-Velocity senden
         try:
             stop_msg = JointJog()
             stop_msg.header.frame_id = "world"
@@ -400,6 +396,7 @@ class ProcessRunStatemachine(QtCore.QObject):
     # ------------------------------------------------------------------ #
 
     def _on_state_move_predispense(self) -> None:
+        # Spielt MOVE_PREDISPENSE und triggert danach den nächsten State
         _LOG.info("ProcessRunStatemachine: ENTER MOVE_PREDISPENSE")
         if not self._error_msg and not self._should_stop():
             self._play_segment_joint_traj("MOVE_PREDISPENSE")
@@ -407,6 +404,7 @@ class ProcessRunStatemachine(QtCore.QObject):
         self._finish_state(self._sig_predispense_done)
 
     def _on_state_move_recipe(self) -> None:
+        # Spielt MOVE_RECIPE und triggert danach den nächsten State
         _LOG.info("ProcessRunStatemachine: ENTER MOVE_RECIPE")
         if not self._error_msg and not self._should_stop():
             self._play_segment_joint_traj("MOVE_RECIPE")
@@ -414,6 +412,7 @@ class ProcessRunStatemachine(QtCore.QObject):
         self._finish_state(self._sig_recipe_done)
 
     def _on_state_move_retreat(self) -> None:
+        # Spielt MOVE_RETREAT und triggert danach den nächsten State
         _LOG.info("ProcessRunStatemachine: ENTER MOVE_RETREAT")
         if not self._error_msg and not self._should_stop():
             self._play_segment_joint_traj("MOVE_RETREAT")
@@ -421,6 +420,7 @@ class ProcessRunStatemachine(QtCore.QObject):
         self._finish_state(self._sig_retreat_done)
 
     def _on_state_move_home(self) -> None:
+        # Spielt MOVE_HOME und beendet danach
         _LOG.info("ProcessRunStatemachine: ENTER MOVE_HOME")
         if not self._error_msg and not self._should_stop():
             self._play_segment_joint_traj("MOVE_HOME")
@@ -428,6 +428,7 @@ class ProcessRunStatemachine(QtCore.QObject):
         self._finish_state(self._sig_home_done)
 
     def _on_state_error(self) -> None:
+        # Fehlerpfad: notifyError + cleanup
         _LOG.info("ProcessRunStatemachine: ENTER ERROR")
         msg = self._error_msg or "Unbekannter Fehler im Servo-Run."
         _LOG.error("ProcessRunStatemachine: notifyError(%s)", msg)
@@ -435,6 +436,7 @@ class ProcessRunStatemachine(QtCore.QObject):
         self._cleanup()
 
     def _on_state_finished(self) -> None:
+        # Erfolgsfall: notifyFinished + cleanup
         _LOG.info("ProcessRunStatemachine: ENTER FINISHED")
 
         result: Dict[str, Any] = {
@@ -450,6 +452,7 @@ class ProcessRunStatemachine(QtCore.QObject):
     # ------------------------------------------------------------------ #
 
     def _cleanup(self) -> None:
+        # Stoppt die Qt-StateMachine (falls noch aktiv) und entfernt den Log-Handler
         m = self._machine
         if m is not None and m.isRunning():
             try:

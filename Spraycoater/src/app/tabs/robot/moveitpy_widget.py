@@ -5,9 +5,14 @@ from __future__ import annotations
 from typing import Optional, Dict, Any
 
 from PyQt6 import QtCore
+from PyQt6.QtCore import QEvent, QObject, QTimer
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QPushButton, QDoubleSpinBox
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFormLayout,
+    QPushButton,
+    QDoubleSpinBox,
 )
 
 from app.model.recipe.recipe_store import RecipeStore
@@ -32,31 +37,42 @@ class MoveItPyWidget(QWidget):
     motionSpeedChanged = QtCore.pyqtSignal(float)
     moveHomeRequestedWithSpeed = QtCore.pyqtSignal(float)
     moveServiceRequestedWithSpeed = QtCore.pyqtSignal(float)
-    plannerCfgChanged = QtCore.pyqtSignal(object)  # z.B. Dict[str, Any]
+    plannerCfgChanged = QtCore.pyqtSignal(object)  # Dict[str, Any]
 
     def __init__(
         self,
         *,
         store: RecipeStore,
         bridge=None,
-        parent: Optional[QWidget] = None
+        parent: Optional[QWidget] = None,
     ):
         if store is None:
             raise ValueError("MoveItPyWidget: RecipeStore ist Pflicht (store=None).")
         super().__init__(parent)
-        self.bridge = bridge
+
         self.store: RecipeStore = store
+        self.bridge = None
+
+        # Debounce für Planner-Config (UI-Änderungen im PlannerGroupBox)
+        self._planner_emit_timer = QTimer(self)
+        self._planner_emit_timer.setSingleShot(True)
+        self._planner_emit_timer.setInterval(60)
+        self._planner_emit_timer.timeout.connect(self._emit_planner_cfg)
 
         self._build_ui()
-        self._wire_outbound_to_bridge_if_present()
+        self._install_planner_change_watchdog()
+
+        if bridge is not None:
+            self.set_bridge(bridge)
 
     # ------------------------------------------------------------------ UI
-    def _build_ui(self):
+
+    def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
 
-        # --- 1) Planner oben (role="service") ---
+        # 1) Planner (role="service")
         self.planner = PlannerGroupBox(
             parent=self,
             title="Service planner",
@@ -65,7 +81,7 @@ class MoveItPyWidget(QWidget):
         )
         root.addWidget(self.planner)
 
-        # --- 2) Motion Speed (mm/s) ---
+        # 2) Motion speed (mm/s)
         frm = QFormLayout()
         self.spinSpeed = QDoubleSpinBox(self)
         self.spinSpeed.setRange(1.0, 2000.0)
@@ -76,11 +92,9 @@ class MoveItPyWidget(QWidget):
         frm.addRow("Speed (mm/s)", self.spinSpeed)
         root.addLayout(frm)
 
-        self.spinSpeed.valueChanged.connect(
-            lambda v: self.motionSpeedChanged.emit(float(v))
-        )
+        self.spinSpeed.valueChanged.connect(self._on_speed_changed)
 
-        # --- 3) Buttons ---
+        # 3) Buttons
         row = QHBoxLayout()
         self.btnHome = QPushButton("Move to Home", self)
         self.btnService = QPushButton("Move to Service", self)
@@ -91,49 +105,37 @@ class MoveItPyWidget(QWidget):
         row.addStretch(1)
         root.addLayout(row)
 
-        # Buttons → immer mit aktueller Speed
-        self.btnHome.clicked.connect(
-            lambda: self.moveHomeRequestedWithSpeed.emit(self.get_motion_speed_mm_s())
-        )
-        self.btnService.clicked.connect(
-            lambda: self.moveServiceRequestedWithSpeed.emit(self.get_motion_speed_mm_s())
-        )
+        self.btnHome.clicked.connect(self._on_move_home)
+        self.btnService.clicked.connect(self._on_move_service)
 
-    # ------------------------------------------------------------------ Bridge-Wiring
-    def _find_moveitpy_bridge(self):
+    def _on_speed_changed(self, v: float) -> None:
+        self.motionSpeedChanged.emit(float(v))
+
+    def _on_move_home(self) -> None:
+        self.moveHomeRequestedWithSpeed.emit(self.get_motion_speed_mm_s())
+
+    def _on_move_service(self) -> None:
+        self.moveServiceRequestedWithSpeed.emit(self.get_motion_speed_mm_s())
+
+    # ------------------------------------------------------------------ Bridge
+
+    def set_bridge(self, bridge) -> None:
         """
-        Robust: findet MoveItPyBridge unabhängig davon ob alte (_motion) oder neue API genutzt wird.
+        Setzt/tauscht die Bridge und verdrahtet die Widget-Signale nach außen.
+        Erwartung: bridge.moveitpy_bridge.signals ist vorhanden.
         """
+        self.bridge = bridge
+        self._wire_outbound_to_bridge()
+
+        # Direkt nach dem Verdrahten einmal den aktuellen Zustand pushen
+        self.motionSpeedChanged.emit(self.get_motion_speed_mm_s())
+        self._emit_planner_cfg()
+
+    def _wire_outbound_to_bridge(self) -> None:
         if self.bridge is None:
-            return None
+            return
 
-        # 1) neue API
-        b = getattr(self.bridge, "moveitpy_bridge", None)
-        if b is not None:
-            try:
-                _ = b.signals
-                return b
-            except Exception:
-                pass
-
-        # 2) interne Felder (neu)
-        b = getattr(self.bridge, "_moveit", None)
-        if b is not None and getattr(b, "signals", None) is not None:
-            return b
-
-        # 3) backward compat (alt)
-        b = getattr(self.bridge, "_motion", None)
-        if b is not None and getattr(b, "signals", None) is not None:
-            return b
-
-        return None
-
-    def _wire_outbound_to_bridge_if_present(self):
-        """
-        Verdrahtet die Widget-Signale direkt mit der MoveItPyBridge,
-        wenn eine UIBridge übergeben wurde.
-        """
-        moveitpy_bridge = self._find_moveitpy_bridge()
+        moveitpy_bridge = getattr(self.bridge, "moveitpy_bridge", None)
         if moveitpy_bridge is None:
             return
 
@@ -141,26 +143,24 @@ class MoveItPyWidget(QWidget):
         if sig is None:
             return
 
-        # Speed-Änderung
+        # Speed
         if hasattr(sig, "motionSpeedChanged"):
             self.motionSpeedChanged.connect(sig.motionSpeedChanged)
 
-        # Buttons -> Varianten MIT Speed
+        # Moves (mit Speed)
         if hasattr(sig, "moveToHomeRequestedWithSpeed"):
             self.moveHomeRequestedWithSpeed.connect(sig.moveToHomeRequestedWithSpeed)
         if hasattr(sig, "moveToServiceRequestedWithSpeed"):
             self.moveServiceRequestedWithSpeed.connect(sig.moveToServiceRequestedWithSpeed)
 
-        # Planner-Konfiguration (als Dict) → MoveItPyBridge
+        # Planner-Cfg (Dict)
         if hasattr(sig, "plannerCfgChanged"):
             self.plannerCfgChanged.connect(sig.plannerCfgChanged)
 
-        # Beim ersten Verbinden direkt aktuelle Planner-Config einmal pushen
-        self._emit_planner_cfg()
+    # ------------------------------------------------------------------ Store
 
-    # ------------------------------------------------------------------ Store-Handling
-    def set_store(self, store: RecipeStore):
-        """Store wechseln (z. B. nach Reload). Lädt sofort die Store-Defaults in den Planner."""
+    def set_store(self, store: RecipeStore) -> None:
+        """Store wechseln (z.B. nach Reload). Lädt sofort Store-Defaults in den Planner."""
         if store is None:
             raise ValueError("MoveItPyWidget.set_store: store=None ist nicht erlaubt.")
         self.store = store
@@ -168,54 +168,82 @@ class MoveItPyWidget(QWidget):
         self.planner.apply_store_defaults()
         self._emit_planner_cfg()
 
-    # ------------------------------------------------------------------ Utilities
-    def set_busy(self, busy: bool):
-        self.btnHome.setEnabled(not busy)
-        self.btnService.setEnabled(not busy)
-        self.spinSpeed.setEnabled(not busy)
+    # ------------------------------------------------------------------ Busy
 
-    # ------------------------------------------------------------------ Motion Speed API
+    def set_busy(self, busy: bool) -> None:
+        en = not bool(busy)
+        self.btnHome.setEnabled(en)
+        self.btnService.setEnabled(en)
+        self.spinSpeed.setEnabled(en)
+        self.planner.setEnabled(en)
+
+    # ------------------------------------------------------------------ Motion speed API
+
     def get_motion_speed_mm_s(self) -> float:
         return float(self.spinSpeed.value())
 
     def set_motion_speed_mm_s(self, v: float) -> None:
         self.spinSpeed.setValue(float(v))
 
-    # ------------------------------------------------------------------ Planner passthroughs (Service-Rolle)
-    def apply_planner_model(self, planner_cfg: Dict[str, Any] | None):
+    # ------------------------------------------------------------------ Planner passthroughs
+
+    def apply_planner_model(self, planner_cfg: Dict[str, Any] | None) -> None:
         """Recipe.planner['service'] → UI."""
-        self.planner.apply_planner_model(planner_cfg)
+        self.planner.apply_planner_model(planner_cfg or {})
         self._emit_planner_cfg()
 
     def collect_planner(self) -> Dict[str, Any]:
         """UI → Dict (für Recipe.planner['service'])."""
-        return self.planner.collect_planner()
+        return dict(self.planner.collect_planner() or {})
 
-    # Für ServiceTab-Forwarder
     def get_planner(self) -> str:
         return self.planner.get_planner()
 
     def get_params(self) -> Dict[str, Any]:
-        return self.planner.get_params()
+        return dict(self.planner.get_params() or {})
 
-    def set_planner(self, pipeline: str):
+    def set_planner(self, pipeline: str) -> None:
         self.planner.set_planner(pipeline)
         self._emit_planner_cfg()
 
-    def set_params(self, cfg: Dict[str, Any]):
+    def set_params(self, cfg: Dict[str, Any]) -> None:
         self.planner.set_params(cfg)
         self._emit_planner_cfg()
 
-    def reset_defaults(self):
-        """Lädt Defaults *nur* aus RecipeStore (service-Rolle bleibt)."""
+    def reset_defaults(self) -> None:
+        """Lädt Defaults nur aus dem RecipeStore (service-Rolle bleibt)."""
         self.planner.apply_store_defaults()
         self._emit_planner_cfg()
 
-    # ------------------------------------------------------------------ Planner → Bridge Helper
-    def _emit_planner_cfg(self):
+    # ------------------------------------------------------------------ Planner change detection
+
+    def _install_planner_change_watchdog(self) -> None:
         """
-        Baut die Planner-Konfiguration (Dict) aus der UI
-        und emittiert plannerCfgChanged.
+        PlannerGroupBox liefert nicht zwingend ein einheitliches 'changed'-Signal.
+        Stattdessen beobachten wir UI-Events (Key/Mouse/Focus) innerhalb des Planner-Bereichs
+        und emittieren die Planner-Konfiguration debounced.
         """
-        cfg = self.collect_planner()
-        self.plannerCfgChanged.emit(cfg)
+        self.planner.installEventFilter(self)
+        for w in self.planner.findChildren(QWidget):
+            w.installEventFilter(self)
+
+    def eventFilter(self, obj: QObject, ev: QEvent) -> bool:  # noqa: N802 (Qt API)
+        t = ev.type()
+        if t in (
+            QEvent.Type.MouseButtonRelease,
+            QEvent.Type.KeyRelease,
+            QEvent.Type.FocusOut,
+            QEvent.Type.Wheel,
+        ):
+            self._schedule_emit_planner_cfg()
+        return super().eventFilter(obj, ev)
+
+    def _schedule_emit_planner_cfg(self) -> None:
+        # Debounce: mehrere UI-Events bündeln
+        self._planner_emit_timer.start()
+
+    # ------------------------------------------------------------------ Planner → Signal
+
+    def _emit_planner_cfg(self) -> None:
+        """Baut die Planner-Konfiguration (Dict) aus der UI und emittiert plannerCfgChanged."""
+        self.plannerCfgChanged.emit(self.collect_planner())

@@ -15,13 +15,14 @@ class InfoGroupBox(QGroupBox):
     Kompakte Infozeile.
 
     Zeigt:
-      Valid | Points | Path length (mm) | ETA (s) | Medium (ml) | Mesh tris | Mesh L×B×H (mm)
+      Points | Path length (mm) | ETA (s) | Medium (ml) | Mesh tris | Mesh L×B×H (mm)
 
     Erwartet ein info-Dict – typischerweise recipe.info.
     Unterstützt beide Varianten:
       - total_points / total_length_mm  (aus Recipe)
       - points / length_mm             (Panel-kompatibel)
     """
+
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__("Info", parent)
         self._build_ui()
@@ -39,7 +40,6 @@ class InfoGroupBox(QGroupBox):
             lay.addWidget(v)
             return v
 
-        self._v_valid     = add("Valid")
         self._v_points    = add("Points")
         self._v_len_mm    = add("Path length (mm)")
         self._v_eta_s     = add("ETA (s)")
@@ -57,40 +57,41 @@ class InfoGroupBox(QGroupBox):
     # ---- formatting helpers ----
     @staticmethod
     def _fmt_num(v: Any, nd: int = 3) -> str:
+        """
+        - ints: Tausendertrennzeichen
+        - floats: nd Nachkommastellen, aber wenn nd==0 oder .is_integer() -> int-format
+        - None/Fehler -> "-"
+        """
         if v is None:
             return "-"
-        if isinstance(v, float):
-            return f"{v:.{nd}f}"
-        if isinstance(v, int):
-            # Tausendertrennzeichen als schmales Leerzeichen
-            return f"{v:,}".replace(",", " ")
         try:
-            # Things like np.int64 / np.float64
-            if float(v).is_integer():
-                return f"{int(v):,}".replace(",", " ")
-            return f"{float(v):.{nd}f}"
+            fv = float(v)
+            if nd <= 0 or fv.is_integer():
+                return f"{int(round(fv)):,}".replace(",", " ")
+            return f"{fv:.{nd}f}"
         except Exception:
+            if isinstance(v, int):
+                return f"{v:,}".replace(",", " ")
             return str(v)
 
     @staticmethod
     def _fmt_with_unit(v: Any, unit: str | None = None, nd: int = 3) -> str:
         s = InfoGroupBox._fmt_num(v, nd)
-        return f"{s} {unit}".strip() if unit else s
+        if s == "-" or not unit:
+            return s
+        return f"{s} {unit}"
 
     @staticmethod
     def _fmt_dims(dims: Any, nd: int = 1) -> str:
         """Erwartet (L, B, H) in mm."""
         try:
-            L, B, H = [float(x) for x in (dims or ())]
+            seq = list(dims) if dims is not None else []
+            if len(seq) < 3:
+                return "-"
+            L, B, H = (float(seq[0]), float(seq[1]), float(seq[2]))
+            return f"{L:.{nd}f} × {B:.{nd}f} × {H:.{nd}f}"
         except Exception:
             return "-"
-        return f"{L:.{nd}f} × {B:.{nd}f} × {H:.{nd}f}"
-
-    @staticmethod
-    def _fmt_bool(v: Any) -> str:
-        if v is None:
-            return "-"
-        return "yes" if bool(v) else "no"
 
     # ---- Public API ----
     def set_values(self, info: Dict[str, Any] | None) -> None:
@@ -98,17 +99,14 @@ class InfoGroupBox(QGroupBox):
         Erwartet recipe.info oder ein ähnliches Dict.
 
         Unterstützte Keys:
-          - valid
           - points          oder total_points
           - length_mm       oder total_length_mm
           - eta_s
           - medium_ml
           - mesh_tris
-          - mesh_bounds / mesh_bounds_mm (L,B,H in mm)
+          - mesh_bounds / mesh_bounds_mm / mesh_dims_mm / dims_mm (L,B,H in mm)
         """
         info = info or {}
-
-        valid = info.get("valid")
 
         points = info.get("points")
         if points is None:
@@ -122,11 +120,13 @@ class InfoGroupBox(QGroupBox):
         medium_ml = info.get("medium_ml")
         mesh_tris = info.get("mesh_tris")
 
-        mesh_bounds = info.get("mesh_bounds")
-        if mesh_bounds is None:
-            mesh_bounds = info.get("mesh_bounds_mm")
+        mesh_bounds = (
+            info.get("mesh_bounds")
+            or info.get("mesh_bounds_mm")
+            or info.get("mesh_dims_mm")
+            or info.get("dims_mm")
+        )
 
-        self._v_valid.setText(self._fmt_bool(valid))
         self._v_points.setText(self._fmt_num(points, nd=0))
         self._v_len_mm.setText(self._fmt_with_unit(length_mm, "mm", nd=3))
         self._v_eta_s.setText(self._fmt_with_unit(eta_s, "s", nd=3))

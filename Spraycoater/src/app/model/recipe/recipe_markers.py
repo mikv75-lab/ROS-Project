@@ -1,13 +1,26 @@
 # app/model/recipe/recipe_markers.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-from typing import Optional, Iterable, List
+
+from typing import Iterable, List, Optional
 
 import numpy as np
-from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
+from visualization_msgs.msg import Marker, MarkerArray
 
 from .recipe import Recipe
+
+
+# ----------------------------
+# Marker helpers
+# ----------------------------
+
+def _make_point(x: float, y: float, z: float) -> Point:
+    p = Point()
+    p.x = float(x)
+    p.y = float(y)
+    p.z = float(z)
+    return p
 
 
 def _points_mm_to_markerarray(
@@ -19,21 +32,24 @@ def _points_mm_to_markerarray(
 ) -> MarkerArray:
     """
     Baut aus mm-Punkten ein MarkerArray:
-      - LINE_STRIP (grün)
-      - Punkte (rot)
-      - Text (Rezeptname) am Startpunkt
+      - LINE_STRIP für den Verlauf
+      - SPHERE_LIST für einzelne Punkte
+      - optional TEXT_VIEW_FACING am Startpunkt (name)
     """
     ma = MarkerArray()
-    if points_mm is None or points_mm.size == 0:
+    if points_mm is None or np.size(points_mm) == 0:
         return ma
 
     P = np.asarray(points_mm, dtype=float).reshape(-1, 3)
-    # mm -> m für ROS/RViz
+    if P.shape[0] == 0:
+        return ma
+
+    # mm -> m (ROS/RViz)
     Pm = P * 1e-3
 
     ns = ns or (name or "recipe_path")
 
-    # LINE_STRIP
+    # ---------------- LINE_STRIP ----------------
     line = Marker()
     line.header.frame_id = frame_id
     line.ns = ns
@@ -47,12 +63,10 @@ def _points_mm_to_markerarray(
     line.color.a = 1.0
     line.pose.orientation.w = 1.0
     for x, y, z in Pm:
-        p = Point()
-        p.x, p.y, p.z = float(x), float(y), float(z)
-        line.points.append(p)
+        line.points.append(_make_point(x, y, z))
     ma.markers.append(line)
 
-    # Punkte (SPHERE_LIST)
+    # ---------------- SPHERE_LIST ----------------
     dots = Marker()
     dots.header.frame_id = frame_id
     dots.ns = ns
@@ -68,12 +82,10 @@ def _points_mm_to_markerarray(
     dots.color.a = 1.0
     dots.pose.orientation.w = 1.0
     for x, y, z in Pm:
-        p = Point()
-        p.x, p.y, p.z = float(x), float(y), float(z)
-        dots.points.append(p)
+        dots.points.append(_make_point(x, y, z))
     ma.markers.append(dots)
 
-    # Text (Rezeptname) am Startpunkt
+    # ---------------- Text am Startpunkt ----------------
     if name:
         txt = Marker()
         txt.header.frame_id = frame_id
@@ -83,24 +95,31 @@ def _points_mm_to_markerarray(
         txt.action = Marker.ADD
         txt.text = name
         txt.scale.z = 0.02  # 20 mm
-        txt.color.r = txt.color.g = txt.color.b = txt.color.a = 1.0
+        txt.color.r = 1.0
+        txt.color.g = 1.0
+        txt.color.b = 1.0
+        txt.color.a = 1.0
         txt.pose.orientation.w = 1.0
+
         x0, y0, z0 = Pm[0]
         txt.pose.position.x = float(x0)
         txt.pose.position.y = float(y0)
-        txt.pose.position.z = float(z0) + 0.01  # 10 mm drüber
+        txt.pose.position.z = float(z0) + 0.01  # 10 mm darüber
         ma.markers.append(txt)
 
     return ma
 
 
+# ----------------------------
+# Data extraction
+# ----------------------------
+
 def _compiled_points_mm_for_side(recipe: Recipe, side: str) -> np.ndarray:
     """
-    Liest die kompilierten Weltpunkte (mm) für eine Side aus recipe.paths_compiled.
+    Liest kompilierten Weltpfad (mm) für eine Side aus recipe.paths_compiled.
 
-    Kein Fallback:
-      - wenn paths_compiled oder die Side fehlen -> (0,3)-Array
-      - wenn keine poses_quat da sind -> (0,3)-Array
+    Erwartet Struktur:
+      recipe.paths_compiled["sides"][side]["poses_quat"] = [{"x":..,"y":..,"z":.., ...}, ...]
     """
     pc = recipe.paths_compiled or {}
     sides = pc.get("sides") or {}
@@ -122,47 +141,44 @@ def _compiled_points_mm_for_side(recipe: Recipe, side: str) -> np.ndarray:
     return P
 
 
+# ----------------------------
+# Public API
+# ----------------------------
+
 def build_marker_array_for_recipe_side(
     recipe: Recipe,
     *,
     side: str,
     frame_id: str,
 ) -> MarkerArray:
-    """
-    Baut Marker für GENAU EINE Side.
-
-    STRICT:
-      - verwendet ausschließlich recipe.paths_compiled["sides"][side]["poses_quat"]
-      - keine rebuild_paths, keine Verwendung von recipe.paths, keine Defaults
-      - wenn nichts kompiliert ist -> leeres MarkerArray
-    """
+    """Baut Marker für eine Side (falls compiled-Daten vorhanden sind)."""
     pts_mm = _compiled_points_mm_for_side(recipe, side)
-    if pts_mm is None or pts_mm.size == 0:
+    if pts_mm.size == 0:
         return MarkerArray()
 
     name = recipe.id or ""
-    return _points_mm_to_markerarray(pts_mm, frame_id=frame_id, name=name, ns=name or side)
+    return _points_mm_to_markerarray(
+        pts_mm,
+        frame_id=frame_id,
+        name=name,
+        ns=name or str(side),
+    )
 
-
-# ================== mehrere Seiten in einem MarkerArray ==================
 
 def build_marker_array_from_recipe(
     recipe: Recipe,
     *,
     sides: Optional[Iterable[str]] = None,
-    frame_id: str = "scene",   # Standard-Frame ist 'scene'
+    frame_id: str = "scene",
 ) -> MarkerArray:
     """
-    Baut ein gemeinsames MarkerArray für alle angegebenen Seiten.
+    Baut ein gemeinsames MarkerArray für mehrere Seiten.
 
-    STRICT:
-      - wenn `sides` None: verwendet ausschließlich Keys aus recipe.paths_compiled["sides"]
-      - keine Fallbacks auf recipe.paths oder recipe.paths_by_side
-      - wenn nichts kompiliert ist -> leeres MarkerArray
+    - Wenn `sides` None ist, werden die vorhandenen Keys aus paths_compiled["sides"] genutzt.
+    - Wenn es keine compiled-Daten gibt, wird ein leeres MarkerArray zurückgegeben.
     """
     ma = MarkerArray()
 
-    # Seitenauswahl STRICT aus paths_compiled
     if sides is not None:
         side_list: List[str] = [str(s) for s in sides]
     else:
@@ -175,21 +191,13 @@ def build_marker_array_from_recipe(
     if not side_list:
         return ma
 
+    # IDs neu vergeben, damit im gemeinsamen MarkerArray nichts kollidiert
     global_id = 0
     for side in side_list:
-        side_ma = build_marker_array_for_recipe_side(
-            recipe,
-            side=side,
-            frame_id=frame_id,
-        )
-        if not side_ma.markers:
-            continue
-
-        # IDs neu vergeben, um Kollisionen zu vermeiden
+        side_ma = build_marker_array_for_recipe_side(recipe, side=side, frame_id=frame_id)
         for m in side_ma.markers:
             m.id = global_id
             global_id += 1
-            # Frame-Sicherheit
             if not m.header.frame_id:
                 m.header.frame_id = frame_id
             ma.markers.append(m)

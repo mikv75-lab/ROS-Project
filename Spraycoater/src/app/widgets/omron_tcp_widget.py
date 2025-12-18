@@ -32,8 +32,8 @@ class OmronTcpWidget(QtWidgets.QWidget):
         self._build_ui()
         self._wire_signals()
 
-        # Initialer Status (nur UI setzen, kein Log-Spam)
-        self._update_connection_indicator(False)
+        # Initialer Status: NUR UI setzen, KEIN Log-Spam
+        self._set_connection_indicator_silent(False)
 
     # ------------------------------------------------------------------
     # UI-Aufbau
@@ -163,6 +163,20 @@ class OmronTcpWidget(QtWidgets.QWidget):
     @QtCore.pyqtSlot(str)
     def _on_raw_rx(self, txt: str) -> None:
         self._append_rx(txt)
+
+    def _set_connection_indicator_silent(self, connected: bool) -> None:
+        """
+        Setzt nur Label+Style und aktualisiert _last_connected,
+        ohne _append_sys() zu triggern (Startup/Restore).
+        """
+        self._last_connected = connected
+
+        if connected:
+            self._status_label.setText("CONNECTED")
+            self._status_label.setStyleSheet("color: #00aa00; font-weight: bold;")
+        else:
+            self._status_label.setText("DISCONNECTED")
+            self._status_label.setStyleSheet("color: #aa0000; font-weight: bold;")
 
     @QtCore.pyqtSlot(bool)
     def _update_connection_indicator(self, connected: bool) -> None:

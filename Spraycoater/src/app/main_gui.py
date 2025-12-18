@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
+# Entry: main_gui.py (oder dein aktuelles Startscript)
 from __future__ import annotations
+
 import os, sys, signal, traceback, atexit, logging
 import faulthandler
 
@@ -10,8 +12,12 @@ os.environ.setdefault("QT_X11_NO_MITSHM", "1")
 os.environ["MPLBACKEND"] = "Agg"
 
 # OpenGL:
-os.environ["QT_OPENGL"] = "software"
+os.environ.setdefault("QT_OPENGL", "software")
 os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+
+# WebEngine in Docker/root (falls du später Foxglove/Browser einbettest)
+if os.geteuid() == 0:
+    os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
 HERE         = os.path.abspath(os.path.dirname(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -21,9 +27,27 @@ for p in (SRC_ROOT, RES_ROOT):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-# ==== Crashdump ====
+# ==== Logging sehr früh initialisieren ====
 LOG_DIR = os.path.join(PROJECT_ROOT, "data", "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
+
+try:
+    from app.utils.logging_setup import init_logging  # dein Modul
+    init_logging(LOG_DIR)
+except Exception:
+    # Fallback: wenigstens irgendwas auf stderr
+    logging.basicConfig(level=logging.INFO, format="%(levelname).1s %(name)s: %(message)s")
+
+# Optional: Warnings + Qt-Message-Handler (dein Modul)
+try:
+    from app.utils.warnings_setup import enable_all_warnings  # falls du es so abgelegt hast
+    enable_all_warnings(qt=False, pywarnings="always")  # Qt-Handler erst nach PyQt6-Import
+except Exception:
+    pass
+
+_LOG = logging.getLogger("app.entry")
+
+# ==== Crashdump ====
 CRASH_PATH = os.path.join(LOG_DIR, "crash.dump")
 
 try:
@@ -97,28 +121,36 @@ try:
 except Exception:
     pass
 
-import vtk
-vtk.vtkObject.GlobalWarningDisplayOn()
+# ROS2 / FastDDS shared memory (Docker)
+os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QPixmap
-from PyQt6.QtWidgets import QApplication, QSplashScreen, QMessageBox
-
+# XDG runtime (Qt mag das)
 if "XDG_RUNTIME_DIR" not in os.environ:
     tmp_run = f"/tmp/runtime-{os.getuid()}"
     os.makedirs(tmp_run, exist_ok=True)
     os.environ["XDG_RUNTIME_DIR"] = tmp_run
 
-os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
+# VTK Logging
+try:
+    from vtkmodules.vtkCommonCore import vtkFileOutputWindow, vtkOutputWindow
+    vtk_log = os.path.join(LOG_DIR, "vtk.log")
+    fow = vtkFileOutputWindow()
+    fow.SetFileName(vtk_log)
+    vtkOutputWindow.SetInstance(fow)
+    _LOG.info("VTK log -> %s", vtk_log)
+except Exception:
+    _LOG.exception("VTK logging setup failed")
 
-from vtkmodules.vtkCommonCore import vtkFileOutputWindow, vtkOutputWindow
-vtk_log_dir = os.path.join(PROJECT_ROOT, "data", "logs")
-os.makedirs(vtk_log_dir, exist_ok=True)
-vtk_log = os.path.join(vtk_log_dir, "vtk.log")
-fow = vtkFileOutputWindow()
-fow.SetFileName(vtk_log)
-vtkOutputWindow.SetInstance(fow)
-logging.getLogger(__name__).info("VTK log -> %s", vtk_log)
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtWidgets import QApplication, QSplashScreen, QMessageBox
+
+# Jetzt Qt-Message-Handler aktivieren (falls vorhanden)
+try:
+    from app.utils.warnings_setup import enable_all_warnings
+    enable_all_warnings(qt=True, pywarnings="always")
+except Exception:
+    pass
 
 # ==== App-Imports ====
 from app.startup_fsm import StartupMachine
@@ -142,10 +174,10 @@ def _make_splash():
     if pm.isNull():
         pm = QPixmap(640, 360)
     if pm.width() == 640 and pm.height() == 360:
-        pm.fill(Qt.black)
+        pm.fill(Qt.GlobalColor.black)
     splash = QSplashScreen(pm)
     splash.setEnabled(False)
-    splash.showMessage("Lade…", Qt.AlignHCenter | Qt.AlignBottom, Qt.white)
+    splash.showMessage("Lade…", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom, Qt.GlobalColor.white)
     splash.show()
     return splash
 
@@ -153,6 +185,24 @@ def _make_splash():
 def _nonblocking_logging_shutdown():
     try:
         logging.shutdown()
+    except Exception:
+        pass
+
+
+def _install_signal_handlers(app: QApplication) -> None:
+    # Ctrl+C / docker stop sauber beenden
+    def _quit(_sig=None, _frame=None):
+        try:
+            app.quit()
+        except Exception:
+            pass
+
+    try:
+        signal.signal(signal.SIGINT, _quit)
+    except Exception:
+        pass
+    try:
+        signal.signal(signal.SIGTERM, _quit)
     except Exception:
         pass
 
@@ -168,6 +218,16 @@ class ExceptionApp(QApplication):
 
 def main():
     app = ExceptionApp(sys.argv)
+    _install_signal_handlers(app)
+
+    # allow SIGINT handling while Qt event loop runs
+    try:
+        timer = QTimer()
+        timer.timeout.connect(lambda: None)
+        timer.start(200)
+    except Exception:
+        pass
+
     app.aboutToQuit.connect(lambda: QTimer.singleShot(0, _nonblocking_logging_shutdown))
 
     splash = _make_splash()
@@ -178,7 +238,9 @@ def main():
         abort_on_error=False,
     )
 
-    splash_msg = lambda t: splash.showMessage(t, Qt.AlignHCenter | Qt.AlignBottom, Qt.white)
+    splash_msg = lambda t: splash.showMessage(
+        t, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom, Qt.GlobalColor.white
+    )
     fsm.progress.connect(lambda p: splash_msg(f"{p} …"))
     fsm.warning.connect(lambda w: splash_msg(f"⚠ {w}"))
     fsm.error.connect(lambda e: splash_msg(f"✖ {e}"))
@@ -193,7 +255,6 @@ def main():
         bridge = bridge_shadow or bridge_live
 
         if bridge is None:
-            # Kein Crash: UI startet, Robot-Tab zeigt dann "ROS disabled / not connected"
             splash_msg("⚠ Keine ROS-Bridge verfügbar (shadow/live beide fehlgeschlagen).")
 
         win = MainWindow(ctx=ctx, bridge=bridge, plc=plc)

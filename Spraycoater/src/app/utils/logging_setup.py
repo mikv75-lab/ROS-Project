@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 # app/utils/logging_setup.py
-
 from __future__ import annotations
 
 import os
+import sys
 import logging
 from logging.handlers import RotatingFileHandler
 from typing import Optional
@@ -39,28 +39,25 @@ def _make_default_formatter() -> logging.Formatter:
     )
 
 
-def _derive_file_name(logger_name: str) -> str:
-    """
-    Leitet einen sinnvollen Log-Dateinamen aus dem Loggernamen ab.
+class _MaxLevelFilter(logging.Filter):
+    """Lässt nur Records <= max_level durch."""
+    def __init__(self, max_level: int):
+        super().__init__()
+        self.max_level = int(max_level)
 
-    Beispiele:
-      "app.tabs.process.run_statemachine" -> "process.log"
-      "app.tabs.recipe.saver"            -> "recipe.log"
-      "ros.ros_launcher"                 -> "ros_launcher.log"
-      "ros.launch"                       -> "launch.log"
-      "irgendwas.custom.logger"          -> "logger.log"
-    """
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno <= self.max_level
+
+
+def _derive_file_name(logger_name: str) -> str:
     parts = logger_name.split(".")
 
-    # app.tabs.<tab>.[...]
     if len(parts) >= 3 and parts[0] == "app" and parts[1] == "tabs":
         return f"{parts[2]}.log"
 
-    # ros.<something>
     if len(parts) >= 2 and parts[0] == "ros":
         return f"{parts[1]}.log"
 
-    # fallback: letzter Teil
     return f"{parts[-1]}.log"
 
 
@@ -69,15 +66,6 @@ def _derive_file_name(logger_name: str) -> str:
 # ---------------------------------------------------------------------------
 
 def init_logging(log_dir: str) -> None:
-    """
-    Basis-Logging initialisieren:
-
-      - Root: INFO, Konsole (stdout + stderr)
-      - stderr-Logger: ERROR → stderr.log + Konsole (stderr)
-      - registriert logging.add_file_logger(...) als Convenience-Funktion
-
-    Muss genau EINMAL (früh) aufgerufen werden, z.B. im Startup.
-    """
     global _INITIALIZED, _LOG_DIR, _CONSOLE_INFO, _CONSOLE_ERR
 
     if _INITIALIZED:
@@ -92,12 +80,13 @@ def init_logging(log_dir: str) -> None:
     default_fmt = _make_default_formatter()
 
     # Konsole
-    console_info = logging.StreamHandler()
-    console_info.setLevel(logging.DEBUG)
+    console_info = logging.StreamHandler(sys.stdout)
+    console_info.setLevel(logging.DEBUG)               # handler nimmt alles, Filter begrenzt
+    console_info.addFilter(_MaxLevelFilter(logging.WARNING))  # <= WARNING (also kein ERROR doppelt)
     console_info.setFormatter(brief_fmt)
 
-    console_err = logging.StreamHandler()
-    console_err.setLevel(logging.ERROR)
+    console_err = logging.StreamHandler(sys.stderr)
+    console_err.setLevel(logging.ERROR)                # >= ERROR
     console_err.setFormatter(default_fmt)
 
     _CONSOLE_INFO = console_info
@@ -117,6 +106,7 @@ def init_logging(log_dir: str) -> None:
         maxBytes=DEFAULT_MAX_BYTES,
         backupCount=DEFAULT_BACKUP_COUNT,
         encoding="utf-8",
+        delay=True,
     )
     stderr_handler.setLevel(logging.ERROR)
     stderr_handler.setFormatter(default_fmt)
@@ -133,9 +123,7 @@ def init_logging(log_dir: str) -> None:
         setattr(logging, "add_file_logger", add_file_logger)  # type: ignore[attr-defined]
 
     _INITIALIZED = True
-    logging.getLogger("app").info(
-        "Basis-Logging konfiguriert (LOG_DIR=%s)", _LOG_DIR
-    )
+    logging.getLogger("app").info("Basis-Logging konfiguriert (LOG_DIR=%s)", _LOG_DIR)
 
 
 def add_file_logger(
@@ -143,28 +131,10 @@ def add_file_logger(
     file_name: Optional[str] = None,
     level: int = logging.DEBUG,
 ) -> logging.Logger:
-    """
-    Fügt einem Logger einen RotatingFileHandler hinzu.
-
-    Default-Usage (so wie du willst):
-
-        import logging
-        logging.add_file_logger("app.tabs.process.run_statemachine")
-
-    → Level = DEBUG  
-    → Dateiname wird automatisch abgeleitet (z.B. "process.log")
-
-    Optional:
-
-        logging.add_file_logger("app.tabs.process.run_statemachine",
-                                file_name="process_debug.log",
-                                level=logging.INFO)
-    """
     global _LOG_DIR, _CONSOLE_INFO, _CONSOLE_ERR
 
     if not _INITIALIZED:
         raise RuntimeError("init_logging(log_dir) wurde noch nicht aufgerufen.")
-
     if not logger_name:
         raise ValueError("logger_name ist leer.")
 
@@ -177,26 +147,27 @@ def add_file_logger(
 
     target_path = os.path.join(_LOG_DIR, file_name)
 
-    # Falls schon ein identischer Filehandler hängt, nichts tun
+    # identischer Filehandler?
     for h in logger.handlers:
         if isinstance(h, RotatingFileHandler) and os.path.abspath(getattr(h, "baseFilename", "")) == os.path.abspath(target_path):
-            return logger
+            # Console-Handler ggf. trotzdem einmalig ergänzen
+            break
+    else:
+        fh = RotatingFileHandler(
+            target_path,
+            maxBytes=DEFAULT_MAX_BYTES,
+            backupCount=DEFAULT_BACKUP_COUNT,
+            encoding="utf-8",
+            delay=True,
+        )
+        fh.setLevel(level)
+        fh.setFormatter(_make_default_formatter())
+        logger.addHandler(fh)
 
-    fh = RotatingFileHandler(
-        target_path,
-        maxBytes=DEFAULT_MAX_BYTES,
-        backupCount=DEFAULT_BACKUP_COUNT,
-        encoding="utf-8",
-    )
-    fh.setLevel(level)
-    fh.setFormatter(_make_default_formatter())
-
-    logger.addHandler(fh)
-
-    # Optional: Konsolenhandler wie Root anhängen
-    if _CONSOLE_INFO is not None:
+    # Console-Handler nur einmal anhängen (wichtig!)
+    if _CONSOLE_INFO is not None and _CONSOLE_INFO not in logger.handlers:
         logger.addHandler(_CONSOLE_INFO)
-    if _CONSOLE_ERR is not None:
+    if _CONSOLE_ERR is not None and _CONSOLE_ERR not in logger.handlers:
         logger.addHandler(_CONSOLE_ERR)
 
     logger.propagate = False

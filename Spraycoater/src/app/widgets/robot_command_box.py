@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
-# File: widgets/robot_command_box.py
+# File: app/widgets/robot_command_box.py
 from __future__ import annotations
+
 from typing import Optional
 
 from PyQt6 import QtCore
 from PyQt6.QtWidgets import (
     QGroupBox, QVBoxLayout, QPushButton, QSizePolicy, QWidget
 )
+
+__all__ = ["RobotCommandButtonsBox"]
 
 
 class RobotCommandButtonsBox(QGroupBox):
@@ -40,8 +43,10 @@ class RobotCommandButtonsBox(QGroupBox):
         self.btnSrvOn  = QPushButton("Servo ENABLE", self)
         self.btnSrvOff = QPushButton("Servo DISABLE", self)
 
-        for b in (self.btnInit, self.btnStop, self.btnClrErr,
-                  self.btnPwrOn, self.btnPwrOff, self.btnSrvOn, self.btnSrvOff):
+        for b in (
+            self.btnInit, self.btnStop, self.btnClrErr,
+            self.btnPwrOn, self.btnPwrOff, self.btnSrvOn, self.btnSrvOff
+        ):
             b.setMinimumHeight(28)
             v.addWidget(b)
 
@@ -61,3 +66,8 @@ class RobotCommandButtonsBox(QGroupBox):
         sp.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
         sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
         self.setSizePolicy(sp)
+
+
+# -------- Backward-compat Aliase (falls irgendwo noch alte Namen hängen) -----
+RobotCommandButtonBox = RobotCommandButtonsBox
+RobotCommandsBox = RobotCommandButtonsBox

@@ -32,7 +32,12 @@ _LOG = logging.getLogger("app.tabs.process")
 
 class ProcessTab(QWidget):
     """
-    Process-Tab (nur Code, keine .ui)
+    UI-Tab für den Prozessablauf:
+      - Robot-Init/Home prüfen
+      - Rezept/Run laden
+      - Prozess starten/stoppen
+      - Status/Log anzeigen
+      - Trajektorie-Infos berechnen und optional als YAML speichern
     """
 
     def __init__(
@@ -48,24 +53,26 @@ class ProcessTab(QWidget):
         self.bridge = bridge
         self.plc = plc
 
-        # -------------------------------------------------------------
-        # HARTE CONTRACTS: ProcessTab arbeitet nur mit der "clean" UIBridge
-        # -------------------------------------------------------------
+        # Stellt sicher, dass die Bridge "ready" ist (Verbindungen/States/Bridges vorhanden).
         self.bridge.ensure_connected()
 
-        # States (signal-frei)
+        # -------------------------------------------------------------
+        # States: reine Datenquellen ohne Qt-Signale (werden abgefragt)
+        # -------------------------------------------------------------
         self._scene_state = self.bridge.scene
         self._poses_state = self.bridge.poses
         self._robot_state = self.bridge.robot
 
-        # Bridges (Qt-Signale)
+        # -------------------------------------------------------------
+        # Bridges: Qt-Signal-Wrapper (Events kommen über .signals)
+        # -------------------------------------------------------------
         self._sb = self.bridge.scene_bridge
         self._pb = self.bridge.poses_bridge
         self._rb = self.bridge.robot_bridge
         self._spray = self.bridge.spray_path_bridge
         self._moveit = self.bridge.moveitpy_bridge
 
-        # Robot signals
+        # Robot signals: zentrale Signalquelle für Statusupdates
         self._sig = self._rb.signals
 
         # -------- interner Zustand --------
@@ -75,20 +82,23 @@ class ProcessTab(QWidget):
         self._recipe_model: Optional[Recipe] = None
         self._recipe_name: str | None = None
 
+        # Setup/Startbedingungen (werden aus Scene + Recipe verglichen)
         self._tool_ok: bool = True
         self._substrate_ok: bool = False
         self._mount_ok: bool = False
 
+        # Prozessverwaltung
         self._process_active: bool = False
         self._process_thread: Optional[ProcessThread] = None
         self._robot_init_thread: Optional[RobotInitThread] = None
 
+        # Merkt sich, ob der letzte Prozess success/error geliefert hat (gegen doppelte Handler)
         self._process_outcome: Optional[str] = None
 
-        # Info-Box Cache
+        # Cache für InfoBox-Inhalte
         self._info_values: Dict[str, Any] = {}
 
-        # Reentrancy-Guard
+        # Guard, damit _update_start_conditions nicht rekursiv läuft
         self._in_update_start_conditions: bool = False
 
         # ==================================================================
@@ -109,7 +119,7 @@ class ProcessTab(QWidget):
         top_row.setSpacing(8)
         left_layout.addLayout(top_row)
 
-        # --- Process Control ---
+        # --- Process Control: Buttons für Init/Load/Start/Stop ---
         self.grpProcess = QGroupBox("Process Control", left)
         vproc_outer = QVBoxLayout(self.grpProcess)
         vproc_outer.setContentsMargins(8, 8, 8, 8)
@@ -126,7 +136,7 @@ class ProcessTab(QWidget):
         vproc_outer.addStretch(1)
         top_row.addWidget(self.grpProcess, 0)
 
-        # --- Startbedingungen ---
+        # --- Startbedingungen: Textfeld, warum Start möglich/nicht möglich ---
         self.grpStatus = QGroupBox("Startbedingungen", left)
         vstat = QVBoxLayout(self.grpStatus)
         vstat.setContentsMargins(8, 8, 8, 8)
@@ -137,7 +147,7 @@ class ProcessTab(QWidget):
         vstat.addWidget(self.lblStatus)
         top_row.addWidget(self.grpStatus, 1)
 
-        # --- Setup ---
+        # --- Setup: Tool/Substrate/Mount Anzeige aus der Scene ---
         self.grpSetup = QGroupBox("Setup", left)
         vsetup = QVBoxLayout(self.grpSetup)
         vsetup.setContentsMargins(8, 8, 8, 8)
@@ -154,11 +164,11 @@ class ProcessTab(QWidget):
         vsetup.addStretch(1)
         top_row.addWidget(self.grpSetup, 1)
 
-        # --- Robot Status ---
+        # --- Robot Status Box: live Status aus RobotBridge (Connection/Mode/TCP/...) ---
         self.robotStatusBox = RobotStatusInfoBox(left, title="Robot Status")
         top_row.addWidget(self.robotStatusBox, 2)
 
-        # Size Policies
+        # Size Policies: GroupBoxes sollen mitwachsen, RobotStatus eher fixed in der Höhe
         for gb in (self.grpProcess, self.grpStatus, self.grpSetup):
             sp = gb.sizePolicy()
             sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
@@ -171,6 +181,7 @@ class ProcessTab(QWidget):
         self.robotStatusBox.setSizePolicy(sp_rs)
 
         # ---------- INFO BOX ----------
+        # Zeigt Key/Value Infos (z.B. Rezeptinfos, Trajektorienmetriken)
         self.infoBox = InfoGroupBox(left)
         sp_info = self.infoBox.sizePolicy()
         sp_info.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
@@ -179,6 +190,7 @@ class ProcessTab(QWidget):
         left_layout.addWidget(self.infoBox)
 
         # ---------- PROCESS STATUS / LOG ----------
+        # Laufender Schritt + Logausgaben der StateMachines
         self.grpProcessInfo = QGroupBox("Process Status / Log", left)
         vproc_info = QVBoxLayout(self.grpProcessInfo)
         vproc_info.setContentsMargins(8, 8, 8, 8)
@@ -202,6 +214,7 @@ class ProcessTab(QWidget):
         left_layout.addWidget(self.grpProcessInfo, 1)
 
         # ---------- RECIPE GROUP ----------
+        # Links: Rezept Summary, Rechts: (compiled poses) Block
         self.grpRecipe = QGroupBox("Recipe", left)
         vrec = QHBoxLayout(self.grpRecipe)
         vrec.setContentsMargins(8, 8, 8, 8)
@@ -228,7 +241,7 @@ class ProcessTab(QWidget):
         root.addWidget(left)
 
         # -------------------------------------------------------------
-        # Button: Run laden
+        # Button: Run laden (zusätzlich zu Rezept laden)
         # -------------------------------------------------------------
         self.btnLoadRunRecipe = QPushButton("Run laden", self.grpProcess)
         proc_layout = self.grpProcess.layout()
@@ -237,6 +250,7 @@ class ProcessTab(QWidget):
         # ==================================================================
         # Threads
         # ==================================================================
+        # RobotInitThread führt Init + Home-Anfahren/Check aus (Timeouts + Toleranz)
         self._robot_init_thread = RobotInitThread(
             bridge=self.bridge,
             parent=self,
@@ -256,14 +270,16 @@ class ProcessTab(QWidget):
         self.btnStart.clicked.connect(self._on_start_clicked)
         self.btnStop.clicked.connect(self._on_stop_clicked)
 
-        # Wiring
+        # Wiring: Scene/Robot/Poses Events an UI-Funktionen koppeln
         self._wire_scene_bridge()
         self._wire_robot_status()
         self._wire_poses_bridge()
 
+        # InfoBox initial leeren
         self._info_values.clear()
         self.infoBox.set_values(None)
 
+        # Timer: prüft Startbedingungen periodisch, solange kein Prozess läuft
         self._condTimer = QtCore.QTimer(self)
         self._condTimer.setInterval(500)
         self._condTimer.timeout.connect(self._update_start_conditions)
@@ -276,10 +292,12 @@ class ProcessTab(QWidget):
     # =====================================================================
 
     def _info_set_all(self, values: Optional[Dict[str, Any]]) -> None:
+        # Setzt die InfoBox komplett neu (überschreibt Cache)
         self._info_values = dict(values or {})
         self.infoBox.set_values(dict(self._info_values) if self._info_values else None)
 
     def _info_update(self, key: str, value: Any | None) -> None:
+        # Updatet einen Key; None entfernt den Key aus der Anzeige
         if value is None:
             self._info_values.pop(key, None)
         else:
@@ -287,18 +305,21 @@ class ProcessTab(QWidget):
         self.infoBox.set_values(dict(self._info_values) if self._info_values else None)
 
     def _append_process_log(self, text: str) -> None:
+        # Schreibt eine Zeile ins Log-Fenster
         if text:
             self.txtProcessLog.append(text)
 
     @QtCore.pyqtSlot(str)
     def _on_process_log_message(self, msg: str) -> None:
+        # Slot für Log-Signale aus ProcessThread/StateMachines
         self._append_process_log(msg)
 
     # =====================================================================
-    # 🆕 Delayed SprayPath publish (Variante 4)
+    # Delayed SprayPath publish
     # =====================================================================
 
     def _publish_recipe_to_spraypath_delayed(self, recipe: Recipe, *, delay_ms: int = 1000) -> None:
+        # Baut MarkerArray aus dem Rezept und published es zeitverzögert in die SprayPath-Anzeige
         def _do_publish():
             ma: MarkerArray = recipe_markers.build_marker_array_from_recipe(
                 recipe,
@@ -315,6 +336,7 @@ class ProcessTab(QWidget):
 
     @staticmethod
     def _compute_trajectory_metrics_from_ps_list(poses: List[PoseStamped]) -> Dict[str, Any]:
+        # Berechnet einfache Metriken: Punktezahl, Gesamtlänge, Bounding-Box (min/max)
         metrics: Dict[str, Any] = {
             "traj_points": 0,
             "traj_length_mm": 0.0,
@@ -371,6 +393,7 @@ class ProcessTab(QWidget):
 
     @staticmethod
     def _compute_trajectory_score(metrics: Dict[str, Any]) -> Optional[float]:
+        # Sehr einfacher Score: kürzere Wege ergeben höhere Scores (auf 0..100 geklemmt)
         total_mm = float(metrics["traj_length_mm"])
         points = int(metrics["traj_points"])
         if points < 2 or total_mm <= 0.0:
@@ -379,6 +402,7 @@ class ProcessTab(QWidget):
         return max(0.0, min(100.0, raw))
 
     def _update_info_with_trajectory_metrics(self, metrics: Dict[str, Any], score: Optional[float]) -> None:
+        # Schreibt Metriken in die InfoBox
         pts = int(metrics["traj_points"])
         total_mm = float(metrics["traj_length_mm"])
 
@@ -392,6 +416,7 @@ class ProcessTab(QWidget):
             self._info_update(f"traj_{axis}_range_mm", f"{mn:.1f} .. {mx:.1f} mm")
 
     def _log_trajectory_metrics(self, metrics: Dict[str, Any], score: Optional[float]) -> None:
+        # Schreibt Metriken zusätzlich ins Prozess-Log
         pts = int(metrics["traj_points"])
         total_mm = float(metrics["traj_length_mm"])
         self._append_process_log(f"Trajektorie: {pts} Posen, Gesamtlänge ≈ {total_mm:.1f} mm.")
@@ -409,6 +434,7 @@ class ProcessTab(QWidget):
     # =====================================================================
 
     def _get_runs_dir(self) -> Path:
+        # Legt neben dem recipe_dir einen "runs/" Ordner an (falls nicht vorhanden)
         recipe_dir = self.ctx.paths.recipe_dir
         base_dir = Path(recipe_dir).resolve().parent
         runs_dir = base_dir / "runs"
@@ -416,12 +442,14 @@ class ProcessTab(QWidget):
         return runs_dir
 
     def _get_run_filename_for_recipe(self) -> Path:
+        # Dateiname wird aus recipe_id oder recipe_name abgeleitet und "sicher" gemacht
         rec_id = (self._recipe_model.id or "").strip() if self._recipe_model else ""
         name = rec_id or (self._recipe_name or "unnamed_recipe")
         safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in name)
         return self._get_runs_dir() / f"{safe_name}.yaml"
 
     def _save_trajectory_yaml(self, poses: List[PoseStamped], metrics: Dict[str, Any], score: Optional[float]) -> None:
+        # Speichert Posen + Metriken als YAML (für späteres Run-Playback/Analyse)
         frame = poses[0].header.frame_id or "scene"
         data: Dict[str, Any] = {
             "version": 1,
@@ -458,9 +486,11 @@ class ProcessTab(QWidget):
 
     @QtCore.pyqtSlot(object)
     def _on_joints(self, js):
+        # JointState -> nur Positionsliste an die RobotStatusBox weitergeben
         self.robotStatusBox.set_joints(list(js.position or []) if js is not None else None)
 
     def _wire_robot_status(self) -> None:
+        # Verbindet RobotBridge-Signale mit der RobotStatusBox und lokalen Slots
         sig = self._sig
         sb = self.robotStatusBox
 
@@ -482,14 +512,17 @@ class ProcessTab(QWidget):
     # =====================================================================
 
     def _wire_poses_bridge(self) -> None:
+        # Wenn sich die HomePose ändert, wird "robot_at_home" neu berechnet
         self._pb.signals.homePoseChanged.connect(self._on_home_pose_changed)
 
     @QtCore.pyqtSlot(object)
     def _on_tcp_pose_changed(self, _msg: object) -> None:
+        # TCP-Pose geändert -> Home-Check neu berechnen
         self._recompute_robot_at_home()
 
     @QtCore.pyqtSlot(object)
     def _on_home_pose_changed(self, _msg: object) -> None:
+        # Home-Pose geändert -> Home-Check neu berechnen
         self._recompute_robot_at_home()
 
     # =====================================================================
@@ -497,13 +530,16 @@ class ProcessTab(QWidget):
     # =====================================================================
 
     def _get_tcp_pose(self) -> Optional[PoseStamped]:
+        # Aktuelle TCP-Pose aus RobotState
         return self._robot_state.tcp_pose()
 
     def _get_home_pose(self) -> Optional[PoseStamped]:
+        # Home-Pose aus PosesState
         return self._poses_state.home()
 
     @staticmethod
     def _poses_close(a: PoseStamped, b: PoseStamped, pos_tol_mm: float = 1.0) -> bool:
+        # Position-only Vergleich (Distanz) gegen Toleranz
         dx = float(a.pose.position.x) - float(b.pose.position.x)
         dy = float(a.pose.position.y) - float(b.pose.position.y)
         dz = float(a.pose.position.z) - float(b.pose.position.z)
@@ -511,6 +547,7 @@ class ProcessTab(QWidget):
         return dist <= pos_tol_mm
 
     def _recompute_robot_at_home(self) -> None:
+        # Setzt robot_at_home, wenn TCP und Home vorhanden sind und nahe genug sind
         cur = self._get_tcp_pose()
         home = self._get_home_pose()
         self.set_robot_at_home(bool(cur and home and self._poses_close(cur, home, pos_tol_mm=1.0)))
@@ -520,6 +557,7 @@ class ProcessTab(QWidget):
     # =====================================================================
 
     def _cleanup_process_thread(self) -> None:
+        # Beendet/entfernt einen bestehenden ProcessThread sauber
         thr = self._process_thread
         self._process_thread = None
         if thr is None:
@@ -530,6 +568,7 @@ class ProcessTab(QWidget):
         thr.deleteLater()
 
     def _setup_process_thread_for_recipe(self, recipe: Recipe) -> None:
+        # Erstellt einen ProcessThread für das "normale" Rezept (MoveIt/Motion Setup+Run)
         self._cleanup_process_thread()
         self._process_outcome = None
 
@@ -544,6 +583,7 @@ class ProcessTab(QWidget):
         self.txtProcessLog.clear()
 
     def _setup_process_thread_for_run(self, run_yaml_path: str) -> None:
+        # Erstellt einen ProcessThread für Run-Playback (Servo)
         self._cleanup_process_thread()
         self._process_outcome = None
 
@@ -563,6 +603,7 @@ class ProcessTab(QWidget):
     # =====================================================================
 
     def _on_init_clicked(self) -> None:
+        # Startet RobotInitThread (Init + Home)
         self.set_robot_initialized(False)
         self.set_robot_at_home(False)
 
@@ -571,6 +612,7 @@ class ProcessTab(QWidget):
         self._robot_init_thread.startSignal.emit()
 
     def _on_load_recipe_clicked(self) -> None:
+        # Lädt ein Rezept-YAML und wendet es im UI an
         start_dir = self.ctx.paths.recipe_dir
 
         fname, _ = QFileDialog.getOpenFileName(
@@ -587,6 +629,7 @@ class ProcessTab(QWidget):
         QtCore.QTimer.singleShot(0, lambda m=model, f=fname, self=self: self._apply_loaded_recipe(m, f))
 
     def _on_load_run_recipe_clicked(self) -> None:
+        # Lädt eine Run-Datei aus runs/ und bereitet Servo-Playback vor
         runs_dir = self._get_runs_dir()
         fname, _ = QFileDialog.getOpenFileName(self, "Run-Recipe laden", str(runs_dir), "YAML (*.yaml *.yml)")
         if not fname:
@@ -603,6 +646,7 @@ class ProcessTab(QWidget):
         self._append_process_log(f"Run-Recipe geladen: {base}")
 
     def _apply_loaded_recipe(self, model: Recipe, fname: str) -> None:
+        # Setzt das geladene Rezept als aktuellen Zustand und published Marker
         self._recipe_model = model
         name = (model.id or "").strip() or os.path.basename(fname)
         self.set_recipe_name(name)
@@ -610,8 +654,10 @@ class ProcessTab(QWidget):
         self._update_recipe_info_text()
         self._setup_process_thread_for_recipe(model)
 
+        # Marker verzögert publishen (damit Viewer/Scene bereit ist)
         self._publish_recipe_to_spraypath_delayed(model, delay_ms=1000)
 
+        # Setup/Scene-Abgleich aktualisieren
         self._update_setup_from_scene()
         self._evaluate_scene_match()
 
@@ -619,11 +665,14 @@ class ProcessTab(QWidget):
         _LOG.info("ProcessTab: Rezept angewendet (id=%r).", model.id)
 
     def _on_start_clicked(self) -> None:
+        # Startet den ProcessThread (wenn vorhanden)
         if self._process_thread is None:
             QMessageBox.warning(self, "Kein Prozess", "Es ist kein Rezept/Run geladen.")
             return
 
         self._process_outcome = None
+
+        # Falls Rezept gewechselt wurde: Thread auf aktuelles Rezept setzen
         if self._recipe_model is not None and getattr(self._process_thread, "recipe", None) is not self._recipe_model:
             self._process_thread.set_recipe(self._recipe_model)
 
@@ -632,6 +681,7 @@ class ProcessTab(QWidget):
         self._process_thread.startSignal.emit()
 
     def _on_stop_clicked(self) -> None:
+        # Stop anfordern (ProcessThread + RobotInitThread)
         self._append_process_log("=== Stop angefordert ===")
         thr = self._process_thread
         if thr is not None:
@@ -647,6 +697,7 @@ class ProcessTab(QWidget):
     # ---------------------------------------------------------------------
 
     def _on_robot_init_finished(self) -> None:
+        # RobotInit erfolgreich -> Flags setzen + UI aktualisieren
         self.set_robot_initialized(True)
         self._recompute_robot_at_home()
 
@@ -656,6 +707,7 @@ class ProcessTab(QWidget):
             self._info_update("recipe", self._recipe_name)
 
     def _on_robot_init_error(self, msg: str) -> None:
+        # RobotInit fehlgeschlagen -> Flags zurücksetzen + MessageBox
         self.set_robot_initialized(False)
         self.set_robot_at_home(False)
 
@@ -667,6 +719,7 @@ class ProcessTab(QWidget):
     # ---------------------------------------------------------------------
 
     def _on_process_finished_success(self, result_obj: object) -> None:
+        # Erfolgspfad (wird ggf. mehrfach getriggert -> Outcome-Guard)
         if self._process_outcome == "error":
             return
         if self._process_outcome is None:
@@ -676,6 +729,7 @@ class ProcessTab(QWidget):
         planned_traj: Any = None
         executed_traj: Any = None
 
+        # Unterstützt dict-Results (Setup/Run) und Listen (Legacy)
         if isinstance(result_obj, dict):
             raw_poses = result_obj.get("poses") or result_obj.get("tcp_poses") or []
             poses = [p for p in raw_poses if isinstance(p, PoseStamped)]
@@ -689,16 +743,20 @@ class ProcessTab(QWidget):
         if executed_traj is not None:
             self._append_process_log("Ausgeführte Trajektorie empfangen.")
 
+        # Falls TCP-Posen vorhanden: ExecutedPath als PoseArray publishen
         if poses:
             pa = PoseArray()
             pa.header.frame_id = poses[0].header.frame_id or "scene"
             pa.poses = [p.pose for p in poses]
             self.bridge.set_executed_path(pa)
 
+        # Metriken + Score berechnen und anzeigen
         metrics = self._compute_trajectory_metrics_from_ps_list(poses)
         score = self._compute_trajectory_score(metrics)
         self._update_info_with_trajectory_metrics(metrics, score)
         self._log_trajectory_metrics(metrics, score)
+
+        # Wenn Posen da sind, wird zusätzlich ein YAML-Log erzeugt
         if poses and (self._recipe_model or self._recipe_name):
             self._save_trajectory_yaml(poses, metrics, score)
 
@@ -709,6 +767,7 @@ class ProcessTab(QWidget):
 
     @QtCore.pyqtSlot(str)
     def _on_process_finished_error(self, msg: str) -> None:
+        # Fehlerpfad (Outcome-Guard gegen doppelte Calls)
         if self._process_outcome == "error":
             return
         self._process_outcome = "error"
@@ -720,10 +779,12 @@ class ProcessTab(QWidget):
         QMessageBox.critical(self, "Prozessfehler", f"Prozess abgebrochen:\n{msg}")
 
     def _on_process_thread_finished(self) -> None:
+        # Qt-Thread finished -> UI Flag zurücksetzen
         self.set_process_active(False)
 
     @QtCore.pyqtSlot(str)
     def _on_process_state_changed(self, state: str) -> None:
+        # Übersetzt interne State-Namen in UI-Text
         pretty = {
             "MOVE_PREDISPENSE": "Predispense-Position anfahren",
             "WAIT_PREDISPENSE": "Predispense-Zeit warten",
@@ -748,11 +809,13 @@ class ProcessTab(QWidget):
     # =====================================================================
 
     def set_recipe_name(self, name: str | None) -> None:
+        # Speichert den angezeigten Rezeptnamen und aktualisiert Startbedingungen
         txt = (name or "").strip()
         self._recipe_name = txt if txt else None
         self._update_start_conditions()
 
     def _update_recipe_info_text(self) -> None:
+        # Füllt die Recipe-Textfelder und die InfoBox aus dem RecipeModel
         if not self._recipe_model:
             self.txtRecipeSummary.setPlainText("")
             self.txtRecipePoses.setPlainText("")
@@ -762,6 +825,7 @@ class ProcessTab(QWidget):
         full_text = str(self._recipe_model)
         lines: List[str] = full_text.splitlines()
 
+        # Trennt Summary und "compiled poses" Block, falls vorhanden
         split_idx = None
         for i, line in enumerate(lines):
             if line.strip().startswith("# compiled poses"):
@@ -785,26 +849,32 @@ class ProcessTab(QWidget):
         self._info_set_all(base_info)
 
     def set_robot_initialized(self, flag: bool) -> None:
+        # Setzt Flag und aktualisiert Startbedingungen
         self._robot_initialized = bool(flag)
         self._update_start_conditions()
 
     def set_robot_at_home(self, flag: bool) -> None:
+        # Setzt Flag und aktualisiert Startbedingungen
         self._robot_at_home = bool(flag)
         self._update_start_conditions()
 
     def set_tool_ok(self, flag: bool) -> None:
+        # Setzt Flag und aktualisiert Startbedingungen
         self._tool_ok = bool(flag)
         self._update_start_conditions()
 
     def set_substrate_ok(self, flag: bool) -> None:
+        # Setzt Flag und aktualisiert Startbedingungen
         self._substrate_ok = bool(flag)
         self._update_start_conditions()
 
     def set_mount_ok(self, flag: bool) -> None:
+        # Setzt Flag und aktualisiert Startbedingungen
         self._mount_ok = bool(flag)
         self._update_start_conditions()
 
     def set_process_active(self, active: bool) -> None:
+        # Aktiv-Flag + Timersteuerung (Startbedingungen nur wenn nicht aktiv)
         self._process_active = bool(active)
         self._update_timer_state()
 
@@ -821,12 +891,14 @@ class ProcessTab(QWidget):
 
     @staticmethod
     def _norm_mesh_name(name: str) -> str:
+        # Normalisiert Mesh-Namen: basename + ohne ".stl"
         n = os.path.basename(name or "").strip()
         if n.lower().endswith(".stl"):
             n = n[:-4]
         return n
 
     def _update_start_conditions(self) -> None:
+        # Prüft, ob alle Bedingungen erfüllt sind und setzt UI entsprechend
         if self._in_update_start_conditions:
             return
 
@@ -851,6 +923,7 @@ class ProcessTab(QWidget):
             can_start = (len(missing) == 0)
             self.btnStart.setEnabled(can_start and not self._process_active)
 
+            # Während Prozess aktiv: Status nicht ständig überschreiben
             if self._process_active:
                 return
 
@@ -866,6 +939,7 @@ class ProcessTab(QWidget):
             self._in_update_start_conditions = False
 
     def _update_timer_state(self) -> None:
+        # Timer läuft nur, wenn kein Prozess aktiv ist
         if self._process_active:
             if self._condTimer.isActive():
                 self._condTimer.stop()
@@ -874,15 +948,15 @@ class ProcessTab(QWidget):
                 self._condTimer.start()
 
     # =====================================================================
-    # Scene wiring + Setup Anzeige (über SceneState!)
+    # Scene wiring + Setup Anzeige (über SceneState)
     # =====================================================================
 
     def _wire_scene_bridge(self) -> None:
+        # Wenn Scene-Objekte wechseln, werden Setup-Labels und Match neu berechnet
         sig = self._sb.signals
         sig.substrateCurrentChanged.connect(self._on_scene_changed)
         sig.mountCurrentChanged.connect(self._on_scene_changed)
-        sig.cageCurrentChanged.connect(self._on_scene_changed)  # falls relevant
-        # falls SceneBridge toolCurrentChanged hat:
+        sig.cageCurrentChanged.connect(self._on_scene_changed)  # optional
         if hasattr(sig, "toolCurrentChanged"):
             sig.toolCurrentChanged.connect(self._on_scene_changed)
 
@@ -890,26 +964,30 @@ class ProcessTab(QWidget):
         self._evaluate_scene_match()
 
     def _on_scene_changed(self, *_args) -> None:
+        # Scene-Update -> Setup und Match aktualisieren
         self._update_setup_from_scene()
         self._evaluate_scene_match()
 
     def _get_scene_currents(self) -> tuple[str, str, str]:
-        # Tool: wenn du Tool als eigenes Scene-State-Feld hast, hier reinziehen.
+        # Liest aktuelle Scene-Auswahl (Tool ist hier noch Platzhalter)
         tool = ""  # aktuell nicht im SceneState vorhanden
         substrate = self._scene_state.substrate_current()
         mount = self._scene_state.mount_current()
         return tool, substrate, mount
 
     def _update_setup_from_scene(self) -> None:
+        # Aktualisiert die Setup-Labels aus den aktuellen Scene-Werten
         tool, substrate, mount = self._get_scene_currents()
         self._set_setup_labels(tool or "-", substrate or "-", mount or "-")
 
     def _set_setup_labels(self, tool: str, substrate: str, mount: str) -> None:
+        # Schreibt Text in die 3 Setup-Labels
         self.lblTool.setText(f"Tool: {tool}")
         self.lblSubstrate.setText(f"Substrate: {substrate}")
         self.lblMount.setText(f"Mount: {mount}")
 
     def _evaluate_scene_match(self) -> None:
+        # Vergleicht aktuelles Substrate/Mount aus der Scene mit dem Rezept
         if not self._recipe_model:
             self.set_substrate_ok(False)
             self.set_mount_ok(False)
@@ -924,4 +1002,5 @@ class ProcessTab(QWidget):
         rec_mount_norm = self._norm_mesh_name(self._recipe_model.substrate_mount or "")
 
         self.set_substrate_ok(bool(rec_sub_norm) and (cur_sub_norm == rec_sub_norm))
+        # Hinweis: hier wird Mount aktuell gegen sich selbst verglichen (cur_mount_norm == rec_mount_norm wäre der Match)
         self.set_mount_ok(bool(rec_mount_norm) and (cur_mount_norm == rec_mount_norm))

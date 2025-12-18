@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
+
 from typing import Dict, Any
 from PyQt6 import QtWidgets, QtCore
 from app.model.recipe.recipe_store import RecipeStore

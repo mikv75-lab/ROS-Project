@@ -14,7 +14,6 @@ def _install_qt_message_handler() -> None:
 
     qtlog = logging.getLogger("qt")
 
-    # Qt6-Enums liegen unter QtCore.QtMsgType
     levels = {
         QtCore.QtMsgType.QtDebugMsg:    logging.DEBUG,
         QtCore.QtMsgType.QtInfoMsg:     logging.INFO,
@@ -23,25 +22,69 @@ def _install_qt_message_handler() -> None:
         QtCore.QtMsgType.QtFatalMsg:    logging.CRITICAL,
     }
 
-    # Qt6-Signatur: handler(msg_type, context, message)
+    def _safe_str(x) -> str:
+        try:
+            return "" if x is None else str(x)
+        except Exception:
+            return ""
+
+    def _flush_all_handlers():
+        try:
+            root = logging.getLogger()
+            for lg in (root, qtlog):
+                for h in getattr(lg, "handlers", []) or []:
+                    try:
+                        h.flush()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    # Qt6: handler(msg_type, context, message)
     def handler(msg_type, context, message):
         lvl = levels.get(msg_type, logging.INFO)
+
         where = ""
+        extra = ""
+
         try:
             file = getattr(context, "file", None)
             line = getattr(context, "line", None)
+            function = getattr(context, "function", None)
+            category = getattr(context, "category", None)
+
             if file and line:
-                where = f"{file}:{line} "
+                where = f"{_safe_str(file)}:{int(line)} "
+            if function:
+                extra += f"{_safe_str(function)} "
+            if category:
+                extra += f"[{_safe_str(category)}] "
         except Exception:
             pass
-        try:
-            qtlog.log(lvl, "%s%s", where, str(message))
-        except Exception:
-            # Fallback ohne Formatierung
-            qtlog.log(lvl, str(message))
 
-    # Installiert den globalen Qt-Message-Handler (überschreibt evtl. vorhandene)
+        msg = _safe_str(message)
+
+        try:
+            if extra:
+                qtlog.log(lvl, "%s%s%s", where, extra, msg)
+            else:
+                qtlog.log(lvl, "%s%s", where, msg)
+        except Exception:
+            # super-fallback
+            try:
+                qtlog.log(lvl, msg)
+            except Exception:
+                pass
+
+        # Bei Fatal: flushen (Qt kann danach sofort aborten)
+        try:
+            if msg_type == QtCore.QtMsgType.QtFatalMsg:
+                _flush_all_handlers()
+        except Exception:
+            pass
+
     QtCore.qInstallMessageHandler(handler)
+
 
 def enable_all_warnings(*, qt: bool = True, pywarnings: str = "always") -> None:
     """
@@ -56,7 +99,6 @@ def enable_all_warnings(*, qt: bool = True, pywarnings: str = "always") -> None:
     if qt:
         _install_qt_message_handler()
 
-    # kleines Lebenszeichen ins Log
     logging.getLogger("py.warnings").info("warnings capture aktiv (filter=%s)", pywarnings)
     if qt:
         logging.getLogger("qt").info("Qt message handler aktiv")

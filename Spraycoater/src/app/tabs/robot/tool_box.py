@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 # File: tabs/service/tool_box.py
 from __future__ import annotations
-from typing import Optional, List
+from typing import Optional, List, Any
 import json
 
+from PyQt6 import QtCore
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QGroupBox, QWidget, QGridLayout, QLabel, QComboBox, QPushButton,
@@ -14,27 +15,59 @@ class ToolGroupBox(QGroupBox):
     """
     Tool-Auswahl.
 
-    ROS Topics:
-      - subscribe (UI -> ROS): /spraycoater/tool/select (std_msgs/String, Name)
-      - publish  (ROS -> UI): /spraycoater/current_tool (std_msgs/String, Name)
-      - publish  (ROS -> UI): /spraycoater/tool/list   (std_msgs/String, Liste)
-
-    Bridge erwartet in bridge._tb.signals (mind. eins der Paare):
-      Inbound:
-        * toolListChanged(list[str])                # bevorzugt
-        * oder: toolListStrChanged(str)             # Roh-String (JSON/CSV/…)
-        * currentToolChanged(str)
-      Outbound:
-        * selectToolRequested(str)                  # UI->ROS (Name)
+    Bridge erwartet (ToolBridge.signals) mindestens:
+      Inbound (ROS -> UI):
+        - toolListChanged(list[str])           (bevorzugt)
+        - optional: toolListStrChanged(str)    (JSON/CSV/…)
+        - currentToolChanged(str)
+      Outbound (UI -> ROS):
+        - selectToolRequested(str)
     """
 
-    def __init__(self, bridge=None, parent: Optional[QWidget] = None):
-        super().__init__("Tool", parent)
+    # Outbound (Widget -> außen/Bridge)
+    selectToolRequested = QtCore.pyqtSignal(str)
+
+    def __init__(self, bridge=None, parent: Optional[QWidget] = None, title: str = "Tool"):
+        super().__init__(title, parent)
         self.bridge = bridge
         self._build_ui()
-        self._wire_bridge()
+        self._wire_bridge_inbound()
+        self._wire_outbound()
 
-    # ---------- UI ----------
+    # ------------------------------------------------------------------ Bridge lookup
+    def _find_tool_bridge(self):
+        """
+        Robust: findet ToolBridge unabhängig davon ob neue Property-API oder _tb verwendet wird.
+        Erwartet auf Bridge-Seite: .tool_bridge (Property) oder ._tb (fallback), jeweils mit .signals.
+        """
+        if self.bridge is None:
+            return None
+
+        # optional ensure_connected
+        ensure = getattr(self.bridge, "ensure_connected", None)
+        if callable(ensure):
+            try:
+                ensure()
+            except Exception:
+                pass
+
+        # 1) neue API
+        if hasattr(self.bridge, "tool_bridge"):
+            try:
+                b = self.bridge.tool_bridge
+                if getattr(b, "signals", None) is not None:
+                    return b
+            except Exception:
+                pass
+
+        # 2) fallback
+        b = getattr(self.bridge, "_tb", None)
+        if b is not None and getattr(b, "signals", None) is not None:
+            return b
+
+        return None
+
+    # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
         g = QGridLayout(self)
 
@@ -67,40 +100,45 @@ class ToolGroupBox(QGroupBox):
         self.btnClear = QPushButton("Clear", self)
         g.addWidget(self.btnClear, 1, 4)
 
-        # Buttons
+        # Buttons -> Widget-Signal
         self.btnSet.clicked.connect(self._on_set_clicked)
-        self.btnClear.clicked.connect(lambda: self._emit_select_request(""))
+        self.btnClear.clicked.connect(lambda: self.selectToolRequested.emit(""))
 
-    # ---------- Bridge Verdrahtung ----------
-    def _wire_bridge(self) -> None:
-        tb = getattr(self.bridge, "_tb", None) if self.bridge else None
+    # ------------------------------------------------------------------ Bridge INBOUND (ROS -> UI)
+    def _wire_bridge_inbound(self) -> None:
+        tb = self._find_tool_bridge()
         sig = getattr(tb, "signals", None) if tb else None
         if not sig:
             return
 
-        # Inbound (ROS -> UI)
         if hasattr(sig, "toolListChanged"):
             sig.toolListChanged.connect(self.set_tool_list)  # list[str]
-        # Alternativ: Roh-String (vom /tool/list Publisher)
+
+        # optional: Roh-String
         for cand in ("toolListStrChanged", "toolListUpdated", "toolListMsg"):
             if hasattr(sig, cand):
                 getattr(sig, cand).connect(self.set_tool_list_from_string)
+
         if hasattr(sig, "currentToolChanged"):
             sig.currentToolChanged.connect(self.set_current_tool)
 
-        # Outbound (UI -> ROS)
-        self._selectToolRequested = getattr(sig, "selectToolRequested", None)
+    # ------------------------------------------------------------------ Outbound (UI -> Bridge)
+    def _wire_outbound(self) -> None:
+        tb = self._find_tool_bridge()
+        sig = getattr(tb, "signals", None) if tb else None
+        if not sig:
+            return
 
-    # ---------- Slots / Handlers ----------
+        # Widget-Signal -> Bridge-Signal
+        if hasattr(sig, "selectToolRequested"):
+            self.selectToolRequested.connect(sig.selectToolRequested.emit)
+
+    # ------------------------------------------------------------------ Slots / Handlers
     def _on_set_clicked(self) -> None:
         name = self.cmbTool.currentText().strip()
-        self._emit_select_request(name)
+        self.selectToolRequested.emit(name)
 
-    def _emit_select_request(self, name: str) -> None:
-        if callable(getattr(self, "_selectToolRequested", None)):
-            self._selectToolRequested.emit(name)  # type: ignore[attr-defined]
-
-    # ---------- Tool-List Parsing ----------
+    # ------------------------------------------------------------------ Tool-List Parsing
     def set_tool_list_from_string(self, payload: str) -> None:
         """
         Akzeptiert:
@@ -111,8 +149,10 @@ class ToolGroupBox(QGroupBox):
         if payload is None:
             self.set_tool_list([])
             return
+
         s = str(payload).strip()
         items: List[str] = []
+
         # JSON?
         if s.startswith("[") and s.endswith("]"):
             try:
@@ -121,6 +161,7 @@ class ToolGroupBox(QGroupBox):
                     items = [str(x).strip() for x in arr if str(x).strip()]
             except Exception:
                 items = []
+
         # Fallback: splitten
         if not items:
             for sep in ("\n", ",", ";", "|"):
@@ -132,19 +173,26 @@ class ToolGroupBox(QGroupBox):
 
         # deduplizieren, Reihenfolge beibehalten
         seen = set()
-        uniq = []
+        uniq: List[str] = []
         for x in items:
             if x and x not in seen:
                 seen.add(x)
                 uniq.append(x)
+
         self.set_tool_list(uniq)
 
-    # ---------- Public API ----------
+    # ------------------------------------------------------------------ Public API
     def set_tool_list(self, items: List[str]) -> None:
+        cur = self.cmbTool.currentText().strip()
         self.cmbTool.blockSignals(True)
         try:
             self.cmbTool.clear()
-            self.cmbTool.addItems(items or [])
+            self.cmbTool.addItems(list(items or []))
+            # best-effort: current selection beibehalten
+            if cur:
+                ix = self.cmbTool.findText(cur)
+                if ix >= 0:
+                    self.cmbTool.setCurrentIndex(ix)
         finally:
             self.cmbTool.blockSignals(False)
 
@@ -152,13 +200,21 @@ class ToolGroupBox(QGroupBox):
         name = (name or "").strip()
         self.lblCurrent.setText(name if name else "-")
         if name:
-            idx = self.cmbTool.findText(name)
-            if idx >= 0:
-                self.cmbTool.setCurrentIndex(idx)
+            ix = self.cmbTool.findText(name)
+            if ix >= 0:
+                self.cmbTool.blockSignals(True)
+                try:
+                    self.cmbTool.setCurrentIndex(ix)
+                finally:
+                    self.cmbTool.blockSignals(False)
 
     def get_selected_tool(self) -> str:
         return self.cmbTool.currentText().strip()
 
     def clear_selection(self) -> None:
-        self.cmbTool.setCurrentIndex(-1)
+        self.cmbTool.blockSignals(True)
+        try:
+            self.cmbTool.setCurrentIndex(-1)
+        finally:
+            self.cmbTool.blockSignals(False)
         self.lblCurrent.setText("-")
