@@ -1,8 +1,15 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Entry: main_gui.py (oder dein aktuelles Startscript)
+
 from __future__ import annotations
 
-import os, sys, signal, traceback, atexit, logging
+import os
+import sys
+import signal
+import traceback
+import atexit
+import logging
 import faulthandler
 
 # ==== Früh: stabile Qt/PyVista-Defaults ====
@@ -16,13 +23,16 @@ os.environ.setdefault("QT_OPENGL", "software")
 os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
 # WebEngine in Docker/root (falls du später Foxglove/Browser einbettest)
-if os.geteuid() == 0:
-    os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+try:
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+except Exception:
+    pass
 
-HERE         = os.path.abspath(os.path.dirname(__file__))
+HERE = os.path.abspath(os.path.dirname(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
-SRC_ROOT     = os.path.join(PROJECT_ROOT, "src")
-RES_ROOT     = os.path.join(PROJECT_ROOT, "resource")
+SRC_ROOT = os.path.join(PROJECT_ROOT, "src")
+RES_ROOT = os.path.join(PROJECT_ROOT, "resource")
 for p in (SRC_ROOT, RES_ROOT):
     if p not in sys.path:
         sys.path.insert(0, p)
@@ -114,9 +124,11 @@ atexit.register(_on_exit_flush)
 
 # ==== Imports, nachdem Backend fixiert ist ====
 import matplotlib
+
 matplotlib.use("Agg", force=True)
 try:
     import matplotlib.pyplot as plt
+
     plt.ioff()
 except Exception:
     pass
@@ -126,13 +138,14 @@ os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
 
 # XDG runtime (Qt mag das)
 if "XDG_RUNTIME_DIR" not in os.environ:
-    tmp_run = f"/tmp/runtime-{os.getuid()}"
+    tmp_run = f"/tmp/runtime-{os.getuid()}" if hasattr(os, "getuid") else "/tmp/runtime-unknown"
     os.makedirs(tmp_run, exist_ok=True)
     os.environ["XDG_RUNTIME_DIR"] = tmp_run
 
 # VTK Logging
 try:
     from vtkmodules.vtkCommonCore import vtkFileOutputWindow, vtkOutputWindow
+
     vtk_log = os.path.join(LOG_DIR, "vtk.log")
     fow = vtkFileOutputWindow()
     fow.SetFileName(vtk_log)
@@ -148,6 +161,7 @@ from PyQt6.QtWidgets import QApplication, QSplashScreen, QMessageBox
 # Jetzt Qt-Message-Handler aktivieren (falls vorhanden)
 try:
     from app.utils.warnings_setup import enable_all_warnings
+
     enable_all_warnings(qt=True, pywarnings="always")
 except Exception:
     pass
@@ -220,6 +234,20 @@ def main():
     app = ExceptionApp(sys.argv)
     _install_signal_handlers(app)
 
+    # ---- Tripwire: wer beendet die App? (aboutToQuit / lastWindowClosed) ----
+    QUIT_LOG = os.path.join(LOG_DIR, "quit.log")
+
+    def _append_quit_log(tag: str):
+        try:
+            with open(QUIT_LOG, "a", encoding="utf-8") as f:
+                f.write(f"\n=== {tag} ===\n")
+                f.write("".join(traceback.format_stack(limit=80)))
+        except Exception:
+            pass
+
+    app.aboutToQuit.connect(lambda: _append_quit_log("aboutToQuit"))
+    app.lastWindowClosed.connect(lambda: _append_quit_log("lastWindowClosed"))
+
     # allow SIGINT handling while Qt event loop runs
     try:
         timer = QTimer()
@@ -258,6 +286,16 @@ def main():
             splash_msg("⚠ Keine ROS-Bridge verfügbar (shadow/live beide fehlgeschlagen).")
 
         win = MainWindow(ctx=ctx, bridge=bridge, plc=plc)
+
+        # WICHTIG: Referenz halten, sonst kann Python-Objekt GC'ed werden -> Fenster weg -> App quit
+        app._main_window = win  # noqa: SLF001
+
+        # Optional: Logge auch, wenn das Window zerstört wird (hilft bei "plötzlich weg")
+        try:
+            win.destroyed.connect(lambda: _append_quit_log("MainWindow destroyed"))
+        except Exception:
+            pass
+
         splash.finish(win)
         win.show()
 
@@ -274,6 +312,7 @@ def main():
                 _CRASH_FH.close()
         except Exception:
             pass
+
     sys.exit(rc)
 
 

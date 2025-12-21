@@ -18,19 +18,18 @@ class RobotInitThread(QtCore.QThread):
          - bridge.robot_init() auslösen
          - dann bis zum Timeout auf RobotState.initialized() == True warten
       2) Wenn der TCP noch nicht an der Home-Pose ist:
-         - bridge.motion_move_home() auslösen
+         - bridge.moveit_move_home() auslösen
          - dann bis zum Timeout warten, bis TCP und Home-Pose innerhalb Toleranz sind
          - bricht zusätzlich ab, wenn ein Motion-Fehler gemeldet wird
 
     Stop:
-      - stopSignal / request_stop setzt ein Flag, das die Warteschleifen abkürzt.
+      - stopSignal / request_stop setzt ein Flag
+      - zusätzlich: bridge.stop() (zentral)
     """
 
-    # Von außen steuerbar: Start (via Signal) und Stop (via Signal)
     startSignal = QtCore.pyqtSignal()
     stopSignal = QtCore.pyqtSignal()
 
-    # Ergebnis nach außen: erfolgreich fertig oder Fehlertext
     notifyFinished = QtCore.pyqtSignal()
     notifyError = QtCore.pyqtSignal(str)
 
@@ -47,32 +46,29 @@ class RobotInitThread(QtCore.QThread):
         bridge: UIBridge-Instanz, über die alle Aktionen/States laufen.
 
         Genutzt werden:
-          - bridge.ensure_connected(): stellt sicher, dass Bridges/States bereit sind
-          - bridge.robot_init(): triggert Robot-Init
-          - bridge.motion_move_home(): triggert "fahre Home"
-          - bridge.motion_last_result(): letzter Motion-Status (für Fehlererkennung)
+          - bridge.ensure_connected()
+          - bridge.stop()                 # zentraler Stop
+          - bridge.robot_init()
+          - bridge.moveit_move_home()
+          - bridge.moveit_last_result()
           - bridge.robot (RobotState): initialized(), tcp_pose()
           - bridge.poses (PosesState): home()
         """
         super().__init__(parent)
 
-        # Bridge + Zustände aus der Bridge ziehen
         self._bridge = bridge
         self._bridge.ensure_connected()
 
         self._robot_state = self._bridge.robot
         self._poses_state = self._bridge.poses
 
-        # Konfiguration (Timeouts und Positions-Toleranz)
         self._init_timeout_s = float(init_timeout_s)
         self._home_timeout_s = float(home_timeout_s)
         self._pos_tol_mm = float(pos_tol_mm)
 
-        # Laufzeit-Flags
         self._stop_requested: bool = False
         self._error_msg: Optional[str] = None
 
-        # Signal->Slot Verdrahtung
         self.startSignal.connect(self._on_start_signal)
         self.stopSignal.connect(self.request_stop)
 
@@ -81,16 +77,14 @@ class RobotInitThread(QtCore.QThread):
     # ------------------------------------------------------------------
 
     def _on_start_signal(self) -> None:
-        # Startet den Thread nur, wenn er nicht bereits läuft
         if not self.isRunning():
             self.start()
 
     def request_stop(self) -> None:
-        # Setzt nur ein Flag; die run()-Schleifen prüfen das regelmäßig
         self._stop_requested = True
+        self._bridge.stop()
 
     def _should_stop(self) -> bool:
-        # Zentraler Check für Stop-Zustand
         return self._stop_requested
 
     # ------------------------------------------------------------------
@@ -98,22 +92,19 @@ class RobotInitThread(QtCore.QThread):
     # ------------------------------------------------------------------
 
     def _last_motion_result(self) -> str:
-        # Letztes Motion-Ergebnis holen und normalisieren
-        return (self._bridge.motion_last_result() or "").strip()
+        return (self._bridge.moveit_last_result() or "").strip()
 
     def _has_motion_error(self) -> bool:
-        # Einfache Erkennung: "ERROR:" Prefix oder bestimmte Marker im Text
         res = self._last_motion_result().upper()
         if not res:
             return False
-        return res.startswith("ERROR:") or ("EXECUTE_FAILED" in res)
+        return res.startswith("ERROR") or ("EXECUTE_FAILED" in res)
 
     # ------------------------------------------------------------------
     # QThread.run – Ablauf Init + Home
     # ------------------------------------------------------------------
 
     def run(self) -> None:
-        # Pro Run: Flags zurücksetzen
         self._stop_requested = False
         self._error_msg = None
 
@@ -134,7 +125,7 @@ class RobotInitThread(QtCore.QThread):
             if self._should_stop():
                 return
 
-            # Schritt 2: Home (nur wenn nötig, Vergleich TCP vs Home-Pose)
+            # Schritt 2: Home (nur wenn nötig)
             if not self._is_at_home():
                 self._send_home()
 
@@ -147,10 +138,8 @@ class RobotInitThread(QtCore.QThread):
                     return
 
         except Exception as e:
-            # Unerwartete Fehler als Text speichern
             self._error_msg = str(e)
         finally:
-            # Ergebnis-Signale: Fehler/Stop -> notifyError, sonst notifyFinished
             if self._error_msg or self._should_stop():
                 if not self._error_msg and self._should_stop():
                     self._error_msg = "Robot-Init abgebrochen."
@@ -163,15 +152,12 @@ class RobotInitThread(QtCore.QThread):
     # ------------------------------------------------------------------
 
     def _is_initialized(self) -> bool:
-        # RobotState-Flag abfragen
         return bool(self._robot_state.initialized())
 
     def _send_init(self) -> None:
-        # Init-Kommando über Bridge auslösen
         self._bridge.robot_init()
 
     def _wait_for_initialized(self, timeout_s: float) -> bool:
-        # Polling-Schleife: wartet bis initialized() True ist oder Timeout/Stop
         if timeout_s <= 0.0:
             return self._is_initialized()
 
@@ -194,18 +180,15 @@ class RobotInitThread(QtCore.QThread):
     # ------------------------------------------------------------------
 
     def _get_tcp_pose(self) -> Optional[PoseStamped]:
-        # TCP-Pose aus RobotState holen (nur akzeptieren, wenn PoseStamped)
         pose = self._robot_state.tcp_pose()
         return pose if isinstance(pose, PoseStamped) else None
 
     def _get_home_pose(self) -> Optional[PoseStamped]:
-        # Home-Pose aus PosesState holen (nur akzeptieren, wenn PoseStamped)
         pose = self._poses_state.home()
         return pose if isinstance(pose, PoseStamped) else None
 
     @staticmethod
     def _poses_close(a: PoseStamped, b: PoseStamped, pos_tol_mm: float) -> bool:
-        # Distanz der Positionen berechnen (a/b in Metern) und in mm vergleichen
         dx = float(a.pose.position.x) - float(b.pose.position.x)
         dy = float(a.pose.position.y) - float(b.pose.position.y)
         dz = float(a.pose.position.z) - float(b.pose.position.z)
@@ -215,7 +198,6 @@ class RobotInitThread(QtCore.QThread):
         return dist_mm <= pos_tol_mm
 
     def _is_at_home(self) -> bool:
-        # True, wenn TCP- und Home-Pose vorhanden sind und innerhalb Toleranz liegen
         cur = self._get_tcp_pose()
         home = self._get_home_pose()
         if cur is None or home is None:
@@ -223,11 +205,9 @@ class RobotInitThread(QtCore.QThread):
         return self._poses_close(cur, home, self._pos_tol_mm)
 
     def _send_home(self) -> None:
-        # Home-Fahrt über Bridge auslösen
-        self._bridge.motion_move_home()
+        self._bridge.moveit_move_home()
 
     def _wait_for_home(self, timeout_s: float) -> bool:
-        # Polling-Schleife: wartet auf "at home", bricht bei Stop oder Motion-Error ab
         if timeout_s <= 0.0:
             return self._is_at_home()
 
@@ -239,7 +219,6 @@ class RobotInitThread(QtCore.QThread):
             if self._should_stop():
                 return False
 
-            # Motion-Fehler früh erkennen und mit Meldung abbrechen
             if self._has_motion_error():
                 if not self._error_msg:
                     self._error_msg = (
@@ -254,11 +233,9 @@ class RobotInitThread(QtCore.QThread):
             self.msleep(step_ms)
             elapsed_ms += step_ms
 
-        # Nach Timeout: letzter Check, ob wir evtl. doch angekommen sind
         if self._is_at_home():
             return True
 
-        # Falls nach Timeout ein Fehler sichtbar ist, Text ergänzen
         if self._has_motion_error() and not self._error_msg:
             self._error_msg = (
                 "Robot-Init: Fehler beim Anfahren der Home-Pose (nach Timeout): "

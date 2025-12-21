@@ -1,22 +1,18 @@
 # -*- coding: utf-8 -*-
-# SceneGroupBox – besitzt Bridge, verdrahtet sich selbst, hat eigene Qt-Signals
+# app/tabs/service/scene_box.py  (oder wo es liegt)
 from __future__ import annotations
 
 from typing import Optional, Sequence
 
 from PyQt6 import QtCore
-from PyQt6.QtWidgets import QGroupBox, QGridLayout, QLabel, QComboBox, QPushButton
+from PyQt6.QtWidgets import QGroupBox, QGridLayout, QLabel, QComboBox, QPushButton, QWidget
 
 
 class SceneGroupBox(QGroupBox):
     """
-    Scene-Controls:
-
-      Rows: Cage / Mount / Substrate
-        - ComboBox: Auswahl
-        - Set:      setzt Auswahl
-        - Current:  zeigt aktuell gesetzten Wert (aus Bridge)
-        - Clear:    setzt auf leer ("")
+    Scene-Controls (event-driven):
+      - UI updated nur bei ROS publish (via SceneBridge.signals)
+      - Buttons senden Signale an Bridge (SceneBridge.signals.set*Requested)
     """
 
     # Outbound (Widget -> außen/Bridge)
@@ -24,10 +20,14 @@ class SceneGroupBox(QGroupBox):
     setMountRequested = QtCore.pyqtSignal(str)
     setSubstrateRequested = QtCore.pyqtSignal(str)
 
-    def __init__(self, bridge, parent: Optional[QtCore.QObject] = None, title: str = "Scene"):
-        super().__init__(parent)  # type: ignore[arg-type]
+    def __init__(self, bridge, parent: Optional[QWidget] = None, title: str = "Scene"):
+        super().__init__(parent)
         self.setTitle(title)
         self.bridge = bridge
+
+        # hard contract: bridge.scene_bridge muss existieren (bridge.ensure_connected() passiert im Tab)
+        self._sb = self.bridge.scene_bridge
+        self._sig = self._sb.signals
 
         self._build_ui()
         self._wire_bridge_inbound()
@@ -83,13 +83,10 @@ class SceneGroupBox(QGroupBox):
         self.btnClrSub = QPushButton("Clear", self)
         g.addWidget(self.btnClrSub, 3, 4)
 
-    # ------------------------------------------------------------------ Bridge Inbound
+    # ------------------------------------------------------------------ Bridge Inbound (ROS -> UI)
 
     def _wire_bridge_inbound(self) -> None:
-        sb = getattr(self.bridge, "_sb", None)
-        sig = getattr(sb, "signals", None) if sb else None
-        if not sig:
-            return
+        sig = self._sig
 
         # Lists
         sig.cageListChanged.connect(lambda items: self._fill(self.cmbCage, items))
@@ -101,7 +98,7 @@ class SceneGroupBox(QGroupBox):
         sig.mountCurrentChanged.connect(lambda v: self._set_current(self.cmbMount, self.lblMountCur, v))
         sig.substrateCurrentChanged.connect(lambda v: self._set_current(self.cmbSub, self.lblSubCur, v))
 
-    # ------------------------------------------------------------------ Outbound
+    # ------------------------------------------------------------------ Outbound (UI -> Bridge)
 
     def _wire_outbound(self) -> None:
         # Buttons -> Widget-Signals
@@ -113,49 +110,12 @@ class SceneGroupBox(QGroupBox):
         self.btnClrMount.clicked.connect(lambda: self.setMountRequested.emit(""))
         self.btnClrSub.clicked.connect(lambda: self.setSubstrateRequested.emit(""))
 
-        # Widget-Signals -> Bridge (falls vorhanden)
-        sb = getattr(self.bridge, "_sb", None)
-        bsig = getattr(sb, "signals", None) if sb else None
-        if not bsig:
-            return
+        # Widget-Signals -> Bridge Signals (direkt, event-driven)
+        self.setCageRequested.connect(self._sig.setCageRequested)
+        self.setMountRequested.connect(self._sig.setMountRequested)
+        self.setSubstrateRequested.connect(self._sig.setSubstrateRequested)
 
-        # Direkt Signal → Signal (keine .emit Hacks)
-        if hasattr(bsig, "setCageRequested"):
-            self.setCageRequested.connect(bsig.setCageRequested)
-        if hasattr(bsig, "setMountRequested"):
-            self.setMountRequested.connect(bsig.setMountRequested)
-        if hasattr(bsig, "setSubstrateRequested"):
-            self.setSubstrateRequested.connect(bsig.setSubstrateRequested)
-
-    # ------------------------------------------------------------------ Public Helpers
-
-    def set_lists(
-        self,
-        cages: Sequence[str] | None = None,
-        mounts: Sequence[str] | None = None,
-        substrates: Sequence[str] | None = None
-    ) -> None:
-        if cages is not None:
-            self._fill(self.cmbCage, cages)
-        if mounts is not None:
-            self._fill(self.cmbMount, mounts)
-        if substrates is not None:
-            self._fill(self.cmbSub, substrates)
-
-    def set_current(
-        self,
-        cage: str | None = None,
-        mount: str | None = None,
-        substrate: str | None = None
-    ) -> None:
-        if cage is not None:
-            self._set_current(self.cmbCage, self.lblCageCur, cage)
-        if mount is not None:
-            self._set_current(self.cmbMount, self.lblMountCur, mount)
-        if substrate is not None:
-            self._set_current(self.cmbSub, self.lblSubCur, substrate)
-
-    # ------------------------------------------------------------------ Intern
+    # ------------------------------------------------------------------ Helpers
 
     @staticmethod
     def _sel(combo: QComboBox) -> str:

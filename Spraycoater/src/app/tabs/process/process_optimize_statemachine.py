@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-# File: tabs/process/process_run_statemachine.py
+# File: tabs/process/process_optimize_statemachine.py
 from __future__ import annotations
 
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any
 import logging
 
 import yaml
@@ -12,7 +12,7 @@ from PyQt6.QtStateMachine import QStateMachine, QState, QFinalState
 
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
-_LOG = logging.getLogger("app.tabs.process.run_statemachine")
+_LOG = logging.getLogger("app.tabs.process.optimize_statemachine")
 
 SEG_ORDER = ["MOVE_PREDISPENSE", "MOVE_RECIPE", "MOVE_RETREAT", "MOVE_HOME"]
 
@@ -20,28 +20,28 @@ SEG_ORDER = ["MOVE_PREDISPENSE", "MOVE_RECIPE", "MOVE_RETREAT", "MOVE_HOME"]
 class _QtSignalHandler(logging.Handler):
     """Logging → Qt-Signal-Weiterleitung (für ProcessTab-Log)."""
 
-    def __init__(self, owner: "ProcessRunStatemachine") -> None:
+    def __init__(self, owner: "ProcessOptimizeStatemachine") -> None:
         super().__init__()
         self._owner = owner
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            msg = self.format(record)
-            self._owner.logMessage.emit(msg)
+            self._owner.logMessage.emit(self.format(record))
         except Exception:
             pass
 
 
-class ProcessRunStatemachine(QtCore.QObject):
+class ProcessOptimizeStatemachine(QtCore.QObject):
     """
-    Run-StateMachine (Execute-only via MoveItPy)
+    Optimize-StateMachine (Retiming-only + Execute-only via MoveItPy)
 
-    - Lädt Run-YAML (joints + segments[name+points])
-    - Baut pro Segment eine JointTrajectory
-    - Führt jedes Segment via MoveItPy aus (execute-only, kein move_home, keine Pose-Steps)
+    WICHTIG: Keine Geometrieänderung:
+      - keine Waypoint-Reduction
+      - kein Shortcut / Replan
+      - nur Retiming (Zeit + optional Velocities neu)
 
     Ablauf:
-      MOVE_PREDISPENSE -> MOVE_RECIPE -> MOVE_RETREAT -> MOVE_HOME -> FINISHED
+      EXEC seg1 -> EXEC seg2 -> ... -> FINISHED
     """
 
     notifyFinished = QtCore.pyqtSignal(object)
@@ -60,14 +60,21 @@ class ProcessRunStatemachine(QtCore.QObject):
         bridge: Any,
         parent: Optional[QtCore.QObject] = None,
         max_retries: int = 2,
-        skip_home: bool = False,
+        skip_home: bool = True,
+        # Retiming Parameter (später aus Recipe/Params)
+        time_scale: float = 1.0,   # <1.0 = schneller, >1.0 = langsamer
+        enforce_min_dt: float = 0.01,
     ) -> None:
         super().__init__(parent)
 
         self._run_yaml_path = run_yaml_path
-        self._ui = bridge  # UIBridge/Bridge (wie in Validate)
+        self._ui = bridge
+
         self._max_retries = int(max_retries)
         self._skip_home = bool(skip_home)
+
+        self._time_scale = float(time_scale)
+        self._min_dt = float(enforce_min_dt)
 
         self._stop_requested: bool = False
         self._stopped: bool = False
@@ -81,12 +88,8 @@ class ProcessRunStatemachine(QtCore.QObject):
         self._segments_pts: Dict[str, List[Dict[str, Any]]] = {}
         self._segments_traj: Dict[str, JointTrajectory] = {}
 
-        # MoveItPy-Bridge/Signals wie bei Validate
         self._moveitpy_bridge = getattr(self._ui, "moveitpy_bridge", None)
         self._moveitpy_signals = getattr(self._moveitpy_bridge, "signals", None)
-
-        if self._moveitpy_signals is None or not hasattr(self._moveitpy_signals, "motionResultChanged"):
-            _LOG.warning("Run: moveitpy_bridge.signals.motionResultChanged nicht gefunden – Feedback kann fehlen.")
 
         self._log_handler: Optional[_QtSignalHandler] = _QtSignalHandler(self)
         self._log_handler.setLevel(logging.INFO)
@@ -99,7 +102,10 @@ class ProcessRunStatemachine(QtCore.QObject):
             except Exception:
                 pass
 
-        _LOG.info("ProcessRunStatemachine init: run_yaml=%s", run_yaml_path)
+        _LOG.info(
+            "Optimize init: run_yaml=%s, time_scale=%.3f, skip_home=%s",
+            run_yaml_path, self._time_scale, self._skip_home
+        )
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -107,7 +113,8 @@ class ProcessRunStatemachine(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def start(self) -> None:
-        _LOG.info("Run: start()")
+        _LOG.info("Optimize: start()")
+
         self._stop_requested = False
         self._stopped = False
         self._error_msg = None
@@ -117,11 +124,12 @@ class ProcessRunStatemachine(QtCore.QObject):
 
         if not self._load_run_yaml(self._run_yaml_path):
             msg = self._error_msg or f"Run-YAML '{self._run_yaml_path}' konnte nicht geladen werden."
-            _LOG.error("Run: %s", msg)
+            _LOG.error("Optimize: %s", msg)
             self.notifyError.emit(msg)
             return
 
         self._build_all_segment_trajectories()
+        self._apply_retime_all()
 
         machine = QStateMachine(self)
         self._machine = machine
@@ -133,23 +141,20 @@ class ProcessRunStatemachine(QtCore.QObject):
         s_finished = QFinalState(machine)
         s_error = QFinalState(machine)
 
-        # Initialstate = erster existierender/erlaubter State
         first = self._first_segment_state()
         if first is None:
-            msg = "Run: Keine Segmente zum Ausführen gefunden."
+            msg = "Optimize: Keine Segmente zum Ausführen gefunden."
             _LOG.error(msg)
             self.notifyError.emit(msg)
             return
 
         machine.setInitialState(states[first])
 
-        # lineare Übergänge (done -> nächstes Segment / oder finished)
         for i, name in enumerate(SEG_ORDER):
             st = states[name]
             st.addTransition(self._sig_done, states[SEG_ORDER[i + 1]] if i + 1 < len(SEG_ORDER) else s_finished)
             st.addTransition(self._sig_error, s_error)
 
-        # entered handlers
         for name in SEG_ORDER:
             states[name].entered.connect(lambda n=name: self._on_state_execute(n))
 
@@ -157,23 +162,22 @@ class ProcessRunStatemachine(QtCore.QObject):
         s_finished.entered.connect(self._on_state_finished)
 
         machine.start()
-        _LOG.info("Run: StateMachine gestartet (initial=%s).", first)
+        _LOG.info("Optimize: StateMachine gestartet (initial=%s).", first)
 
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
-        _LOG.info("Run: request_stop()")
+        _LOG.info("Optimize: request_stop()")
         self._stop_requested = True
         self._stopped = True
-        # MoveIt stoppen (falls vorhanden)
         self._call_ui("moveit_stop")
 
     @QtCore.pyqtSlot()
     def stop(self) -> None:
-        _LOG.info("Run: stop()")
+        _LOG.info("Optimize: stop()")
         self.request_stop()
 
     # ------------------------------------------------------------------ #
-    # YAML → Segmente
+    # YAML / build trajectories
     # ------------------------------------------------------------------ #
 
     def _load_run_yaml(self, path: str) -> bool:
@@ -195,7 +199,6 @@ class ProcessRunStatemachine(QtCore.QObject):
             return False
 
         seg_map: Dict[str, List[Dict[str, Any]]] = {k: [] for k in SEG_ORDER}
-
         for seg in segments_raw:
             name = (seg.get("name") or "").strip().upper()
             pts = seg.get("points") or []
@@ -206,7 +209,7 @@ class ProcessRunStatemachine(QtCore.QObject):
         self._segments_pts = seg_map
 
         _LOG.info(
-            "Run: YAML geladen joints=%d, segments={%s}",
+            "Optimize: YAML geladen joints=%d, segments={%s}",
             len(self._joints),
             ", ".join(f"{k}:{len(v)}" for k, v in self._segments_pts.items()),
         )
@@ -227,7 +230,6 @@ class ProcessRunStatemachine(QtCore.QObject):
         if n_j <= 0:
             return None
 
-        # Zeit normalisieren: t0 -> 0
         try:
             t0 = float(pts[0].get("t", 0.0))
         except Exception:
@@ -241,15 +243,13 @@ class ProcessRunStatemachine(QtCore.QObject):
             positions = p.get("positions") or []
             if not isinstance(positions, list) or len(positions) != n_j:
                 continue
-
             try:
                 t = float(p.get("t", 0.0)) - t0
             except Exception:
                 continue
 
-            # ensure monotonic increasing
             if t <= last_t:
-                t = last_t + 0.001
+                t = last_t + max(self._min_dt, 0.001)
             last_t = t
 
             pt = JointTrajectoryPoint()
@@ -259,14 +259,73 @@ class ProcessRunStatemachine(QtCore.QObject):
             traj.points.append(pt)
 
         if len(traj.points) < 2:
-            _LOG.warning("Run: Segment %s hat zu wenig gültige Punkte.", seg_name)
+            _LOG.warning("Optimize: Segment %s hat zu wenig gültige Punkte.", seg_name)
             return None
-
-        _LOG.info("Run: Segment %s -> JointTrajectory points=%d", seg_name, len(traj.points))
         return traj
 
     # ------------------------------------------------------------------ #
-    # State execution
+    # Retiming (NO geometry change)
+    # ------------------------------------------------------------------ #
+
+    def _apply_retime_all(self) -> None:
+        # time_scale: <1 schneller, >1 langsamer
+        s = max(0.05, float(self._time_scale))
+        if abs(s - 1.0) < 1e-6:
+            _LOG.info("Optimize: time_scale=1.0 -> kein Retiming angewendet.")
+            return
+
+        for name, jt in list(self._segments_traj.items()):
+            self._segments_traj[name] = self._retime_scale_joint_traj(jt, scale=s)
+
+        _LOG.info("Optimize: Retiming angewendet (scale=%.3f).", s)
+
+    def _retime_scale_joint_traj(self, jt: JointTrajectory, *, scale: float) -> JointTrajectory:
+        out = JointTrajectory()
+        out.joint_names = list(jt.joint_names)
+
+        # skaliere time_from_start
+        for p in jt.points:
+            t = float(p.time_from_start.sec) + float(p.time_from_start.nanosec) * 1e-9
+            t2 = max(self._min_dt, t * scale)
+
+            q = JointTrajectoryPoint()
+            q.positions = list(p.positions)
+            q.time_from_start.sec = int(t2)
+            q.time_from_start.nanosec = int((t2 - int(t2)) * 1e9)
+            out.points.append(q)
+
+        # optional: velocities aus finite diff (hilft Controller)
+        self._fill_velocities_fd(out)
+
+        return out
+
+    def _fill_velocities_fd(self, jt: JointTrajectory) -> None:
+        n = len(jt.points)
+        if n < 2:
+            return
+        n_j = len(jt.joint_names)
+        if n_j <= 0:
+            return
+
+        def t_of(i: int) -> float:
+            p = jt.points[i]
+            return float(p.time_from_start.sec) + float(p.time_from_start.nanosec) * 1e-9
+
+        for i in range(n):
+            jt.points[i].velocities = [0.0] * n_j
+
+        for i in range(n - 1):
+            p0 = jt.points[i]
+            p1 = jt.points[i + 1]
+            dt = max(self._min_dt, t_of(i + 1) - t_of(i))
+            v = [(p1.positions[j] - p0.positions[j]) / dt for j in range(n_j)]
+            p0.velocities = v
+
+        # letztes: gleiche v wie vorletztes
+        jt.points[-1].velocities = list(jt.points[-2].velocities)
+
+    # ------------------------------------------------------------------ #
+    # State exec
     # ------------------------------------------------------------------ #
 
     def _first_segment_state(self) -> Optional[str]:
@@ -277,37 +336,22 @@ class ProcessRunStatemachine(QtCore.QObject):
                 return name
         return None
 
-    def _next_segment(self, current: str) -> Optional[str]:
-        try:
-            idx = SEG_ORDER.index(current)
-        except ValueError:
-            return None
-        for j in range(idx + 1, len(SEG_ORDER)):
-            name = SEG_ORDER[j]
-            if self._skip_home and name == "MOVE_HOME":
-                continue
-            if self._segments_traj.get(name) is not None:
-                return name
-        return None
-
     def _emit_state(self, name: str) -> None:
         self._current_state = name
         self.stateChanged.emit(name)
-        self.logMessage.emit(f"Run: State={name}")
+        self.logMessage.emit(f"Optimize: State={name}")
 
     def _on_state_execute(self, seg_name: str) -> None:
-        # Skip wenn kein Segment
         if self._skip_home and seg_name == "MOVE_HOME":
             self._emit_state(seg_name)
-            _LOG.info("Run: skip_home -> überspringe MOVE_HOME")
+            _LOG.info("Optimize: skip_home -> überspringe MOVE_HOME")
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
 
         jt = self._segments_traj.get(seg_name)
         if jt is None:
-            # Segment fehlt -> direkt weiter
             self._emit_state(seg_name)
-            _LOG.info("Run: Segment %s leer -> überspringe", seg_name)
+            _LOG.info("Optimize: Segment %s leer -> überspringe", seg_name)
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
 
@@ -325,38 +369,30 @@ class ProcessRunStatemachine(QtCore.QObject):
             self._signal_error(msg)
 
     def _execute_joint_traj(self, jt: JointTrajectory) -> bool:
-        """
-        Erwartet eine UI-Methode, eine JointTrajectory auszuführen.
-        Unterstützte Namen (probiert in Reihenfolge):
-          - moveit_execute_joint_trajectory(jt)
-          - moveit_execute_trajectory(jt)
-          - moveit_execute(jt)
-        """
         for fn in ("moveit_execute_joint_trajectory", "moveit_execute_trajectory", "moveit_execute"):
             if hasattr(self._ui, fn):
                 try:
                     getattr(self._ui, fn)(jt)
-                    _LOG.info("Run: execute via %s()", fn)
+                    _LOG.info("Optimize: execute via %s()", fn)
                     return True
                 except Exception as e:
                     self._error_msg = f"{fn} failed: {e}"
-                    _LOG.exception("Run: %s", self._error_msg)
+                    _LOG.exception("Optimize: %s", self._error_msg)
                     return False
-
         self._error_msg = "UIBridge hat keine Execute-Methode (moveit_execute_*)."
-        _LOG.error("Run: %s", self._error_msg)
+        _LOG.error("Optimize: %s", self._error_msg)
         return False
 
     def _signal_error(self, msg: str) -> None:
         if not msg:
-            msg = "Unbekannter Run-Fehler."
+            msg = "Unbekannter Optimize-Fehler."
         if self._error_msg is None:
             self._error_msg = msg
-        _LOG.error("Run: %s", msg)
+        _LOG.error("Optimize: %s", msg)
         QtCore.QTimer.singleShot(0, self._sig_error.emit)
 
     # ------------------------------------------------------------------ #
-    # Motion result feedback
+    # Motion feedback
     # ------------------------------------------------------------------ #
 
     @QtCore.pyqtSlot(str)
@@ -368,12 +404,12 @@ class ProcessRunStatemachine(QtCore.QObject):
         if not self._current_state:
             return
 
-        _LOG.info("Run: motion_result=%s (state=%s)", result, self._current_state)
+        _LOG.info("Optimize: motion_result=%s (state=%s)", result, self._current_state)
 
         if result.startswith("ERROR"):
             if self._retry_count < self._max_retries:
                 self._retry_count += 1
-                _LOG.warning("Run: Retry %d/%d für %s", self._retry_count, self._max_retries, self._current_state)
+                _LOG.warning("Optimize: Retry %d/%d für %s", self._retry_count, self._max_retries, self._current_state)
                 jt = self._segments_traj.get(self._current_state)
                 if jt is not None:
                     self._execute_joint_traj(jt)
@@ -386,15 +422,10 @@ class ProcessRunStatemachine(QtCore.QObject):
         if not result.startswith("EXECUTED:OK"):
             return
 
-        # Segment ok -> nächstes Segment oder done
-        nxt = self._next_segment(self._current_state)
-        if nxt is None:
-            QtCore.QTimer.singleShot(0, self._sig_done.emit)
-        else:
-            QtCore.QTimer.singleShot(0, self._sig_done.emit)
+        QtCore.QTimer.singleShot(0, self._sig_done.emit)
 
     # ------------------------------------------------------------------ #
-    # Final states
+    # Final / cleanup
     # ------------------------------------------------------------------ #
 
     def _on_state_error(self) -> None:
@@ -412,10 +443,6 @@ class ProcessRunStatemachine(QtCore.QObject):
             }
         )
         self._cleanup()
-
-    # ------------------------------------------------------------------ #
-    # Helpers / cleanup
-    # ------------------------------------------------------------------ #
 
     def _call_ui(self, name: str, *args, **kwargs):
         if hasattr(self._ui, name):

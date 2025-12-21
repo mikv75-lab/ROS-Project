@@ -12,9 +12,8 @@ from pyvistaqt import QtInteractor
 from app.tabs.process.process_tab import ProcessTab
 from app.tabs.recipe.recipe_tab import RecipeTab
 from app.tabs.robot.robot_tab import ServiceRobotTab
-from app.tabs.signals_tab import ServiceSignalsTab
-from app.tabs.syringe_tab import SyringeTab
-from app.tabs.system.system_tab import SystemTab
+from app.tabs.plc_tab import PlcTab
+from app.tabs.system_tab import SystemTab
 from app.model.recipe.recipe_store import RecipeStore
 
 from plc.plc_client import PlcClientBase
@@ -61,23 +60,14 @@ class MainWindow(QMainWindow):
         )
         tabs.addTab(self.serviceRobotTab, "Robot")
 
-        # 4) Signale
-        self.serviceSignalsTab = ServiceSignalsTab(
+        # 4) Plc
+        self.serviceSignalsTab = PlcTab(
             ctx=self.ctx,
             store=self.store,
             bridge=self.bridge,
             plc=self.plc,
         )
-        tabs.addTab(self.serviceSignalsTab, "Signale")
-
-        # 5) Syringe
-        self.syringeTab = SyringeTab(
-            ctx=self.ctx,
-            store=self.store,
-            bridge=self.bridge,
-            plc=self.plc,
-        )
-        tabs.addTab(self.syringeTab, "Syringe")
+        tabs.addTab(self.serviceSignalsTab, "Plc")
 
         # 6) System
         self.systemTab = SystemTab(ctx=self.ctx, bridge=self.bridge)

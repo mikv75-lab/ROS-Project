@@ -1,5 +1,5 @@
-# src/ros/bridge/ui_bridge.py
 # -*- coding: utf-8 -*-
+# File: src/ros/bridge/ui_bridge.py
 from __future__ import annotations
 
 import os
@@ -13,18 +13,18 @@ from .poses_bridge import PosesBridge
 from .spray_path_bridge import SprayPathBridge
 from .servo_bridge import ServoBridge
 from .robot_bridge import RobotBridge
-from .moveitpy_bridge import MoveItPyBridge  # ✅ only one MoveIt bridge (no fallbacks)
+from .moveitpy_bridge import MoveItPyBridge
 from .omron_bridge import OmronBridge  # optional
 
+from std_msgs.msg import String as MsgString
 from geometry_msgs.msg import PoseStamped, PoseArray
 from sensor_msgs.msg import JointState
 from visualization_msgs.msg import MarkerArray
 from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg
+from trajectory_msgs.msg import JointTrajectory
 
 _LOG = logging.getLogger("ros.ui_bridge")
 
-
-# ------------------------------ State: Scene ------------------------------
 
 class SceneState:
     def __init__(self) -> None:
@@ -85,8 +85,6 @@ class SceneState:
             return self._substrate_current
 
 
-# ------------------------------ State: Poses ------------------------------
-
 class PosesState:
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -110,8 +108,6 @@ class PosesState:
             return self._service
 
 
-# ------------------------------ State: SprayPath ------------------------------
-
 class SprayPathState:
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -134,8 +130,6 @@ class SprayPathState:
         with self._lock:
             return self._poses
 
-
-# ------------------------------ State: Robot ------------------------------
 
 class RobotState:
     def __init__(self) -> None:
@@ -232,13 +226,18 @@ class RobotState:
             return self._joints
 
 
-# ------------------------------ State: MoveIt ------------------------------
-
 class MoveItState:
     def __init__(self) -> None:
         self._lock = threading.RLock()
+        self._target: Optional[JointTrajectory] = None
         self._planned: Optional[RobotTrajectoryMsg] = None
         self._executed: Optional[RobotTrajectoryMsg] = None
+        self._preview: Optional[MarkerArray] = None
+        self._srdf: str = ""
+
+    def _set_target(self, msg: JointTrajectory) -> None:
+        with self._lock:
+            self._target = msg
 
     def _set_planned(self, msg: RobotTrajectoryMsg) -> None:
         with self._lock:
@@ -248,6 +247,18 @@ class MoveItState:
         with self._lock:
             self._executed = msg
 
+    def _set_preview(self, msg: MarkerArray) -> None:
+        with self._lock:
+            self._preview = msg
+
+    def _set_srdf(self, text: str) -> None:
+        with self._lock:
+            self._srdf = text or ""
+
+    def target(self) -> Optional[JointTrajectory]:
+        with self._lock:
+            return self._target
+
     def planned(self) -> Optional[RobotTrajectoryMsg]:
         with self._lock:
             return self._planned
@@ -256,14 +267,20 @@ class MoveItState:
         with self._lock:
             return self._executed
 
+    def preview(self) -> Optional[MarkerArray]:
+        with self._lock:
+            return self._preview
 
-# ============================== UIBridge ==============================
+    def srdf(self) -> str:
+        with self._lock:
+            return self._srdf
+
 
 class UIBridge:
     """
     Clean Contract:
       - genau eine MoveIt-Bridge: MoveItPyBridge
-      - keine Fallbacks / keine Aliase (moveit_bridge gibt es nicht mehr)
+      - keine Fallbacks / keine Aliase
     """
 
     def __init__(self, startup_yaml_path: Optional[str] = None, namespace: str = ""):
@@ -389,17 +406,15 @@ class UIBridge:
     def disconnect(self) -> None:
         if self._bridge is None:
             return
-        try:
-            self._bridge.stop()
-        finally:
-            self._bridge = None
-            self._scene = None
-            self._poses = None
-            self._spray = None
-            self._servo = None
-            self._robot = None
-            self._moveitpy = None
-            self._omron = None
+        self._bridge.stop()
+        self._bridge = None
+        self._scene = None
+        self._poses = None
+        self._spray = None
+        self._servo = None
+        self._robot = None
+        self._moveitpy = None
+        self._omron = None
 
     def shutdown(self) -> None:
         self.disconnect()
@@ -465,7 +480,6 @@ class UIBridge:
 
     def servo_joint_jog(self, joint_name: str, delta_deg: float, speed_pct: Optional[float] = None) -> None:
         if speed_pct is None:
-            # falls UI es nicht mitschickt -> Default, ohne private Attribute zu lesen
             speed_pct = 40.0
         self.servo_bridge.signals.jointJogRequested.emit(str(joint_name), float(delta_deg), float(speed_pct))
 
@@ -484,14 +498,32 @@ class UIBridge:
     def moveit_move_to_pose(self, pose: PoseStamped) -> None:
         self.moveitpy_bridge.signals.moveToPoseRequested.emit(pose)
 
+    def moveit_stop(self) -> None:
+        """Stop an MoveItPy weiterreichen (Topic moveit_py/stop)."""
+        self.moveitpy_bridge.signals.stopRequested.emit()
+
     def moveit_last_result(self) -> str:
         return self.moveitpy_bridge.signals.last_result
+
+    def moveit_target_trajectory(self) -> Optional[JointTrajectory]:
+        return self.moveit.target()
 
     def moveit_planned_trajectory(self) -> Optional[RobotTrajectoryMsg]:
         return self.moveit.planned()
 
     def moveit_executed_trajectory(self) -> Optional[RobotTrajectoryMsg]:
         return self.moveit.executed()
+
+    def moveit_preview_markers(self) -> Optional[MarkerArray]:
+        return self.moveit.preview()
+
+    def moveit_robot_description_semantic(self) -> str:
+        return self.moveit.srdf()
+
+    # ---------- Zentraler Stop ----------
+    def stop(self) -> None:
+        """Zentraler Stop für die UI: stoppt MoveItPy-Ausführung."""
+        self.moveit_stop()
 
     # ---------- Wiring: Qt-Signale -> States ----------
     def _wire_scene_into_state(self, sb: SceneBridge) -> None:
@@ -528,8 +560,11 @@ class UIBridge:
 
     def _wire_moveit_into_state(self, mb: MoveItPyBridge) -> None:
         sig = mb.signals
+        sig.targetTrajectoryChanged.connect(self.moveit._set_target)
         sig.plannedTrajectoryChanged.connect(self.moveit._set_planned)
         sig.executedTrajectoryChanged.connect(self.moveit._set_executed)
+        sig.previewMarkersChanged.connect(self.moveit._set_preview)
+        sig.robotDescriptionSemanticChanged.connect(self.moveit._set_srdf)
 
 
 def get_ui_bridge(_ctx, namespace: str = "") -> UIBridge:

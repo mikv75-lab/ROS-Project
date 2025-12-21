@@ -116,7 +116,7 @@ class ServiceRobotTab(QWidget):
         root.addWidget(self.tabs)
 
         self.moveitpyWidget = MoveItPyWidget(store=self.store, bridge=self.bridge, parent=self.tabs)
-        self.tabs.addTab(self.moveitpyWidget, "Motion")
+        self.tabs.addTab(self.moveitpyWidget, "Motion Planning")
 
         self.jointJogWidget = JointJogWidget(self.ctx, self.bridge, self.tabs)
         self.tabs.addTab(self.jointJogWidget, "Joint Jog")
@@ -168,8 +168,11 @@ class ServiceRobotTab(QWidget):
         sig.estopChanged.connect(sb.set_estop)
         sig.errorsChanged.connect(sb.set_errors)
         sig.tcpPoseChanged.connect(sb.set_tcp_from_ps)
-        sig.jointsChanged.connect(self._on_joints)
 
+        # ✅ JointState -> StatusBox + JointJogWidget (Anzeige-only Slider)
+        sig.jointsChanged.connect(self._on_joints)
+        sig.jointsChanged.connect(self.jointJogWidget.update_from_joint_state)
+    
     # ==================================================================
     # Bridge OUTBOUND: UI → ROS
     # ==================================================================

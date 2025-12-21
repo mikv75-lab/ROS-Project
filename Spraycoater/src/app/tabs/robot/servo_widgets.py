@@ -99,6 +99,7 @@ class JointJogWidget(QWidget):
 
         self._joint_names: List[str] = []
         self._joint_lims_deg: List[Tuple[float, float]] = []
+        # row tuple: (btn_minus, slider, btn_plus, value_label)
         self._rows: List[Tuple[QPushButton, QSlider, QPushButton, QLabel]] = []
 
         self._build_ui()
@@ -110,7 +111,7 @@ class JointJogWidget(QWidget):
         # Default parameters
         self.set_params({"joint_step_deg": 2.0, "joint_speed_pct": 40.0})
 
-        # Default 6-DOF joint model
+        # Default 6-DOF joint model (hardcoded limits)
         joint_names = [f"joint_{i}" for i in range(1, 7)]
         limits_deg = [
             (-170.0, 170.0),
@@ -237,7 +238,11 @@ class JointJogWidget(QWidget):
         self._joint_lims_deg = list(limits_deg or [])
 
         for row_idx, name in enumerate(self._joint_names, start=1):
-            mn, mx = self._joint_lims_deg[row_idx - 1] if (row_idx - 1) < len(self._joint_lims_deg) else (-180.0, 180.0)
+            mn, mx = (
+                self._joint_lims_deg[row_idx - 1]
+                if (row_idx - 1) < len(self._joint_lims_deg)
+                else (-180.0, 180.0)
+            )
 
             self.grid.addWidget(QLabel(str(name), self), row_idx, 0)
 
@@ -247,9 +252,13 @@ class JointJogWidget(QWidget):
             sld = QSlider(Qt.Orientation.Horizontal, self)
             sld.setMinimum(int(float(mn) * 10))
             sld.setMaximum(int(float(mx) * 10))
-            sld.setSingleStep(1)     # 0.1° in slider units
-            sld.setPageStep(10)      # 1.0°
-            sld.setTracking(True)
+
+            # ✅ Anzeige-only: nicht beweglich, aber optisch nicht "disabled"
+            sld.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            sld.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            sld.setTracking(False)
+            sld.setSingleStep(0)
+            sld.setPageStep(0)
 
             lblVal = QLabel("-", self)
             lblVal.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -267,13 +276,14 @@ class JointJogWidget(QWidget):
             idx = row_idx - 1
             btnm.clicked.connect(lambda _=False, i=idx: self._emit_joint_step(i, True))
             btnp.clicked.connect(lambda _=False, i=idx: self._emit_joint_step(i, False))
-            sld.valueChanged.connect(lambda _v, i=idx: self._on_slider_changed(i))
 
+            # ❌ kein Slider-Callback (Slider ist Anzeige-only)
             self._rows.append((btnm, sld, btnp, lblVal))
 
         self.grid.setColumnStretch(2, 1)
 
     def set_joint_positions_deg(self, positions_deg):
+        """Setzt UI-Anzeige (Slider + Label). Slider bleibt read-only."""
         for i, v in enumerate(positions_deg or []):
             if i >= len(self._rows):
                 break
@@ -289,6 +299,10 @@ class JointJogWidget(QWidget):
 
     @QtCore.pyqtSlot(object)
     def update_from_joint_state(self, msg):
+        """
+        ROS JointState -> Anzeige.
+        Erwartet: msg.position in rad (typisch ROS) -> wird in deg umgerechnet.
+        """
         if not msg:
             return
         names = getattr(msg, "name", None)
@@ -321,10 +335,6 @@ class JointJogWidget(QWidget):
         delta = -step if negative else step
         speed = float(self.spinSpeedPct.value())
         self.jointJogRequested.emit(str(name), float(delta), float(speed))
-
-    def _on_slider_changed(self, idx):
-        _, sld, _, lbl = self._rows[idx]
-        lbl.setText(f"{sld.value() / 10.0:.2f}")
 
     def _apply_vertical_max(self):
         for w in [self] + self.findChildren(QWidget):
