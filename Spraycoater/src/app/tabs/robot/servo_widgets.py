@@ -27,12 +27,21 @@ def _clear_layout(layout: QLayout) -> None:
         item = layout.takeAt(0)
         if item is None:
             continue
+
         w = item.widget()
+        if w is not None:
+            w.deleteLater()
+            continue
+
         l = item.layout()
         if l is not None:
             _clear_layout(l)
-        if w is not None:
-            w.deleteLater()
+            continue
+
+        sp = item.spacerItem()
+        if sp is not None:
+            # SpacerItems are not widgets/layouts; dropping reference is enough.
+            del sp
 
 
 def _find_servo_bridge(bridge: Any, *, log_prefix: str):
@@ -44,7 +53,6 @@ def _find_servo_bridge(bridge: Any, *, log_prefix: str):
         _LOG.warning("[%s] bridge=None -> ServoBridge wiring skipped.", log_prefix)
         return None
 
-    # optional: sicherstellen, dass connected ist (wenn verfügbar)
     ensure = getattr(bridge, "ensure_connected", None)
     if callable(ensure):
         try:
@@ -52,7 +60,6 @@ def _find_servo_bridge(bridge: Any, *, log_prefix: str):
         except Exception as e:
             _LOG.warning("[%s] bridge.ensure_connected() failed: %s", log_prefix, e)
 
-    # 1) neue API: bridge.servo_bridge (Property kann AssertionError werfen)
     if hasattr(bridge, "servo_bridge"):
         try:
             b = bridge.servo_bridge
@@ -66,7 +73,6 @@ def _find_servo_bridge(bridge: Any, *, log_prefix: str):
         except Exception as e:
             _LOG.exception("[%s] error accessing bridge.servo_bridge: %s", log_prefix, e)
 
-    # 2) internal fallback: bridge._servo
     b = getattr(bridge, "_servo", None)
     if b is not None and getattr(b, "signals", None) is not None:
         _LOG.info("[%s] ServoBridge found via bridge._servo (fallback).", log_prefix)
@@ -95,23 +101,23 @@ class JointJogWidget(QWidget):
         self.bridge = bridge  # UIBridge (optional)
 
         self._servo_wired: bool = False
-        self._wired_warned: bool = False  # spam-schutz
+        self._wired_warned: bool = False
+
+        # debounced wiring attempts
+        self._wire_tries: int = 0
+        self._wire_timer: Optional[QtCore.QTimer] = None
 
         self._joint_names: List[str] = []
         self._joint_lims_deg: List[Tuple[float, float]] = []
-        # row tuple: (btn_minus, slider, btn_plus, value_label)
         self._rows: List[Tuple[QPushButton, QSlider, QPushButton, QLabel]] = []
 
         self._build_ui()
         self._wire_signals()
 
-        # ✅ wie MoveItPyWidget: robust versuchen zu verdrahten
-        self._wire_outbound_to_bridge_if_present()
+        self._try_wire_debounced()
 
-        # Default parameters
         self.set_params({"joint_step_deg": 2.0, "joint_speed_pct": 40.0})
 
-        # Default 6-DOF joint model (hardcoded limits)
         joint_names = [f"joint_{i}" for i in range(1, 7)]
         limits_deg = [
             (-170.0, 170.0),
@@ -127,19 +133,35 @@ class JointJogWidget(QWidget):
         self._apply_vertical_max()
 
     # ------------------------------------------------------------------ Bridge wiring
+    def _try_wire_debounced(self) -> None:
+        """Avoid spamming logs by retrying wiring with a timer (max N tries)."""
+        if self._servo_wired:
+            return
+
+        if self._wire_timer is None:
+            self._wire_timer = QtCore.QTimer(self)
+            self._wire_timer.setSingleShot(True)
+            self._wire_timer.timeout.connect(self._wire_outbound_to_bridge_if_present)
+
+        if not self._wire_timer.isActive():
+            self._wire_timer.start(150)
+
     def _wire_outbound_to_bridge_if_present(self) -> None:
         if self._servo_wired:
             return
 
+        self._wire_tries += 1
         servo_bridge = _find_servo_bridge(self.bridge, log_prefix="JointJogWidget")
         if servo_bridge is None:
-            self._servo_wired = False
+            if self._wire_tries < 40:
+                self._schedule_retry()
             return
 
         sig = getattr(servo_bridge, "signals", None)
         if sig is None:
             _LOG.error("[JointJogWidget] ServoBridge found, but signals=None -> wiring aborted.")
-            self._servo_wired = False
+            if self._wire_tries < 40:
+                self._schedule_retry()
             return
 
         ok = True
@@ -162,6 +184,16 @@ class JointJogWidget(QWidget):
             self._emit_params()
         else:
             _LOG.error("[JointJogWidget] wiring failed (missing signals).")
+            if self._wire_tries < 40:
+                self._schedule_retry()
+
+    def _schedule_retry(self) -> None:
+        if self._wire_timer is None:
+            return
+        # backoff: up to 1s
+        delay = min(1000, 150 + self._wire_tries * 25)
+        if not self._wire_timer.isActive():
+            self._wire_timer.start(delay)
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -223,11 +255,9 @@ class JointJogWidget(QWidget):
 
     # ------------------------------------------------------------------ Joint table
     def set_joint_model(self, names, limits_deg):
-        # clear layout safely (no double delete)
         _clear_layout(self.grid)
         self._rows.clear()
 
-        # header
         self.grid.addWidget(self._bold("Joint"),     0, 0)
         self.grid.addWidget(self._bold("Decrease"),  0, 1)
         self.grid.addWidget(self._bold("Position"),  0, 2)
@@ -253,7 +283,6 @@ class JointJogWidget(QWidget):
             sld.setMinimum(int(float(mn) * 10))
             sld.setMaximum(int(float(mx) * 10))
 
-            # ✅ Anzeige-only: nicht beweglich, aber optisch nicht "disabled"
             sld.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             sld.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
             sld.setTracking(False)
@@ -277,7 +306,6 @@ class JointJogWidget(QWidget):
             btnm.clicked.connect(lambda _=False, i=idx: self._emit_joint_step(i, True))
             btnp.clicked.connect(lambda _=False, i=idx: self._emit_joint_step(i, False))
 
-            # ❌ kein Slider-Callback (Slider ist Anzeige-only)
             self._rows.append((btnm, sld, btnp, lblVal))
 
         self.grid.setColumnStretch(2, 1)
@@ -315,9 +343,8 @@ class JointJogWidget(QWidget):
 
     # ------------------------------------------------------------------ Internals
     def _emit_params(self):
-        # falls Bridge später kommt: beim ersten param-change nochmal versuchen
         if not self._servo_wired:
-            self._wire_outbound_to_bridge_if_present()
+            self._try_wire_debounced()
         self.paramsChanged.emit(self.get_params())
 
     def _emit_joint_step(self, idx, negative):
@@ -325,7 +352,7 @@ class JointJogWidget(QWidget):
             return
 
         if not self._servo_wired:
-            self._wire_outbound_to_bridge_if_present()
+            self._try_wire_debounced()
             if not self._servo_wired and not self._wired_warned:
                 _LOG.warning("[JointJogWidget] Jog pressed but ServoBridge not wired.")
                 self._wired_warned = True
@@ -359,37 +386,56 @@ class CartesianJogWidget(QWidget):
         self.bridge = bridge  # UIBridge (optional)
 
         self._servo_wired: bool = False
-        self._wired_warned: bool = False  # spam-schutz
+        self._wired_warned: bool = False
+
+        # debounced wiring attempts
+        self._wire_tries: int = 0
+        self._wire_timer: Optional[QtCore.QTimer] = None
 
         self._build_ui()
         self._wire_signals()
 
-        # ✅ wie MoveItPyWidget: robust versuchen zu verdrahten
-        self._wire_outbound_to_bridge_if_present()
+        self._try_wire_debounced()
 
         self.set_params({
             "cart_lin_step_mm": 1.0,
             "cart_ang_step_deg": 2.0,
             "cart_speed_mm_s": 50.0,
+            "cart_speed_deg_s": 30.0,
             "frame": "wrf",
         })
 
         self._apply_vertical_max()
 
     # ------------------------------------------------------------------ Bridge wiring
+    def _try_wire_debounced(self) -> None:
+        if self._servo_wired:
+            return
+
+        if self._wire_timer is None:
+            self._wire_timer = QtCore.QTimer(self)
+            self._wire_timer.setSingleShot(True)
+            self._wire_timer.timeout.connect(self._wire_outbound_to_bridge_if_present)
+
+        if not self._wire_timer.isActive():
+            self._wire_timer.start(150)
+
     def _wire_outbound_to_bridge_if_present(self) -> None:
         if self._servo_wired:
             return
 
+        self._wire_tries += 1
         servo_bridge = _find_servo_bridge(self.bridge, log_prefix="CartesianJogWidget")
         if servo_bridge is None:
-            self._servo_wired = False
+            if self._wire_tries < 40:
+                self._schedule_retry()
             return
 
         sig = getattr(servo_bridge, "signals", None)
         if sig is None:
             _LOG.error("[CartesianJogWidget] ServoBridge found, but signals=None -> wiring aborted.")
-            self._servo_wired = False
+            if self._wire_tries < 40:
+                self._schedule_retry()
             return
 
         ok = True
@@ -418,6 +464,15 @@ class CartesianJogWidget(QWidget):
             self._on_frame_changed()
         else:
             _LOG.error("[CartesianJogWidget] wiring failed (missing signals).")
+            if self._wire_tries < 40:
+                self._schedule_retry()
+
+    def _schedule_retry(self) -> None:
+        if self._wire_timer is None:
+            return
+        delay = min(1000, 150 + self._wire_tries * 25)
+        if not self._wire_timer.isActive():
+            self._wire_timer.start(delay)
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -437,15 +492,23 @@ class CartesianJogWidget(QWidget):
         self.spinAngStep.setSingleStep(0.1)
         self.spinAngStep.setSuffix(" °")
 
-        self.spinSpeed = QDoubleSpinBox(self)
-        self.spinSpeed.setRange(1.0, 2000.0)
-        self.spinSpeed.setDecimals(1)
-        self.spinSpeed.setSingleStep(1.0)
-        self.spinSpeed.setSuffix(" mm/s")
+        # ✅ separate speeds (fix semantics)
+        self.spinSpeedLin = QDoubleSpinBox(self)
+        self.spinSpeedLin.setRange(1.0, 5000.0)
+        self.spinSpeedLin.setDecimals(1)
+        self.spinSpeedLin.setSingleStep(5.0)
+        self.spinSpeedLin.setSuffix(" mm/s")
+
+        self.spinSpeedRot = QDoubleSpinBox(self)
+        self.spinSpeedRot.setRange(1.0, 360.0)
+        self.spinSpeedRot.setDecimals(1)
+        self.spinSpeedRot.setSingleStep(1.0)
+        self.spinSpeedRot.setSuffix(" °/s")
 
         form.addRow("Linear step (mm)", self.spinLinStep)
         form.addRow("Angular step (°)", self.spinAngStep)
-        form.addRow("Speed (mm/s)", self.spinSpeed)
+        form.addRow("Speed lin (mm/s)", self.spinSpeedLin)
+        form.addRow("Speed rot (°/s)", self.spinSpeedRot)
         root.addLayout(form)
 
         fr = QHBoxLayout()
@@ -509,7 +572,8 @@ class CartesianJogWidget(QWidget):
     def _wire_signals(self):
         self.spinLinStep.valueChanged.connect(lambda _v: self._emit_params())
         self.spinAngStep.valueChanged.connect(lambda _v: self._emit_params())
-        self.spinSpeed.valueChanged.connect(lambda _v: self._emit_params())
+        self.spinSpeedLin.valueChanged.connect(lambda _v: self._emit_params())
+        self.spinSpeedRot.valueChanged.connect(lambda _v: self._emit_params())
 
         self.rbWRF.toggled.connect(lambda _=False: self._on_frame_changed())
         self.rbTRF.toggled.connect(lambda _=False: self._on_frame_changed())
@@ -535,7 +599,9 @@ class CartesianJogWidget(QWidget):
         if "cart_ang_step_deg" in cfg:
             self.spinAngStep.setValue(float(cfg["cart_ang_step_deg"]))
         if "cart_speed_mm_s" in cfg:
-            self.spinSpeed.setValue(float(cfg["cart_speed_mm_s"]))
+            self.spinSpeedLin.setValue(float(cfg["cart_speed_mm_s"]))
+        if "cart_speed_deg_s" in cfg:
+            self.spinSpeedRot.setValue(float(cfg["cart_speed_deg_s"]))
         if "frame" in cfg:
             self.set_frame(str(cfg["frame"]))
         self._emit_params()
@@ -544,7 +610,8 @@ class CartesianJogWidget(QWidget):
         return {
             "cart_lin_step_mm": float(self.spinLinStep.value()),
             "cart_ang_step_deg": float(self.spinAngStep.value()),
-            "cart_speed_mm_s": float(self.spinSpeed.value()),
+            "cart_speed_mm_s": float(self.spinSpeedLin.value()),
+            "cart_speed_deg_s": float(self.spinSpeedRot.value()),
             "frame": self.get_frame(),
         }
 
@@ -560,36 +627,36 @@ class CartesianJogWidget(QWidget):
     # ------------------------------------------------------------------ Emit
     def _emit_params(self):
         if not self._servo_wired:
-            self._wire_outbound_to_bridge_if_present()
+            self._try_wire_debounced()
         self.paramsChanged.emit(self.get_params())
 
     def _on_frame_changed(self):
         if not self._servo_wired:
-            self._wire_outbound_to_bridge_if_present()
+            self._try_wire_debounced()
         self.frameChanged.emit(self.get_frame())
         self._emit_params()
 
     def _emit_cart(self, axis: str, delta_mm: float):
         if not self._servo_wired:
-            self._wire_outbound_to_bridge_if_present()
+            self._try_wire_debounced()
             if not self._servo_wired and not self._wired_warned:
                 _LOG.warning("[CartesianJogWidget] Jog pressed but ServoBridge not wired.")
                 self._wired_warned = True
 
         frame_ui = self.get_frame()
-        speed = float(self.spinSpeed.value())
-        self.cartesianJogRequested.emit(str(axis), float(delta_mm), speed, frame_ui)
+        speed_mm_s = float(self.spinSpeedLin.value())
+        self.cartesianJogRequested.emit(str(axis), float(delta_mm), speed_mm_s, frame_ui)
 
     def _emit_rot(self, axis: str, delta_deg: float):
         if not self._servo_wired:
-            self._wire_outbound_to_bridge_if_present()
+            self._try_wire_debounced()
             if not self._servo_wired and not self._wired_warned:
                 _LOG.warning("[CartesianJogWidget] Jog pressed but ServoBridge not wired.")
                 self._wired_warned = True
 
         frame_ui = self.get_frame()
-        speed = float(self.spinSpeed.value())
-        self.cartesianJogRequested.emit(str(axis), float(delta_deg), speed, frame_ui)
+        speed_deg_s = float(self.spinSpeedRot.value())
+        self.cartesianJogRequested.emit(str(axis), float(delta_deg), speed_deg_s, frame_ui)
 
     def _apply_vertical_max(self):
         for w in [self] + self.findChildren(QWidget):

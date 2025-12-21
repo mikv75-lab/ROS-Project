@@ -7,13 +7,7 @@ import yaml
 from math import radians, sin, cos
 
 from launch import LaunchDescription
-from launch.actions import (
-    DeclareLaunchArgument,
-    OpaqueFunction,
-    IncludeLaunchDescription,
-    TimerAction,
-    SetEnvironmentVariable,
-)
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, IncludeLaunchDescription, TimerAction
 from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
@@ -28,14 +22,19 @@ def _rpy_rad_to_quat(roll, pitch, yaw):
     cy = cos(yaw * 0.5)
     sy = sin(yaw * 0.5)
     return (
-        sr * cp * cy - cr * sp * sy,
-        cr * sp * cy + sr * sp * sy,
-        cr * cp * sy - sr * sp * cy,
-        cr * cp * cy + sr * sp * sy,
+        sr * cp * cy - cr * sp * sy,  # x
+        cr * sp * cy + sr * sp * sy,  # y
+        cr * cp * sy - sr * sp * cy,  # z
+        cr * cp * cy + sr * sp * sy,  # w
     )
 
 
 def _get_world_to_mount(cfg: dict) -> dict:
+    """
+    Unterstützt beide Layouts:
+      cfg['tf']['world_to_robot_mount']
+      cfg['world_to_robot_mount']
+    """
     tf_root = cfg.get("tf")
     if isinstance(tf_root, dict):
         w2m = tf_root.get("world_to_robot_mount")
@@ -53,16 +52,15 @@ def _get_world_to_mount(cfg: dict) -> dict:
 
 
 def generate_launch_description():
-    quiet_env = SetEnvironmentVariable(
-        name="RCUTILS_LOGGING_SEVERITY",
-        value="ERROR",
-    )
-
+    # ---------------------------------------------------------
+    # Launch Args
+    # ---------------------------------------------------------
     role_arg = DeclareLaunchArgument(
         "role",
         default_value="shadow",
         description="Instanz-Name/Namespace (z.B. shadow oder live)",
     )
+
     use_sim_time_arg = DeclareLaunchArgument(
         "use_sim_time",
         default_value="false",
@@ -73,20 +71,30 @@ def generate_launch_description():
         role = LaunchConfiguration("role").perform(context).strip()
         use_sim_time = LaunchConfiguration("use_sim_time").perform(context).strip().lower() == "true"
 
+        # ---------------------------------------------------------
+        # robot.yaml laden
+        # ---------------------------------------------------------
         bringup_share = FindPackageShare("spraycoater_bringup").perform(context)
-        with open(os.path.join(bringup_share, "config", "robot.yaml"), "r", encoding="utf-8") as f:
+        robot_yaml = os.path.join(bringup_share, "config", "robot.yaml")
+        if not os.path.exists(robot_yaml):
+            raise FileNotFoundError(f"[bringup] robot.yaml nicht gefunden: {robot_yaml}")
+
+        with open(robot_yaml, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
 
         sel = cfg.get("selected")
         robots = cfg.get("robots") or {}
         if not isinstance(sel, str) or sel not in robots:
-            raise KeyError("[bringup] robot.yaml: 'selected' fehlt/ungültig")
+            raise KeyError("[bringup] robot.yaml: 'selected' fehlt/ungültig oder nicht in 'robots'")
 
         robot = robots[sel]
         moveit_pkg = robot.get("moveit_pkg")
         if not isinstance(moveit_pkg, str) or not moveit_pkg:
             raise KeyError("[bringup] robot.yaml: robots[selected].moveit_pkg fehlt")
 
+        # ---------------------------------------------------------
+        # TF world->robot_mount aus cfg
+        # ---------------------------------------------------------
         tf_cfg = _get_world_to_mount(cfg)
         for k in ("parent", "child", "xyz", "rpy_deg"):
             if k not in tf_cfg:
@@ -96,16 +104,22 @@ def generate_launch_description():
         roll, pitch, yaw = map(lambda d: radians(float(d)), tf_cfg["rpy_deg"])
         qx, qy, qz, qw = _rpy_rad_to_quat(roll, pitch, yaw)
 
+        # ---------------------------------------------------------
+        # MoveIt package share
+        # ---------------------------------------------------------
         moveit_share = FindPackageShare(moveit_pkg).perform(context)
 
-        # moveit_common.py aus dem moveit_pkg/launch laden
+        # moveit_common.py aus moveit_pkg/launch laden
         moveit_launch_dir = os.path.join(moveit_share, "launch")
         if moveit_launch_dir not in sys.path:
             sys.path.insert(0, moveit_launch_dir)
-        from moveit_common import create_omron_moveit_config  # noqa: E402
 
+        from moveit_common import create_omron_moveit_config  # noqa: E402
         moveit_config = create_omron_moveit_config()
 
+        # ---------------------------------------------------------
+        # shadow/live Auswahl
+        # ---------------------------------------------------------
         if role == "live":
             robot_launch = os.path.join(moveit_share, "launch", "omron_live.launch.py")
             backend = "omron_real"
@@ -135,13 +149,13 @@ def generate_launch_description():
             }.items(),
         )
 
+        # ---------------------------------------------------------
+        # Unsere Nodes
+        # ---------------------------------------------------------
         common_params = {"backend": backend, "use_sim_time": use_sim_time}
 
         # TF GLOBAL lassen
-        tf_remaps_global = [
-            ("tf", "/tf"),
-            ("tf_static", "/tf_static"),
-        ]
+        tf_remaps_global = [("tf", "/tf"), ("tf_static", "/tf_static")]
 
         robot_node = Node(
             package="spraycoater_nodes_py",
@@ -198,14 +212,13 @@ def generate_launch_description():
             emulate_tty=True,
         )
 
-        # ✅ WIE ALT: MoveIt-Konfig kommt vom bringup via moveit_config.to_dict()
         moveitpy_node = Node(
             package="spraycoater_nodes_py",
             executable="moveit_py",
             name="moveit_py",
             namespace=role,
             parameters=[
-                moveit_config.to_dict(),  # planning_pipelines, kinematics, robot_description, SRDF, ...
+                moveit_config.to_dict(),
                 common_params,
             ],
             remappings=tf_remaps_global,
@@ -224,7 +237,6 @@ def generate_launch_description():
         ]
 
     return LaunchDescription([
-        quiet_env,
         role_arg,
         use_sim_time_arg,
         OpaqueFunction(function=_setup),

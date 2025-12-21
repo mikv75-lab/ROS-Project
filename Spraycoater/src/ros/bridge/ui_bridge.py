@@ -396,6 +396,7 @@ class UIBridge:
         self._scene.signals.reemit_cached()
         self._poses.signals.reemit_cached()
         self._spray.signals.reemit_cached()
+        self._servo.signals.reemit_cached()   # ✅ FIX: was missing
         self._robot.signals.reemit_cached()
         self._moveitpy.signals.reemit_cached()
         if self._omron is not None:

@@ -1,5 +1,5 @@
-# src/ros/bridge/servo_bridge.py
 # -*- coding: utf-8 -*-
+# File: src/ros/bridge/servo_bridge.py
 from __future__ import annotations
 
 from typing import Optional, Dict, Any, Callable, Type
@@ -30,22 +30,14 @@ class ServoSignals(QtCore.QObject):
       - joint_out     JointJog
     """
 
-    # UI Widgets pushen Parameter in Bridge (optional)
     paramsChanged = QtCore.pyqtSignal(dict)
 
-    # Joint jog: joint_name, delta_deg, speed_pct
     jointJogRequested = QtCore.pyqtSignal(str, float, float)
-
-    # Cartesian jog: axis ("x","y","z","rx","ry","rz"), delta(mm|deg), speed(mm/s | deg/s), frame_ui("wrf"/"trf")
     cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)
 
-    # UI Frame selector: "wrf"/"trf"
     frameChanged = QtCore.pyqtSignal(str)
-
-    # Optional: UI toggles mode explicitly ("joint"/"cart"/"JOINT_JOG"/"TWIST"/...)
     modeChanged = QtCore.pyqtSignal(str)
 
-    # Optional inbound (Debug / Anzeige)
     twistOutChanged = QtCore.pyqtSignal(object)  # TwistStamped
     jointOutChanged = QtCore.pyqtSignal(object)  # JointJog
 
@@ -62,7 +54,6 @@ class ServoSignals(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def reemit_cached(self) -> None:
-        # Servo hat normalerweise keinen “State”, aber outputs können wir re-emitten
         if self._last_twist_out is not None:
             self.twistOutChanged.emit(self._last_twist_out)
         if self._last_joint_out is not None:
@@ -83,20 +74,18 @@ class ServoBridge(BaseBridge):
     def __init__(self, content: AppContent, *, namespace: str = ""):
         self.signals = ServoSignals()
 
-        # UI -> Node pubs (IDs wie in topics.yaml: servo/subscribe)
         self._ui_to_node_pubs: Dict[str, Any] = {}
-
-        # Node -> UI subs (IDs wie in topics.yaml: servo/publish) [optional]
         self._node_to_ui_subs: Dict[str, Any] = {}
 
         # UI Params (Defaults)
         self._cart_lin_step_mm: float = 1.0
         self._cart_ang_step_deg: float = 2.0
         self._cart_speed_mm_s: float = 50.0
+        self._cart_speed_deg_s: float = 30.0
+
         self._joint_step_deg: float = 2.0
         self._joint_speed_pct: float = 40.0
 
-        # UI Frame (wrf/trf) + last-published tracking
         self._frame_ui: str = "wrf"
         self._last_mode_txt: Optional[str] = None
         self._last_frame_txt: Optional[str] = None
@@ -106,21 +95,17 @@ class ServoBridge(BaseBridge):
         s = self.signals
         s.paramsChanged.connect(self._on_params_changed)
         s.frameChanged.connect(self._on_frame_changed)
-        s.modeChanged.connect(self.set_command_type)
+        s.modeChanged.connect(lambda m: self.set_command_type(m, force=False))
         s.jointJogRequested.connect(self._on_joint_jog_requested)
         s.cartesianJogRequested.connect(self._on_cart_jog_requested)
 
-        # ------------------------
-        # UI -> Node (Node subscribt)  => topics.yaml: servo/subscribe
-        # ------------------------
+        # UI -> Node
         self._ensure_pub("cartesian_mm", TwistStamped)
         self._ensure_pub("joint_jog", JointJog)
         self._ensure_pub("set_mode", MsgString)
         self._ensure_pub("set_frame", MsgString)
 
-        # ------------------------
-        # Node -> UI (Node publisht)  => topics.yaml: servo/publish (optional Debug)
-        # ------------------------
+        # Node -> UI (optional)
         self._ensure_sub("twist_out", TwistStamped, self._on_twist_out)
         self._ensure_sub("joint_out", JointJog, self._on_joint_out)
 
@@ -142,8 +127,6 @@ class ServoBridge(BaseBridge):
 
         spec = self._spec("subscribe", topic_id)  # Node subscribt => UI published
         qos = self._content.qos(spec.qos_key)
-
-        # IMPORTANT: spec.name ist RELATIV (ohne führendes "/") -> Namespace wirkt korrekt
         self._ui_to_node_pubs[topic_id] = self.create_publisher(msg_type, spec.name, qos)
         self.get_logger().info(f"[servo] PUB ui->node id={topic_id} topic={spec.name} qos={spec.qos_key}")
 
@@ -153,7 +136,6 @@ class ServoBridge(BaseBridge):
 
         spec = self._spec("publish", topic_id)  # Node publisht => UI subscribt
         qos = self._content.qos(spec.qos_key)
-
         self._node_to_ui_subs[topic_id] = self.create_subscription(msg_type, spec.name, cb, qos)
         self.get_logger().info(f"[servo] SUB node->ui id={topic_id} topic={spec.name} qos={spec.qos_key}")
 
@@ -164,10 +146,10 @@ class ServoBridge(BaseBridge):
         return p
 
     # ─────────────────────────────────────────────────────────────
-    # Public API (kann von UIBridge genutzt werden)
+    # Public API
     # ─────────────────────────────────────────────────────────────
 
-    def set_command_type(self, mode: str) -> None:
+    def set_command_type(self, mode: str, *, force: bool = False) -> None:
         """
         publish auf set_mode (String).
         Akzeptiert: "joint"/"cart" oder direkt "JOINT_JOG"/"TWIST"/...
@@ -180,15 +162,14 @@ class ServoBridge(BaseBridge):
         else:
             txt = (mode or "").strip() or "JOINT_JOG"
 
-        # caching ok, aber publish joint/cart jog passiert trotzdem
-        if txt == self._last_mode_txt:
+        if (not force) and (txt == self._last_mode_txt):
             return
         self._last_mode_txt = txt
 
         self._pub("set_mode").publish(MsgString(data=txt))
-        self.get_logger().info(f"[servo_bridge] PUB set_mode -> {txt}")
+        self.get_logger().info(f"[servo_bridge] PUB set_mode -> {txt} (force={force})")
 
-    def set_frame_ui(self, frame_ui: str) -> None:
+    def set_frame_ui(self, frame_ui: str, *, force: bool = False) -> None:
         """
         frame_ui: "wrf"/"trf" (UI) oder "world"/"tcp"
         publish auf set_frame (String).
@@ -203,12 +184,12 @@ class ServoBridge(BaseBridge):
         else:
             txt = raw
 
-        if txt == self._last_frame_txt:
+        if (not force) and (txt == self._last_frame_txt):
             return
         self._last_frame_txt = txt
 
         self._pub("set_frame").publish(MsgString(data=txt))
-        self.get_logger().info(f"[servo_bridge] PUB set_frame -> {txt} (from {raw})")
+        self.get_logger().info(f"[servo_bridge] PUB set_frame -> {txt} (from {raw}, force={force})")
 
     # ─────────────────────────────────────────────────────────────
     # UI inbound (Signals aus Widgets)
@@ -228,16 +209,18 @@ class ServoBridge(BaseBridge):
             self._cart_ang_step_deg = float(cfg["cart_ang_step_deg"])
         if "cart_speed_mm_s" in cfg:
             self._cart_speed_mm_s = float(cfg["cart_speed_mm_s"])
+        if "cart_speed_deg_s" in cfg:
+            self._cart_speed_deg_s = float(cfg["cart_speed_deg_s"])
 
         if "frame" in cfg:
             self._frame_ui = str(cfg["frame"]).strip().lower() or self._frame_ui
 
     def _on_frame_changed(self, frame_ui: str) -> None:
-        self.set_frame_ui(frame_ui)
+        self.set_frame_ui(frame_ui, force=False)
 
     def _on_joint_jog_requested(self, joint_name: str, delta_deg: float, speed_pct: float) -> None:
-        # Mode auf JOINT_JOG setzen (falls UI es nicht separat macht)
-        self.set_command_type("joint")
+        # ✅ For robustness: always publish mode on jog (wrapper may have restarted)
+        self.set_command_type("joint", force=True)
 
         j = str(joint_name)
         ddeg = float(delta_deg)
@@ -260,41 +243,57 @@ class ServoBridge(BaseBridge):
         )
 
     def _on_cart_jog_requested(self, axis: str, delta: float, speed: float, frame_ui: str) -> None:
-        self.set_command_type("cart")
-        self.set_frame_ui(frame_ui)
+        # ✅ robust: always publish mode + frame on jog
+        self.set_command_type("cart", force=True)
+        self.set_frame_ui(frame_ui, force=True)
 
         a = (axis or "").strip().lower()
         d = float(delta)
-        s = float(speed) if speed is not None else self._cart_speed_mm_s
+
+        # NOTE:
+        # - UI sends speed in mm/s for x/y/z
+        # - UI sends speed in deg/s for rx/ry/rz
+        s = float(speed) if speed is not None else (
+            self._cart_speed_deg_s if a in ("rx", "ry", "rz") else self._cart_speed_mm_s
+        )
 
         msg = TwistStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = ""  # Wrapper-Node setzt current_frame wenn leer
 
-        lin_v = s / 1000.0               # mm/s -> m/s
-        ang_v = math.radians(abs(s))     # deg/s -> rad/s (wenn UI speed ein Feld nutzt)
+        if a in ("x", "y", "z"):
+            lin_v = s / 1000.0  # mm/s -> m/s
+            if a == "x":
+                msg.twist.linear.x = math.copysign(lin_v, d)
+            elif a == "y":
+                msg.twist.linear.y = math.copysign(lin_v, d)
+            else:
+                msg.twist.linear.z = math.copysign(lin_v, d)
 
-        if a == "x":
-            msg.twist.linear.x = math.copysign(lin_v, d)
-        elif a == "y":
-            msg.twist.linear.y = math.copysign(lin_v, d)
-        elif a == "z":
-            msg.twist.linear.z = math.copysign(lin_v, d)
-        elif a == "rx":
-            msg.twist.angular.x = math.copysign(ang_v, d)
-        elif a == "ry":
-            msg.twist.angular.y = math.copysign(ang_v, d)
-        elif a == "rz":
-            msg.twist.angular.z = math.copysign(ang_v, d)
-        else:
-            self.get_logger().warning(f"[servo_bridge] unknown cart axis: {axis!r}")
+            self._pub("cartesian_mm").publish(msg)
+            self.get_logger().info(
+                f"[servo_bridge] PUB cartesian_mm axis={a} delta_mm={d:+.3f} speed_mm_s={s:.1f} "
+                f"frame_ui={frame_ui} lin_v={lin_v:.4f}"
+            )
             return
 
-        self._pub("cartesian_mm").publish(msg)
-        self.get_logger().info(
-            f"[servo_bridge] PUB cartesian_mm axis={a} delta={d:+.3f} speed={s:.1f} "
-            f"frame_ui={frame_ui} lin_v={lin_v:.4f} ang_v={ang_v:.4f}"
-        )
+        if a in ("rx", "ry", "rz"):
+            ang_v = math.radians(abs(s))  # deg/s -> rad/s
+            if a == "rx":
+                msg.twist.angular.x = math.copysign(ang_v, d)
+            elif a == "ry":
+                msg.twist.angular.y = math.copysign(ang_v, d)
+            else:
+                msg.twist.angular.z = math.copysign(ang_v, d)
+
+            self._pub("cartesian_mm").publish(msg)
+            self.get_logger().info(
+                f"[servo_bridge] PUB cartesian_mm axis={a} delta_deg={d:+.3f} speed_deg_s={s:.1f} "
+                f"frame_ui={frame_ui} ang_v={ang_v:.4f}"
+            )
+            return
+
+        self.get_logger().warning(f"[servo_bridge] unknown cart axis: {axis!r}")
 
     # ─────────────────────────────────────────────────────────────
     # Inbound vom ROS-Servo-Wrapper (optional Debug)

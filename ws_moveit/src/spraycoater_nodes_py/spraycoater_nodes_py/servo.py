@@ -2,8 +2,10 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass
+from typing import Optional, List
 
 import rclpy
 from rclpy.node import Node
@@ -11,7 +13,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import TwistStamped
 from control_msgs.msg import JointJog
 from std_msgs.msg import String
-from std_srvs.srv import Trigger
+from moveit_msgs.srv import ServoCommandType
 
 from spraycoater_nodes_py.utils.config_hub import topics, frames
 
@@ -31,23 +33,40 @@ class _Counters:
 
 class Servo(Node):
     """
-    ROS-Servo-Wrapper-Node (UI -> MoveIt Servo):
+    ROS-Servo-Wrapper-Node (UI -> MoveIt Servo /servo_node):
 
-      UI in:
-        - servo/cartesian_mm   (geometry_msgs/TwistStamped)   -> forwarded to delta_twist_cmds
-        - servo/joint_jog      (control_msgs/JointJog)        -> forwarded to delta_joint_cmds
-        - servo/set_mode       (std_msgs/String)              -> nur Logging/Status (kein Switch-Service)
-        - servo/set_frame      (std_msgs/String)              -> 'world'|'tcp' -> setzt header.frame_id Default
+      UI in (topics.yaml / NODE_KEY='servo' / subscribe):
+        - servo/cartesian_mm   (TwistStamped)
+        - servo/joint_jog      (JointJog)
+        - servo/set_mode       (String)         -> calls switch_command_type
+        - servo/set_frame      (String)
 
-      OUT (MoveIt Servo inputs):
+      OUT (topics.yaml / NODE_KEY='servo' / publish):
         - servo/delta_twist_cmds
         - servo/delta_joint_cmds
 
-    MoveIt2 Humble:
-      Servo wird typischerweise per Service gestartet:
-        /<ns>/servo_node/start_servo   (std_srvs/Trigger)
-      Daher: wir unterstützen optional auto-start über Trigger.
+    IMPORTANT:
+      - MoveIt Servo muss auf DIESE output-topics hören, sonst bleibt out_subs=0.
+        In moveit_servo params:
+          cartesian_command_in_topic := "servo/delta_twist_cmds"
+          joint_command_in_topic     := "servo/delta_joint_cmds"
     """
+
+    MODE_MAP = {
+        # joint jog
+        "JOINT_JOG": ServoCommandType.Request.JOINT_JOG,
+        "JOINT":     ServoCommandType.Request.JOINT_JOG,
+        "J":         ServoCommandType.Request.JOINT_JOG,
+
+        # twist
+        "TWIST":     ServoCommandType.Request.TWIST,
+        "CARTESIAN": ServoCommandType.Request.TWIST,
+        "T":         ServoCommandType.Request.TWIST,
+
+        # pose
+        "POSE":      ServoCommandType.Request.POSE,
+        "P":         ServoCommandType.Request.POSE,
+    }
 
     def __init__(self) -> None:
         super().__init__("servo")
@@ -56,28 +75,33 @@ class Servo(Node):
         self.declare_parameter("backend", "default")
         self.backend = self.get_parameter("backend").get_parameter_value().string_value or "default"
 
-        # MoveIt Servo start service (relativ, damit Namespace greift -> /shadow/servo_node/start_servo)
-        self.declare_parameter("start_servo_service", "servo_node/start_servo")
-        self.start_service_name = (
-            self.get_parameter("start_servo_service").get_parameter_value().string_value
-            or "servo_node/start_servo"
-        )
+        # Default: RELATIV und korrekt zur ComposableNode name="servo_node"
+        # => /<ns>/servo_node/switch_command_type
+        self.declare_parameter("switch_service", "servo_node/switch_command_type")
+        raw_srv = (self.get_parameter("switch_service").get_parameter_value().string_value or "").strip()
+        if not raw_srv:
+            raw_srv = "servo_node/switch_command_type"
 
-        # auto-start Servo (Trigger) sobald Service da ist
-        self.declare_parameter("auto_start_servo", True)
-        self.auto_start_servo = bool(self.get_parameter("auto_start_servo").value)
+        # UI Units: cartesian_mm ist mm/s + deg/s -> konvertiere zu m/s + rad/s
+        self.declare_parameter("ui_twist_is_mm_deg", True)
+        self.ui_twist_is_mm_deg = bool(self.get_parameter("ui_twist_is_mm_deg").value)
+
+        # Robustness: wenn UI set_mode nicht kommt -> Default + Auto
+        self.declare_parameter("default_mode", "JOINT_JOG")   # JOINT_JOG | TWIST | POSE
+        self.declare_parameter("auto_set_mode_on_rx", True)   # wenn Twist/Joint kommt, Mode passend setzen
+        self.default_mode = (self.get_parameter("default_mode").value or "JOINT_JOG").strip().upper()
+        self.auto_set_mode_on_rx = bool(self.get_parameter("auto_set_mode_on_rx").value)
 
         # Logging / Debug
-        self.declare_parameter("log_steps", True)            # loggt jede RX/TX Aktion
-        self.declare_parameter("log_every_n", 1)             # nur jede n-te RX Nachricht loggen
-        self.declare_parameter("warn_no_downstream", True)   # warn wenn delta_* keine Subscriber hat
-        self.declare_parameter("status_rate_hz", 1.0)        # 0 deaktiviert
+        self.declare_parameter("log_steps", True)
+        self.declare_parameter("log_every_n", 1)
+        self.declare_parameter("warn_no_downstream", True)
+        self.declare_parameter("status_rate_hz", 1.0)
 
         self.log_steps = bool(self.get_parameter("log_steps").value)
         self.log_every_n = int(self.get_parameter("log_every_n").value or 1)
         self.warn_no_downstream = bool(self.get_parameter("warn_no_downstream").value)
         self.status_rate_hz = float(self.get_parameter("status_rate_hz").value or 0.0)
-
         if self.log_every_n < 1:
             self.log_every_n = 1
 
@@ -88,11 +112,20 @@ class Servo(Node):
         self.frame_tcp = self._F(self.frames_cfg.get("tcp", "tcp"))
         self.frame_world = self._F(self.frames_cfg.get("world", "world"))
 
-        # Default frame (wenn UI keinen frame_id sendet)
         self.current_frame = self.frame_tcp
-
-        # optional: nur für Status/Debug
         self.last_ui_mode: str = "UNKNOWN"
+        self.current_mode: Optional[int] = None
+
+        # pending-mode retry
+        self._pending_mode: Optional[int] = None
+        self._pending_label: str = ""
+        self._switch_inflight: bool = False
+        self._last_switch_warn: float = 0.0
+
+        # switch service handling
+        self._switch_service_param = raw_srv  # keep original for status
+        self.switch_service: str = ""         # final resolved name
+        self.switch_client = None
 
         # --- subscribe: UI topics ---
         self.t_ui_twist = self.loader.subscribe_topic(NODE_KEY, "cartesian_mm")
@@ -122,31 +155,119 @@ class Servo(Node):
         self.create_subscription(String, self.t_set_mode, self._on_set_mode, q_set_mode)
         self.create_subscription(String, self.t_set_frame, self._on_set_frame, q_set_frame)
 
-        # --- MoveIt Servo start service client (Trigger) ---
-        self.start_client = self.create_client(Trigger, self.start_service_name)
-        self._servo_started: bool = False
-        self._start_inflight: bool = False
-        self._last_start_warn: float = 0.0
-        self._last_start_try: float = 0.0
-
         self._cnt = _Counters()
 
+        # Resolve/create service client
+        self._init_switch_client(raw_srv)
+
+        # Retry Timer (zieht pending-mode nach, wenn Service ready wird)
+        self.create_timer(0.1, self._retry_pending_mode)
+
+        # Default-Mode beim Start setzen
+        if self.default_mode in self.MODE_MAP:
+            self._pending_mode = self.MODE_MAP[self.default_mode]
+            self._pending_label = self.default_mode
+
         self.get_logger().info(
-            f"✅ Servo aktiv (backend='{self.backend}', ns='{self.get_namespace() or '/'}')\n"
+            f"✅ Servo Wrapper aktiv (backend='{self.backend}', ns='{self.get_namespace() or '/'}')\n"
             f"   UI in:  {self.t_ui_twist}, {self.t_ui_joint}, {self.t_set_mode}, {self.t_set_frame}\n"
             f"   OUT:    {self.t_twist_out}, {self.t_joint_out}\n"
-            f"   start_service='{self.start_service_name}' auto_start_servo={self.auto_start_servo}\n"
+            f"   switch_service(param)='{self._switch_service_param}' resolved='{self.switch_service or '<pending>'}'\n"
+            f"   ui_twist_is_mm_deg={self.ui_twist_is_mm_deg}\n"
+            f"   default_mode={self.default_mode} auto_set_mode_on_rx={self.auto_set_mode_on_rx}\n"
             f"   log_steps={self.log_steps} log_every_n={self.log_every_n} warn_no_downstream={self.warn_no_downstream}"
         )
 
-        # Auto-start ticker (bis gestartet)
-        if self.auto_start_servo:
-            self.create_timer(0.5, self._auto_start_tick)
-
-        # Status ticker
         if self.status_rate_hz and self.status_rate_hz > 0.0:
-            period = 1.0 / self.status_rate_hz
-            self.create_timer(period, self._status_tick)
+            self.create_timer(1.0 / self.status_rate_hz, self._status_tick)
+
+    # -------------------------------------------------------------------------
+    # Service discovery / client init
+    # -------------------------------------------------------------------------
+
+    def _resolve_service_name(self, raw_srv: str) -> str:
+        """If raw_srv is relative, resolve it against the node namespace."""
+        raw_srv = (raw_srv or "").strip()
+        if not raw_srv:
+            return ""
+        if raw_srv.startswith("/"):
+            return raw_srv
+        ns = (self.get_namespace() or "").rstrip("/")
+        return f"{ns}/{raw_srv}" if ns else f"/{raw_srv}"
+
+    def _find_switch_services(self) -> List[str]:
+        """Find ServoCommandType services ending with 'switch_command_type'."""
+        matches: List[str] = []
+        try:
+            for name, types in self.get_service_names_and_types():
+                if not name.endswith("switch_command_type"):
+                    continue
+                if "__unset__" in name:
+                    continue
+                ok = any(
+                    t == "moveit_msgs/srv/ServoCommandType" or t.endswith("/ServoCommandType")
+                    for t in types
+                )
+                if ok:
+                    matches.append(name)
+        except Exception:
+            pass
+        return matches
+
+    def _choose_best_service(self, candidates: List[str]) -> str:
+        """Prefer a candidate within our namespace first, otherwise shortest absolute."""
+        if not candidates:
+            return ""
+        ns = (self.get_namespace() or "").rstrip("/")
+        if ns:
+            in_ns = [c for c in candidates if c.startswith(ns + "/")]
+            if in_ns:
+                return sorted(in_ns, key=len)[0]
+        return sorted(candidates, key=len)[0]
+
+    def _init_switch_client(self, raw_srv: str) -> None:
+        raw = (raw_srv or "").strip()
+        if raw.lower() == "auto":
+            candidates = self._find_switch_services()
+            chosen = self._choose_best_service(candidates)
+            self.switch_service = chosen
+        else:
+            self.switch_service = self._resolve_service_name(raw)
+
+        # Client erstellen (auch wenn noch nicht ready)
+        if not self.switch_service:
+            # fallback (sollte praktisch nicht mehr passieren)
+            self.switch_service = self._resolve_service_name("servo_node/switch_command_type")
+
+        self.switch_client = self.create_client(ServoCommandType, self.switch_service)
+
+        # Auto- oder Not-ready: regelmäßig prüfen/rebind
+        self.create_timer(0.5, self._maybe_rebind_switch_client)
+
+    def _maybe_rebind_switch_client(self) -> None:
+        """If 'auto' OR service not ready, try to discover/rebind."""
+        want_auto = (self._switch_service_param or "").strip().lower() == "auto"
+
+        # wenn nicht auto: nur warten bis ready
+        if not want_auto:
+            return
+
+        if self.switch_client and self.switch_client.service_is_ready():
+            return
+
+        candidates = self._find_switch_services()
+        chosen = self._choose_best_service(candidates)
+        if not chosen:
+            return
+        if chosen == self.switch_service:
+            return
+
+        self.switch_service = chosen
+        try:
+            self.switch_client = self.create_client(ServoCommandType, self.switch_service)
+            self.get_logger().info(f"🔎 auto switch_service gefunden -> '{self.switch_service}'")
+        except Exception as e:
+            self.get_logger().warning(f"auto rebind failed: {e}")
 
     # -------------------------------------------------------------------------
     # Helpers
@@ -167,69 +288,66 @@ class Servo(Node):
         subs = self._subs(pub)
         if subs == 0:
             self.get_logger().warning(
-                f"⚠️ downstream hat 0 Subscriber: {topic_name} "
-                f"(MoveIt Servo hört evtl. auf einem anderen Topic!)"
+                f"⚠️ downstream hat 0 Subscriber: {topic_name}\n"
+                f"   -> Check: moveit_servo cartesian_command_in_topic/joint_command_in_topic\n"
+                f"      müssen auf '{self.t_twist_out}' und '{self.t_joint_out}' zeigen."
             )
 
     # -------------------------------------------------------------------------
-    # MoveIt Servo start (Trigger)
+    # switch_command_type (robust + retry)
     # -------------------------------------------------------------------------
 
-    def _auto_start_tick(self) -> None:
-        """Periodischer Versuch, MoveIt Servo zu starten, bis success."""
-        if self._servo_started:
-            return
-        self._try_start_servo()
+    def _set_pending(self, cmd_type: int, label: str) -> None:
+        self._pending_mode = cmd_type
+        self._pending_label = label
 
-    def _ensure_servo_started(self) -> None:
-        """Wird bei eingehenden Commands aufgerufen (best-effort)."""
-        if self._servo_started:
+    def _retry_pending_mode(self) -> None:
+        if self._pending_mode is None:
             return
-        if not self.auto_start_servo:
-            # auch wenn auto-start aus: einmal pro Sekunde best-effort versuchen,
-            # falls Nutzer trotzdem will, dass wir automatisch starten sobald service auftaucht
+        self._request_mode(self._pending_mode, self._pending_label or "PENDING")
+
+    def _request_mode(self, cmd_type: int, label: str) -> None:
+        if self.current_mode == cmd_type:
+            self._pending_mode = None
+            self._pending_label = ""
+            return
+        if self._switch_inflight:
+            return
+
+        if not self.switch_client or not self.switch_client.service_is_ready():
+            self._set_pending(cmd_type, label)
             now = time.time()
-            if now - self._last_start_try > 1.0:
-                self._try_start_servo()
-            return
-        # auto-start tick übernimmt, aber wir dürfen hier auch anstoßen
-        self._try_start_servo()
-
-    def _try_start_servo(self) -> None:
-        if self._servo_started or self._start_inflight:
-            return
-
-        self._last_start_try = time.time()
-
-        if not self.start_client.service_is_ready():
-            now = time.time()
-            if now - self._last_start_warn > 2.0:
-                self._last_start_warn = now
+            if now - self._last_switch_warn > 2.0:
+                self._last_switch_warn = now
                 self.get_logger().warning(
-                    f"start_servo Service noch nicht ready: '{self.start_service_name}' "
-                    f"(wenn MoveIt Servo läuft, sollte der Service existieren)"
+                    f"switch_command_type Service nicht ready: '{self.switch_service or '<unknown>'}' (retrying)"
                 )
             return
 
-        req = Trigger.Request()
-        self._start_inflight = True
-        fut = self.start_client.call_async(req)
+        req = ServoCommandType.Request()
+        req.command_type = cmd_type
+
+        self._switch_inflight = True
+        fut = self.switch_client.call_async(req)
 
         def _done(_f):
-            self._start_inflight = False
+            self._switch_inflight = False
             try:
                 resp = _f.result()
             except Exception as e:
-                self.get_logger().warning(f"start_servo exception: {e}")
+                self.get_logger().warning(f"switch_command_type exception: {e} (retrying)")
+                self._set_pending(cmd_type, label)
                 return
 
-            if resp and getattr(resp, "success", False):
-                self._servo_started = True
-                self.get_logger().info(f"✅ start_servo OK: {getattr(resp, 'message', '')}")
+            success = bool(getattr(resp, "success", False)) if resp is not None else False
+            if success:
+                self.current_mode = cmd_type
+                self._pending_mode = None
+                self._pending_label = ""
+                self.get_logger().info(f"✅ switch_command_type OK -> {label} ({cmd_type})")
             else:
-                self.get_logger().warning(
-                    f"❌ start_servo failed: {getattr(resp, 'message', '') if resp else 'no response'}"
-                )
+                self.get_logger().warning(f"❌ switch_command_type failed -> {label} ({cmd_type}) (retrying)")
+                self._set_pending(cmd_type, label)
 
         fut.add_done_callback(_done)
 
@@ -241,12 +359,21 @@ class Servo(Node):
         self._cnt.rx_twist += 1
         self._cnt.last_rx_wall = time.time()
 
-        self._ensure_servo_started()
+        if self.auto_set_mode_on_rx:
+            self._request_mode(ServoCommandType.Request.TWIST, "TWIST")
 
         out = TwistStamped()
         out.header.stamp = self.get_clock().now().to_msg()
         out.header.frame_id = msg.header.frame_id or self.current_frame
         out.twist = msg.twist
+
+        if self.ui_twist_is_mm_deg:
+            out.twist.linear.x *= 0.001
+            out.twist.linear.y *= 0.001
+            out.twist.linear.z *= 0.001
+            out.twist.angular.x *= (math.pi / 180.0)
+            out.twist.angular.y *= (math.pi / 180.0)
+            out.twist.angular.z *= (math.pi / 180.0)
 
         self.pub_twist.publish(out)
         self._cnt.tx_twist += 1
@@ -256,9 +383,9 @@ class Servo(Node):
             self.get_logger().info(
                 f"[RX twist #{self._cnt.rx_twist}] in='{self.t_ui_twist}' "
                 f"frame='{out.header.frame_id}' "
-                f"lin=({out.twist.linear.x:.4f}, {out.twist.linear.y:.4f}, {out.twist.linear.z:.4f}) "
-                f"ang=({out.twist.angular.x:.4f}, {out.twist.angular.y:.4f}, {out.twist.angular.z:.4f}) "
-                f"-> forward '{self.t_twist_out}' (subs={subs})"
+                f"lin(m/s)=({out.twist.linear.x:.4f},{out.twist.linear.y:.4f},{out.twist.linear.z:.4f}) "
+                f"ang(rad/s)=({out.twist.angular.x:.4f},{out.twist.angular.y:.4f},{out.twist.angular.z:.4f}) "
+                f"-> '{self.t_twist_out}' (subs={subs})"
             )
 
         self._warn_if_no_downstream(self.pub_twist, self.t_twist_out)
@@ -267,7 +394,8 @@ class Servo(Node):
         self._cnt.rx_joint += 1
         self._cnt.last_rx_wall = time.time()
 
-        self._ensure_servo_started()
+        if self.auto_set_mode_on_rx:
+            self._request_mode(ServoCommandType.Request.JOINT_JOG, "JOINT_JOG")
 
         out = JointJog()
         out.header.stamp = self.get_clock().now().to_msg()
@@ -287,14 +415,13 @@ class Servo(Node):
             v = out.velocities[0] if out.velocities else 0.0
             self.get_logger().info(
                 f"[RX joint #{self._cnt.rx_joint}] in='{self.t_ui_joint}' joint='{j}' "
-                f"disp(rad)={d:+.6f} vel={v:.3f} frame='{out.header.frame_id}' "
-                f"-> forward '{self.t_joint_out}' (subs={subs})"
+                f"disp(rad)={d:+.6f} vel(rad/s)={v:.3f} frame='{out.header.frame_id}' "
+                f"-> '{self.t_joint_out}' (subs={subs})"
             )
 
         self._warn_if_no_downstream(self.pub_joint, self.t_joint_out)
 
     def _on_set_mode(self, msg: String) -> None:
-        """UI-Mode bleibt als Status erhalten (kein switch_service in Humble nötig)."""
         self._cnt.rx_set_mode += 1
         self._cnt.last_rx_wall = time.time()
 
@@ -302,7 +429,12 @@ class Servo(Node):
         if not raw:
             return
         self.last_ui_mode = raw
-        self.get_logger().info(f"[set_mode] RX '{raw}' (no-op; MoveIt Servo Humble braucht keinen switch_command_type)")
+
+        if raw not in self.MODE_MAP:
+            self.get_logger().warning(f"[set_mode] Unbekannt: {msg.data!r} (z.B. TWIST/JOINT_JOG/POSE)")
+            return
+
+        self._request_mode(self.MODE_MAP[raw], raw)
 
     def _on_set_frame(self, msg: String) -> None:
         self._cnt.rx_set_frame += 1
@@ -311,28 +443,30 @@ class Servo(Node):
         raw = (msg.data or "").strip().lower()
         if raw == "world":
             self.current_frame = self.frame_world
-            self.get_logger().info(f"[set_frame] RX 'world' -> current_frame='{self.current_frame}'")
+            self.get_logger().info(f"[set_frame] world -> '{self.current_frame}'")
         elif raw == "tcp":
             self.current_frame = self.frame_tcp
-            self.get_logger().info(f"[set_frame] RX 'tcp' -> current_frame='{self.current_frame}'")
+            self.get_logger().info(f"[set_frame] tcp -> '{self.current_frame}'")
         else:
-            self.get_logger().warning(f"[set_frame] Unbekannter Frame: {msg.data!r} (expected 'world'|'tcp')")
+            self.get_logger().warning(f"[set_frame] Unbekannt: {msg.data!r} (expected 'world'|'tcp')")
 
     # -------------------------------------------------------------------------
-    # Status ticker (optional)
+    # Status ticker
     # -------------------------------------------------------------------------
 
     def _status_tick(self) -> None:
         age = (time.time() - self._cnt.last_rx_wall) if self._cnt.last_rx_wall else -1.0
         subs_tw = self._subs(self.pub_twist)
         subs_j = self._subs(self.pub_joint)
-        srv_ready = "ready" if self.start_client.service_is_ready() else "not_ready"
-        started = "started" if self._servo_started else "not_started"
+        srv_ready = "ready" if (self.switch_client and self.switch_client.service_is_ready()) else "not_ready"
+        mode = self.current_mode if self.current_mode is not None else -1
+        pending = self._pending_mode if self._pending_mode is not None else -1
         self.get_logger().info(
             f"[status] rx_twist={self._cnt.rx_twist} rx_joint={self._cnt.rx_joint} "
             f"tx_twist={self._cnt.tx_twist} tx_joint={self._cnt.tx_joint} "
             f"out_subs(twist={subs_tw}, joint={subs_j}) last_rx_age={age:.2f}s "
-            f"start_srv={srv_ready} servo={started} ui_mode={self.last_ui_mode}"
+            f"switch_srv={srv_ready} switch_name='{self.switch_service}' "
+            f"mode={mode} pending={pending} ui_mode={self.last_ui_mode}"
         )
 
 
