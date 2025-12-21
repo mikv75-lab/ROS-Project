@@ -109,7 +109,7 @@ def generate_launch_description():
         # ---------------------------------------------------------
         moveit_share = FindPackageShare(moveit_pkg).perform(context)
 
-        # moveit_common.py aus moveit_pkg/launch laden
+        # moveit_common.py aus moveit_pkg/launch laden (optional genutzt unten)
         moveit_launch_dir = os.path.join(moveit_share, "launch")
         if moveit_launch_dir not in sys.path:
             sys.path.insert(0, moveit_launch_dir)
@@ -157,13 +157,18 @@ def generate_launch_description():
         # TF GLOBAL lassen
         tf_remaps_global = [("tf", "/tf"), ("tf_static", "/tf_static")]
 
+        # Falls irgendwo "/joint_states" absolut verwendet wird:
+        joint_state_remaps = [("/joint_states", "joint_states")]
+
+        common_remaps = tf_remaps_global + joint_state_remaps
+
         robot_node = Node(
             package="spraycoater_nodes_py",
             executable=robot_exec,
             name="robot",
             namespace=role,
             parameters=[common_params],
-            remappings=tf_remaps_global,
+            remappings=common_remaps,
             output="screen",
             emulate_tty=True,
         )
@@ -174,7 +179,7 @@ def generate_launch_description():
             name="scene",
             namespace=role,
             parameters=[common_params],
-            remappings=tf_remaps_global,
+            remappings=common_remaps,
             output="screen",
             emulate_tty=True,
         )
@@ -185,7 +190,7 @@ def generate_launch_description():
             name="poses",
             namespace=role,
             parameters=[common_params],
-            remappings=tf_remaps_global,
+            remappings=common_remaps,
             output="screen",
             emulate_tty=True,
         )
@@ -196,7 +201,7 @@ def generate_launch_description():
             name="spray_path",
             namespace=role,
             parameters=[common_params],
-            remappings=tf_remaps_global,
+            remappings=common_remaps,
             output="screen",
             emulate_tty=True,
         )
@@ -206,8 +211,11 @@ def generate_launch_description():
             executable="servo",
             name="servo",
             namespace=role,
-            parameters=[common_params],
-            remappings=tf_remaps_global,
+            parameters=[
+                common_params,
+                # {"switch_service": "servo_node/switch_command_type"},
+            ],
+            remappings=common_remaps,
             output="screen",
             emulate_tty=True,
         )
@@ -221,7 +229,7 @@ def generate_launch_description():
                 moveit_config.to_dict(),
                 common_params,
             ],
-            remappings=tf_remaps_global,
+            remappings=common_remaps,
             output="screen",
             emulate_tty=True,
         )

@@ -3,15 +3,16 @@
 """
 omron_moveit_config/launch/omron_shadow.launch.py
 
-Option A (Tutorial-Style): Servo als ComposableNode im Container starten.
-=> Node wird sauber: /<ns>/servo_node
-=> Service wird sauber: /<ns>/servo_node/switch_command_type
+Servo als Node starten.
+=> Node:     /<ns>/servo_node
+=> Service:  /<ns>/servo_node/switch_command_type
 
 Namespace-Regeln:
-- Alle "Robot Stack" Nodes laufen unter namespace=<ns> (default: shadow)
+- Stack-Nodes laufen unter namespace=<ns> (default: shadow)
 - /tf und /tf_static bleiben global
-- Servo Topics/Services werden RELATIV gesetzt (ohne führenden "/"),
-  damit sie automatisch unter /<ns>/... landen.
+- Servo Topics/Services RELATIV (ohne führenden "/"), damit /<ns>/...
+- FIX: ServoNode defaultet oft auf /joint_states (global). Wir remappen das sauber
+       auf 'joint_states' => /<ns>/joint_states
 """
 
 from __future__ import annotations
@@ -26,11 +27,9 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, RegisterEventHandler, TimerAction
 from launch.event_handlers import OnProcessStart
 from launch.substitutions import LaunchConfiguration, TextSubstitution
-from launch_ros.actions import Node, ComposableNodeContainer
-from launch_ros.descriptions import ComposableNode
+from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
-# moveit_common.py liegt in diesem launch/ Ordner
 _current_dir = Path(__file__).resolve().parent
 if str(_current_dir) not in sys.path:
     sys.path.insert(0, str(_current_dir))
@@ -42,9 +41,6 @@ def generate_launch_description() -> LaunchDescription:
     cfg_pkg = get_package_share_directory("omron_moveit_config")
     ros2_controllers_path = os.path.join(cfg_pkg, "config", "ros2_controllers.yaml")
     default_rviz_cfg = os.path.join(cfg_pkg, "config", "shadow_moveit.rviz")
-
-    # optionales Servo-Paramfile (wenn du es zusätzlich nutzen willst)
-    servo_params_file = os.path.join(cfg_pkg, "config", "servo.yaml")
 
     # ----------------- Launch-Argumente -----------------
     namespace_arg = DeclareLaunchArgument(
@@ -65,7 +61,6 @@ def generate_launch_description() -> LaunchDescription:
         description="RViz config file",
     )
 
-    # Mount TF args
     mount_parent_arg = DeclareLaunchArgument("mount_parent", default_value="world")
     mount_child_arg = DeclareLaunchArgument("mount_child", default_value="robot_mount")
 
@@ -88,8 +83,14 @@ def generate_launch_description() -> LaunchDescription:
     # controller_manager fully qualified: /<ns>/controller_manager
     cm_fqn = [TextSubstitution(text="/"), ns, TextSubstitution(text="/controller_manager")]
 
-    # ----------------- Nodes -----------------
+    # Global TF bleibt global
+    tf_remaps_global = [("tf", "/tf"), ("tf_static", "/tf_static")]
 
+    # WICHTIG: ServoNode (und teils MoveIt) nimmt gerne "/joint_states" absolut.
+    # Wir remappen absolute -> relative, damit es im Namespace landet.
+    joint_states_remap = [("/joint_states", "joint_states")]
+
+    # ----------------- Nodes -----------------
     static_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -106,7 +107,7 @@ def generate_launch_description() -> LaunchDescription:
             "--frame-id", LaunchConfiguration("mount_parent"),
             "--child-frame-id", LaunchConfiguration("mount_child"),
         ],
-        remappings=[("tf", "/tf"), ("tf_static", "/tf_static")],
+        remappings=tf_remaps_global,
         output="screen",
         emulate_tty=True,
     )
@@ -121,7 +122,7 @@ def generate_launch_description() -> LaunchDescription:
             {"use_sim_time": use_sim_time},
             {"publish_frequency": 100.0},
         ],
-        remappings=[("tf", "/tf"), ("tf_static", "/tf_static")],
+        remappings=tf_remaps_global + joint_states_remap,
         output="screen",
         emulate_tty=True,
     )
@@ -136,7 +137,7 @@ def generate_launch_description() -> LaunchDescription:
             ros2_controllers_path,
             {"use_sim_time": use_sim_time},
         ],
-        remappings=[("tf", "/tf"), ("tf_static", "/tf_static")],
+        remappings=tf_remaps_global,
         output="screen",
         emulate_tty=True,
     )
@@ -149,6 +150,8 @@ def generate_launch_description() -> LaunchDescription:
             "joint_state_broadcaster",
             "--controller-manager", cm_fqn,
             "--controller-manager-timeout", "300",
+            # optional: wenn du auch hier sicher global/relativ trennen willst:
+            # "--controller-ros-args", "-r", "/joint_states:=joint_states",
         ],
         output="screen",
         emulate_tty=True,
@@ -167,22 +170,30 @@ def generate_launch_description() -> LaunchDescription:
         emulate_tty=True,
     )
 
-    # ----------------- Servo: Composable in Container -----------------
-    # ✅ FIX: MoveIt Servo subscribt auf servo/delta_* (Wrapper-Outputs)
+    # ----------------- Servo Parameters (inline) -----------------
     servo_params_inline = {
         "use_sim_time": use_sim_time,
+
+        # Wichtig für online_signal_smoothing::AccelerationLimitedPlugin
+        "update_period": 0.01,
+
         "moveit_servo": {
             "command_in_type": "speed_units",
             "move_group_name": "omron_arm_group",
-            "planning_frame": "world",
+            "planning_frame": "robot_mount",
+            "ee_frame_name": "tcp",
 
-            # RELATIV -> /<ns>/servo/delta_twist_cmds etc.
+            # FIX: ServoNode soll im Namespace auf joint_states lauschen
+            "joint_topic": "joint_states",
+
+            # Input topics (relativ => /<ns>/servo/...)
             "cartesian_command_in_topic": "servo/delta_twist_cmds",
             "joint_command_in_topic": "servo/delta_joint_cmds",
             "pose_command_in_topic": "servo/delta_pose_cmds",
 
             "use_servo_services": True,
             "check_collisions": False,
+
             "publish_period": 0.01,
             "incoming_command_timeout": 0.2,
         },
@@ -195,26 +206,16 @@ def generate_launch_description() -> LaunchDescription:
         moveit_config.joint_limits,
         servo_params_inline,
     ]
-    if os.path.exists(servo_params_file):
-        servo_parameters.append(servo_params_file)
 
-    servo_container = ComposableNodeContainer(
-        name="servo_container",
-        namespace=ns,
-        package="rclcpp_components",
-        executable="component_container_mt",
+    servo_node = Node(
+        package="moveit_servo",
+        executable="servo_node",
+        name="servo_node",
+        namespace=ns,  # -> /shadow/servo_node
+        parameters=servo_parameters,
+        remappings=tf_remaps_global + joint_states_remap,
         output="screen",
         emulate_tty=True,
-        remappings=[("tf", "/tf"), ("tf_static", "/tf_static")],
-        composable_node_descriptions=[
-            ComposableNode(
-                package="moveit_servo",
-                plugin="moveit_servo::ServoNode",
-                name="servo_node",
-                parameters=servo_parameters,
-                extra_arguments=[{"use_intra_process_comms": True}],
-            )
-        ],
     )
 
     rviz_node = Node(
@@ -224,7 +225,7 @@ def generate_launch_description() -> LaunchDescription:
         namespace=ns,
         arguments=["-d", rviz_cfg],
         parameters=[moveit_config.to_dict(), {"use_sim_time": use_sim_time}],
-        remappings=[("tf", "/tf"), ("tf_static", "/tf_static")],
+        remappings=tf_remaps_global + joint_states_remap,
         output="screen",
         emulate_tty=True,
     )
@@ -236,7 +237,7 @@ def generate_launch_description() -> LaunchDescription:
             on_start=[
                 TimerAction(period=2.0, actions=[jsb_spawner]),
                 TimerAction(period=3.0, actions=[arm_spawner]),
-                TimerAction(period=4.0, actions=[servo_container]),
+                TimerAction(period=4.0, actions=[servo_node]),
                 TimerAction(period=6.0, actions=[rviz_node]),
             ],
         )

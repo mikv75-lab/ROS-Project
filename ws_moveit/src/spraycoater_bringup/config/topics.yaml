@@ -29,12 +29,12 @@ topics:
       - id: twist_out
         name: servo/delta_twist_cmds
         type: geometry_msgs/msg/TwistStamped
-        qos: default
+        qos: sensor_data   # ✅ BEST_EFFORT wie Servo erwartet
 
       - id: joint_out
         name: servo/delta_joint_cmds
         type: control_msgs/msg/JointJog
-        qos: default
+        qos: sensor_data   # ✅
 
   tool:
     subscribe:
