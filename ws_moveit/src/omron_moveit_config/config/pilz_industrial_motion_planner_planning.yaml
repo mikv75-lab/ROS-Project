@@ -1,3 +1,5 @@
+# omron_moveit_config/config/pilz_industrial_motion_planner_planning.yaml
+
 planning_plugins:
   - pilz_industrial_motion_planner/CommandPlanner
 
@@ -15,4 +17,7 @@ start_state_max_bounds_error: 0.1
 planner_configs:
   PTP:
     type: pilz_industrial_motion_planner/CommandPlanner
-    # später LIN/CIRC ergänzen, wenn du willst
+  LIN:
+    type: pilz_industrial_motion_planner/CommandPlanner
+  CIRC:
+    type: pilz_industrial_motion_planner/CommandPlanner

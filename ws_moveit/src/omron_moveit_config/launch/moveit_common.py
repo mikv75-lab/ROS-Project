@@ -8,36 +8,29 @@ Zentraler Helper zum Laden der MoveIt-Konfiguration für den Omron Viper S650.
 create_omron_moveit_config()  → Basis-MoveIt-Config (für move_group/RViz/MoveItPy).
 
 Die Pipelines kommen aus:
-  - config/*_planning.yaml         (Plugins, Request-Adapter, usw.)
-  - config/moveit_cpp.yaml         (MoveItCpp-spezifische Optionen)
-
-Es gibt EINE zentrale Liste PIPELINES, die überall verwendet wird.
+  - config/*_planning.yaml                       (Plugins, Request/Response-Adapter, Planner-Configs)
+  - config/moveit_cpp.yaml                       (MoveItCpp-spezifische Optionen)
+  - config/pilz_cartesian_limits.yaml            (Pilz Cartesian Limits) ✅
 """
 
 from __future__ import annotations
 
 from moveit_configs_utils import MoveItConfigsBuilder
 
-# Eine Quelle der Wahrheit für die Pipelines
+# Single source of truth
 PIPELINES = ["ompl", "pilz_industrial_motion_planner", "chomp", "stomp"]
 
 
 def create_omron_moveit_config():
     """
     Erzeugt eine MoveIt-Konfiguration für den Omron Viper S650.
-
-    Pipelines:
-        - ompl                         (Default)
-        - pilz_industrial_motion_planner
-        - chomp
-        - stomp
     """
-    builder = (
+    return (
         MoveItConfigsBuilder(
             robot_name="omron_viper_s650",
             package_name="omron_moveit_config",
         )
-        # explizit deine Dateien (relativ zum Paket-Pfad)
+        # URDF/SRDF/etc
         .robot_description("config/omron_viper_s650.urdf.xacro")
         .robot_description_semantic("config/omron_viper_s650.srdf")
         .robot_description_kinematics("config/kinematics.yaml")
@@ -49,17 +42,18 @@ def create_omron_moveit_config():
             publish_geometry_updates=True,
             publish_state_updates=True,
             publish_transforms_updates=True,
-            publish_robot_description=False,
-            publish_robot_description_semantic=False,
+            publish_robot_description=True,
+            publish_robot_description_semantic=True,
         )
-        # Globale Planning-Pipelines (Plugins + Default)
+        # Pipelines + Default
         .planning_pipelines(
             default_planning_pipeline="ompl",
             pipelines=PIPELINES,
             load_all=False,
         )
-        # NEU: MoveItCpp-spezifische Konfiguration aus config/moveit_cpp.yaml
+        # ✅ Pilz Limits explizit laden (safer/lesbarer)
+        .pilz_cartesian_limits("config/pilz_cartesian_limits.yaml")
+        # MoveItCpp-spezifische Konfig
         .moveit_cpp("config/moveit_cpp.yaml")
+        .to_moveit_configs()
     )
-
-    return builder.to_moveit_configs()

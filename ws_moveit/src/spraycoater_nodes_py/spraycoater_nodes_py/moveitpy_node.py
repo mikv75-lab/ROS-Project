@@ -35,6 +35,7 @@ GROUP_NAME = "omron_arm_group"
 EE_LINK = "tcp"
 WORLD_FRAME = "world"
 
+# ✅ hard default: ompl until overwritten (and empty overrides are ignored)
 DEFAULT_PLANNER_CFG: Dict[str, Any] = {
     "pipeline": "ompl",
     "planner_id": "RRTConnectkConfigDefault",
@@ -49,9 +50,19 @@ class MoveItPyNode(Node):
     """
     Wrapper-Node (rclpy), der MoveItPy initialisiert.
 
-    Fixes (nur 2 + 3):
+    Fixes:
       (2) get_planning_scene Cache-Service SOFORT bereitstellen (RViz-safe)
       (3) MoveItPy init im Background-Thread (damit rclpy sofort spinnen kann)
+
+    Additional fixes:
+      - never allow empty planning pipeline name -> defaults to 'ompl'
+      - set PlanRequestParameters.planning_pipeline
+      - ignore empty JSON overrides for 'pipeline' and 'planner_id'
+
+    IMPORTANT FIX (your warning):
+      - PlanRequestParameters must be constructed with the PRESET NAME
+        (e.g. "default_ompl"), NOT with "plan_request_params".
+        Otherwise you get: plan_request_params.plan_request_params.* not found.
     """
 
     def __init__(self) -> None:
@@ -80,6 +91,17 @@ class MoveItPyNode(Node):
         if not self.has_parameter("max_tcp_speed_mm_s"):
             self.declare_parameter("max_tcp_speed_mm_s", 300.0)
         self.max_tcp_speed_mm_s = float(self.get_parameter("max_tcp_speed_mm_s").value)
+
+        # ✅ NEW: choose PlanRequestParameters preset name (matches moveit_cpp.yaml)
+        # Example YAML:
+        # plan_request_params:
+        #   default_ompl: { ... }
+        #   pilz_lin: { ... }
+        if not self.has_parameter("plan_request_preset"):
+            self.declare_parameter("plan_request_preset", "default_ompl")
+        self.plan_request_preset = str(self.get_parameter("plan_request_preset").value or "default_ompl").strip()
+        if not self.plan_request_preset:
+            self.plan_request_preset = "default_ompl"
 
         backend_lower = str(self.backend).lower()
         self.is_real_backend = ("omron" in backend_lower) and ("sim" not in backend_lower)
@@ -215,13 +237,41 @@ class MoveItPyNode(Node):
         self.log.info("MoveItPyNode init done (MoveItPy is initializing in background).")
 
     # ----------------------------------------------------------
+    # ✅ robust default pipeline resolver (never return "")
+    # ----------------------------------------------------------
+    def _default_pipeline_id(self) -> str:
+        # 1) planner_cfg.pipeline
+        try:
+            v = (self._planner_cfg.get("pipeline") or "").strip()
+            if v:
+                return v
+        except Exception:
+            pass
+
+        # 2) ROS params (optional)
+        for key in (
+            "planning_pipelines.default_planning_pipeline",
+            "default_planning_pipeline",
+        ):
+            try:
+                if self.has_parameter(key):
+                    v = self.get_parameter(key).value
+                    if isinstance(v, str) and v.strip():
+                        return v.strip()
+            except Exception:
+                pass
+
+        # 3) hard fallback
+        return "ompl"
+
+    # ----------------------------------------------------------
     # MoveItPy background init
     # ----------------------------------------------------------
     def _init_moveitpy_background(self) -> None:
         try:
             with self._moveit_lock:
                 self.moveit = MoveItPy(
-                    node_name=self.get_name(),   # bleibt "moveit_py" (Parameter kommen so rein wie bisher)
+                    node_name=self.get_name(),   # bleibt "moveit_py"
                     name_space=self._name_space,
                     provide_planning_service=True,
                 )
@@ -229,9 +279,18 @@ class MoveItPyNode(Node):
                 self.arm = self.moveit.get_planning_component(GROUP_NAME)
                 self.robot_model = self.moveit.get_robot_model()
 
+                # ✅ IMPORTANT: use preset name under plan_request_params.*
                 try:
-                    self._plan_params = PlanRequestParameters(self.moveit, "plan_request_params")
+                    preset = (self.plan_request_preset or "default_ompl").strip()
+                    if not preset:
+                        preset = "default_ompl"
+
+                    self._plan_params = PlanRequestParameters(self.moveit, preset)
+
+                    # Optional: sync with runtime cfg (UI overrides etc.)
                     self._apply_planner_cfg_to_params()
+
+                    self.log.info(f"[config] PlanRequestParameters loaded preset='{preset}'")
                 except Exception as e:
                     self._plan_params = None
                     self.log.warning(
@@ -269,9 +328,8 @@ class MoveItPyNode(Node):
         qos_scene = QoSProfile(depth=1)
         qos_scene.history = HistoryPolicy.KEEP_LAST
         qos_scene.reliability = ReliabilityPolicy.RELIABLE
-        qos_scene.durability = DurabilityPolicy.VOLATILE  # maximal kompatibel
+        qos_scene.durability = DurabilityPolicy.VOLATILE
 
-        # relative -> /shadow/monitored_planning_scene
         self._gps_sub = self.create_subscription(
             PlanningScene,
             "monitored_planning_scene",
@@ -279,7 +337,6 @@ class MoveItPyNode(Node):
             qos_scene,
         )
 
-        # relative -> /shadow/get_planning_scene
         self._gps_srv = self.create_service(
             GetPlanningScene,
             "get_planning_scene",
@@ -296,7 +353,6 @@ class MoveItPyNode(Node):
         _req: GetPlanningScene.Request,
         res: GetPlanningScene.Response,
     ) -> GetPlanningScene.Response:
-        # Muss schnell sein (RViz ruft früh auf).
         if self._last_scene is not None:
             res.scene = self._last_scene
             res.scene.is_diff = False
@@ -354,11 +410,20 @@ class MoveItPyNode(Node):
         cfg = self._planner_cfg
         p = self._plan_params
 
-        planner_id = (cfg.get("planner_id") or DEFAULT_PLANNER_CFG["planner_id"]).strip()
+        # ✅ never empty
+        pipeline_id = (str(cfg.get("pipeline") or "").strip()) or "ompl"
+        planner_id = (str(cfg.get("planner_id") or "").strip()) or "RRTConnectkConfigDefault"
+
+        # ✅ IMPORTANT: this is what MotionPlanRequest uses
+        try:
+            p.planning_pipeline = pipeline_id  # type: ignore[attr-defined]
+        except Exception:
+            self.log.warning("[config] PlanRequestParameters has no attribute 'planning_pipeline'")
+
         try:
             p.planner_id = planner_id  # type: ignore[attr-defined]
         except Exception:
-            pass
+            self.log.warning("[config] PlanRequestParameters has no attribute 'planner_id'")
 
         p.planning_time = float(cfg.get("planning_time", DEFAULT_PLANNER_CFG["planning_time"]))
         p.planning_attempts = int(cfg.get("planning_attempts", DEFAULT_PLANNER_CFG["planning_attempts"]))
@@ -370,7 +435,7 @@ class MoveItPyNode(Node):
         )
 
         self.log.info(
-            f"[config] Planner applied: planner_id='{planner_id}', "
+            f"[config] Planner applied: planning_pipeline='{pipeline_id}', planner_id='{planner_id}', "
             f"time={p.planning_time:.2f}s, attempts={p.planning_attempts}, "
             f"vel_scale={p.max_velocity_scaling_factor:.2f}, acc_scale={p.max_acceleration_scaling_factor:.2f}"
         )
@@ -386,13 +451,25 @@ class MoveItPyNode(Node):
     def _on_set_planner_cfg(self, msg: MsgString) -> None:
         raw = msg.data or ""
         try:
-            cfg = json.loads(raw)
-            if not isinstance(cfg, dict):
+            incoming = json.loads(raw)
+            if not isinstance(incoming, dict):
                 raise ValueError("planner_cfg JSON ist kein dict.")
-            self._planner_cfg.update(cfg)
-            # ggf. MoveIt schon ready -> direkt anwenden
+
+            # ✅ ignore empty overrides
+            if "pipeline" in incoming and not str(incoming.get("pipeline") or "").strip():
+                incoming.pop("pipeline", None)
+            if "planner_id" in incoming and not str(incoming.get("planner_id") or "").strip():
+                incoming.pop("planner_id", None)
+
+            self._planner_cfg.update(incoming)
+
+            # ✅ if pipeline is missing/empty after update, enforce default
+            if not str(self._planner_cfg.get("pipeline") or "").strip():
+                self._planner_cfg["pipeline"] = self._default_pipeline_id()
+
             if self._moveit_ready.is_set():
                 self._apply_planner_cfg_to_params()
+
         except Exception as e:
             self.log.error(f"[config] set_planner_cfg: invalid JSON '{raw}': {e}")
 
@@ -426,6 +503,10 @@ class MoveItPyNode(Node):
 
             self.arm.set_start_state_to_current_state()
             self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
+
+            # ✅ keep params synced (esp. pipeline)
+            if self._plan_params is not None:
+                self._apply_planner_cfg_to_params()
 
             result = self.arm.plan(single_plan_parameters=self._plan_params) if self._plan_params else self.arm.plan()
             core = getattr(result, "trajectory", None)
@@ -478,6 +559,10 @@ class MoveItPyNode(Node):
             self.arm.set_start_state_to_current_state()
             self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
 
+            # ✅ keep params synced (esp. pipeline)
+            if self._plan_params is not None:
+                self._apply_planner_cfg_to_params()
+
             result = self.arm.plan(single_plan_parameters=self._plan_params) if self._plan_params else self.arm.plan()
             core = getattr(result, "trajectory", None)
             if core is None:
@@ -521,7 +606,6 @@ class MoveItPyNode(Node):
             if self.is_real_backend:
                 ok = self._execute_via_omron(msg_traj)
             else:
-                # MoveItPy execute
                 ok = self.moveit.execute(self._planned, controllers=[])  # type: ignore[union-attr]
 
             if self._cancel:
@@ -593,6 +677,7 @@ class MoveItPyNode(Node):
             m.pose.orientation.w = 1.0
 
         m.scale.x = m.scale.y = m.scale.z = 0.02
+        # NOTE: colors are fine here; leaving as-is
         m.color.r, m.color.g, m.color.b, m.color.a = 0.2, 1.0, 0.2, 1.0
         self.pub_preview.publish(MarkerArray(markers=[m]))
 
