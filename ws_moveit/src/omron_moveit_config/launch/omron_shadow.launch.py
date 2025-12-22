@@ -173,29 +173,38 @@ def generate_launch_description() -> LaunchDescription:
     # ----------------- Servo Parameters (inline) -----------------
     servo_params_inline = {
         "use_sim_time": use_sim_time,
-
-        # Wichtig für online_signal_smoothing::AccelerationLimitedPlugin
         "update_period": 0.01,
+
+        # ✅ REQUIRED for online_signal_smoothing plugin (Rolling / MoveIt 2.14)
+        "planning_group_name": "omron_arm_group",
 
         "moveit_servo": {
             "command_in_type": "speed_units",
             "move_group_name": "omron_arm_group",
-            "planning_frame": "robot_mount",
+            "planning_frame": "world",
             "ee_frame_name": "tcp",
-
-            # FIX: ServoNode soll im Namespace auf joint_states lauschen
             "joint_topic": "joint_states",
 
-            # Input topics (relativ => /<ns>/servo/...)
             "cartesian_command_in_topic": "servo/delta_twist_cmds",
             "joint_command_in_topic": "servo/delta_joint_cmds",
             "pose_command_in_topic": "servo/delta_pose_cmds",
 
+            "command_out_topic": "omron_arm_controller/joint_trajectory",
+
             "use_servo_services": True,
-            "check_collisions": False,
+
+            "use_smoothing": True,
+            "smoothing_filter_plugin_name": "online_signal_smoothing::AccelerationLimitedPlugin",
+
+            "check_collisions": True,
+            "collision_check_rate": 10.0,
+            "self_collision_proximity_threshold": 0.01,
+            "scene_collision_proximity_threshold": 0.02,
 
             "publish_period": 0.01,
             "incoming_command_timeout": 0.2,
+
+            "enable_singularity_checking": False,
         },
     }
 

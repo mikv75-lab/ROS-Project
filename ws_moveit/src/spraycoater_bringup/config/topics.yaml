@@ -6,35 +6,33 @@ topics:
       - id: cartesian_mm
         name: servo/cartesian_mm
         type: geometry_msgs/msg/TwistStamped
-        qos: sensor_data
+        qos: cmd
 
       - id: joint_jog
         name: servo/joint_jog
         type: control_msgs/msg/JointJog
-        qos: sensor_data
+        qos: cmd
 
-      # ✅ FIX: latched, damit One-Shot beim Start nicht verloren geht
       - id: set_mode
         name: servo/set_mode
         type: std_msgs/msg/String
-        qos: latched
+        qos: cmd
 
-      # ✅ FIX: latched, gleiches Problem wie set_mode
       - id: set_frame
         name: servo/set_frame
         type: std_msgs/msg/String
-        qos: latched
+        qos: cmd
 
     publish:
       - id: twist_out
         name: servo/delta_twist_cmds
         type: geometry_msgs/msg/TwistStamped
-        qos: sensor_data   # ✅ BEST_EFFORT wie Servo erwartet
+        qos: sensor_data
 
       - id: joint_out
         name: servo/delta_joint_cmds
         type: control_msgs/msg/JointJog
-        qos: sensor_data   # ✅
+        qos: sensor_data
 
   tool:
     subscribe:

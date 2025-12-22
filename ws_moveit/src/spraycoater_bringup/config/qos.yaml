@@ -19,6 +19,13 @@ profiles:
 
   scene_collision:
     history: KEEP_LAST
-    depth: 50          # nimm >= Anzahl collision objects, z.B. 50
+    depth: 50
     reliability: RELIABLE
     durability: TRANSIENT_LOCAL
+
+  # ✅ Neu: Servo / Command Topics (keine RELIABILITY-Inkompatibilität mehr)
+  cmd:
+    history: KEEP_LAST
+    depth: 10
+    reliability: RELIABLE
+    durability: VOLATILE

@@ -372,12 +372,12 @@ class JointJogWidget(QWidget):
 
 
 # =============================================================================
-# CartesianJogWidget – sendet frame_ui als "wrf"/"trf"
+# CartesianJogWidget – sendet frame als "world"/"tcp" (kein wrf/trf mehr)
 # =============================================================================
 class CartesianJogWidget(QWidget):
-    frameChanged = QtCore.pyqtSignal(str)  # "wrf"/"trf"
+    frameChanged = QtCore.pyqtSignal(str)  # "world" / "tcp"
     paramsChanged = QtCore.pyqtSignal(dict)
-    cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)  # axis, delta, speed, frame_ui
+    cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)  # axis, delta, speed, frame
 
     def __init__(self, ctx, bridge=None, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -402,7 +402,7 @@ class CartesianJogWidget(QWidget):
             "cart_ang_step_deg": 2.0,
             "cart_speed_mm_s": 50.0,
             "cart_speed_deg_s": 30.0,
-            "frame": "wrf",
+            "frame": "world",
         })
 
         self._apply_vertical_max()
@@ -513,8 +513,9 @@ class CartesianJogWidget(QWidget):
 
         fr = QHBoxLayout()
         fr.addWidget(QLabel("Frame:", self))
-        self.rbWRF = QRadioButton("WRF (World)", self)
-        self.rbTRF = QRadioButton("TRF (Tool)", self)
+        # UI-Text darf bleiben, aber intern senden wir world/tcp
+        self.rbWRF = QRadioButton("World", self)
+        self.rbTRF = QRadioButton("TCP", self)
         self.rbWRF.setChecked(True)
         fr.addWidget(self.rbWRF)
         fr.addWidget(self.rbTRF)
@@ -575,8 +576,9 @@ class CartesianJogWidget(QWidget):
         self.spinSpeedLin.valueChanged.connect(lambda _v: self._emit_params())
         self.spinSpeedRot.valueChanged.connect(lambda _v: self._emit_params())
 
-        self.rbWRF.toggled.connect(lambda _=False: self._on_frame_changed())
-        self.rbTRF.toggled.connect(lambda _=False: self._on_frame_changed())
+        # ✅ FIX: toggled feuert doppelt (TRF True + WRF False). Wir reagieren nur auf checked=True.
+        self.rbWRF.toggled.connect(self._on_frame_toggled)
+        self.rbTRF.toggled.connect(self._on_frame_toggled)
 
         self.btnXm.clicked.connect(lambda _=False: self._emit_cart("x", -self.spinLinStep.value()))
         self.btnXp.clicked.connect(lambda _=False: self._emit_cart("x",  self.spinLinStep.value()))
@@ -591,6 +593,13 @@ class CartesianJogWidget(QWidget):
         self.btnRyp.clicked.connect(lambda _=False: self._emit_rot("ry",  self.spinAngStep.value()))
         self.btnRzm.clicked.connect(lambda _=False: self._emit_rot("rz", -self.spinAngStep.value()))
         self.btnRzp.clicked.connect(lambda _=False: self._emit_rot("rz",  self.spinAngStep.value()))
+
+    @QtCore.pyqtSlot(bool)
+    def _on_frame_toggled(self, checked: bool) -> None:
+        # ✅ verhindert Doppel-Call / Signal-Sturm
+        if not checked:
+            return
+        self._on_frame_changed()
 
     # ------------------------------------------------------------------ Params API
     def set_params(self, cfg):
@@ -612,17 +621,32 @@ class CartesianJogWidget(QWidget):
             "cart_ang_step_deg": float(self.spinAngStep.value()),
             "cart_speed_mm_s": float(self.spinSpeedLin.value()),
             "cart_speed_deg_s": float(self.spinSpeedRot.value()),
-            "frame": self.get_frame(),
+            "frame": self.get_frame(),  # world/tcp
         }
 
     def set_frame(self, f: str):
-        if (f or "").strip().lower() == "trf":
-            self.rbTRF.setChecked(True)
-        else:
-            self.rbWRF.setChecked(True)
+        """Accepts 'world' or 'tcp' (legacy 'wrf'/'trf' tolerated)."""
+        raw = (f or "").strip().lower()
+
+        # tolerate legacy
+        if raw == "trf":
+            raw = "tcp"
+        elif raw == "wrf":
+            raw = "world"
+
+        target_tcp = (raw == "tcp")
+
+        # ✅ FIX: avoid feedback loop when setting checked programmatically
+        b1 = QtCore.QSignalBlocker(self.rbWRF)
+        b2 = QtCore.QSignalBlocker(self.rbTRF)
+        try:
+            self.rbTRF.setChecked(target_tcp)
+            self.rbWRF.setChecked(not target_tcp)
+        finally:
+            del b1, b2
 
     def get_frame(self) -> str:
-        return "trf" if self.rbTRF.isChecked() else "wrf"
+        return "tcp" if self.rbTRF.isChecked() else "world"
 
     # ------------------------------------------------------------------ Emit
     def _emit_params(self):
@@ -633,7 +657,7 @@ class CartesianJogWidget(QWidget):
     def _on_frame_changed(self):
         if not self._servo_wired:
             self._try_wire_debounced()
-        self.frameChanged.emit(self.get_frame())
+        self.frameChanged.emit(self.get_frame())  # world/tcp
         self._emit_params()
 
     def _emit_cart(self, axis: str, delta_mm: float):
@@ -643,9 +667,9 @@ class CartesianJogWidget(QWidget):
                 _LOG.warning("[CartesianJogWidget] Jog pressed but ServoBridge not wired.")
                 self._wired_warned = True
 
-        frame_ui = self.get_frame()
+        frame = self.get_frame()  # world/tcp
         speed_mm_s = float(self.spinSpeedLin.value())
-        self.cartesianJogRequested.emit(str(axis), float(delta_mm), speed_mm_s, frame_ui)
+        self.cartesianJogRequested.emit(str(axis), float(delta_mm), speed_mm_s, frame)
 
     def _emit_rot(self, axis: str, delta_deg: float):
         if not self._servo_wired:
@@ -654,9 +678,9 @@ class CartesianJogWidget(QWidget):
                 _LOG.warning("[CartesianJogWidget] Jog pressed but ServoBridge not wired.")
                 self._wired_warned = True
 
-        frame_ui = self.get_frame()
+        frame = self.get_frame()  # world/tcp
         speed_deg_s = float(self.spinSpeedRot.value())
-        self.cartesianJogRequested.emit(str(axis), float(delta_deg), speed_deg_s, frame_ui)
+        self.cartesianJogRequested.emit(str(axis), float(delta_deg), speed_deg_s, frame)
 
     def _apply_vertical_max(self):
         for w in [self] + self.findChildren(QWidget):
