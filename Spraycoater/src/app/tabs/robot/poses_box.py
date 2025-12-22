@@ -21,12 +21,12 @@ class PosesGroupBox(QGroupBox):
     setHomeRequested = QtCore.pyqtSignal()
     setServiceRequested = QtCore.pyqtSignal()
 
-    def __init__(self, bridge, parent: Optional[QWidget] = None, title: str = "Poses"):
+    def __init__(self, ros, parent: Optional[QWidget] = None, title: str = "Poses"):
         super().__init__(title, parent)
 
         # Strikt: Bridge muss ein 'poses_bridge' mit 'signals' liefern
-        self.bridge = bridge
-        self._pb = self.bridge.poses_bridge
+        self.ros = ros
+        self._pb = self.ros.poses
         self._sig = self._pb.signals
 
         self._build_ui()

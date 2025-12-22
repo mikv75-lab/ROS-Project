@@ -1,24 +1,35 @@
 # -*- coding: utf-8 -*-
-# src/app/startup_fsm.py
+# File: src/app/startup_fsm.py
+#
+# Fixes:
+# - Bridge ist RosBridge, Variable/Semantik konsistent
+# - ready(ctx, bridge_shadow, bridge_live, plc) bleibt, aber intern sauber benannt
+# - Bridge wird nur gestartet wenn ros.launch_ros true ist
+# - Jede StepState fängt Exceptions, optional abort_on_error
+
+from __future__ import annotations
+
 import os
 import logging
 from typing import Optional, Callable, Any
 
-from PyQt6 import QtCore, QtStateMachine  # StateMachine unter PyQt6
+from PyQt6 import QtCore, QtStateMachine
 
-# Projekt-Helfer
 from config.startup import load_startup, PlcConfig
 from app.utils.logging_setup import init_logging
 from app.utils.warnings_setup import enable_all_warnings
+
 from ros.ros_launcher import (
     ensure_clean_graph_then_launch,
     BRINGUP_RUNNING,
     make_bringup_cmd,
 )
-from ros.bridge.ui_bridge import get_ui_bridge, UIBridge
 
-# PLC – Implementierung
+from ros.bridge.ros_bridge import RosBridge
+
 from plc.plc_client import PlcClientBase, create_plc_client
+
+_LOG = logging.getLogger("app.startup")
 
 
 class _StepState(QtStateMachine.QState):
@@ -53,22 +64,18 @@ class StartupMachine(QtCore.QObject):
     Orchestriert den App-Start via QStateMachine (PyQt6).
 
     Laufzeit-Ressourcen:
-      - ROS-UIBridge SHADOW (self.bridge_shadow)
-      - ROS-UIBridge LIVE   (self.bridge_live)
-      - PLC-Backend         (self.plc)
+      - RosBridge SHADOW (self.bridge_shadow)
+      - RosBridge LIVE   (self.bridge_live)
+      - PLC-Backend      (self.plc)
 
-    WICHTIG:
-      - PLC wird NICHT in ctx gespeichert, sondern als eigenes Feld geführt.
-      - ready-Signal: (ctx, bridge_shadow, bridge_live, plc)
+    ready-Signal: (ctx, bridge_shadow, bridge_live, plc)
     """
 
-    progress = QtCore.pyqtSignal(str)                     # z.B. "LoadStartup"
-    warning = QtCore.pyqtSignal(str)                     # gelbe Meldung auf Splash
-    error = QtCore.pyqtSignal(str)                       # optional
+    progress = QtCore.pyqtSignal(str)
+    warning = QtCore.pyqtSignal(str)
+    error = QtCore.pyqtSignal(str)
     ready = QtCore.pyqtSignal(object, object, object, object)
-    #               ctx,    bridge_shadow, bridge_live,   plc
 
-    # interne Trigger
     _done_sig = QtCore.pyqtSignal()
     _failed_sig = QtCore.pyqtSignal()
 
@@ -84,13 +91,12 @@ class StartupMachine(QtCore.QObject):
         self.abort_on_error = abort_on_error
 
         self.ctx: Any = None
-        self.bridge_shadow: Optional[UIBridge] = None
-        self.bridge_live: Optional[UIBridge] = None
-        self.plc: Optional[PlcClientBase] = None   # PLC separat, nicht im ctx
+        self.bridge_shadow: Optional[RosBridge] = None
+        self.bridge_live: Optional[RosBridge] = None
+        self.plc: Optional[PlcClientBase] = None
 
         self._log = logging.getLogger("app.startup")
 
-        # QStateMachine + States
         self.m = QtStateMachine.QStateMachine(self)
 
         s_init = QtStateMachine.QState()
@@ -102,26 +108,22 @@ class StartupMachine(QtCore.QObject):
         s_bridge = _StepState("ConnectBridge", self, self._step_bridge)
         s_ready = QtStateMachine.QFinalState()
 
-        # transitions
         s_init.addTransition(self._done_sig, s_load)
         s_load.addTransition(self._done_sig, s_log)
         s_log.addTransition(self._done_sig, s_warn)
         s_warn.addTransition(self._done_sig, s_bring)
-        s_bring.addTransition(self._done_sig, s_plc)       # Bringup → PLC
-        s_plc.addTransition(self._done_sig, s_bridge)      # PLC → Bridges
+        s_bring.addTransition(self._done_sig, s_plc)
+        s_plc.addTransition(self._done_sig, s_bridge)
         s_bridge.addTransition(self._done_sig, s_ready)
 
-        # abort path
         for st in (s_load, s_log, s_warn, s_bring, s_plc, s_bridge):
             st.addTransition(self._failed_sig, s_ready)
 
-        # kickoff
         def _kickoff() -> None:
             QtCore.QTimer.singleShot(0, self._done_sig.emit)
 
         s_init.entered.connect(_kickoff)
 
-        # final
         self.m.finished.connect(self._emit_ready)
 
         self.m.addState(s_init)
@@ -136,32 +138,23 @@ class StartupMachine(QtCore.QObject):
 
     # -------- Steps --------
     def _step_load(self) -> None:
-        # Strict load
         self.ctx = load_startup(self.startup_yaml_path)
         if self.ctx is None:
             raise RuntimeError("load_startup() returned None")
         self._log.info("startup loaded: %s", self.startup_yaml_path)
 
-        # SC_STARTUP_YAML für Bridge/ROS (Single Source of Truth)
         os.environ["SC_STARTUP_YAML"] = self.startup_yaml_path
         self._log.info("SC_STARTUP_YAML = %s", os.environ.get("SC_STARTUP_YAML"))
 
-        # In Containern SHM-Transport deaktivieren (FastDDS)
         os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
 
     def _step_logging(self) -> None:
-        """
-        Neues Logging-Setup ohne logging.yaml:
-          - init_logging(log_dir)
-          - eigenständiger File-Logger für app.startup
-        """
+        # ctx.paths.log_dir ist canonical
         init_logging(self.ctx.paths.log_dir)
 
-        # Logfile für diesen Logger direkt anlegen
         try:
             logging.add_file_logger("app.startup")  # type: ignore[attr-defined]
         except AttributeError:
-            # Falls add_file_logger nicht gepatcht wurde (Safety)
             from app.utils.logging_setup import add_file_logger  # type: ignore
             add_file_logger("app.startup")
 
@@ -173,19 +166,15 @@ class StartupMachine(QtCore.QObject):
         self._log.info("warnings enabled")
 
     def _step_bringup(self) -> None:
-        # Falls ROS in startup.yaml deaktiviert: überspringen
         if not getattr(self.ctx.ros, "launch_ros", False):
             self._log.info("ROS launch disabled in startup.yaml -> Bringup übersprungen")
             return
 
         os.environ.setdefault("FASTDDS_SHM_TRANSPORT_DISABLE", "1")
 
-        # ✅ cmd + args aus ctx.ros bauen (inkl. bringup_launch, sim, use_sim_time, robot_type)
         cmd, extra = make_bringup_cmd(self.ctx.ros, startup_yaml_path=self.startup_yaml_path)
 
-        env = {
-            "SPRAY_LOG_DIR": self.ctx.paths.log_dir,
-        }
+        env = {"SPRAY_LOG_DIR": self.ctx.paths.log_dir}
         ensure_clean_graph_then_launch(
             cmd,
             extra_launch_args=extra,
@@ -196,21 +185,12 @@ class StartupMachine(QtCore.QObject):
             self.warning.emit(f"Bringup nicht gestartet. Log: {self.ctx.paths.bringup_log}")
 
     def _step_plc(self) -> None:
-        """
-        Initialisiert das PLC-Backend anhand der PLC-Konfiguration aus ctx.plc.
-
-        Ergebnis:
-          - self.plc = PlcClientBase-Instanz oder None
-          - NICHT in ctx speichern.
-        """
-        # Kontext MUSS geladen sein
         if self.ctx is None:
             self.warning.emit("PLC-Setup übersprungen: ctx ist None.")
             self._log.error("SetupPLC: ctx ist None")
             self.plc = None
             return
 
-        # PlcConfig direkt aus dem AppContext nehmen
         plc_cfg: Optional[PlcConfig] = getattr(self.ctx, "plc", None)
         if plc_cfg is None:
             self.warning.emit("PLC-Konfiguration fehlt in ctx (ctx.plc ist None).")
@@ -218,13 +198,11 @@ class StartupMachine(QtCore.QObject):
             self.plc = None
             return
 
-        # Simulationsmodus: keine Verbindung aufbauen
         if getattr(plc_cfg, "sim", False):
             self._log.info("PLC im Simulationsmodus (sim=true) -> keine ADS-Verbindung.")
             self.plc = None
             return
 
-        # Echte Verbindung über Fabrikfunktion
         try:
             self.plc = create_plc_client(plc_cfg)
             self.plc.connect()
@@ -240,11 +218,19 @@ class StartupMachine(QtCore.QObject):
 
     def _step_bridge(self) -> None:
         """
-        Bridges für shadow + live nur verbinden, wenn ROS-Launch aktiv ist.
-        Erwartet:
-          ros.shadow.enabled: bool
-          ros.live.enabled:   bool
+        Start RosBridge for shadow + live only if ROS is enabled/launched.
+
+        Expects:
+          ctx.ros.shadow.enabled
+          ctx.ros.live.enabled
         """
+        if self.ctx is None:
+            self.warning.emit("Bridge-Setup übersprungen: ctx ist None.")
+            self._log.error("ConnectBridge: ctx ist None")
+            self.bridge_shadow = None
+            self.bridge_live = None
+            return
+
         if not getattr(self.ctx.ros, "launch_ros", False):
             self._log.info("ROS launch disabled -> Bridge-Verbindungen übersprungen")
             self.bridge_shadow = None
@@ -256,38 +242,35 @@ class StartupMachine(QtCore.QObject):
         self.bridge_shadow = None
         self.bridge_live = None
 
-        # --- SHADOW-Bridge ---
+        # --- SHADOW ---
         try:
             shadow_cfg = getattr(self.ctx.ros, "shadow", None)
             shadow_enabled = bool(getattr(shadow_cfg, "enabled", False)) if shadow_cfg else False
             if shadow_enabled:
-                # get_ui_bridge() verbindet bereits (ensure_connected)
-                self.bridge_shadow = get_ui_bridge(self.ctx, namespace="shadow")
-                logging.getLogger("ros").info(
-                    "UIBridge SHADOW verbunden (node=%s).",
-                    getattr(self.bridge_shadow, "node_name", "ui_bridge_shadow"),
-                )
+                b = RosBridge(ctx=self.ctx, namespace="shadow")
+                b.start()
+                self.bridge_shadow = b
+                logging.getLogger("ros").info("RosBridge SHADOW gestartet (namespace=shadow)")
             else:
                 self._log.info("ROS shadow-role disabled -> keine Shadow-Bridge.")
         except Exception as e:
-            self.warning.emit(f"UIBridge SHADOW nicht verbunden: {e}")
+            self.warning.emit(f"RosBridge SHADOW nicht gestartet: {e}")
             self._log.exception("ConnectBridge[shadow] fehlgeschlagen")
             self.bridge_shadow = None
 
-        # --- LIVE-Bridge ---
+        # --- LIVE ---
         try:
             live_cfg = getattr(self.ctx.ros, "live", None)
             live_enabled = bool(getattr(live_cfg, "enabled", False)) if live_cfg else False
             if live_enabled:
-                self.bridge_live = get_ui_bridge(self.ctx, namespace="live")
-                logging.getLogger("ros").info(
-                    "UIBridge LIVE verbunden (node=%s).",
-                    getattr(self.bridge_live, "node_name", "ui_bridge_live"),
-                )
+                b = RosBridge(ctx=self.ctx, namespace="live")
+                b.start()
+                self.bridge_live = b
+                logging.getLogger("ros").info("RosBridge LIVE gestartet (namespace=live)")
             else:
                 self._log.info("ROS live-role disabled -> keine Live-Bridge.")
         except Exception as e:
-            self.warning.emit(f"UIBridge LIVE nicht verbunden: {e}")
+            self.warning.emit(f"RosBridge LIVE nicht gestartet: {e}")
             self._log.exception("ConnectBridge[live] fehlgeschlagen")
             self.bridge_live = None
 

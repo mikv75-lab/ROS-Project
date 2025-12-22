@@ -20,7 +20,7 @@ SEG_ORDER = ["MOVE_PREDISPENSE", "MOVE_RECIPE", "MOVE_RETREAT", "MOVE_HOME"]
 class _QtSignalHandler(logging.Handler):
     """Logging → Qt-Signal-Weiterleitung (für ProcessTab-Log)."""
 
-    def __init__(self, owner: "ProcessRunStatemachine") -> None:
+    def __init__(self, owner: "ProcessExecuteStatemachine") -> None:
         super().__init__()
         self._owner = owner
 
@@ -32,9 +32,9 @@ class _QtSignalHandler(logging.Handler):
             pass
 
 
-class ProcessRunStatemachine(QtCore.QObject):
+class ProcessExecuteStatemachine(QtCore.QObject):
     """
-    Run-StateMachine (Execute-only via MoveItPy)
+    Execute-StateMachine (Execute-only via MoveItPy)
 
     - Lädt Run-YAML (joints + segments[name+points])
     - Baut pro Segment eine JointTrajectory

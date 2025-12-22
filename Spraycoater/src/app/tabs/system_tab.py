@@ -38,10 +38,9 @@ def _ui_path(project_root: Path, filename: str) -> Path:
 
 
 class SystemTab(QWidget):
-    def __init__(self, *, ctx, bridge, parent=None) -> None:
+    def __init__(self, *, ctx, parent=None) -> None:
         super().__init__(parent)
         self.ctx = ctx
-        self.bridge = bridge
 
         here = Path(__file__).resolve()
         project_root = _find_project_root(here.parent)

@@ -20,13 +20,13 @@ class SceneGroupBox(QGroupBox):
     setMountRequested = QtCore.pyqtSignal(str)
     setSubstrateRequested = QtCore.pyqtSignal(str)
 
-    def __init__(self, bridge, parent: Optional[QWidget] = None, title: str = "Scene"):
+    def __init__(self, ros, parent: Optional[QWidget] = None, title: str = "Scene"):
         super().__init__(parent)
         self.setTitle(title)
-        self.bridge = bridge
+        self.ros = ros
 
-        # hard contract: bridge.scene_bridge muss existieren (bridge.ensure_connected() passiert im Tab)
-        self._sb = self.bridge.scene_bridge
+        # hard contract: ros.scene (SceneBridge Node) muss existieren (bridge.ensure_connected() passiert im Tab)
+        self._sb = self.ros.scene
         self._sig = self._sb.signals
 
         self._build_ui()

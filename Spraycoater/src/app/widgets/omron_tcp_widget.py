@@ -7,7 +7,7 @@ import html
 
 from PyQt6 import QtCore, QtWidgets
 
-from ros.bridge.ui_bridge import UIBridge
+from ros.bridge.ros_bridge import RosBridge
 
 
 class OmronTcpWidget(QtWidgets.QWidget):
@@ -15,16 +15,16 @@ class OmronTcpWidget(QtWidgets.QWidget):
     Einfaches TCP-Client-Widget für den Omron ACE-Server.
 
     Erwartet:
-        ui_bridge._omron -> OmronBridge mit:
+        ros.omron -> OmronBridge mit:
             - signals.rawRxChanged(str)
             - signals.connectionChanged(bool)
             - Methode send_command(str)
     """
 
-    def __init__(self, ui_bridge: UIBridge, parent: Optional[QtWidgets.QWidget] = None):
+    def __init__(self, ros: Optional[RosBridge], parent: Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
-        self._bridge = ui_bridge
-        self._omron = getattr(ui_bridge, "_omron", None)
+        self._ros = ros
+        self._omron = getattr(ros, "omron", None) if ros is not None else None
 
         # letzter bekannter Connection-Status (für Change-Detection)
         self._last_connected: Optional[bool] = None

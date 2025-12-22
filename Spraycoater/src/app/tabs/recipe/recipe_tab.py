@@ -33,14 +33,14 @@ class RecipeTab(QWidget):
         *,
         ctx,
         store,
-        bridge,
+        ros,
         attach_preview_widget: Callable[[QWidget], None] | None = None,
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
         self.ctx = ctx
         self.store = store
-        self.bridge = bridge
+        self.ros = ros
         self._attach_preview_widget = attach_preview_widget
 
         self._initial_preview_done: bool = False
@@ -102,8 +102,8 @@ class RecipeTab(QWidget):
             )
 
             if isinstance(ma, MarkerArray) and getattr(ma, "markers", None):
-                if self.bridge is not None:
-                    self.bridge.set_spraypath(ma)
+                if self.ros is not None:
+                    self.ros.set_spraypath(ma)
                 _LOG.info(
                     "RecipeTab: SprayPath MarkerArray gesendet (%d Marker, frame=scene, sides=%s)",
                     len(ma.markers),

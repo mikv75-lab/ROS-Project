@@ -12,7 +12,7 @@ from app.model.recipe.recipe import Recipe
 
 from .process_validate_statemachine import ProcessValidateStatemachine
 from .process_optimize_statemachine import ProcessOptimizeStatemachine
-from .process_run_statemachine import ProcessRunStatemachine
+from .process_execute_statemachine import ProcessExecuteStatemachine
 
 _LOG = logging.getLogger("app.tabs.process.thread")
 
@@ -21,17 +21,17 @@ class ProcessThread(QtCore.QObject):
     """
     Wrapper, der in der GUI wie ein "Thread" genutzt wird, intern aber:
       - besitzt einen QThread (Eventloop im Hintergrund)
-      - erzeugt pro Start einen Worker (StateMachine QObject) je Mode
+      - erzeugt pro Start genau einen Worker (StateMachine QObject)
 
     Modi:
-      - validate: ProcessValidateStatemachine (Recipe Input, MoveItPy plan/execute)
-      - optimize: ProcessOptimizeStatemachine (Run YAML Input, MoveItPy optimize)
-      - run:      ProcessRunStatemachine (Run YAML Input, Replay)
+      - validate : Recipe → Validate-Statemachine (Plan + optionale Execute-Checks)
+      - optimize : Run-YAML → Optimize-Statemachine (Retiming / Glättung)
+      - execute  : Run-YAML → Execute-Statemachine (Abspielen der Segmente)
     """
 
     MODE_VALIDATE = "validate"
     MODE_OPTIMIZE = "optimize"
-    MODE_RUN = "run"
+    MODE_EXECUTE = "execute"
 
     startSignal = QtCore.pyqtSignal()
     stopSignal = QtCore.pyqtSignal()
@@ -48,7 +48,7 @@ class ProcessThread(QtCore.QObject):
         self,
         *,
         recipe: Optional[Recipe],
-        bridge,
+        ros,
         parent: Optional[QtCore.QObject] = None,
         mode: str = MODE_VALIDATE,
         run_yaml_path: Optional[str] = None,
@@ -56,7 +56,7 @@ class ProcessThread(QtCore.QObject):
         super().__init__(parent)
 
         self._thread = QtCore.QThread()
-        self._bridge = bridge
+        self._ros = ros
 
         self._recipe: Optional[Recipe] = recipe
         self._mode: str = mode or self.MODE_VALIDATE
@@ -76,7 +76,11 @@ class ProcessThread(QtCore.QObject):
             except Exception:
                 pass
 
-        _LOG.info("ProcessThread init: mode=%s run_yaml=%r", self._mode, self._run_yaml_path)
+        _LOG.info(
+            "ProcessThread init: mode=%s run_yaml=%r",
+            self._mode,
+            self._run_yaml_path,
+        )
 
     # ------------------------------------------------------------------ #
     # Öffentliche API
@@ -88,7 +92,7 @@ class ProcessThread(QtCore.QObject):
 
     def set_recipe(self, recipe: Recipe) -> None:
         if self.isRunning():
-            _LOG.warning("ProcessThread.set_recipe ignoriert: Run läuft.")
+            _LOG.warning("ProcessThread.set_recipe ignoriert: Prozess läuft.")
             return
         self._recipe = recipe
 
@@ -112,33 +116,43 @@ class ProcessThread(QtCore.QObject):
             _LOG.exception("ProcessThread.wait: Fehler beim Warten.")
 
     # ------------------------------------------------------------------ #
-    # Worker
+    # Worker-Erzeugung
     # ------------------------------------------------------------------ #
 
     def _create_worker(self) -> QtCore.QObject:
-        if self._mode == self.MODE_RUN:
-            worker = ProcessRunStatemachine(
+        if self._mode == self.MODE_EXECUTE:
+            worker = ProcessExecuteStatemachine(
                 run_yaml_path=self._run_yaml_path or "",
-                bridge=self._bridge,
+                bridge=self._ros,
             )
-            _LOG.info("Worker=ProcessRunStatemachine run_yaml=%r", self._run_yaml_path)
+            _LOG.info(
+                "Worker=ProcessExecuteStatemachine run_yaml=%r",
+                self._run_yaml_path,
+            )
 
         elif self._mode == self.MODE_OPTIMIZE:
             worker = ProcessOptimizeStatemachine(
                 run_yaml_path=self._run_yaml_path or "",
-                ui_bridge=self._bridge,
+                ui_ros=self._ros,
             )
-            _LOG.info("Worker=ProcessOptimizeStatemachine run_yaml=%r", self._run_yaml_path)
+            _LOG.info(
+                "Worker=ProcessOptimizeStatemachine run_yaml=%r",
+                self._run_yaml_path,
+            )
 
         else:
             worker = ProcessValidateStatemachine(
                 recipe=self._recipe,
-                ui_bridge=self._bridge,
+                ui_ros=self._ros,
             )
-            _LOG.info("Worker=ProcessValidateStatemachine recipe=%r", getattr(self._recipe, "id", None))
+            _LOG.info(
+                "Worker=ProcessValidateStatemachine recipe=%r",
+                getattr(self._recipe, "id", None),
+            )
 
         worker.moveToThread(self._thread)
 
+        # Worker → UI
         worker.stateChanged.connect(self.stateChanged)           # type: ignore[attr-defined]
         worker.logMessage.connect(self.logMessage)               # type: ignore[attr-defined]
         worker.notifyFinished.connect(self._on_worker_finished)  # type: ignore[attr-defined]
@@ -159,17 +173,22 @@ class ProcessThread(QtCore.QObject):
         self._worker = None
 
     # ------------------------------------------------------------------ #
-    # Slots start/stop
+    # Slots start / stop
     # ------------------------------------------------------------------ #
 
     @QtCore.pyqtSlot()
     def _on_start_signal(self) -> None:
         if not self._thread.isRunning():
-            _LOG.info("ProcessThread: starte QThread (mode=%s).", self._mode)
+            _LOG.info(
+                "ProcessThread: starte QThread (mode=%s).",
+                self._mode,
+            )
             self._thread.start()
 
         if self._worker is not None:
-            _LOG.warning("ProcessThread: alter Worker war noch vorhanden, räume auf.")
+            _LOG.warning(
+                "ProcessThread: alter Worker war noch vorhanden – räume auf."
+            )
             self._cleanup_worker()
 
         worker = self._create_worker()
@@ -185,7 +204,7 @@ class ProcessThread(QtCore.QObject):
         self.request_stop()
 
     # ------------------------------------------------------------------ #
-    # Worker -> Wrapper
+    # Worker → Wrapper
     # ------------------------------------------------------------------ #
 
     @QtCore.pyqtSlot(object)
@@ -199,7 +218,7 @@ class ProcessThread(QtCore.QObject):
         self._cleanup_worker()
 
     # ------------------------------------------------------------------ #
-    # Thread/App shutdown
+    # Thread / App shutdown
     # ------------------------------------------------------------------ #
 
     @QtCore.pyqtSlot()
@@ -223,7 +242,9 @@ class ProcessThread(QtCore.QObject):
                 self._thread.quit()
                 self._thread.wait(5000)
         except Exception:
-            _LOG.exception("ProcessThread._on_app_about_to_quit: Fehler beim Thread-Shutdown.")
+            _LOG.exception(
+                "ProcessThread._on_app_about_to_quit: Fehler beim Thread-Shutdown."
+            )
 
         self._cleanup_worker()
 
@@ -237,7 +258,9 @@ class ProcessThread(QtCore.QObject):
                 self._thread.quit()
                 self._thread.wait(5000)
         except Exception:
-            _LOG.exception("ProcessThread.deleteLater: Fehler beim Thread-Shutdown.")
+            _LOG.exception(
+                "ProcessThread.deleteLater: Fehler beim Thread-Shutdown."
+            )
 
         self._cleanup_worker()
 

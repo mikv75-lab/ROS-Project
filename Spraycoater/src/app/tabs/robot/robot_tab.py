@@ -20,8 +20,8 @@ from .tool_box import ToolGroupBox
 from .moveitpy_widget import MoveItPyWidget
 from .servo_widgets import JointJogWidget, CartesianJogWidget
 
-if TYPE_CHECKING:
-    from ros.bridge.ui_bridge import UIBridge
+from ros.bridge.ros_bridge import RosBridge
+
 
 _LOG = logging.getLogger("app.tabs.service.robot")
 
@@ -31,8 +31,8 @@ class ServiceRobotTab(QWidget):
     Service-Tab für Roboterfunktionen.
 
     Contract:
-      - bridge darf None sein -> UI deaktiviert (Hinweis wird angezeigt)
-      - sonst: bridge ist UIBridge und connected (ensure_connected() wird hier 1x aufgerufen)
+      - ros darf None sein -> UI deaktiviert (Hinweis wird angezeigt)
+      - sonst: ros ist RosBridge und connected (ensure_connected() wird hier 1x aufgerufen)
       - keine Fallback-Attribute / kein "try multiple names"
     """
 
@@ -41,14 +41,14 @@ class ServiceRobotTab(QWidget):
         *,
         ctx,
         store: RecipeStore,
-        bridge: Optional["UIBridge"],
+        ros: Optional["RosBridge"],
         parent: Optional[QWidget] = None
     ):
         super().__init__(parent)
 
         self.ctx = ctx
         self.store = store
-        self.bridge = bridge
+        self.ros = ros
 
         self._rb = None   # RobotBridge
         self._sig = None  # RobotBridge.signals
@@ -58,7 +58,7 @@ class ServiceRobotTab(QWidget):
         root.setSpacing(8)
 
         # --- No bridge: Tab bleibt sichtbar aber deaktiviert ---
-        if self.bridge is None:
+        if self.ros is None:
             hint = QLabel(
                 "ROS-Bridge nicht verbunden (shadow/live fehlgeschlagen). Robot-Tab ist deaktiviert.",
                 self
@@ -69,8 +69,9 @@ class ServiceRobotTab(QWidget):
             return
 
         # --- Hard contract: connected + Bridges vorhanden ---
-        self.bridge.ensure_connected()
-        self._rb = self.bridge.robot_bridge
+        # RosBridge already started by StartupMachine
+        # (no ensure_connected contract needed)
+        self._rb = self.ros.robot
         self._sig = self._rb.signals
 
         # ================================================================
@@ -81,7 +82,7 @@ class ServiceRobotTab(QWidget):
 
         self.commandBox = RobotCommandButtonsBox(self, title="Commands")
         self.statusBox = RobotStatusInfoBox(self, title="Robot Status")
-        self.omronWidget = OmronTcpWidget(self.bridge, self)
+        self.omronWidget = OmronTcpWidget(self.ros, self)
 
         for w in (self.commandBox, self.statusBox, self.omronWidget):
             sp = w.sizePolicy()
@@ -100,9 +101,9 @@ class ServiceRobotTab(QWidget):
         row_bottom = QHBoxLayout()
         row_bottom.setSpacing(8)
 
-        self.posesBox = PosesGroupBox(self.bridge, self)
-        self.toolBox = ToolGroupBox(self.bridge, self)
-        self.sceneBox = SceneGroupBox(self.bridge, self)
+        self.posesBox = PosesGroupBox(self.ros, self)
+        self.toolBox = ToolGroupBox(self.ros, self)
+        self.sceneBox = SceneGroupBox(self.ros, self)
 
         row_bottom.addWidget(self.posesBox)
         row_bottom.addWidget(self.toolBox)
@@ -115,13 +116,13 @@ class ServiceRobotTab(QWidget):
         self.tabs = QTabWidget(self)
         root.addWidget(self.tabs)
 
-        self.moveitpyWidget = MoveItPyWidget(store=self.store, bridge=self.bridge, parent=self.tabs)
+        self.moveitpyWidget = MoveItPyWidget(store=self.store, ros=self.ros, parent=self.tabs)
         self.tabs.addTab(self.moveitpyWidget, "Motion Planning")
 
-        self.jointJogWidget = JointJogWidget(self.ctx, self.bridge, self.tabs)
+        self.jointJogWidget = JointJogWidget(self.ctx, self.ros, self.tabs)
         self.tabs.addTab(self.jointJogWidget, "Joint Jog")
 
-        self.cartJogWidget = CartesianJogWidget(self.ctx, self.bridge, self.tabs)
+        self.cartJogWidget = CartesianJogWidget(self.ctx, self.ros, self.tabs)
         self.tabs.addTab(self.cartJogWidget, "Cartesian Jog")
 
         for w in (
@@ -198,7 +199,7 @@ class ServiceRobotTab(QWidget):
         page = self.tabs.widget(idx)
 
         # Hard contract: bridge ist verbunden
-        self.bridge.robot_servo_on()
+        self.ros.robot.do_servo_on()
 
         if page is self.jointJogWidget:
             mode = "joint"
@@ -207,7 +208,7 @@ class ServiceRobotTab(QWidget):
         else:
             mode = "joint"
 
-        self.bridge.servo_set_command_type(mode)
+        self.ros.servo.signals.modeChanged.emit(mode)
 
     # ==================================================================
     # Forwarder-API

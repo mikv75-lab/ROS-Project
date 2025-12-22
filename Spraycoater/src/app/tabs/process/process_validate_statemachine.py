@@ -34,7 +34,7 @@ class ProcessValidateStatemachine(QtCore.QObject):
     """
     Validate-StateMachine (war Setup):
 
-    - nimmt die SprayPath-Posen aus UIBridge.spraypath.poses()
+    - nimmt die SprayPath-Posen aus RosBridge.spraypath.poses()
     - fährt sie via MoveItPy ab: moveit_move_to_pose() / moveit_move_home()
     - Fortschritt basiert auf moveit_py/motion_result (EXECUTED:OK / ERROR:...)
     """
@@ -55,14 +55,14 @@ class ProcessValidateStatemachine(QtCore.QObject):
         self,
         *,
         recipe: Any,
-        ui_bridge: Any,
+        ros: Any,
         parent: Optional[QtCore.QObject] = None,
         **_ignored_kwargs: Any,
     ) -> None:
         super().__init__(parent)
 
         self._recipe = recipe
-        self._ui = ui_bridge
+        self._ros = ros
 
         self._stop_requested: bool = False
         self._stopped: bool = False
@@ -78,7 +78,7 @@ class ProcessValidateStatemachine(QtCore.QObject):
         self._current_state_name: str = ""
 
         # MoveItPy-Bridge (SSoT)
-        self._moveitpy_bridge = self._ui.moveitpy_bridge
+        self._moveitpy_bridge = self._ros.moveitpy_bridge
         self._moveitpy_signals = self._moveitpy_bridge.signals
 
         self._log_handler: Optional[_QtSignalHandler] = _QtSignalHandler(self)
@@ -87,9 +87,9 @@ class ProcessValidateStatemachine(QtCore.QObject):
         _LOG.addHandler(self._log_handler)
 
         _LOG.info(
-            "ProcessValidateStatemachine init: recipe=%r, ui_bridge=%s, moveitpy=%s",
+            "ProcessValidateStatemachine init: recipe=%r, ros=%s, moveitpy=%s",
             self._recipe,
-            type(self._ui).__name__,
+            type(self._ros).__name__,
             type(self._moveitpy_bridge).__name__,
         )
 
@@ -110,7 +110,7 @@ class ProcessValidateStatemachine(QtCore.QObject):
         self._recipe_index = 0
         self._current_state_name = ""
 
-        pa: Optional[PoseArray] = self._ui.spraypath.poses()
+        pa: Optional[PoseArray] = self._ros.spraypath.poses()
         if pa is None or not pa.poses:
             msg = "Keine Recipe-Posen vorhanden (spraypath.poses ist leer)."
             _LOG.error(msg)
@@ -185,7 +185,7 @@ class ProcessValidateStatemachine(QtCore.QObject):
         _LOG.info("Validate: stop()")
         self.request_stop()
 
-        self._ui.moveit_stop()
+        self._ros.moveit_stop()
 
         if self._machine is not None and self._machine.isRunning():
             QtCore.QTimer.singleShot(0, self._emit_done_for_current_state)
@@ -255,7 +255,7 @@ class ProcessValidateStatemachine(QtCore.QObject):
 
         self._recipe_index = 0
         self._retry_count = 0
-        self._ui.moveit_move_to_pose(self._poses[0])
+        self._ros.moveit_move_to_pose(self._poses[0])
 
     @QtCore.pyqtSlot()
     def _on_state_recipe(self) -> None:
@@ -284,7 +284,7 @@ class ProcessValidateStatemachine(QtCore.QObject):
             return
 
         self._retry_count = 0
-        self._ui.moveit_move_to_pose(self._poses[self._recipe_index])
+        self._ros.moveit_move_to_pose(self._poses[self._recipe_index])
 
     @QtCore.pyqtSlot()
     def _on_state_retreat(self) -> None:
@@ -300,7 +300,7 @@ class ProcessValidateStatemachine(QtCore.QObject):
             return
 
         self._retry_count = 0
-        self._ui.moveit_move_to_pose(self._poses[-1])
+        self._ros.moveit_move_to_pose(self._poses[-1])
 
     @QtCore.pyqtSlot()
     def _on_state_home(self) -> None:
@@ -311,7 +311,7 @@ class ProcessValidateStatemachine(QtCore.QObject):
             return
 
         self._retry_count = 0
-        self._ui.moveit_move_home()
+        self._ros.moveit_move_home()
 
     # ------------------------------------------------------------------ #
     # Motion result handler
@@ -327,7 +327,7 @@ class ProcessValidateStatemachine(QtCore.QObject):
                 self._recipe_index,
                 result,
             )
-            self._ui.moveit_move_to_pose(self._poses[self._recipe_index])
+            self._ros.moveit_move_to_pose(self._poses[self._recipe_index])
         else:
             self._signal_error(result)
 
@@ -381,12 +381,12 @@ class ProcessValidateStatemachine(QtCore.QObject):
         _LOG.info("Validate: ENTER FINISHED")
         status = "stopped" if self._stopped else "finished"
 
-        # Du bekommst hier direkt die letzten MoveIt-Trajs aus dem UIBridge-State.
+        # Du bekommst hier direkt die letzten MoveIt-Trajs aus dem RosBridge-State.
         self.notifyFinished.emit(
             {
                 "poses": [],
-                "planned_traj": self._ui.moveit_planned_trajectory(),
-                "executed_traj": self._ui.moveit_executed_trajectory(),
+                "planned_traj": self._ros.moveit_planned_trajectory(),
+                "executed_traj": self._ros.moveit_executed_trajectory(),
                 "status": status,
                 "recipe": self._recipe,
             }

@@ -27,9 +27,9 @@ class ToolGroupBox(QGroupBox):
     # Outbound (Widget -> außen/Bridge)
     selectToolRequested = QtCore.pyqtSignal(str)
 
-    def __init__(self, bridge=None, parent: Optional[QWidget] = None, title: str = "Tool"):
+    def __init__(self, ros=None, parent: Optional[QWidget] = None, title: str = "Tool"):
         super().__init__(title, parent)
-        self.bridge = bridge
+        self.ros = ros
         self._build_ui()
         self._wire_bridge_inbound()
         self._wire_outbound()
@@ -37,14 +37,19 @@ class ToolGroupBox(QGroupBox):
     # ------------------------------------------------------------------ Bridge lookup
     def _find_tool_bridge(self):
         """
-        Robust: findet ToolBridge unabhängig davon ob neue Property-API oder _tb verwendet wird.
-        Erwartet auf Bridge-Seite: .tool_bridge (Property) oder ._tb (fallback), jeweils mit .signals.
+        Findet den Tool-Bridge/Node auf der neuen RosBridge.
+
+        Erwartet (bevorzugt):
+          - ros.tool (Node) mit .signals
+        Optional (legacy):
+          - ros.tool_bridge
+          - ros._tb
         """
-        if self.bridge is None:
+        if self.ros is None:
             return None
 
-        # optional ensure_connected
-        ensure = getattr(self.bridge, "ensure_connected", None)
+        # optional ensure_connected (falls jemand es anbietet)
+        ensure = getattr(self.ros, "ensure_connected", None)
         if callable(ensure):
             try:
                 ensure()
@@ -52,20 +57,22 @@ class ToolGroupBox(QGroupBox):
                 pass
 
         # 1) neue API
-        if hasattr(self.bridge, "tool_bridge"):
-            try:
-                b = self.bridge.tool_bridge
-                if getattr(b, "signals", None) is not None:
-                    return b
-            except Exception:
-                pass
+        for attr in ("tool", "tool_bridge"):
+            if hasattr(self.ros, attr):
+                try:
+                    b = getattr(self.ros, attr)
+                    if b is not None and getattr(b, "signals", None) is not None:
+                        return b
+                except Exception:
+                    pass
 
         # 2) fallback
-        b = getattr(self.bridge, "_tb", None)
+        b = getattr(self.ros, "_tb", None)
         if b is not None and getattr(b, "signals", None) is not None:
             return b
 
         return None
+
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:

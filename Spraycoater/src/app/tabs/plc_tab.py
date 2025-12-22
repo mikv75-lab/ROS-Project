@@ -46,14 +46,28 @@ class PlcTab(QWidget):
         *,
         ctx: Any,
         store: Any,
-        bridge: Any,
+        # NEU: ros=... akzeptieren
+        ros: Any = None,
+        # ALT: bridge=... weiterhin akzeptieren
+        bridge: Any = None,
+        # optional weitere Legacy-Namen, falls irgendwo verwendet
+        ui_bridge: Any = None,
+        ros_bridge: Any = None,
         plc: Optional[PlcClientBase],
         parent: Optional[QWidget] = None,
+        **_ignored: Any,
     ) -> None:
         super().__init__(parent)
         self.ctx = ctx
         self.store = store
-        self.bridge = bridge
+
+        # unify -> self.bridge (damit dein restlicher Code unverändert bleibt)
+        self.bridge = (
+            ros
+            if ros is not None
+            else (bridge if bridge is not None else (ui_bridge if ui_bridge is not None else ros_bridge))
+        )
+
         self._plc: Optional[PlcClientBase] = plc
 
         self._dying: bool = False

@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# File: src/app/main_window.py
+#
+# Fixes:
+# - __init__ akzeptiert konsistent `ros: Optional[RosBridge]`
+# - Tabs bekommen `ros=self.ros` (kann None sein)
+# - closeEvent stoppt Bridge + PLC + optional Bringup clean
+
 from __future__ import annotations
+
 import logging
+from typing import Optional
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QGuiApplication
@@ -18,36 +27,40 @@ from app.model.recipe.recipe_store import RecipeStore
 
 from plc.plc_client import PlcClientBase
 
-_LOG = logging.getLogger(__name__)
+from ros.bridge.ros_bridge import RosBridge
+
+_LOG = logging.getLogger("app.main_window")
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, *, ctx, bridge, plc: PlcClientBase | None = None, parent=None):
+    def __init__(self, *, ctx, ros: Optional[RosBridge], plc: PlcClientBase | None = None, parent=None):
         super().__init__(parent)
         if ctx is None:
             raise RuntimeError("AppContext ist None – Startup fehlgeschlagen?")
+
         self.ctx = ctx
-        self.bridge = bridge   # darf None sein
+        self.ros: Optional[RosBridge] = ros  # darf None sein
         self.plc: PlcClientBase | None = plc
 
         self.setWindowTitle("SprayCoater UI")
 
         self.store = RecipeStore.from_ctx(self.ctx)
 
+        # Shared PyVista Preview
         self.previewPlot = QtInteractor(self)
         self.previewPlot.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 
         tabs = QTabWidget(self)
 
         # 1) Process
-        self.processTab = ProcessTab(ctx=self.ctx, bridge=self.bridge, plc=self.plc)
+        self.processTab = ProcessTab(ctx=self.ctx, ros=self.ros, plc=self.plc)
         tabs.addTab(self.processTab, "Process")
 
         # 2) Recipe
         self.recipeTab = RecipeTab(
             ctx=self.ctx,
             store=self.store,
-            bridge=self.bridge,
+            ros=self.ros,
             attach_preview_widget=self.attach_preview_widget,
         )
         tabs.addTab(self.recipeTab, "Recipe")
@@ -56,7 +69,7 @@ class MainWindow(QMainWindow):
         self.serviceRobotTab = ServiceRobotTab(
             ctx=self.ctx,
             store=self.store,
-            bridge=self.bridge,   # kann None sein -> Tab handled das
+            ros=self.ros,  # kann None sein -> Tab handled das
         )
         tabs.addTab(self.serviceRobotTab, "Robot")
 
@@ -64,13 +77,13 @@ class MainWindow(QMainWindow):
         self.serviceSignalsTab = PlcTab(
             ctx=self.ctx,
             store=self.store,
-            bridge=self.bridge,
+            ros=self.ros,
             plc=self.plc,
         )
         tabs.addTab(self.serviceSignalsTab, "Plc")
 
-        # 6) System
-        self.systemTab = SystemTab(ctx=self.ctx, bridge=self.bridge)
+        # 5) System
+        self.systemTab = SystemTab(ctx=self.ctx)
         tabs.addTab(self.systemTab, "System")
 
         self.setCentralWidget(tabs)
@@ -79,6 +92,9 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self.center_on_primary)
 
     def attach_preview_widget(self, host_widget):
+        """
+        RecipeTab gibt uns ein Host-Widget; wir hängen den gemeinsamen QtInteractor dort ein.
+        """
         try:
             ly = host_widget.layout()
             if ly is None:
@@ -91,6 +107,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
+            # optional: Parent-Panel mit set_interactor(...) updaten
             panel = host_widget
             while panel is not None and not hasattr(panel, "set_interactor"):
                 panel = panel.parent()
@@ -125,23 +142,29 @@ class MainWindow(QMainWindow):
             _LOG.exception("center_on_primary failed")
 
     def closeEvent(self, event):
+        # 1) stop ROS bridge
         try:
-            if self.bridge and getattr(self.bridge, "is_connected", False):
-                self.bridge.shutdown()
+            if self.ros is not None:
+                try:
+                    self.ros.stop()
+                except Exception:
+                    _LOG.exception("RosBridge stop failed")
         except Exception:
             pass
 
+        # 2) PLC disconnect
         try:
-            if self.plc is not None and self.plc.is_connected:
+            if self.plc is not None and getattr(self.plc, "is_connected", False):
                 self.plc.disconnect()
         except Exception:
-            pass
+            _LOG.exception("PLC disconnect failed")
 
+        # 3) bringup shutdown (optional)
         try:
             from ros.ros_launcher import BRINGUP_RUNNING, shutdown_bringup
             if BRINGUP_RUNNING():
                 shutdown_bringup()
         except Exception:
-            pass
+            _LOG.exception("bringup shutdown failed")
 
         super().closeEvent(event)

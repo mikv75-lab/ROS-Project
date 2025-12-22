@@ -43,7 +43,7 @@ class MoveItPyWidget(QWidget):
         self,
         *,
         store: RecipeStore,
-        bridge=None,
+        ros=None,
         parent: Optional[QWidget] = None,
     ):
         if store is None:
@@ -51,7 +51,7 @@ class MoveItPyWidget(QWidget):
         super().__init__(parent)
 
         self.store: RecipeStore = store
-        self.bridge = None
+        self.ros = None
 
         # Debounce für Planner-Config (UI-Änderungen im PlannerGroupBox)
         self._planner_emit_timer = QTimer(self)
@@ -62,8 +62,8 @@ class MoveItPyWidget(QWidget):
         self._build_ui()
         self._install_planner_change_watchdog()
 
-        if bridge is not None:
-            self.set_bridge(bridge)
+        if ros is not None:
+            self.set_ros(ros)
 
     # ------------------------------------------------------------------ UI
 
@@ -119,23 +119,23 @@ class MoveItPyWidget(QWidget):
 
     # ------------------------------------------------------------------ Bridge
 
-    def set_bridge(self, bridge) -> None:
+    def set_ros(self, ros) -> None:
         """
-        Setzt/tauscht die Bridge und verdrahtet die Widget-Signale nach außen.
-        Erwartung: bridge.moveitpy_bridge.signals ist vorhanden.
+        Setzt/tauscht die RosBridge und verdrahtet die Widget-Signale nach außen.
+        Erwartung: ros.moveitpy.signals ist vorhanden.
         """
-        self.bridge = bridge
-        self._wire_outbound_to_bridge()
+        self.ros = ros
+        self._wire_outbound_to_ros()
 
         # Direkt nach dem Verdrahten einmal den aktuellen Zustand pushen
         self.motionSpeedChanged.emit(self.get_motion_speed_mm_s())
         self._emit_planner_cfg()
 
-    def _wire_outbound_to_bridge(self) -> None:
-        if self.bridge is None:
+    def _wire_outbound_to_ros(self) -> None:
+        if self.ros is None:
             return
 
-        moveitpy_bridge = getattr(self.bridge, "moveitpy_bridge", None)
+        moveitpy_bridge = getattr(self.ros, "moveitpy", None)
         if moveitpy_bridge is None:
             return
 

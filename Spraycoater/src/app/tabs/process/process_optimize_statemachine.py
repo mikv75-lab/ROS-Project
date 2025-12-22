@@ -68,7 +68,7 @@ class ProcessOptimizeStatemachine(QtCore.QObject):
         super().__init__(parent)
 
         self._run_yaml_path = run_yaml_path
-        self._ui = bridge
+        self._ros = bridge
 
         self._max_retries = int(max_retries)
         self._skip_home = bool(skip_home)
@@ -88,7 +88,7 @@ class ProcessOptimizeStatemachine(QtCore.QObject):
         self._segments_pts: Dict[str, List[Dict[str, Any]]] = {}
         self._segments_traj: Dict[str, JointTrajectory] = {}
 
-        self._moveitpy_bridge = getattr(self._ui, "moveitpy_bridge", None)
+        self._moveitpy_bridge = getattr(self._ros, "moveitpy_bridge", None)
         self._moveitpy_signals = getattr(self._moveitpy_bridge, "signals", None)
 
         self._log_handler: Optional[_QtSignalHandler] = _QtSignalHandler(self)
@@ -370,16 +370,16 @@ class ProcessOptimizeStatemachine(QtCore.QObject):
 
     def _execute_joint_traj(self, jt: JointTrajectory) -> bool:
         for fn in ("moveit_execute_joint_trajectory", "moveit_execute_trajectory", "moveit_execute"):
-            if hasattr(self._ui, fn):
+            if hasattr(self._ros, fn):
                 try:
-                    getattr(self._ui, fn)(jt)
+                    getattr(self._ros, fn)(jt)
                     _LOG.info("Optimize: execute via %s()", fn)
                     return True
                 except Exception as e:
                     self._error_msg = f"{fn} failed: {e}"
                     _LOG.exception("Optimize: %s", self._error_msg)
                     return False
-        self._error_msg = "UIBridge hat keine Execute-Methode (moveit_execute_*)."
+        self._error_msg = "RosBridge hat keine Execute-Methode (moveit_execute_*)."
         _LOG.error("Optimize: %s", self._error_msg)
         return False
 
@@ -445,9 +445,9 @@ class ProcessOptimizeStatemachine(QtCore.QObject):
         self._cleanup()
 
     def _call_ui(self, name: str, *args, **kwargs):
-        if hasattr(self._ui, name):
+        if hasattr(self._ros, name):
             try:
-                return getattr(self._ui, name)(*args, **kwargs)
+                return getattr(self._ros, name)(*args, **kwargs)
             except Exception:
                 return None
         return None

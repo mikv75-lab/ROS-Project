@@ -44,23 +44,53 @@ def _clear_layout(layout: QLayout) -> None:
             del sp
 
 
-def _find_servo_bridge(bridge: Any, *, log_prefix: str):
+def _find_servo_bridge(ros: Any, *, log_prefix: str):
     """
-    Robust: findet ServoBridge unabhängig davon ob neue Property-API oder _servo verwendet wird.
-    Erwartet auf Bridge-Seite: .servo_bridge (Property) oder ._servo (fallback), jeweils mit .signals.
+    Findet den Servo-Node/Bridge auf der neuen RosBridge.
+
+    Erwartet (bevorzugt):
+      - ros.servo (ServoBridge Node) mit .signals
+    Optional (legacy):
+      - ros.servo_bridge
+      - ros._servo
     """
-    if bridge is None:
-        _LOG.warning("[%s] bridge=None -> ServoBridge wiring skipped.", log_prefix)
+    if ros is None:
+        _LOG.warning("[%s] ros=None -> Servo wiring skipped.", log_prefix)
         return None
 
-    ensure = getattr(bridge, "ensure_connected", None)
+    ensure = getattr(ros, "ensure_connected", None)
+    if callable(ensure):
+        try:
+            ensure()
+        except Exception as e:
+            _LOG.warning("[%s] ros.ensure_connected() failed: %s", log_prefix, e)
+
+    for attr in ("servo", "servo_bridge"):
+        if hasattr(ros, attr):
+            try:
+                b = getattr(ros, attr)
+                sig = getattr(b, "signals", None) if b is not None else None
+                if sig is not None:
+                    return b
+            except Exception as e:
+                _LOG.exception("[%s] error accessing ros.%s: %s", log_prefix, attr, e)
+
+    b = getattr(ros, "_servo", None)
+    if b is not None and getattr(b, "signals", None) is not None:
+        _LOG.info("[%s] Servo found via ros._servo (fallback).", log_prefix)
+        return b
+
+    _LOG.error("[%s] No Servo found on RosBridge.", log_prefix)
+    return None
+
+    ensure = getattr(ros, "ensure_connected", None)
     if callable(ensure):
         try:
             ensure()
         except Exception as e:
             _LOG.warning("[%s] bridge.ensure_connected() failed: %s", log_prefix, e)
 
-    if hasattr(bridge, "servo_bridge"):
+    if hasattr(ros, "servo") or hasattr(ros, "servo_bridge"):
         try:
             b = bridge.servo_bridge
             sig = getattr(b, "signals", None)
@@ -94,11 +124,11 @@ class JointJogWidget(QWidget):
     paramsChanged = QtCore.pyqtSignal(dict)
     jointJogRequested = QtCore.pyqtSignal(str, float, float)  # joint_name, delta_deg, speed_pct
 
-    def __init__(self, ctx, bridge=None, parent: Optional[QWidget] = None):
+    def __init__(self, ctx, ros=None, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
         self.content = getattr(ctx, "content", None)
-        self.bridge = bridge  # UIBridge (optional)
+        self.ros = ros  # RosBridge (optional)
 
         self._servo_wired: bool = False
         self._wired_warned: bool = False
@@ -151,7 +181,7 @@ class JointJogWidget(QWidget):
             return
 
         self._wire_tries += 1
-        servo_bridge = _find_servo_bridge(self.bridge, log_prefix="JointJogWidget")
+        servo_bridge = _find_servo_bridge(self.ros, log_prefix="JointJogWidget")
         if servo_bridge is None:
             if self._wire_tries < 40:
                 self._schedule_retry()
@@ -379,11 +409,11 @@ class CartesianJogWidget(QWidget):
     paramsChanged = QtCore.pyqtSignal(dict)
     cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)  # axis, delta, speed, frame
 
-    def __init__(self, ctx, bridge=None, parent: Optional[QWidget] = None):
+    def __init__(self, ctx, ros=None, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
         self.content = getattr(ctx, "content", None)
-        self.bridge = bridge  # UIBridge (optional)
+        self.ros = ros  # RosBridge (optional)
 
         self._servo_wired: bool = False
         self._wired_warned: bool = False
@@ -425,7 +455,7 @@ class CartesianJogWidget(QWidget):
             return
 
         self._wire_tries += 1
-        servo_bridge = _find_servo_bridge(self.bridge, log_prefix="CartesianJogWidget")
+        servo_bridge = _find_servo_bridge(self.ros, log_prefix="CartesianJogWidget")
         if servo_bridge is None:
             if self._wire_tries < 40:
                 self._schedule_retry()

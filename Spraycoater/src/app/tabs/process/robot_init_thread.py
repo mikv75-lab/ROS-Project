@@ -2,29 +2,31 @@
 # File: tabs/process/robot_init_thread.py
 from __future__ import annotations
 
-import math
-from typing import Optional
+import logging
+from typing import Optional, Any
 
 from PyQt6 import QtCore
-from geometry_msgs.msg import PoseStamped
+from PyQt6.QtCore import QCoreApplication
+
+from .robot_init_statemachine import RobotInitStatemachine
+
+_LOG = logging.getLogger("app.tabs.process.robot_init_thread")
 
 
-class RobotInitThread(QtCore.QThread):
+class RobotInitThread(QtCore.QObject):
     """
-    Hintergrund-Thread für die Robot-Initialisierung.
+    Persistent Worker + QThread (nur RosBridge).
 
-    Ablauf:
-      1) Wenn der RobotState noch nicht "initialized" ist:
-         - bridge.robot_init() auslösen
-         - dann bis zum Timeout auf RobotState.initialized() == True warten
-      2) Wenn der TCP noch nicht an der Home-Pose ist:
-         - bridge.moveit_move_home() auslösen
-         - dann bis zum Timeout warten, bis TCP und Home-Pose innerhalb Toleranz sind
-         - bricht zusätzlich ab, wenn ein Motion-Fehler gemeldet wird
+    - QThread läuft dauerhaft (einmal gestartet)
+    - Worker wird einmal erzeugt und lebt im QThread
+    - startSignal triggert einen Run (wenn nicht bereits running)
+    - stopSignal bricht den Run ab (ohne RosBridge zu zerstören!)
 
-    Stop:
-      - stopSignal / request_stop setzt ein Flag
-      - zusätzlich: bridge.stop() (zentral)
+    API:
+      - startSignal.emit() -> startet Run
+      - stopSignal.emit()  -> stoppt Run
+      - request_stop()     -> stoppt Run
+      - isRunning()        -> ob Run aktiv ist
     """
 
     startSignal = QtCore.pyqtSignal()
@@ -33,213 +35,206 @@ class RobotInitThread(QtCore.QThread):
     notifyFinished = QtCore.pyqtSignal()
     notifyError = QtCore.pyqtSignal(str)
 
+    stateChanged = QtCore.pyqtSignal(str)
+    logMessage = QtCore.pyqtSignal(str)
+
+    finished = QtCore.pyqtSignal()
+
     def __init__(
         self,
         *,
-        bridge,
+        ros: Any,
         parent: Optional[QtCore.QObject] = None,
         init_timeout_s: float = 10.0,
         home_timeout_s: float = 60.0,
         pos_tol_mm: float = 1.0,
     ) -> None:
-        """
-        bridge: UIBridge-Instanz, über die alle Aktionen/States laufen.
-
-        Genutzt werden:
-          - bridge.ensure_connected()
-          - bridge.stop()                 # zentraler Stop
-          - bridge.robot_init()
-          - bridge.moveit_move_home()
-          - bridge.moveit_last_result()
-          - bridge.robot (RobotState): initialized(), tcp_pose()
-          - bridge.poses (PosesState): home()
-        """
         super().__init__(parent)
 
-        self._bridge = bridge
-        self._bridge.ensure_connected()
+        if ros is None:
+            raise ValueError("RobotInitThread: ros ist None")
 
-        self._robot_state = self._bridge.robot
-        self._poses_state = self._bridge.poses
-
+        self._ros = ros
         self._init_timeout_s = float(init_timeout_s)
         self._home_timeout_s = float(home_timeout_s)
         self._pos_tol_mm = float(pos_tol_mm)
 
-        self._stop_requested: bool = False
-        self._error_msg: Optional[str] = None
+        self._thread = QtCore.QThread()
+        self._worker: Optional[RobotInitStatemachine] = None
+        self._running: bool = False
 
         self.startSignal.connect(self._on_start_signal)
-        self.stopSignal.connect(self.request_stop)
+        self.stopSignal.connect(self._on_stop_signal)
+        self._thread.finished.connect(self._on_thread_finished)
 
-    # ------------------------------------------------------------------
-    # Public API (Slots)
-    # ------------------------------------------------------------------
+        app = QCoreApplication.instance()
+        if app is not None:
+            try:
+                app.aboutToQuit.connect(self._on_app_about_to_quit)
+            except Exception:
+                pass
 
-    def _on_start_signal(self) -> None:
-        if not self.isRunning():
-            self.start()
+        self._start_thread_if_needed()
+        self._create_worker_once()
+
+        _LOG.info(
+            "RobotInitThread init (ros-only): init_timeout=%.1fs home_timeout=%.1fs tol=%.2fmm",
+            self._init_timeout_s,
+            self._home_timeout_s,
+            self._pos_tol_mm,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Lifecycle
+    # ------------------------------------------------------------------ #
+
+    def _start_thread_if_needed(self) -> None:
+        if not self._thread.isRunning():
+            _LOG.info("RobotInitThread: starte QThread (persistent).")
+            self._thread.start()
+
+    def _create_worker_once(self) -> None:
+        if self._worker is not None:
+            return
+
+        worker = RobotInitStatemachine(
+            ros=self._ros,
+            init_timeout_s=self._init_timeout_s,
+            home_timeout_s=self._home_timeout_s,
+            pos_tol_mm=self._pos_tol_mm,
+        )
+        worker.moveToThread(self._thread)
+
+        # Worker -> UI
+        worker.stateChanged.connect(self.stateChanged)
+        worker.logMessage.connect(self.logMessage)
+        worker.notifyFinished.connect(self._on_worker_finished)
+        worker.notifyError.connect(self._on_worker_error)
+
+        self._worker = worker
+
+    # ------------------------------------------------------------------ #
+    # Public API
+    # ------------------------------------------------------------------ #
+
+    def isRunning(self) -> bool:
+        return self._running
 
     def request_stop(self) -> None:
-        self._stop_requested = True
-        self._bridge.stop()
+        w = self._worker
+        if w is None:
+            return
+        QtCore.QMetaObject.invokeMethod(
+            w,
+            "request_stop",
+            QtCore.Qt.ConnectionType.QueuedConnection,
+        )
 
-    def _should_stop(self) -> bool:
-        return self._stop_requested
+    def wait(self, timeout_ms: int = 2000) -> None:
+        try:
+            self._thread.wait(timeout_ms)
+        except Exception:
+            _LOG.exception("RobotInitThread.wait: Fehler beim Warten.")
 
-    # ------------------------------------------------------------------
-    # Motion-Error Handling (über UIBridge API)
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ #
+    # Slots start / stop
+    # ------------------------------------------------------------------ #
 
-    def _last_motion_result(self) -> str:
-        return (self._bridge.moveit_last_result() or "").strip()
+    @QtCore.pyqtSlot()
+    def _on_start_signal(self) -> None:
+        self._start_thread_if_needed()
+        self._create_worker_once()
 
-    def _has_motion_error(self) -> bool:
-        res = self._last_motion_result().upper()
-        if not res:
-            return False
-        return res.startswith("ERROR") or ("EXECUTE_FAILED" in res)
+        if self._running:
+            _LOG.info("RobotInitThread: Start ignoriert (läuft bereits).")
+            return
 
-    # ------------------------------------------------------------------
-    # QThread.run – Ablauf Init + Home
-    # ------------------------------------------------------------------
+        if self._worker is None:
+            self.notifyError.emit("RobotInitThread: Worker fehlt.")
+            return
 
-    def run(self) -> None:
-        self._stop_requested = False
-        self._error_msg = None
+        self._running = True
+        QtCore.QMetaObject.invokeMethod(
+            self._worker,
+            "start",
+            QtCore.Qt.ConnectionType.QueuedConnection,
+        )
+
+    @QtCore.pyqtSlot()
+    def _on_stop_signal(self) -> None:
+        self.request_stop()
+
+    # ------------------------------------------------------------------ #
+    # Worker callbacks
+    # ------------------------------------------------------------------ #
+
+    @QtCore.pyqtSlot()
+    def _on_worker_finished(self) -> None:
+        self._running = False
+        self.notifyFinished.emit()
+
+    @QtCore.pyqtSlot(str)
+    def _on_worker_error(self, msg: str) -> None:
+        self._running = False
+        self.notifyError.emit(msg)
+
+    # ------------------------------------------------------------------ #
+    # Thread / App shutdown
+    # ------------------------------------------------------------------ #
+
+    @QtCore.pyqtSlot()
+    def _on_thread_finished(self) -> None:
+        _LOG.info("RobotInitThread: QThread beendet.")
+        try:
+            self.finished.emit()
+        except Exception:
+            pass
+
+    @QtCore.pyqtSlot()
+    def _on_app_about_to_quit(self) -> None:
+        _LOG.info("RobotInitThread: aboutToQuit – stoppe Worker/Thread.")
+        try:
+            self.request_stop()
+        except Exception:
+            pass
 
         try:
-            # Schritt 1: Init (nur wenn nötig)
-            if self._should_stop():
-                return
+            if self._thread.isRunning():
+                self._thread.quit()
+                self._thread.wait(5000)
+        except Exception:
+            _LOG.exception("RobotInitThread._on_app_about_to_quit: Fehler beim Thread-Shutdown.")
 
-            if not self._is_initialized():
-                self._send_init()
-                if not self._wait_for_initialized(self._init_timeout_s):
-                    self._error_msg = (
-                        f"Robot-Init: Timeout nach {self._init_timeout_s:.1f} s "
-                        "beim Warten auf 'initialized'."
-                    )
-                    return
+        try:
+            if self._worker is not None:
+                self._worker.deleteLater()
+        except Exception:
+            pass
+        self._worker = None
 
-            if self._should_stop():
-                return
+    def deleteLater(self) -> None:
+        try:
+            self.request_stop()
+        except Exception:
+            pass
 
-            # Schritt 2: Home (nur wenn nötig)
-            if not self._is_at_home():
-                self._send_home()
+        try:
+            if self._thread.isRunning():
+                self._thread.quit()
+                self._thread.wait(5000)
+        except Exception:
+            _LOG.exception("RobotInitThread.deleteLater: Fehler beim Thread-Shutdown.")
 
-                if not self._wait_for_home(self._home_timeout_s):
-                    if not self._error_msg:
-                        self._error_msg = (
-                            f"Robot-Init: Timeout nach {self._home_timeout_s:.1f} s "
-                            "beim Anfahren der Home-Pose (TCP ≉ Home-Pose)."
-                        )
-                    return
+        try:
+            if self._worker is not None:
+                self._worker.deleteLater()
+        except Exception:
+            pass
+        self._worker = None
 
-        except Exception as e:
-            self._error_msg = str(e)
-        finally:
-            if self._error_msg or self._should_stop():
-                if not self._error_msg and self._should_stop():
-                    self._error_msg = "Robot-Init abgebrochen."
-                self.notifyError.emit(self._error_msg or "Unbekannter Fehler.")
-            else:
-                self.notifyFinished.emit()
+        try:
+            self._thread.deleteLater()
+        except Exception:
+            pass
 
-    # ------------------------------------------------------------------
-    # Schritt 1: Init
-    # ------------------------------------------------------------------
-
-    def _is_initialized(self) -> bool:
-        return bool(self._robot_state.initialized())
-
-    def _send_init(self) -> None:
-        self._bridge.robot_init()
-
-    def _wait_for_initialized(self, timeout_s: float) -> bool:
-        if timeout_s <= 0.0:
-            return self._is_initialized()
-
-        step_ms = 50
-        max_ms = int(timeout_s * 1000.0)
-        elapsed_ms = 0
-
-        while elapsed_ms < max_ms:
-            if self._should_stop():
-                return False
-            if self._is_initialized():
-                return True
-            self.msleep(step_ms)
-            elapsed_ms += step_ms
-
-        return self._is_initialized()
-
-    # ------------------------------------------------------------------
-    # Schritt 2: Home (Pose-basierter Check)
-    # ------------------------------------------------------------------
-
-    def _get_tcp_pose(self) -> Optional[PoseStamped]:
-        pose = self._robot_state.tcp_pose()
-        return pose if isinstance(pose, PoseStamped) else None
-
-    def _get_home_pose(self) -> Optional[PoseStamped]:
-        pose = self._poses_state.home()
-        return pose if isinstance(pose, PoseStamped) else None
-
-    @staticmethod
-    def _poses_close(a: PoseStamped, b: PoseStamped, pos_tol_mm: float) -> bool:
-        dx = float(a.pose.position.x) - float(b.pose.position.x)
-        dy = float(a.pose.position.y) - float(b.pose.position.y)
-        dz = float(a.pose.position.z) - float(b.pose.position.z)
-
-        dist_m = math.sqrt(dx * dx + dy * dy + dz * dz)
-        dist_mm = dist_m * 1000.0
-        return dist_mm <= pos_tol_mm
-
-    def _is_at_home(self) -> bool:
-        cur = self._get_tcp_pose()
-        home = self._get_home_pose()
-        if cur is None or home is None:
-            return False
-        return self._poses_close(cur, home, self._pos_tol_mm)
-
-    def _send_home(self) -> None:
-        self._bridge.moveit_move_home()
-
-    def _wait_for_home(self, timeout_s: float) -> bool:
-        if timeout_s <= 0.0:
-            return self._is_at_home()
-
-        step_ms = 50
-        max_ms = int(timeout_s * 1000.0)
-        elapsed_ms = 0
-
-        while elapsed_ms < max_ms:
-            if self._should_stop():
-                return False
-
-            if self._has_motion_error():
-                if not self._error_msg:
-                    self._error_msg = (
-                        "Robot-Init: Fehler beim Anfahren der Home-Pose: "
-                        f"{self._last_motion_result() or 'EXECUTE_FAILED'}"
-                    )
-                return False
-
-            if self._is_at_home():
-                return True
-
-            self.msleep(step_ms)
-            elapsed_ms += step_ms
-
-        if self._is_at_home():
-            return True
-
-        if self._has_motion_error() and not self._error_msg:
-            self._error_msg = (
-                "Robot-Init: Fehler beim Anfahren der Home-Pose (nach Timeout): "
-                f"{self._last_motion_result() or 'EXECUTE_FAILED'}"
-            )
-
-        return False
+        super().deleteLater()
