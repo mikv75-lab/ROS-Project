@@ -113,26 +113,64 @@ class PosesState:
 
 
 class SprayPathState:
+    """
+    Vollständiger Cache für alle SprayPathBridge Inbound-Signale.
+    """
+
     def __init__(self) -> None:
         self._lock = threading.RLock()
-        self._current_name: str = ""
-        self._poses: Optional[PoseArray] = None
 
-    def _set_current_name(self, name: str) -> None:
+        self._current: str = ""
+
+        self._poses: Optional[PoseArray] = None
+        self._markers: Optional[MarkerArray] = None
+
+        self._executed_poses: Optional[PoseArray] = None
+        self._executed_markers: Optional[MarkerArray] = None
+
+    # --- setters (wired from Qt signals) ---
+
+    def _set_current(self, name: str) -> None:
         with self._lock:
-            self._current_name = name
+            self._current = str(name or "")
 
     def _set_poses(self, pa: PoseArray) -> None:
         with self._lock:
             self._poses = pa
 
-    def current_name(self) -> str:
+    def _set_markers(self, ma: MarkerArray) -> None:
         with self._lock:
-            return self._current_name
+            self._markers = ma
+
+    def _set_executed_poses(self, pa: PoseArray) -> None:
+        with self._lock:
+            self._executed_poses = pa
+
+    def _set_executed_markers(self, ma: MarkerArray) -> None:
+        with self._lock:
+            self._executed_markers = ma
+
+    # --- getters ---
+
+    def current(self) -> str:
+        with self._lock:
+            return self._current
 
     def poses(self) -> Optional[PoseArray]:
         with self._lock:
             return self._poses
+
+    def markers(self) -> Optional[MarkerArray]:
+        with self._lock:
+            return self._markers
+
+    def executed_poses(self) -> Optional[PoseArray]:
+        with self._lock:
+            return self._executed_poses
+
+    def executed_markers(self) -> Optional[MarkerArray]:
+        with self._lock:
+            return self._executed_markers
 
 
 class RobotState:
@@ -468,8 +506,11 @@ class RosBridge:
 
         if self.spray is not None:
             sig = self.spray.signals
-            sig.currentNameChanged.connect(self.spraypath_state._set_current_name)
+            sig.currentChanged.connect(self.spraypath_state._set_current)
             sig.posesChanged.connect(self.spraypath_state._set_poses)
+            sig.markersChanged.connect(self.spraypath_state._set_markers)
+            sig.executedPosesChanged.connect(self.spraypath_state._set_executed_poses)
+            sig.executedMarkersChanged.connect(self.spraypath_state._set_executed_markers)
 
         if self.robot is not None:
             sig = self.robot.signals
@@ -541,14 +582,41 @@ class RosBridge:
         if self.poses is not None:
             self.poses.set_service()
 
-    # SprayPath
-    def set_spraypath(self, marker_array: MarkerArray) -> None:
+    # SprayPath (New API)
+    def spray_set_view(self, view_key: str) -> None:
         if self.spray is not None:
-            self.spray.publish_set(marker_array)
+            self.spray.publish_set_view(view_key)
+
+    def spray_set_compiled(self, *, poses: PoseArray | None = None, markers: MarkerArray | None = None) -> None:
+        if self.spray is None:
+            return
+        if poses is not None:
+            self.spray.publish_compiled_poses(poses)
+        if markers is not None:
+            self.spray.publish_compiled_markers(markers)
+
+    def spray_set_traj(self, *, poses: PoseArray | None = None, markers: MarkerArray | None = None) -> None:
+        if self.spray is None:
+            return
+        if poses is not None:
+            self.spray.publish_traj_poses(poses)
+        if markers is not None:
+            self.spray.publish_traj_markers(markers)
+
+    def spray_set_executed(self, *, poses: PoseArray | None = None, markers: MarkerArray | None = None) -> None:
+        if self.spray is None:
+            return
+        if poses is not None:
+            self.spray.publish_executed_poses(poses)
+        if markers is not None:
+            self.spray.publish_executed_markers(markers)
+
+    # Legacy wrappers (optional, keep old calls working)
+    def set_spraypath(self, marker_array: MarkerArray) -> None:
+        self.spray_set_compiled(markers=marker_array)
 
     def set_executed_path(self, pose_array: PoseArray) -> None:
-        if self.spray is not None:
-            self.spray.publish_executed_path(pose_array)
+        self.spray_set_executed(poses=pose_array)
 
     # Robot
     def robot_init(self) -> None:
