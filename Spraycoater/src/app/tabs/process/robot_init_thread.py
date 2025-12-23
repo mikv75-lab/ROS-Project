@@ -15,18 +15,12 @@ _LOG = logging.getLogger("app.tabs.process.robot_init_thread")
 
 class RobotInitThread(QtCore.QObject):
     """
-    Persistent Worker + QThread (nur RosBridge).
+    Persistent Worker + QThread (Ros-only)
 
-    - QThread läuft dauerhaft (einmal gestartet)
-    - Worker wird einmal erzeugt und lebt im QThread
-    - startSignal triggert einen Run (wenn nicht bereits running)
-    - stopSignal bricht den Run ab (ohne RosBridge zu zerstören!)
-
-    API:
-      - startSignal.emit() -> startet Run
-      - stopSignal.emit()  -> stoppt Run
-      - request_stop()     -> stoppt Run
-      - isRunning()        -> ob Run aktiv ist
+    - Thread läuft dauerhaft
+    - Worker einmal erzeugt
+    - startSignal triggert Run (wenn nicht running)
+    - stopSignal/request_stop bricht Run ab (ohne ros.stop())
     """
 
     startSignal = QtCore.pyqtSignal()
@@ -59,7 +53,9 @@ class RobotInitThread(QtCore.QObject):
         self._home_timeout_s = float(home_timeout_s)
         self._pos_tol_mm = float(pos_tol_mm)
 
-        self._thread = QtCore.QThread()
+        # Ownership sauber
+        self._thread = QtCore.QThread(self)
+
         self._worker: Optional[RobotInitStatemachine] = None
         self._running: bool = False
 
@@ -78,15 +74,11 @@ class RobotInitThread(QtCore.QObject):
         self._create_worker_once()
 
         _LOG.info(
-            "RobotInitThread init (ros-only): init_timeout=%.1fs home_timeout=%.1fs tol=%.2fmm",
+            "RobotInitThread init: init_timeout=%.1fs home_timeout=%.1fs tol=%.2fmm",
             self._init_timeout_s,
             self._home_timeout_s,
             self._pos_tol_mm,
         )
-
-    # ------------------------------------------------------------------ #
-    # Lifecycle
-    # ------------------------------------------------------------------ #
 
     def _start_thread_if_needed(self) -> None:
         if not self._thread.isRunning():
@@ -105,7 +97,6 @@ class RobotInitThread(QtCore.QObject):
         )
         worker.moveToThread(self._thread)
 
-        # Worker -> UI
         worker.stateChanged.connect(self.stateChanged)
         worker.logMessage.connect(self.logMessage)
         worker.notifyFinished.connect(self._on_worker_finished)
@@ -113,9 +104,7 @@ class RobotInitThread(QtCore.QObject):
 
         self._worker = worker
 
-    # ------------------------------------------------------------------ #
-    # Public API
-    # ------------------------------------------------------------------ #
+    # ---------------- Public API ----------------
 
     def isRunning(self) -> bool:
         return self._running
@@ -136,9 +125,7 @@ class RobotInitThread(QtCore.QObject):
         except Exception:
             _LOG.exception("RobotInitThread.wait: Fehler beim Warten.")
 
-    # ------------------------------------------------------------------ #
-    # Slots start / stop
-    # ------------------------------------------------------------------ #
+    # ---------------- Slots ----------------
 
     @QtCore.pyqtSlot()
     def _on_start_signal(self) -> None:
@@ -164,9 +151,7 @@ class RobotInitThread(QtCore.QObject):
     def _on_stop_signal(self) -> None:
         self.request_stop()
 
-    # ------------------------------------------------------------------ #
-    # Worker callbacks
-    # ------------------------------------------------------------------ #
+    # ---------------- Worker callbacks ----------------
 
     @QtCore.pyqtSlot()
     def _on_worker_finished(self) -> None:
@@ -178,9 +163,7 @@ class RobotInitThread(QtCore.QObject):
         self._running = False
         self.notifyError.emit(msg)
 
-    # ------------------------------------------------------------------ #
-    # Thread / App shutdown
-    # ------------------------------------------------------------------ #
+    # ---------------- Shutdown ----------------
 
     @QtCore.pyqtSlot()
     def _on_thread_finished(self) -> None:

@@ -16,20 +16,18 @@ _LOG = logging.getLogger("app.tabs.process.robot_init_sm")
 
 class RobotInitStatemachine(QtCore.QObject):
     """
-    Worker-Statemachine für Robot Init + Home.
+    Robot Init + Home (Run-once Worker)
 
-    Clean Contract:
-      - nutzt ausschließlich die RosBridge High-Level API
-      - liest ausschließlich States über ros.robot_state / ros.poses_state
-      - STOP: darf NICHT ros.stop() aufrufen (das zerstört rclpy-Nodes / Destroyable)
-        Stattdessen: laufende Motion/Robot stoppen und die Statemachine abbrechen.
+    Contract:
+      - nutzt NUR RosBridge High-Level API
+      - liest NUR über ros.robot_state / ros.poses_state
+      - STOP darf NICHT ros.stop() aufrufen (keine Node-Destroy!)
+        -> best effort: motion stop + robot stop, dann Run abbrechen
 
     Ablauf:
-      A) FETCH_HOME: fordert Home-Pose an (ros.set_home()) und wartet kurz,
-         bis poses.home() verfügbar ist (oder timeout)
-      B) INIT: falls nicht initialized -> ros.robot_init(), warten bis initialized True (oder timeout)
-      C) HOME: falls TCP nicht an Home -> ros.moveit_move_home() (named),
-         warten bis TCP≈Home oder timeout; bricht ab bei moveit_last_result ERROR
+      1) FETCH_HOME: ros.set_home(), kurz warten bis poses_state.home() verfügbar (timeout)
+      2) INIT: falls !initialized -> ros.robot_init(), warten bis initialized True (timeout)
+      3) HOME: falls TCP nicht an Home -> ros.moveit_move_home(), warten bis TCP≈Home (timeout / moveit error)
     """
 
     notifyFinished = QtCore.pyqtSignal()
@@ -59,42 +57,34 @@ class RobotInitStatemachine(QtCore.QObject):
         parent: Optional[QtCore.QObject] = None,
     ) -> None:
         super().__init__(parent)
-        self._b = ros
-
-        # Bridge starten (aber niemals hier wieder stoppen/zerstören)
-        try:
-            if hasattr(self._b, "ensure_connected"):
-                self._b.ensure_connected()
-            elif hasattr(self._b, "start") and not getattr(self._b, "is_running", False):
-                self._b.start()
-        except Exception:
-            _LOG.exception("RobotInit: ensure_connected/start failed")
+        self._ros = ros
 
         self._init_timeout_s = float(init_timeout_s)
         self._home_timeout_s = float(home_timeout_s)
         self._pos_tol_mm = float(pos_tol_mm)
 
         self._stop_requested: bool = False
+        self._done: bool = False
+
         self._state: str = self.S_IDLE
         self._deadline_ms: int = 0
-        self._done: bool = False  # prevents double-finish
 
-        # run-once guards (per start-run)
-        self._home_requested_once: bool = False
-        self._init_sent_once: bool = False
-        self._home_sent_once: bool = False
+        # run-once flags
+        self._home_requested_once = False
+        self._init_sent_once = False
+        self._home_sent_once = False
 
+        # tick timer
         self._timer = QTimer(self)
         self._timer.setInterval(50)
         self._timer.timeout.connect(self._tick)
 
     # ------------------------------------------------------------------
-    # Qt slots
+    # Public slots
     # ------------------------------------------------------------------
 
     @QtCore.pyqtSlot()
     def start(self) -> None:
-        # reset run state
         self._stop_requested = False
         self._done = False
         self._deadline_ms = 0
@@ -108,37 +98,39 @@ class RobotInitStatemachine(QtCore.QObject):
             f"RobotInit: start (init_timeout={self._init_timeout_s:.1f}s, "
             f"home_timeout={self._home_timeout_s:.1f}s, tol={self._pos_tol_mm:.2f}mm)"
         )
+
         self._timer.start()
         self._tick()
 
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
         """
-        WICHTIG:
-        - NICHT ros.stop() aufrufen! Das zerstört Nodes (Destroyable) und danach geht nix mehr.
-        - Stattdessen: best-effort Stop von MoveIt/Robot + Statemachine abbrechen.
+        STOP = Run abbrechen, ohne RosBridge/Nodes zu zerstören.
         """
+        if self._done:
+            return
+
         self._stop_requested = True
         self._log("RobotInit: stop requested -> stopping motion/robot (NOT ros.stop())")
 
-        # Best-effort: MoveIt stoppen
+        # best effort stop: MoveIt
         try:
-            if hasattr(self._b, "stop_all"):
-                self._b.stop_all()
-            elif hasattr(self._b, "moveit_stop"):
-                self._b.moveit_stop()
+            if hasattr(self._ros, "stop_all"):
+                self._ros.stop_all()
+            elif hasattr(self._ros, "moveit_stop"):
+                self._ros.moveit_stop()
         except Exception:
             _LOG.exception("RobotInit: moveit stop failed")
 
-        # Best-effort: Robot stoppen
+        # best effort stop: Robot
         try:
-            if hasattr(self._b, "robot_stop"):
-                self._b.robot_stop()
+            if hasattr(self._ros, "robot_stop"):
+                self._ros.robot_stop()
         except Exception:
             _LOG.exception("RobotInit: robot_stop failed")
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Time helpers
     # ------------------------------------------------------------------
 
     def _now_ms(self) -> int:
@@ -149,6 +141,10 @@ class RobotInitStatemachine(QtCore.QObject):
 
     def _deadline_passed(self) -> bool:
         return self._deadline_ms > 0 and self._now_ms() >= self._deadline_ms
+
+    # ------------------------------------------------------------------
+    # State / log / finish
+    # ------------------------------------------------------------------
 
     def _set_state(self, s: str) -> None:
         if s != self._state:
@@ -187,57 +183,41 @@ class RobotInitStatemachine(QtCore.QObject):
         self.notifyError.emit("Robot-Init abgebrochen.")
 
     # ------------------------------------------------------------------
-    # Bridge guards
+    # Guards
     # ------------------------------------------------------------------
 
     def _bridge_alive(self) -> bool:
         try:
-            # RosBridge hat is_running property
-            return bool(getattr(self._b, "is_running", False))
+            return bool(getattr(self._ros, "is_running", False))
         except Exception:
             return False
 
     # ------------------------------------------------------------------
-    # State checks
+    # State reads
     # ------------------------------------------------------------------
 
     def _is_initialized(self) -> bool:
         try:
-            # in deiner neuen RosBridge: robot_state.initialized()
-            if hasattr(self._b, "robot_state"):
-                return bool(self._b.robot_state.initialized())
-            # fallback (falls du doch noch self._b.robot verwendest)
-            if hasattr(self._b, "robot") and self._b.robot is not None:
-                return bool(self._b.robot.initialized())
+            rs = getattr(self._ros, "robot_state", None)
+            return bool(rs.initialized()) if rs is not None else False
         except Exception:
             return False
-        return False
 
     def _get_tcp_pose(self) -> Optional[PoseStamped]:
         try:
-            if hasattr(self._b, "robot_state"):
-                pose = self._b.robot_state.tcp_pose()
-                return pose if isinstance(pose, PoseStamped) else None
-            if hasattr(self._b, "robot") and self._b.robot is not None:
-                pose = self._b.robot.tcp_pose()
-                return pose if isinstance(pose, PoseStamped) else None
+            rs = getattr(self._ros, "robot_state", None)
+            p = rs.tcp_pose() if rs is not None else None
+            return p if isinstance(p, PoseStamped) else None
         except Exception:
             return None
-        return None
 
     def _get_home_pose(self) -> Optional[PoseStamped]:
         try:
-            # in deiner neuen RosBridge: poses_state.home()
-            if hasattr(self._b, "poses_state"):
-                pose = self._b.poses_state.home()
-                return pose if isinstance(pose, PoseStamped) else None
-            # fallback: poses.home()
-            if hasattr(self._b, "poses") and self._b.poses is not None:
-                pose = self._b.poses.home()
-                return pose if isinstance(pose, PoseStamped) else None
+            ps = getattr(self._ros, "poses_state", None)
+            p = ps.home() if ps is not None else None
+            return p if isinstance(p, PoseStamped) else None
         except Exception:
             return None
-        return None
 
     def _poses_close(self, a: PoseStamped, b: PoseStamped) -> bool:
         dx = float(a.pose.position.x) - float(b.pose.position.x)
@@ -259,40 +239,26 @@ class RobotInitStatemachine(QtCore.QObject):
 
     def _last_motion_result(self) -> str:
         try:
-            if hasattr(self._b, "moveit_last_result"):
-                return (self._b.moveit_last_result() or "").strip()
+            if hasattr(self._ros, "moveit_last_result"):
+                return (self._ros.moveit_last_result() or "").strip()
         except Exception:
             return ""
         return ""
 
     def _has_motion_error(self) -> bool:
         res = self._last_motion_result().upper()
-        if not res:
-            return False
-        return res.startswith("ERROR") or ("EXECUTE_FAILED" in res)
-
-    def _clear_motion_result_cache_if_possible(self) -> None:
-        """
-        Optional: wenn du in MoveItPyBridge irgendwann 'clear last_result' einbaust.
-        Aktuell gibt's keine API dafür, also no-op.
-        """
-        return
+        return bool(res) and (res.startswith("ERROR") or "EXECUTE_FAILED" in res)
 
     # ------------------------------------------------------------------
-    # Actions
+    # Actions (run-once)
     # ------------------------------------------------------------------
 
     def _request_home_pose_once(self) -> None:
         if self._home_requested_once:
             return
         self._home_requested_once = True
-
-        if not self._bridge_alive():
-            self._log("RobotInit: warning: RosBridge not running -> cannot set_home()")
-            return
-
         try:
-            self._b.set_home()
+            self._ros.set_home()
         except Exception as e:
             self._log(f"RobotInit: warning: set_home() failed: {e}")
 
@@ -300,25 +266,15 @@ class RobotInitStatemachine(QtCore.QObject):
         if self._init_sent_once:
             return
         self._init_sent_once = True
-
-        if not self._bridge_alive():
-            raise RuntimeError("RosBridge not running (cannot robot_init)")
-
         self._log("RobotInit: sending robot_init()")
-        self._b.robot_init()
+        self._ros.robot_init()
 
-    def _send_home_once(self) -> None:
+    def _send_move_home_once(self) -> None:
         if self._home_sent_once:
             return
         self._home_sent_once = True
-
-        if not self._bridge_alive():
-            raise RuntimeError("RosBridge not running (cannot move home)")
-
-        self._clear_motion_result_cache_if_possible()
-        self._log("RobotInit: sending moveit_move_home() (named, via MoveItPyBridge)")
-        # erwartet: ros.moveit_move_home() existiert (wie in deinem Code)
-        self._b.moveit_move_home()
+        self._log("RobotInit: sending moveit_move_home()")
+        self._ros.moveit_move_home()
 
     # ------------------------------------------------------------------
     # Tick
@@ -330,18 +286,16 @@ class RobotInitStatemachine(QtCore.QObject):
             self._finish_stopped()
             return
 
-        # Wenn Bridge weg ist, sofort sauber abbrechen (statt Destroyable-Errors zu spammen)
         if not self._bridge_alive():
             self._finish_err("RosBridge läuft nicht (wurde gestoppt/zerstört).")
             return
 
-        # A) Ensure home pose is available (so comparisons work deterministically)
+        # 1) Fetch home pose (best effort, aber HOME-Fahrt braucht sie)
         if self._state in (self.S_FETCH_HOME, self.S_WAIT_HOME_AVAILABLE):
             self._request_home_pose_once()
 
             if self._state == self.S_FETCH_HOME:
                 self._set_state(self.S_WAIT_HOME_AVAILABLE)
-                # give it a short budget to arrive (separate from init/home timeouts)
                 self._set_deadline(2.0)
 
             if self._get_home_pose() is not None:
@@ -349,14 +303,13 @@ class RobotInitStatemachine(QtCore.QObject):
                 self._set_state(self.S_IDLE)
                 self._deadline_ms = 0
             elif self._deadline_passed():
-                # not fatal: we can still continue, but home-check will be false until pose arrives
-                self._log("RobotInit: warning: home pose not available yet (continuing anyway)")
+                self._log("RobotInit: warning: home pose not available yet (continuing)")
                 self._set_state(self.S_IDLE)
                 self._deadline_ms = 0
             else:
-                return  # keep waiting a bit
+                return
 
-        # B) Ensure initialized
+        # 2) Init
         if not self._is_initialized():
             if self._state == self.S_IDLE:
                 self._set_state(self.S_INIT_REQUESTED)
@@ -365,6 +318,7 @@ class RobotInitStatemachine(QtCore.QObject):
                 except Exception as e:
                     self._finish_err(f"robot_init() fehlgeschlagen: {e}")
                     return
+
                 self._set_state(self.S_WAIT_INITIALIZED)
                 self._set_deadline(self._init_timeout_s)
                 return
@@ -375,26 +329,32 @@ class RobotInitStatemachine(QtCore.QObject):
                     self._set_state(self.S_IDLE)
                     self._deadline_ms = 0
                     return
+
                 if self._deadline_passed():
-                    self._finish_err(
-                        f"Robot-Init: Timeout nach {self._init_timeout_s:.1f}s "
-                        "beim Warten auf 'initialized'."
-                    )
+                    self._finish_err(f"Timeout nach {self._init_timeout_s:.1f}s beim Warten auf initialized.")
                     return
+
                 return
 
-            # any other state while not initialized -> converge
+            # converge
             self._set_state(self.S_WAIT_INITIALIZED)
             return
 
-        # C) Ensure home pose reached
+        # 3) Home (hier: Home-Pose muss existieren, sonst können wir nicht deterministisch vergleichen)
+        if self._get_home_pose() is None:
+            # wir haben init, aber keine home pose -> einmal nachfordern und kurz warten
+            self._set_state(self.S_WAIT_HOME_AVAILABLE)
+            self._request_home_pose_once()
+            self._set_deadline(2.0)
+            return
+
         if not self._is_at_home():
             if self._state == self.S_IDLE:
                 self._set_state(self.S_HOME_REQUESTED)
                 try:
-                    self._send_home_once()
+                    self._send_move_home_once()
                 except Exception as e:
-                    self._finish_err(f"Home request fehlgeschlagen: {e}")
+                    self._finish_err(f"move_home() fehlgeschlagen: {e}")
                     return
 
                 self._set_state(self.S_WAIT_HOME)
@@ -403,10 +363,7 @@ class RobotInitStatemachine(QtCore.QObject):
 
             if self._state == self.S_WAIT_HOME:
                 if self._has_motion_error():
-                    self._finish_err(
-                        "Robot-Init: Fehler beim Anfahren der Home-Pose: "
-                        f"{self._last_motion_result() or 'EXECUTE_FAILED'}"
-                    )
+                    self._finish_err(f"Home-Execute Fehler: {self._last_motion_result() or 'EXECUTE_FAILED'}")
                     return
 
                 if self._is_at_home():
@@ -415,22 +372,13 @@ class RobotInitStatemachine(QtCore.QObject):
                     return
 
                 if self._deadline_passed():
-                    if self._has_motion_error():
-                        self._finish_err(
-                            "Robot-Init: Fehler beim Anfahren der Home-Pose (nach Timeout): "
-                            f"{self._last_motion_result() or 'EXECUTE_FAILED'}"
-                        )
-                    else:
-                        self._finish_err(
-                            f"Robot-Init: Timeout nach {self._home_timeout_s:.1f}s "
-                            "beim Anfahren der Home-Pose (TCP ≉ Home-Pose)."
-                        )
+                    self._finish_err(f"Timeout nach {self._home_timeout_s:.1f}s: TCP ≉ Home-Pose.")
                     return
+
                 return
 
-            # any other state while not at home -> converge
             self._set_state(self.S_WAIT_HOME)
             return
 
-        # D) All good
+        # 4) Done
         self._finish_ok()

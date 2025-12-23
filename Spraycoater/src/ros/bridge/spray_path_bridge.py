@@ -1,4 +1,3 @@
-# src/ros/bridge/spray_path_bridge.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
@@ -15,140 +14,175 @@ from .base_bridge import BaseBridge, sub_handler
 
 class SprayPathSignals(QtCore.QObject):
     """
-    Qt-Signalträger für die SprayPath-Bridge.
+    Qt-Signalträger für SprayPath.
 
     Inbound (ROS -> UI):
-      - currentNameChanged(str)       # latched Name
-      - posesChanged(PoseArray)       # aktueller Pfad als PoseArray
+      - currentChanged(str)
+      - posesChanged(PoseArray)
+      - markersChanged(MarkerArray)
+      - executedPosesChanged(PoseArray)
+      - executedMarkersChanged(MarkerArray)
 
     Outbound (UI -> ROS):
-      - setRequested(MarkerArray)         # UI erzeugt MarkerArray für SprayPath (Sollpfad)
-      - executedPathRequested(PoseArray)  # UI gibt gefahrenen Pfad als PoseArray (Istpfad)
+      - setViewRequested(str)
+      - compiledPosesRequested(PoseArray)
+      - compiledMarkersRequested(MarkerArray)
+      - trajPosesRequested(PoseArray)
+      - trajMarkersRequested(MarkerArray)
+      - executedPosesRequested(PoseArray)
+      - executedMarkersRequested(MarkerArray)
     """
 
     # Inbound
-    currentNameChanged = QtCore.pyqtSignal(str)
-    posesChanged = QtCore.pyqtSignal(object)   # PoseArray
+    currentChanged = QtCore.pyqtSignal(str)
+    posesChanged = QtCore.pyqtSignal(object)           # PoseArray
+    markersChanged = QtCore.pyqtSignal(object)         # MarkerArray
+    executedPosesChanged = QtCore.pyqtSignal(object)   # PoseArray
+    executedMarkersChanged = QtCore.pyqtSignal(object) # MarkerArray
 
     # Outbound
-    setRequested = QtCore.pyqtSignal(object)          # MarkerArray (Rezeptpfad)
-    executedPathRequested = QtCore.pyqtSignal(object) # PoseArray (gefahrener Pfad)
+    setViewRequested = QtCore.pyqtSignal(object)          # str (object for Qt)
+    compiledPosesRequested = QtCore.pyqtSignal(object)    # PoseArray
+    compiledMarkersRequested = QtCore.pyqtSignal(object)  # MarkerArray
+    trajPosesRequested = QtCore.pyqtSignal(object)        # PoseArray
+    trajMarkersRequested = QtCore.pyqtSignal(object)      # MarkerArray
+    executedPosesRequested = QtCore.pyqtSignal(object)    # PoseArray
+    executedMarkersRequested = QtCore.pyqtSignal(object)  # MarkerArray
 
     def __init__(self, parent: Optional[QtCore.QObject] = None) -> None:
         super().__init__(parent)
 
-        # Cache für Re-Emit (wird von Bridge gepflegt)
-        self.current_name: str = ""
+        # Cache for re-emit
+        self.current: str = ""
         self.poses: Optional[PoseArray] = None
+        self.markers: Optional[MarkerArray] = None
         self.executed_poses: Optional[PoseArray] = None
+        self.executed_markers: Optional[MarkerArray] = None
 
     @QtCore.pyqtSlot()
     def reemit_cached(self) -> None:
-        """
-        Erneutes Aussenden der letzten bekannten Werte.
-        Wird von UIBridge._try_reemit_cached() verwendet, wenn sich Widgets neu verbinden.
-        """
-        if self.current_name:
-            self.currentNameChanged.emit(self.current_name)
+        if self.current:
+            self.currentChanged.emit(self.current)
         if self.poses is not None:
             self.posesChanged.emit(self.poses)
+        if self.markers is not None:
+            self.markersChanged.emit(self.markers)
+        if self.executed_poses is not None:
+            self.executedPosesChanged.emit(self.executed_poses)
+        if self.executed_markers is not None:
+            self.executedMarkersChanged.emit(self.executed_markers)
 
 
 class SprayPathBridge(BaseBridge):
     """
-    UI-Bridge für 'spray_path' mit eingebauten Qt-Signalen.
+    UI-Bridge für 'spray_path' (compiled + traj + executed overlay).
 
-    Abonniert (ROS -> UI, topics.spray_path.publish.*):
-      - spray_path.current        (String, latched)
-      - spray_path.poses          (PoseArray)
-      - spray_path.executed_poses (PoseArray)   [optional]
+    SUB (ROS -> UI, topics.spray_path.publish.*):
+      - current
+      - poses
+      - markers
+      - executed_poses
+      - executed_markers
 
-    Publiziert (UI -> ROS, topics.spray_path.subscribe.*):
-      - spray_path.set               (MarkerArray)       [Sollpfad]
-      - spray_path.executed_poses_in (PoseArray)         [Istpfad]
+    PUB (UI -> ROS, topics.spray_path.subscribe.*):
+      - set_view
+      - compiled_poses_in / compiled_markers_in
+      - traj_poses_in     / traj_markers_in
+      - executed_poses_in / executed_markers_in
     """
+
     GROUP = "spray_path"
 
     def __init__(self, content: AppContent, namespace: str = ""):
-        # Signale anlegen (inkl. Cachefelder)
         self.signals = SprayPathSignals()
 
-        # Interner State (roh, ohne Defaults/Fallbacks)
-        self.current_name: str = ""
+        # Local state
+        self.current: str = ""
         self.poses: Optional[PoseArray] = None
+        self.markers: Optional[MarkerArray] = None
         self.executed_poses: Optional[PoseArray] = None
+        self.executed_markers: Optional[MarkerArray] = None
 
         super().__init__("spray_path_bridge", content, namespace=namespace)
 
         # Qt Outbound -> ROS
-        self.signals.setRequested.connect(self.publish_set)
-        self.signals.executedPathRequested.connect(self.publish_executed_path)
+        self.signals.setViewRequested.connect(self.publish_set_view)
+        self.signals.compiledPosesRequested.connect(self.publish_compiled_poses)
+        self.signals.compiledMarkersRequested.connect(self.publish_compiled_markers)
+        self.signals.trajPosesRequested.connect(self.publish_traj_poses)
+        self.signals.trajMarkersRequested.connect(self.publish_traj_markers)
+        self.signals.executedPosesRequested.connect(self.publish_executed_poses)
+        self.signals.executedMarkersRequested.connect(self.publish_executed_markers)
 
-    # -------- eingehend (ROS -> UI) --------
+    # ---------------- ROS -> UI ----------------
 
     @sub_handler("spray_path", "current")
     def _on_current(self, msg: String):
-        self.current_name = (msg.data or "")
-        self.signals.current_name = self.current_name
-        self.signals.currentNameChanged.emit(self.current_name)
-        self.get_logger().info(f"[spray_path] current: {self.current_name or '-'}")
+        self.current = (msg.data or "")
+        self.signals.current = self.current
+        self.signals.currentChanged.emit(self.current)
 
     @sub_handler("spray_path", "poses")
     def _on_poses(self, msg: PoseArray):
         self.poses = msg
         self.signals.poses = msg
         self.signals.posesChanged.emit(msg)
-        self.get_logger().info(f"[spray_path] poses received: {len(msg.poses)} poses")
+
+    @sub_handler("spray_path", "markers")
+    def _on_markers(self, msg: MarkerArray):
+        self.markers = msg
+        self.signals.markers = msg
+        self.signals.markersChanged.emit(msg)
 
     @sub_handler("spray_path", "executed_poses")
     def _on_executed_poses(self, msg: PoseArray):
-        """
-        Optionaler Callback, falls die UI den gefahrenen Pfad auch wieder aus ROS
-        zurücklesen möchte.
-        """
         self.executed_poses = msg
         self.signals.executed_poses = msg
-        self.get_logger().info(f"[spray_path] executed_poses received: {len(msg.poses)} poses")
+        self.signals.executedPosesChanged.emit(msg)
 
-    # -------- ausgehend (UI -> ROS) --------
+    @sub_handler("spray_path", "executed_markers")
+    def _on_executed_markers(self, msg: MarkerArray):
+        self.executed_markers = msg
+        self.signals.executed_markers = msg
+        self.signals.executedMarkersChanged.emit(msg)
 
-    def publish_set(self, marker_array: MarkerArray) -> None:
-        """
-        Publisht das übergebene MarkerArray unverändert auf spray_path.set.
-        """
+    # ---------------- UI -> ROS ----------------
+
+    def publish_set_view(self, view_key: str) -> None:
         try:
-            topic_id = "set"
+            topic_id = "set_view"
             Msg = self.spec("subscribe", topic_id).resolve_type()
-            if not isinstance(marker_array, Msg):
-                raise TypeError(
-                    f"spray_path.set erwartet {Msg.__name__}, bekommen: {type(marker_array).__name__}"
-                )
-            pub = self.pub(topic_id)
-            self.get_logger().info(
-                f"[spray_path] -> {topic_id}: publishing MarkerArray with "
-                f"{len(marker_array.markers)} markers"
-            )
-            pub.publish(marker_array)
+            m = Msg()
+            m.data = str(view_key or "")
+            self.pub(topic_id).publish(m)
         except Exception as e:
-            self.get_logger().error(f"[spray_path] publish set failed: {e}")
+            self.get_logger().error(f"[spray_path] publish_set_view failed: {e}")
 
-    def publish_executed_path(self, pose_array: PoseArray) -> None:
-        """
-        Publisht den gefahrenen Pfad als PoseArray auf spray_path.executed_poses_in.
-        """
+    def publish_compiled_poses(self, pose_array: PoseArray) -> None:
+        self._pub_checked("compiled_poses_in", pose_array)
+
+    def publish_compiled_markers(self, marker_array: MarkerArray) -> None:
+        self._pub_checked("compiled_markers_in", marker_array)
+
+    def publish_traj_poses(self, pose_array: PoseArray) -> None:
+        self._pub_checked("traj_poses_in", pose_array)
+
+    def publish_traj_markers(self, marker_array: MarkerArray) -> None:
+        self._pub_checked("traj_markers_in", marker_array)
+
+    def publish_executed_poses(self, pose_array: PoseArray) -> None:
+        self._pub_checked("executed_poses_in", pose_array)
+
+    def publish_executed_markers(self, marker_array: MarkerArray) -> None:
+        self._pub_checked("executed_markers_in", marker_array)
+
+    # ---------------- internal helper ----------------
+
+    def _pub_checked(self, topic_id: str, msg_obj) -> None:
         try:
-            topic_id = "executed_poses_in"
             Msg = self.spec("subscribe", topic_id).resolve_type()
-            if not isinstance(pose_array, Msg):
-                raise TypeError(
-                    f"spray_path.{topic_id} erwartet {Msg.__name__}, "
-                    f"bekommen: {type(pose_array).__name__}"
-                )
-            pub = self.pub(topic_id)
-            self.get_logger().info(
-                f"[spray_path] -> {topic_id}: publishing executed PoseArray with "
-                f"{len(pose_array.poses)} poses"
-            )
-            pub.publish(pose_array)
+            if not isinstance(msg_obj, Msg):
+                raise TypeError(f"{topic_id} expects {Msg.__name__}, got {type(msg_obj).__name__}")
+            self.pub(topic_id).publish(msg_obj)
         except Exception as e:
-            self.get_logger().error(f"[spray_path] publish_executed_path failed: {e}")
+            self.get_logger().error(f"[spray_path] publish {topic_id} failed: {e}")

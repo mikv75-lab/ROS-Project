@@ -11,46 +11,188 @@ import yaml
 import numpy as np
 
 
+# ============================================================
+# Eval
+# ============================================================
+
+@dataclass
+class EvalWeights:
+    w_mean: float = 0.40
+    w_p95: float = 0.40
+    w_max: float = 0.20
+
+
+@dataclass
+class EvalResult:
+    score: float = 0.0
+    metrics: Dict[str, Any] = field(default_factory=dict)
+    details: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "score": float(self.score),
+            "metrics": dict(self.metrics or {}),
+            "details": dict(self.details or {}),
+        }
+
+
+class RecipeEvaluator:
+    """
+    Vergleicht Test-Pfad gegen Referenz (mm).
+    O(N*M) NN ist bewusst simpel; reicht für <= ~2000 Punkte gut.
+    """
+
+    def __init__(
+        self,
+        *,
+        weights: Optional[EvalWeights] = None,
+        clamp_mm: Tuple[float, float, float] = (1.0, 3.0, 8.0),
+    ) -> None:
+        self.weights = weights or EvalWeights()
+        self.clamp_mean, self.clamp_p95, self.clamp_max = [float(x) for x in clamp_mm]
+
+    @staticmethod
+    def _path_length_mm(P: np.ndarray) -> float:
+        P = np.asarray(P, float).reshape(-1, 3)
+        if P.shape[0] < 2:
+            return 0.0
+        d = np.linalg.norm(P[1:] - P[:-1], axis=1)
+        return float(d.sum())
+
+    @staticmethod
+    def _step_stats_mm(P: np.ndarray) -> Dict[str, float]:
+        P = np.asarray(P, float).reshape(-1, 3)
+        if P.shape[0] < 2:
+            return {"mean_step_mm": 0.0, "max_step_mm": 0.0}
+        d = np.linalg.norm(P[1:] - P[:-1], axis=1)
+        return {"mean_step_mm": float(np.mean(d)), "max_step_mm": float(np.max(d))}
+
+    @staticmethod
+    def _nearest_neighbor_distances(A: np.ndarray, B: np.ndarray) -> np.ndarray:
+        A = np.asarray(A, float).reshape(-1, 3)
+        B = np.asarray(B, float).reshape(-1, 3)
+        if A.shape[0] == 0 or B.shape[0] == 0:
+            return np.zeros((0,), dtype=float)
+        diff = A[:, None, :] - B[None, :, :]
+        dist = np.linalg.norm(diff, axis=2)
+        return np.min(dist, axis=1)
+
+    @staticmethod
+    def _percentile(x: np.ndarray, p: float) -> float:
+        x = np.asarray(x, float).reshape(-1)
+        if x.size == 0:
+            return 0.0
+        return float(np.percentile(x, p))
+
+    @staticmethod
+    def _score_from_error(err: float, target: float) -> float:
+        err = max(0.0, float(err))
+        target = max(1e-9, float(target))
+        x = err / target
+        s = 100.0 * math.exp(-math.log(2.0) * x)
+        return float(np.clip(s, 0.0, 100.0))
+
+    def evaluate_points_mm(
+        self,
+        *,
+        ref_points_mm: np.ndarray,
+        test_points_mm: np.ndarray,
+        label: str = "",
+    ) -> EvalResult:
+        ref = np.asarray(ref_points_mm, float).reshape(-1, 3)
+        test = np.asarray(test_points_mm, float).reshape(-1, 3)
+
+        metrics: Dict[str, Any] = {
+            "label": label,
+            "num_ref": int(ref.shape[0]),
+            "num_test": int(test.shape[0]),
+            "path_length_ref_mm": self._path_length_mm(ref),
+            "path_length_test_mm": self._path_length_mm(test),
+        }
+        metrics.update({f"ref_{k}": v for k, v in self._step_stats_mm(ref).items()})
+        metrics.update({f"test_{k}": v for k, v in self._step_stats_mm(test).items()})
+
+        if ref.shape[0] == 0 or test.shape[0] == 0:
+            return EvalResult(score=0.0, metrics=metrics, details={"reason": "empty_ref_or_test"})
+
+        nn_rt = self._nearest_neighbor_distances(ref, test)
+        nn_tr = self._nearest_neighbor_distances(test, ref)
+
+        max_sym = max(float(np.max(nn_rt)), float(np.max(nn_tr)))
+        mean_sym = float(0.5 * (np.mean(nn_rt) + np.mean(nn_tr)))
+        p95_sym = float(0.5 * (self._percentile(nn_rt, 95.0) + self._percentile(nn_tr, 95.0)))
+
+        metrics.update(
+            {
+                "mean_nn_mm": mean_sym,
+                "p95_nn_mm": p95_sym,
+                "max_nn_mm": max_sym,
+            }
+        )
+
+        s_mean = self._score_from_error(mean_sym, self.clamp_mean)
+        s_p95 = self._score_from_error(p95_sym, self.clamp_p95)
+        s_max = self._score_from_error(max_sym, self.clamp_max)
+
+        w = self.weights
+        score = (w.w_mean * s_mean) + (w.w_p95 * s_p95) + (w.w_max * s_max)
+
+        details = {
+            "score_components": {"mean": s_mean, "p95": s_p95, "max": s_max},
+            "weights": {"mean": w.w_mean, "p95": w.w_p95, "max": w.w_max},
+        }
+
+        return EvalResult(score=float(np.clip(score, 0.0, 100.0)), metrics=metrics, details=details)
+
+
+# ============================================================
+# Recipe
+# ============================================================
+
 @dataclass
 class Recipe:
     """
-    Rezeptdaten + Laufzeit-Caches + optionale, gespeicherte Kompilate.
+    Persistentes Rezeptmodell (SSoT).
 
-    Felder:
-      - parameters:     globale Instanzwerte
-      - planner:        planer-/pipeline-nahe Instanzwerte (frei)
-      - paths_by_side:  pro Side eine Path-Definition (dict)
-      - _paths_cache:   rohe Pfadpunkte (N,3) je Side (nur RAM)
-      - paths_compiled: gespeicherte Posen (Quaternionen) + Meta
-      - info:           abgeleitete Kennzahlen (z.B. Längen, Punktanzahl)
+    Gespeichert:
+      - paths_compiled
+      - trajectories["traj"]          (Soll, Geometrie + Score)
+      - trajectories["executed_traj"] (Ist,  Geometrie + Score)
+
+    Keine History. Kein validate/optimize/editor.
     """
 
-    # Meta / Auswahl
-    id: str
+    # Keys
+    TRAJ_COMPILED: str = "compiled_path"     # Alias auf paths_compiled
+    TRAJ_TRAJ: str = "traj"                  # geplant (Soll)
+    TRAJ_EXECUTED: str = "executed_traj"     # ausgeführt (Ist)
+
+    # Meta
+    id: str = "recipe"
     description: str = ""
     tool: Optional[str] = None
     substrate: Optional[str] = None
     substrate_mount: Optional[str] = None
 
-    # Instanzparameter
     parameters: Dict[str, Any] = field(default_factory=dict)
     planner: Dict[str, Any] = field(default_factory=dict)
-
-    # Pfad-Definitionen pro Side
     paths_by_side: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
-    # Laufzeit (nicht speichern)
     _paths_cache: Dict[str, np.ndarray] = field(default_factory=dict, repr=False, compare=False)
 
-    # Ergebnis (wird gespeichert)
     paths_compiled: Dict[str, Any] = field(default_factory=dict)
-
-    # Abgeleitete Info (wird gespeichert)
     info: Dict[str, Any] = field(default_factory=dict)
 
+    trajectories: Dict[str, Any] = field(default_factory=dict)
+
     # ---------- YAML ----------
+
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "Recipe":
+        traj = d.get("trajectories") or {}
+        if not isinstance(traj, dict):
+            raise TypeError("Recipe: trajectories must be a dict")
+
         return Recipe(
             id=str(d.get("id") or "recipe"),
             description=str(d.get("description") or ""),
@@ -62,32 +204,21 @@ class Recipe:
             paths_by_side=dict(d.get("paths_by_side") or {}),
             paths_compiled=dict(d.get("paths_compiled") or {}),
             info=dict(d.get("info") or {}),
+            trajectories=dict(traj),
         )
 
     @staticmethod
     def _to_plain(obj: Any) -> Any:
-        """
-        Rekursive Normalisierung auf YAML-freundliche Python-Typen:
-        - numpy scalars -> Python scalars
-        - dict/list/tuple/set -> rekursiv
-        - ndarray -> List
-        - sonst -> str(obj)
-        """
         if isinstance(obj, np.generic):
             return obj.item()
-
         if isinstance(obj, (str, bool, int, float)) or obj is None:
             return obj
-
         if isinstance(obj, dict):
             return {str(k): Recipe._to_plain(v) for k, v in obj.items()}
-
-        if isinstance(obj, (list, tuple, set)):
+        if isinstance(obj, (list, tuple)):
             return [Recipe._to_plain(x) for x in obj]
-
         if isinstance(obj, np.ndarray):
             return [Recipe._to_plain(x) for x in obj.tolist()]
-
         return str(obj)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -99,494 +230,141 @@ class Recipe:
             "substrate_mount": self.substrate_mount,
             "parameters": Recipe._to_plain(self.parameters or {}),
             "planner": Recipe._to_plain(self.planner or {}),
-            "paths_by_side": Recipe._to_plain({s: dict(p or {}) for s, p in (self.paths_by_side or {}).items()}),
+            "paths_by_side": Recipe._to_plain(self.paths_by_side or {}),
         }
+
         if self.paths_compiled:
             out["paths_compiled"] = Recipe._to_plain(self.paths_compiled)
         if self.info:
             out["info"] = Recipe._to_plain(self.info)
+
+        traj_out: Dict[str, Any] = {}
+        for k in (self.TRAJ_TRAJ, self.TRAJ_EXECUTED):
+            if isinstance(self.trajectories.get(k), dict):
+                traj_out[k] = Recipe._to_plain(self.trajectories[k])
+        if traj_out:
+            out["trajectories"] = traj_out
+
         return out
 
     @staticmethod
     def load_yaml(path: str) -> "Recipe":
         with open(path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        return Recipe.from_dict(dict(data))
+            return Recipe.from_dict(yaml.safe_load(f) or {})
 
     def save_yaml(self, path: str) -> None:
-        """
-        Speichert das Rezept als YAML.
-
-        Wenn paths_compiled vorhanden ist, wird info vorher aktualisiert,
-        damit die gespeicherten Kennzahlen konsistent bleiben.
-        """
         if self.paths_compiled:
             self._recompute_info_from_compiled()
-
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        data = self.to_dict()
         with open(path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
+            yaml.safe_dump(self.to_dict(), f, allow_unicode=True, sort_keys=False)
 
-    # ------- benötigte Globals -------
-    def _globals_params_strict(self) -> Dict[str, Any]:
-        """
-        Extrahiert die Globals, die für Pfaderzeugung/Kompilierung benötigt werden.
-        """
-        g = dict(self.parameters or {})
-        required = ["stand_off_mm", "max_angle_deg", "sample_step_mm", "max_points"]
-        missing = [k for k in required if k not in g]
-        if missing:
-            raise ValueError(f"Recipe: fehlende Parameter: {missing}")
-        return {k: g[k] for k in required}
+    # ---------- Helpers ----------
 
-    # ------- PLC: Payload aus aktuellen parameters bauen -------
-    def plc_payload_from_schema(self, plc_globals_schema: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Gibt {name: value} für alle Parameter zurück, die im übergebenen Schema
-        enthalten sind und in self.parameters existieren.
-        """
-        out: Dict[str, Any] = {}
-        params = self.parameters or {}
-        for name in plc_globals_schema.keys():
-            if name in params:
-                out[name] = params[name]
-        return out
+    def _assert_valid_traj_key(self, traj_key: str) -> str:
+        if traj_key == self.TRAJ_COMPILED:
+            raise ValueError("compiled_path ist Alias auf paths_compiled")
+        if traj_key not in (self.TRAJ_TRAJ, self.TRAJ_EXECUTED):
+            raise ValueError(f"Invalid traj_key '{traj_key}'")
+        return traj_key
 
-    # ------- Pfad-Cache -------
-    def _side_list(self, sides: Optional[Iterable[str]]) -> List[str]:
-        return [str(s) for s in sides] if sides else list(self.paths_by_side.keys())
+    # ---------- Points ----------
 
-    def invalidate_paths(self) -> None:
-        self._paths_cache.clear()
-
-    def rebuild_paths(
-        self,
-        *,
-        sides: Optional[Iterable[str]] = None,
-        max_points: Optional[int] = None,
-    ) -> Dict[str, np.ndarray]:
-        """
-        Erzeugt rohe Geometriepfade (N,3) je Side (nur RAM).
-        - sample_step_mm kommt aus parameters
-        - max_points kommt aus parameters oder wird explizit übergeben
-        """
-        from app.model.recipe.path_builder import PathBuilder
-
-        _ = self._globals_params_strict()
-
-        if max_points is None:
-            max_points = int(self.parameters["max_points"])
-
-        step = float(self.parameters["sample_step_mm"])
-
-        if not sides:
-            self._paths_cache.clear()
-
-        for side in self._side_list(sides):
-            pd = PathBuilder.from_side(
-                self,
-                side=side,
-                globals_params=self._globals_params_strict(),
-                sample_step_mm=step,
-                max_points=max_points,
-            )
-            self._paths_cache[side] = np.asarray(pd.points_mm, float).reshape(-1, 3)
-
-        return self._paths_cache
-
-    @property
-    def paths(self) -> Dict[str, np.ndarray]:
-        return self._paths_cache
-
-    # ------- kompilierten Pfad als Punktwolke (mm) holen -------
     def compiled_points_mm_for_side(self, side: str) -> Optional[np.ndarray]:
-        """Gibt kompilierten (x,y,z)-Punktpfad (mm) für eine Side zurück, falls vorhanden."""
-        pc = self.paths_compiled or {}
-        sides = pc.get("sides") or {}
-        sdata = sides.get(side)
+        sdata = (self.paths_compiled.get("sides") or {}).get(str(side))
         if not isinstance(sdata, dict):
             return None
-
         poses = sdata.get("poses_quat") or []
         if not poses:
             return None
+        return np.array([[p["x"], p["y"], p["z"]] for p in poses], dtype=float)
 
-        P = np.array(
-            [[float(p.get("x", 0.0)), float(p.get("y", 0.0)), float(p.get("z", 0.0))] for p in poses],
-            dtype=float,
-        ).reshape(-1, 3)
-        return P
+    def trajectory_points_mm_for_side(self, traj_key: str, side: str) -> Optional[np.ndarray]:
+        if traj_key == self.TRAJ_COMPILED:
+            return self.compiled_points_mm_for_side(side)
+        t = self.trajectories.get(traj_key)
+        if not isinstance(t, dict):
+            return None
+        sdata = (t.get("sides") or {}).get(str(side))
+        if not isinstance(sdata, dict):
+            return None
+        poses = sdata.get("poses_quat") or []
+        if not poses:
+            return None
+        return np.array([[p["x"], p["y"], p["z"]] for p in poses], dtype=float)
 
-    # ------- interne Info-Berechnung aus paths_compiled -------
+    # ---------- Setters ----------
+
+    def set_trajectory_points_mm(
+        self,
+        *,
+        traj_key: str,
+        side: str,
+        points_mm: np.ndarray,
+        frame: str = "scene",
+        tool_frame: Optional[str] = None,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        traj_key = self._assert_valid_traj_key(traj_key)
+        P = np.asarray(points_mm, float).reshape(-1, 3)
+
+        t = self.trajectories.setdefault(traj_key, {})
+        t["frame"] = frame
+        t["tool_frame"] = tool_frame or self.planner.get("tool_frame", "tool_mount")
+        t.setdefault("sides", {})[str(side)] = {
+            "poses_quat": [
+                {"x": float(x), "y": float(y), "z": float(z), "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}
+                for x, y, z in P
+            ]
+        }
+        if meta:
+            t["meta"] = dict(meta)
+
+    # ---------- Eval ----------
+
+    def evaluate_trajectory_against_compiled(
+        self,
+        *,
+        traj_key: str,
+        side: str,
+        clamp_mm: Tuple[float, float, float] = (1.0, 3.0, 8.0),
+    ) -> Optional[Dict[str, Any]]:
+        traj_key = self._assert_valid_traj_key(traj_key)
+
+        ref = self.compiled_points_mm_for_side(side)
+        test = self.trajectory_points_mm_for_side(traj_key, side)
+        if ref is None or test is None:
+            return None
+
+        ev = RecipeEvaluator(clamp_mm=clamp_mm)
+        res = ev.evaluate_points_mm(
+            ref_points_mm=ref,
+            test_points_mm=test,
+            label=f"{traj_key}/{side}",
+        ).to_dict()
+
+        self.trajectories.setdefault(traj_key, {}).setdefault("sides", {}).setdefault(str(side), {})["eval"] = res
+        return res
+
+    # ---------- Info ----------
+
     def _recompute_info_from_compiled(self) -> None:
-        """
-        Aktualisiert self.info auf Basis von paths_compiled.
-
-        Neu berechnet:
-          - total_points
-          - total_length_mm
-          - sides[side].num_points / length_mm
-
-        Alle anderen Keys in self.info bleiben erhalten.
-        """
-        pc = self.paths_compiled or {}
-        sides = pc.get("sides") or {}
-        old = dict(self.info or {})
-
-        if not isinstance(sides, dict) or not sides:
-            info_new: Dict[str, Any] = {"total_points": 0, "total_length_mm": 0.0, "sides": {}}
-            for k, v in old.items():
-                if k not in ("total_points", "total_length_mm", "sides"):
-                    info_new[k] = v
-            self.info = info_new
-            return
-
+        sides = self.paths_compiled.get("sides") or {}
         total_points = 0
         total_length = 0.0
         sides_info: Dict[str, Any] = {}
 
         for side, sdata in sides.items():
             poses = (sdata or {}).get("poses_quat") or []
-            if not poses:
-                sides_info[str(side)] = {"num_points": 0, "length_mm": 0.0}
-                continue
-
-            P = np.array(
-                [[float(p.get("x", 0.0)), float(p.get("y", 0.0)), float(p.get("z", 0.0))] for p in poses],
-                dtype=float,
-            ).reshape(-1, 3)
-
+            P = np.array([[p["x"], p["y"], p["z"]] for p in poses], dtype=float)
             num = int(P.shape[0])
-            length = 0.0
-            if num >= 2:
-                d = np.linalg.norm(P[1:] - P[:-1], axis=1)
-                length = float(d.sum())
-
+            length = float(np.linalg.norm(P[1:] - P[:-1], axis=1).sum()) if num >= 2 else 0.0
             sides_info[str(side)] = {"num_points": num, "length_mm": length}
             total_points += num
             total_length += length
 
-        info_new: Dict[str, Any] = {"total_points": total_points, "total_length_mm": total_length, "sides": sides_info}
-        for k, v in old.items():
-            if k not in ("total_points", "total_length_mm", "sides"):
-                info_new[k] = v
-
-        self.info = info_new
-
-    # ------- Quaternion-Posen erzeugen -------
-    def compile_poses(
-        self,
-        *,
-        bounds: Tuple[float, float, float, float, float, float],
-        sides: Optional[Iterable[str]] = None,
-        stand_off_mm: Optional[float] = None,
-        tool_frame: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        from app.model.recipe.path_builder import PathBuilder
-
-        xmin, xmax, ymin, ymax, zmin, zmax = bounds
-        cx, cy, cz = (0.5 * (xmin + xmax), 0.5 * (ymin + ymax), 0.5 * (zmin + zmax))
-
-        _ = self._globals_params_strict()
-
-        if stand_off_mm is None:
-            stand_off_mm = float(self.parameters.get("stand_off_mm", 0.0))
-        if tool_frame is None:
-            tool_frame = str((self.planner or {}).get("tool_frame", "tool_mount"))
-
-        explicit_scene_z_off = self.parameters.get("scene_z_offset_mm", None)
-        auto_z_off = float(zmin)
-        z_offset_top_default = float(explicit_scene_z_off) if explicit_scene_z_off is not None else auto_z_off
-
-        face = {
-            "top":   {"surface_n": np.array([0, 0,  1.0]), "anchor": ("z", zmax), "axes": ("x", "y")},
-            "front": {"surface_n": np.array([0, -1, 0.0]), "anchor": ("y", ymin), "axes": ("x", "z")},
-            "back":  {"surface_n": np.array([0,  1, 0.0]), "anchor": ("y", ymax), "axes": ("x", "z")},
-            "left":  {"surface_n": np.array([-1, 0, 0.0]), "anchor": ("x", xmin), "axes": ("y", "z")},
-            "right": {"surface_n": np.array([ 1, 0, 0.0]), "anchor": ("x", xmax), "axes": ("y", "z")},
-            "helix": {"surface_n": np.array([0, 0,  1.0]), "anchor": ("z", cz),   "axes": ("x", "y")},
+        self.info = {
+            "total_points": total_points,
+            "total_length_mm": total_length,
+            "sides": sides_info,
         }
-
-        def _safe_norm(v: np.ndarray) -> np.ndarray:
-            v = np.asarray(v, float).reshape(3)
-            n = float(np.linalg.norm(v))
-            return v / (n if n > 1e-9 else 1.0)
-
-        def _embed_local(P: np.ndarray, side: str) -> np.ndarray:
-            cfg = face.get(side, face["top"])
-            ax0, ax1 = cfg["axes"]
-            anch_ax, anch_val = cfg["anchor"]
-
-            P = np.asarray(P, float).reshape(-1, 3)
-            out = np.empty_like(P)
-
-            a0, a1 = P[:, 0], P[:, 1]
-            mp = {"x": cx, "y": cy, "z": cz}
-
-            def place(axis: str, arr: np.ndarray) -> np.ndarray:
-                return mp[axis] + arr
-
-            axes: Dict[str, Optional[np.ndarray]] = {"x": None, "y": None, "z": None}
-            axes[ax0] = place(ax0, a0)
-            axes[ax1] = place(ax1, a1)
-            axes[anch_ax] = np.full(P.shape[0], anch_val, float)
-
-            out[:, 0], out[:, 1], out[:, 2] = axes["x"], axes["y"], axes["z"]
-            return out
-
-        def _quat_from_axes(x: np.ndarray, y: np.ndarray, z: np.ndarray) -> Tuple[float, float, float, float]:
-            x = _safe_norm(x)
-            y = _safe_norm(y)
-            z = _safe_norm(z)
-
-            R = np.array(
-                [[x[0], y[0], z[0]],
-                 [x[1], y[1], z[1]],
-                 [x[2], y[2], z[2]]],
-                float,
-            )
-            t = float(np.trace(R))
-
-            if t > 0:
-                s = math.sqrt(t + 1.0) * 2.0
-                qw = 0.25 * s
-                qx = (R[2, 1] - R[1, 2]) / s
-                qy = (R[0, 2] - R[2, 0]) / s
-                qz = (R[1, 0] - R[0, 1]) / s
-            else:
-                i = int(np.argmax([R[0, 0], R[1, 1], R[2, 2]]))
-                if i == 0:
-                    s = math.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2.0
-                    qw = (R[2, 1] - R[1, 2]) / s
-                    qx = 0.25 * s
-                    qy = (R[0, 1] + R[1, 0]) / s
-                    qz = (R[0, 2] + R[2, 0]) / s
-                elif i == 1:
-                    s = math.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2.0
-                    qw = (R[0, 2] - R[2, 0]) / s
-                    qx = (R[0, 1] + R[1, 0]) / s
-                    qy = 0.25 * s
-                    qz = (R[1, 2] + R[2, 1]) / s
-                else:
-                    s = math.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2.0
-                    qw = (R[1, 0] - R[0, 1]) / s
-                    qx = (R[0, 2] + R[2, 0]) / s
-                    qy = (R[1, 2] + R[2, 1]) / s
-                    qz = 0.25 * s
-
-            return float(qx), float(qy), float(qz), float(qw)
-
-        sides_in = self._side_list(sides)
-        sides_out: Dict[str, Any] = {}
-
-        for side in sides_in:
-            pdef = dict(self.paths_by_side.get(side, {}))
-            step = float(self.parameters["sample_step_mm"])
-
-            P_local = self._paths_cache.get(side)
-            if P_local is None:
-                pd = PathBuilder.from_side(
-                    self,
-                    side=side,
-                    globals_params=self._globals_params_strict(),
-                    sample_step_mm=step,
-                    max_points=int(self.parameters["max_points"]),
-                )
-                P_local = np.asarray(pd.points_mm, float).reshape(-1, 3)
-                source = pd.meta.get("source", "points")
-            else:
-                source = pdef.get("type", "points")
-
-            cfg = face.get(side, face["top"])
-            surface_n = _safe_norm(cfg["surface_n"])
-            tool_z = -surface_n  # Tool zeigt zur Fläche
-
-            if P_local.shape[0] == 0:
-                sides_out[side] = {
-                    "meta": {
-                        "side": side,
-                        "source": source,
-                        "path_type": pdef.get("type"),
-                        "path_params": pdef,
-                        "globals": dict(self.parameters or {}),
-                        "sample_step_mm": step,
-                        "stand_off_mm": float(stand_off_mm),
-                        "tool_frame": tool_frame,
-                        "angle_hints": _extract_angle_hints(pdef),
-                        "z_offset_top_mm": z_offset_top_default if side == "top" else 0.0,
-                    },
-                    "poses_quat": [],
-                }
-                continue
-
-            Pw = _embed_local(P_local, side)
-
-            if abs(float(stand_off_mm)) > 1e-9:
-                Pw = Pw + surface_n.reshape(1, 3) * float(stand_off_mm)
-
-            if side == "top":
-                Pw = Pw.copy()
-                Pw[:, 2] -= z_offset_top_default
-
-            # Tangenten (projiziert in Ebene senkrecht zu tool_z)
-            T = np.empty_like(Pw)
-            T[0] = Pw[1] - Pw[0]
-            T[-1] = Pw[-1] - Pw[-2] if len(Pw) >= 2 else np.array([1.0, 0.0, 0.0])
-            if len(Pw) > 2:
-                T[1:-1] = Pw[2:] - Pw[:-2]
-
-            for i in range(len(T)):
-                t = T[i] - tool_z * float(np.dot(T[i], tool_z))
-                nrm = float(np.linalg.norm(t))
-                T[i] = (t / nrm) if nrm > 1e-12 else np.array([1.0, 0.0, 0.0])
-
-            for i in range(1, len(T)):
-                if float(np.dot(T[i - 1], T[i])) < 0.0:
-                    T[i] = -T[i]
-
-            poses: List[Dict[str, float]] = []
-            for i in range(len(Pw)):
-                x = T[i]
-                y = np.cross(tool_z, x)
-                qx, qy, qz, qw = _quat_from_axes(x, y, tool_z)
-                poses.append(
-                    {
-                        "x": float(Pw[i, 0]),
-                        "y": float(Pw[i, 1]),
-                        "z": float(Pw[i, 2]),
-                        "qx": qx,
-                        "qy": qy,
-                        "qz": qz,
-                        "qw": qw,
-                    }
-                )
-
-            meta: Dict[str, Any] = {
-                "side": side,
-                "source": source,
-                "path_type": pdef.get("type"),
-                "path_params": pdef,
-                "globals": dict(self.parameters or {}),
-                "sample_step_mm": step,
-                "stand_off_mm": float(stand_off_mm),
-                "tool_frame": tool_frame,
-                "angle_hints": _extract_angle_hints(pdef),
-            }
-            if side == "top":
-                meta["z_offset_top_mm"] = z_offset_top_default
-
-            sides_out[side] = {"meta": meta, "poses_quat": poses}
-
-        self.paths_compiled = {"frame": "scene", "tool_frame": tool_frame, "sides": sides_out}
-        self._recompute_info_from_compiled()
-        return self.paths_compiled
-
-    # ---------- Text-Repräsentation ----------
-    def __str__(self) -> str:
-        lines: List[str] = []
-
-        lines.append(f"id: {self.id or ''}")
-        if self.description:
-            lines.append(f"description: {self.description}")
-        if self.tool:
-            lines.append(f"tool: {self.tool}")
-        if self.substrate:
-            lines.append(f"substrate: {self.substrate}")
-        if self.substrate_mount:
-            lines.append(f"substrate_mount: {self.substrate_mount}")
-
-        if self.parameters:
-            lines.append("")
-            lines.append("parameters:")
-            for k in sorted(self.parameters.keys()):
-                lines.append(f"  {k}: {self.parameters[k]}")
-
-        if self.planner:
-            lines.append("")
-            lines.append("planner:")
-            for k in sorted(self.planner.keys()):
-                lines.append(f"  {k}: {self.planner[k]}")
-
-        if self.info:
-            lines.append("")
-            lines.append("info:")
-            total_pts = self.info.get("total_points")
-            total_len = self.info.get("total_length_mm")
-            if total_pts is not None:
-                lines.append(f"  total_points: {total_pts}")
-            if total_len is not None:
-                lines.append(f"  total_length_mm: {total_len}")
-
-            sides = self.info.get("sides") or {}
-            if isinstance(sides, dict) and sides:
-                lines.append("  sides:")
-                for s, d in sides.items():
-                    lines.append(f"    {s}:")
-                    if d.get("num_points") is not None:
-                        lines.append(f"      num_points: {d.get('num_points')}")
-                    if d.get("length_mm") is not None:
-                        lines.append(f"      length_mm: {d.get('length_mm')}")
-
-        if self.paths_by_side:
-            lines.append("")
-            lines.append("paths_by_side:")
-            for side, p in self.paths_by_side.items():
-                lines.append(f"  {side}:")
-                for pk, pv in (p or {}).items():
-                    if pk in ("points_mm", "polyline_mm"):
-                        continue
-                    lines.append(f"    {pk}: {pv}")
-
-        pc = self.paths_compiled or {}
-        sides = pc.get("sides") or {}
-        if isinstance(sides, dict) and sides:
-            frame = pc.get("frame")
-            tool_frame = pc.get("tool_frame")
-
-            lines.append("")
-            lines.append("# compiled poses")
-            if frame:
-                lines.append(f"frame: {frame}")
-            if tool_frame:
-                lines.append(f"tool_frame: {tool_frame}")
-
-            for side, sdata in sides.items():
-                lines.append(f"[side: {side}]")
-                poses = (sdata or {}).get("poses_quat") or []
-                if not poses:
-                    lines.append("  (no poses)")
-                    continue
-
-                for i, p in enumerate(poses):
-                    x = float(p.get("x", 0.0))
-                    y = float(p.get("y", 0.0))
-                    z = float(p.get("z", 0.0))
-                    qx = float(p.get("qx", 0.0))
-                    qy = float(p.get("qy", 0.0))
-                    qz = float(p.get("qz", 0.0))
-                    qw = float(p.get("qw", 1.0))
-                    lines.append(
-                        f"  {i:04d}: "
-                        f"x={x:.3f}, y={y:.3f}, z={z:.3f}, "
-                        f"qx={qx:.4f}, qy={qy:.4f}, qz={qz:.4f}, qw={qw:.4f}"
-                    )
-
-        return "\n".join(lines)
-
-
-def _extract_angle_hints(path_params: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    def pick(prefix: str) -> Dict[str, Any]:
-        out: Dict[str, Any] = {}
-        am = path_params.get(f"{prefix}.angle_mode")
-        ad = path_params.get(f"{prefix}.angle_deg")
-        if am is not None:
-            out["angle_mode"] = am
-        if ad is not None:
-            out["angle_deg"] = ad
-        return out
-
-    return {
-        "predispense": pick("predispense"),
-        "retreat": pick("retreat"),
-    }
