@@ -18,8 +18,8 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
 )
 
-from.model.recipe.recipe_store import RecipeStore
-from.widgets.planner_groupbox import PlannerGroupBox
+from model.recipe.recipe_store import RecipeStore
+from widgets.planner_groupbox import PlannerGroupBox
 
 
 class Vec2Edit(QWidget):

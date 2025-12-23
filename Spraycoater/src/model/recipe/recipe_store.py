@@ -17,9 +17,6 @@ class RecipeStore:
       - recipes
     """
 
-    # ------------------------------------------------------------------ #
-    # Konstruktion
-    # ------------------------------------------------------------------ #
     def __init__(self, data: Dict[str, Any]):
         self.data = data or {}
         self.params_schema: Dict[str, Any] = self.data.get("recipe_params") or {}
@@ -32,11 +29,9 @@ class RecipeStore:
         """Factory: liest ctx.recipes_yaml (bereits geparstes YAML-Dict)."""
         return RecipeStore(getattr(ctx, "recipes_yaml", {}) or {})
 
-    # ------------------------------------------------------------------ #
-    # interne Helfer
-    # ------------------------------------------------------------------ #
+    # ---------------- helpers ----------------
+
     def _get_params_node_key(self, key: str) -> Optional[Dict[str, Any]]:
-        """Liest recipe_params[key] und gibt es als Dict zurück (oder None)."""
         ps = self.params_schema or {}
         node = ps.get(key)
         return dict(node) if isinstance(node, dict) else None
@@ -49,9 +44,8 @@ class RecipeStore:
             return [val]
         return []
 
-    # ------------------------------------------------------------------ #
-    # Recipes (IDs, Lookup, Listen)
-    # ------------------------------------------------------------------ #
+    # ---------------- recipes ----------------
+
     def recipe_ids(self) -> List[str]:
         return [str(r.get("id")) for r in self.recipes if r.get("id")]
 
@@ -70,9 +64,8 @@ class RecipeStore:
     def mounts_for_recipe(self, rec_def: Dict[str, Any]) -> List[str]:
         return [str(m) for m in (rec_def.get("substrate_mounts") or [])]
 
-    # ------------------------------------------------------------------ #
-    # Globals (Schema/Defaults)
-    # ------------------------------------------------------------------ #
+    # ---------------- globals ----------------
+
     def globals_schema(self) -> Dict[str, Any]:
         gs = self._get_params_node_key("globals")
         return gs if isinstance(gs, dict) else {}
@@ -84,11 +77,7 @@ class RecipeStore:
                 out[key] = spec["default"]
         return out
 
-    # ------------------------ PLC-Globals ------------------------------ #
     def plc_globals_schema(self) -> Dict[str, Any]:
-        """
-        Filtert globals-Schema auf Parameter mit `plc: true`.
-        """
         out: Dict[str, Any] = {}
         for name, spec in self.globals_schema().items():
             if not isinstance(spec, dict):
@@ -98,47 +87,31 @@ class RecipeStore:
         return out
 
     def plc_param_names(self) -> List[str]:
-        """Namen der PLC-relevanten Global-Parameter."""
         return list(self.plc_globals_schema().keys())
 
     def collect_plc_defaults(self) -> Dict[str, Any]:
-        """Default-Werte nur für PLC-relevante Parameter (falls vorhanden)."""
         out: Dict[str, Any] = {}
         for name, spec in self.plc_globals_schema().items():
             if isinstance(spec, dict) and "default" in spec:
                 out[name] = spec["default"]
         return out
 
-    # ------------------------------------------------------------------ #
-    # Planner (historisch)
-    # ------------------------------------------------------------------ #
+    # ---------------- planner defs/lists ----------------
+
     def planner_schema(self) -> Dict[str, Any]:
-        """
-        In aktuellen YAMLs nicht mehr genutzt.
-        Wird als leeres Dict zurückgegeben.
-        """
         return {}
 
     def collect_planner_defaults(self) -> Dict[str, Any]:
-        """Siehe planner_schema()."""
         return {}
 
-    # ------------------------------------------------------------------ #
-    # Planner-Definitionen & -Listen
-    # ------------------------------------------------------------------ #
     def planner_defs(self) -> Dict[str, Any]:
-        """Alle Planner-Definitionen aus planner_pipeline (pipeline → planner → spec)."""
         return dict(self.planner_pipeline) if isinstance(self.planner_pipeline, dict) else {}
 
     def planner_lists_global(self) -> Dict[str, List[str]]:
-        """
-        Rollenlisten aus planner_settings (alle Keys außer 'path_types').
-        """
         ps = self.planner_settings or {}
         out: Dict[str, List[str]] = {}
         if not isinstance(ps, dict):
             return out
-
         for role, vals in ps.items():
             if role == "path_types":
                 continue
@@ -151,14 +124,6 @@ class RecipeStore:
         side: str,
         path_type: Optional[str] = None,
     ) -> Dict[str, List[str]]:
-        """
-        Liefert Planner-Listen pro Rolle für eine Side.
-
-        Basis:
-          - planner_lists_global()
-        Optional:
-          - overrides über planner_settings.path_types[<path_type>][role]
-        """
         base = self.planner_lists_global()
         out: Dict[str, List[str]] = {role: list(vals) for role, vals in base.items()}
 
@@ -170,12 +135,15 @@ class RecipeStore:
 
             dp = side_cfg.get("default_path")
             if not isinstance(dp, dict):
-                raise KeyError(f"Recipe side '{side}' hat keine 'default_path'-Definition (rezept='{rec_def.get('id')}').")
+                raise KeyError(
+                    f"Recipe side '{side}' hat keine 'default_path'-Definition (rezept='{rec_def.get('id')}')."
+                )
 
             ptype = dp.get("type")
             if not isinstance(ptype, str) or not ptype.strip():
-                raise KeyError(f"Recipe side '{side}' default_path.type ist leer/ungültig (rezept='{rec_def.get('id')}').")
-
+                raise KeyError(
+                    f"Recipe side '{side}' default_path.type ist leer/ungültig (rezept='{rec_def.get('id')}')."
+                )
             path_type = ptype.strip()
 
         path_types_node = (self.planner_settings or {}).get("path_types") or {}
@@ -192,15 +160,6 @@ class RecipeStore:
         side: str,
         path_type: Optional[str] = None,
     ) -> Dict[str, Optional[str]]:
-        """
-        Wählt genau einen Planner pro Rolle.
-
-        Priorität:
-          1) side.planner_selected.<role>
-          2) recipe.planner_selected.<role>
-          3) erster Eintrag aus planner_lists_for_side(...)[role]
-          4) None
-        """
         lists = self.planner_lists_for_side(rec_def, side, path_type)
 
         sides = self.sides_for_recipe(rec_def)
@@ -222,25 +181,19 @@ class RecipeStore:
                 result[role] = None
         return result
 
-    # ------------------------------------------------------------------ #
-    # Sides/Paths (aus Rezepten)
-    # ------------------------------------------------------------------ #
+    # ---------------- sides/paths schema ----------------
+
     def sides_for_recipe(self, rec_def: Dict[str, Any]) -> Dict[str, Any]:
         sides = rec_def.get("sides") or {}
         return dict(sides) if isinstance(sides, dict) else {}
 
     def allowed_and_default_for(self, rec_def: Dict[str, Any], side: str) -> Dict[str, Any]:
-        """
-        Gibt die Side-Definition als deepcopy zurück.
-        Erwartet üblicherweise 'allowed_path_types' und 'default_path'.
-        """
         sides = self.sides_for_recipe(rec_def)
         if side not in sides:
             raise KeyError(f"Recipe side '{side}' ist nicht definiert (rezept='{rec_def.get('id')}').")
         return deepcopy(sides[side] or {})
 
     def build_default_paths_for_recipe(self, rec_def: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-        """Extrahiert für jede Side die default_path-Definition."""
         out: Dict[str, Dict[str, Any]] = {}
         for side, scfg in self.sides_for_recipe(rec_def).items():
             if not isinstance(scfg, dict):
@@ -251,13 +204,7 @@ class RecipeStore:
             out[str(side)] = dict(dp)
         return out
 
-    # ------------------------------------------------------------------ #
-    # Path-Schema Auflösung
-    # ------------------------------------------------------------------ #
     def schema_for_type_strict(self, ptype: str) -> Dict[str, Any]:
-        """
-        Liefert das Schema (Spec-Dict) für einen Path-Typ aus recipe_params[ptype].
-        """
         key = str(ptype).strip()
         if not key:
             raise KeyError("schema_for_type_strict: leerer Path-Typ.")
@@ -280,28 +227,14 @@ class RecipeStore:
             )
         return node
 
-    # ------------------------------------------------------------------ #
-    # Runtime-Normalisierung einer Side
-    # ------------------------------------------------------------------ #
     def build_side_runtime_cfg_strict(self, rec_def: Dict[str, Any], side: str) -> Dict[str, Any]:
-        """
-        Baut eine Laufzeit-Konfiguration für eine Side:
-
-          {
-            "allowed_path_types": [...],
-            "default_path": { "type": "...", ... },
-            "schemas": { "<type>": { ... }, ... }
-          }
-
-        - default_path wird mit Schema-Defaults befüllt und dann mit den Werten
-          aus default_path überschrieben.
-        - Unbekannte Keys in default_path (nicht im Schema) lösen einen Fehler aus.
-        """
         scfg = self.allowed_and_default_for(rec_def, side) or {}
 
         allowed_raw = scfg.get("allowed_path_types")
         if not isinstance(allowed_raw, (list, tuple)) or not allowed_raw:
-            raise ValueError(f"Recipe side '{side}' benötigt 'allowed_path_types' (rezept='{rec_def.get('id')}').")
+            raise ValueError(
+                f"Recipe side '{side}' benötigt 'allowed_path_types' (rezept='{rec_def.get('id')}')."
+            )
         allowed: List[str] = [str(x) for x in allowed_raw]
 
         default_path = scfg.get("default_path")
@@ -316,7 +249,6 @@ class RecipeStore:
 
         schema_default = self.schema_for_type_strict(ptype)
 
-        # Defaults aus Schema + Overrides aus default_path
         norm: Dict[str, Any] = {"type": ptype}
         for key, spec in (schema_default or {}).items():
             if isinstance(spec, dict) and "default" in spec:
@@ -332,7 +264,6 @@ class RecipeStore:
                 )
             norm[k] = v
 
-        # Schemas für erlaubte Typen + Default-Typ bereitstellen
         types_to_resolve = list(dict.fromkeys([ptype] + list(allowed)))
         schemas: Dict[str, Dict[str, Any]] = {}
         resolved_allowed: List[str] = []
@@ -348,17 +279,11 @@ class RecipeStore:
                 f"Keine auflösbaren allowed_path_types für side='{side}' (rezept='{rec_def.get('id')}')."
             )
 
-        return {
-            "allowed_path_types": resolved_allowed,
-            "default_path": norm,
-            "schemas": schemas,
-        }
+        return {"allowed_path_types": resolved_allowed, "default_path": norm, "schemas": schemas}
 
-    # ------------------------------------------------------------------ #
-    # UI-Enum-Helper
-    # ------------------------------------------------------------------ #
+    # ---------------- UI enums ----------------
+
     def spiral_plane_enums(self) -> Dict[str, List[str]]:
-        """Liest Enum-Werte für path.spiral.plane aus dem Schema (z.B. direction)."""
         out: Dict[str, List[str]] = {}
         node = self._get_params_node_key("path.spiral.plane") or {}
         if isinstance(node, dict):
@@ -368,7 +293,6 @@ class RecipeStore:
         return out
 
     def spiral_cylinder_enums(self) -> Dict[str, List[str]]:
-        """Liest Enum-Werte für path.spiral.cylinder aus dem Schema (start_from, direction)."""
         out: Dict[str, List[str]] = {}
         node = self._get_params_node_key("path.spiral.cylinder") or {}
         if isinstance(node, dict):

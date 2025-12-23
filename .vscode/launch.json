@@ -8,7 +8,7 @@
       "name": "Spraycoater (PyQt6, XLaunch)",
       "type": "debugpy",
       "request": "launch",
-      "program": "/root/Spraycoater/src/app/main_gui.py",
+      "program": "/root/Spraycoater/src/main_gui.py",
       "console": "integratedTerminal",
       "python": "/root/Spraycoater/.venv/bin/python",
       "cwd": "/root/Spraycoater",

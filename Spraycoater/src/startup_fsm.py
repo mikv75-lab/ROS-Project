@@ -16,8 +16,8 @@ from typing import Optional, Callable, Any
 from PyQt6 import QtCore, QtStateMachine
 
 from config.startup import load_startup, PlcConfig
-from.utils.logging_setup import init_logging
-from.utils.warnings_setup import enable_all_warnings
+from utils.logging_setup import init_logging
+from utils.warnings_setup import enable_all_warnings
 
 from ros.ros_launcher import (
     ensure_clean_graph_then_launch,
@@ -155,7 +155,7 @@ class StartupMachine(QtCore.QObject):
         try:
             logging.add_file_logger("startup")  # type: ignore[attr-defined]
         except AttributeError:
-            from.utils.logging_setup import add_file_logger  # type: ignore
+            from utils.logging_setup import add_file_logger  # type: ignore
             add_file_logger("startup")
 
         self._log.info("logging configured (AppLogging)")

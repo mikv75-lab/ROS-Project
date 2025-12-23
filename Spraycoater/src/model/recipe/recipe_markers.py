@@ -124,13 +124,12 @@ def _points_mm_to_markerarray(
 
 
 # ----------------------------
-# Data extraction (STRICT: compiled_path + traj + executed_traj)
+# Strict extraction
 # ----------------------------
 
 def _poses_quat_to_points_mm(poses: list) -> np.ndarray:
     """
     Erwartet: Liste von Dicts mit x/y/z (mm).
-    Keine Legacy-Formate.
     """
     if not poses:
         return np.zeros((0, 3), dtype=float)
@@ -148,12 +147,12 @@ def _require_dict(obj, path: str) -> dict:
 
 def _points_mm_for_source_side(recipe: Recipe, source: SourceKey, side: str) -> np.ndarray:
     """
-    Strict reader für Punkte (mm) aus den neuen Sources.
+    Strict reader für Punkte (mm).
 
     source:
       - "compiled_path" -> recipe.paths_compiled["sides"][side]["poses_quat"]
-      - "traj"          -> recipe.trajectory["traj"]["sides"][side]["poses_quat"]
-      - "executed_traj" -> recipe.trajectory["executed_traj"]["sides"][side]["poses_quat"]
+      - "traj"          -> recipe.trajectories["traj"]["sides"][side]["poses_quat"]
+      - "executed_traj" -> recipe.trajectories["executed_traj"]["sides"][side]["poses_quat"]
     """
     side = str(side)
 
@@ -166,13 +165,13 @@ def _points_mm_for_source_side(recipe: Recipe, source: SourceKey, side: str) -> 
             raise KeyError(f"Missing poses_quat at recipe.paths_compiled['sides']['{side}']['poses_quat']")
         return _poses_quat_to_points_mm(poses)
 
-    traj = _require_dict(getattr(recipe, "trajectory", None), "recipe.trajectory")
-    tdata = _require_dict(traj.get(source), f"recipe.trajectory['{source}']")
-    sides = _require_dict(tdata.get("sides"), f"recipe.trajectory['{source}']['sides']")
-    sdata = _require_dict(sides.get(side), f"recipe.trajectory['{source}']['sides']['{side}']")
+    traj_root = _require_dict(recipe.trajectories, "recipe.trajectories")
+    tdata = _require_dict(traj_root.get(source), f"recipe.trajectories['{source}']")
+    sides = _require_dict(tdata.get("sides"), f"recipe.trajectories['{source}']['sides']")
+    sdata = _require_dict(sides.get(side), f"recipe.trajectories['{source}']['sides']['{side}']")
     poses = sdata.get("poses_quat")
     if poses is None:
-        raise KeyError(f"Missing poses_quat at recipe.trajectory['{source}']['sides']['{side}']['poses_quat']")
+        raise KeyError(f"Missing poses_quat at recipe.trajectories['{source}']['sides']['{side}']['poses_quat']")
     return _poses_quat_to_points_mm(poses)
 
 
@@ -180,14 +179,14 @@ def _frame_for_source(recipe: Recipe, source: SourceKey, default: str) -> str:
     """
     Strict frame reader:
       - compiled_path -> recipe.paths_compiled["frame"]
-      - traj/executed -> recipe.trajectory[source]["frame"]
+      - traj/executed -> recipe.trajectories[source]["frame"]
     """
     if source == "compiled_path":
         pc = _require_dict(recipe.paths_compiled, "recipe.paths_compiled")
         return str(pc.get("frame") or default)
 
-    traj = _require_dict(getattr(recipe, "trajectory", None), "recipe.trajectory")
-    tdata = _require_dict(traj.get(source), f"recipe.trajectory['{source}']")
+    traj_root = _require_dict(recipe.trajectories, "recipe.trajectories")
+    tdata = _require_dict(traj_root.get(source), f"recipe.trajectories['{source}']")
     return str(tdata.get("frame") or default)
 
 
@@ -252,9 +251,9 @@ def build_marker_array_from_recipe(
             pc = _require_dict(recipe.paths_compiled, "recipe.paths_compiled")
             sdata = _require_dict(pc.get("sides"), "recipe.paths_compiled['sides']")
         else:
-            traj = _require_dict(getattr(recipe, "trajectory", None), "recipe.trajectory")
-            tdata = _require_dict(traj.get(source), f"recipe.trajectory['{source}']")
-            sdata = _require_dict(tdata.get("sides"), f"recipe.trajectory['{source}']['sides']")
+            traj_root = _require_dict(recipe.trajectories, "recipe.trajectories")
+            tdata = _require_dict(traj_root.get(source), f"recipe.trajectories['{source}']")
+            sdata = _require_dict(tdata.get("sides"), f"recipe.trajectories['{source}']['sides']")
 
         side_list = list(sdata.keys())
 

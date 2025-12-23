@@ -5,15 +5,13 @@ from __future__ import annotations
 import logging
 from typing import Optional, Callable
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QWidget, QHBoxLayout
 
 from .recipe_editor_panel.recipe_editor_panel import RecipeEditorPanel
 from .coating_preview_panel.coating_preview_panel import CoatingPreviewPanel
 
 from model.recipe.recipe import Recipe
-from model.recipe import recipe_markers
-from visualization_msgs.msg import MarkerArray
+from model.recipe.recipe_store import RecipeStore
 
 _LOG = logging.getLogger("tabs.recipe")
 
@@ -24,100 +22,58 @@ class RecipeTab(QWidget):
     Rechts: CoatingPreviewPanel (PyVista-Host wird extern attached)
 
     Wichtig:
-      - Preview und RViz/Marker werden immer aus derselben Recipe-Quelle erzeugt.
-      - Das initiale Preview läuft genau 1x – erst wenn der 3D-Interactor bereit ist.
+      - Preview läuft wie gehabt, aber: KEIN ROS publish aus dem RecipeTab.
+      - Validate/Optimize passieren nicht mehr hier (Buttons entfernt im Panel).
     """
 
     def __init__(
         self,
         *,
         ctx,
-        store,
+        store: RecipeStore | None,
         ros,
         attach_preview_widget: Callable[[QWidget], None] | None = None,
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
         self.ctx = ctx
-        self.store = store
         self.ros = ros
-        self._attach_preview_widget = attach_preview_widget
 
-        self._initial_preview_done: bool = False
+        # ---------------- Store SSoT ----------------
+        # Falls MainWindow store=None übergibt, holen wir ihn aus ctx.
+        if store is None:
+            store = getattr(ctx, "store", None) or getattr(ctx, "recipe_store", None)
+        if store is None:
+            raise RuntimeError(
+                "RecipeTab: RecipeStore fehlt (store=None). "
+                "MainWindow muss store übergeben oder ctx.store/ctx.recipe_store setzen."
+            )
+        self.store: RecipeStore = store
 
-        # ---------------- Layout ----------------
-        hroot = QHBoxLayout(self)
-        hroot.setContentsMargins(6, 6, 6, 6)
-        hroot.setSpacing(8)
+        self._initial_preview_done = False
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
 
         self.recipePanel = RecipeEditorPanel(ctx=self.ctx, store=self.store, parent=self)
-        hroot.addWidget(self.recipePanel, 0)
+        self.previewPanel = CoatingPreviewPanel(ctx=self.ctx, ros=self.ros, parent=self)
 
-        self.previewPanel = CoatingPreviewPanel(ctx=self.ctx, store=self.store, parent=self)
-        hroot.addWidget(self.previewPanel, 1)
+        layout.addWidget(self.recipePanel, 2)
+        layout.addWidget(self.previewPanel, 3)
 
-        hroot.setStretch(0, 0)
-        hroot.setStretch(1, 1)
+        if attach_preview_widget is not None:
+            attach_preview_widget(self.previewPanel)
 
-        # Externen PyVista-Interactor-Host an das Preview-Panel hängen (z. B. QtInteractor-Widget)
-        if callable(self._attach_preview_widget):
-            self._attach_preview_widget(self.previewPanel.get_pv_host())
-
-        # ---------------- Signals ----------------
-        # Update-Button (und Load) → Preview + Marker
-        self.recipePanel.updatePreviewRequested.connect(
-            self._on_update_preview_requested,
-            Qt.ConnectionType.QueuedConnection,
-        )
-
-        # Initiales Preview erst, wenn der Interactor da ist (kein "Fallback"-Timer)
-        self.previewPanel.interactorReady.connect(self._emit_initial_preview)
-
-    # ==================== Preview + RViz aus derselben Quelle ====================
+        self.recipePanel.updatePreviewRequested.connect(self._on_update_preview_requested)
 
     def _on_update_preview_requested(self, model: Recipe) -> None:
-        """
-        Einziger Einstiegspunkt für Preview + Marker-Update:
-          1) PyVista-Preview aktualisieren
-          2) MarkerArray aus derselben Recipe-Quelle bauen und über die Bridge publizieren
-        """
-        # 1) Preview
         try:
-            self.previewPanel.handle_update_preview(model)
+            self.previewPanel.update_preview(model)
         except Exception:
-            _LOG.exception("RecipeTab: handle_update_preview failed")
+            _LOG.exception("RecipeTab: preview update failed")
 
-        # 2) Marker / RViz
-        try:
-            checked_sides = None
-            try:
-                checked_sides = self.recipePanel.content.checked_sides()
-            except Exception:
-                checked_sides = None
-
-            ma: MarkerArray = recipe_markers.build_marker_array_from_recipe(
-                model,
-                sides=checked_sides,
-                frame_id="scene",
-            )
-
-            if isinstance(ma, MarkerArray) and getattr(ma, "markers", None):
-                if self.ros is not None:
-                    self.ros.set_spraypath(ma)
-                _LOG.info(
-                    "RecipeTab: SprayPath MarkerArray gesendet (%d Marker, frame=scene, sides=%s)",
-                    len(ma.markers),
-                    ", ".join(checked_sides or []),
-                )
-            else:
-                _LOG.warning("RecipeTab: MarkerArray ist leer (nichts zu publizieren)")
-        except Exception:
-            _LOG.exception("RecipeTab: Fehler beim Erzeugen/Publizieren des MarkerArray")
-
-    def _emit_initial_preview(self) -> None:
-        """
-        Initiales Preview nach Start – läuft genau einmal, sobald der Interactor bereit ist.
-        """
+    def on_after_show(self) -> None:
         if self._initial_preview_done:
             return
 

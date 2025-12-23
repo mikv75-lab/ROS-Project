@@ -23,7 +23,7 @@ from .mesh_utils import (
     load_substrate_mesh_from_key,
     place_substrate_on_mount,
 )
-from.model.recipe.recipe import Recipe
+from model.recipe.recipe import Recipe
 
 _LOG = logging.getLogger("tabs.recipe.scene")
 

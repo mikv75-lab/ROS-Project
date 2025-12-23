@@ -1,3 +1,4 @@
+# app/tabs/recipe/recipe_editor_panel/recipe_editor_panel.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
@@ -12,31 +13,19 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QGroupBox,
     QPushButton,
-    QFileDialog,
-    QMessageBox,
     QSizePolicy,
-    QFrame,
+    QMessageBox,
 )
 
-from.model.recipe.recipe import Recipe
-from.model.recipe.recipe_store import RecipeStore
+from model.recipe.recipe import Recipe
+from model.recipe.recipe_repo import RecipeRepo
+from model.recipe.recipe_bundle import RecipeBundle
+from model.recipe.recipe_store import RecipeStore
+
 from .recipe_editor_content import RecipeEditorContent
 
 
-def _slugify(s: str) -> str:
-    s = (s or "").strip()
-    s = re.sub(r"\s+", "_", s)
-    s = re.sub(r"[^-a-zA-Z0-9_]", "", s)
-    s = re.sub(r"_+", "_", s)
-    return s
-
-
-def _hline() -> QFrame:
-    f = QFrame()
-    f.setFrameShape(QFrame.HLine)
-    f.setFrameShadow(QFrame.Sunken)
-    return f
-
+# ----------------------------- UI helpers -----------------------------
 
 def _set_policy(
     w: QWidget,
@@ -53,128 +42,131 @@ def _set_policy(
 class RecipeEditorPanel(QWidget):
     """
     Commands:
-      Row 1: New | Load | Save | Delete
-      Row 2: Divider
-      Row 3: Update Preview | Validate | Optimize
-
-    Content:
-      RecipeEditorContent (Meta/Setup | Globals/Move Planner | Sides)
+      - New    -> create_new(bundle) (draft only, clears compiled + runs)
+      - Load   -> load_for_editor(bundle draft)
+      - Save   -> save_editor(bundle draft, clears runs; compiled may be dropped on hash change)
+      - Delete -> delete(bundle folder)
     """
 
-    updatePreviewRequested = pyqtSignal(object)  # model: Recipe
-    validateRequested = pyqtSignal()
-    optimizeRequested = pyqtSignal()
+    updatePreviewRequested = pyqtSignal(object)  # Recipe
 
-    def __init__(self, *, ctx, store: RecipeStore, parent: Optional[QWidget] = None):
+    def __init__(self, *, ctx, store: RecipeStore, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.ctx = ctx
         self.store = store
 
+        # Recipe persistence (new bundle layout)
+        recipes_root = getattr(getattr(self.ctx, "paths", None), "recipe_dir", None)
+        if not recipes_root:
+            raise RuntimeError("ctx.paths.recipe_dir fehlt (RecipeBundle root).")
+        self.repo = RecipeRepo(bundle=RecipeBundle(recipes_root_dir=recipes_root))
+
         self._active_model: Optional[Recipe] = None
-        self._active_rec_def: Optional[Dict[str, Any]] = None
         self._recipes_by_id: Dict[str, Dict[str, Any]] = {}
 
-        vroot = QVBoxLayout(self)
-        vroot.setContentsMargins(8, 8, 8, 8)
-        vroot.setSpacing(8)
+        # ---------------- Layout ----------------
+        root = QVBoxLayout(self)
+        root.setContentsMargins(6, 6, 6, 6)
+        root.setSpacing(6)
 
-        # ---------------- Commands ----------------
-        self.gbCommands = QGroupBox("Commands", self)
-        _set_policy(self.gbCommands, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
-
-        cmd_layout = QVBoxLayout(self.gbCommands)
-        cmd_layout.setContentsMargins(8, 6, 8, 6)
-        cmd_layout.setSpacing(6)
-
-        # Row 1
-        h_buttons = QHBoxLayout()
-        h_buttons.setContentsMargins(0, 0, 0, 0)
-        h_buttons.setSpacing(6)
-
-        self.btnNew = QPushButton("New", self.gbCommands)
-        self.btnLoad = QPushButton("Load", self.gbCommands)
-        self.btnSave = QPushButton("Save", self.gbCommands)
-        self.btnDelete = QPushButton("Delete", self.gbCommands)
-
-        for b in (self.btnNew, self.btnLoad, self.btnSave, self.btnDelete):
-            b.setAutoDefault(False)
-            _set_policy(b, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
-            h_buttons.addWidget(b, 1)
-
-        # Row 3
-        h_footer = QHBoxLayout()
-        h_footer.setContentsMargins(0, 0, 0, 0)
-        h_footer.setSpacing(8)
-
-        self.btnUpdatePreview = QPushButton("Update Preview", self.gbCommands)
-        self.btnValidate = QPushButton("Validate", self.gbCommands)
-        self.btnOptimize = QPushButton("Optimize", self.gbCommands)
-
-        for b in (self.btnUpdatePreview, self.btnValidate, self.btnOptimize):
-            b.setAutoDefault(False)
-            _set_policy(b, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
-            h_footer.addWidget(b, 1)
-
-        cmd_layout.addLayout(h_buttons)
-        cmd_layout.addWidget(_hline())
-        cmd_layout.addLayout(h_footer)
-
-        vroot.addWidget(self.gbCommands, 0)
-
-        # ---------------- Content ----------------
         self.content = RecipeEditorContent(ctx=self.ctx, store=self.store, parent=self)
-        _set_policy(self.content, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Expanding)
-        vroot.addWidget(self.content, 1)
 
-        # ---------------- Wiring ----------------
-        self._fill_recipe_select()
-        if self.content.sel_recipe is not None:
+        # --- buttons ---
+        gb_cmd = QGroupBox("Recipe", self)
+        gb_cmd_l = QHBoxLayout(gb_cmd)
+        gb_cmd_l.setContentsMargins(8, 8, 8, 8)
+        gb_cmd_l.setSpacing(8)
+
+        self.btn_new = QPushButton("New", gb_cmd)
+        self.btn_load = QPushButton("Load", gb_cmd)
+        self.btn_save = QPushButton("Save", gb_cmd)
+        self.btn_delete = QPushButton("Delete", gb_cmd)
+
+        gb_cmd_l.addWidget(self.btn_new)
+        gb_cmd_l.addWidget(self.btn_load)
+        gb_cmd_l.addWidget(self.btn_save)
+        gb_cmd_l.addStretch(1)
+        gb_cmd_l.addWidget(self.btn_delete)
+
+        root.addWidget(gb_cmd)
+        root.addWidget(self.content, 1)
+
+        _set_policy(self.content)
+
+        # ---------------- Signals ----------------
+        self.btn_new.clicked.connect(self._on_new_clicked)
+        self.btn_load.clicked.connect(self._on_load_clicked)
+        self.btn_save.clicked.connect(self._on_save_clicked)
+        self.btn_delete.clicked.connect(self._on_delete_clicked)
+
+        if getattr(self.content, "sel_recipe", None) is not None:
             self.content.sel_recipe.currentIndexChanged.connect(self._on_recipe_select_changed)
 
-        self.btnNew.clicked.connect(self._on_new_clicked)
-        self.btnLoad.clicked.connect(self._on_load_clicked)
-        self.btnSave.clicked.connect(self._on_save_clicked)
-        self.btnDelete.clicked.connect(self._on_delete_clicked)
+        self._rebuild_recipe_defs()
+        self._load_default_or_first()
 
-        self.btnValidate.clicked.connect(self.validateRequested.emit)
-        self.btnOptimize.clicked.connect(self.optimizeRequested.emit)
-        self.btnUpdatePreview.clicked.connect(self._relay_update_preview)
+    # ---------------- recipes list ----------------
 
-        # Init first recipe (if present)
+    def _rebuild_recipe_defs(self) -> None:
+        recipes = self.store.list_recipe_defs()
+        self._recipes_by_id = {}
+        for rd in recipes:
+            rid = str(rd.get("id") or "").strip()
+            if rid:
+                self._recipes_by_id[rid] = rd
+
         combo = getattr(self.content, "sel_recipe", None)
-        if combo is not None and combo.count() > 0:
-            if combo.currentIndex() < 0:
-                combo.setCurrentIndex(0)
-            self._on_recipe_select_changed(combo.currentIndex())
-
-    # ============================ recipes ============================
-
-    def _fill_recipe_select(self) -> None:
-        combo = getattr(self.content, "sel_recipe", None)
-        if combo is None:
-            return
-
-        self._recipes_by_id.clear()
-        combo.blockSignals(True)
-        combo.clear()
-
-        for rec_def in (self.store.recipes or []):
-            rid = str((rec_def or {}).get("id") or "").strip()
-            if not rid:
-                continue
-            combo.addItem(rid)
-            self._recipes_by_id[rid] = rec_def
-
-        combo.blockSignals(False)
+        if combo is not None:
+            combo.blockSignals(True)
+            combo.clear()
+            for rid in sorted(self._recipes_by_id.keys()):
+                combo.addItem(rid)
+            combo.blockSignals(False)
 
     def _current_recipe_def(self) -> Optional[Dict[str, Any]]:
         combo = getattr(self.content, "sel_recipe", None)
-        if combo is None:
+        if combo is None or combo.currentIndex() < 0:
             return None
         rid = combo.currentText().strip()
         return self._recipes_by_id.get(rid)
 
+    def _load_default_or_first(self) -> None:
+        combo = getattr(self.content, "sel_recipe", None)
+        if combo is None:
+            return
+
+        if combo.count() <= 0:
+            # nothing configured
+            return
+
+        # keep current selection if valid; else first
+        rid = combo.currentText().strip()
+        if not rid:
+            combo.setCurrentIndex(0)
+            rid = combo.currentText().strip()
+
+        rec_def = self._recipes_by_id.get(rid)
+        if not rec_def:
+            combo.setCurrentIndex(0)
+            rid = combo.currentText().strip()
+            rec_def = self._recipes_by_id.get(rid)
+
+        if not rec_def:
+            return
+
+        # Try load existing draft; otherwise show defaults
+        try:
+            model = self.repo.load_for_editor(rid)
+        except Exception:
+            model = self._new_model_from_rec_def(rec_def)
+
+        self._apply_model(model, rec_def)
+        self.updatePreviewRequested.emit(model)
+
+    # ---------------- model ----------------
+
     def _new_model_from_rec_def(self, rec_def: Dict[str, Any]) -> Recipe:
+        rid = str(rec_def.get("id") or "").strip()
         params = self.store.collect_global_defaults()
         move_planner = self.store.collect_planner_defaults()
         pbs = self.store.build_default_paths_for_recipe(rec_def)
@@ -186,144 +178,152 @@ class RecipeEditorPanel(QWidget):
         tools = rec_def.get("tools") or []
         tool = tools[0] if tools else None
 
-        return Recipe.from_dict({
-            "id": "",
-            "description": rec_def.get("description") or "",
-            "tool": tool,
-            "substrate": sub,
-            "substrate_mount": mnt,
-            "parameters": params,
-            "planner": move_planner,     # aktuell: Move-Planner
-            "paths_by_side": pbs,
-        })
+        return Recipe.from_dict(
+            {
+                "id": rid,
+                "description": rec_def.get("description") or "",
+                "tool": tool,
+                "substrate": sub,
+                "substrate_mount": mnt,
+                "parameters": params,
+                "planner": move_planner,
+                "paths_by_side": pbs,
+            }
+        )
 
     def _apply_model(self, model: Recipe, rec_def: Dict[str, Any]) -> None:
+        rid = str(rec_def.get("id") or "").strip()
+        desc = (rec_def.get("description") or "").strip()
+
+        model.id = rid  # SSoT
         self._active_model = model
-        self._active_rec_def = rec_def
 
-        self.content.set_meta(name=model.id or "", desc=model.description or "")
-        self.content.apply_recipe_model(model, rec_def)
-        self.content.apply_planner_model(model.planner or {})
+        self.content.set_meta(name=rid, desc=desc)
+        self.content.apply_model_to_ui(model, rec_def)
 
-    def _on_recipe_select_changed(self, _index: int) -> None:
+    def current_model(self) -> Optional[Recipe]:
+        """Return a Recipe instance that reflects the current UI state.
+
+        Policy:
+          - Bundle-ID is SSoT: always equals recipes[..].id (selected in combo).
+          - Editor works on draft only (no traj/executed persisted here).
+        """
+        rec_def = self._current_recipe_def()
+        if not rec_def:
+            return None
+
+        rid = str(rec_def.get("id") or "").strip()
+        desc = (rec_def.get("description") or "").strip()
+
+        model = self._active_model
+        if model is None:
+            model = self._new_model_from_rec_def(rec_def)
+
+        # enforce bundle id == recipes[..].id
+        model.id = rid
+
+        # apply UI -> model
+        self.content.set_meta(name=rid, desc=desc)
+        self.content.apply_ui_to_model(model)
+
+        # editor draft never carries persisted trajectories
+        model.trajectories = {}
+        return model
+
+    # ---------------- UI handlers ----------------
+
+    def _on_recipe_select_changed(self, *_args) -> None:
         rec_def = self._current_recipe_def()
         if not rec_def:
             return
-        self._apply_model(self._new_model_from_rec_def(rec_def), rec_def)
+        rid = str(rec_def.get("id") or "").strip()
+        if not rid:
+            return
 
-    # ============================ UI events ============================
+        # load draft if exists; else show defaults
+        try:
+            model = self.repo.load_for_editor(rid)
+        except FileNotFoundError:
+            model = self._new_model_from_rec_def(rec_def)
+
+        self._apply_model(model, rec_def)
+        self.updatePreviewRequested.emit(model)
 
     def _on_new_clicked(self) -> None:
         rec_def = self._current_recipe_def()
         if not rec_def:
-            self.content.apply_defaults()
-            self._active_model = None
-            self._active_rec_def = None
-            self.content.set_meta(name="", desc="")
             return
+        rid = str(rec_def.get("id") or "").strip()
+        if not rid:
+            raise ValueError("recipes[..].id ist leer.")
 
-        self._apply_model(self._new_model_from_rec_def(rec_def), rec_def)
+        base = self._new_model_from_rec_def(rec_def)
 
-    def _on_load_clicked(self) -> None:
-        start_dir = getattr(getattr(self.ctx, "paths", None), "recipe_dir", os.getcwd())
-        fname, _ = QFileDialog.getOpenFileName(self, "Rezept laden", start_dir, "YAML (*.yaml *.yml)")
-        if not fname:
-            return
+        # create/overwrite draft; clears compiled + runs per bundle policy
+        self.repo.create_new(rid, base=base, overwrite=True)
 
-        # 1) Load full model
-        model = Recipe.load_yaml(fname)
-        if not model.id:
-            raise ValueError("Geladenes Rezept hat kein 'id'-Feld.")
-
-        # 2) Find matching definition strictly by model.id
-        rec_def = self._recipes_by_id.get(model.id)
-        if not rec_def:
-            raise ValueError(
-                f"Kein recipes[..].id == '{model.id}' gefunden. "
-                f"Bitte ein Rezept mit gültiger ID laden."
-            )
-
-        # 3) Set recipe selection (without triggering auto-new)
-        combo = getattr(self.content, "sel_recipe", None)
-        if combo is not None:
-            idx = combo.findText(str(model.id))
-            if idx >= 0:
-                combo.blockSignals(True)
-                combo.setCurrentIndex(idx)
-                combo.blockSignals(False)
-
-        # 4) Apply model
+        model = self.repo.load_for_editor(rid)
         self._apply_model(model, rec_def)
-
-        # 5) Update preview
         self.updatePreviewRequested.emit(model)
 
-        QMessageBox.information(self, "Geladen", os.path.basename(fname))
+    def _on_load_clicked(self) -> None:
+        rec_def = self._current_recipe_def()
+        if not rec_def:
+            return
+        rid = str(rec_def.get("id") or "").strip()
+        if not rid:
+            raise ValueError("recipes[..].id ist leer.")
+
+        try:
+            model = self.repo.load_for_editor(rid)
+        except FileNotFoundError:
+            # first time: create defaults
+            base = self._new_model_from_rec_def(rec_def)
+            self.repo.create_new(rid, base=base, overwrite=True)
+            model = self.repo.load_for_editor(rid)
+
+        self._apply_model(model, rec_def)
+        self.updatePreviewRequested.emit(model)
 
     def _on_save_clicked(self) -> None:
+        rec_def = self._current_recipe_def()
+        if not rec_def:
+            return
+        rid = str(rec_def.get("id") or "").strip()
+        if not rid:
+            raise ValueError("recipes[..].id ist leer.")
+
         model = self.current_model()
-
-        name_inp, _desc_inp = self.content.meta_values()
-        name = _slugify((name_inp or "").strip())
-        if not name:
-            QMessageBox.warning(self, "Name fehlt", "Bitte zuerst einen Recipe-Namen eingeben.")
+        if model is None:
             return
+        model.id = rid
 
-        model.id = name
+        # Editor-save: draft only; bundle enforces "no runs in draft" and can drop compiled on hash changes
+        self.repo.save_editor(rid, draft=model, compiled=None, delete_compiled_on_hash_change=True)
 
-        start_dir = getattr(getattr(self.ctx, "paths", None), "recipe_dir", os.getcwd())
-        suggested = f"{name}.yaml"
-        fname, _ = QFileDialog.getSaveFileName(
-            self,
-            "Rezept speichern",
-            os.path.join(start_dir, suggested),
-            "YAML (*.yaml *.yml)",
-        )
-        if not fname:
-            return
-
-        model.save_yaml(fname)
-        QMessageBox.information(self, "Gespeichert", os.path.basename(fname))
+        QMessageBox.information(self, "Gespeichert", f"{rid} (draft)")
 
     def _on_delete_clicked(self) -> None:
         rec_def = self._current_recipe_def()
         if not rec_def:
-            self.content.apply_defaults()
-            self._active_model = None
-            self._active_rec_def = None
-            self.content.set_meta(name="", desc="")
+            return
+        rid = str(rec_def.get("id") or "").strip()
+        if not rid:
+            raise ValueError("recipes[..].id ist leer.")
+
+        reply = QMessageBox.question(
+            self,
+            "Löschen",
+            f"Rezept '{rid}' wirklich löschen? (draft + compiled + runs)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
             return
 
-        self._apply_model(self._new_model_from_rec_def(rec_def), rec_def)
+        self.repo.delete(rid)
 
-    # ============================ export / trigger ============================
-
-    def current_model(self) -> Recipe:
-        """
-        Builds a Recipe from current UI state (globals, move-planner, paths_by_side).
-        """
-        params = self.content.collect_globals()
-        paths_by_side = self.content.collect_paths_by_side()
-        move_planner = self.content.collect_planner()
-        tool, sub, mnt = self.content.active_selectors_values()
-        name, desc = self.content.meta_values()
-
-        model = self._active_model
-        if model is None:
-            rec_def = self._current_recipe_def() or {}
-            model = self._new_model_from_rec_def(rec_def)
-
-        model.id = (name or "").strip()
-        model.description = (desc or "").strip()
-        model.tool = tool
-        model.substrate = sub
-        model.substrate_mount = mnt
-        model.parameters = params
-        model.planner = move_planner
-        model.paths_by_side = paths_by_side
-
-        self._active_model = model
-        return model
-
-    def _relay_update_preview(self) -> None:
-        self.updatePreviewRequested.emit(self.current_model())
+        # reset UI to defaults (unsaved draft)
+        base = self._new_model_from_rec_def(rec_def)
+        self._apply_model(base, rec_def)
+        self.updatePreviewRequested.emit(base)

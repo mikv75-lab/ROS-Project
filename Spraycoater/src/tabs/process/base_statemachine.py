@@ -8,7 +8,7 @@ from typing import Optional, Dict, Any
 from PyQt6 import QtCore
 from PyQt6.QtStateMachine import QStateMachine, QState, QFinalState
 
-from ...model.recipe.run_result import RunResult  # <-- anpassen: relative Ebenen passend zu deinem Refactor
+from model.recipe.recipe_run_result import RunResult
 
 _LOG = logging.getLogger("tabs.process.base_statemachine")
 
@@ -42,10 +42,22 @@ class BaseProcessStatemachine(QtCore.QObject):
     """
     Gemeinsame Basis für Validate / Optimize / Execute.
 
-    Ergebnis: RunResult (oder kompatibles dict via to_process_payload()).
+    Subklassen:
+      - setzen ROLE = "validate" | "optimize" | "execute"
+      - implementieren _on_enter_segment(seg_name)
+      - optional: _prepare_run(), _segment_exists(), _should_transition_on_ok()
+
+    Contract:
+      - StateMachine triggert Bewegungs-Calls via ros.*
+      - Transition passiert über moveitpy.signals.motionResultChanged:
+          - "EXECUTED:OK"  -> next
+          - "ERROR..."     -> retry / fail
+      - Eval/Score passiert NICHT hier (macht ProcessTab).
     """
 
-    notifyFinished = QtCore.pyqtSignal(object)  # emits RunResult oder dict-payload
+    ROLE = "process"
+
+    notifyFinished = QtCore.pyqtSignal(object)  # emits dict payload (RunResult.to_process_payload())
     notifyError = QtCore.pyqtSignal(str)
 
     stateChanged = QtCore.pyqtSignal(str)
@@ -59,7 +71,6 @@ class BaseProcessStatemachine(QtCore.QObject):
         *,
         recipe: Any,
         ros: Any,
-        role: str,  # <-- NEU: "validate" | "optimize" | "execute"
         parent: Optional[QtCore.QObject] = None,
         max_retries: int = 2,
         skip_home: bool = False,
@@ -68,7 +79,7 @@ class BaseProcessStatemachine(QtCore.QObject):
 
         self._recipe = recipe
         self._ros = ros
-        self._role = str(role or "")
+        self._role = str(getattr(self, "ROLE", "process") or "process")
 
         self._max_retries = int(max_retries)
         self._skip_home = bool(skip_home)
@@ -88,6 +99,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._moveitpy = getattr(self._ros, "moveitpy", None)
         self._moveitpy_signals = getattr(self._moveitpy, "signals", None)
 
+        # forward our internal logger to UI
         self._log_handler = _QtSignalHandler(self)
         self._log_handler.setFormatter(logging.Formatter("%(message)s"))
         self._log_handler.setLevel(logging.INFO)
@@ -146,7 +158,6 @@ class BaseProcessStatemachine(QtCore.QObject):
     # ---------------- Result ----------------
 
     def _build_result(self) -> RunResult:
-        # last snapshots für Kompatibilität (ProcessTab liest planned_traj/executed_traj)
         last_planned = self._safe_call("moveit_planned_trajectory")
         last_executed = self._safe_call("moveit_executed_trajectory")
 
@@ -156,19 +167,19 @@ class BaseProcessStatemachine(QtCore.QObject):
             message="stopped" if self._stopped else "finished",
         )
 
-        rr.meta.update({
-            "status": "stopped" if self._stopped else "finished",
-            "planned_by_segment": dict(self._planned_by_segment),
-            "executed_by_segment": dict(self._executed_by_segment),
-        })
+        rr.meta.update(
+            {
+                "status": "stopped" if self._stopped else "finished",
+                "planned_by_segment": dict(self._planned_by_segment),
+                "executed_by_segment": dict(self._executed_by_segment),
+            }
+        )
 
-        # Diese beiden Keys versteht dein aktueller ProcessTab direkt:
         if isinstance(last_planned, dict):
             rr.planned_traj = last_planned
         if isinstance(last_executed, dict):
             rr.executed_traj = last_executed
 
-        # optional: recipe-id etc. nur als meta (nicht als Object rumschleppen)
         rid = getattr(self._recipe, "id", None)
         if rid is not None:
             rr.meta["recipe_id"] = rid
@@ -176,7 +187,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         return rr
 
     # ---------------- Machine ----------------
-    # (dein Code unverändert)
+
     def _build_machine(self) -> QStateMachine:
         m = QStateMachine(self)
         states = {n: QState(m) for n in SEG_ORDER}
@@ -261,13 +272,7 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     def _on_finished(self) -> None:
         rr = self._build_result()
-
-        # ✅ kompatibel zu deinem aktuellen ProcessTab (dict erwartet):
         self.notifyFinished.emit(rr.to_process_payload())
-
-        # Alternative (wenn ProcessTab RunResult akzeptiert):
-        # self.notifyFinished.emit(rr)
-
         self._cleanup()
 
     def _on_error(self) -> None:
@@ -282,12 +287,14 @@ class BaseProcessStatemachine(QtCore.QObject):
             return None
 
     def _cleanup(self) -> None:
+        # disconnect moveit signals
         try:
             if self._moveitpy_signals is not None and hasattr(self._moveitpy_signals, "motionResultChanged"):
                 self._moveitpy_signals.motionResultChanged.disconnect(self._on_motion_result)
         except Exception:
             pass
 
+        # stop + delete machine
         if self._machine:
             try:
                 self._machine.stop()
@@ -299,6 +306,7 @@ class BaseProcessStatemachine(QtCore.QObject):
                 pass
             self._machine = None
 
+        # remove log handler
         if self._log_handler:
             try:
                 _LOG.removeHandler(self._log_handler)

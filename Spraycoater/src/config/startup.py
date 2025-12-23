@@ -371,7 +371,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     # ----- AppContent erzeugen -----
     content = AppContent(startup_yaml_path)
 
-    return AppContext(
+    ctx = AppContext(
         paths=paths,
         ros=ros_cfg,
         plc=plc_cfg,
@@ -381,6 +381,15 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         mounts_yaml=mounts_yaml,
         content=content,
     )
+
+    # ✅ Repo in content binden (Tabs holen es über ctx.content.recipe_repo())
+    try:
+        if ctx.content is not None:
+            ctx.content.bind_ctx(ctx)
+    except Exception as e:
+        warnings.warn(f"RecipeRepo konnte nicht initialisiert werden: {e}")
+
+    return ctx
 
 
 # ============================================================
@@ -424,6 +433,9 @@ class AppContent:
       - topics.yaml enthält bereits "spraycoater/..."
       - daher wird HIER NICHTS geprefixt (kein root_ns)
       - Node-Namespace (shadow/live) kommt allein aus RosBridge / rclpy Node
+
+    Zusätzlich:
+      - RecipeRepo hängt in content und wird via bind_ctx(ctx) initialisiert
     """
 
     def __init__(self, startup_yaml_path: str):
@@ -475,13 +487,43 @@ class AppContent:
             if my and isinstance(my.get("mounts"), dict):
                 self.mounts_yaml = my
 
+        # ---- Repo (lazy, gebunden über bind_ctx) ----
+        self._ctx: Any = None
+        self._recipe_repo: Any = None
+
+    # ---------------- Repo -----------------
+
+    def bind_ctx(self, ctx: Any) -> None:
+        """Bindet den AppContext an content (für Repo-Erzeugung)."""
+        self._ctx = ctx
+
+    def recipe_repo(self):
+        """
+        Lazy getter für RecipeRepo.
+
+        Repo basiert auf ctx.paths.recipe_dir (RecipeBundle root).
+        """
+        if self._recipe_repo is not None:
+            return self._recipe_repo
+        if self._ctx is None:
+            raise RuntimeError("AppContent.recipe_repo(): ctx ist nicht gebunden (bind_ctx(ctx) fehlt).")
+
+        from model.recipe.recipe_bundle import RecipeBundle
+        from model.recipe.recipe_repo import RecipeRepo
+
+        bundle = RecipeBundle(recipes_root_dir=self._ctx.paths.recipe_dir)
+        self._recipe_repo = RecipeRepo(bundle=bundle)
+        return self._recipe_repo
+
     # ---------------- Frames ----------------
+
     def frame(self, name: str) -> str:
         if name not in self._frames_map:
             raise KeyError(f"Frame '{name}' nicht gefunden.")
         return self._frames_map[name]
 
     # ---------------- QoS -------------------
+
     @staticmethod
     def _str_to_history(s: str):
         s = (s or "").upper()
@@ -526,6 +568,7 @@ class AppContent:
         return self._qos_profiles[key]
 
     # ---------------- Topics -----------------
+
     def _with_root_ns(self, name: str) -> str:
         # Für deinen Fall: NICHT prefixen, aber absolute Topics respektieren
         return name
@@ -562,6 +605,7 @@ class AppContent:
         raise KeyError(f"Topic id '{topic_id}' in {group}/{direction} nicht gefunden.")
 
     # Node-Helpers
+
     def create_publisher_from_id(self, node, group: str, topic_id: str):
         spec = self.topic_by_id(group, "publish", topic_id)
         msg_type = spec.resolve_type()

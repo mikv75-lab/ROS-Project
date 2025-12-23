@@ -9,8 +9,8 @@ from PyQt6.QtCore import pyqtSignal, QTimer
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QSpacerItem
 from PyQt6.sip import isdeleted  # Guard gegen zerstörte Qt-Objekte
 
-from.model.recipe.recipe import Recipe
-from.widgets.info_groupbox import InfoGroupBox
+from model.recipe.recipe import Recipe
+from widgets.info_groupbox import InfoGroupBox
 
 from .views_3d.scene_manager import SceneManager
 from .views_2d.matplot2d import Matplot2DView
