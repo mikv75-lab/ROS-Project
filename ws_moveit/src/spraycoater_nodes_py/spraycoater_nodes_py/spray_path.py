@@ -1,306 +1,305 @@
-# spraycoater_nodes_py/spray_path.py
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python3
 from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, Optional
 
 import rclpy
 from rclpy.node import Node
 
 from std_msgs.msg import String
-from geometry_msgs.msg import Pose, PoseArray, Point
-from visualization_msgs.msg import MarkerArray, Marker
+from geometry_msgs.msg import PoseArray
+from visualization_msgs.msg import MarkerArray
 
 from spraycoater_nodes_py.utils.config_hub import topics, frames
 
 
+@dataclass
+class _ViewCache:
+    poses: Optional[PoseArray] = None
+    markers: Optional[MarkerArray] = None
+
+
 class SprayPath(Node):
     """
-    SprayPath-Manager.
+    SprayPath Router/Cache Node (compiled + traj + executed overlay).
 
-    SUB:
-      - spraycoater/spray_path/set               (MarkerArray)
-      - spraycoater/spray_path/executed_poses_in (PoseArray)
+    Inputs (subscribe):
+      - compiled_path: compiled_poses_in / compiled_markers_in
+      - traj:          traj_poses_in     / traj_markers_in
+      - executed:      executed_poses_in / executed_markers_in
+      - set_view (String): selects what is published on main poses/markers
 
-    PUB (QoS via config_hub, i.d.R. latched/TRANSIENT_LOCAL + 1 Hz republish):
-      - spraycoater/spray_path/poses
-      - spraycoater/spray_path/markers
-      - spraycoater/spray_path/current
-      - spraycoater/spray_path/executed_poses
-      - spraycoater/spray_path/executed_markers
-
-    Namespace kommt ausschließlich über den Node (Launchfile).
+    Outputs (publish):
+      - current (String, latched)
+      - poses/markers (latched): currently selected main view
+      - executed_poses/executed_markers (latched): overlay, always updated
     """
 
     GROUP = "spray_path"
 
+    VIEW_COMPILED = "compiled_path"
+    VIEW_TRAJ = "traj"
+    VIEW_EXECUTED = "executed_traj"
+
     def __init__(self) -> None:
-        super().__init__("spraypath_manager")
+        super().__init__("spray_path")
 
         # ---------------- Backend-Parameter ----------------
         self.declare_parameter("backend", "default")
-        self.backend: str = (
-            self.get_parameter("backend").get_parameter_value().string_value or "default"
-        )
+        self.backend: str = self.get_parameter("backend").get_parameter_value().string_value or "default"
 
         # Config-Hub
         self.loader = topics()
         self.frames = frames()
-        self._F = self.frames.resolve
 
         # ---------------- Topics & QoS via config_hub ----------------
         # SUB
-        topic_set = self.loader.subscribe_topic(self.GROUP, "set")
-        qos_set = self.loader.qos_by_id("subscribe", self.GROUP, "set")
+        t_set_view = self.loader.subscribe_topic(self.GROUP, "set_view")
+        q_set_view = self.loader.qos_by_id("subscribe", self.GROUP, "set_view")
 
-        topic_exec_in = self.loader.subscribe_topic(self.GROUP, "executed_poses_in")
-        qos_exec_in = self.loader.qos_by_id("subscribe", self.GROUP, "executed_poses_in")
+        t_compiled_poses_in = self.loader.subscribe_topic(self.GROUP, "compiled_poses_in")
+        q_compiled_poses_in = self.loader.qos_by_id("subscribe", self.GROUP, "compiled_poses_in")
+        t_compiled_markers_in = self.loader.subscribe_topic(self.GROUP, "compiled_markers_in")
+        q_compiled_markers_in = self.loader.qos_by_id("subscribe", self.GROUP, "compiled_markers_in")
 
-        # PUB (QoS kommt aus qos.yaml über die IDs)
-        topic_current = self.loader.publish_topic(self.GROUP, "current")
-        qos_current = self.loader.qos_by_id("publish", self.GROUP, "current")
+        t_traj_poses_in = self.loader.subscribe_topic(self.GROUP, "traj_poses_in")
+        q_traj_poses_in = self.loader.qos_by_id("subscribe", self.GROUP, "traj_poses_in")
+        t_traj_markers_in = self.loader.subscribe_topic(self.GROUP, "traj_markers_in")
+        q_traj_markers_in = self.loader.qos_by_id("subscribe", self.GROUP, "traj_markers_in")
 
-        topic_poses = self.loader.publish_topic(self.GROUP, "poses")
-        qos_poses = self.loader.qos_by_id("publish", self.GROUP, "poses")
+        t_executed_poses_in = self.loader.subscribe_topic(self.GROUP, "executed_poses_in")
+        q_executed_poses_in = self.loader.qos_by_id("subscribe", self.GROUP, "executed_poses_in")
+        t_executed_markers_in = self.loader.subscribe_topic(self.GROUP, "executed_markers_in")
+        q_executed_markers_in = self.loader.qos_by_id("subscribe", self.GROUP, "executed_markers_in")
 
-        topic_markers = self.loader.publish_topic(self.GROUP, "markers")
-        qos_markers = self.loader.qos_by_id("publish", self.GROUP, "markers")
+        # PUB
+        t_current = self.loader.publish_topic(self.GROUP, "current")
+        q_current = self.loader.qos_by_id("publish", self.GROUP, "current")
 
-        topic_exec_poses = self.loader.publish_topic(self.GROUP, "executed_poses")
-        qos_exec_poses = self.loader.qos_by_id("publish", self.GROUP, "executed_poses")
+        t_poses = self.loader.publish_topic(self.GROUP, "poses")
+        q_poses = self.loader.qos_by_id("publish", self.GROUP, "poses")
 
-        topic_exec_markers = self.loader.publish_topic(self.GROUP, "executed_markers")
-        qos_exec_markers = self.loader.qos_by_id("publish", self.GROUP, "executed_markers")
+        t_markers = self.loader.publish_topic(self.GROUP, "markers")
+        q_markers = self.loader.qos_by_id("publish", self.GROUP, "markers")
+
+        t_exec_poses = self.loader.publish_topic(self.GROUP, "executed_poses")
+        q_exec_poses = self.loader.qos_by_id("publish", self.GROUP, "executed_poses")
+
+        t_exec_markers = self.loader.publish_topic(self.GROUP, "executed_markers")
+        q_exec_markers = self.loader.qos_by_id("publish", self.GROUP, "executed_markers")
 
         # ---------------- Publisher / Subscriber ----------------
-        self.pub_current = self.create_publisher(String, topic_current, qos_current)
-        self.pub_poses = self.create_publisher(PoseArray, topic_poses, qos_poses)
-        self.pub_markers = self.create_publisher(MarkerArray, topic_markers, qos_markers)
-        self.pub_exec_poses = self.create_publisher(PoseArray, topic_exec_poses, qos_exec_poses)
-        self.pub_exec_markers = self.create_publisher(MarkerArray, topic_exec_markers, qos_exec_markers)
+        self.pub_current = self.create_publisher(String, t_current, q_current)
+        self.pub_poses = self.create_publisher(PoseArray, t_poses, q_poses)
+        self.pub_markers = self.create_publisher(MarkerArray, t_markers, q_markers)
+        self.pub_exec_poses = self.create_publisher(PoseArray, t_exec_poses, q_exec_poses)
+        self.pub_exec_markers = self.create_publisher(MarkerArray, t_exec_markers, q_exec_markers)
 
-        self.sub_set = self.create_subscription(
-            MarkerArray,
-            topic_set,
-            self._on_set_spraypath,
-            qos_set,
+        self.sub_set_view = self.create_subscription(String, t_set_view, self._on_set_view, q_set_view)
+
+        self.sub_compiled_poses = self.create_subscription(
+            PoseArray, t_compiled_poses_in, self._on_compiled_poses_in, q_compiled_poses_in
+        )
+        self.sub_compiled_markers = self.create_subscription(
+            MarkerArray, t_compiled_markers_in, self._on_compiled_markers_in, q_compiled_markers_in
         )
 
-        self.sub_exec = self.create_subscription(
-            PoseArray,
-            topic_exec_in,
-            self._on_executed_poses,
-            qos_exec_in,
+        self.sub_traj_poses = self.create_subscription(
+            PoseArray, t_traj_poses_in, self._on_traj_poses_in, q_traj_poses_in
+        )
+        self.sub_traj_markers = self.create_subscription(
+            MarkerArray, t_traj_markers_in, self._on_traj_markers_in, q_traj_markers_in
         )
 
-        # ---------------- Interner Zustand ----------------
-        self._last_frame = self.frames.get("scene", "scene")
-        self._last_name: str = ""
-        self._last_pa: PoseArray | None = None
-        self._last_markers: MarkerArray | None = None
+        self.sub_executed_poses = self.create_subscription(
+            PoseArray, t_executed_poses_in, self._on_executed_poses_in, q_executed_poses_in
+        )
+        self.sub_executed_markers = self.create_subscription(
+            MarkerArray, t_executed_markers_in, self._on_executed_markers_in, q_executed_markers_in
+        )
 
-        self._last_exec_frame = self._last_frame
-        self._last_exec_pa: PoseArray | None = None
-        self._last_exec_markers: MarkerArray | None = None
+        # ---------------- Internal state ----------------
+        self._current_view: str = ""
+        self._views: Dict[str, _ViewCache] = {
+            self.VIEW_COMPILED: _ViewCache(),
+            self.VIEW_TRAJ: _ViewCache(),
+            self.VIEW_EXECUTED: _ViewCache(),
+        }
 
-        # 1 Hz Republish Timer
+        # 1 Hz Republish Timer (helps late subscribers & keeps "latched-like" behavior consistent)
         self._timer = self.create_timer(1.0, self._republish_all)
 
         self.get_logger().info(
-            f"✅ SprayPathManager bereit (backend='{self.backend}'): "
-            f"set→poses/markers, exec_in→executed_*, QoS via config_hub + 1Hz Republish."
+            f"✅ SprayPath ready (backend='{self.backend}'). "
+            f"Inputs: compiled + traj + executed + set_view. "
+            f"Outputs: current + poses/markers + executed_* overlay. QoS via config_hub + 1Hz republish."
         )
 
     # ----------------------------------------------------------------------
-    # Helper
+    # View routing
     # ----------------------------------------------------------------------
 
-    @staticmethod
-    def _extract_name(ma: MarkerArray) -> str:
-        for m in ma.markers:
-            if m.type == Marker.TEXT_VIEW_FACING:
-                t = (m.text or "").strip()
-                if t:
-                    return t
-        for m in ma.markers:
-            ns = (m.ns or "").strip()
-            if ns:
-                return ns
-        return ""
-
-    @staticmethod
-    def _prefer_linestrip(ma: MarkerArray) -> Marker | None:
-        best = None
-        for m in ma.markers:
-            if len(m.points) >= 2:
-                if m.type == Marker.LINE_STRIP:
-                    return m
-                if best is None:
-                    best = m
-        return best
-
-    def _publish_current_name(self, name: str) -> None:
-        self.pub_current.publish(String(data=name))
-
-    # ----------------------------------------------------------------------
-    # Handler: Sollpfad
-    # ----------------------------------------------------------------------
-
-    def _on_set_spraypath(self, msg: MarkerArray) -> None:
-        if msg is None or len(msg.markers) == 0:
-            self.get_logger().warning(
-                f"[{self.backend}] ⚠️ spray_path.set: leeres MarkerArray – ignoriere"
-            )
+    def _set_current_view(self, key: str) -> None:
+        key = (key or "").strip()
+        if not key:
             return
 
-        frame = self._last_frame
-        for m in msg.markers:
-            fid = (m.header.frame_id or "").strip()
-            if fid:
-                frame = fid
-                break
-        self._last_frame = frame
-
-        name = self._extract_name(msg)
-        m_path = self._prefer_linestrip(msg)
-        if m_path is None:
-            self.get_logger().warning(
-                f"[{self.backend}] ⚠️ spray_path.set: kein gültiger Pfad – ignoriere"
-            )
+        if key not in self._views:
+            self.get_logger().warning(f"[{self.backend}] ⚠️ set_view: unknown key '{key}'")
             return
 
-        now = self.get_clock().now().to_msg()
+        self._current_view = key
+        self.pub_current.publish(String(data=key))
+        self._publish_selected_view()
 
-        # PoseArray (Sollpfad)
-        pa = PoseArray()
-        pa.header.frame_id = frame
-        pa.header.stamp = now
+    def _publish_selected_view(self) -> None:
+        key = self._current_view
+        if not key:
+            return
+        cache = self._views.get(key)
+        if cache is None:
+            return
+        if cache.poses is not None:
+            self.pub_poses.publish(cache.poses)
+        if cache.markers is not None:
+            self.pub_markers.publish(cache.markers)
 
-        for pt in m_path.points:
-            p = Pose()
-            p.position.x = pt.x
-            p.position.y = pt.y
-            p.position.z = pt.z
-            p.orientation.w = 1.0
-            pa.poses.append(p)
-
-        # MarkerArray (Sollpfad)
-        out_ma = MarkerArray()
-        for src in msg.markers:
-            m = Marker()
-            m.header.frame_id = frame
-            m.header.stamp = now
-            m.ns = src.ns
-            m.id = src.id
-            m.type = src.type
-            m.action = src.action
-            m.pose = src.pose
-            m.scale = src.scale
-            m.color = src.color
-            m.lifetime = src.lifetime
-            m.frame_locked = src.frame_locked
-            m.points = list(src.points)
-            m.colors = list(src.colors)
-            m.text = src.text
-            m.mesh_resource = src.mesh_resource
-            m.mesh_use_embedded_materials = src.mesh_use_embedded_materials
-            out_ma.markers.append(m)
-
-        # Zustand merken
-        self._last_pa = pa
-        self._last_markers = out_ma
-        self._last_name = name
-
-        # One-Shot + latched (über QoS aus config_hub)
-        self.pub_poses.publish(pa)
-        self.pub_markers.publish(out_ma)
-        self._publish_current_name(name)
-
-        self.get_logger().info(
-            f"[{self.backend}] 🎯 Sollpfad gesetzt: name='{name}', "
-            f"frame='{frame}', points={len(pa.poses)}"
-        )
+    def _auto_select_if_empty(self, key: str) -> None:
+        if not self._current_view:
+            self._set_current_view(key)
 
     # ----------------------------------------------------------------------
-    # Handler: Istpfad
+    # Handlers: set_view
     # ----------------------------------------------------------------------
 
-    def _on_executed_poses(self, msg: PoseArray) -> None:
+    def _on_set_view(self, msg: String) -> None:
+        key = (msg.data or "").strip()
+        if not key:
+            self.get_logger().warning(f"[{self.backend}] ⚠️ set_view: empty")
+            return
+        self._set_current_view(key)
+        self.get_logger().info(f"[{self.backend}] 👁️ view selected: {key}")
+
+    # ----------------------------------------------------------------------
+    # Handlers: compiled_path
+    # ----------------------------------------------------------------------
+
+    def _on_compiled_poses_in(self, msg: PoseArray) -> None:
         if msg is None or len(msg.poses) == 0:
-            self.get_logger().warning(
-                f"[{self.backend}] ⚠️ executed_poses_in: leer – ignoriere"
-            )
+            self.get_logger().warning(f"[{self.backend}] ⚠️ compiled_path/poses_in: empty")
             return
 
-        frame = (msg.header.frame_id or "").strip() or self._last_exec_frame
-        self._last_exec_frame = frame
+        self._views[self.VIEW_COMPILED].poses = msg
+        self._auto_select_if_empty(self.VIEW_COMPILED)
 
-        now = self.get_clock().now().to_msg()
+        if self._current_view == self.VIEW_COMPILED:
+            self.pub_poses.publish(msg)
+            self.pub_current.publish(String(data=self.VIEW_COMPILED))
 
-        # PoseArray (Istpfad)
-        pa = PoseArray()
-        pa.header.frame_id = frame
-        pa.header.stamp = now
-        pa.poses = list(msg.poses)
+        self.get_logger().info(f"[{self.backend}] 📌 compiled poses cached: poses={len(msg.poses)}")
 
-        if len(pa.poses) < 2:
-            self.get_logger().warning(
-                f"[{self.backend}] ⚠️ executed_poses_in: <2 Posen – ignoriere"
-            )
+    def _on_compiled_markers_in(self, msg: MarkerArray) -> None:
+        if msg is None or len(msg.markers) == 0:
+            self.get_logger().warning(f"[{self.backend}] ⚠️ compiled_path/markers_in: empty")
             return
 
-        # MarkerArray (Istpfad) – Marker Properties sind ok, QoS kommt vom Publisher
-        m = Marker()
-        m.header.frame_id = frame
-        m.header.stamp = now
-        m.ns = "executed_path"
-        m.id = 1000
-        m.type = Marker.LINE_STRIP
-        m.action = Marker.ADD
-        m.scale.x = 0.002
-        m.color.r = 0.0
-        m.color.g = 1.0
-        m.color.b = 0.0
-        m.color.a = 1.0
+        self._views[self.VIEW_COMPILED].markers = msg
+        self._auto_select_if_empty(self.VIEW_COMPILED)
 
-        for p in pa.poses:
-            pt = Point()
-            pt.x = p.position.x
-            pt.y = p.position.y
-            pt.z = p.position.z
-            m.points.append(pt)
+        if self._current_view == self.VIEW_COMPILED:
+            self.pub_markers.publish(msg)
+            self.pub_current.publish(String(data=self.VIEW_COMPILED))
 
-        out_ma = MarkerArray()
-        out_ma.markers.append(m)
+        self.get_logger().info(f"[{self.backend}] 📌 compiled markers cached: markers={len(msg.markers)}")
 
-        # Zustand merken
-        self._last_exec_pa = pa
-        self._last_exec_markers = out_ma
+    # ----------------------------------------------------------------------
+    # Handlers: traj (generic slot)
+    # ----------------------------------------------------------------------
 
-        # One-Shot + latched
-        self.pub_exec_poses.publish(pa)
-        self.pub_exec_markers.publish(out_ma)
+    def _on_traj_poses_in(self, msg: PoseArray) -> None:
+        if msg is None or len(msg.poses) == 0:
+            self.get_logger().warning(f"[{self.backend}] ⚠️ traj/poses_in: empty")
+            return
 
-        self.get_logger().info(
-            f"[{self.backend}] ✅ Istpfad gesetzt: points={len(pa.poses)}, frame='{frame}'"
-        )
+        self._views[self.VIEW_TRAJ].poses = msg
+        self._auto_select_if_empty(self.VIEW_TRAJ)
+
+        if self._current_view == self.VIEW_TRAJ:
+            self.pub_poses.publish(msg)
+            self.pub_current.publish(String(data=self.VIEW_TRAJ))
+
+        self.get_logger().info(f"[{self.backend}] 🧭 traj poses cached: poses={len(msg.poses)}")
+
+    def _on_traj_markers_in(self, msg: MarkerArray) -> None:
+        if msg is None or len(msg.markers) == 0:
+            self.get_logger().warning(f"[{self.backend}] ⚠️ traj/markers_in: empty")
+            return
+
+        self._views[self.VIEW_TRAJ].markers = msg
+        self._auto_select_if_empty(self.VIEW_TRAJ)
+
+        if self._current_view == self.VIEW_TRAJ:
+            self.pub_markers.publish(msg)
+            self.pub_current.publish(String(data=self.VIEW_TRAJ))
+
+        self.get_logger().info(f"[{self.backend}] 🧭 traj markers cached: markers={len(msg.markers)}")
+
+    # ----------------------------------------------------------------------
+    # Handlers: executed overlay
+    # ----------------------------------------------------------------------
+
+    def _on_executed_poses_in(self, msg: PoseArray) -> None:
+        if msg is None or len(msg.poses) == 0:
+            self.get_logger().warning(f"[{self.backend}] ⚠️ executed_traj/poses_in: empty")
+            return
+
+        self._views[self.VIEW_EXECUTED].poses = msg
+
+        # overlay always publishes
+        self.pub_exec_poses.publish(msg)
+
+        # if selected as main, also publish there
+        if self._current_view == self.VIEW_EXECUTED:
+            self.pub_poses.publish(msg)
+            self.pub_current.publish(String(data=self.VIEW_EXECUTED))
+
+        self.get_logger().info(f"[{self.backend}] ▶ executed poses cached: poses={len(msg.poses)}")
+
+    def _on_executed_markers_in(self, msg: MarkerArray) -> None:
+        if msg is None or len(msg.markers) == 0:
+            self.get_logger().warning(f"[{self.backend}] ⚠️ executed_traj/markers_in: empty")
+            return
+
+        self._views[self.VIEW_EXECUTED].markers = msg
+
+        # overlay always publishes
+        self.pub_exec_markers.publish(msg)
+
+        # if selected as main, also publish there
+        if self._current_view == self.VIEW_EXECUTED:
+            self.pub_markers.publish(msg)
+            self.pub_current.publish(String(data=self.VIEW_EXECUTED))
+
+        self.get_logger().info(f"[{self.backend}] ▶ executed markers cached: markers={len(msg.markers)}")
 
     # ----------------------------------------------------------------------
     # 1 Hz REPUBLISH
     # ----------------------------------------------------------------------
 
     def _republish_all(self) -> None:
-        if self._last_pa is not None:
-            self.pub_poses.publish(self._last_pa)
-        if self._last_markers is not None:
-            self.pub_markers.publish(self._last_markers)
+        # main selected view
+        self._publish_selected_view()
+        if self._current_view:
+            self.pub_current.publish(String(data=self._current_view))
 
-        if self._last_name:
-            self._publish_current_name(self._last_name)
-
-        if self._last_exec_pa is not None:
-            self.pub_exec_poses.publish(self._last_exec_pa)
-        if self._last_exec_markers is not None:
-            self.pub_exec_markers.publish(self._last_exec_markers)
+        # executed overlay (independent)
+        ex = self._views.get(self.VIEW_EXECUTED)
+        if ex and ex.poses is not None:
+            self.pub_exec_poses.publish(ex.poses)
+        if ex and ex.markers is not None:
+            self.pub_exec_markers.publish(ex.markers)
 
 
 def main(args=None):

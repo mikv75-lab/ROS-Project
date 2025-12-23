@@ -184,20 +184,83 @@ topics:
 
   spray_path:
     subscribe:
-      - id: set
-        name: spraycoater/spray_path/set
-        type: visualization_msgs/msg/MarkerArray
-        qos: default
-      - id: executed_poses_in
-        name: spraycoater/spray_path/executed_poses_in
+      # --- Reference (compiled_path) ---
+      - id: compiled_poses_in
+        name: spraycoater/spray_path/compiled_path/poses_in
         type: geometry_msgs/msg/PoseArray
         qos: default
 
+      - id: compiled_markers_in
+        name: spraycoater/spray_path/compiled_path/markers_in
+        type: visualization_msgs/msg/MarkerArray
+        qos: default
+
+      # --- Generic trajectory slot (validate/optimize/...) ---
+      - id: traj_poses_in
+        name: spraycoater/spray_path/traj/poses_in
+        type: geometry_msgs/msg/PoseArray
+        qos: default
+
+      - id: traj_markers_in
+        name: spraycoater/spray_path/traj/markers_in
+        type: visualization_msgs/msg/MarkerArray
+        qos: default
+
+      # --- Executed overlay ---
+      - id: executed_poses_in
+        name: spraycoater/spray_path/executed_traj/poses_in
+        type: geometry_msgs/msg/PoseArray
+        qos: default
+
+      - id: executed_markers_in
+        name: spraycoater/spray_path/executed_traj/markers_in
+        type: visualization_msgs/msg/MarkerArray
+        qos: default
+
+      # --- UI selects what to show ---
+      - id: set_view
+        name: spraycoater/spray_path/set_view
+        type: std_msgs/msg/String
+        qos: default
+
     publish:
+      # what is currently shown (latched)
       - id: current
         name: spraycoater/spray_path/current
         type: std_msgs/msg/String
         qos: latched
+
+      # current "main" view (latched)
+      - id: poses
+        name: spraycoater/spray_path/poses
+        type: geometry_msgs/msg/PoseArray
+        qos: latched
+
+      - id: markers
+        name: spraycoater/spray_path/markers
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
+
+      # executed overlay (latched)
+      - id: executed_poses
+        name: spraycoater/spray_path/executed_poses
+        type: geometry_msgs/msg/PoseArray
+        qos: latched
+
+      - id: executed_markers
+        name: spraycoater/spray_path/executed_markers
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
+
+
+    publish:
+      # --- Outputs (SprayPathNode -> RViz/GUI) ---
+      - id: current
+        name: spraycoater/spray_path/current
+        type: std_msgs/msg/String
+        qos: latched
+
+      # "das was gerade angezeigt wird"
       - id: poses
         name: spraycoater/spray_path/poses
         type: geometry_msgs/msg/PoseArray
@@ -206,6 +269,8 @@ topics:
         name: spraycoater/spray_path/markers
         type: visualization_msgs/msg/MarkerArray
         qos: latched
+
+      # executed overlay separat (damit du es immer zusätzlich anzeigen kannst)
       - id: executed_poses
         name: spraycoater/spray_path/executed_poses
         type: geometry_msgs/msg/PoseArray
