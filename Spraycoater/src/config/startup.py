@@ -83,10 +83,22 @@ def _load_yaml(path_or_uri: str, *, strict: bool = True) -> Optional[Dict[str, A
 
 @dataclass(frozen=True)
 class AppPaths:
-    recipe_file: str
+    """
+    WICHTIG:
+      - recipes.yaml wurde aufgesplittet in 3 Dateien:
+        * recipe_params_file
+        * planner_catalog_file
+        * recipe_catalog_file
+      - recipe_dir bleibt als Bundle-Root für RecipeRepo (compiled/draft etc.)
+    """
     recipe_dir: str
     log_dir: str
     bringup_log: str
+
+    recipe_params_file: str
+    planner_catalog_file: str
+    recipe_catalog_file: str
+
     substrate_mounts_dir: Optional[str] = None
     substrate_mounts_file: Optional[str] = None
 
@@ -162,11 +174,21 @@ class AppContext:
     ros: ROSConfig
     plc: PlcConfig
 
-    recipes_yaml: Dict[str, Any]
-    recipes: List[Dict[str, Any]]
+    # --- getrennte YAMLs (raw) ---
+    recipe_params_yaml: Dict[str, Any]
+    planner_catalog_yaml: Dict[str, Any]
+    recipe_catalog_yaml: Dict[str, Any]
+
+    # --- parsed convenience ---
     recipe_params: Dict[str, Any]
+    planner_catalog: Dict[str, Any]
+    recipes: List[Dict[str, Any]]
+
     mounts_yaml: Optional[Dict[str, Any]] = None
     content: Optional["AppContent"] = None
+
+    # --- optional legacy combined view (falls Alt-Code noch recipes_yaml erwartet) ---
+    recipes_yaml: Optional[Dict[str, Any]] = None
 
 
 # ============================================================
@@ -188,14 +210,25 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not isinstance(p, dict):
         _err("startup.yaml: Abschnitt 'paths' fehlt oder ist ungültig.")
 
-    for key in ("recipe_file", "recipe_dir", "log_dir", "bringup_log"):
+    # Pflicht: Bundle-Dir + Logs + 3 getrennte YAMLs
+    for key in (
+        "recipe_dir",
+        "log_dir",
+        "bringup_log",
+        "recipe_params_file",
+        "planner_catalog_file",
+        "recipe_catalog_file",
+    ):
         if key not in p:
             _err(f"startup.yaml: 'paths.{key}' fehlt.")
 
-    recipe_file_abs = _abspath_rel_to(base, p["recipe_file"])
     recipe_dir_abs  = _abspath_rel_to(base, p["recipe_dir"])
     log_dir_abs     = _abspath_rel_to(base, p["log_dir"])
     bringup_log_abs = _abspath_rel_to(base, p["bringup_log"])
+
+    recipe_params_abs   = _abspath_rel_to(base, p["recipe_params_file"])
+    planner_catalog_abs = _abspath_rel_to(base, p["planner_catalog_file"])
+    recipe_catalog_abs  = _abspath_rel_to(base, p["recipe_catalog_file"])
 
     if not os.path.isdir(recipe_dir_abs):
         _err(f"paths.recipe_dir existiert nicht: {recipe_dir_abs}")
@@ -210,10 +243,12 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     mounts_file_abs = _abspath_rel_to(base, p["substrate_mounts_file"]) if p.get("substrate_mounts_file") else None
 
     paths = AppPaths(
-        recipe_file=recipe_file_abs,
         recipe_dir=recipe_dir_abs,
         log_dir=log_dir_abs,
         bringup_log=bringup_log_abs,
+        recipe_params_file=recipe_params_abs,
+        planner_catalog_file=planner_catalog_abs,
+        recipe_catalog_file=recipe_catalog_abs,
         substrate_mounts_dir=mounts_dir_abs,
         substrate_mounts_file=mounts_file_abs,
     )
@@ -244,7 +279,16 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not isinstance(rcfg, dict):
         _err("startup.yaml: ros.configs fehlt oder ist ungültig.")
 
-    for key in ("topics_file", "qos_file", "frames_file", "scene_file", "robot_file", "servo_file", "poses_file", "tools_file"):
+    for key in (
+        "topics_file",
+        "qos_file",
+        "frames_file",
+        "scene_file",
+        "robot_file",
+        "servo_file",
+        "poses_file",
+        "tools_file",
+    ):
         if key not in rcfg:
             _err(f"startup.yaml: ros.configs.{key} fehlt.")
 
@@ -350,15 +394,27 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         spec=plc_spec,
     )
 
-    # ----- recipes.yaml -----
-    ry = _load_yaml(recipe_file_abs, strict=True) or {}
-    recipe_params = ry.get("recipe_params")
-    recipes_list = ry.get("recipes")
+    # =========================================================
+    # ==========  3 getrennte Recipe/Planner YAMLs  ============
+    # =========================================================
 
+    # ----- recipe_params.yaml -----
+    rp_y = _load_yaml(paths.recipe_params_file, strict=True) or {}
+    recipe_params = rp_y.get("recipe_params")
     if not isinstance(recipe_params, dict) or not recipe_params:
-        _err("recipes.yaml: recipe_params fehlt oder ist leer.")
+        _err("recipe_params.yaml: recipe_params fehlt oder ist leer.")
+
+    # ----- planner_catalog.yaml -----
+    pc_y = _load_yaml(paths.planner_catalog_file, strict=True) or {}
+    planner_catalog = pc_y.get("planner_catalog")
+    if not isinstance(planner_catalog, dict) or not planner_catalog:
+        _err("planner_catalog.yaml: planner_catalog fehlt oder ist leer.")
+
+    # ----- recipe_catalog.yaml -----
+    rc_y = _load_yaml(paths.recipe_catalog_file, strict=True) or {}
+    recipes_list = rc_y.get("recipes")
     if not isinstance(recipes_list, list) or not recipes_list:
-        _err("recipes.yaml: recipes fehlt oder ist leer.")
+        _err("recipe_catalog.yaml: recipes fehlt oder ist leer.")
 
     # ----- substrate_mounts.yaml optional -----
     mounts_yaml = None
@@ -371,15 +427,31 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     # ----- AppContent erzeugen -----
     content = AppContent(startup_yaml_path)
 
+    # ----- optional legacy combined view (für Alt-Code) -----
+    legacy_combined = {
+        "version": 1,
+        "recipe_params": recipe_params,
+        "planner_catalog": planner_catalog,
+        "recipes": recipes_list,
+    }
+
     ctx = AppContext(
         paths=paths,
         ros=ros_cfg,
         plc=plc_cfg,
-        recipes_yaml=ry,
-        recipes=recipes_list,
+
+        recipe_params_yaml=rp_y,
+        planner_catalog_yaml=pc_y,
+        recipe_catalog_yaml=rc_y,
+
         recipe_params=recipe_params,
+        planner_catalog=planner_catalog,
+        recipes=recipes_list,
+
         mounts_yaml=mounts_yaml,
         content=content,
+
+        recipes_yaml=legacy_combined,
     )
 
     # ✅ Repo in content binden (Tabs holen es über ctx.content.recipe_repo())

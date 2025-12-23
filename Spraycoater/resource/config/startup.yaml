@@ -1,87 +1,51 @@
 version: 1
 
-# ===================================================================
-# Pfade / Files
-# ===================================================================
 paths:
-  recipe_file: "recipes.yaml"
+  recipe_dir: "data/recipes"
+  log_dir: "data/logs"
+  bringup_log: "data/logs/bringup.log"
 
-  substrate_mounts_file:  "package://spraycoater_bringup/config/substrate_mounts.yaml"
-  substrate_mounts_dir:   "package://spraycoater_bringup/resource/substrate_mounts"
+  # neu:
+  recipe_params_file: "config/recipe_params.yaml"
+  planner_catalog_file: "config/planner_catalog.yaml"
+  recipe_catalog_file: "config/recipe_catalog.yaml"
 
-  recipe_dir:   "../../data/recipes"
-  log_dir:      "../../data/logs"
-  bringup_log:  "../../data/logs/bringup.log"
+  # optional
+  substrate_mounts_dir: "data/mounts"
+  substrate_mounts_file: "config/substrate_mounts.yaml"
 
-# ===================================================================
-# ROS / Bringup + Roboterauswahl
-# ===================================================================
 ros:
   launch_ros: true
-  bringup_launch: "bringup.launch.py"
-
-  # Gemeinsamer Namespace für das Gesamtsystem
+  bringup_launch: "package://spraycoater_bringup/launch/bringup.launch.py"
   namespace: "spraycoater"
-
-  # GILT GLOBAL für ALLE ROS-Nodes (shadow + live)
   use_sim_time: false
+  robot_type: "omron_viper_s650"
 
   configs:
-    topics_file: "package://spraycoater_bringup/config/topics.yaml"
-    qos_file:    "package://spraycoater_bringup/config/qos.yaml"
-    frames_file: "package://spraycoater_bringup/config/frames.yaml"
-    scene_file:  "package://spraycoater_bringup/config/scene.yaml"
-    robot_file:  "package://spraycoater_bringup/config/robot.yaml"
-    servo_file:  "package://spraycoater_bringup/config/servo.yaml"
-    poses_file:  "package://spraycoater_bringup/config/poses.yaml"
-    tools_file:  "package://spraycoater_bringup/config/tools.yaml"
+    topics_file: "config/topics.yaml"
+    qos_file: "config/qos.yaml"
+    frames_file: "config/frames.yaml"
+    scene_file: "config/scene.yaml"
+    robot_file: "config/robot.yaml"
+    servo_file: "config/servo.yaml"
+    poses_file: "config/poses.yaml"
+    tools_file: "config/tools.yaml"
 
-  # Robotertyp (MoveIt / URDF / ros2_control)
-  robot_type: "omron_viper_650"
-
-  # -----------------------------------------------------------------
-  # Rollen
-  # -----------------------------------------------------------------
   shadow:
     enabled: true
-    # nutzt FakeController / Planung
 
   live:
     enabled: false
-
-    # Betriebsmodus:
-    #   - "omron"    → echter Omron-Controller
-    #   - "emulator" → ACE / V+ Emulator
-    mode: "emulator"
-
+    mode: "omron"
     omron:
-      omron:
-        ip:   "192.168.10.20"
-        port: 5000
+      omron: { ip: "192.168.0.10", port: 5000 }
+      emulator: { ip: "127.0.0.1", port: 5001 }
 
-      emulator:
-        ip:   "host.docker.internal"
-        port: 5000
-
-# ===================================================================
-# SPS / PLC-Anbindung (NICHT über ROS)
-# ===================================================================
 plc:
-  # true  → komplette PLC-Anbindung überspringen
-  # false → echte ADS-Verbindung
   sim: true
-
-  # "ads" | "umrt"
   mode: "ads"
-
+  spec_file: "config/plc.yaml"
   ads:
-    ams_net_id: "1.2.3.4.5.6"
-    ip:         "192.168.10.30"
-    port:       851
-
-  umrt:
-    ams_net_id: "192.168.4.1.1.1"
-    ip:         "192.168.4.1"
-    port:       851
-
-  spec_file: "plc.yaml"
+    ams_net_id: "..."
+    ip: "..."
+    port: 851

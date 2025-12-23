@@ -2,39 +2,143 @@
 # File: app/model/recipe/recipe_store.py
 from __future__ import annotations
 
+import io
+import os
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+
+import yaml
+
+
+def _err(msg: str) -> None:
+    raise ValueError(msg)
+
+
+def _load_yaml(path: str, *, strict: bool = True) -> Optional[Dict[str, Any]]:
+    try:
+        path = os.path.abspath(os.path.normpath(path))
+        if not os.path.exists(path):
+            if strict:
+                _err(f"YAML nicht gefunden: {path}")
+            return None
+        with io.open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if data is None:
+            if strict:
+                _err(f"YAML ist leer: {path}")
+            return None
+        if not isinstance(data, dict):
+            if strict:
+                _err(f"YAML ist kein Mapping (Dict): {path}")
+            return None
+        return data
+    except Exception as e:
+        if strict:
+            _err(str(e))
+        return None
+
+
+@dataclass(frozen=True)
+class RecipeStorePaths:
+    recipe_params_file: str
+    planner_catalog_file: str
+    recipe_catalog_file: str
 
 
 class RecipeStore:
     """
-    Liest die YAML-Struktur (als Dict) und bietet Zugriffe für UI/Preview.
+    Lädt und hält die 3 YAMLs:
+      - recipe_params.yaml    -> recipe_params
+      - planner_catalog.yaml  -> planner_catalog
+      - recipe_catalog.yaml   -> recipes list
 
-    Erwartete Top-Level Keys (typisch):
-      - recipe_params
-      - planner_settings
-      - planner_pipeline
-      - recipes
+    Optional: erzeugt legacy 'recipes_yaml' View, wenn Alt-Code sie erwartet.
     """
 
-    def __init__(self, data: Dict[str, Any]):
-        self.data = data or {}
-        self.params_schema: Dict[str, Any] = self.data.get("recipe_params") or {}
-        self.recipes: List[Dict[str, Any]] = list(self.data.get("recipes") or [])
-        self.planner_settings: Dict[str, Any] = self.data.get("planner_settings") or {}
-        self.planner_pipeline: Dict[str, Any] = self.data.get("planner_pipeline") or {}
+    def __init__(
+        self,
+        *,
+        paths: RecipeStorePaths,
+        recipe_params_yaml: Dict[str, Any],
+        planner_catalog_yaml: Dict[str, Any],
+        recipe_catalog_yaml: Dict[str, Any],
+    ):
+        self.paths = paths
+
+        # raw YAML roots
+        self.recipe_params_yaml = recipe_params_yaml or {}
+        self.planner_catalog_yaml = planner_catalog_yaml or {}
+        self.recipe_catalog_yaml = recipe_catalog_yaml or {}
+
+        # parsed payloads
+        self.params_schema: Dict[str, Any] = self._require_dict(self.recipe_params_yaml, "recipe_params", "recipe_params.yaml")
+        self.planner_catalog: Dict[str, Any] = self._require_dict(self.planner_catalog_yaml, "planner_catalog", "planner_catalog.yaml")
+        self.recipes: List[Dict[str, Any]] = self._require_list_of_dicts(self.recipe_catalog_yaml, "recipes", "recipe_catalog.yaml")
+
+        # optional legacy combined view (für Übergang)
+        self.recipes_yaml: Dict[str, Any] = {
+            "version": 1,
+            "recipe_params": self.params_schema,
+            "planner_catalog": self.planner_catalog,
+            "recipes": self.recipes,
+        }
+
+    # ---------- factories ----------
 
     @staticmethod
     def from_ctx(ctx) -> "RecipeStore":
-        """Factory: liest ctx.recipes_yaml (bereits geparstes YAML-Dict)."""
-        return RecipeStore(getattr(ctx, "recipes_yaml", {}) or {})
+        """
+        ctx kommt aus startup.load_startup() und liefert nur Pfade:
+          ctx.paths.recipe_params_file
+          ctx.paths.planner_catalog_file
+          ctx.paths.recipe_catalog_file
+        """
+        p = getattr(ctx, "paths", None)
+        if p is None:
+            _err("RecipeStore.from_ctx: ctx.paths fehlt.")
 
-    # ---------------- helpers ----------------
+        rp_file = getattr(p, "recipe_params_file", None)
+        pc_file = getattr(p, "planner_catalog_file", None)
+        rc_file = getattr(p, "recipe_catalog_file", None)
+        if not rp_file or not pc_file or not rc_file:
+            _err("RecipeStore.from_ctx: ctx.paths.*_file fehlen (recipe_params/planner_catalog/recipe_catalog).")
 
-    def _get_params_node_key(self, key: str) -> Optional[Dict[str, Any]]:
-        ps = self.params_schema or {}
-        node = ps.get(key)
-        return dict(node) if isinstance(node, dict) else None
+        rp_y = _load_yaml(rp_file, strict=True) or {}
+        pc_y = _load_yaml(pc_file, strict=True) or {}
+        rc_y = _load_yaml(rc_file, strict=True) or {}
+
+        return RecipeStore(
+            paths=RecipeStorePaths(
+                recipe_params_file=str(rp_file),
+                planner_catalog_file=str(pc_file),
+                recipe_catalog_file=str(rc_file),
+            ),
+            recipe_params_yaml=rp_y,
+            planner_catalog_yaml=pc_y,
+            recipe_catalog_yaml=rc_y,
+        )
+
+    # ---------- internal validators ----------
+
+    @staticmethod
+    def _require_dict(root: Dict[str, Any], key: str, label: str) -> Dict[str, Any]:
+        node = (root or {}).get(key)
+        if not isinstance(node, dict) or not node:
+            _err(f"{label}: '{key}' fehlt oder ist leer.")
+        return dict(node)
+
+    @staticmethod
+    def _require_list_of_dicts(root: Dict[str, Any], key: str, label: str) -> List[Dict[str, Any]]:
+        node = (root or {}).get(key)
+        if not isinstance(node, list) or not node:
+            _err(f"{label}: '{key}' fehlt oder ist leer.")
+        out: List[Dict[str, Any]] = []
+        for i, e in enumerate(node):
+            if not isinstance(e, dict):
+                _err(f"{label}: {key}[{i}] ist kein Dict.")
+            out.append(dict(e))
+        return out
 
     @staticmethod
     def _as_str_list(val: Any) -> List[str]:
@@ -64,7 +168,12 @@ class RecipeStore:
     def mounts_for_recipe(self, rec_def: Dict[str, Any]) -> List[str]:
         return [str(m) for m in (rec_def.get("substrate_mounts") or [])]
 
-    # ---------------- globals ----------------
+    # ---------------- recipe params ----------------
+
+    def _get_params_node_key(self, key: str) -> Optional[Dict[str, Any]]:
+        ps = self.params_schema or {}
+        node = ps.get(key)
+        return dict(node) if isinstance(node, dict) else None
 
     def globals_schema(self) -> Dict[str, Any]:
         gs = self._get_params_node_key("globals")
@@ -77,111 +186,54 @@ class RecipeStore:
                 out[key] = spec["default"]
         return out
 
-    def plc_globals_schema(self) -> Dict[str, Any]:
+    # ---------------- planner catalog (NEU) ----------------
+
+    def planner_defaults(self, *, role: str | None = None, pipeline: str | None = None) -> Dict[str, Any]:
+        """
+        Erwartetes Schema (empfohlen):
+          planner_catalog:
+            defaults:
+              common: {...}
+              roles: { validate_move: {...}, ... }
+              pipelines: { ompl: {...}, ... }
+        """
+        cat = self.planner_catalog or {}
+        droot = cat.get("defaults") or {}
         out: Dict[str, Any] = {}
-        for name, spec in self.globals_schema().items():
-            if not isinstance(spec, dict):
-                continue
-            if bool(spec.get("plc", False)):
-                out[name] = spec
-        return out
 
-    def plc_param_names(self) -> List[str]:
-        return list(self.plc_globals_schema().keys())
+        common = droot.get("common") or {}
+        if isinstance(common, dict):
+            out.update(common)
 
-    def collect_plc_defaults(self) -> Dict[str, Any]:
-        out: Dict[str, Any] = {}
-        for name, spec in self.plc_globals_schema().items():
-            if isinstance(spec, dict) and "default" in spec:
-                out[name] = spec["default"]
-        return out
+        if role:
+            rnode = (droot.get("roles") or {}).get(role) or {}
+            if isinstance(rnode, dict):
+                out.update(rnode)
 
-    # ---------------- planner defs/lists ----------------
-
-    def planner_schema(self) -> Dict[str, Any]:
-        return {}
-
-    def collect_planner_defaults(self) -> Dict[str, Any]:
-        return {}
-
-    def planner_defs(self) -> Dict[str, Any]:
-        return dict(self.planner_pipeline) if isinstance(self.planner_pipeline, dict) else {}
-
-    def planner_lists_global(self) -> Dict[str, List[str]]:
-        ps = self.planner_settings or {}
-        out: Dict[str, List[str]] = {}
-        if not isinstance(ps, dict):
-            return out
-        for role, vals in ps.items():
-            if role == "path_types":
-                continue
-            out[str(role)] = self._as_str_list(vals)
-        return out
-
-    def planner_lists_for_side(
-        self,
-        rec_def: Dict[str, Any],
-        side: str,
-        path_type: Optional[str] = None,
-    ) -> Dict[str, List[str]]:
-        base = self.planner_lists_global()
-        out: Dict[str, List[str]] = {role: list(vals) for role, vals in base.items()}
-
-        if path_type is None:
-            sides = self.sides_for_recipe(rec_def)
-            side_cfg = sides.get(side)
-            if not isinstance(side_cfg, dict):
-                raise KeyError(f"Recipe side '{side}' ist nicht definiert (rezept='{rec_def.get('id')}').")
-
-            dp = side_cfg.get("default_path")
-            if not isinstance(dp, dict):
-                raise KeyError(
-                    f"Recipe side '{side}' hat keine 'default_path'-Definition (rezept='{rec_def.get('id')}')."
-                )
-
-            ptype = dp.get("type")
-            if not isinstance(ptype, str) or not ptype.strip():
-                raise KeyError(
-                    f"Recipe side '{side}' default_path.type ist leer/ungültig (rezept='{rec_def.get('id')}')."
-                )
-            path_type = ptype.strip()
-
-        path_types_node = (self.planner_settings or {}).get("path_types") or {}
-        overrides = path_types_node.get(str(path_type)) or {}
-        if isinstance(overrides, dict):
-            for role, vals in overrides.items():
-                out[str(role)] = self._as_str_list(vals)
+        if pipeline:
+            pnode = (droot.get("pipelines") or {}).get(pipeline) or {}
+            if isinstance(pnode, dict):
+                out.update(pnode)
 
         return out
 
-    def selected_planners_for_side(
-        self,
-        rec_def: Dict[str, Any],
-        side: str,
-        path_type: Optional[str] = None,
-    ) -> Dict[str, Optional[str]]:
-        lists = self.planner_lists_for_side(rec_def, side, path_type)
+    def allowed_planners(self, *, pipeline: str) -> List[str]:
+        """
+        Erwartetes Schema:
+          planner_catalog:
+            pipelines:
+              ompl:
+                planners:
+                  RRTConnectkConfigDefault: {}
+        """
+        cat = self.planner_catalog or {}
+        pnode = (cat.get("pipelines") or {}).get(str(pipeline)) or {}
+        planners = pnode.get("planners") or {}
+        if isinstance(planners, dict):
+            return [str(k) for k in planners.keys()]
+        return []
 
-        sides = self.sides_for_recipe(rec_def)
-        side_cfg = sides.get(side, {}) or {}
-        side_sel = side_cfg.get("planner_selected") or {}
-        rec_sel = rec_def.get("planner_selected") or {}
-
-        all_roles = set(lists.keys()) | {"validate_move", "validate_path", "refine", "optimize", "service"}
-
-        result: Dict[str, Optional[str]] = {}
-        for role in all_roles:
-            candidates = lists.get(role, [])
-            chosen = side_sel.get(role) or rec_sel.get(role)
-            if chosen in candidates:
-                result[role] = chosen
-            elif candidates:
-                result[role] = candidates[0]
-            else:
-                result[role] = None
-        return result
-
-    # ---------------- sides/paths schema ----------------
+    # ---------------- sides/paths schema (wie gehabt) ----------------
 
     def sides_for_recipe(self, rec_def: Dict[str, Any]) -> Dict[str, Any]:
         sides = rec_def.get("sides") or {}
@@ -192,17 +244,6 @@ class RecipeStore:
         if side not in sides:
             raise KeyError(f"Recipe side '{side}' ist nicht definiert (rezept='{rec_def.get('id')}').")
         return deepcopy(sides[side] or {})
-
-    def build_default_paths_for_recipe(self, rec_def: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-        out: Dict[str, Dict[str, Any]] = {}
-        for side, scfg in self.sides_for_recipe(rec_def).items():
-            if not isinstance(scfg, dict):
-                raise TypeError(f"Recipe side '{side}' ist kein Dict (rezept='{rec_def.get('id')}').")
-            dp = scfg.get("default_path")
-            if not isinstance(dp, dict):
-                raise KeyError(f"Recipe side '{side}' hat kein 'default_path' (rezept='{rec_def.get('id')}').")
-            out[str(side)] = dict(dp)
-        return out
 
     def schema_for_type_strict(self, ptype: str) -> Dict[str, Any]:
         key = str(ptype).strip()
@@ -226,80 +267,3 @@ class RecipeStore:
                 f"Verfügbare path.* Keys: [{available}]"
             )
         return node
-
-    def build_side_runtime_cfg_strict(self, rec_def: Dict[str, Any], side: str) -> Dict[str, Any]:
-        scfg = self.allowed_and_default_for(rec_def, side) or {}
-
-        allowed_raw = scfg.get("allowed_path_types")
-        if not isinstance(allowed_raw, (list, tuple)) or not allowed_raw:
-            raise ValueError(
-                f"Recipe side '{side}' benötigt 'allowed_path_types' (rezept='{rec_def.get('id')}')."
-            )
-        allowed: List[str] = [str(x) for x in allowed_raw]
-
-        default_path = scfg.get("default_path")
-        if not isinstance(default_path, dict):
-            raise ValueError(f"Recipe side '{side}' benötigt 'default_path' als Dict (rezept='{rec_def.get('id')}').")
-        if "type" not in default_path:
-            raise ValueError(f"Recipe side '{side}' benötigt 'default_path.type' (rezept='{rec_def.get('id')}').")
-
-        ptype = str(default_path["type"]).strip()
-        if not ptype:
-            raise ValueError(f"Recipe side '{side}' hat leeren 'default_path.type' (rezept='{rec_def.get('id')}').")
-
-        schema_default = self.schema_for_type_strict(ptype)
-
-        norm: Dict[str, Any] = {"type": ptype}
-        for key, spec in (schema_default or {}).items():
-            if isinstance(spec, dict) and "default" in spec:
-                norm[key] = spec["default"]
-
-        for k, v in default_path.items():
-            if k == "type":
-                continue
-            if k not in schema_default:
-                raise KeyError(
-                    f"Unbekannter Parameter '{k}' in default_path für type '{ptype}' "
-                    f"(side='{side}', rezept='{rec_def.get('id')}')."
-                )
-            norm[k] = v
-
-        types_to_resolve = list(dict.fromkeys([ptype] + list(allowed)))
-        schemas: Dict[str, Dict[str, Any]] = {}
-        resolved_allowed: List[str] = []
-
-        for t in types_to_resolve:
-            sch = self.schema_for_type_strict(t)
-            schemas[t] = sch
-            if t in allowed and t not in resolved_allowed:
-                resolved_allowed.append(t)
-
-        if not resolved_allowed:
-            raise ValueError(
-                f"Keine auflösbaren allowed_path_types für side='{side}' (rezept='{rec_def.get('id')}')."
-            )
-
-        return {"allowed_path_types": resolved_allowed, "default_path": norm, "schemas": schemas}
-
-    # ---------------- UI enums ----------------
-
-    def spiral_plane_enums(self) -> Dict[str, List[str]]:
-        out: Dict[str, List[str]] = {}
-        node = self._get_params_node_key("path.spiral.plane") or {}
-        if isinstance(node, dict):
-            dir_spec = node.get("direction")
-            if isinstance(dir_spec, dict) and isinstance(dir_spec.get("values"), list):
-                out["direction"] = [str(v) for v in dir_spec["values"]]
-        return out
-
-    def spiral_cylinder_enums(self) -> Dict[str, List[str]]:
-        out: Dict[str, List[str]] = {}
-        node = self._get_params_node_key("path.spiral.cylinder") or {}
-        if isinstance(node, dict):
-            sf_spec = node.get("start_from")
-            if isinstance(sf_spec, dict) and isinstance(sf_spec.get("values"), list):
-                out["start_froms"] = [str(v) for v in sf_spec["values"]]
-            dir_spec = node.get("direction")
-            if isinstance(dir_spec, dict) and isinstance(dir_spec.get("values"), list):
-                out["directions"] = [str(v) for v in dir_spec["values"]]
-        return out

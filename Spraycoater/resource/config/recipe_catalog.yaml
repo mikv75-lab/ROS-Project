@@ -1,0 +1,148 @@
+version: 1
+
+recipes:
+  - id: "wafer"
+    substrate_type: "wafer"
+    tools: ["spray_nozzle_01", "spray_nozzle_02"]
+    substrates: ["wafer_d100_h2", "wafer_d150_h2", "wafer_d200_h2"]
+    substrate_mounts: ["circle_d240_h50"]
+    parameters: {}
+    sides:
+      top:
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+          - "path.perimeter_follow.plane"
+        default_path: { type: "path.spiral.plane" }
+
+  - id: "mask"
+    substrate_type: "mask"
+    tools: ["spray_nozzle_01", "spray_nozzle_02"]
+    substrates: ["mask_100_10"]
+    substrate_mounts: ["flat_240x240x50"]
+    parameters: {}
+    sides:
+      top:
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.perimeter_follow.plane"
+        default_path: { type: "path.meander.plane" }
+
+  - id: "tube"
+    substrate_type: "tube"
+    tools: ["spray_nozzle_01", "spray_nozzle_02"]
+    substrates:
+      - "tube_ID5mm_t1p5mm_h100mm"
+      - "tube_ID10mm_t1p5mm_h100mm"
+      - "tube_ID20mm_t1p5mm_h100mm"
+    substrate_mounts: ["post_d30mm_h100mm"]
+    parameters: {}
+    sides:
+      helix:
+        allowed_path_types:
+          - "path.spiral.cylinder"
+        default_path: { type: "path.spiral.cylinder" }
+
+  - id: "cylinder"
+    substrate_type: "cylinder"
+    tools: ["spray_nozzle_01", "spray_nozzle_02"]
+    substrates:
+      - "cylinder_d100_h100"
+      - "cylinder_d150_h150"
+      - "cylinder_d200_h200"
+    substrate_mounts: ["post_d30mm_h100mm"]
+    parameters: {}
+    sides:
+      top:
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.spiral.plane" }
+      helix:
+        allowed_path_types:
+          - "path.spiral.cylinder"
+        default_path: { type: "path.spiral.cylinder" }
+
+  - id: "cube"
+    substrate_type: "cube"
+    tools: ["spray_nozzle_01", "spray_nozzle_02"]
+    substrates: ["cube_100", "cube_150"]
+    substrate_mounts: ["flat_240x240x50"]
+    parameters: {}
+    sides:
+      top:
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
+      front:
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
+      back:
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
+      left:
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
+      right:
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
+      polyhelix:
+        allowed_path_types:
+          - "path.polyhelix.pyramid"
+          - "path.polyhelix.cube"
+        default_path: { type: "path.polyhelix.cube" }
+
+  - id: "hemisphere"
+    substrate_type: "hemisphere"
+    tools: ["spray_nozzle_01", "spray_nozzle_02"]
+    substrates: ["hemisphere_d200"]
+    substrate_mounts: ["circle_d240_h50", "flat_240x240x50"]
+    parameters: {}
+    sides:
+      top:
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
+
+  - id: "pyramid"
+    substrate_type: "pyramid"
+    tools: ["spray_nozzle_01", "spray_nozzle_02"]
+    substrates: ["pyramid_d150_h150", "pyramid_d200_h200"]
+    substrate_mounts: ["flat_240x240x50"]
+    parameters: {}
+    sides:
+      front:
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
+      back:
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
+      left:
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
+      right:
+        allowed_path_types:
+          - "path.meander.plane"
+          - "path.spiral.plane"
+        default_path: { type: "path.meander.plane" }
+      polyhelix:
+        allowed_path_types:
+          - "path.polyhelix.pyramid"
+          - "path.polyhelix.cube"
+        default_path: { type: "path.polyhelix.pyramid" }

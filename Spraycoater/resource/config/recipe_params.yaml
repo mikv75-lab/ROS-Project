@@ -1,0 +1,273 @@
+version: 1
+
+# -------------------------------------------------------------------
+# Zentrale UI-/Validierungs-Spezifikationen mit DEFAULT-WERTEN
+# -------------------------------------------------------------------
+recipe_params:
+
+  globals:
+    speed_mm_s:
+      type: number
+      min: 10
+      max: 2000
+      step: 10
+      unit: "mm/s"
+      default: 200
+      plc: false
+
+    stand_off_mm:
+      type: number
+      min: 0.1
+      max: 200
+      step: 0.1
+      unit: "mm"
+      default: 10
+      plc: false
+
+    sample_step_mm:
+      type: number
+      min: 0.05
+      max: 50
+      step: 0.05
+      unit: "mm"
+      default: 1.0
+      plc: false
+
+    max_points:
+      type: number
+      min: 100
+      max: 1000
+      step: 100
+      default: 500
+      plc: false
+
+    max_angle_deg:
+      type: number
+      min: 0
+      max: 45
+      step: 0.5
+      default: 0
+      plc: false
+
+    pre_dispense_s:
+      type: number
+      min: 0.0
+      max: 10.0
+      step: 0.1
+      unit: "s"
+      default: 0.2
+      plc: false
+
+    post_dispense_s:
+      type: number
+      min: 0.0
+      max: 10.0
+      step: 0.1
+      unit: "s"
+      default: 0.1
+      plc: false
+
+    # -------- PLC-gebundene Prozessparameter (plc: true) --------
+    n2_pressure_bar:
+      type: number
+      min: 0.0
+      max: 6.0
+      step: 0.05
+      unit: "bar"
+      default: 1.5
+      plc: true
+      description: "Soll-N2-Sprühdruck für den Sprayprozess."
+
+    us_power_percent:
+      type: number
+      min: 0.0
+      max: 100.0
+      step: 1.0
+      unit: "%"
+      default: 60.0
+      plc: true
+      description: "Megasonic-/Ultraschallleistung in Prozent."
+
+    syringe_flow_ml_min:
+      type: number
+      min: 0.0
+      max: 50.0
+      step: 0.1
+      unit: "ml/min"
+      default: 5.0
+      plc: true
+      description: "Kartuschen-/Spritzenförderstrom (für Dosierung)."
+
+    nozzle_on_delay_s:
+      type: number
+      min: 0.0
+      max: 5.0
+      step: 0.05
+      unit: "s"
+      default: 0.3
+      plc: true
+      description: "Verzögerung von N2 EIN bis Düse als 'stabil' gilt."
+
+    syringe_on_delay_s:
+      type: number
+      min: 0.0
+      max: 5.0
+      step: 0.05
+      unit: "s"
+      default: 0.5
+      plc: true
+      description: "Verzögerung bis Kartusche/Spritze als stabil gilt."
+
+    nozzle_off_delay_s:
+      type: number
+      min: 0.0
+      max: 5.0
+      step: 0.05
+      unit: "s"
+      default: 0.2
+      plc: true
+      description: "Nachlaufzeit von N2 nach Sprühende."
+
+    syringe_off_delay_s:
+      type: number
+      min: 0.0
+      max: 5.0
+      step: 0.05
+      unit: "s"
+      default: 0.2
+      plc: true
+      description: "Nachlaufzeit Kartusche/Spritze nach Sprühende."
+
+    dryrun:
+      type: boolean
+      default: false
+      plc: true
+      description: "Trockenlauf ohne Medien (nur Roboterbewegung)."
+
+    syringe_only:
+      type: boolean
+      default: false
+      plc: true
+      description: "Test Kartusche ohne Medienpfad (nur Ansteuerung Kartusche)."
+
+
+  # --- Meander (Ebene) ---
+  path.meander.plane:
+    area.shape:        { type: enum, values: ["circle","rect"], default: "circle" }
+    area.center_xy_mm: { type: vec2, min: [-1000,-1000], max: [1000,1000], step: [0.1,0.1], unit: "mm", default: [0,0] }
+    area.radius_mm:    { type: number, min: 1.0, max: 2000, step: 0.1, unit: "mm", default: 50.0,
+                         visible_if: {"area.shape":"circle"} }
+    area.size_mm:      { type: vec2,   min: [1.0,1.0], max: [5000,5000], step: [0.1,0.1], unit: "mm", default: [100.0,100.0],
+                         visible_if: {"area.shape":"rect"} }
+    pitch_mm:          { type: number, min: 0.1, max: 200,  step: 0.1, unit: "mm", default: 5.0 }
+    angle_deg:         { type: number, min: 0,   max: 180,  step: 1,   unit: "deg", default: 0 }
+    edge_extend_mm:    { type: number, min: 0.0, max: 200,  step: 0.1, unit: "mm", default: 0.0 }
+    margin_mm:         { type: number, min: 0.0, max: 200,  step: 0.1, unit: "mm", default: 0.0 }
+    boustrophedon:     { type: boolean, default: true }
+    start:             { type: enum, values: ["auto","minx_miny","minx_maxy","maxx_miny","maxx_maxy"], default: "auto" }
+
+    predispense.angle_mode: { type: enum, values: ["auto","custom"], default: "auto" }
+    predispense.angle_deg:  { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
+                              visible_if: {"predispense.angle_mode":"custom"} }
+    retreat.angle_mode:     { type: enum, values: ["auto","custom"], default: "auto" }
+    retreat.angle_deg:      { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
+                              visible_if: {"retreat.angle_mode":"custom"} }
+
+  # --- Spiral (Ebene / Top) ---
+  path.spiral.plane:
+    center_xy_mm:     { type: vec2,   min: [-1000,-1000], max: [1000,1000], step: [0.1,0.1], unit: "mm", default: [0,0] }
+    r_outer_mm:       { type: number, min: 0.1,  max: 2000, step: 0.1, unit: "mm", default: 49.0 }
+    r_inner_mm:       { type: number, min: 0.0,  max: 1000, step: 0.1, unit: "mm", default: 1.0 }
+    pitch_mm:         { type: number, min: 0.1,  max: 200,  step: 0.1, unit: "mm", default: 4.0 }
+    z_mm:             { type: number, min: 0.0,  max: 500,  step: 0.1, unit: "mm", default: 10.0 }
+    direction:        { type: enum,   values: ["cw","ccw"], default: "ccw" }
+
+    predispense.angle_mode: { type: enum, values: ["auto","custom"], default: "auto" }
+    predispense.angle_deg:  { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
+                              visible_if: {"predispense.angle_mode":"custom"} }
+    retreat.angle_mode:     { type: enum, values: ["auto","custom"], default: "auto" }
+    retreat.angle_deg:      { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
+                              visible_if: {"retreat.angle_mode":"custom"} }
+
+  # --- Spiral (Zylinder / Helix) ---
+  path.spiral.cylinder:
+    pitch_mm:         { type: number, min: 0.1, max: 200,  step: 0.1, unit: "mm", default: 10.0 }
+    outside_mm:       { type: number, min: 0.0, max: 100,  step: 0.1, unit: "mm", default: 1.0 }
+    margin_top_mm:    { type: number, min: 0.0, max: 200,  step: 0.1, unit: "mm", default: 0.0 }
+    margin_bottom_mm: { type: number, min: 0.0, max: 200,  step: 0.1, unit: "mm", default: 0.0 }
+    start_from:       { type: enum,   values: ["top","bottom"], default: "top" }
+    direction:        { type: enum,   values: ["cw","ccw"],     default: "ccw" }
+
+    predispense.angle_mode: { type: enum, values: ["auto","custom"], default: "auto" }
+    predispense.angle_deg:  { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
+                              visible_if: {"predispense.angle_mode":"custom"} }
+    retreat.angle_mode:     { type: enum, values: ["auto","custom"], default: "auto" }
+    retreat.angle_deg:      { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
+                              visible_if: {"retreat.angle_mode":"custom"} }
+
+  # --- Polyhelix (Pyramide) ---
+  path.polyhelix.pyramid:
+    base_polygon_sides:     { type: enum, values: [3,4,5,6], default: 4 }
+    base_edge_len_mm:       { type: number, min: 5,   max: 5000, step: 0.1, unit: "mm", default: 100.0 }
+    height_mm:              { type: number, min: 5,   max: 5000, step: 0.1, unit: "mm", default: 60.0 }
+    pitch_mm:               { type: number, min: 0.1, max: 200,  step: 0.1, unit: "mm", default: 6.0 }
+    dz_mm:                  { type: number, min: 0.05,max: 50,   step: 0.05,unit: "mm", default: 1.0 }
+    start_phase_deg:        { type: number, min: 0,   max: 360,  step: 1,   unit: "deg", default: 0 }
+    stand_off_mm:           { type: number, min: 0.1, max: 200,  step: 0.1, unit: "mm", default: 25.0 }
+    corner_roll_radius_mm:  { type: number, min: 0,   max: 50,   step: 0.1, unit: "mm", default: 8.0 }
+    cap_top_mm:             { type: number, min: 0,   max: 200,  step: 0.1, unit: "mm", default: 8.0 }
+    azimuth_sector_deg:     { type: vec2,   min: [-180,-180], max: [180,180], step: [1,1], unit: "deg", default: [-180,180] }
+    flow_scale_min:         { type: number, min: 0.0, max: 1.0, step: 0.05, default: 0.3 }
+    flow_scale_max:         { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
+    cos_alpha_comp:         { type: boolean, default: true }
+
+    predispense.angle_mode: { type: enum, values: ["auto","custom"], default: "auto" }
+    predispense.angle_deg:  { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
+                              visible_if: {"predispense.angle_mode":"custom"} }
+    retreat.angle_mode:     { type: enum, values: ["auto","custom"], default: "auto" }
+    retreat.angle_deg:      { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
+                              visible_if: {"retreat.angle_mode":"custom"} }
+
+  # --- Polyhelix (Würfel) ---
+  path.polyhelix.cube:
+    edge_len_mm:            { type: number, min: 5,   max: 5000, step: 0.1, unit: "mm", default: 100.0 }
+    height_mm:              { type: number, min: 5,   max: 5000, step: 0.1, unit: "mm", default: 100.0 }
+    pitch_mm:               { type: number, min: 0.1, max: 200,  step: 0.1, unit: "mm", default: 6.0 }
+    dz_mm:                  { type: number, min: 0.05,max: 50,   step: 0.05,unit: "mm", default: 1.0 }
+    start_phase_deg:        { type: number, min: 0,   max: 360,  step: 1,   unit: "deg", default: 0 }
+    stand_off_mm:           { type: number, min: 0.1, max: 200,  step: 0.1, unit: "mm", default: 25.0 }
+    corner_roll_radius_mm:  { type: number, min: 0,   max: 50,   step: 0.1, unit: "mm", default: 8.0 }
+    azimuth_sector_deg:     { type: vec2,   min: [-180,-180], max: [180,180], step: [1,1], unit: "deg", default: [-180,180] }
+    flow_scale_min:         { type: number, min: 0.0, max: 1.0, step: 0.05, default: 0.3 }
+    flow_scale_max:         { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
+    cos_alpha_comp:         { type: boolean, default: true }
+
+    predispense.angle_mode: { type: enum, values: ["auto","custom"], default: "auto" }
+    predispense.angle_deg:  { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
+                              visible_if: {"predispense.angle_mode":"custom"} }
+    retreat.angle_mode:     { type: enum, values: ["auto","custom"], default: "auto" }
+    retreat.angle_deg:      { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
+                              visible_if: {"retreat.angle_mode":"custom"} }
+
+  # --- Perimeter-Follow (Rand, Ebene) ---
+  path.perimeter_follow.plane:
+    area.shape:        { type: enum, values: ["circle","rect"], default: "circle" }
+    area.center_xy_mm: { type: vec2, min: [-1000,-1000], max: [1000,1000], step: [0.1,0.1], unit: "mm", default: [0,0] }
+    area.radius_mm:    { type: number, min: 1.0, max: 2000, step: 0.1, unit: "mm", default: 50.0,
+                         visible_if: {"area.shape":"circle"} }
+    area.size_mm:      { type: vec2,   min: [1.0,1.0], max: [5000,5000], step: [0.1,0.1], unit: "mm", default: [100.0,100.0],
+                         visible_if: {"area.shape":"rect"} }
+    loops:             { type: number, min: 1, max: 10, step: 1, default: 2 }
+    offset_start_mm:   { type: number, min: -20, max: 20, step: 0.1, unit: "mm", default: 1.0 }
+    offset_step_mm:    { type: number, min: 0, max: 10, step: 0.1, unit: "mm", default: 1.0 }
+    corner_blend_mm:   { type: number, min: 0, max: 20, step: 0.1, unit: "mm", default: 5.0 }
+    spray_angle_deg:   { type: number, min: 0, max: 20, step: 1, unit: "deg", default: 8 }
+    flow_scale_min:    { type: number, min: 0.0, max: 1.0, step: 0.05, default: 0.6 }
+    flow_scale_max:    { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
+
+    predispense.angle_mode: { type: enum, values: ["auto","custom"], default: "auto" }
+    predispense.angle_deg:  { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
+                              visible_if: {"predispense.angle_mode":"custom"} }
+    retreat.angle_mode:     { type: enum, values: ["auto","custom"], default: "auto" }
+    retreat.angle_deg:      { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
+                              visible_if: {"retreat.angle_mode":"custom"} }
