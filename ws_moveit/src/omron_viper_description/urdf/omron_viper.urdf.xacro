@@ -1,0 +1,247 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="omron_viper_s650">
+
+  <!-- ===== Materialien ===== -->
+  <material name="Black">
+    <color rgba="0 0 0 1"/>
+  </material>
+
+  <material name="White">
+    <color rgba="1 1 1 1"/>
+  </material>
+
+  <!-- ===== Welt / Mount ===== -->
+  <link name="robot_mount"/>
+
+  <joint name="world_to_base" type="fixed">
+    <parent link="robot_mount"/>
+    <child  link="Adept_Viper_s650_Link1"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ===== LINKS ===== -->
+
+  <!-- Link 1 -->
+  <link name="Adept_Viper_s650_Link1">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link1.stl"/>
+      </geometry>
+      <material name="Black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link1.stl"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Link 2 -->
+  <link name="Adept_Viper_s650_Link2">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link2.stl"/>
+      </geometry>
+      <material name="White"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link2.stl"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Link 3 -->
+  <link name="Adept_Viper_s650_Link3">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link3.stl"/>
+      </geometry>
+      <material name="White"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link3.stl"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Link 4 -->
+  <link name="Adept_Viper_s650_Link4">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link4.stl"/>
+      </geometry>
+      <material name="White"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link4.stl"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Link 5 -->
+  <link name="Adept_Viper_s650_Link5">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link5.stl"/>
+      </geometry>
+      <material name="White"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link5.stl"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Link 6 -->
+  <link name="Adept_Viper_s650_Link6">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Link6.stl"/>
+      </geometry>
+      <material name="White"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Link6.stl"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Interface Plate -->
+  <link name="Adept_Viper_650_Interface_Plate">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/visual/Adept_Viper_650_Interface_Plate.stl"/>
+      </geometry>
+      <material name="White"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/collision/Adept_Viper_650_Interface_Plate.stl"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Tool-Mount (TCP-Referenz) -->
+  <link name="tool_mount"/>
+
+  <!-- ===== JOINTS (Kinematik) ===== -->
+
+  <!-- Joint 1 -->
+  <joint name="joint_1" type="revolute">
+    <parent link="Adept_Viper_s650_Link1"/>
+    <child  link="Adept_Viper_s650_Link2"/>
+    <origin xyz="0 0 0.203" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="100" velocity="5.72468" lower="-2.96706" upper="2.96706"/>
+  </joint>
+
+  <!-- Joint 2 -->
+  <joint name="joint_2" type="revolute">
+    <parent link="Adept_Viper_s650_Link2"/>
+    <child  link="Adept_Viper_s650_Link3"/>
+    <origin xyz="0.074 0 0.132" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="100" velocity="5.23599" lower="-3.31613" upper="0.78540"/>
+  </joint>
+
+  <!-- Joint 3 -->
+  <joint name="joint_3" type="revolute">
+    <parent link="Adept_Viper_s650_Link3"/>
+    <child  link="Adept_Viper_s650_Link4"/>
+    <origin xyz="0.270 0 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="100" velocity="6.54498" lower="-0.50615" upper="4.46805"/>
+  </joint>
+
+  <!-- Joint 4 -->
+  <joint name="joint_4" type="revolute">
+    <parent link="Adept_Viper_s650_Link4"/>
+    <child  link="Adept_Viper_s650_Link5"/>
+    <origin xyz="-0.090 0 0.295" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="100" velocity="6.54498" lower="-3.31613" upper="3.31613"/>
+  </joint>
+
+  <!-- Joint 5 -->
+  <joint name="joint_5" type="revolute">
+    <parent link="Adept_Viper_s650_Link5"/>
+    <child  link="Adept_Viper_s650_Link6"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="100" velocity="6.54498" lower="-2.09440" upper="2.09440"/>
+  </joint>
+
+  <!-- Joint 6 -->
+  <joint name="joint_6" type="revolute">
+    <parent link="Adept_Viper_s650_Link6"/>
+    <child  link="Adept_Viper_650_Interface_Plate"/>
+    <origin xyz="0 0 0.08" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="100" velocity="10.47198" lower="-3.14159" upper="3.14159"/>
+  </joint>
+
+  <!-- tool_mount: neutrale Orientierung auf der Interface-Plate -->
+  <joint name="tool_mount_joint" type="fixed">
+    <parent link="Adept_Viper_650_Interface_Plate"/>
+    <child  link="tool_mount"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Sonotek Vortex Nozzle (Mesh in mm -> scale auf Meter) -->
+  <link name="sonotek_vortex">
+    <visual>
+      <!-- Nur das Mesh ist rotiert, KEINE Verschiebung -->
+      <origin xyz="0 0 0" rpy="0 1.57079633 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/tools/Sonotek_Vortex.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="White"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 1.57079633 0"/>
+      <geometry>
+        <mesh filename="package://omron_viper_description/meshes/tools/Sonotek_Vortex.stl"
+              scale="0.001 0.001 0.001"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Joint: tool_mount -> mesh (nur Rotation im TF, keine Verschiebung) -->
+  <joint name="sonotek_vortex_joint" type="fixed">
+    <parent link="tool_mount"/>
+    <child  link="sonotek_vortex"/>
+    <!-- TF-Ausrichtung zwischen Flansch und Tool -->
+    <origin xyz="0 0 0" rpy="1.57079633 0 -1.57079633"/>
+  </joint>
+
+  <!-- TCP-Link: nur Frame, kein Mesh -->
+  <link name="tcp"/>
+
+  <!-- Joint: sonotek_vortex -> tcp (hier: -10cm in z, +5cm in y) -->
+  <joint name="tcp_joint" type="fixed">
+    <parent link="sonotek_vortex"/>
+    <child  link="tcp"/>
+    <origin xyz="0 0.045 -0.11" rpy="0 0 0"/>
+  </joint>
+
+</robot>
