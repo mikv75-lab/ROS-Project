@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # File: src/app/main_gui.py
-#
-# Robust entry-point for SprayCoater UI
-# - finds PROJECT_ROOT dynamically
-# - loads startup.yaml reliably
-# - wires StartupMachine → RosBridge → MainWindow correctly
 
 from __future__ import annotations
 
@@ -43,10 +38,6 @@ HERE = os.path.abspath(os.path.dirname(__file__))
 
 
 def find_project_root(start: str) -> str:
-    """
-    Walk upwards until resource/config/startup.yaml is found.
-    This makes the entry-point immune to file moves (app/, entry/, etc.).
-    """
     cur = os.path.abspath(start)
     while True:
         candidate = os.path.join(cur, "resource", "config", "startup.yaml")
@@ -56,12 +47,14 @@ def find_project_root(start: str) -> str:
         if parent == cur:
             break
         cur = parent
-    raise FileNotFoundError(
-        "PROJECT_ROOT nicht gefunden (resource/config/startup.yaml fehlt)"
-    )
+    raise FileNotFoundError("PROJECT_ROOT nicht gefunden (resource/config/startup.yaml fehlt)")
 
 
 PROJECT_ROOT = find_project_root(HERE)
+
+# ✅ Variante B: Loader soll relative Pfade (data/..., config/...) relativ zum Projektroot auflösen
+os.environ["SC_PROJECT_ROOT"] = PROJECT_ROOT
+
 SRC_ROOT = os.path.join(PROJECT_ROOT, "src")
 RES_ROOT = os.path.join(PROJECT_ROOT, "resource")
 
@@ -105,13 +98,7 @@ except Exception:
 try:
     _CRASH_FH = open(CRASH_PATH, "w", buffering=1, encoding="utf-8")
     faulthandler.enable(file=_CRASH_FH, all_threads=True)
-    for sig in (
-        signal.SIGSEGV,
-        signal.SIGABRT,
-        signal.SIGBUS,
-        signal.SIGILL,
-        signal.SIGFPE,
-    ):
+    for sig in (signal.SIGSEGV, signal.SIGABRT, signal.SIGBUS, signal.SIGILL, signal.SIGFPE):
         try:
             faulthandler.register(sig, file=_CRASH_FH, all_threads=True)
         except Exception:
@@ -233,9 +220,7 @@ def main():
 
     def on_ready(ctx, bridge_shadow, bridge_live, plc):
         if ctx is None:
-            QMessageBox.critical(
-                None, "Startup fehlgeschlagen", "Kein gültiger AppContext"
-            )
+            QMessageBox.critical(None, "Startup fehlgeschlagen", "Kein gültiger AppContext")
             return
 
         ros = bridge_shadow or bridge_live

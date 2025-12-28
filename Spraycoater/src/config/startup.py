@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
-# /root/Spraycoater/src/config/startup.py
-# Startup-Loader + AppContent (Frames/QoS/Topics)
+# File: src/config/startup.py
 from __future__ import annotations
 
-import os
 import io
-import yaml
+import os
 import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+import yaml
+
 
 # ============================================================
-# ===============  Basis-Helfer  =============================
+# Helpers
 # ============================================================
 
 def _err(msg: str) -> None:
@@ -20,7 +20,7 @@ def _err(msg: str) -> None:
 
 
 def resolve_package_uri(uri: str) -> str:
-    """ROS2 package:// Pfade auflösen."""
+    """Resolve ROS2 package://<pkg>/<relpath> to an absolute filesystem path."""
     if not isinstance(uri, str) or not uri.startswith("package://"):
         return uri
     try:
@@ -28,33 +28,57 @@ def resolve_package_uri(uri: str) -> str:
     except Exception as e:
         _err(f"ament_index_python nicht verfügbar für package-URI '{uri}': {e}")
     try:
-        pkg, rel = uri[len("package://"):].split("/", 1)
+        pkg, rel = uri[len("package://") :].split("/", 1)
     except ValueError:
         _err(f"Ungültige package-URI: '{uri}' (erwartet package://<pkg>/relpath)")
     base = get_package_share_directory(pkg)
     return os.path.join(base, rel)
 
 
+def _effective_base_dir(startup_yaml_path: str) -> str:
+    """
+    Base directory for resolving relative paths.
+
+    - If SC_PROJECT_ROOT is set and points to a directory, use it.
+    - Otherwise, fallback to directory of startup.yaml.
+    """
+    env_root = os.environ.get("SC_PROJECT_ROOT", "").strip()
+    if env_root:
+        env_root = os.path.abspath(os.path.normpath(os.path.expanduser(env_root)))
+        if os.path.isdir(env_root):
+            return env_root
+        warnings.warn(
+            f"SC_PROJECT_ROOT gesetzt, aber kein Verzeichnis: {env_root!r} – fallback auf startup.yaml dir."
+        )
+    return os.path.dirname(os.path.abspath(startup_yaml_path))
+
+
 def _abspath_rel_to(base_dir: str, p: str) -> str:
+    """Resolve relative/absolute/package:// paths to an absolute normalized path."""
     if not p:
         _err("Leerer Pfad übergeben.")
     p = os.path.expanduser(p)
-    if p.startswith("package://"):
+
+    if isinstance(p, str) and p.startswith("package://"):
         path = resolve_package_uri(p)
     else:
         path = p if os.path.isabs(p) else os.path.join(base_dir, p)
+
     return os.path.abspath(os.path.normpath(path))
 
 
+def _normalize_path_or_uri(path_or_uri: str) -> str:
+    """Normalize input to a filesystem path (supports package:// URIs)."""
+    if isinstance(path_or_uri, str) and path_or_uri.startswith("package://"):
+        return os.path.abspath(os.path.normpath(resolve_package_uri(path_or_uri)))
+    return os.path.abspath(os.path.normpath(path_or_uri))
+
+
 def _load_yaml(path_or_uri: str, *, strict: bool = True) -> Optional[Dict[str, Any]]:
-    """YAML laden. strict=True → Fehler; sonst: None."""
+    """Load YAML from a filesystem path or package:// URI. strict=True raises on errors."""
     try:
-        path = (
-            resolve_package_uri(path_or_uri)
-            if isinstance(path_or_uri, str) and path_or_uri.startswith("package://")
-            else path_or_uri
-        )
-        path = os.path.abspath(os.path.normpath(path))
+        path = _normalize_path_or_uri(path_or_uri)
+
         if not os.path.exists(path):
             if strict:
                 _err(f"YAML nicht gefunden: {path}")
@@ -78,27 +102,17 @@ def _load_yaml(path_or_uri: str, *, strict: bool = True) -> Optional[Dict[str, A
 
 
 # ============================================================
-# =================== Datenstrukturen ========================
+# Data structures
 # ============================================================
 
 @dataclass(frozen=True)
 class AppPaths:
-    """
-    WICHTIG:
-      - recipes.yaml wurde aufgesplittet in 3 Dateien:
-        * recipe_params_file
-        * planner_catalog_file
-        * recipe_catalog_file
-      - recipe_dir bleibt als Bundle-Root für RecipeRepo (compiled/draft etc.)
-    """
     recipe_dir: str
     log_dir: str
     bringup_log: str
-
     recipe_params_file: str
     planner_catalog_file: str
     recipe_catalog_file: str
-
     substrate_mounts_dir: Optional[str] = None
     substrate_mounts_file: Optional[str] = None
 
@@ -128,7 +142,7 @@ class ROSLiveEndpoint:
 
 @dataclass(frozen=True)
 class ROSLiveOmronConfig:
-    mode: str  # "omron" | "emulator"
+    mode: str
     omron: ROSLiveEndpoint
     emulator: ROSLiveEndpoint
 
@@ -143,8 +157,8 @@ class ROSLiveConfig(ROSRoleConfig):
 class ROSConfig:
     launch_ros: bool
     bringup_launch: str
-    namespace: str               # z.B. "spraycoater" (Info, aber NICHT für Topic-Prefixing!)
-    use_sim_time: bool           # global
+    namespace: str
+    use_sim_time: bool
     robot_type: str
     configs: ROSConfigPaths
     shadow: ROSRoleConfig
@@ -161,38 +175,202 @@ class PlcEndpoint:
 @dataclass(frozen=True)
 class PlcConfig:
     sim: bool
-    mode: str                   # "ads" oder "umrt"
+    mode: str
     ads: Optional[PlcEndpoint]
     umrt: Optional[PlcEndpoint]
     spec_file: str
     spec: Optional[Dict[str, Any]] = None
 
 
-@dataclass(frozen=True)
+@dataclass
 class AppContext:
+    """
+    Single Source of Truth (naming):
+
+      - ctx.store : RecipeStore   (catalog/defaults/defs)
+      - ctx.repo  : RecipeRepo    (persistence: draft/compiled/runs)
+      - ctx.content: AppContent   (frames/qos/topics; optional mounts yaml)
+    """
     paths: AppPaths
     ros: ROSConfig
     plc: PlcConfig
 
-    # --- getrennte YAMLs (raw) ---
+    # raw YAML roots (useful for debug)
     recipe_params_yaml: Dict[str, Any]
     planner_catalog_yaml: Dict[str, Any]
     recipe_catalog_yaml: Dict[str, Any]
+    mounts_yaml: Optional[Dict[str, Any]]
 
-    # --- parsed convenience ---
-    recipe_params: Dict[str, Any]
-    planner_catalog: Dict[str, Any]
-    recipes: List[Dict[str, Any]]
-
-    mounts_yaml: Optional[Dict[str, Any]] = None
-    content: Optional["AppContent"] = None
-
-    # --- optional legacy combined view (falls Alt-Code noch recipes_yaml erwartet) ---
-    recipes_yaml: Optional[Dict[str, Any]] = None
+    # Core objects
+    content: "AppContent"
+    store: Any
+    repo: Any
 
 
 # ============================================================
-# ==================  Loader: load_startup  ==================
+# AppContent (ROS content only)
+# ============================================================
+
+try:
+    from rosidl_runtime_py.utilities import get_message
+    from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
+except Exception:
+    QoSProfile = object
+    ReliabilityPolicy = DurabilityPolicy = HistoryPolicy = object
+
+    def get_message(_s: str):
+        raise RuntimeError("rosidl_runtime_py nicht verfügbar.")
+
+
+@dataclass(frozen=True)
+class TopicSpec:
+    id: str
+    name: str
+    type_str: str
+    qos_key: str
+
+    def resolve_type(self):
+        if "/msg/" not in self.type_str:
+            raise ValueError(f"Ungültiger Msg-Typ: {self.type_str}")
+        return get_message(self.type_str)
+
+
+class AppContent:
+    """
+    Lightweight access to:
+      - frames.yaml
+      - qos.yaml
+      - topics.yaml
+      - optional substrate mounts yaml
+
+    NOTE: No RecipeStore/RecipeRepo creation here.
+    Those live in ctx.store / ctx.repo.
+    """
+
+    def __init__(
+        self,
+        *,
+        base_dir: str,
+        ros_cfg_paths: ROSConfigPaths,
+        substrate_mounts_dir: Optional[str],
+        substrate_mounts_file: Optional[str],
+    ):
+        self._frames = _load_yaml(ros_cfg_paths.frames_file, strict=True) or {}
+        self._qos = _load_yaml(ros_cfg_paths.qos_file, strict=True) or {}
+        self._topics = _load_yaml(ros_cfg_paths.topics_file, strict=True) or {}
+
+        self._frames_map = self._frames.get("frames") or {}
+        if not isinstance(self._frames_map, dict) or not self._frames_map:
+            raise ValueError("frames.yaml: frames fehlt.")
+
+        self._topics_root = self._topics.get("topics") or {}
+        if not isinstance(self._topics_root, dict):
+            raise ValueError("topics.yaml: topics fehlt.")
+
+        self._qos_profiles = self._build_qos_profiles(self._qos)
+
+        # optional mounts
+        self.substrate_mounts_dir = substrate_mounts_dir
+        self.mounts_yaml: Optional[Dict[str, Any]] = None
+        if substrate_mounts_file:
+            my = _load_yaml(substrate_mounts_file, strict=False)
+            if my and isinstance(my.get("mounts"), dict):
+                self.mounts_yaml = my
+
+        self._base_dir = base_dir
+
+    def frame(self, name: str) -> str:
+        if name not in self._frames_map:
+            raise KeyError(f"Frame '{name}' nicht gefunden.")
+        return self._frames_map[name]
+
+    @staticmethod
+    def _str_to_history(s: str):
+        s = (s or "").upper()
+        return getattr(HistoryPolicy, s, HistoryPolicy.KEEP_LAST)
+
+    @staticmethod
+    def _str_to_reliability(s: str):
+        s = (s or "").upper()
+        return getattr(ReliabilityPolicy, s, ReliabilityPolicy.RELIABLE)
+
+    @staticmethod
+    def _str_to_durability(s: str):
+        s = (s or "").upper()
+        return getattr(DurabilityPolicy, s, DurabilityPolicy.VOLATILE)
+
+    def _build_qos_profiles(self, qos_yaml: Dict[str, Any]) -> Dict[str, QoSProfile]:
+        profiles = qos_yaml.get("profiles") or {}
+        if not isinstance(profiles, dict) or not profiles:
+            raise ValueError("qos.yaml: profiles fehlt.")
+
+        out: Dict[str, QoSProfile] = {}
+        for key, spec in profiles.items():
+            if not isinstance(spec, dict):
+                raise ValueError(f"Ungültiges QoS-Profil: {key}")
+
+            history = self._str_to_history(spec.get("history", "KEEP_LAST"))
+            depth = int(spec.get("depth", 10))
+            reliability = self._str_to_reliability(spec.get("reliability", "RELIABLE"))
+            durability = self._str_to_durability(spec.get("durability", "VOLATILE"))
+
+            out[key] = QoSProfile(
+                history=history,
+                depth=depth,
+                reliability=reliability,
+                durability=durability,
+            )
+        return out
+
+    def qos(self, key: str):
+        if key not in self._qos_profiles:
+            raise KeyError(f"QoS-Profil '{key}' fehlt.")
+        return self._qos_profiles[key]
+
+    def topics(self, group: str, direction: str) -> List[TopicSpec]:
+        if group not in self._topics_root:
+            raise KeyError(f"Topic-Gruppe '{group}' fehlt.")
+        block = self._topics_root[group].get(direction) or []
+        if not isinstance(block, list):
+            raise ValueError(f"topics[{group}][{direction}] ist kein Array.")
+
+        out: List[TopicSpec] = []
+        for e in block:
+            name = str(e["name"])
+            if name.startswith("/"):
+                raise ValueError(
+                    f"topics.yaml: Topic '{name}' darf NICHT mit '/' anfangen "
+                    f"(sonst ignoriert ROS den Node-Namespace)."
+                )
+            out.append(
+                TopicSpec(
+                    id=str(e["id"]),
+                    name=name,
+                    type_str=str(e["type"]),
+                    qos_key=str(e.get("qos", "default")),
+                )
+            )
+        return out
+
+    def topic_by_id(self, group: str, direction: str, topic_id: str) -> TopicSpec:
+        for t in self.topics(group, direction):
+            if t.id == topic_id:
+                return t
+        raise KeyError(f"Topic id '{topic_id}' in {group}/{direction} nicht gefunden.")
+
+    def create_publisher_from_id(self, node, group: str, topic_id: str):
+        spec = self.topic_by_id(group, "publish", topic_id)
+        msg_type = spec.resolve_type()
+        return node.create_publisher(msg_type, spec.name, self.qos(spec.qos_key))
+
+    def create_subscription_from_id(self, node, group: str, topic_id: str, callback):
+        spec = self.topic_by_id(group, "subscribe", topic_id)
+        msg_type = spec.resolve_type()
+        return node.create_subscription(msg_type, spec.name, callback, self.qos(spec.qos_key))
+
+
+# ============================================================
+# Loader
 # ============================================================
 
 def load_startup(startup_yaml_path: str) -> AppContext:
@@ -203,32 +381,32 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         _err(f"startup.yaml nicht gefunden: {startup_yaml_path}")
 
     su = _load_yaml(startup_yaml_path, strict=True) or {}
-    base = os.path.dirname(startup_yaml_path)
+    base = _effective_base_dir(startup_yaml_path)
 
-    # ----- PATHS -----
+    # ---------------- PATHS ----------------
     p = su.get("paths") or {}
     if not isinstance(p, dict):
         _err("startup.yaml: Abschnitt 'paths' fehlt oder ist ungültig.")
 
-    # Pflicht: Bundle-Dir + Logs + 3 getrennte YAMLs
-    for key in (
+    required_paths = (
         "recipe_dir",
         "log_dir",
         "bringup_log",
         "recipe_params_file",
         "planner_catalog_file",
         "recipe_catalog_file",
-    ):
+    )
+    for key in required_paths:
         if key not in p:
             _err(f"startup.yaml: 'paths.{key}' fehlt.")
 
-    recipe_dir_abs  = _abspath_rel_to(base, p["recipe_dir"])
-    log_dir_abs     = _abspath_rel_to(base, p["log_dir"])
+    recipe_dir_abs = _abspath_rel_to(base, p["recipe_dir"])
+    log_dir_abs = _abspath_rel_to(base, p["log_dir"])
     bringup_log_abs = _abspath_rel_to(base, p["bringup_log"])
 
-    recipe_params_abs   = _abspath_rel_to(base, p["recipe_params_file"])
+    recipe_params_abs = _abspath_rel_to(base, p["recipe_params_file"])
     planner_catalog_abs = _abspath_rel_to(base, p["planner_catalog_file"])
-    recipe_catalog_abs  = _abspath_rel_to(base, p["recipe_catalog_file"])
+    recipe_catalog_abs = _abspath_rel_to(base, p["recipe_catalog_file"])
 
     if not os.path.isdir(recipe_dir_abs):
         _err(f"paths.recipe_dir existiert nicht: {recipe_dir_abs}")
@@ -253,7 +431,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         substrate_mounts_file=mounts_file_abs,
     )
 
-    # ----- ROS -----
+    # ---------------- ROS ----------------
     r = su.get("ros") or {}
     if not isinstance(r, dict):
         _err("startup.yaml: Abschnitt 'ros' fehlt oder ist ungültig.")
@@ -279,7 +457,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not isinstance(rcfg, dict):
         _err("startup.yaml: ros.configs fehlt oder ist ungültig.")
 
-    for key in (
+    required_ros_cfg = (
         "topics_file",
         "qos_file",
         "frames_file",
@@ -288,7 +466,8 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         "servo_file",
         "poses_file",
         "tools_file",
-    ):
+    )
+    for key in required_ros_cfg:
         if key not in rcfg:
             _err(f"startup.yaml: ros.configs.{key} fehlt.")
 
@@ -356,7 +535,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         live=live_cfg,
     )
 
-    # ----- PLC -----
+    # ---------------- PLC ----------------
     plc_yaml = su.get("plc") or {}
     if not isinstance(plc_yaml, dict):
         _err("startup.yaml: Abschnitt 'plc' fehlt oder ist ungültig.")
@@ -369,17 +548,24 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     ads_cfg = plc_yaml.get("ads") or {}
     umrt_cfg = plc_yaml.get("umrt") or {}
 
-    ads_ep = PlcEndpoint(
-        ams_net_id=ads_cfg.get("ams_net_id"),
-        ip=ads_cfg.get("ip"),
-        port=ads_cfg.get("port"),
-    ) if ads_cfg else None
-
-    umrt_ep = PlcEndpoint(
-        ams_net_id=umrt_cfg.get("ams_net_id"),
-        ip=umrt_cfg.get("ip"),
-        port=umrt_cfg.get("port"),
-    ) if umrt_cfg else None
+    ads_ep = (
+        PlcEndpoint(
+            ams_net_id=ads_cfg.get("ams_net_id"),
+            ip=ads_cfg.get("ip"),
+            port=ads_cfg.get("port"),
+        )
+        if ads_cfg
+        else None
+    )
+    umrt_ep = (
+        PlcEndpoint(
+            ams_net_id=umrt_cfg.get("ams_net_id"),
+            ip=umrt_cfg.get("ip"),
+            port=umrt_cfg.get("port"),
+        )
+        if umrt_cfg
+        else None
+    )
 
     spec_rel = plc_yaml.get("spec_file", "plc.yaml")
     spec_abs = _abspath_rel_to(base, spec_rel)
@@ -394,29 +580,25 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         spec=plc_spec,
     )
 
-    # =========================================================
-    # ==========  3 getrennte Recipe/Planner YAMLs  ============
-    # =========================================================
-
-    # ----- recipe_params.yaml -----
+    # ---------------- Recipe YAMLs ----------------
     rp_y = _load_yaml(paths.recipe_params_file, strict=True) or {}
+    pc_y = _load_yaml(paths.planner_catalog_file, strict=True) or {}
+    rc_y = _load_yaml(paths.recipe_catalog_file, strict=True) or {}
+
+    # (validations are strict; no legacy fallback keys)
     recipe_params = rp_y.get("recipe_params")
     if not isinstance(recipe_params, dict) or not recipe_params:
         _err("recipe_params.yaml: recipe_params fehlt oder ist leer.")
 
-    # ----- planner_catalog.yaml -----
-    pc_y = _load_yaml(paths.planner_catalog_file, strict=True) or {}
     planner_catalog = pc_y.get("planner_catalog")
     if not isinstance(planner_catalog, dict) or not planner_catalog:
         _err("planner_catalog.yaml: planner_catalog fehlt oder ist leer.")
 
-    # ----- recipe_catalog.yaml -----
-    rc_y = _load_yaml(paths.recipe_catalog_file, strict=True) or {}
     recipes_list = rc_y.get("recipes")
     if not isinstance(recipes_list, list) or not recipes_list:
         _err("recipe_catalog.yaml: recipes fehlt oder ist leer.")
 
-    # ----- substrate_mounts.yaml optional -----
+    # optional mounts yaml (already loaded in AppContent too, but we keep it here for quick access)
     mounts_yaml = None
     if mounts_file_abs:
         mounts_yaml = _load_yaml(mounts_file_abs, strict=False)
@@ -424,266 +606,42 @@ def load_startup(startup_yaml_path: str) -> AppContext:
             warnings.warn("substrate_mounts.yaml ungültig → ignoriert.")
             mounts_yaml = None
 
-    # ----- AppContent erzeugen -----
-    content = AppContent(startup_yaml_path)
+    # ---------------- Build core objects: content + store + repo ----------------
+    content = AppContent(
+        base_dir=base,
+        ros_cfg_paths=ros_paths,
+        substrate_mounts_dir=mounts_dir_abs,
+        substrate_mounts_file=mounts_file_abs,
+    )
 
-    # ----- optional legacy combined view (für Alt-Code) -----
-    legacy_combined = {
-        "version": 1,
-        "recipe_params": recipe_params,
-        "planner_catalog": planner_catalog,
-        "recipes": recipes_list,
-    }
+    # Create RecipeStore + RecipeRepo (SSoT)
+    from model.recipe.recipe_store import RecipeStore, RecipeStorePaths
+    from model.recipe.recipe_bundle import RecipeBundle
+    from model.recipe.recipe_repo import RecipeRepo
 
-    ctx = AppContext(
-        paths=paths,
-        ros=ros_cfg,
-        plc=plc_cfg,
-
+    store_paths = RecipeStorePaths(
+        recipe_params_file=paths.recipe_params_file,
+        planner_catalog_file=paths.planner_catalog_file,
+        recipe_catalog_file=paths.recipe_catalog_file,
+    )
+    store = RecipeStore(
+        paths=store_paths,
         recipe_params_yaml=rp_y,
         planner_catalog_yaml=pc_y,
         recipe_catalog_yaml=rc_y,
-
-        recipe_params=recipe_params,
-        planner_catalog=planner_catalog,
-        recipes=recipes_list,
-
-        mounts_yaml=mounts_yaml,
-        content=content,
-
-        recipes_yaml=legacy_combined,
     )
 
-    # ✅ Repo in content binden (Tabs holen es über ctx.content.recipe_repo())
-    try:
-        if ctx.content is not None:
-            ctx.content.bind_ctx(ctx)
-    except Exception as e:
-        warnings.warn(f"RecipeRepo konnte nicht initialisiert werden: {e}")
+    repo = RecipeRepo(bundle=RecipeBundle(recipes_root_dir=paths.recipe_dir))
 
-    return ctx
-
-
-# ============================================================
-# =================== AppContent (Frames/QoS/Topics) =========
-# ============================================================
-
-try:
-    from rosidl_runtime_py.utilities import get_message
-    from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
-except Exception:
-    QoSProfile = object
-    ReliabilityPolicy = DurabilityPolicy = HistoryPolicy = object
-
-    def get_message(_s: str):
-        raise RuntimeError("rosidl_runtime_py nicht verfügbar.")
-
-
-@dataclass(frozen=True)
-class TopicSpec:
-    id: str
-    name: str
-    type_str: str
-    qos_key: str
-
-    def resolve_type(self):
-        if "/msg/" not in self.type_str:
-            raise ValueError(f"Ungültiger Msg-Typ: {self.type_str}")
-        return get_message(self.type_str)
-
-
-@dataclass(frozen=True)
-class PathsLite:
-    substrate_mounts_dir: Optional[str] = None
-
-
-class AppContent:
-    """
-    Frames / QoS / Topics aus startup.yaml.ros.configs.* laden.
-
-    WICHTIG für deinen Fall:
-      - topics.yaml enthält bereits "spraycoater/..."
-      - daher wird HIER NICHTS geprefixt (kein root_ns)
-      - Node-Namespace (shadow/live) kommt allein aus RosBridge / rclpy Node
-
-    Zusätzlich:
-      - RecipeRepo hängt in content und wird via bind_ctx(ctx) initialisiert
-    """
-
-    def __init__(self, startup_yaml_path: str):
-        su = _load_yaml(startup_yaml_path, strict=True) or {}
-        base = os.path.dirname(os.path.abspath(startup_yaml_path))
-
-        r = su.get("ros") or {}
-        if not isinstance(r, dict):
-            raise ValueError("startup.yaml: Abschnitt 'ros' fehlt oder ist ungültig.")
-        cfg = r.get("configs") or {}
-        if not isinstance(cfg, dict) or not cfg:
-            raise ValueError("startup.yaml: ros.configs fehlt oder ist ungültig.")
-
-        # ✅ configs sauber auflösen (package:// + relativ)
-        frames_path = _abspath_rel_to(base, cfg.get("frames_file", ""))
-        qos_path    = _abspath_rel_to(base, cfg.get("qos_file", ""))
-        topics_path = _abspath_rel_to(base, cfg.get("topics_file", ""))
-
-        self._frames = _load_yaml(frames_path, strict=True) or {}
-        self._qos    = _load_yaml(qos_path, strict=True) or {}
-        self._topics = _load_yaml(topics_path, strict=True) or {}
-
-        # ---- Frames ----
-        self._frames_map = self._frames.get("frames") or {}
-        if not isinstance(self._frames_map, dict) or not self._frames_map:
-            raise ValueError("frames.yaml: frames fehlt.")
-
-        # ---- QoS ----
-        self._qos_profiles = self._build_qos_profiles(self._qos)
-
-        # ---- Topics ----
-        self._topics_root = self._topics.get("topics") or {}
-        if not isinstance(self._topics_root, dict):
-            raise ValueError("topics.yaml: topics fehlt.")
-
-        # ❗ Für deinen Fall: kein root_ns, kein Prefixing
-        self._root_ns = ""
-
-        # optional Mounts:
-        p = su.get("paths") or {}
-        mounts_dir_abs = _abspath_rel_to(base, p["substrate_mounts_dir"]) if p.get("substrate_mounts_dir") else None
-        mounts_file_abs = _abspath_rel_to(base, p["substrate_mounts_file"]) if p.get("substrate_mounts_file") else None
-
-        self.paths = PathsLite(substrate_mounts_dir=mounts_dir_abs)
-
-        self.mounts_yaml = None
-        if mounts_file_abs:
-            my = _load_yaml(mounts_file_abs, strict=False)
-            if my and isinstance(my.get("mounts"), dict):
-                self.mounts_yaml = my
-
-        # ---- Repo (lazy, gebunden über bind_ctx) ----
-        self._ctx: Any = None
-        self._recipe_repo: Any = None
-
-    # ---------------- Repo -----------------
-
-    def bind_ctx(self, ctx: Any) -> None:
-        """Bindet den AppContext an content (für Repo-Erzeugung)."""
-        self._ctx = ctx
-
-    def recipe_repo(self):
-        """
-        Lazy getter für RecipeRepo.
-
-        Repo basiert auf ctx.paths.recipe_dir (RecipeBundle root).
-        """
-        if self._recipe_repo is not None:
-            return self._recipe_repo
-        if self._ctx is None:
-            raise RuntimeError("AppContent.recipe_repo(): ctx ist nicht gebunden (bind_ctx(ctx) fehlt).")
-
-        from model.recipe.recipe_bundle import RecipeBundle
-        from model.recipe.recipe_repo import RecipeRepo
-
-        bundle = RecipeBundle(recipes_root_dir=self._ctx.paths.recipe_dir)
-        self._recipe_repo = RecipeRepo(bundle=bundle)
-        return self._recipe_repo
-
-    # ---------------- Frames ----------------
-
-    def frame(self, name: str) -> str:
-        if name not in self._frames_map:
-            raise KeyError(f"Frame '{name}' nicht gefunden.")
-        return self._frames_map[name]
-
-    # ---------------- QoS -------------------
-
-    @staticmethod
-    def _str_to_history(s: str):
-        s = (s or "").upper()
-        return getattr(HistoryPolicy, s, HistoryPolicy.KEEP_LAST)
-
-    @staticmethod
-    def _str_to_reliability(s: str):
-        s = (s or "").upper()
-        return getattr(ReliabilityPolicy, s, ReliabilityPolicy.RELIABLE)
-
-    @staticmethod
-    def _str_to_durability(s: str):
-        s = (s or "").upper()
-        return getattr(DurabilityPolicy, s, DurabilityPolicy.VOLATILE)
-
-    def _build_qos_profiles(self, qos_yaml: Dict[str, Any]) -> Dict[str, QoSProfile]:
-        profiles = qos_yaml.get("profiles") or {}
-        if not isinstance(profiles, dict) or not profiles:
-            raise ValueError("qos.yaml: profiles fehlt.")
-
-        out: Dict[str, QoSProfile] = {}
-        for key, spec in profiles.items():
-            if not isinstance(spec, dict):
-                raise ValueError(f"Ungültiges QoS-Profil: {key}")
-
-            history = self._str_to_history(spec.get("history", "KEEP_LAST"))
-            depth = int(spec.get("depth", 10))
-            reliability = self._str_to_reliability(spec.get("reliability", "RELIABLE"))
-            durability = self._str_to_durability(spec.get("durability", "VOLATILE"))
-
-            out[key] = QoSProfile(
-                history=history,
-                depth=depth,
-                reliability=reliability,
-                durability=durability,
-            )
-        return out
-
-    def qos(self, key: str):
-        if key not in self._qos_profiles:
-            raise KeyError(f"QoS-Profil '{key}' fehlt.")
-        return self._qos_profiles[key]
-
-    # ---------------- Topics -----------------
-
-    def _with_root_ns(self, name: str) -> str:
-        # Für deinen Fall: NICHT prefixen, aber absolute Topics respektieren
-        return name
-
-    def topics(self, group: str, direction: str) -> List[TopicSpec]:
-        if group not in self._topics_root:
-            raise KeyError(f"Topic-Gruppe '{group}' fehlt.")
-        block = self._topics_root[group].get(direction) or []
-        if not isinstance(block, list):
-            raise ValueError(f"topics[{group}][{direction}] ist kein Array.")
-
-        out: List[TopicSpec] = []
-        for e in block:
-            name = str(e["name"])
-            if name.startswith("/"):
-                raise ValueError(
-                    f"topics.yaml: Topic '{name}' darf NICHT mit '/' anfangen "
-                    f"(sonst ignoriert ROS den Node-Namespace)."
-                )
-            out.append(
-                TopicSpec(
-                    id=str(e["id"]),
-                    name=self._with_root_ns(name),
-                    type_str=str(e["type"]),
-                    qos_key=str(e.get("qos", "default")),
-                )
-            )
-        return out
-
-    def topic_by_id(self, group: str, direction: str, topic_id: str) -> TopicSpec:
-        for t in self.topics(group, direction):
-            if t.id == topic_id:
-                return t
-        raise KeyError(f"Topic id '{topic_id}' in {group}/{direction} nicht gefunden.")
-
-    # Node-Helpers
-
-    def create_publisher_from_id(self, node, group: str, topic_id: str):
-        spec = self.topic_by_id(group, "publish", topic_id)
-        msg_type = spec.resolve_type()
-        return node.create_publisher(msg_type, spec.name, self.qos(spec.qos_key))
-
-    def create_subscription_from_id(self, node, group: str, topic_id: str, callback):
-        spec = self.topic_by_id(group, "subscribe", topic_id)
-        msg_type = spec.resolve_type()
-        return node.create_subscription(msg_type, spec.name, callback, self.qos(spec.qos_key))
+    return AppContext(
+        paths=paths,
+        ros=ros_cfg,
+        plc=plc_cfg,
+        recipe_params_yaml=rp_y,
+        planner_catalog_yaml=pc_y,
+        recipe_catalog_yaml=rc_y,
+        mounts_yaml=mounts_yaml,
+        content=content,
+        store=store,
+        repo=repo,
+    )

@@ -52,16 +52,20 @@ class ProcessTab(QWidget):
         self,
         *,
         ctx,
-        store,
+        repo,
         ros: Optional[RosBridge],
         plc: PlcClientBase | None = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self.ctx = ctx
-        self.store = store
+        self.repo = repo  # ✅ RecipeRepo (SSoT: ctx.repo)
         self.ros = ros
         self.plc = plc
+
+        if self.repo is None:
+            # ProcessTab braucht Repo zwingend (load/save)
+            raise RuntimeError("ProcessTab: repo ist None (ctx.repo fehlt?)")
 
         # currently displayed recipe in tab (used for markers/score)
         self._recipe: Optional[Recipe] = None
@@ -185,12 +189,6 @@ class ProcessTab(QWidget):
         self._update_buttons()
         self._update_layer_enablement()
 
-    # ---------------- Repo helper ----------------
-
-    def _recipe_repo(self):
-        repo_getter = getattr(getattr(self.ctx, "content", None), "recipe_repo", None)
-        return repo_getter() if callable(repo_getter) else None
-
     # ---------------- Utils ----------------
 
     def _append_log(self, msg: str) -> None:
@@ -265,18 +263,12 @@ class ProcessTab(QWidget):
             QMessageBox.warning(self, "Load", "Während RobotInit läuft nicht möglich.")
             return
 
-        # simplest: reload the currently selected recipe_id
         if not self._recipe_id:
             QMessageBox.information(self, "Load", "Kein Rezept ausgewählt.")
             return
 
-        repo = self._recipe_repo()
-        if repo is None:
-            QMessageBox.critical(self, "Load", "RecipeRepo nicht verfügbar.")
-            return
-
         try:
-            r = repo.load_for_process(self._recipe_id)
+            r = self.repo.load_for_process(self._recipe_id)
             self.set_recipe(r)
             self._append_log("Load: OK")
         except Exception as e:
@@ -361,14 +353,9 @@ class ProcessTab(QWidget):
             QMessageBox.warning(self, "Execute", "PLC ist nicht verfügbar (Execute benötigt PLC).")
             return
 
-        repo = self._recipe_repo()
-        if repo is None:
-            QMessageBox.critical(self, "Process", "RecipeRepo nicht verfügbar.")
-            return
-
         # IMPORTANT: load fresh process recipe snapshot for this run
         try:
-            recipe_run = repo.load_for_process(self._recipe_id)
+            recipe_run = self.repo.load_for_process(self._recipe_id)
         except Exception as e:
             QMessageBox.critical(self, "Process", f"Rezept laden fehlgeschlagen: {e}")
             return
@@ -398,14 +385,9 @@ class ProcessTab(QWidget):
     # ---------------- Process result handling ----------------
 
     def _apply_payload_to_recipe_and_eval(self, payload: Dict[str, Any]) -> None:
-        """
-        Übernimmt planned/executed aus payload ins aktuelle Recipe (tab),
-        führt EVAL IMMER vor Anzeige/Speichern aus.
-        """
         if self._recipe is None:
             return
 
-        # 1) merge payload trajs into recipe
         planned = payload.get("planned_traj")
         executed = payload.get("executed_traj")
 
@@ -414,7 +396,6 @@ class ProcessTab(QWidget):
         if isinstance(executed, dict):
             self._recipe.trajectories[Recipe.TRAJ_EXECUTED] = executed
 
-        # 2) eval for all compiled sides (preferred) so score is always present
         sides = self._compiled_sides()
         for side in sides:
             try:
@@ -429,13 +410,7 @@ class ProcessTab(QWidget):
                 pass
 
     def _persist_runs_if_enabled(self) -> None:
-        """
-        Speichert scored planned/executed (YAML) – nur wenn Checkboxen gesetzt.
-        """
         if self._recipe is None or not self._recipe_id:
-            return
-        repo = self._recipe_repo()
-        if repo is None:
             return
 
         # save planned
@@ -443,7 +418,7 @@ class ProcessTab(QWidget):
             traj = self._recipe.trajectories.get(Recipe.TRAJ_TRAJ)
             if isinstance(traj, dict):
                 try:
-                    repo.save_traj_run(self._recipe_id, traj=traj)
+                    self.repo.save_traj_run(self._recipe_id, traj=traj)
                     self._append_log("I persist: planned traj gespeichert (scored).")
                 except Exception as e:
                     self._append_log(f"W persist: planned traj konnte nicht gespeichert werden: {e}")
@@ -453,7 +428,7 @@ class ProcessTab(QWidget):
             ex = self._recipe.trajectories.get(Recipe.TRAJ_EXECUTED)
             if isinstance(ex, dict):
                 try:
-                    repo.save_executed_run(self._recipe_id, executed=ex)
+                    self.repo.save_executed_run(self._recipe_id, executed=ex)
                     self._append_log("I persist: executed traj gespeichert (scored).")
                 except Exception as e:
                     self._append_log(f"W persist: executed traj konnte nicht gespeichert werden: {e}")
@@ -474,27 +449,21 @@ class ProcessTab(QWidget):
         payload: Dict[str, Any] = result_obj if isinstance(result_obj, dict) else {}
         self._append_log("=== Process finished ===")
 
-        # Make sure tab has a recipe instance to store runs into:
-        # prefer: reload process recipe (draft+compiled) fresh, then apply runs+eval on top
-        repo = self._recipe_repo()
-        if repo is not None and self._recipe_id:
+        # reload base process recipe (draft+compiled) fresh, then apply runs+eval on top
+        if self._recipe_id:
             try:
-                self._recipe = repo.load_for_process(self._recipe_id)
+                self._recipe = self.repo.load_for_process(self._recipe_id)
             except Exception:
                 pass
 
-        # Apply + EVAL (MUST happen before UI + save)
         self._apply_payload_to_recipe_and_eval(payload)
 
-        # UI refresh (score + markers + yaml views)
         self._update_spray_score_label(prefer_executed=True)
         self._publish_layers()
         self._render_run_yaml_views()
 
-        # Persist AFTER eval
         self._persist_runs_if_enabled()
 
-        # cleanup flags
         self._process_active = False
         self._active_mode = ""
         self._process_thread = None
@@ -524,7 +493,6 @@ class ProcessTab(QWidget):
             return
 
         try:
-            # published separately or merged: here we merge into one MarkerArray
             ma = MarkerArray()
 
             if self.chkCompiled.isChecked():
@@ -546,9 +514,6 @@ class ProcessTab(QWidget):
             self._append_log(f"W publish_layers failed: {e}")
 
     def _update_spray_score_label(self, *, prefer_executed: bool = True) -> None:
-        """
-        Zeigt Score der active_side an. Prefer executed, sonst traj, sonst –.
-        """
         if self._recipe is None:
             self.lblScore.setText("Score: –")
             return

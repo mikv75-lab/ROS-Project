@@ -2,8 +2,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import os
-import re
 from typing import Optional, Dict, Any
 
 from PyQt6.QtCore import pyqtSignal
@@ -18,14 +16,9 @@ from PyQt6.QtWidgets import (
 )
 
 from model.recipe.recipe import Recipe
-from model.recipe.recipe_repo import RecipeRepo
-from model.recipe.recipe_bundle import RecipeBundle
 from model.recipe.recipe_store import RecipeStore
-
 from .recipe_editor_content import RecipeEditorContent
 
-
-# ----------------------------- UI helpers -----------------------------
 
 def _set_policy(
     w: QWidget,
@@ -40,38 +33,38 @@ def _set_policy(
 
 
 class RecipeEditorPanel(QWidget):
-    """
-    Commands:
-      - New    -> create_new(bundle) (draft only, clears compiled + runs)
-      - Load   -> load_for_editor(bundle draft)
-      - Save   -> save_editor(bundle draft, clears runs; compiled may be dropped on hash change)
-      - Delete -> delete(bundle folder)
-    """
-
     updatePreviewRequested = pyqtSignal(object)  # Recipe
 
-    def __init__(self, *, ctx, store: RecipeStore, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        *,
+        ctx,
+        store: RecipeStore,
+        repo: Any,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
         self.ctx = ctx
-        self.store = store
 
-        # Recipe persistence (new bundle layout)
-        recipes_root = getattr(getattr(self.ctx, "paths", None), "recipe_dir", None)
-        if not recipes_root:
-            raise RuntimeError("ctx.paths.recipe_dir fehlt (RecipeBundle root).")
-        self.repo = RecipeRepo(bundle=RecipeBundle(recipes_root_dir=recipes_root))
+        if store is None:
+            raise RuntimeError("RecipeEditorPanel: store ist None.")
+        if not isinstance(store, RecipeStore):
+            raise TypeError(f"RecipeEditorPanel: store ist kein RecipeStore (got: {type(store)}).")
+        if repo is None:
+            raise RuntimeError("RecipeEditorPanel: repo ist None.")
+
+        self.store: RecipeStore = store
+        self.repo = repo
 
         self._active_model: Optional[Recipe] = None
         self._recipes_by_id: Dict[str, Dict[str, Any]] = {}
 
-        # ---------------- Layout ----------------
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(6)
 
         self.content = RecipeEditorContent(ctx=self.ctx, store=self.store, parent=self)
 
-        # --- buttons ---
         gb_cmd = QGroupBox("Recipe", self)
         gb_cmd_l = QHBoxLayout(gb_cmd)
         gb_cmd_l.setContentsMargins(8, 8, 8, 8)
@@ -93,7 +86,6 @@ class RecipeEditorPanel(QWidget):
 
         _set_policy(self.content)
 
-        # ---------------- Signals ----------------
         self.btn_new.clicked.connect(self._on_new_clicked)
         self.btn_load.clicked.connect(self._on_load_clicked)
         self.btn_save.clicked.connect(self._on_save_clicked)
@@ -105,15 +97,20 @@ class RecipeEditorPanel(QWidget):
         self._rebuild_recipe_defs()
         self._load_default_or_first()
 
-    # ---------------- recipes list ----------------
-
     def _rebuild_recipe_defs(self) -> None:
-        recipes = self.store.list_recipe_defs()
         self._recipes_by_id = {}
-        for rd in recipes:
-            rid = str(rd.get("id") or "").strip()
-            if rid:
-                self._recipes_by_id[rid] = rd
+
+        ids = [str(x).strip() for x in (self.store.recipe_ids() or []) if str(x).strip()]
+        if not ids:
+            raise KeyError("RecipeStore.recipe_ids() leer.")
+
+        for rid in ids:
+            rd = self.store.get_recipe_def(rid)
+            if not isinstance(rd, dict):
+                raise TypeError(f"get_recipe_def('{rid}') ist kein dict (got {type(rd)}).")
+            d = dict(rd)
+            d.setdefault("id", rid)
+            self._recipes_by_id[rid] = d
 
         combo = getattr(self.content, "sel_recipe", None)
         if combo is not None:
@@ -132,14 +129,9 @@ class RecipeEditorPanel(QWidget):
 
     def _load_default_or_first(self) -> None:
         combo = getattr(self.content, "sel_recipe", None)
-        if combo is None:
-            return
+        if combo is None or combo.count() <= 0:
+            raise RuntimeError("Recipe selection combo leer/nicht vorhanden.")
 
-        if combo.count() <= 0:
-            # nothing configured
-            return
-
-        # keep current selection if valid; else first
         rid = combo.currentText().strip()
         if not rid:
             combo.setCurrentIndex(0)
@@ -147,47 +139,77 @@ class RecipeEditorPanel(QWidget):
 
         rec_def = self._recipes_by_id.get(rid)
         if not rec_def:
-            combo.setCurrentIndex(0)
-            rid = combo.currentText().strip()
-            rec_def = self._recipes_by_id.get(rid)
+            raise KeyError(f"RecipeDef für '{rid}' nicht gefunden.")
 
-        if not rec_def:
-            return
-
-        # Try load existing draft; otherwise show defaults
         try:
             model = self.repo.load_for_editor(rid)
-        except Exception:
-            model = self._new_model_from_rec_def(rec_def)
+        except FileNotFoundError:
+            base = self._new_model_from_rec_def(rec_def)
+            self.repo.create_new(rid, base=base, overwrite=True)
+            model = self.repo.load_for_editor(rid)
 
         self._apply_model(model, rec_def)
         self.updatePreviewRequested.emit(model)
 
-    # ---------------- model ----------------
-
     def _new_model_from_rec_def(self, rec_def: Dict[str, Any]) -> Recipe:
         rid = str(rec_def.get("id") or "").strip()
-        params = self.store.collect_global_defaults()
-        move_planner = self.store.collect_planner_defaults()
-        pbs = self.store.build_default_paths_for_recipe(rec_def)
+        if not rid:
+            raise KeyError("rec_def.id fehlt/leer.")
 
-        subs = rec_def.get("substrates") or []
-        sub = subs[0] if subs else None
-        mounts = rec_def.get("substrate_mounts") or []
-        mnt = mounts[0] if mounts else None
-        tools = rec_def.get("tools") or []
-        tool = tools[0] if tools else None
+        # globals defaults (flat dict)
+        params = self.store.collect_global_defaults()
+        if not isinstance(params, dict):
+            raise TypeError(f"collect_global_defaults() ist kein dict (got {type(params)}).")
+
+        # planner defaults
+        move_planner = self.store.planner_defaults()
+
+        # paths_by_side strict aus sides + default_path
+        sides_cfg = self.store.sides_for_recipe(rec_def)
+        if not isinstance(sides_cfg, dict) or not sides_cfg:
+            raise KeyError(f"Recipe '{rid}': sides fehlt/leer.")
+
+        pbs: Dict[str, Any] = {}
+        for side in sides_cfg.keys():
+            scfg = self.store.allowed_and_default_for(rec_def, side)
+            if not isinstance(scfg, dict):
+                raise TypeError(f"sides['{side}'] ist kein dict.")
+
+            allowed = scfg.get("allowed_path_types")
+            if not isinstance(allowed, list) or not [x for x in allowed if str(x).strip()]:
+                raise KeyError(f"Recipe '{rid}' side '{side}': allowed_path_types fehlt/leer.")
+
+            dp = scfg.get("default_path")
+            if not isinstance(dp, dict):
+                raise KeyError(f"Recipe '{rid}' side '{side}': default_path fehlt/kein dict.")
+            if "type" not in dp or not str(dp.get("type") or "").strip():
+                raise KeyError(f"Recipe '{rid}' side '{side}': default_path.type fehlt/leer.")
+
+            pbs[str(side)] = dict(dp)
+
+        # tool/substrate/mount strict (erste Einträge)
+        tools = rec_def.get("tools")
+        subs = rec_def.get("substrates")
+        mounts = rec_def.get("substrate_mounts")
+
+        if not isinstance(tools, list) or not tools:
+            raise KeyError(f"Recipe '{rid}': tools fehlt/leer.")
+        if not isinstance(subs, list) or not subs:
+            raise KeyError(f"Recipe '{rid}': substrates fehlt/leer.")
+        if not isinstance(mounts, list) or not mounts:
+            raise KeyError(f"Recipe '{rid}': substrate_mounts fehlt/leer.")
 
         return Recipe.from_dict(
             {
                 "id": rid,
                 "description": rec_def.get("description") or "",
-                "tool": tool,
-                "substrate": sub,
-                "substrate_mount": mnt,
+                "tool": str(tools[0]),
+                "substrate": str(subs[0]),
+                "substrate_mount": str(mounts[0]),
                 "parameters": params,
                 "planner": move_planner,
                 "paths_by_side": pbs,
+                "trajectories": {},
             }
         )
 
@@ -195,19 +217,13 @@ class RecipeEditorPanel(QWidget):
         rid = str(rec_def.get("id") or "").strip()
         desc = (rec_def.get("description") or "").strip()
 
-        model.id = rid  # SSoT
+        model.id = rid
         self._active_model = model
 
         self.content.set_meta(name=rid, desc=desc)
         self.content.apply_model_to_ui(model, rec_def)
 
     def current_model(self) -> Optional[Recipe]:
-        """Return a Recipe instance that reflects the current UI state.
-
-        Policy:
-          - Bundle-ID is SSoT: always equals recipes[..].id (selected in combo).
-          - Editor works on draft only (no traj/executed persisted here).
-        """
         rec_def = self._current_recipe_def()
         if not rec_def:
             return None
@@ -219,32 +235,28 @@ class RecipeEditorPanel(QWidget):
         if model is None:
             model = self._new_model_from_rec_def(rec_def)
 
-        # enforce bundle id == recipes[..].id
         model.id = rid
-
-        # apply UI -> model
         self.content.set_meta(name=rid, desc=desc)
         self.content.apply_ui_to_model(model)
 
-        # editor draft never carries persisted trajectories
         model.trajectories = {}
         return model
-
-    # ---------------- UI handlers ----------------
 
     def _on_recipe_select_changed(self, *_args) -> None:
         rec_def = self._current_recipe_def()
         if not rec_def:
             return
+
         rid = str(rec_def.get("id") or "").strip()
         if not rid:
-            return
+            raise ValueError("recipes[..].id ist leer.")
 
-        # load draft if exists; else show defaults
         try:
             model = self.repo.load_for_editor(rid)
         except FileNotFoundError:
-            model = self._new_model_from_rec_def(rec_def)
+            base = self._new_model_from_rec_def(rec_def)
+            self.repo.create_new(rid, base=base, overwrite=True)
+            model = self.repo.load_for_editor(rid)
 
         self._apply_model(model, rec_def)
         self.updatePreviewRequested.emit(model)
@@ -258,8 +270,6 @@ class RecipeEditorPanel(QWidget):
             raise ValueError("recipes[..].id ist leer.")
 
         base = self._new_model_from_rec_def(rec_def)
-
-        # create/overwrite draft; clears compiled + runs per bundle policy
         self.repo.create_new(rid, base=base, overwrite=True)
 
         model = self.repo.load_for_editor(rid)
@@ -277,7 +287,6 @@ class RecipeEditorPanel(QWidget):
         try:
             model = self.repo.load_for_editor(rid)
         except FileNotFoundError:
-            # first time: create defaults
             base = self._new_model_from_rec_def(rec_def)
             self.repo.create_new(rid, base=base, overwrite=True)
             model = self.repo.load_for_editor(rid)
@@ -298,9 +307,7 @@ class RecipeEditorPanel(QWidget):
             return
         model.id = rid
 
-        # Editor-save: draft only; bundle enforces "no runs in draft" and can drop compiled on hash changes
         self.repo.save_editor(rid, draft=model, compiled=None, delete_compiled_on_hash_change=True)
-
         QMessageBox.information(self, "Gespeichert", f"{rid} (draft)")
 
     def _on_delete_clicked(self) -> None:
@@ -323,7 +330,6 @@ class RecipeEditorPanel(QWidget):
 
         self.repo.delete(rid)
 
-        # reset UI to defaults (unsaved draft)
         base = self._new_model_from_rec_def(rec_def)
         self._apply_model(base, rec_def)
         self.updatePreviewRequested.emit(base)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, Callable
+from typing import Optional, Callable, Any
 
 from PyQt6.QtWidgets import QWidget, QHBoxLayout
 
@@ -21,34 +21,34 @@ class RecipeTab(QWidget):
     Links:  RecipeEditorPanel
     Rechts: CoatingPreviewPanel (PyVista-Host wird extern attached)
 
-    Wichtig:
-      - Preview läuft wie gehabt, aber: KEIN ROS publish aus dem RecipeTab.
-      - Validate/Optimize passieren nicht mehr hier (Buttons entfernt im Panel).
+    Clean Contract (SSoT):
+      - store: RecipeStore
+      - repo : RecipeRepo (Persistenz: draft/compiled/runs)
+      - KEIN ROS in diesem Tab.
     """
 
     def __init__(
         self,
         *,
         ctx,
-        store: RecipeStore | None,
-        ros,
+        store: RecipeStore,
+        repo: Any,
         attach_preview_widget: Callable[[QWidget], None] | None = None,
         parent: Optional[QWidget] = None,
-    ):
+    ) -> None:
         super().__init__(parent)
         self.ctx = ctx
-        self.ros = ros
 
-        # ---------------- Store SSoT ----------------
-        # Falls MainWindow store=None übergibt, holen wir ihn aus ctx.
         if store is None:
-            store = getattr(ctx, "store", None) or getattr(ctx, "recipe_store", None)
-        if store is None:
-            raise RuntimeError(
-                "RecipeTab: RecipeStore fehlt (store=None). "
-                "MainWindow muss store übergeben oder ctx.store/ctx.recipe_store setzen."
-            )
+            raise RuntimeError("RecipeTab: store ist None (MainWindow muss store übergeben).")
+        if not isinstance(store, RecipeStore):
+            raise TypeError(f"RecipeTab: store ist kein RecipeStore (got: {type(store)}).")
+
+        if repo is None:
+            raise RuntimeError("RecipeTab: repo ist None (MainWindow muss repo übergeben).")
+
         self.store: RecipeStore = store
+        self.repo = repo  # bewusst Any: Repo-Typ projektabhängig
 
         self._initial_preview_done = False
 
@@ -56,8 +56,18 @@ class RecipeTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
 
-        self.recipePanel = RecipeEditorPanel(ctx=self.ctx, store=self.store, parent=self)
-        self.previewPanel = CoatingPreviewPanel(ctx=self.ctx, ros=self.ros, parent=self)
+        self.recipePanel = RecipeEditorPanel(
+            ctx=self.ctx,
+            store=self.store,
+            repo=self.repo,
+            parent=self,
+        )
+
+        # Preview ohne ROS
+        self.previewPanel = CoatingPreviewPanel(
+            ctx=self.ctx,
+            parent=self,
+        )
 
         layout.addWidget(self.recipePanel, 2)
         layout.addWidget(self.previewPanel, 3)

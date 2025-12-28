@@ -1,8 +1,10 @@
+# app/tabs/recipe/recipe_editor_panel/side_path_editor.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from PyQt6.QtCore import QSignalBlocker
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -87,14 +89,34 @@ class SidePathEditor(QWidget):
     Unten:
       - links:  Stack der Path-Parameter (abhängig vom Type)
       - rechts: Path-Planner (role="path")
+
+    SSoT (strict):
+      - allowed types / default_path kommen aus RecipeStore.allowed_and_default_for(rec_def, side)
+      - schemas kommen strikt aus RecipeStore.schema_for_type_strict(ptype)
+      - YAML-Key: allowed_path_types (nicht allowed_types)
     """
 
-    def __init__(self, *, side_name: str, store: RecipeStore, parent: Optional[QWidget] = None):
+    def __init__(
+        self,
+        *,
+        side_name: str,
+        store: RecipeStore,
+        ctx: Any | None = None,
+        parent: Optional[QWidget] = None,
+    ):
         super().__init__(parent)
         self.side_name = side_name
         self.store = store
+        self.ctx = ctx
 
+        # contract:
+        # {
+        #   "allowed_types": [...],          # intern normalisiert
+        #   "default_path": {...},
+        #   "schemas": { ptype: {param: spec, ...}, ... }
+        # }
         self._side_cfg: Dict[str, Any] = {}
+
         # ptype -> (page, fields_map, params_schema)
         self._type_pages: Dict[str, Tuple[QWidget, Dict[str, Tuple[QWidget, str, Dict[str, Any]]], Dict[str, Any]]] = {}
 
@@ -142,6 +164,53 @@ class SidePathEditor(QWidget):
 
         self.type_combo.currentIndexChanged.connect(self._on_type_changed)
 
+    # ------------------------------------------------------------------ strict SSoT init
+
+    def enable_auto_reset(self, rec_def: Dict[str, Any], side: str) -> None:
+        """
+        Strict SSoT:
+          - liest side_cfg aus store.allowed_and_default_for(rec_def, side)
+          - erwartet YAML-Key: allowed_path_types (list[str])
+          - baut schemas strikt via store.schema_for_type_strict(ptype)
+          - setzt allowed types + default_path in UI
+
+        Wirft KeyError, wenn irgendetwas fehlt/inkonsistent ist.
+        """
+        side_cfg = self.store.allowed_and_default_for(rec_def, side)
+        if not isinstance(side_cfg, dict):
+            raise TypeError(f"Side '{side}': sides[{side}] ist kein dict (got {type(side_cfg)}).")
+
+        allowed = side_cfg.get("allowed_path_types")
+        if not isinstance(allowed, list) or not [x for x in allowed if str(x).strip()]:
+            raise KeyError(f"Side '{side}': allowed_path_types fehlt/leer in recipe_catalog.sides")
+
+        allowed_types = [str(x).strip() for x in allowed if str(x).strip()]
+
+        default_path = side_cfg.get("default_path")
+        if not isinstance(default_path, dict):
+            raise KeyError(f"Side '{side}': default_path fehlt oder ist kein dict.")
+        if "type" not in default_path or not str(default_path.get("type") or "").strip():
+            raise KeyError(f"Side '{side}': default_path.type fehlt/leer.")
+
+        # build schemas strictly for each allowed type
+        schemas: Dict[str, Any] = {}
+        for ptype in allowed_types:
+            schemas[ptype] = dict(self.store.schema_for_type_strict(ptype) or {})
+
+        self._side_cfg = {
+            "allowed_types": allowed_types,
+            "default_path": dict(default_path),
+            "schemas": schemas,
+        }
+
+        # build pages strictly from schemas
+        self.set_allowed_types(allowed_types)
+
+        # apply default path (inject cfg so apply_default_path can rebuild if needed)
+        dp = dict(default_path)
+        dp["_side_cfg"] = dict(self._side_cfg)
+        self.apply_default_path(dp)
+
     # ------------------------------------------------------------------ pages
 
     def _clear_pages(self) -> None:
@@ -152,26 +221,41 @@ class SidePathEditor(QWidget):
             w.deleteLater()
 
     def set_allowed_types(self, types: List[str]) -> None:
-        """Setzt erlaubte Path-Typen und baut die Parameter-Pages strikt aus Schema."""
-        allowed = list(types or [])
+        """
+        Strict:
+          - schemas für alle types müssen in self._side_cfg["schemas"] existieren
+          - keine stillen Fallbacks
+        """
+        allowed = [str(t).strip() for t in (types or []) if str(t).strip()]
+        if not allowed:
+            raise KeyError(f"Side '{self.side_name}': allowed types leer.")
 
-        self.type_combo.blockSignals(True)
-        self.type_combo.clear()
-        self.type_combo.addItems(allowed)
-        self.type_combo.blockSignals(False)
+        schemas = self._side_cfg.get("schemas")
+        if not isinstance(schemas, dict):
+            raise KeyError(f"Side '{self.side_name}': _side_cfg['schemas'] fehlt oder ist kein dict.")
+
+        for ptype in allowed:
+            if ptype not in schemas or not isinstance(schemas.get(ptype), dict) or not schemas.get(ptype):
+                raise KeyError(
+                    f"Side '{self.side_name}': Schema fehlt/leer für type '{ptype}' "
+                    f"(erwartet via RecipeStore.schema_for_type_strict)."
+                )
+
+        with QSignalBlocker(self.type_combo):
+            self.type_combo.clear()
+            self.type_combo.addItems(allowed)
 
         self._clear_pages()
 
-        schemas = (self._side_cfg.get("schemas") or {}) if isinstance(self._side_cfg, dict) else {}
         for ptype in allowed:
-            params = dict((schemas.get(ptype) or {}))
+            params = dict(schemas[ptype] or {})
             page, fields_map = self._build_page_for_type(ptype, params)
             self._type_pages[ptype] = (page, fields_map, params)
             self.stack.addWidget(page)
 
-        if self.type_combo.count() > 0:
+        with QSignalBlocker(self.type_combo):
             self.type_combo.setCurrentIndex(0)
-            self._on_type_changed(0)
+        self._on_type_changed(0)
 
     def _build_page_for_type(
         self,
@@ -190,7 +274,7 @@ class SidePathEditor(QWidget):
 
         fields: Dict[str, Tuple[QWidget, str, Dict[str, Any]]] = {}
 
-        keys = sorted(list(params.keys()), key=lambda k: (0 if k.endswith("shape") else 1, k))
+        keys = sorted(list(params.keys()), key=lambda k: (0 if str(k).endswith("shape") else 1, str(k)))
 
         for key in keys:
             spec = dict(params.get(key) or {})
@@ -198,10 +282,10 @@ class SidePathEditor(QWidget):
 
             w: Optional[QWidget] = None
             kind: str = ""
-            row_label = key
+            row_label = str(key)
 
             if t == "boolean":
-                w = QCheckBox(key, page)
+                w = QCheckBox(str(key), page)
                 kind = "check"
                 row_label = ""
             elif t == "string":
@@ -213,11 +297,7 @@ class SidePathEditor(QWidget):
                 w.addItems([str(v) for v in (spec.get("values") or [])])
             elif t == "vec2":
                 step_spec = spec.get("step", 0.1)
-                if isinstance(step_spec, (list, tuple)):
-                    step = float(step_spec[0] if step_spec else 0.1)
-                else:
-                    step = float(step_spec)
-
+                step = float(step_spec[0] if isinstance(step_spec, (list, tuple)) and step_spec else step_spec)
                 unit = str(spec.get("unit", "") or "")
                 w = Vec2Edit(step=step, unit=unit, parent=page)
                 kind = "vec2"
@@ -251,7 +331,7 @@ class SidePathEditor(QWidget):
                     suf = (" " + unit) if not unit.startswith(" ") else unit
                     w.setSuffix(suf)
             else:
-                # unbekannter Typ -> ignoriere (strikt)
+                # strict: ignore unknown types
                 continue
 
             assert w is not None
@@ -264,7 +344,7 @@ class SidePathEditor(QWidget):
             if spec.get("help") and hasattr(w, "setToolTip"):
                 w.setToolTip(str(spec["help"]))
 
-            fields[key] = (w, kind, spec)
+            fields[str(key)] = (w, kind, spec)
             form.addRow(row_label, w)
 
         self._wire_visibility(fields, form=form)
@@ -344,7 +424,6 @@ class SidePathEditor(QWidget):
                 _set_row_visible(w_tgt, visible)
             self._lock_stack_height()
 
-        # connect dependency sources
         for _tgt, (dep_key, _dep_v) in deps.items():
             if dep_key not in fields:
                 continue
@@ -369,20 +448,35 @@ class SidePathEditor(QWidget):
         """
         Schreibt Default-Parameter in UI.
         Wenn `_side_cfg` im dict enthalten ist, wird er übernommen.
+
+        Wichtig:
+          - Wenn sich _side_cfg ändert, müssen die Pages ggf. neu gebaut werden.
         """
         if isinstance(path, dict) and "_side_cfg" in path:
-            self._side_cfg = dict(path["_side_cfg"] or {})
+            new_cfg = dict(path["_side_cfg"] or {})
+            cfg_changed = (new_cfg != self._side_cfg)
+            self._side_cfg = new_cfg
+
+            if cfg_changed:
+                allowed_types = [str(t).strip() for t in (self._side_cfg.get("allowed_types") or []) if str(t).strip()]
+                if not allowed_types:
+                    raise KeyError(f"Side '{self.side_name}': _side_cfg.allowed_types fehlt/leer.")
+                self.set_allowed_types(allowed_types)
 
         ptype = str(path.get("type") or "").strip()
-        if ptype and self.type_combo.findText(ptype) >= 0:
+        if not ptype:
+            raise KeyError(f"Side '{self.side_name}': path.type fehlt/leer.")
+        if self.type_combo.findText(ptype) < 0:
+            raise KeyError(f"Side '{self.side_name}': type '{ptype}' ist nicht erlaubt.")
+
+        with QSignalBlocker(self.type_combo):
             self.type_combo.setCurrentText(ptype)
-        elif self.type_combo.count() > 0:
-            self.type_combo.setCurrentIndex(0)
 
         self._on_type_changed(self.type_combo.currentIndex())
 
-        ptype = self.type_combo.currentText().strip()
         _page, fields_map, _params = self._type_pages.get(ptype, (None, {}, {}))
+        if not fields_map:
+            raise KeyError(f"Side '{self.side_name}': keine Felder für type '{ptype}' (schema leer?).")
 
         for key, (w, kind, spec) in fields_map.items():
             val = path[key] if key in path else spec.get("default", None)
@@ -394,7 +488,9 @@ class SidePathEditor(QWidget):
                 if val is None:
                     continue
                 idx = w.findText(str(val))
-                w.setCurrentIndex(idx if idx >= 0 else (0 if w.count() > 0 else -1))
+                if idx < 0:
+                    raise KeyError(f"Side '{self.side_name}': ungültiger enum '{val}' für '{key}'.")
+                w.setCurrentIndex(idx)
 
             elif kind == "string" and isinstance(w, QLineEdit):
                 w.setText("" if val is None else str(val))
@@ -418,7 +514,9 @@ class SidePathEditor(QWidget):
     def collect_path(self) -> Dict[str, Any]:
         """UI → Dict für paths_by_side[side]."""
         ptype = self.type_combo.currentText().strip()
-        out: Dict[str, Any] = {"type": ptype} if ptype else {}
+        if not ptype:
+            raise KeyError(f"Side '{self.side_name}': current type leer.")
+        out: Dict[str, Any] = {"type": ptype}
 
         _page, fields_map, _params = self._type_pages.get(ptype, (None, {}, {}))
         for key, (w, kind, _spec) in fields_map.items():
@@ -441,29 +539,18 @@ class SidePathEditor(QWidget):
 
     def apply_path_planner_model(self, cfg: Dict[str, Any] | None) -> None:
         """Recipe.planner['path'][side_name] → UI."""
-        self.pathPlanner.apply_planner_model(cfg or {})
+        if hasattr(self.pathPlanner, "apply_planner_model"):
+            self.pathPlanner.apply_planner_model(cfg or {})
+        else:
+            self.pathPlanner.apply_model_to_ui(cfg or {})  # type: ignore[attr-defined]
 
     def collect_path_planner(self) -> Dict[str, Any]:
         """UI → Planner-Config für diese Side."""
-        return self.pathPlanner.collect_planner()
-
-    # ------------------------------------------------------------------ auto-reset (defaults only)
-
-    def enable_auto_reset(self, rec_def: Dict[str, Any], side_name: str) -> None:
-        """
-        Aktiviert Auto-Reset der Path-Defaults bei Type-Wechsel.
-        (Keine Legacy/Fallback-Keys – strikt aus store/runtime-cfg.)
-        """
-        self._side_cfg = self.store.build_side_runtime_cfg_strict(rec_def, side_name)
-
-        def _reload_defaults() -> None:
-            side_default = dict((self._side_cfg.get("default_path") or {}))
-            cur_t = self.type_combo.currentText().strip()
-            if cur_t:
-                side_default["type"] = cur_t
-            self.apply_default_path(side_default)
-
-        self.type_combo.currentTextChanged.connect(lambda _t: _reload_defaults())
+        if hasattr(self.pathPlanner, "collect_planner"):
+            return self.pathPlanner.collect_planner()
+        tmp: Dict[str, Any] = {}
+        self.pathPlanner.apply_ui_to_model(tmp)  # type: ignore[attr-defined]
+        return tmp
 
     # ------------------------------------------------------------------ intern
 
@@ -476,10 +563,7 @@ class SidePathEditor(QWidget):
             self._lock_stack_height()
 
     def _lock_stack_height(self) -> None:
-        """
-        Fixiert die Stack-Höhe auf die aktuelle Page, damit das Layout stabil bleibt
-        (insbesondere bei visible_if).
-        """
+        """Fixiert die Stack-Höhe auf die aktuelle Page."""
         w = self.stack.currentWidget()
         if w is not None:
             self.stack.setMaximumHeight(w.sizeHint().height())

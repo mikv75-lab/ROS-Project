@@ -1,3 +1,4 @@
+# app/tabs/recipe/recipe_editor_panel/recipe_editor_content.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
@@ -10,16 +11,15 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QGroupBox,
     QFormLayout,
-    QDoubleSpinBox,
-    QSpinBox,
-    QCheckBox,
     QComboBox,
     QLabel,
     QFrame,
     QLineEdit,
     QSizePolicy,
     QTabBar,
-    QTextEdit,
+    QCheckBox,
+    QDoubleSpinBox,
+    QSpinBox,
 )
 
 from model.recipe.recipe import Recipe
@@ -30,8 +30,6 @@ from .side_path_editor import SidePathEditor
 
 Bounds = Tuple[float, float, float, float, float, float]
 
-
-# ----------------------------- UI helpers -----------------------------
 
 def _hline() -> QFrame:
     f = QFrame()
@@ -52,15 +50,171 @@ def _set_policy(
     w.setSizePolicy(sp)
 
 
-# ----------------------------- Tabbar with checkboxes -----------------------------
+def _compact_form(f: QFormLayout) -> None:
+    f.setContentsMargins(8, 8, 8, 8)
+    f.setHorizontalSpacing(8)
+    f.setVerticalSpacing(6)
+    f.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+    f.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
+
+
+def _intish(*vals: Any) -> bool:
+    try:
+        return all(float(v).is_integer() for v in vals)
+    except Exception:
+        return False
+
+
+class GlobalParamsBox(QGroupBox):
+    """
+    Global recipe parameters:
+      - model.parameters ist ein FLACHES dict (entspricht recipe_params.globals)
+
+    Supported schema field types:
+      - boolean
+      - string
+      - enum (values)
+      - number (min/max/step/unit)
+    """
+
+    def __init__(self, *, store: RecipeStore, parent: Optional[QWidget] = None) -> None:
+        super().__init__("Parameters", parent)
+        self.store = store
+
+        self._form = QFormLayout(self)
+        _compact_form(self._form)
+
+        self._fields: Dict[str, tuple[QWidget, str, Dict[str, Any]]] = {}
+        self._build()
+
+    def _build(self) -> None:
+        schema = self.store.globals_schema()
+        if not isinstance(schema, dict) or not schema:
+            raise KeyError("RecipeStore.globals_schema() ist leer/ungültig.")
+
+        keys = sorted([str(k) for k in schema.keys()])
+
+        for key in keys:
+            spec = schema.get(key)
+            if not isinstance(spec, dict):
+                raise TypeError(f"globals_schema['{key}'] ist kein dict (got {type(spec)}).")
+
+            t = str(spec.get("type", "")).strip().lower()
+            w: Optional[QWidget] = None
+            kind: str = ""
+
+            if t == "boolean":
+                w = QCheckBox(self)
+                kind = "check"
+
+            elif t == "string":
+                w = QLineEdit(self)
+                kind = "string"
+
+            elif t == "enum":
+                cbx = QComboBox(self)
+                vals = spec.get("values")
+                if not isinstance(vals, list) or not vals:
+                    raise KeyError(f"globals_schema['{key}']: enum values fehlt/leer.")
+                cbx.addItems([str(v) for v in vals])
+                w = cbx
+                kind = "combo"
+
+            elif t == "number":
+                step = float(spec.get("step"))
+                minv = float(spec.get("min"))
+                maxv = float(spec.get("max"))
+                unit = str(spec.get("unit", "") or "")
+
+                if _intish(step, minv, maxv):
+                    sb = QSpinBox(self)
+                    sb.setMinimum(int(minv))
+                    sb.setMaximum(int(maxv))
+                    sb.setSingleStep(int(step))
+                    w = sb
+                    kind = "int"
+                else:
+                    sb = QDoubleSpinBox(self)
+                    sb.setMinimum(minv)
+                    sb.setMaximum(maxv)
+                    sb.setSingleStep(step)
+                    s = str(spec.get("step", "1"))
+                    decimals = 0 if "." not in s else min(6, max(1, len(s.split(".")[1])))
+                    sb.setDecimals(decimals)
+                    w = sb
+                    kind = "double"
+
+                if unit:
+                    suf = (" " + unit) if not unit.startswith(" ") else unit
+                    w.setSuffix(suf)  # type: ignore[attr-defined]
+
+            else:
+                raise KeyError(f"globals_schema['{key}']: unsupported type '{t}'.")
+
+            assert w is not None
+
+            sp = w.sizePolicy()
+            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+            sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+            w.setSizePolicy(sp)
+
+            if spec.get("description") and hasattr(w, "setToolTip"):
+                w.setToolTip(str(spec["description"]))
+
+            self._fields[key] = (w, kind, dict(spec))
+            self._form.addRow(f"{key}:", w)
+
+    def apply_model_to_ui(self, model: Recipe) -> None:
+        params = getattr(model, "parameters", None)
+        if params is None:
+            raise KeyError("Recipe.parameters fehlt (None).")
+        if not isinstance(params, dict):
+            raise TypeError(f"Recipe.parameters ist kein dict (got {type(params)}).")
+
+        for key, (w, kind, spec) in self._fields.items():
+            val = params.get(key, spec.get("default"))
+
+            if kind == "check" and isinstance(w, QCheckBox):
+                w.setChecked(bool(val))
+            elif kind == "string" and isinstance(w, QLineEdit):
+                w.setText("" if val is None else str(val))
+            elif kind == "combo" and isinstance(w, QComboBox):
+                if val is None:
+                    continue
+                idx = w.findText(str(val))
+                if idx < 0:
+                    raise KeyError(f"globals param '{key}': ungültiger enum '{val}'.")
+                w.setCurrentIndex(idx)
+            elif kind == "int" and isinstance(w, QSpinBox):
+                if val is None:
+                    continue
+                w.setValue(int(val))
+            elif kind == "double" and isinstance(w, QDoubleSpinBox):
+                if val is None:
+                    continue
+                w.setValue(float(val))
+
+    def apply_ui_to_model(self, model: Recipe) -> None:
+        params = getattr(model, "parameters", None)
+        if params is None:
+            model.parameters = {}
+        if not isinstance(model.parameters, dict):
+            raise TypeError(f"Recipe.parameters ist kein dict (got {type(model.parameters)}).")
+
+        for key, (w, kind, _spec) in self._fields.items():
+            if kind == "check" and isinstance(w, QCheckBox):
+                model.parameters[key] = bool(w.isChecked())
+            elif kind == "string" and isinstance(w, QLineEdit):
+                model.parameters[key] = str(w.text())
+            elif kind == "combo" and isinstance(w, QComboBox):
+                model.parameters[key] = str(w.currentText())
+            elif kind == "int" and isinstance(w, QSpinBox):
+                model.parameters[key] = int(w.value())
+            elif kind == "double" and isinstance(w, QDoubleSpinBox):
+                model.parameters[key] = float(w.value())
+
 
 class _TabBarWithChecks(QTabBar):
-    """
-    QTabBar mit Checkbox pro Tab. Dient als TabBar-Teil eines "QTabWidget-ähnlichen" Aufbaus.
-    - currentChanged: wird wie üblich vom QTabBar gesendet
-    - checkedChanged(side_name, state): eigenes Signal für Checkbox-Status
-    """
-
     checkedChanged = pyqtSignal(str, bool)
 
     def __init__(self, parent=None) -> None:
@@ -68,45 +222,55 @@ class _TabBarWithChecks(QTabBar):
         self.setMovable(False)
         self.setExpanding(False)
         self.setUsesScrollButtons(True)
-        self._checks: Dict[int, QCheckBox] = {}
+        self._checks: Dict[int, QWidget] = {}
+        self._side_by_index: Dict[int, str] = {}
 
     def addTabWithCheck(self, label: str, side_name: str, checked: bool = True) -> int:
         idx = self.addTab(label)
+        from PyQt6.QtWidgets import QCheckBox  # local import
+
         cb = QCheckBox(self)
         cb.setChecked(bool(checked))
-        cb.stateChanged.connect(lambda s, i=idx, sn=side_name: self.checkedChanged.emit(sn, bool(s)))
+
+        def _emit_state(s: int, sn: str = side_name) -> None:
+            is_checked = (s == int(Qt.CheckState.Checked.value))
+            self.checkedChanged.emit(sn, is_checked)
+
+        cb.stateChanged.connect(_emit_state)
         self.setTabButton(idx, QTabBar.ButtonPosition.RightSide, cb)
+
         self._checks[idx] = cb
+        self._side_by_index[idx] = side_name
         return idx
 
-    def setChecked(self, idx: int, checked: bool) -> None:
-        cb = self._checks.get(idx)
-        if cb is not None:
-            cb.setChecked(bool(checked))
+    def clear_tabs(self) -> None:
+        for i in range(self.count() - 1, -1, -1):
+            try:
+                w = self.tabButton(i, QTabBar.ButtonPosition.RightSide)
+                if w is not None:
+                    w.setParent(None)
+                    w.deleteLater()
+            except Exception:
+                pass
+            try:
+                self.removeTab(i)
+            except Exception:
+                pass
 
-    def isChecked(self, idx: int) -> bool:
-        cb = self._checks.get(idx)
-        return bool(cb.isChecked()) if cb is not None else False
+        self._checks.clear()
+        self._side_by_index.clear()
 
+    def clear(self) -> None:  # type: ignore[override]
+        self.clear_tabs()
 
-# ----------------------------- Main content widget -----------------------------
 
 class RecipeEditorContent(QWidget):
-    """
-    Editor-Inhalt:
-      - Meta (ID/Desc)
-      - Auswahl: recipe-id (aus Store), tool/substrate/mount
-      - Parameter / Planner
-      - Path editors pro Side
-    """
-
     def __init__(self, *, ctx, store: RecipeStore, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.ctx = ctx
         self.store = store
 
         self.sel_recipe: Optional[QComboBox] = None
-
         self.sel_tool: Optional[QComboBox] = None
         self.sel_substrate: Optional[QComboBox] = None
         self.sel_mount: Optional[QComboBox] = None
@@ -114,18 +278,23 @@ class RecipeEditorContent(QWidget):
         self.e_name: Optional[QLineEdit] = None
         self.e_desc: Optional[QLineEdit] = None
 
+        self._params_box: Optional[GlobalParamsBox] = None
         self._planner_box: Optional[PlannerGroupBox] = None
-
         self._side_tabbar: Optional[_TabBarWithChecks] = None
-        self._side_editors: Dict[str, SidePathEditor] = {}
 
-        self._txt_info: Optional[QTextEdit] = None
+        self._paths_host: Optional[QWidget] = None
+        self._paths_host_l: Optional[QVBoxLayout] = None
+
+        self._side_editors: Dict[str, SidePathEditor] = {}
+        self._side_order: List[str] = []
+
+        # Info-Box wurde entfernt
+        self._txt_info = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(6)
 
-        # --- selection row ---
         gb_sel = QGroupBox("Selection", self)
         gb_sel_l = QHBoxLayout(gb_sel)
         gb_sel_l.setContentsMargins(8, 8, 8, 8)
@@ -149,31 +318,38 @@ class RecipeEditorContent(QWidget):
 
         root.addWidget(gb_sel)
 
-        # --- meta ---
-        self.gb_meta = QGroupBox("Meta", self)
-        self.gb_meta_l = QFormLayout(self.gb_meta)
-        self.gb_meta_l.setContentsMargins(8, 8, 8, 8)
-        self.gb_meta_l.setSpacing(6)
+        gb_meta = QGroupBox("Meta", self)
+        gb_meta_l = QFormLayout(gb_meta)
+        gb_meta_l.setContentsMargins(8, 8, 8, 8)
+        gb_meta_l.setSpacing(6)
 
-        self.e_name = QLineEdit(self.gb_meta)
+        self.e_name = QLineEdit(gb_meta)
         self.e_name.setPlaceholderText("recipes[..].id (SSoT)")
         self.e_name.setReadOnly(True)
-        self.e_name.setToolTip("ID ist durch recipes[..].id vorgegeben und wird automatisch gespeichert/geladen.")
-        self.e_desc = QLineEdit(self.gb_meta)
+
+        self.e_desc = QLineEdit(gb_meta)
         self.e_desc.setPlaceholderText("Short description ...")
 
-        self.gb_meta_l.addRow("Name:", self.e_name)
-        self.gb_meta_l.addRow("Description:", self.e_desc)
+        gb_meta_l.addRow("Name:", self.e_name)
+        gb_meta_l.addRow("Description:", self.e_desc)
 
-        root.addWidget(self.gb_meta)
+        root.addWidget(gb_meta)
 
-        # --- planner ---
+        # ---- Params + Planner row (HBOX) ----
+        row_params_planner = QHBoxLayout()
+        row_params_planner.setContentsMargins(0, 0, 0, 0)
+        row_params_planner.setSpacing(8)
+
+        self._params_box = GlobalParamsBox(store=self.store, parent=self)
         self._planner_box = PlannerGroupBox(ctx=self.ctx, store=self.store, parent=self)
-        root.addWidget(self._planner_box)
+
+        row_params_planner.addWidget(self._params_box, 3)
+        row_params_planner.addWidget(self._planner_box, 2)
+
+        root.addLayout(row_params_planner)
 
         root.addWidget(_hline())
 
-        # --- sides / paths ---
         self._side_tabbar = _TabBarWithChecks(self)
         root.addWidget(self._side_tabbar)
 
@@ -183,48 +359,30 @@ class RecipeEditorContent(QWidget):
         self._paths_host_l.setSpacing(6)
         root.addWidget(self._paths_host, 1)
 
-        # --- info ---
-        gb_info = QGroupBox("Info", self)
-        gb_info_l = QVBoxLayout(gb_info)
-        gb_info_l.setContentsMargins(8, 8, 8, 8)
-        self._txt_info = QTextEdit(gb_info)
-        self._txt_info.setReadOnly(True)
-        gb_info_l.addWidget(self._txt_info)
-        root.addWidget(gb_info)
-
         _set_policy(self._paths_host, v=QSizePolicy.Policy.Expanding)
 
         if self._side_tabbar is not None:
             self._side_tabbar.currentChanged.connect(self._on_side_tab_changed)
 
-    # ---------------- meta ----------------
-
     def set_meta(self, *, name: str = "", desc: str = "") -> None:
         if self.e_name is not None:
             self.e_name.setText(name or "")
-        if self.e_desc is not None:
+        if self.e_desc is not None and not self.e_desc.hasFocus():
             self.e_desc.setText(desc or "")
 
-    # ---------------- internal handlers ----------------
-
-    def _current_ctx_key(self) -> str:
-        tool = self.sel_tool.currentText().strip() if (self.sel_tool and self.sel_tool.currentIndex() >= 0) else ""
-        sub = self.sel_substrate.currentText().strip() if (self.sel_substrate and self.sel_substrate.currentIndex() >= 0) else ""
-        mnt = self.sel_mount.currentText().strip() if (self.sel_mount and self.sel_mount.currentIndex() >= 0) else ""
-        return f"{tool}|{sub}|{mnt}"
-
     def _on_side_tab_changed(self, idx: int) -> None:
-        # show only the selected editor
-        for i, (side, ed) in enumerate(self._side_editors.items()):
-            ed.setVisible(i == idx)
-
-    # ---------------- UI <-> Model ----------------
+        if idx < 0 or idx >= len(self._side_order):
+            return
+        active_side = self._side_order[idx]
+        for side, ed in self._side_editors.items():
+            ed.setVisible(side == active_side)
 
     def apply_model_to_ui(self, model: Recipe, rec_def: Dict[str, Any]) -> None:
-        # fill tool/substrate/mount combos based on rec_def, then select values from model
-        tools = [str(x) for x in (rec_def.get("tools") or [])]
-        subs = [str(x) for x in (rec_def.get("substrates") or [])]
-        mounts = [str(x) for x in (rec_def.get("substrate_mounts") or [])]
+        rid = str(rec_def.get("id") or "").strip()
+
+        tools = [str(x) for x in (self.store.tools_for_recipe(rec_def) or [])]
+        subs = [str(x) for x in (self.store.substrates_for_recipe(rec_def) or [])]
+        mounts = [str(x) for x in (self.store.mounts_for_recipe(rec_def) or [])]
 
         def _fill(cb: Optional[QComboBox], values: List[str], current: Optional[str]) -> None:
             if cb is None:
@@ -235,64 +393,79 @@ class RecipeEditorContent(QWidget):
                 cb.addItem(v)
             if current and current in values:
                 cb.setCurrentText(current)
+            elif cb.count() > 0:
+                cb.setCurrentIndex(0)
             cb.blockSignals(False)
 
         _fill(self.sel_tool, tools, getattr(model, "tool", None))
         _fill(self.sel_substrate, subs, getattr(model, "substrate", None))
         _fill(self.sel_mount, mounts, getattr(model, "substrate_mount", None))
 
-        # planner
+        if self._params_box is not None:
+            self._params_box.apply_model_to_ui(model)
+
         if self._planner_box is not None:
-            self._planner_box.apply_model_to_ui(model)
+            # je nach API deiner PlannerGroupBox
+            if hasattr(self._planner_box, "apply_model_to_ui"):
+                self._planner_box.apply_model_to_ui(model)  # type: ignore[attr-defined]
+            elif hasattr(self._planner_box, "apply_planner_model"):
+                cfg = getattr(model, "planner", {}) or {}
+                self._planner_box.apply_planner_model(cfg)  # type: ignore[attr-defined]
+            else:
+                raise AttributeError("PlannerGroupBox: keine unterstützte apply_* API gefunden.")
 
-        # sides
-        sides = list((rec_def.get("sides") or ["top"]))
-        self._rebuild_side_editors(sides, model)
+        sides_cfg = self.store.sides_for_recipe(rec_def)
+        if not isinstance(sides_cfg, dict) or not sides_cfg:
+            raise KeyError(f"Recipe '{rid}': sides fehlt/leer.")
 
-        # info
-        if self._txt_info is not None:
-            self._txt_info.setPlainText(
-                f"recipe_id: {model.id}\n"
-                f"tool: {getattr(model, 'tool', '')}\n"
-                f"substrate: {getattr(model, 'substrate', '')}\n"
-                f"mount: {getattr(model, 'substrate_mount', '')}\n"
-                f"sides: {', '.join(sides)}\n"
-            )
+        sides = list(sides_cfg.keys())
+        self._rebuild_side_editors(sides=sides, model=model, rec_def=rec_def)
 
-    def _rebuild_side_editors(self, sides: List[str], model: Recipe) -> None:
-        # clear previous editors
+    def _rebuild_side_editors(self, *, sides: List[str], model: Recipe, rec_def: Dict[str, Any]) -> None:
         for ed in self._side_editors.values():
-            try:
-                ed.setParent(None)
-                ed.deleteLater()
-            except Exception:
-                pass
+            ed.setParent(None)
+            ed.deleteLater()
         self._side_editors.clear()
+
+        self._side_order = list(sides)
 
         if self._side_tabbar is not None:
             self._side_tabbar.blockSignals(True)
-            self._side_tabbar.clear()
+            self._side_tabbar.clear_tabs()
             self._side_tabbar.blockSignals(False)
 
-        # create new editors
-        for side in sides:
+        if self._paths_host_l is None:
+            raise RuntimeError("_paths_host_l ist None (Layout nicht initialisiert).")
+
+        for side in self._side_order:
             if self._side_tabbar is not None:
                 self._side_tabbar.addTabWithCheck(side, side, checked=True)
 
-            ed = SidePathEditor(ctx=self.ctx, store=self.store, side_name=side, parent=self._paths_host)
-            ed.apply_model_to_ui(model)
+            ed = SidePathEditor(store=self.store, side_name=side, parent=self._paths_host)
+
+            # STRICT SSoT: baut allowed types + schema + default
+            ed.enable_auto_reset(rec_def, side)
+
+            # overlay user/model override (optional)
+            model_path = (getattr(model, "paths_by_side", None) or {}).get(side) or {}
+            if isinstance(model_path, dict) and model_path:
+                ed.apply_default_path(dict(model_path))
+
+            # per-side planner
+            planner = getattr(model, "planner", {}) or {}
+            path_cfg = planner.get("path")
+            side_pl = (path_cfg.get(side) if isinstance(path_cfg, dict) else None)
+            ed.apply_path_planner_model(side_pl or {})
+
             ed.setVisible(False)
             self._paths_host_l.addWidget(ed)
             self._side_editors[side] = ed
 
-        # show first
         if self._side_tabbar is not None and self._side_tabbar.count() > 0:
             self._side_tabbar.setCurrentIndex(0)
-            # update visibility
             self._on_side_tab_changed(0)
 
     def apply_ui_to_model(self, model: Recipe) -> None:
-        # combos -> model
         if self.sel_tool is not None and self.sel_tool.currentIndex() >= 0:
             model.tool = self.sel_tool.currentText().strip()
         if self.sel_substrate is not None and self.sel_substrate.currentIndex() >= 0:
@@ -300,14 +473,32 @@ class RecipeEditorContent(QWidget):
         if self.sel_mount is not None and self.sel_mount.currentIndex() >= 0:
             model.substrate_mount = self.sel_mount.currentText().strip()
 
-        # desc only (name/id is SSoT from recipes[..].id)
         if self.e_desc is not None:
             model.description = self.e_desc.text().strip()
 
-        # planner
-        if self._planner_box is not None:
-            self._planner_box.apply_ui_to_model(model)
+        if self._params_box is not None:
+            self._params_box.apply_ui_to_model(model)
 
-        # side editors -> paths_by_side
+        if self._planner_box is not None:
+            if hasattr(self._planner_box, "apply_ui_to_model"):
+                self._planner_box.apply_ui_to_model(model)  # type: ignore[attr-defined]
+            elif hasattr(self._planner_box, "collect_planner"):
+                cfg = self._planner_box.collect_planner()  # type: ignore[attr-defined]
+                if cfg:
+                    model.planner = cfg
+            else:
+                raise AttributeError("PlannerGroupBox: keine unterstützte ui->model API gefunden.")
+
+        if getattr(model, "paths_by_side", None) is None:
+            model.paths_by_side = {}
+
         for side, ed in self._side_editors.items():
-            ed.apply_ui_to_model(model)
+            model.paths_by_side[side] = ed.collect_path()
+
+            pl = ed.collect_path_planner()
+            if pl:
+                if getattr(model, "planner", None) is None:
+                    model.planner = {}
+                if not isinstance(model.planner.get("path"), dict):
+                    model.planner["path"] = {}
+                model.planner["path"][side] = pl

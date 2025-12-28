@@ -5,31 +5,29 @@ paths:
   log_dir: "data/logs"
   bringup_log: "data/logs/bringup.log"
 
-  # neu:
-  recipe_params_file: "config/recipe_params.yaml"
-  planner_catalog_file: "config/planner_catalog.yaml"
-  recipe_catalog_file: "config/recipe_catalog.yaml"
+  recipe_params_file: "resource/config/recipe_params.yaml"
+  planner_catalog_file: "resource/config/planner_catalog.yaml"
+  recipe_catalog_file: "resource/config/recipe_catalog.yaml"
 
-  # optional
   substrate_mounts_dir: "data/mounts"
-  substrate_mounts_file: "config/substrate_mounts.yaml"
+  substrate_mounts_file: "resource/config/substrate_mounts.yaml"
 
 ros:
-  launch_ros: true
+  launch_ros: false
   bringup_launch: "package://spraycoater_bringup/launch/bringup.launch.py"
   namespace: "spraycoater"
   use_sim_time: false
   robot_type: "omron_viper_s650"
 
   configs:
-    topics_file: "config/topics.yaml"
-    qos_file: "config/qos.yaml"
-    frames_file: "config/frames.yaml"
-    scene_file: "config/scene.yaml"
-    robot_file: "config/robot.yaml"
-    servo_file: "config/servo.yaml"
-    poses_file: "config/poses.yaml"
-    tools_file: "config/tools.yaml"
+    topics_file: "package://spraycoater_bringup/config/topics.yaml"
+    qos_file: "package://spraycoater_bringup/config/qos.yaml"
+    frames_file: "package://spraycoater_bringup/config/frames.yaml"
+    scene_file: "package://spraycoater_bringup/config/scene.yaml"
+    robot_file: "package://spraycoater_bringup/config/robot.yaml"
+    servo_file: "package://spraycoater_bringup/config/servo.yaml"
+    poses_file: "package://spraycoater_bringup/config/poses.yaml"
+    tools_file: "package://spraycoater_bringup/config/tools.yaml"
 
   shadow:
     enabled: true
@@ -44,7 +42,7 @@ ros:
 plc:
   sim: true
   mode: "ads"
-  spec_file: "config/plc.yaml"
+  spec_file: "resource/config/plc.yaml"
   ads:
     ams_net_id: "..."
     ip: "..."
