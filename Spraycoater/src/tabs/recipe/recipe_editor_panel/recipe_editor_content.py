@@ -288,13 +288,32 @@ class RecipeEditorContent(QWidget):
         self._side_editors: Dict[str, SidePathEditor] = {}
         self._side_order: List[str] = []
 
-        # Info-Box wurde entfernt
-        self._txt_info = None
+        self._txt_info = None  # Info-Box entfernt
 
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(6)
 
+        # ---------------- Meta (oben) ----------------
+        gb_meta = QGroupBox("Meta", self)
+        gb_meta_l = QFormLayout(gb_meta)
+        gb_meta_l.setContentsMargins(8, 8, 8, 8)
+        gb_meta_l.setSpacing(6)
+
+        self.e_name = QLineEdit(gb_meta)
+        self.e_name.setPlaceholderText("recipes[..].id (SSoT)")
+        self.e_name.setReadOnly(True)
+
+        self.e_desc = QLineEdit(gb_meta)
+        self.e_desc.setPlaceholderText("Short description ...")
+
+        gb_meta_l.addRow("Name:", self.e_name)
+        gb_meta_l.addRow("Description:", self.e_desc)
+
+        _set_policy(gb_meta, v=QSizePolicy.Policy.Fixed)
+        root.addWidget(gb_meta)
+
+        # ---------------- Selection (darunter) ----------------
         gb_sel = QGroupBox("Selection", self)
         gb_sel_l = QHBoxLayout(gb_sel)
         gb_sel_l.setContentsMargins(8, 8, 8, 8)
@@ -316,24 +335,8 @@ class RecipeEditorContent(QWidget):
         gb_sel_l.addWidget(QLabel("Mount:", gb_sel))
         gb_sel_l.addWidget(self.sel_mount, 1)
 
+        _set_policy(gb_sel, v=QSizePolicy.Policy.Fixed)
         root.addWidget(gb_sel)
-
-        gb_meta = QGroupBox("Meta", self)
-        gb_meta_l = QFormLayout(gb_meta)
-        gb_meta_l.setContentsMargins(8, 8, 8, 8)
-        gb_meta_l.setSpacing(6)
-
-        self.e_name = QLineEdit(gb_meta)
-        self.e_name.setPlaceholderText("recipes[..].id (SSoT)")
-        self.e_name.setReadOnly(True)
-
-        self.e_desc = QLineEdit(gb_meta)
-        self.e_desc.setPlaceholderText("Short description ...")
-
-        gb_meta_l.addRow("Name:", self.e_name)
-        gb_meta_l.addRow("Description:", self.e_desc)
-
-        root.addWidget(gb_meta)
 
         # ---- Params + Planner row (HBOX) ----
         row_params_planner = QHBoxLayout()
@@ -405,7 +408,6 @@ class RecipeEditorContent(QWidget):
             self._params_box.apply_model_to_ui(model)
 
         if self._planner_box is not None:
-            # je nach API deiner PlannerGroupBox
             if hasattr(self._planner_box, "apply_model_to_ui"):
                 self._planner_box.apply_model_to_ui(model)  # type: ignore[attr-defined]
             elif hasattr(self._planner_box, "apply_planner_model"):
@@ -443,15 +445,12 @@ class RecipeEditorContent(QWidget):
 
             ed = SidePathEditor(store=self.store, side_name=side, parent=self._paths_host)
 
-            # STRICT SSoT: baut allowed types + schema + default
             ed.enable_auto_reset(rec_def, side)
 
-            # overlay user/model override (optional)
             model_path = (getattr(model, "paths_by_side", None) or {}).get(side) or {}
             if isinstance(model_path, dict) and model_path:
                 ed.apply_default_path(dict(model_path))
 
-            # per-side planner
             planner = getattr(model, "planner", {}) or {}
             path_cfg = planner.get("path")
             side_pl = (path_cfg.get(side) if isinstance(path_cfg, dict) else None)

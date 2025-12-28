@@ -63,8 +63,7 @@ class RecipeEditorPanel(QWidget):
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(6)
 
-        self.content = RecipeEditorContent(ctx=self.ctx, store=self.store, parent=self)
-
+        # -------- Recipe GroupBox (Buttons) --------
         gb_cmd = QGroupBox("Recipe", self)
         gb_cmd_l = QHBoxLayout(gb_cmd)
         gb_cmd_l.setContentsMargins(8, 8, 8, 8)
@@ -74,28 +73,40 @@ class RecipeEditorPanel(QWidget):
         self.btn_load = QPushButton("Load", gb_cmd)
         self.btn_save = QPushButton("Save", gb_cmd)
         self.btn_delete = QPushButton("Delete", gb_cmd)
+        self.btn_update_preview = QPushButton("Update Preview", gb_cmd)
 
         gb_cmd_l.addWidget(self.btn_new)
         gb_cmd_l.addWidget(self.btn_load)
         gb_cmd_l.addWidget(self.btn_save)
+        gb_cmd_l.addWidget(self.btn_update_preview)
         gb_cmd_l.addStretch(1)
         gb_cmd_l.addWidget(self.btn_delete)
 
         root.addWidget(gb_cmd)
-        root.addWidget(self.content, 1)
 
+        # -------- Content --------
+        self.content = RecipeEditorContent(ctx=self.ctx, store=self.store, parent=self)
+        root.addWidget(self.content, 1)
         _set_policy(self.content)
 
+        # -------- Signals --------
         self.btn_new.clicked.connect(self._on_new_clicked)
         self.btn_load.clicked.connect(self._on_load_clicked)
         self.btn_save.clicked.connect(self._on_save_clicked)
         self.btn_delete.clicked.connect(self._on_delete_clicked)
+        self.btn_update_preview.clicked.connect(self._on_update_preview_clicked)
 
         if getattr(self.content, "sel_recipe", None) is not None:
             self.content.sel_recipe.currentIndexChanged.connect(self._on_recipe_select_changed)
 
         self._rebuild_recipe_defs()
         self._load_default_or_first()
+
+    def _on_update_preview_clicked(self) -> None:
+        model = self.current_model()
+        if model is None:
+            return
+        self.updatePreviewRequested.emit(model)
 
     def _rebuild_recipe_defs(self) -> None:
         self._recipes_by_id = {}
@@ -156,15 +167,12 @@ class RecipeEditorPanel(QWidget):
         if not rid:
             raise KeyError("rec_def.id fehlt/leer.")
 
-        # globals defaults (flat dict)
         params = self.store.collect_global_defaults()
         if not isinstance(params, dict):
             raise TypeError(f"collect_global_defaults() ist kein dict (got {type(params)}).")
 
-        # planner defaults
         move_planner = self.store.planner_defaults()
 
-        # paths_by_side strict aus sides + default_path
         sides_cfg = self.store.sides_for_recipe(rec_def)
         if not isinstance(sides_cfg, dict) or not sides_cfg:
             raise KeyError(f"Recipe '{rid}': sides fehlt/leer.")
@@ -187,7 +195,6 @@ class RecipeEditorPanel(QWidget):
 
             pbs[str(side)] = dict(dp)
 
-        # tool/substrate/mount strict (erste Einträge)
         tools = rec_def.get("tools")
         subs = rec_def.get("substrates")
         mounts = rec_def.get("substrate_mounts")
