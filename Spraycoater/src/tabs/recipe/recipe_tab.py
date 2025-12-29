@@ -19,12 +19,13 @@ _LOG = logging.getLogger("tabs.recipe")
 class RecipeTab(QWidget):
     """
     Links:  RecipeEditorPanel
-    Rechts: CoatingPreviewPanel (PyVista-Host wird extern attached)
+    Rechts: CoatingPreviewPanel
 
-    Clean Contract (SSoT):
-      - store: RecipeStore
-      - repo : RecipeRepo (Persistenz: draft/compiled/runs)
-      - KEIN ROS in diesem Tab.
+    Wichtig:
+      - Kein ROS/Bridge in diesem Tab.
+      - PyVista (QtInteractor) wird von außen über attach_preview_widget(...) eingesetzt.
+      - attach_preview_widget bekommt IMMER den pvHost des PreviewPanels,
+        damit der 3D View rechts UNTER der Overlays-Groupbox bleibt.
     """
 
     def __init__(
@@ -48,7 +49,7 @@ class RecipeTab(QWidget):
             raise RuntimeError("RecipeTab: repo ist None (MainWindow muss repo übergeben).")
 
         self.store: RecipeStore = store
-        self.repo = repo  # bewusst Any: Repo-Typ projektabhängig
+        self.repo = repo
 
         self._initial_preview_done = False
 
@@ -63,7 +64,6 @@ class RecipeTab(QWidget):
             parent=self,
         )
 
-        # Preview ohne ROS
         self.previewPanel = CoatingPreviewPanel(
             ctx=self.ctx,
             parent=self,
@@ -72,9 +72,11 @@ class RecipeTab(QWidget):
         layout.addWidget(self.recipePanel, 2)
         layout.addWidget(self.previewPanel, 3)
 
+        # ✅ Entscheidend: immer pvHost als Target
         if attach_preview_widget is not None:
-            attach_preview_widget(self.previewPanel)
+            attach_preview_widget(self.previewPanel.get_pv_host())
 
+        # UI -> Preview
         self.recipePanel.updatePreviewRequested.connect(self._on_update_preview_requested)
 
     def _on_update_preview_requested(self, model: Recipe) -> None:

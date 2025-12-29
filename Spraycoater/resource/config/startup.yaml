@@ -9,15 +9,16 @@ paths:
   planner_catalog_file: "resource/config/planner_catalog.yaml"
   recipe_catalog_file: "resource/config/recipe_catalog.yaml"
 
-  substrate_mounts_dir: "data/mounts"
-  substrate_mounts_file: "resource/config/substrate_mounts.yaml"
-
 ros:
   launch_ros: false
   bringup_launch: "package://spraycoater_bringup/launch/bringup.launch.py"
   namespace: "spraycoater"
   use_sim_time: false
   robot_type: "omron_viper_s650"
+
+  # Mounts gehören zu den ROS-Configs
+  substrate_mounts_file: "package://spraycoater_bringup/config/substrate_mounts.yaml"
+  substrate_mounts_dir: "package://spraycoater_bringup/resource/substrate_mounts"
 
   configs:
     topics_file: "package://spraycoater_bringup/config/topics.yaml"
