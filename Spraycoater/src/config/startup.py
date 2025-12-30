@@ -33,27 +33,57 @@ def require_env_dir(var_name: str) -> str:
     return val
 
 
+def _ros_overlay_available() -> bool:
+    """
+    Best-effort check whether ROS overlay is present in this process.
+    This is critical for resolving package:// URIs via ament_index_python.
+    """
+    if not os.environ.get("AMENT_PREFIX_PATH", "").strip():
+        return False
+    try:
+        from ament_index_python.packages import get_package_share_directory  # type: ignore
+        _ = get_package_share_directory  # noqa
+        return True
+    except Exception:
+        return False
+
+
+def require_ros_overlay(reason: str) -> None:
+    if not _ros_overlay_available():
+        _err(
+            "ROS overlay ist in diesem Prozess nicht verfügbar.\n"
+            f"Grund: {reason}\n\n"
+            "Bitte stelle sicher, dass du VOR dem Start der UI folgendes gesourced hast:\n"
+            "  source /root/ws_moveit/install/setup.bash\n"
+        )
+
+
 def resolve_package_uri(uri: str) -> str:
     """Resolve ROS2 package://<pkg>/<relpath> to an absolute filesystem path."""
     if not isinstance(uri, str) or not uri.startswith("package://"):
         return uri
+
+    require_ros_overlay(f"package:// URI muss aufgelöst werden: {uri}")
+
     try:
-        from ament_index_python.packages import get_package_share_directory
+        from ament_index_python.packages import get_package_share_directory  # type: ignore
     except Exception as e:
         _err(f"ament_index_python nicht verfügbar für package-URI '{uri}': {e}")
+
     try:
         pkg, rel = uri[len("package://") :].split("/", 1)
     except ValueError:
         _err(f"Ungültige package-URI: '{uri}' (erwartet package://<pkg>/relpath)")
+
     base = get_package_share_directory(pkg)
     return os.path.join(base, rel)
 
 
-def _abspath_rel_to(base_dir: str, p: str) -> str:
+def resolve_path(base_dir: str, p: str) -> str:
     """
     Resolve relative/absolute/package:// paths to an absolute normalized path.
 
-    Strict: empty path -> error.
+    Strict: empty -> error.
     """
     if not isinstance(p, str) or not p.strip():
         _err("Leerer Pfad übergeben.")
@@ -67,19 +97,15 @@ def _abspath_rel_to(base_dir: str, p: str) -> str:
     return os.path.abspath(os.path.normpath(path))
 
 
-def _load_yaml(path_or_uri: str) -> Dict[str, Any]:
+def load_yaml_abs(path: str) -> Dict[str, Any]:
     """
-    Load YAML from a filesystem path or package:// URI.
+    Load YAML from an absolute filesystem path.
 
     Strict: must exist; must be a non-empty mapping.
     """
-    if not isinstance(path_or_uri, str) or not path_or_uri.strip():
-        _err("YAML Pfad/URI ist leer.")
-    path_or_uri = path_or_uri.strip()
-
-    path = _abspath_rel_to("/", path_or_uri) if not path_or_uri.startswith("package://") else os.path.abspath(
-        os.path.normpath(resolve_package_uri(path_or_uri))
-    )
+    if not isinstance(path, str) or not path.strip():
+        _err("YAML Pfad ist leer.")
+    path = os.path.abspath(os.path.normpath(path.strip()))
 
     if not os.path.exists(path):
         _err(f"YAML nicht gefunden: {path}")
@@ -91,6 +117,16 @@ def _load_yaml(path_or_uri: str) -> Dict[str, Any]:
         _err(f"YAML leer oder ungültig (kein Mapping): {path}")
 
     return data
+
+
+def load_yaml_path(base_dir: str, path_or_uri: str) -> Dict[str, Any]:
+    """
+    Load YAML from relative/absolute/package://
+
+    Strict: must exist; must be a non-empty mapping.
+    """
+    abs_path = resolve_path(base_dir, path_or_uri)
+    return load_yaml_abs(abs_path)
 
 
 # ============================================================
@@ -146,7 +182,11 @@ class ROSLiveConfig(ROSRoleConfig):
 @dataclass(frozen=True)
 class ROSConfig:
     launch_ros: bool
-    bringup_launch: str
+
+    # ✅ for ros2 launch: pkg + file
+    bringup_package: str
+    bringup_file: str
+
     namespace: str
     use_sim_time: bool
     robot_type: str
@@ -206,9 +246,11 @@ class AppContext:
 # AppContent (ROS content)
 # ============================================================
 
-# These imports may fail in non-ROS environments; here we keep strict behavior.
-from rosidl_runtime_py.utilities import get_message
-from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
+# These imports may fail in non-ROS environments; we keep strict behavior via require_ros_overlay().
+require_ros_overlay("AppContent benötigt ROS (rosidl_runtime_py + rclpy QoS).")
+
+from rosidl_runtime_py.utilities import get_message  # type: ignore
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy  # type: ignore
 
 
 @dataclass(frozen=True)
@@ -239,13 +281,15 @@ class AppContent:
     def __init__(
         self,
         *,
+        base_dir: str,
         ros_cfg_paths: ROSConfigPaths,
         substrate_mounts_dir: str,
         substrate_mounts_file: str,
     ):
-        self._frames = _load_yaml(ros_cfg_paths.frames_file)
-        self._qos = _load_yaml(ros_cfg_paths.qos_file)
-        self._topics = _load_yaml(ros_cfg_paths.topics_file)
+        # All of these may be package://, so base_dir is used only for relative fallbacks.
+        self._frames = load_yaml_path(base_dir, ros_cfg_paths.frames_file)
+        self._qos = load_yaml_path(base_dir, ros_cfg_paths.qos_file)
+        self._topics = load_yaml_path(base_dir, ros_cfg_paths.topics_file)
 
         self._frames_map = self._frames.get("frames")
         if not isinstance(self._frames_map, dict) or not self._frames_map:
@@ -258,8 +302,8 @@ class AppContent:
         self._qos_profiles = self._build_qos_profiles(self._qos)
 
         # mounts required
-        self.substrate_mounts_dir = substrate_mounts_dir
-        self.mounts_yaml = _load_yaml(substrate_mounts_file)
+        self.substrate_mounts_dir = resolve_path(base_dir, substrate_mounts_dir)
+        self.mounts_yaml = load_yaml_path(base_dir, substrate_mounts_file)
         mounts = self.mounts_yaml.get("mounts")
         if not isinstance(mounts, dict) or not mounts:
             _err("substrate_mounts.yaml: 'mounts' fehlt oder ist leer.")
@@ -376,7 +420,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     # Base dir is strictly controlled via SC_PROJECT_ROOT (required).
     base = require_env_dir("SC_PROJECT_ROOT")
 
-    su = _load_yaml(startup_yaml_path)
+    su = load_yaml_abs(startup_yaml_path)
 
     # ---------------- PATHS ----------------
     p = su.get("paths")
@@ -395,13 +439,13 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         if key not in p:
             _err(f"startup.yaml: 'paths.{key}' fehlt.")
 
-    recipe_dir_abs = _abspath_rel_to(base, p["recipe_dir"])
-    log_dir_abs = _abspath_rel_to(base, p["log_dir"])
-    bringup_log_abs = _abspath_rel_to(base, p["bringup_log"])
+    recipe_dir_abs = resolve_path(base, p["recipe_dir"])
+    log_dir_abs = resolve_path(base, p["log_dir"])
+    bringup_log_abs = resolve_path(base, p["bringup_log"])
 
-    recipe_params_abs = _abspath_rel_to(base, p["recipe_params_file"])
-    planner_catalog_abs = _abspath_rel_to(base, p["planner_catalog_file"])
-    recipe_catalog_abs = _abspath_rel_to(base, p["recipe_catalog_file"])
+    recipe_params_abs = resolve_path(base, p["recipe_params_file"])
+    planner_catalog_abs = resolve_path(base, p["planner_catalog_file"])
+    recipe_catalog_abs = resolve_path(base, p["recipe_catalog_file"])
 
     if not os.path.isdir(recipe_dir_abs):
         _err(f"paths.recipe_dir existiert nicht: {recipe_dir_abs}")
@@ -428,20 +472,28 @@ def load_startup(startup_yaml_path: str) -> AppContext:
 
     if "launch_ros" not in r:
         _err("startup.yaml: ros.launch_ros ist Pflichtfeld.")
-
     launch_ros = bool(r["launch_ros"])
-    bringup_launch = str(r.get("bringup_launch", "")).strip()
-    namespace = str(r.get("namespace", "")).strip()
-    use_sim_time = bool(r.get("use_sim_time", False))
 
-    if not bringup_launch:
-        _err("startup.yaml: ros.bringup_launch fehlt oder ist leer.")
+    namespace = str(r.get("namespace", "")).strip()
     if not namespace:
         _err("startup.yaml: ros.namespace fehlt oder ist leer.")
+
+    use_sim_time = bool(r.get("use_sim_time", False))
 
     robot_type = str(r.get("robot_type", "")).strip()
     if not robot_type:
         _err("startup.yaml: ros.robot_type fehlt oder ist leer.")
+
+    # ✅ bringup as pkg + file
+    bringup_pkg = str(r.get("bringup_package", "")).strip()
+    bringup_file = str(r.get("bringup_file", "")).strip()
+    if launch_ros:
+        if not bringup_pkg:
+            _err("startup.yaml: ros.bringup_package fehlt oder ist leer.")
+        if not bringup_file:
+            _err("startup.yaml: ros.bringup_file fehlt oder ist leer.")
+        # require ROS overlay if we intend to launch
+        require_ros_overlay("ros.launch_ros=true (Bringup/Bridges benötigen ROS overlay).")
 
     # mounts are ROS config (required by UI preview)
     if "substrate_mounts_file" not in r:
@@ -449,8 +501,8 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if "substrate_mounts_dir" not in r:
         _err("startup.yaml: ros.substrate_mounts_dir fehlt.")
 
-    substrate_mounts_file_abs = _abspath_rel_to(base, str(r["substrate_mounts_file"]))
-    substrate_mounts_dir_abs = _abspath_rel_to(base, str(r["substrate_mounts_dir"]))
+    substrate_mounts_file = str(r["substrate_mounts_file"]).strip()
+    substrate_mounts_dir = str(r["substrate_mounts_dir"]).strip()
 
     rcfg = r.get("configs")
     if not isinstance(rcfg, dict):
@@ -471,14 +523,14 @@ def load_startup(startup_yaml_path: str) -> AppContext:
             _err(f"startup.yaml: ros.configs.{key} fehlt.")
 
     ros_paths = ROSConfigPaths(
-        topics_file=_abspath_rel_to(base, rcfg["topics_file"]),
-        qos_file=_abspath_rel_to(base, rcfg["qos_file"]),
-        frames_file=_abspath_rel_to(base, rcfg["frames_file"]),
-        scene_file=_abspath_rel_to(base, rcfg["scene_file"]),
-        robot_file=_abspath_rel_to(base, rcfg["robot_file"]),
-        servo_file=_abspath_rel_to(base, rcfg["servo_file"]),
-        poses_file=_abspath_rel_to(base, rcfg["poses_file"]),
-        tools_file=_abspath_rel_to(base, rcfg["tools_file"]),
+        topics_file=str(rcfg["topics_file"]),
+        qos_file=str(rcfg["qos_file"]),
+        frames_file=str(rcfg["frames_file"]),
+        scene_file=str(rcfg["scene_file"]),
+        robot_file=str(rcfg["robot_file"]),
+        servo_file=str(rcfg["servo_file"]),
+        poses_file=str(rcfg["poses_file"]),
+        tools_file=str(rcfg["tools_file"]),
     )
 
     shadow_yaml = r.get("shadow")
@@ -492,8 +544,13 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     live_enabled = bool(live_yaml.get("enabled", False))
 
     mode = str(live_yaml.get("mode", "")).strip().lower()
-    if mode not in ("omron", "emulator"):
-        _err(f"startup.yaml: ros.live.mode muss 'omron' oder 'emulator' sein (ist {mode!r}).")
+    if live_enabled:
+        if mode not in ("omron", "emulator"):
+            _err(f"startup.yaml: ros.live.mode muss 'omron' oder 'emulator' sein (ist {mode!r}).")
+    else:
+        # keep a safe default even if disabled
+        if mode not in ("omron", "emulator"):
+            mode = "omron"
 
     omron_yaml = live_yaml.get("omron")
     if not isinstance(omron_yaml, dict):
@@ -525,12 +582,13 @@ def load_startup(startup_yaml_path: str) -> AppContext:
 
     ros_cfg = ROSConfig(
         launch_ros=launch_ros,
-        bringup_launch=bringup_launch,
+        bringup_package=bringup_pkg,
+        bringup_file=bringup_file,
         namespace=namespace,
         use_sim_time=use_sim_time,
         robot_type=robot_type,
-        substrate_mounts_dir=substrate_mounts_dir_abs,
-        substrate_mounts_file=substrate_mounts_file_abs,
+        substrate_mounts_dir=substrate_mounts_dir,
+        substrate_mounts_file=substrate_mounts_file,
         configs=ros_paths,
         shadow=shadow_cfg,
         live=live_cfg,
@@ -570,8 +628,8 @@ def load_startup(startup_yaml_path: str) -> AppContext:
 
     if "spec_file" not in plc_yaml:
         _err("startup.yaml: plc.spec_file fehlt.")
-    spec_abs = _abspath_rel_to(base, str(plc_yaml["spec_file"]))
-    plc_spec = _load_yaml(spec_abs)
+    spec_abs = resolve_path(base, str(plc_yaml["spec_file"]))
+    plc_spec = load_yaml_abs(spec_abs)
 
     plc_cfg = PlcConfig(
         sim=plc_sim,
@@ -583,9 +641,9 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     )
 
     # ---------------- Recipe YAMLs ----------------
-    rp_y = _load_yaml(paths.recipe_params_file)
-    pc_y = _load_yaml(paths.planner_catalog_file)
-    rc_y = _load_yaml(paths.recipe_catalog_file)
+    rp_y = load_yaml_abs(paths.recipe_params_file)
+    pc_y = load_yaml_abs(paths.planner_catalog_file)
+    rc_y = load_yaml_abs(paths.recipe_catalog_file)
 
     recipe_params = rp_y.get("recipe_params")
     if not isinstance(recipe_params, dict) or not recipe_params:
@@ -599,17 +657,18 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not isinstance(recipes_list, list) or not recipes_list:
         _err("recipe_catalog.yaml: recipes fehlt oder ist leer.")
 
-    # ---------------- Mounts YAML (required, already validated by AppContent too) ----------------
-    mounts_yaml = _load_yaml(substrate_mounts_file_abs)
+    # ---------------- Mounts YAML (required) ----------------
+    mounts_yaml = load_yaml_path(base, substrate_mounts_file)
     mounts = mounts_yaml.get("mounts")
     if not isinstance(mounts, dict) or not mounts:
         _err("substrate_mounts.yaml: mounts fehlt oder ist leer.")
 
     # ---------------- Build core objects: content + store + repo ----------------
     content = AppContent(
+        base_dir=base,
         ros_cfg_paths=ros_paths,
-        substrate_mounts_dir=substrate_mounts_dir_abs,
-        substrate_mounts_file=substrate_mounts_file_abs,
+        substrate_mounts_dir=substrate_mounts_dir,
+        substrate_mounts_file=substrate_mounts_file,
     )
 
     # Create RecipeStore + RecipeRepo (SSoT)

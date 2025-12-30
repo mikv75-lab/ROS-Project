@@ -142,9 +142,7 @@ Visualization Manager:
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: maPlanned
-      Namespaces:
-        Value: true
-        recipe: true
+      Namespaces: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -279,7 +277,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 0.2412802278995514
+      Distance: 2.828415632247925
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -294,10 +292,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.9803980588912964
+      Pitch: 0.5503979921340942
       Target Frame: scene
       Value: Orbit (rviz_default_plugins)
-      Yaw: 3.1535840034484863
+      Yaw: 6.26858377456665
     Saved: ~
 Window Geometry:
   Displays:

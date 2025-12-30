@@ -37,19 +37,20 @@ def _set_policy(
 
 class RecipeEditorPanel(QWidget):
     """
-    GUI:
-      - KEIN Recipe-ID Feld im Meta.
-      - Nur Recipe Name (editierbar) + Description.
+    Storage-SSoT (dein Bundle/Repo):
+      data/recipes/<RECIPE_NAME>/
+        recipe.yaml
+        compiled.yaml
 
-    Intern:
-      - "rid" kommt weiterhin aus Selection Combo (Catalog recipe id).
-      - Key für Repo: "<rid>/<recipe_name>"
+    UI:
+      - Recipe Name (editierbar) bestimmt <RECIPE_NAME>
+      - Selection->Recipe Combo bestimmt model.id (Catalog-ID), nur für UI/Constraints
 
-    UX/SSoT:
-      - Update Preview: UI -> _active_model/_active_compiled/_active_key, emit preview 1x
-      - Save: speichert _active_model (+ compiled). Wenn noch kein Preview: macht implizit Preview/Compile.
-      - Load: lädt key -> schreibt in _active_model -> UI update -> emit preview 1x
-      - New: speichert vorheriges Preview best-effort, reset auf defaults für aktuelles rid, emit preview 1x
+    Verhalten:
+      - Load lädt draft und updated UI komplett (inkl. Selection->Recipe anhand model.id)
+      - Update Preview baut Draft aus UI, compiled-cache und emittet 1x
+      - Save speichert recipe.yaml + compiled.yaml unter <RECIPE_NAME>
+      - New resettet UI auf Defaults (für aktuell selektiertes Catalog-Recipe), setzt Recipe Name auf "<rid>"
     """
 
     updatePreviewRequested = pyqtSignal(object)  # Recipe
@@ -79,7 +80,7 @@ class RecipeEditorPanel(QWidget):
 
         self._active_model: Optional[Recipe] = None
         self._active_compiled: Optional[dict] = None
-        self._active_key: Optional[str] = None
+        self._active_name: Optional[str] = None  # <RECIPE_NAME> folder
 
         self._recipes_by_id: Dict[str, Dict[str, Any]] = {}
 
@@ -87,6 +88,7 @@ class RecipeEditorPanel(QWidget):
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(6)
 
+        # -------- Recipe GroupBox (Buttons) --------
         gb_cmd = QGroupBox("Recipe", self)
         gb_cmd_l = QHBoxLayout(gb_cmd)
         gb_cmd_l.setContentsMargins(8, 8, 8, 8)
@@ -107,10 +109,12 @@ class RecipeEditorPanel(QWidget):
 
         root.addWidget(gb_cmd)
 
+        # -------- Content --------
         self.content = RecipeEditorContent(ctx=self.ctx, store=self.store, parent=self)
         root.addWidget(self.content, 1)
         _set_policy(self.content)
 
+        # -------- Signals --------
         self.btn_new.clicked.connect(self._on_new_clicked)
         self.btn_load.clicked.connect(self._on_load_clicked)
         self.btn_save.clicked.connect(self._on_save_clicked)
@@ -124,29 +128,14 @@ class RecipeEditorPanel(QWidget):
         self._load_default_or_first()
 
     # ---------------------------------------------------------
-    # Helpers
+    # Helpers: rid / recipe_name / UI selection
     # ---------------------------------------------------------
 
-    def _split_key(self, key: str) -> tuple[str, str]:
-        key = str(key or "").strip()
-        if not key:
-            return "", ""
-        if "/" not in key:
-            return key, key
-        a, b = key.split("/", 1)
-        return a.strip(), b.strip()
-
-    def _make_key(self, rid: str, recipe_name: str) -> str:
-        return self.repo.make_key(rid, recipe_name)
-
-    def _keys_for_rid(self, rid: str) -> List[str]:
-        rid = str(rid or "").strip()
-        if not rid:
-            return []
-        prefix = rid + "/"
-        keys = [k for k in (self.repo.list_recipes() or []) if isinstance(k, str) and k.startswith(prefix)]
-        keys.sort()
-        return keys
+    def _current_rid(self) -> str:
+        cb = getattr(self.content, "sel_recipe", None)
+        if cb is None or cb.currentIndex() < 0:
+            return ""
+        return str(cb.currentText() or "").strip()
 
     def _select_rid_in_combo_blocked(self, rid: str) -> None:
         cb = getattr(self.content, "sel_recipe", None)
@@ -162,7 +151,7 @@ class RecipeEditorPanel(QWidget):
         cb.setCurrentIndex(idx)
         cb.blockSignals(False)
 
-    def _recipe_name_from_ui(self, *, fallback: str) -> str:
+    def _recipe_name_from_ui(self, fallback: str) -> str:
         fn = getattr(self.content, "get_recipe_name", None)
         if callable(fn):
             try:
@@ -182,7 +171,7 @@ class RecipeEditorPanel(QWidget):
                 pass
 
     # ---------------------------------------------------------
-    # Compile
+    # Compile: paths_by_side -> compiled dict
     # ---------------------------------------------------------
 
     def _compile_from_model(self, model: Recipe) -> dict:
@@ -219,39 +208,7 @@ class RecipeEditorPanel(QWidget):
         return out
 
     # ---------------------------------------------------------
-    # Apply loaded
-    # ---------------------------------------------------------
-
-    def _apply_loaded(self, *, key: str, model: Recipe) -> None:
-        rid, name = self._split_key(key)
-        if not rid:
-            raise ValueError(f"Ungültiger key: {key}")
-
-        rec_def = self._recipes_by_id.get(rid)
-        if not rec_def:
-            raise KeyError(f"RecipeDef für '{rid}' nicht gefunden.")
-
-        self._select_rid_in_combo_blocked(rid)
-
-        model.id = rid
-        self._active_model = model
-        self._active_key = key
-
-        desc = (rec_def.get("description") or "").strip()
-        self._set_recipe_name_in_ui(name or rid)
-        self.content.set_meta(name=name or rid, desc=desc)
-        self.content.apply_model_to_ui(model, rec_def)
-
-        try:
-            full = self.repo.load_for_process(key)
-            self._active_compiled = (full.paths_compiled or None)
-        except Exception:
-            self._active_compiled = None
-
-        self.updatePreviewRequested.emit(model)
-
-    # ---------------------------------------------------------
-    # Recipe defs
+    # Recipe defs (Catalog)
     # ---------------------------------------------------------
 
     def _rebuild_recipe_defs(self) -> None:
@@ -277,37 +234,18 @@ class RecipeEditorPanel(QWidget):
                 combo.addItem(rid)
             combo.blockSignals(False)
 
-    def _current_recipe_def(self) -> Optional[Dict[str, Any]]:
-        combo = getattr(self.content, "sel_recipe", None)
-        if combo is None or combo.currentIndex() < 0:
-            return None
-        rid = combo.currentText().strip()
-        return self._recipes_by_id.get(rid)
-
-    # ---------------------------------------------------------
-    # Defaults
-    # ---------------------------------------------------------
-
-    def _load_default_or_first(self) -> None:
-        keys = self.repo.list_recipes() or []
-        if keys:
-            key = keys[0]
-            model = self.repo.load_for_editor(key)
-            self._apply_loaded(key=key, model=model)
-            return
-
-        rec_def = self._current_recipe_def()
-        if not rec_def:
-            raise RuntimeError("Recipe selection combo leer/nicht vorhanden.")
-        rid = str(rec_def.get("id") or "").strip()
+    def _recipe_def_for_rid(self, rid: str) -> Dict[str, Any]:
+        rid = str(rid or "").strip()
         if not rid:
-            raise RuntimeError("rec_def.id leer.")
+            raise KeyError("rid leer.")
+        rec_def = self._recipes_by_id.get(rid)
+        if not rec_def:
+            raise KeyError(f"RecipeDef für '{rid}' nicht gefunden.")
+        return rec_def
 
-        key = self._make_key(rid, rid)
-        base = self._new_model_from_rec_def(rec_def)
-        self.repo.create_new(key, base=base, overwrite=True)
-        model = self.repo.load_for_editor(key)
-        self._apply_loaded(key=key, model=model)
+    # ---------------------------------------------------------
+    # Default/new model from rec_def
+    # ---------------------------------------------------------
 
     def _new_model_from_rec_def(self, rec_def: Dict[str, Any]) -> Recipe:
         rid = str(rec_def.get("id") or "").strip()
@@ -355,7 +293,7 @@ class RecipeEditorPanel(QWidget):
 
         return Recipe.from_dict(
             {
-                "id": rid,
+                "id": rid,  # Catalog recipe-id
                 "description": rec_def.get("description") or "",
                 "tool": str(tools[0]),
                 "substrate": str(subs[0]),
@@ -368,85 +306,144 @@ class RecipeEditorPanel(QWidget):
         )
 
     # ---------------------------------------------------------
-    # Preview/SSoT
+    # Apply loaded model into UI (and emit preview once)
     # ---------------------------------------------------------
 
-    def _preview_from_ui_into_active(self) -> Optional[Recipe]:
-        rec_def = self._current_recipe_def()
-        if not rec_def:
-            return None
+    def _apply_loaded(self, *, name: str, model: Recipe) -> None:
+        # model.id bestimmt, welches Catalog-Recipe aktiv ist
+        rid = str(getattr(model, "id", "") or "").strip()
+        if not rid:
+            raise KeyError(f"Geladenes Rezept '{name}': model.id fehlt/leer (kann Catalog nicht auswählen).")
 
-        rid = str(rec_def.get("id") or "").strip()
+        rec_def = self._recipe_def_for_rid(rid)
+
+        # 1) Selection->Recipe (Catalog) setzen
+        self._select_rid_in_combo_blocked(rid)
+
+        # 2) Active state
+        self._active_model = model
+        self._active_name = name
+
+        # 3) Meta-UI setzen
+        desc = (rec_def.get("description") or "").strip()
+        self._set_recipe_name_in_ui(name)
+        self.content.set_meta(name=name, desc=desc)
+
+        # 4) Restliche UI aus Modell füllen
+        self.content.apply_model_to_ui(model, rec_def)
+
+        # 5) compiled cache (optional)
+        try:
+            full = self.repo.load_for_process(name)
+            self._active_compiled = (full.paths_compiled or None)
+        except Exception:
+            self._active_compiled = None
+
+        # 6) Preview: genau einmal mit geladenem Draft
+        self.updatePreviewRequested.emit(model)
+
+    # ---------------------------------------------------------
+    # Build current model from UI
+    # ---------------------------------------------------------
+
+    def current_model(self) -> Optional[Recipe]:
+        rid = self._current_rid()
         if not rid:
             return None
+
+        rec_def = self._recipe_def_for_rid(rid)
+        desc = (rec_def.get("description") or "").strip()
 
         model = self._active_model
         if model is None:
             model = self._new_model_from_rec_def(rec_def)
 
+        # immer Catalog-ID setzen (UI constraints)
         model.id = rid
 
+        # Meta
         name = self._recipe_name_from_ui(fallback=rid)
-        key = self._make_key(rid, name)
-
-        desc = (rec_def.get("description") or "").strip()
         self.content.set_meta(name=name, desc=desc)
 
+        # UI -> Model
         self.content.apply_ui_to_model(model)
         model.trajectories = {}
 
         self._active_model = model
-        self._active_key = key
+        self._active_name = name
+        return model
+
+    # ---------------------------------------------------------
+    # Startup default
+    # ---------------------------------------------------------
+
+    def _load_default_or_first(self) -> None:
+        names = self.repo.list_recipes() or []
+        if names:
+            name = names[0]
+            model = self.repo.load_for_editor(name)
+            self._apply_loaded(name=name, model=model)
+            return
+
+        # nichts gespeichert -> defaults für aktuell selektiertes Catalog-Recipe
+        rid = self._current_rid()
+        if not rid:
+            raise RuntimeError("Kein Catalog-Recipe auswählbar (sel_recipe leer).")
+
+        rec_def = self._recipe_def_for_rid(rid)
+        base = self._new_model_from_rec_def(rec_def)
+
+        name = rid  # default recipe-name
+        self.repo.create_new(name, base=base, overwrite=True)
+        model = self.repo.load_for_editor(name)
+        self._apply_loaded(name=name, model=model)
+
+    # ---------------------------------------------------------
+    # UI handlers
+    # ---------------------------------------------------------
+
+    def _on_update_preview_clicked(self) -> None:
+        model = self.current_model()
+        if model is None:
+            return
 
         try:
             self._active_compiled = self._compile_from_model(model)
         except Exception:
             self._active_compiled = None
 
-        return model
-
-    def _ensure_active_preview(self) -> bool:
-        if self._active_model is not None:
-            if self._active_compiled is None:
-                try:
-                    self._active_compiled = self._compile_from_model(self._active_model)
-                except Exception:
-                    self._active_compiled = None
-            if self._active_key is None:
-                rec_def = self._current_recipe_def()
-                rid = str((rec_def or {}).get("id") or "").strip()
-                if rid:
-                    name = self._recipe_name_from_ui(fallback=rid)
-                    self._active_key = self._make_key(rid, name)
-            return True
-
-        m = self._preview_from_ui_into_active()
-        return m is not None
-
-    # ---------------------------------------------------------
-    # Handlers
-    # ---------------------------------------------------------
-
-    def _on_update_preview_clicked(self) -> None:
-        model = self._preview_from_ui_into_active()
-        if model is None:
-            return
         self.updatePreviewRequested.emit(model)
 
     def _on_recipe_select_changed(self, *_args) -> None:
-        rec_def = self._current_recipe_def()
-        if not rec_def:
-            return
-        rid = str(rec_def.get("id") or "").strip()
+        # User wechselt Catalog recipe-id -> fresh defaults anzeigen
+        rid = self._current_rid()
         if not rid:
             return
 
+        rec_def = self._recipe_def_for_rid(rid)
         base = self._new_model_from_rec_def(rec_def)
+
+        # defaults
         self._active_model = base
         self._active_compiled = None
+        self._active_name = rid
+        desc = (rec_def.get("description") or "").strip()
+        self._set_recipe_name_in_ui(rid)
+        self.content.set_meta(name=rid, desc=desc)
+        self.content.apply_model_to_ui(base, rec_def)
+        self.updatePreviewRequested.emit(base)
 
-        # default recipe name = rid (user kann ändern)
-        self._active_key = self._make_key(rid, rid)
+    def _on_new_clicked(self) -> None:
+        # reset auf defaults für aktuelles Catalog-Recipe
+        rid = self._current_rid()
+        if not rid:
+            return
+        rec_def = self._recipe_def_for_rid(rid)
+        base = self._new_model_from_rec_def(rec_def)
+
+        self._active_model = base
+        self._active_compiled = None
+        self._active_name = rid
 
         desc = (rec_def.get("description") or "").strip()
         self._set_recipe_name_in_ui(rid)
@@ -454,96 +451,76 @@ class RecipeEditorPanel(QWidget):
         self.content.apply_model_to_ui(base, rec_def)
         self.updatePreviewRequested.emit(base)
 
-    def _on_save_clicked(self) -> None:
-        if not self._ensure_active_preview():
-            return
-        assert self._active_model is not None
-        assert self._active_key is not None
-
-        self.repo.save_from_editor(
-            self._active_key,
-            draft=self._active_model,
-            compiled=self._active_compiled,
-            delete_compiled_on_hash_change=True,
-        )
-        QMessageBox.information(self, "Gespeichert", f"{self._active_key} (recipe.yaml + compiled.yaml)")
-
     def _on_load_clicked(self) -> None:
-        keys = self.repo.list_recipes() or []
-        if not keys:
+        names = self.repo.list_recipes() or []
+        if not names:
             QMessageBox.information(self, "Load", "Keine gespeicherten Rezepte gefunden.")
             return
 
-        current = self._active_key if (self._active_key in keys) else keys[0]
-        idx = keys.index(current) if current in keys else 0
+        current = self._active_name if (self._active_name in names) else names[0]
+        idx = names.index(current) if current in names else 0
 
         choice, ok = QInputDialog.getItem(
             self,
             "Recipe laden",
             "Rezept auswählen:",
-            keys,
+            names,
             idx,
             editable=False,
         )
         if not ok:
             return
 
-        key = str(choice).strip()
-        model = self.repo.load_for_editor(key)
-        self._apply_loaded(key=key, model=model)
+        name = str(choice).strip()
+        model = self.repo.load_for_editor(name)
+        self._apply_loaded(name=name, model=model)
 
-    def _on_new_clicked(self) -> None:
-        # vorheriges Preview best-effort speichern
-        if self._ensure_active_preview() and self._active_key and self._active_model:
+    def _on_save_clicked(self) -> None:
+        model = self.current_model()
+        if model is None:
+            return
+
+        name = self._active_name or self._recipe_name_from_ui(fallback=self._current_rid() or "recipe")
+        name = str(name).strip()
+        if not name:
+            QMessageBox.warning(self, "Save", "Recipe Name ist leer.")
+            return
+
+        # compile wenn nicht vorhanden
+        if self._active_compiled is None:
             try:
-                self.repo.save_from_editor(
-                    self._active_key,
-                    draft=self._active_model,
-                    compiled=self._active_compiled,
-                    delete_compiled_on_hash_change=True,
-                )
+                self._active_compiled = self._compile_from_model(model)
             except Exception:
-                pass
+                self._active_compiled = None
 
-        rec_def = self._current_recipe_def()
-        if not rec_def:
-            return
-        rid = str(rec_def.get("id") or "").strip()
-        if not rid:
-            return
-
-        base = self._new_model_from_rec_def(rec_def)
-
-        key = self._make_key(rid, rid)
-        self._active_model = base
-        self._active_compiled = None
-        self._active_key = key
-
-        desc = (rec_def.get("description") or "").strip()
-        self._set_recipe_name_in_ui(rid)
-        self.content.set_meta(name=rid, desc=desc)
-        self.content.apply_model_to_ui(base, rec_def)
-        self.updatePreviewRequested.emit(base)
+        self.repo.save_from_editor(
+            name,
+            draft=model,
+            compiled=self._active_compiled,
+            delete_compiled_on_hash_change=True,
+        )
+        self._active_name = name
+        QMessageBox.information(self, "Gespeichert", f"{name} (recipe.yaml + compiled.yaml)")
 
     def _on_delete_clicked(self) -> None:
-        if not self._active_key:
+        if not self._active_name:
             QMessageBox.information(self, "Delete", "Kein Rezept geladen.")
             return
 
-        key = self._active_key
+        name = self._active_name
 
         reply = QMessageBox.question(
             self,
             "Löschen",
-            f"Rezept '{key}' wirklich löschen? (draft + compiled + runs)",
+            f"Rezept '{name}' wirklich löschen? (draft + compiled + runs)",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        self.repo.delete(key)
-        self._active_key = None
+        self.repo.delete(name)
+        self._active_name = None
         self._active_model = None
         self._active_compiled = None
 

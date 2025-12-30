@@ -10,13 +10,19 @@ paths:
   recipe_catalog_file: "resource/config/recipe_catalog.yaml"
 
 ros:
-  launch_ros: false
-  bringup_launch: "package://spraycoater_bringup/launch/bringup.launch.py"
+  launch_ros: true
+
+  # ✅ NICHT package:// für bringup (für ros2 launch braucht man pkg + file)
+  bringup_package: "spraycoater_bringup"
+  bringup_file: "bringup.launch.py"
+
+  # Namespace, den deine ROS-Bridges intern verwenden (shadow/live fügen ihrerseits ggf. Prefix hinzu)
   namespace: "spraycoater"
+
   use_sim_time: false
   robot_type: "omron_viper_s650"
 
-  # Mounts gehören zu den ROS-Configs
+  # Mounts gehören zu den ROS-Configs (package:// ist ok)
   substrate_mounts_file: "package://spraycoater_bringup/config/substrate_mounts.yaml"
   substrate_mounts_dir: "package://spraycoater_bringup/resource/substrate_mounts"
 
@@ -35,7 +41,7 @@ ros:
 
   live:
     enabled: false
-    mode: "omron"
+    mode: "omron"   # ✅ wird nur geprüft, wenn enabled=true
     omron:
       omron: { ip: "192.168.0.10", port: 5000 }
       emulator: { ip: "127.0.0.1", port: 5001 }

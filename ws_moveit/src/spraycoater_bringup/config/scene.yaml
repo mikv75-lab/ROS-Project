@@ -1,6 +1,6 @@
 scene_objects:
 - id: cage
-  mesh: ''
+  mesh: ../resource/environment/cage_with_panels.stl
   frame: world
   position:
   - 0.0

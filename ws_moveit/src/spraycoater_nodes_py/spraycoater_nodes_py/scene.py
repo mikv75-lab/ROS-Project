@@ -25,8 +25,7 @@ import trimesh
 
 MAX_SCENE_WAIT = 30.0
 
-# ✅ Republish deaktiviert - verhindert "Moved backwards in time" Warning
-# Wenn du Republish brauchst, setze z.B. auf 300.0 (5 Minuten)
+# ✅ Republish (nur CollisionObjects). 0.0 = aus
 REPUBLISH_PERIOD_S = 10.0
 
 OID_ALIAS = {
@@ -58,40 +57,8 @@ def _require_str(node: dict, key: str):
     return val
 
 
-def _quat_mul(a, b):
-    """Hamilton-Produkt q = a ⊗ b (x,y,z,w)."""
-    ax, ay, az, aw = a
-    bx, by, bz, bw = b
-    return (
-        aw * bx + ax * bw + ay * bz - az * by,
-        aw * by - ax * bz + ay * bw + az * bx,
-        aw * bz + ax * by - ay * bx + az * bw,
-        aw * bw - ax * bx - ay * by - az * bz,
-    )
-
-
 def _quat_from_rpy_deg(r, p, y):
     return rpy_deg_to_quat(float(r), float(p), float(y))
-
-
-def _rotmat_from_quat(q):
-    x, y, z, w = q
-    xx, yy, zz = x * x, y * y, z * z
-    xy, xz, yz = x * y, x * z, y * z
-    wx, wy, wz = w * x, w * y, w * z
-    return [
-        [1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)],
-        [2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)],
-        [2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)],
-    ]
-
-
-def _rot_apply(R, v):
-    return [
-        R[0][0] * v[0] + R[0][1] * v[1] + R[0][2] * v[2],
-        R[1][0] * v[0] + R[1][1] * v[1] + R[1][2] * v[2],
-        R[2][0] * v[0] + R[2][1] * v[1] + R[2][2] * v[2],
-    ]
 
 
 class Scene(Node):
@@ -104,6 +71,11 @@ class Scene(Node):
       - wartet NICHT auf move_group/get_planning_scene
       - wartet stattdessen auf Subscriber (MoveItPy) auf collision_object und sendet dann die Szene
       - republished CollisionObjects periodisch (für Late-Joiner), wenn REPUBLISH_PERIOD_S > 0
+
+    WICHTIGES SPAWN-VERHALTEN (wie von dir gewünscht):
+      - Jedes Objekt bekommt einen TF: parent_frame -> object_frame(id) mit position+rpy_deg
+      - CollisionObject wird IM object_frame gespawnt (co.header.frame_id = object_frame)
+      - mesh_pose enthält NUR mesh_offset + mesh_rpy (lokal im object_frame)
     """
 
     GROUP = "scene"
@@ -206,7 +178,7 @@ class Scene(Node):
         self.final_scene_sent = False
         self.initial_state_published = False
 
-        # ✅ WICHTIG: logical keys verwenden (cage/mount/substrate)
+        # ✅ logical keys verwenden (cage/mount/substrate)
         self.current_cage: str = self._initial_current_from_yaml("cage")
         self.current_mount: str = self._initial_current_from_yaml("mount")
         self.current_substrate: str = self._initial_current_from_yaml("substrate")
@@ -214,7 +186,6 @@ class Scene(Node):
         # Cache für Republish (wird nach _publish_scene gefüllt)
         self._cached_cos: dict[str, CollisionObject] = {}
         self._republish_timer = None
-        self._last_republish_log = 0.0
 
         self._publish_lists_once()
         self._publish_current_once()
@@ -348,6 +319,10 @@ class Scene(Node):
         return pose
 
     def _make_tf(self, parent: str, child: str, xyz, rpy_deg) -> TransformStamped:
+        """
+        parent/child sind LOGISCHE Namen aus YAML.
+        Resolve passiert HIER genau einmal. (Wichtig: kein double-resolve!)
+        """
         qx, qy, qz, qw = _quat_from_rpy_deg(*rpy_deg)
         tf = TransformStamped()
         tf.header.frame_id = self._F(parent)
@@ -357,29 +332,25 @@ class Scene(Node):
         return tf
 
     def _make_co_from_obj_and_mesh(self, obj: dict, mesh_path: str) -> CollisionObject:
+        """
+        ✅ CollisionObject IM eigenen Frame spawnen:
+           - TF parent->oid übernimmt position+rpy_deg
+           - mesh_pose ist nur mesh_offset + mesh_rpy (lokal im oid-frame)
+        """
         oid = str(obj["id"])
-        frame = self._F(obj.get("frame", "world"))
-        pos = _require_vec3(obj, "position")
-        rpy = _require_vec3(obj, "rpy_deg")
+
+        # Lokale Mesh-Pose (nur Offset + lokale Rotation)
         mpos = _require_vec3(obj, "mesh_offset")
         mrpy = _require_vec3(obj, "mesh_rpy")
 
         mesh_msg = self._load_mesh_mm(mesh_path)
-
-        q_frame = _quat_from_rpy_deg(*rpy)
-        R_frame = _rotmat_from_quat(q_frame)
-        mpos_in_parent = _rot_apply(R_frame, mpos)
-        p_total = [pos[0] + mpos_in_parent[0],
-                   pos[1] + mpos_in_parent[1],
-                   pos[2] + mpos_in_parent[2]]
         q_mesh = _quat_from_rpy_deg(*mrpy)
-        q_total = _quat_mul(q_frame, q_mesh)
 
         co = CollisionObject()
         co.id = oid
-        co.header.frame_id = frame
+        co.header.frame_id = self._F(oid)  # ✅ own TF frame
         co.meshes = [mesh_msg]
-        co.mesh_poses = [self._pose_from_xyz_quat(p_total, q_total)]
+        co.mesh_poses = [self._pose_from_xyz_quat(mpos, q_mesh)]
         co.operation = CollisionObject.ADD
         return co
 
@@ -465,24 +436,33 @@ class Scene(Node):
         if self.final_scene_sent:
             return
         self.final_scene_sent = True
-        F = self._F
 
-        # TFs nur einmal senden (StaticTransformBroadcaster ist latched)
+        # ✅ TFs nur einmal senden (StaticTransformBroadcaster ist latched)
         tfs = []
         for obj in self.scene_objects:
             if "id" not in obj:
                 raise KeyError("YAML: jedes Objekt braucht ein 'id'")
             oid = str(obj["id"])
-            frame = F(obj.get("frame", "world"))
+
+            parent = str(obj.get("frame", "world"))  # ✅ UNRESOLVED lassen!
             xyz = _require_vec3(obj, "position")
             rpy = _require_vec3(obj, "rpy_deg")
-            tfs.append(self._make_tf(frame, oid, xyz, rpy))
+            tfs.append(self._make_tf(parent, oid, xyz, rpy))
+
         if tfs:
             self.static_tf.sendTransform(tfs)
-        self.get_logger().info(f"✅ Static TFs veröffentlicht ({len(tfs)})")
+            self.get_logger().info(f"✅ Static TFs veröffentlicht ({len(tfs)})")
 
-        # CollisionObjects senden + Cache füllen
+            # hilfreiche Debug-Zeilen (einmalig)
+            for tf in tfs:
+                self.get_logger().info(
+                    f"TF {tf.header.frame_id} -> {tf.child_frame_id} "
+                    f"t=({tf.transform.translation.x:.3f},{tf.transform.translation.y:.3f},{tf.transform.translation.z:.3f})"
+                )
+
+        # ✅ CollisionObjects senden + Cache füllen
         self._cached_cos = {}
+        sent = 0
         for obj in self.scene_objects:
             mesh_rel = _require_str(obj, "mesh")
             if mesh_rel.strip() == "":
@@ -491,9 +471,13 @@ class Scene(Node):
             co = self._make_co_from_obj_and_mesh(obj, mesh_path)
             self.scene_pub.publish(co)
             self._cached_cos[str(obj["id"])] = co
+            sent += 1
 
         ns = self.get_namespace() or "/"
-        self.get_logger().info(f"🎯 Szene FINAL gesendet (backend='{self.backend}', ns='{ns}').")
+        self.get_logger().info(
+            f"🎯 Szene FINAL gesendet (backend='{self.backend}', ns='{ns}'). "
+            f"CollisionObjects={sent}"
+        )
 
         self._publish_lists_once()
         self._publish_current_once()
@@ -506,20 +490,13 @@ class Scene(Node):
             self.get_logger().info("ℹ️  Republish deaktiviert (REPUBLISH_PERIOD_S = 0.0)")
 
     def _republish_collision_objects(self):
-        """Republished CollisionObjects für Late-Joiner, ohne Log-Spam."""
+        """Republished CollisionObjects für Late-Joiner."""
         if not self.final_scene_sent:
             return
         if not self._cached_cos:
             return
-
         for co in self._cached_cos.values():
             self.scene_pub.publish(co)
-
-        # optional: sehr selten loggen (z.B. alle 60s)
-        # now = time.time()
-        # if now - self._last_republish_log > 60.0:
-        #     self._last_republish_log = now
-        #     self.get_logger().debug(f"🔁 Republished {len(self._cached_cos)} CollisionObjects")
 
     # ------------------------
     # Readiness wait (MoveItPy-only)
@@ -548,7 +525,6 @@ class Scene(Node):
             self._publish_scene()
             return
 
-        # Debug/Info (nicht zu spammy: 0.5s ist ok, aber du kannst hier auch drosseln)
         ns = self.get_namespace() or "/"
         topic_co = self.loader.publish_topic(self.GROUP, "collision_object")
         self.get_logger().info(f"⏳ Warte auf Subscriber (MoveItPy) auf '{ns}/{topic_co}'... (subs={sub_count})")
