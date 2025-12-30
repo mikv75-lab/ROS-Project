@@ -44,13 +44,11 @@ class RecipeTab(QWidget):
             raise RuntimeError("RecipeTab: store ist None (MainWindow muss store übergeben).")
         if not isinstance(store, RecipeStore):
             raise TypeError(f"RecipeTab: store ist kein RecipeStore (got: {type(store)}).")
-
         if repo is None:
             raise RuntimeError("RecipeTab: repo ist None (MainWindow muss repo übergeben).")
 
         self.store: RecipeStore = store
         self.repo = repo
-
         self._initial_preview_done = False
 
         layout = QHBoxLayout(self)
@@ -64,19 +62,19 @@ class RecipeTab(QWidget):
             parent=self,
         )
 
+        # ✅ store hier mitgeben!
         self.previewPanel = CoatingPreviewPanel(
             ctx=self.ctx,
+            store=self.store,
             parent=self,
         )
 
         layout.addWidget(self.recipePanel, 2)
         layout.addWidget(self.previewPanel, 3)
 
-        # ✅ Entscheidend: immer pvHost als Target
         if attach_preview_widget is not None:
             attach_preview_widget(self.previewPanel.get_pv_host())
 
-        # UI -> Preview
         self.recipePanel.updatePreviewRequested.connect(self._on_update_preview_requested)
 
     def _on_update_preview_requested(self, model: Recipe) -> None:

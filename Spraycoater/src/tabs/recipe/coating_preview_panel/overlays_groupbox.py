@@ -10,11 +10,6 @@ from .views_3d.overlays import OverlayRenderer
 
 
 class OverlaysGroupBox(QGroupBox):
-    """
-    Overlays: eine horizontale Zeile mit Toggles
-      Mask  Path  Hits  Misses  Normals  Lokale KS
-    """
-
     maskToggled = pyqtSignal(bool)
     pathToggled = pyqtSignal(bool)
     hitsToggled = pyqtSignal(bool)
@@ -39,7 +34,8 @@ class OverlaysGroupBox(QGroupBox):
         super().__init__("Overlays", parent)
 
         self._build_ui()
-        self._build_renderer(
+
+        self.overlays = OverlayRenderer(
             add_mesh_fn=add_mesh_fn,
             clear_layer_fn=clear_layer_fn,
             add_path_polyline_fn=add_path_polyline_fn,
@@ -50,9 +46,8 @@ class OverlaysGroupBox(QGroupBox):
             layers=layers,
             get_bounds=get_bounds,
         )
-        self._connect_signals()
 
-    # ---------------- UI ----------------
+        self._connect_signals()
 
     def _build_ui(self) -> None:
         lay = QHBoxLayout(self)
@@ -70,8 +65,8 @@ class OverlaysGroupBox(QGroupBox):
 
         self.chkShowMask = add_toggle("Mask", False)
         self.chkShowPath = add_toggle("Path", True)
-        self.chkShowHits = add_toggle("Hits", False)
-        self.chkShowMisses = add_toggle("Misses", False)
+        self.chkShowHits = add_toggle("Hits", True)
+        self.chkShowMisses = add_toggle("Misses", True)
         self.chkShowNormals = add_toggle("Normals", False)
         self.chkShowLocalFrames = add_toggle("Lokale KS", False)
 
@@ -82,31 +77,6 @@ class OverlaysGroupBox(QGroupBox):
         sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
         self.setSizePolicy(sp)
 
-    def _build_renderer(
-        self,
-        *,
-        add_mesh_fn: Callable[..., Any],
-        clear_layer_fn: Callable[[str], None],
-        add_path_polyline_fn: Callable[..., Any],
-        show_poly_fn: Callable[..., Any],
-        show_frames_at_fn: Callable[..., None],
-        set_layer_visible_fn: Callable[..., Any],
-        update_2d_scene_fn: Callable[[Any, Any, Any], None],
-        layers: Dict[str, str],
-        get_bounds: Callable[[], Any],
-    ) -> None:
-        self.overlays = OverlayRenderer(
-            add_mesh_fn=add_mesh_fn,
-            clear_layer_fn=clear_layer_fn,
-            add_path_polyline_fn=add_path_polyline_fn,
-            show_poly_fn=show_poly_fn,
-            show_frames_at_fn=show_frames_at_fn,
-            set_layer_visible_fn=set_layer_visible_fn,
-            update_2d_scene_fn=update_2d_scene_fn,
-            layers=layers,
-            get_bounds=get_bounds,
-        )
-
     def _connect_signals(self) -> None:
         self.chkShowMask.toggled.connect(self._on_mask_toggled)
         self.chkShowPath.toggled.connect(self._on_path_toggled)
@@ -115,7 +85,6 @@ class OverlaysGroupBox(QGroupBox):
         self.chkShowNormals.toggled.connect(self._on_normals_toggled)
         self.chkShowLocalFrames.toggled.connect(self._on_frames_toggled)
 
-        # externe Listener optional: Signale weiterreichen
         self.chkShowMask.toggled.connect(self.maskToggled.emit)
         self.chkShowPath.toggled.connect(self.pathToggled.emit)
         self.chkShowHits.toggled.connect(self.hitsToggled.emit)
@@ -123,40 +92,20 @@ class OverlaysGroupBox(QGroupBox):
         self.chkShowNormals.toggled.connect(self.normalsToggled.emit)
         self.chkShowLocalFrames.toggled.connect(self.localFramesToggled.emit)
 
-    # ---------------- Convenience ----------------
-
-    def set_defaults(
-        self,
-        *,
-        mask: bool = False,
-        path: bool = True,
-        hits: bool = False,
-        misses: bool = False,
-        normals: bool = False,
-        local_frames: bool = False,
-    ) -> None:
-        self.chkShowMask.setChecked(bool(mask))
-        self.chkShowPath.setChecked(bool(path))
-        self.chkShowHits.setChecked(bool(hits))
-        self.chkShowMisses.setChecked(bool(misses))
-        self.chkShowNormals.setChecked(bool(normals))
-        self.chkShowLocalFrames.setChecked(bool(local_frames))
-
-    def apply_visibility(self, vis: dict | None) -> None:
-        """Sichtbarkeit übernehmen (ohne UI zu ändern)."""
-        if hasattr(self, "overlays") and self.overlays:
-            self.overlays.apply_visibility(vis or {})
-
-    def render_compiled(self, **kwargs) -> dict:
-        return self.overlays.render_compiled(**kwargs)
-
-    # ---------------- Intern: rebuild on enable ----------------
+    # ✅ WIRD VOM PreviewPanel BENÖTIGT
+    def current_visibility(self) -> Dict[str, bool]:
+        return {
+            "path": bool(self.chkShowPath.isChecked()),
+            "hits": bool(self.chkShowHits.isChecked()),
+            "misses": bool(self.chkShowMisses.isChecked()),
+            "normals": bool(self.chkShowNormals.isChecked()),
+            "frames": bool(self.chkShowLocalFrames.isChecked()),
+            "mask": bool(self.chkShowMask.isChecked()),
+        }
 
     def _rebuild_if_enabled(self, flag: bool, keys: list[str]) -> None:
-        if flag and hasattr(self, "overlays") and self.overlays:
+        if flag and getattr(self, "overlays", None):
             self.overlays.rebuild_layers(keys)
-
-    # ---------------- Toggle handler ----------------
 
     def _on_mask_toggled(self, v: bool) -> None:
         self.overlays.set_mask_visible(v)

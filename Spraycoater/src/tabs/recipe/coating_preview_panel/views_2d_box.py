@@ -1,81 +1,54 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from typing import Optional, Callable, Tuple
+from typing import Callable, Optional, Tuple
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QGroupBox, QWidget, QFormLayout, QHBoxLayout, QPushButton, QSizePolicy, QLabel
-
-from .views_2d.view_controller_2d import ViewController2D
+from PyQt6.QtWidgets import (
+    QWidget,
+    QGroupBox,
+    QHBoxLayout,
+    QPushButton,
+    QSizePolicy,
+)
 
 Bounds = Tuple[float, float, float, float, float, float]
 
 
-def _set_policy(
-    w: QWidget,
-    *,
-    h: QSizePolicy.Policy = QSizePolicy.Policy.Expanding,
-    v: QSizePolicy.Policy = QSizePolicy.Policy.Preferred,
-) -> None:
-    sp = w.sizePolicy()
-    sp.setHorizontalPolicy(h)
-    sp.setVerticalPolicy(v)
-    w.setSizePolicy(sp)
-
-
 class Views2DBox(QGroupBox):
-    """2D-Controls (Matplotlib): Top / Front / Back / Left / Right"""
-
     def __init__(
         self,
         *,
         switch_2d: Callable[[str], None],
-        refresh_callable: Optional[Callable[[], None]] = None,
+        refresh_callable: Callable[[], None],
         get_bounds: Optional[Callable[[], Bounds]] = None,
         set_bounds: Optional[Callable[[Bounds], None]] = None,
         parent: Optional[QWidget] = None,
     ):
-        super().__init__("2D View", parent)
+        super().__init__("2D Views", parent)
+
         self._switch_2d = switch_2d
+        self._refresh = refresh_callable
+        self._get_bounds = get_bounds
+        self._set_bounds = set_bounds
 
-        # Controller ist immer vorhanden; refresh ist ggf. No-Op.
-        self.controller = ViewController2D(
-            set_plane=self._switch_2d,
-            refresh=(refresh_callable or (lambda: None)),
-            get_bounds=get_bounds,
-            set_bounds=set_bounds,
-        )
-
-        form = QFormLayout(self)
-        form.setContentsMargins(8, 8, 8, 8)
-        form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(4)
-        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        form.setFormAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-
-        row = QWidget(self)
-        lay = QHBoxLayout(row)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(6)
 
-        self.btnTop = QPushButton("Top", self)
-        self.btnFront = QPushButton("Front", self)
-        self.btnBack = QPushButton("Back", self)
-        self.btnLeft = QPushButton("Left", self)
-        self.btnRight = QPushButton("Right", self)
+        def mk(label: str, plane: str) -> QPushButton:
+            b = QPushButton(label, self)
+            b.clicked.connect(lambda *_: self._switch_2d(plane))
+            return b
 
-        for b in (self.btnTop, self.btnFront, self.btnBack, self.btnLeft, self.btnRight):
-            b.setAutoDefault(False)
-            lay.addWidget(b)
+        lay.addWidget(mk("Top", "top"))
+        lay.addWidget(mk("Front", "front"))
+        lay.addWidget(mk("Back", "back"))
+        lay.addWidget(mk("Left", "left"))
+        lay.addWidget(mk("Right", "right"))
 
-        form.addRow(QLabel("Plane", self), row)
+        lay.addStretch(1)
 
-        # Wiring: immer über den Controller (keine Fallback-Logik).
-        self.btnTop.clicked.connect(self.controller.plane_top)
-        self.btnFront.clicked.connect(self.controller.plane_front)
-        self.btnBack.clicked.connect(self.controller.plane_back)
-        self.btnLeft.clicked.connect(self.controller.plane_left)
-        self.btnRight.clicked.connect(self.controller.plane_right)
-
-        _set_policy(self, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
+        sp = self.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+        self.setSizePolicy(sp)

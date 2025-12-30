@@ -1,89 +1,56 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from typing import Optional, Callable, Tuple
+from typing import Optional, Callable, Tuple, Any
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QGroupBox, QWidget, QFormLayout, QHBoxLayout, QPushButton, QLabel, QSizePolicy
+from PyQt6.QtWidgets import QWidget, QGroupBox, QHBoxLayout, QPushButton, QSizePolicy
 
 from .views_3d.view_controller_3d import ViewController3D
 
 Bounds = Tuple[float, float, float, float, float, float]
 
 
-def _set_policy(
-    w: QWidget,
-    *,
-    h: QSizePolicy.Policy = QSizePolicy.Policy.Expanding,
-    v: QSizePolicy.Policy = QSizePolicy.Policy.Preferred,
-) -> None:
-    sp = w.sizePolicy()
-    sp.setHorizontalPolicy(h)
-    sp.setVerticalPolicy(v)
-    w.setSizePolicy(sp)
-
-
 class Views3DBox(QGroupBox):
-    """3D-Controls (PyVista): Iso / Top / Front / Back / Left / Right"""
-
     def __init__(
         self,
         *,
-        interactor_getter: Callable[[], object],
+        interactor_getter: Callable[[], Any],
         render_callable: Callable[..., None],
-        bounds_getter: Optional[Callable[[], Bounds]] = None,
+        bounds_getter: Callable[[], Bounds],
         substrate_bounds_getter: Optional[Callable[[], Optional[Bounds]]] = None,
-        cam_pad: float = 1.6,
+        cam_pad: float = 1.2,
         iso_extra_zoom: float = 1.30,
         parent: Optional[QWidget] = None,
-    ):
-        super().__init__("3D View", parent)
+    ) -> None:
+        super().__init__("3D Views", parent)
 
-        self.views = ViewController3D(
+        self._vc = ViewController3D(
             interactor_getter=interactor_getter,
             render_callable=render_callable,
             bounds_getter=bounds_getter,
-            cam_pad=cam_pad,
             substrate_bounds_getter=substrate_bounds_getter,
-            zoom_after_reset=1.12,
+            cam_pad=cam_pad,
             iso_extra_zoom=iso_extra_zoom,
         )
 
-        form = QFormLayout(self)
-        form.setContentsMargins(8, 8, 8, 8)
-        form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(4)
-        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        form.setFormAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-
-        row = QWidget(self)
-        lay = QHBoxLayout(row)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(6)
 
-        self.btnIso = QPushButton("Iso", self)
-        self.btnTop = QPushButton("Top", self)
-        self.btnFront = QPushButton("Front", self)
-        self.btnBack = QPushButton("Back", self)
-        self.btnLeft = QPushButton("Left", self)
-        self.btnRight = QPushButton("Right", self)
-
-        for b in (self.btnIso, self.btnTop, self.btnFront, self.btnBack, self.btnLeft, self.btnRight):
-            b.setAutoDefault(False)
+        def mk(text: str, fn):
+            b = QPushButton(text, self)
+            b.clicked.connect(fn)
+            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             lay.addWidget(b)
 
-        form.addRow(QLabel("Camera", self), row)
+        mk("Iso", self._vc.view_isometric)
+        mk("Top", self._vc.view_top)
+        mk("Front", self._vc.view_front)
+        mk("Back", self._vc.view_back)
+        mk("Left", self._vc.view_left)
+        mk("Right", self._vc.view_right)
 
-        self.btnIso.clicked.connect(self.views.view_isometric)
-        self.btnTop.clicked.connect(self.views.view_top)
-        self.btnFront.clicked.connect(self.views.view_front)
-        self.btnBack.clicked.connect(self.views.view_back)
-        self.btnLeft.clicked.connect(self.views.view_left)
-        self.btnRight.clicked.connect(self.views.view_right)
-
-        _set_policy(self, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
-
-    def set_substrate_bounds_getter(self, fn: Optional[Callable[[], Optional[Bounds]]]) -> None:
-        # bewusst simpel gehalten: Views hält nur den Getter
-        self.views._get_sub_bounds = fn
+        sp = self.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+        self.setSizePolicy(sp)

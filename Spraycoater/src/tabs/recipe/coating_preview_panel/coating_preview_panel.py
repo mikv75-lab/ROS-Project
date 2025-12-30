@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, Any, Dict, Tuple
+from typing import Optional, Any, Dict, Tuple, List
 
 import numpy as np
 from PyQt6.QtCore import pyqtSignal, QTimer
@@ -10,9 +10,12 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QSpa
 from PyQt6.sip import isdeleted
 
 from model.recipe.recipe import Recipe
+from model.recipe.recipe_store import RecipeStore
+from model.recipe.path_builder import PathBuilder
+
 from widgets.info_groupbox import InfoGroupBox
 
-from .views_3d.scene_manager import SceneManager
+from .views_3d.scene_manager import SceneManager, PreviewScene
 from .views_2d.matplot2d import Matplot2DView
 from .overlays_groupbox import OverlaysGroupBox
 from .views_2d_box import Views2DBox
@@ -41,15 +44,18 @@ class CoatingPreviewPanel(QWidget):
       Info
       Split (HBox):
         - Left:  Views2D + Matplotlib
-        - Right: Views3D-Buttons + Overlays + pvHost (PyVista interactor)  ✅
+        - Right: Views3D-Buttons + Overlays + pvHost (PyVista interactor)
     """
 
     interactorReady = pyqtSignal()
 
-    def __init__(self, *, ctx, store=None, parent: Optional[QWidget] = None):
+    def __init__(self, *, ctx, store: RecipeStore, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.ctx = ctx
-        self.store = store
+
+        if store is None or not isinstance(store, RecipeStore):
+            raise RuntimeError("CoatingPreviewPanel: store fehlt/ungültig (RecipeTab muss store übergeben).")
+        self.store: RecipeStore = store
 
         self._dying: bool = False
         self.destroyed.connect(lambda *_: setattr(self, "_dying", True))
@@ -118,7 +124,6 @@ class CoatingPreviewPanel(QWidget):
 
         self.scene = SceneManager(interactor_getter=lambda: self._interactor)
 
-        # 3D camera buttons (oben rechts)
         self.views3d = Views3DBox(
             interactor_getter=lambda: self._interactor,
             render_callable=self.render,
@@ -131,7 +136,6 @@ class CoatingPreviewPanel(QWidget):
         _set_policy(self.views3d, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
         vright.addWidget(self.views3d, 0)
 
-        # Overlays groupbox (darunter)
         self.grpOverlays = OverlaysGroupBox(
             self,
             add_mesh_fn=self.add_mesh,
@@ -162,12 +166,10 @@ class CoatingPreviewPanel(QWidget):
         _set_policy(self.grpOverlays, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
         vright.addWidget(self.grpOverlays, 0)
 
-        # ✅ pvHost: hier muss der QtInteractor rein -> liegt automatisch unter Overlays
         self._pvHost = QWidget(self)
         self._pvHost.setObjectName("pvHost")
         _set_policy(self._pvHost, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Expanding)
 
-        # ✅ entscheidend: Layout in pvHost, sonst wird extern oft "irgendwo" angehängt
         self._pvHostLayout = QVBoxLayout(self._pvHost)
         self._pvHostLayout.setContentsMargins(0, 0, 0, 0)
         self._pvHostLayout.setSpacing(0)
@@ -182,22 +184,6 @@ class CoatingPreviewPanel(QWidget):
     def get_pv_host(self) -> QWidget:
         return self._pvHost
 
-    def set_pyvista_widget(self, w: QWidget) -> None:
-        """
-        Optional helper: falls du lieber direkt das Widget übergibst,
-        wird es in pvHost eingesetzt (unter Overlays).
-        """
-        if w is None:
-            return
-        # clear
-        while self._pvHostLayout.count():
-            item = self._pvHostLayout.takeAt(0)
-            if item and item.widget():
-                item.widget().setParent(None)
-        w.setParent(self._pvHost)
-        _set_policy(w, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Expanding)
-        self._pvHostLayout.addWidget(w, 1)
-
     def set_interactor(self, ia) -> None:
         self._interactor = ia
         try:
@@ -210,11 +196,58 @@ class CoatingPreviewPanel(QWidget):
     def update_preview(self, model: Recipe) -> None:
         self.handle_update_preview(model)
 
-    # -------- Preview Pipeline (unverändert gekürzt) --------
+    # -------- Path compilation (Recipe bleibt unangetastet) --------
+
+    def _compile_path_xyz(self, model: Recipe) -> Optional[np.ndarray]:
+        """
+        Baut den Preview-Path ausschließlich aus:
+          - Recipe.paths_by_side
+          - Recipe.globals_params
+          - Store (defaults + recipe_def/sides)
+        """
+        rec_def = self.store.get_recipe_def(model.id)
+        sides_dict = self.store.sides_for_recipe(rec_def)  # -> Dict[side_id, spec]
+        sides: List[str] = list(sides_dict.keys())
+
+        defaults = self.store.collect_global_defaults()
+        globals_params = dict(defaults)
+        globals_params.update(getattr(model, "globals_params", {}) or {})
+
+        sample_step_mm = float(globals_params.get("sample_step_mm", 1.0))
+        max_points = int(globals_params.get("max_points", 500))
+
+        built = PathBuilder.from_recipe_paths(
+            recipe=model,
+            sides=sides,
+            globals_params=globals_params,
+            sample_step_mm=sample_step_mm,
+            max_points=max_points,
+        )
+
+        pts_all: List[np.ndarray] = []
+        for _side_id, pdata in built:
+            if pdata is None:
+                continue
+
+            arr = getattr(pdata, "points_mm", None)
+            if arr is None:
+                arr = getattr(pdata, "points", None)
+
+            if arr is None:
+                continue
+
+            P = np.asarray(arr, dtype=float).reshape(-1, 3)
+            if P.size == 0:
+                continue
+
+            pts_all.append(P)
+
+    # -------- Preview Pipeline --------
 
     def handle_update_preview(self, model: Recipe) -> None:
         if self._dying or isdeleted(self):
             return
+
         ia = self._interactor
         if ia is None:
             if self._retry_left > 0:
@@ -226,8 +259,10 @@ class CoatingPreviewPanel(QWidget):
         self._retry_left = 10
 
         cam_snap = self.snapshot_camera()
+
+        # 1) Szene (Substrat/Mount/Ground)
         try:
-            scene = self.scene.build_scene(self.ctx, model, grid_step_mm=10.0)
+            scene: PreviewScene = self.scene.build_scene(self.ctx, model, grid_step_mm=10.0)
         except Exception:
             _LOG.exception("build_scene failed")
             self._set_info_defaults()
@@ -235,15 +270,61 @@ class CoatingPreviewPanel(QWidget):
 
         self.set_bounds(scene.bounds)
 
-        # ... (rest bleibt wie bei dir) ...
+        # 2) Pfad kompilieren (aus Recipe + Store) und Overlays bauen
+        path_xyz: Optional[np.ndarray] = None
+        try:
+            path_xyz = self._compile_path_xyz(model)
+        except Exception:
+            _LOG.exception("path compile failed -> no overlays")
+            path_xyz = None
+
+        try:
+            self.scene.build_overlays(
+                path_xyz=path_xyz,
+                normals_xyz=None,
+                frames_at=None,
+                rays_hit=None,
+                rays_miss=None,
+                as_tube=False,
+                tube_radius=0.8,
+            )
+        except Exception:
+            _LOG.exception("build_overlays failed")
+
+        # 3) Sichtbarkeit (Checkboxes -> SceneManager)
+        try:
+            vis = self.grpOverlays.current_visibility()
+            self.scene.toggle_overlays(vis)
+        except Exception:
+            _LOG.exception("apply visibility failed")
+
+        # 4) 2D View updaten (Substrat + Pfad)
+        try:
+            self.update_2d_scene(substrate_mesh=scene.substrate_mesh, path_xyz=path_xyz)
+        except Exception:
+            _LOG.exception("update_2d_scene failed")
+
+        # 5) InfoGroupBox (als dict, nicht PreviewScene!)
+        try:
+            info = {
+                "points": int(0 if path_xyz is None else len(path_xyz)),
+                "tris": scene.mesh_tris,
+                "bounds": scene.bounds,
+            }
+            self.grpInfo.set_values(info)
+        except Exception:
+            _LOG.exception("InfoGroupBox update failed")
+
+        # 6) Kamera wiederherstellen + render
         try:
             if cam_snap:
                 self.restore_camera(cam_snap)
         except Exception:
             _LOG.exception("restore_camera failed")
+
         self.scene.update_current_views_once(refresh_2d=self._mat2d.refresh)
 
-    # -------- Helpers (rest unverändert / wie vorher) --------
+    # -------- Helpers --------
 
     def _set_info_defaults(self) -> None:
         try:
