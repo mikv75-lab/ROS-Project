@@ -7,7 +7,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional
 
 from model.recipe.recipe import Recipe
 
@@ -32,15 +32,16 @@ def _hash_paths_by_side(paths_by_side: dict) -> str:
 @dataclass(frozen=True)
 class RecipePaths:
     root_dir: str
-    name: str
+    recipe_id: str
+    recipe_name: str
 
     @property
     def folder(self) -> str:
-        return os.path.join(self.root_dir, self.name)
+        # NEW layout: data/recipes/<recipe_id>/<recipe_name>/
+        return os.path.join(self.root_dir, self.recipe_id, self.recipe_name)
 
     @property
     def editor_yaml(self) -> str:
-        # Draft/Editor source of truth (no traj/executed stored here)
         return os.path.join(self.folder, "recipe.yaml")
 
     @property
@@ -58,73 +59,112 @@ class RecipePaths:
 
 class RecipeBundle:
     """
-    Storage Layout:
-      data/recipes/<name>/
-        recipe.yaml         (editor draft: meta, parameters, paths_by_side, planner...)
+    Storage Layout (NEU):
+      data/recipes/<recipe_id>/<recipe_name>/
+        recipe.yaml         (editor draft: parameters, paths_by_side, planner...)
         compiled.yaml       (paths_compiled)
         traj.yaml           (trajectories['traj'])
         executed_traj.yaml  (trajectories['executed_traj'])
 
-    Policy:
-      - Editor save löscht IMMER traj + executed.
-      - Wenn paths_hash changed: optional zusätzlich compiled löschen (default: True).
+    Hinweis:
+      - "key" ist ab jetzt "<recipe_id>/<recipe_name>"
+      - damit kannst du pro recipe_id mehrere Rezepte speichern
     """
 
     def __init__(self, *, recipes_root_dir: str) -> None:
         self.root_dir = os.path.abspath(recipes_root_dir)
 
-    # -------------------- filesystem helpers -------------------- #
+    # -------------------- key helpers -------------------- #
 
-    def paths(self, name: str) -> RecipePaths:
-        return RecipePaths(self.root_dir, _safe_name(name))
+    @staticmethod
+    def split_key(key: str) -> tuple[str, str]:
+        """
+        Erwartet "recipe_id/recipe_name".
+        Legacy:
+          - wenn kein "/" drin: interpretieren als recipe_id UND recipe_name identisch
+        """
+        key = (key or "").strip()
+        if not key:
+            raise ValueError("Recipe key ist leer.")
+        if "/" not in key:
+            rid = _safe_name(key)
+            return rid, rid
+        rid, rname = key.split("/", 1)
+        rid = _safe_name(rid)
+        rname = _safe_name(rname)
+        return rid, rname
+
+    def make_key(self, recipe_id: str, recipe_name: str) -> str:
+        return f"{_safe_name(recipe_id)}/{_safe_name(recipe_name)}"
+
+    def paths(self, key: str) -> RecipePaths:
+        rid, rname = self.split_key(key)
+        return RecipePaths(self.root_dir, rid, rname)
+
+    # -------------------- listing -------------------- #
 
     def list_names(self) -> list[str]:
+        """
+        Gibt Keys "recipe_id/recipe_name" zurück.
+        """
         if not os.path.isdir(self.root_dir):
             return []
         out: list[str] = []
-        for e in os.listdir(self.root_dir):
-            p = os.path.join(self.root_dir, e)
-            if os.path.isdir(p) and os.path.isfile(os.path.join(p, "recipe.yaml")):
-                out.append(e)
+        for rid in os.listdir(self.root_dir):
+            p_rid = os.path.join(self.root_dir, rid)
+            if not os.path.isdir(p_rid):
+                continue
+            for rname in os.listdir(p_rid):
+                p = os.path.join(p_rid, rname)
+                if os.path.isdir(p) and os.path.isfile(os.path.join(p, "recipe.yaml")):
+                    out.append(f"{rid}/{rname}")
         out.sort()
         return out
 
-    def exists(self, name: str) -> bool:
-        p = self.paths(name)
+    def exists(self, key: str) -> bool:
+        p = self.paths(key)
         return os.path.isfile(p.editor_yaml)
 
-    def create_new(self, name: str, *, base: Optional[Recipe] = None, overwrite: bool = False) -> Recipe:
-        p = self.paths(name)
+    # -------------------- create/delete -------------------- #
+
+    def create_new(self, key: str, *, base: Optional[Recipe] = None, overwrite: bool = False) -> Recipe:
+        p = self.paths(key)
         os.makedirs(p.folder, exist_ok=True)
         if (not overwrite) and os.path.exists(p.editor_yaml):
-            raise FileExistsError(f"Recipe '{name}' existiert bereits.")
+            raise FileExistsError(f"Recipe '{key}' existiert bereits.")
 
-        r = base if isinstance(base, Recipe) else Recipe(id=_safe_name(name))
-        r.id = _safe_name(name)
-        r.trajectories = {}  # editor draft has no traj/executed persisted
+        # Draft-Recipe: ID bleibt im YAML dein "id" (typisch recipe_id)
+        rid, rname = self.split_key(key)
+        r = base if isinstance(base, Recipe) else Recipe(id=rid)
+        r.id = rid
+        r.meta = dict(r.meta or {})
+        r.meta["recipe_name"] = rname
+        r.meta["recipe_id"] = rid
+
+        r.trajectories = {}
         r.paths_compiled = {}
         r.info = {}
         r.save_yaml(p.editor_yaml)
-        # hard-clear optional extras
+
+        # optional extras entfernen
         self._try_remove(p.compiled_yaml)
         self._try_remove(p.traj_yaml)
         self._try_remove(p.executed_yaml)
         return r
 
-    def delete(self, name: str) -> None:
-        p = self.paths(name)
+    def delete(self, key: str) -> None:
+        p = self.paths(key)
         if not os.path.isdir(p.folder):
             return
-        # remove all files in folder then folder
         for fn in (p.editor_yaml, p.compiled_yaml, p.traj_yaml, p.executed_yaml):
             self._try_remove(fn)
-        # also remove unknown leftovers
         for e in os.listdir(p.folder):
             self._try_remove(os.path.join(p.folder, e))
+        # Ordner löschen
         try:
             os.rmdir(p.folder)
         except OSError:
-            # folder not empty (maybe subdirs) -> do a conservative walk
+            # fallback walk
             for root, dirs, files in os.walk(p.folder, topdown=False):
                 for f in files:
                     self._try_remove(os.path.join(root, f))
@@ -148,24 +188,22 @@ class RecipeBundle:
 
     # -------------------- load -------------------- #
 
-    def load_draft(self, name: str) -> Recipe:
-        """
-        Editor-Load: nur recipe.yaml (draft).
-        """
-        p = self.paths(name)
+    def load_draft(self, key: str) -> Recipe:
+        p = self.paths(key)
         if not os.path.isfile(p.editor_yaml):
-            raise FileNotFoundError(f"Recipe '{name}' nicht gefunden.")
+            raise FileNotFoundError(f"Recipe '{key}' nicht gefunden.")
         r = Recipe.load_yaml(p.editor_yaml)
-        # ensure id is folder name (SSoT)
-        r.id = _safe_name(name)
+
+        rid, rname = self.split_key(key)
+        r.id = rid
+        r.meta = dict(r.meta or {})
+        r.meta["recipe_name"] = rname
+        r.meta["recipe_id"] = rid
         return r
 
-    def load_full(self, name: str) -> Recipe:
-        """
-        Process-Load: draft + compiled + traj + executed, alles merged in eine Recipe-Instanz.
-        """
-        p = self.paths(name)
-        r = self.load_draft(name)
+    def load_full(self, key: str) -> Recipe:
+        p = self.paths(key)
+        r = self.load_draft(key)
 
         if os.path.isfile(p.compiled_yaml):
             c = Recipe.load_yaml(p.compiled_yaml)
@@ -181,9 +219,7 @@ class RecipeBundle:
             r.trajectories.setdefault(Recipe.TRAJ_EXECUTED, {})
             r.trajectories[Recipe.TRAJ_EXECUTED] = (e.trajectories.get(Recipe.TRAJ_EXECUTED) or {})
 
-        # update info if we have compiled
         if r.paths_compiled:
-            # uses internal helper
             try:
                 r._recompute_info_from_compiled()
             except Exception:
@@ -195,24 +231,22 @@ class RecipeBundle:
 
     def save_editor(
         self,
-        name: str,
+        key: str,
         *,
         draft: Recipe,
         compiled: Optional[dict] = None,
         delete_compiled_on_hash_change: bool = True,
     ) -> None:
-        """
-        Editor save:
-          - writes recipe.yaml (draft)
-          - optionally writes compiled.yaml (paths_compiled)
-          - ALWAYS deletes traj.yaml + executed_traj.yaml (old runs become invalid)
-          - if paths_hash changed: optionally delete compiled.yaml too (if no new compiled provided or if you want hard reset)
-        """
-        p = self.paths(name)
+        p = self.paths(key)
         os.makedirs(p.folder, exist_ok=True)
 
-        # normalize id
-        draft.id = _safe_name(name)
+        rid, rname = self.split_key(key)
+
+        # normalize meta/id
+        draft.id = rid
+        draft.meta = dict(draft.meta or {})
+        draft.meta["recipe_name"] = rname
+        draft.meta["recipe_id"] = rid
 
         old_hash = str((draft.info or {}).get("paths_hash") or "")
         new_hash = _hash_paths_by_side(draft.paths_by_side or {})
@@ -221,54 +255,48 @@ class RecipeBundle:
 
         hash_changed = bool(old_hash) and (old_hash != new_hash)
 
-        # policy: any editor save invalidates old traj/executed
+        # policy: editor save invalidates old traj/executed
         self._try_remove(p.traj_yaml)
         self._try_remove(p.executed_yaml)
 
         if hash_changed and delete_compiled_on_hash_change and compiled is None:
-            # editor changed paths but didn't provide new compiled -> compiled is now stale
             self._try_remove(p.compiled_yaml)
 
-        # write draft
-        # ensure draft itself does not persist traj/executed
+        # write draft (no traj/compiled inside)
         draft.trajectories = {}
         draft.paths_compiled = {}
         draft.save_yaml(p.editor_yaml)
 
         # write compiled if provided
         if isinstance(compiled, dict):
-            tmp = Recipe(id=draft.id)
+            tmp = Recipe(id=rid)
+            tmp.meta = {"recipe_name": rname, "recipe_id": rid}
             tmp.paths_compiled = compiled
             tmp.save_yaml(p.compiled_yaml)
 
-    def save_traj(self, name: str, *, traj: dict) -> None:
-        """
-        Writes traj.yaml as trajectories['traj'].
-        """
-        p = self.paths(name)
+    def save_traj(self, key: str, *, traj: dict) -> None:
+        p = self.paths(key)
         os.makedirs(p.folder, exist_ok=True)
-        r = Recipe(id=_safe_name(name))
+        rid, rname = self.split_key(key)
+        r = Recipe(id=rid)
+        r.meta = {"recipe_name": rname, "recipe_id": rid}
         r.trajectories = {Recipe.TRAJ_TRAJ: traj}
         r.save_yaml(p.traj_yaml)
 
-    def save_executed(self, name: str, *, executed: dict) -> None:
-        """
-        Writes executed_traj.yaml as trajectories['executed_traj'].
-        """
-        p = self.paths(name)
+    def save_executed(self, key: str, *, executed: dict) -> None:
+        p = self.paths(key)
         os.makedirs(p.folder, exist_ok=True)
-        r = Recipe(id=_safe_name(name))
+        rid, rname = self.split_key(key)
+        r = Recipe(id=rid)
+        r.meta = {"recipe_name": rname, "recipe_id": rid}
         r.trajectories = {Recipe.TRAJ_EXECUTED: executed}
         r.save_yaml(p.executed_yaml)
 
-    def clear_runs(self, name: str) -> None:
-        """
-        Manuell: löscht traj + executed (z.B. "Reset run").
-        """
-        p = self.paths(name)
+    def clear_runs(self, key: str) -> None:
+        p = self.paths(key)
         self._try_remove(p.traj_yaml)
         self._try_remove(p.executed_yaml)
 
-    def clear_compiled(self, name: str) -> None:
-        p = self.paths(name)
+    def clear_compiled(self, key: str) -> None:
+        p = self.paths(key)
         self._try_remove(p.compiled_yaml)

@@ -13,12 +13,13 @@ from model.recipe.recipe_bundle import RecipeBundle
 @dataclass
 class RecipeRepo:
     """
-    Gemeinsamer Wrapper für Editor + ProcessTab.
+    Wrapper für Editor + ProcessTab.
 
-    Kernidee:
-      - beide Tabs nutzen denselben Repo
-      - aber laden in 2 Modi
-      - Process bekommt immer eine eigene Instanz (deepcopy), damit Editor-Save nix "wegbläst"
+    key-Format (NEU):
+      "<recipe_id>/<recipe_name>"
+
+    Legacy:
+      - ohne "/" -> wird als "<id>/<id>" behandelt.
     """
     bundle: RecipeBundle
 
@@ -27,45 +28,45 @@ class RecipeRepo:
     def list_recipes(self) -> list[str]:
         return self.bundle.list_names()
 
-    def create_new(self, name: str, *, base: Optional[Recipe] = None, overwrite: bool = False) -> Recipe:
-        return self.bundle.create_new(name, base=base, overwrite=overwrite)
+    def make_key(self, recipe_id: str, recipe_name: str) -> str:
+        return self.bundle.make_key(recipe_id, recipe_name)
 
-    def delete(self, name: str) -> None:
-        self.bundle.delete(name)
+    def create_new(self, key: str, *, base: Optional[Recipe] = None, overwrite: bool = False) -> Recipe:
+        return self.bundle.create_new(key, base=base, overwrite=overwrite)
+
+    def delete(self, key: str) -> None:
+        self.bundle.delete(key)
 
     # ---------- load modes ----------
 
-    def load_for_editor(self, name: str) -> Recipe:
-        # editor arbeitet nur auf dem draft
-        return self.bundle.load_draft(name)
+    def load_for_editor(self, key: str) -> Recipe:
+        return self.bundle.load_draft(key)
 
-    def load_for_process(self, name: str) -> Recipe:
-        # process braucht compiled + last runs
-        # deepcopy schützt gegen shared-state zwischen tabs
-        return deepcopy(self.bundle.load_full(name))
+    def load_for_process(self, key: str) -> Recipe:
+        return deepcopy(self.bundle.load_full(key))
 
     # ---------- save policies ----------
 
     def save_from_editor(
         self,
-        name: str,
+        key: str,
         *,
         draft: Recipe,
         compiled: Optional[dict] = None,
         delete_compiled_on_hash_change: bool = True,
     ) -> None:
         self.bundle.save_editor(
-            name,
+            key,
             draft=draft,
             compiled=compiled,
             delete_compiled_on_hash_change=delete_compiled_on_hash_change,
         )
 
-    def save_traj_run(self, name: str, *, traj: dict) -> None:
-        self.bundle.save_traj(name, traj=traj)
+    def save_traj_run(self, key: str, *, traj: dict) -> None:
+        self.bundle.save_traj(key, traj=traj)
 
-    def save_executed_run(self, name: str, *, executed: dict) -> None:
-        self.bundle.save_executed(name, executed=executed)
+    def save_executed_run(self, key: str, *, executed: dict) -> None:
+        self.bundle.save_executed(key, executed=executed)
 
-    def clear_runs(self, name: str) -> None:
-        self.bundle.clear_runs(name)
+    def clear_runs(self, key: str) -> None:
+        self.bundle.clear_runs(key)

@@ -69,12 +69,6 @@ class GlobalParamsBox(QGroupBox):
     """
     Global recipe parameters:
       - model.parameters ist ein FLACHES dict (entspricht recipe_params.globals)
-
-    Supported schema field types:
-      - boolean
-      - string
-      - enum (values)
-      - number (min/max/step/unit)
     """
 
     def __init__(self, *, store: RecipeStore, parent: Optional[QWidget] = None) -> None:
@@ -195,8 +189,7 @@ class GlobalParamsBox(QGroupBox):
                 w.setValue(float(val))
 
     def apply_ui_to_model(self, model: Recipe) -> None:
-        params = getattr(model, "parameters", None)
-        if params is None:
+        if getattr(model, "parameters", None) is None:
             model.parameters = {}
         if not isinstance(model.parameters, dict):
             raise TypeError(f"Recipe.parameters ist kein dict (got {type(model.parameters)}).")
@@ -265,6 +258,12 @@ class _TabBarWithChecks(QTabBar):
 
 
 class RecipeEditorContent(QWidget):
+    """
+    UI: KEIN "Recipe ID" Feld.
+    - Recipe Name: editierbar (das ist der Ordner-/Key-Name)
+    - Recipe (Combo): ist das "recipe_id" aus dem Catalog (intern), aber wird nicht als Meta angezeigt.
+    """
+
     def __init__(self, *, ctx, store: RecipeStore, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.ctx = ctx
@@ -275,7 +274,8 @@ class RecipeEditorContent(QWidget):
         self.sel_substrate: Optional[QComboBox] = None
         self.sel_mount: Optional[QComboBox] = None
 
-        self.e_name: Optional[QLineEdit] = None
+        # Meta
+        self.e_recipe_name: Optional[QLineEdit] = None
         self.e_desc: Optional[QLineEdit] = None
 
         self._params_box: Optional[GlobalParamsBox] = None
@@ -288,8 +288,6 @@ class RecipeEditorContent(QWidget):
         self._side_editors: Dict[str, SidePathEditor] = {}
         self._side_order: List[str] = []
 
-        self._txt_info = None  # Info-Box entfernt
-
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(6)
@@ -300,14 +298,13 @@ class RecipeEditorContent(QWidget):
         gb_meta_l.setContentsMargins(8, 8, 8, 8)
         gb_meta_l.setSpacing(6)
 
-        self.e_name = QLineEdit(gb_meta)
-        self.e_name.setPlaceholderText("recipes[..].id (SSoT)")
-        self.e_name.setReadOnly(True)
+        self.e_recipe_name = QLineEdit(gb_meta)
+        self.e_recipe_name.setPlaceholderText("Recipe name (folder/key) ...")
 
         self.e_desc = QLineEdit(gb_meta)
         self.e_desc.setPlaceholderText("Short description ...")
 
-        gb_meta_l.addRow("Name:", self.e_name)
+        gb_meta_l.addRow("Recipe Name:", self.e_recipe_name)
         gb_meta_l.addRow("Description:", self.e_desc)
 
         _set_policy(gb_meta, v=QSizePolicy.Policy.Fixed)
@@ -367,9 +364,25 @@ class RecipeEditorContent(QWidget):
         if self._side_tabbar is not None:
             self._side_tabbar.currentChanged.connect(self._on_side_tab_changed)
 
+    # ---------------- Recipe Name API (für Panel) ----------------
+
+    def get_recipe_name(self) -> str:
+        return str(self.e_recipe_name.text() if self.e_recipe_name is not None else "").strip()
+
+    def set_recipe_name(self, name: str) -> None:
+        if self.e_recipe_name is None:
+            return
+        # nicht überschreiben, während user tippt
+        if self.e_recipe_name.hasFocus():
+            return
+        self.e_recipe_name.setText(str(name or "").strip())
+
+    # ---------------- Meta ----------------
+
     def set_meta(self, *, name: str = "", desc: str = "") -> None:
-        if self.e_name is not None:
-            self.e_name.setText(name or "")
+        # Name ist editierbar, daher: nur setzen wenn nicht fokussiert
+        if self.e_recipe_name is not None and not self.e_recipe_name.hasFocus():
+            self.e_recipe_name.setText(name or "")
         if self.e_desc is not None and not self.e_desc.hasFocus():
             self.e_desc.setText(desc or "")
 
@@ -379,6 +392,8 @@ class RecipeEditorContent(QWidget):
         active_side = self._side_order[idx]
         for side, ed in self._side_editors.items():
             ed.setVisible(side == active_side)
+
+    # ---------------- Model -> UI ----------------
 
     def apply_model_to_ui(self, model: Recipe, rec_def: Dict[str, Any]) -> None:
         rid = str(rec_def.get("id") or "").strip()
@@ -444,7 +459,6 @@ class RecipeEditorContent(QWidget):
                 self._side_tabbar.addTabWithCheck(side, side, checked=True)
 
             ed = SidePathEditor(store=self.store, side_name=side, parent=self._paths_host)
-
             ed.enable_auto_reset(rec_def, side)
 
             model_path = (getattr(model, "paths_by_side", None) or {}).get(side) or {}
@@ -463,6 +477,8 @@ class RecipeEditorContent(QWidget):
         if self._side_tabbar is not None and self._side_tabbar.count() > 0:
             self._side_tabbar.setCurrentIndex(0)
             self._on_side_tab_changed(0)
+
+    # ---------------- UI -> Model ----------------
 
     def apply_ui_to_model(self, model: Recipe) -> None:
         if self.sel_tool is not None and self.sel_tool.currentIndex() >= 0:
