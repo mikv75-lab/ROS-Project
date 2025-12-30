@@ -242,6 +242,14 @@ class CoatingPreviewPanel(QWidget):
 
             pts_all.append(P)
 
+        # Nichts zu zeichnen
+        if not pts_all:
+            return None
+
+        # Einfachster Start: alle Sides hintereinander.
+        # (Später können wir das pro Side als eigene Polyline zeichnen.)
+        return np.vstack(pts_all)
+
     # -------- Preview Pipeline --------
 
     def handle_update_preview(self, model: Recipe) -> None:
