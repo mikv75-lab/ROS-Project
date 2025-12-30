@@ -229,11 +229,12 @@ def cast_rays_for_side(
     flip_normals_to_face_rays: bool = True,
     invert_dirs: bool = False,
     lock_xy: bool = True,
-) -> tuple[RayProjectResult, pv.PolyData, pv.PolyData]:
+) -> tuple[RayProjectResult, pv.PolyData, pv.PolyData, pv.PolyData]:
     # Erzeugt Rays abhängig von side/source und wirft sie auf sub_mesh_world.
     # Rückgabe:
     # - RayProjectResult (valid/hit/normal/tcp)
     # - rays_hit_poly: Segmente start->hit (nur gültige)
+    # - rays_miss_poly: Segmente start->end (nur ungültige)
     # - tcp_poly: Segmente hit->tcp (nur gültige)
     mesh = sub_mesh_world.triangulate()
     face_normals = np.asarray(mesh.face_normals)
@@ -249,7 +250,7 @@ def cast_rays_for_side(
             refl_dir=np.zeros((0, 3), float),
             tcp_mm=np.zeros((0, 3), float),
         )
-        return empty, pv.PolyData(), pv.PolyData()
+        return empty, pv.PolyData(), pv.PolyData(), pv.PolyData()
 
     # Basis-Rayrichtung pro Side
     side = str(side or "").lower()
@@ -322,13 +323,18 @@ def cast_rays_for_side(
 
     tcp = hits + normals * float(stand_off_mm)
 
-    # Visualisierungspolys nur für gültige Rays
+    # Visualisierungspolys: Hits/Misses/TCP (nur passende Indizes)
     if np.any(valid):
         rays_hit_poly = _polydata_from_segments(starts[valid], hits[valid])
         tcp_poly      = _polydata_from_segments(hits[valid], tcp[valid])
     else:
         rays_hit_poly = pv.PolyData()
         tcp_poly      = pv.PolyData()
+
+    if np.any(~valid):
+        rays_miss_poly = _polydata_from_segments(starts[~valid], ends[~valid])
+    else:
+        rays_miss_poly = pv.PolyData()
 
     rc = RayProjectResult(
         valid=valid,
@@ -337,4 +343,4 @@ def cast_rays_for_side(
         refl_dir=refl,
         tcp_mm=tcp,
     )
-    return rc, rays_hit_poly, tcp_poly
+    return rc, rays_hit_poly, rays_miss_poly, tcp_poly
