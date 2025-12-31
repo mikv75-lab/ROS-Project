@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# File: widgets/info_groupbox.py
 from __future__ import annotations
 from typing import Optional, Dict, Any, Tuple
 
@@ -57,11 +58,6 @@ class InfoGroupBox(QGroupBox):
     # ---- formatting helpers ----
     @staticmethod
     def _fmt_num(v: Any, nd: int = 3) -> str:
-        """
-        - ints: Tausendertrennzeichen
-        - floats: nd Nachkommastellen, aber wenn nd==0 oder .is_integer() -> int-format
-        - None/Fehler -> "-"
-        """
         if v is None:
             return "-"
         try:
@@ -105,6 +101,9 @@ class InfoGroupBox(QGroupBox):
           - medium_ml
           - mesh_tris
           - mesh_bounds / mesh_bounds_mm / mesh_dims_mm / dims_mm (L,B,H in mm)
+
+        NICHT angezeigt:
+          - valid / is_valid / validation_*  (falls vorhanden)
         """
         info = info or {}
 

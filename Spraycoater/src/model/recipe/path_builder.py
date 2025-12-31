@@ -53,6 +53,16 @@ class PathBuilder:
     - bewusst strikt: fehlende Pflichtparameter / unknown types => Exception
     """
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """
+        Kompatibilitäts-Init (no-op).
+
+        In älterem Code wurde PathBuilder teils instanziiert (z.B. PathBuilder(...)).
+        Diese Klasse ist aber als statische Utility gedacht. Damit Save/Compile nicht
+        crasht, akzeptieren wir args/kwargs stillschweigend.
+        """
+        _ = args, kwargs
+
     # ---------------------------
     # Public API
     # ---------------------------
@@ -161,7 +171,6 @@ class PathBuilder:
         meta = dict(pd.meta or {})
         meta["stand_off_mm"] = float(g["stand_off_mm"])
         meta["max_angle_deg"] = float(g["max_angle_deg"])
-        # JSON-safe: keine numpy types in meta
         meta = PathBuilder._json_safe_meta(meta)
         return PathData(points_mm=np.asarray(pd.points_mm, dtype=float).reshape(-1, 3), meta=meta)
 
@@ -179,13 +188,6 @@ class PathBuilder:
 
     @staticmethod
     def _postprocess(pd: PathData) -> PathData:
-        """
-        Postprocessing-Hook.
-
-        Aktuell: keine Geometrie-Änderung, aber:
-        - reshape
-        - NaN/Inf filter
-        """
         P = np.asarray(pd.points_mm, dtype=float).reshape(-1, 3)
         if P.size == 0:
             return PathData(points_mm=P, meta=dict(pd.meta or {}))
@@ -226,13 +228,11 @@ class PathBuilder:
         sample_step_mm: float,
         max_points: int,
     ) -> PathData:
-        # 1) Direkte Punkte (ohne Type-Auswertung)
         pts = p.get("points_mm") or p.get("polyline_mm")
         if pts is not None:
             P = PathBuilder._as_points_mm(pts, max_points)
             return PathData(points_mm=P, meta={"source": "points"})
 
-        # 2) Type-basierte Generierung
         raw_type = p.get("type")
         if raw_type is None or str(raw_type).strip() == "":
             raise ValueError("PathBuilder: path.type fehlt oder ist leer.")

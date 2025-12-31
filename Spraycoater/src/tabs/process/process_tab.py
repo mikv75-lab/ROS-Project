@@ -17,8 +17,8 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QLabel,
     QMessageBox,
-    QCheckBox,
     QInputDialog,
+    QSizePolicy,
 )
 
 from visualization_msgs.msg import MarkerArray
@@ -29,6 +29,9 @@ from ros.bridge.ros_bridge import RosBridge
 from model.recipe.recipe import Recipe
 from model.recipe.recipe_markers import build_marker_array_from_recipe
 
+from widgets.robot_status_box import RobotStatusInfoBox
+from widgets.info_groupbox import InfoGroupBox
+
 from .process_thread import ProcessThread
 from .robot_init_thread import RobotInitThread
 
@@ -37,11 +40,18 @@ _LOG = logging.getLogger("tabs.process")
 
 class ProcessTab(QWidget):
     """
-    ProcessTab
+    ProcessTab (aktuell)
 
-    - Load: wählt ein gespeichertes Rezept aus dem Repo (key) und lädt process-mode (draft+compiled+last runs)
-    - Anzeige: zeigt geladene Rezeptinfo (Key) + Robot/ROS Status
-    - ROS Trigger: nach Load wird Marker/Info publiziert (über _publish_layers + optionale RosBridge Hooks)
+    Layout:
+      - Top Row: Recipe (links) | Process (mitte) | Robot Status (rechts)
+      - InfoGroupBox (wie im RecipeTab, ETA bleibt)
+      - Run Data (scored)
+      - Log
+
+    Behavior:
+      - Load: lädt process-mode Rezept (draft + compiled + last runs)
+      - Beim Load: publisht alle 3 Layer (compiled/traj/executed) sofern vorhanden
+      - Process buttons: Init/Validate/Optimize/Execute/Stop
     """
 
     def __init__(
@@ -55,16 +65,14 @@ class ProcessTab(QWidget):
     ) -> None:
         super().__init__(parent)
         self.ctx = ctx
-        self.repo = repo  # ✅ RecipeRepo (SSoT: ctx.repo)
+        self.repo = repo
         self.ros = ros
         self.plc = plc
 
         if self.repo is None:
             raise RuntimeError("ProcessTab: repo ist None (ctx.repo fehlt?)")
 
-        # currently displayed recipe in tab (used for markers/score)
         self._recipe: Optional[Recipe] = None
-        # IMPORTANT: repo-key (nicht nur recipe.id!)
         self._recipe_key: Optional[str] = None
 
         self._process_thread: Optional[ProcessThread] = None
@@ -80,17 +88,44 @@ class ProcessTab(QWidget):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
 
-        # ---------------- Process buttons ----------------
-        grp_proc = QGroupBox("Process", self)
-        vproc = QVBoxLayout(grp_proc)
+        # =========================================================
+        # TOP ROW: Recipe (links) + Process (mitte) + Robot Status (rechts)
+        # =========================================================
+        top_row = QHBoxLayout()
+        top_row.setSpacing(8)
+
+        # ---------------- Recipe GroupBox (links) ----------------
+        grp_recipe = QGroupBox("Recipe", self)
+        vrec = QVBoxLayout(grp_recipe)
+        vrec.setSpacing(6)
 
         row_load = QHBoxLayout()
-        self.btnLoad = QPushButton("Load", grp_proc)
+        self.btnLoad = QPushButton("Load", grp_recipe)
         self.btnLoad.setMinimumHeight(28)
-        self.lblRecipe = QLabel("Recipe: –", grp_proc)
+        self.lblRecipeKey = QLabel("Key: –", grp_recipe)
         row_load.addWidget(self.btnLoad)
-        row_load.addWidget(self.lblRecipe, 1)
-        vproc.addLayout(row_load)
+        row_load.addWidget(self.lblRecipeKey, 1)
+        vrec.addLayout(row_load)
+
+        self.lblRecipeMeta = QLabel("Info: –", grp_recipe)
+        self.lblRecipeMeta.setWordWrap(True)
+        vrec.addWidget(self.lblRecipeMeta)
+
+        self.txtRecipeDraft = QTextEdit(grp_recipe)
+        self.txtRecipeDraft.setReadOnly(True)
+        self.txtRecipeDraft.setPlaceholderText("Draft info (parameters/planner/paths_by_side/meta)")
+        sp = self.txtRecipeDraft.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp.setVerticalPolicy(QSizePolicy.Policy.Expanding)
+        self.txtRecipeDraft.setSizePolicy(sp)
+        vrec.addWidget(self.txtRecipeDraft, 1)
+
+        top_row.addWidget(grp_recipe, 2)
+
+        # ---------------- Process GroupBox (mitte) ----------------
+        grp_proc = QGroupBox("Process", self)
+        vproc = QVBoxLayout(grp_proc)
+        vproc.setSpacing(6)
 
         self.btnInit = QPushButton("Init", grp_proc)
         self.btnValidate = QPushButton("Validate", grp_proc)
@@ -105,52 +140,17 @@ class ProcessTab(QWidget):
         self.lblInit = QLabel("Init: –", grp_proc)
         vproc.addWidget(self.lblInit)
 
-        # optional Persistenz
-        self.chkPersistTraj = QCheckBox("Persist planned traj", grp_proc)
-        self.chkPersistExecuted = QCheckBox("Persist executed traj", grp_proc)
-        self.chkPersistTraj.setChecked(False)
-        self.chkPersistExecuted.setChecked(False)
-        vproc.addSpacing(6)
-        vproc.addWidget(self.chkPersistTraj)
-        vproc.addWidget(self.chkPersistExecuted)
+        top_row.addWidget(grp_proc, 1)
 
-        root.addWidget(grp_proc)
+        # ---------------- Robot Status (rechts) ----------------
+        self.robotStatusBox = RobotStatusInfoBox(self, title="Robot Status")
+        top_row.addWidget(self.robotStatusBox, 2)
 
-        # ---------------- Robot Status (wieder da) ----------------
-        grp_status = QGroupBox("Robot Status", self)
-        vst = QVBoxLayout(grp_status)
-        self.lblRosStatus = QLabel("ROS: –", grp_status)
-        self.lblRobotStatus = QLabel("Robot: –", grp_status)
-        self.lblModeStatus = QLabel("Mode: –", grp_status)
-        self.lblConnHint = QLabel("", grp_status)
-        vst.addWidget(self.lblRosStatus)
-        vst.addWidget(self.lblRobotStatus)
-        vst.addWidget(self.lblModeStatus)
-        vst.addWidget(self.lblConnHint)
-        root.addWidget(grp_status)
+        root.addLayout(top_row)
 
-        # ---------------- SprayPath view (checkboxes + score) ----------------
-        grp_view = QGroupBox("SprayPath View", self)
-        vview = QVBoxLayout(grp_view)
-
-        row = QHBoxLayout()
-        self.chkCompiled = QCheckBox("Compiled", grp_view)
-        self.chkTraj = QCheckBox("Traj", grp_view)
-        self.chkExecuted = QCheckBox("Executed", grp_view)
-
-        self.chkCompiled.setChecked(True)
-        self.chkTraj.setChecked(True)
-        self.chkExecuted.setChecked(True)
-
-        row.addWidget(self.chkCompiled)
-        row.addWidget(self.chkTraj)
-        row.addWidget(self.chkExecuted)
-        vview.addLayout(row)
-
-        self.lblScore = QLabel("Score: –", grp_view)
-        vview.addWidget(self.lblScore)
-
-        root.addWidget(grp_view)
+        # ---------------- InfoGroupBox ----------------
+        self.infoBox = InfoGroupBox(self)
+        root.addWidget(self.infoBox)
 
         # ---------------- Results ----------------
         grp_res = QGroupBox("Run Data (scored)", self)
@@ -188,10 +188,6 @@ class ProcessTab(QWidget):
         self.btnExecute.clicked.connect(self._on_execute_clicked)
         self.btnStop.clicked.connect(self._on_stop_clicked)
 
-        self.chkCompiled.toggled.connect(self._publish_layers)
-        self.chkTraj.toggled.connect(self._publish_layers)
-        self.chkExecuted.toggled.connect(self._publish_layers)
-
         # init thread
         self._setup_init_thread()
 
@@ -202,42 +198,21 @@ class ProcessTab(QWidget):
         self._status_timer.start()
 
         self._update_buttons()
-        self._update_layer_enablement()
         self._update_robot_status_widget()
+        self._update_recipe_box()
+        self._update_info_box()
 
     # ---------------- Utils ----------------
 
     def _append_log(self, msg: str) -> None:
-        if not msg:
-            return
-        self.txtLog.append(msg)
+        if msg:
+            self.txtLog.append(msg)
 
     def _yaml_dump(self, obj: Any) -> str:
         try:
             return yaml.safe_dump(obj or {}, allow_unicode=True, sort_keys=False)
         except Exception:
             return str(obj)
-
-    def _compiled_sides(self) -> list[str]:
-        try:
-            pc = getattr(self._recipe, "paths_compiled", {}) or {}
-            sides = pc.get("sides") or {}
-            if isinstance(sides, dict) and sides:
-                return [str(k) for k in sides.keys()]
-        except Exception:
-            pass
-        # fallback: active_side
-        try:
-            side = str((getattr(self._recipe, "parameters", {}) or {}).get("active_side", "top"))
-            return [side]
-        except Exception:
-            return ["top"]
-
-    def _active_side(self) -> str:
-        try:
-            return str((getattr(self._recipe, "parameters", {}) or {}).get("active_side", "top"))
-        except Exception:
-            return "top"
 
     def _list_repo_keys(self) -> List[str]:
         try:
@@ -248,16 +223,23 @@ class ProcessTab(QWidget):
         except Exception:
             return []
 
+    def _compiled_sides(self) -> list[str]:
+        try:
+            pc = getattr(self._recipe, "paths_compiled", {}) or {}
+            sides = pc.get("sides") or {}
+            if isinstance(sides, dict) and sides:
+                return [str(k) for k in sides.keys()]
+        except Exception:
+            pass
+        try:
+            side = str((getattr(self._recipe, "parameters", {}) or {}).get("active_side", "top"))
+            return [side]
+        except Exception:
+            return ["top"]
+
     def _trigger_ros_on_loaded_recipe(self) -> None:
-        """
-        Optional: RosBridge “triggern”, ohne harte API-Abhängigkeit.
-        - Marker kommen sowieso über _publish_layers()
-        - Falls deine RosBridge zusätzliche Hooks hat, werden sie hier (best-effort) aufgerufen.
-        """
         if self.ros is None or self._recipe is None:
             return
-
-        # Best-effort: unterschiedliche mögliche API-Namen
         for fn_name in (
             "on_recipe_loaded",
             "notify_recipe_loaded",
@@ -270,67 +252,148 @@ class ProcessTab(QWidget):
                 try:
                     fn(self._recipe)  # type: ignore[misc]
                 except Exception:
-                    # keine harte Abhängigkeit -> ignorieren
                     pass
 
-    # ---------------- Robot Status Widget ----------------
+    # ---------------- Recipe UI ----------------
 
-    def _update_robot_status_widget(self) -> None:
-        # ROS status
-        if self.ros is None:
-            self.lblRosStatus.setText("ROS: – (disabled)")
-            self.lblRobotStatus.setText("Robot: –")
-            self.lblModeStatus.setText("Mode: –")
-            self.lblConnHint.setText("")
+    def _update_recipe_box(self) -> None:
+        if self._recipe is None:
+            self.lblRecipeKey.setText("Key: –")
+            self.lblRecipeMeta.setText("Info: –")
+            self.txtRecipeDraft.clear()
             return
 
-        # Verbindung / Status: best-effort
-        ros_ok = None
-        for attr in ("is_connected", "connected", "ok", "is_ok"):
-            v = getattr(self.ros, attr, None)
-            if callable(v):
-                try:
-                    ros_ok = bool(v())
-                    break
-                except Exception:
-                    pass
-            elif isinstance(v, bool):
-                ros_ok = v
-                break
+        r = self._recipe
+        key = self._recipe_key or "-"
+        self.lblRecipeKey.setText(f"Key: {key}")
 
-        if ros_ok is None:
-            self.lblRosStatus.setText("ROS: connected?")
-        else:
-            self.lblRosStatus.setText(f"ROS: {'OK' if ros_ok else 'OFF'}")
+        parts = []
+        parts.append(f"id={r.id}")
+        if r.tool:
+            parts.append(f"tool={r.tool}")
+        if r.substrate:
+            parts.append(f"substrate={r.substrate}")
+        if r.substrate_mount:
+            parts.append(f"mount={r.substrate_mount}")
+        if r.description:
+            parts.append(f"desc={r.description}")
 
-        # Robot status text: best-effort
-        robot_txt = None
-        for attr in ("robot_status_text", "status_text", "last_status", "state_text"):
-            v = getattr(self.ros, attr, None)
-            if callable(v):
+        # compiled info (falls vorhanden)
+        try:
+            info = getattr(r, "info", {}) or {}
+            if isinstance(info, dict) and info:
+                tp = info.get("total_points")
+                tl = info.get("total_length_mm")
+                if tp is not None or tl is not None:
+                    parts.append(f"compiled: points={tp} len_mm={tl}")
+        except Exception:
+            pass
+
+        self.lblRecipeMeta.setText("Info: " + (" | ".join(parts) if parts else "-"))
+
+        draft_view = {
+            "id": r.id,
+            "description": r.description,
+            "tool": r.tool,
+            "substrate": r.substrate,
+            "substrate_mount": r.substrate_mount,
+            "parameters": r.parameters or {},
+            "planner": r.planner or {},
+            "paths_by_side": r.paths_by_side or {},
+            "meta": r.meta or {},
+        }
+        self.txtRecipeDraft.setPlainText(self._yaml_dump(draft_view))
+
+    def _update_info_box(self) -> None:
+        if self._recipe is None:
+            self.infoBox.set_values({})
+            return
+        try:
+            self.infoBox.set_values(getattr(self._recipe, "info", {}) or {})
+        except Exception:
+            self.infoBox.set_values({})
+
+    # ---------------- Robot Status Box update ----------------
+
+    def _update_robot_status_widget(self) -> None:
+        box = self.robotStatusBox
+
+        if self.ros is None:
+            box.set_connection("disabled")
+            box.set_mode(self._active_mode or "idle")
+            box.set_initialized(bool(self._robot_ready))
+            box.set_moving(False)
+            box.set_servo_enabled(False)
+            box.set_power(False)
+            box.set_estop(False)
+            box.set_errors("-")
+            box.set_tcp_pose6((-1, -1, -1, 0, 0, 0))
+            box.set_joints(None)
+            return
+
+        status_dict = None
+        for fn_name in ("get_status", "status_dict", "robot_status_dict", "get_robot_status"):
+            fn = getattr(self.ros, fn_name, None)
+            if callable(fn):
                 try:
-                    robot_txt = str(v() or "").strip()
-                    if robot_txt:
+                    v = fn()
+                    if isinstance(v, dict):
+                        status_dict = v
                         break
                 except Exception:
                     pass
-            elif isinstance(v, str) and v.strip():
-                robot_txt = v.strip()
+            elif isinstance(fn, dict):
+                status_dict = fn
                 break
 
-        if not robot_txt:
-            # fallback: init gating
-            robot_txt = "READY" if self._robot_ready else "NOT READY"
+        if isinstance(status_dict, dict):
+            try:
+                box.set_status_dict(status_dict)
+            except Exception:
+                pass
+        else:
+            ros_ok = None
+            for attr in ("is_connected", "connected", "ok", "is_ok"):
+                v = getattr(self.ros, attr, None)
+                if callable(v):
+                    try:
+                        ros_ok = bool(v())
+                        break
+                    except Exception:
+                        pass
+                elif isinstance(v, bool):
+                    ros_ok = v
+                    break
+            box.set_connection(ros_ok if ros_ok is not None else "connected?")
+            box.set_mode(self._active_mode or "idle")
+            box.set_initialized(bool(self._robot_ready))
 
-        self.lblRobotStatus.setText(f"Robot: {robot_txt}")
-        self.lblModeStatus.setText(f"Mode: {self._active_mode or 'idle'}")
+        # optional best-effort: tcp + joints
+        ps = None
+        for attr in ("tcp_pose_stamped", "tcp_pose", "last_tcp_pose", "tcp_ps"):
+            v = getattr(self.ros, attr, None)
+            if v is not None:
+                ps = v() if callable(v) else v
+                if ps is not None:
+                    break
+        if ps is not None:
+            try:
+                box.set_tcp_from_ps(ps)
+            except Exception:
+                pass
 
-        hint = []
-        if self._process_active:
-            hint.append("process running")
-        if self._init_thread is not None and self._init_thread.isRunning():
-            hint.append("init running")
-        self.lblConnHint.setText(" / ".join(hint))
+        joints = None
+        for attr in ("joint_positions", "joints", "last_joints", "q"):
+            v = getattr(self.ros, attr, None)
+            if v is not None:
+                joints = v() if callable(v) else v
+                if joints is not None:
+                    break
+        if joints is not None:
+            try:
+                box.set_joints(joints)
+            except Exception:
+                pass
 
     # ---------------- Public API ----------------
 
@@ -345,25 +408,22 @@ class ProcessTab(QWidget):
         self._recipe = recipe
         self._recipe_key = str(key).strip() if key else self._recipe_key
 
-        shown = self._recipe_key or (getattr(recipe, "id", None) if recipe else None)
-
-        self.lblRecipe.setText(f"Recipe: {shown}" if shown else "Recipe: –")
-        self._append_log(f"Recipe gesetzt: {shown}")
-
+        self._update_recipe_box()
+        self._update_info_box()
         self._update_buttons()
-        self._update_layer_enablement()
 
         self.txtPlanned.clear()
         self.txtExecuted.clear()
 
         if recipe:
-            self._publish_layers()
-            self._update_spray_score_label(prefer_executed=True)
+            # ✅ beim Load: alle 3 publizieren sofern verfügbar
+            self._publish_all_available_layers()
             self._render_run_yaml_views()
             self._trigger_ros_on_loaded_recipe()
         else:
             self._clear_layers()
-            self._update_spray_score_label(prefer_executed=True)
+
+        self._update_robot_status_widget()
 
     # ---------------- Load ----------------
 
@@ -426,27 +486,27 @@ class ProcessTab(QWidget):
         if self._process_active:
             QMessageBox.warning(self, "Init", "Während eines laufenden Prozesses nicht möglich.")
             return
-        if not self._recipe_key:
-            QMessageBox.warning(self, "Init", "Kein Rezept geladen.")
-            return
 
         self._robot_ready = False
         self.lblInit.setText("Init: START")
         self._append_log("=== Robot-Init gestartet ===")
         self._init_thread.startSignal.emit()
         self._update_buttons()
+        self._update_robot_status_widget()
 
     def _on_init_finished_ok(self) -> None:
         self._robot_ready = True
         self.lblInit.setText("Init: OK")
         self._append_log("=== Robot-Init erfolgreich abgeschlossen ===")
         self._update_buttons()
+        self._update_robot_status_widget()
 
     def _on_init_finished_err(self, msg: str) -> None:
         self._robot_ready = False
         self.lblInit.setText("Init: ERROR")
         self._append_log(f"=== Robot-Init Fehler: {msg} ===")
         self._update_buttons()
+        self._update_robot_status_widget()
 
     # ---------------- Process actions ----------------
 
@@ -478,7 +538,6 @@ class ProcessTab(QWidget):
             QMessageBox.warning(self, "Process", "ROS nicht verfügbar.")
             return
 
-        # gating
         if mode in (ProcessThread.MODE_VALIDATE, ProcessThread.MODE_OPTIMIZE, ProcessThread.MODE_EXECUTE):
             if not self._robot_ready:
                 QMessageBox.warning(self, "Process", "Robot nicht initialisiert. Bitte zuerst Init.")
@@ -503,7 +562,6 @@ class ProcessTab(QWidget):
         self._append_log(f"=== {mode.upper()} gestartet ===")
 
         self._update_buttons()
-        self._update_layer_enablement()
         self._update_robot_status_widget()
 
         self._process_thread = ProcessThread(
@@ -532,8 +590,7 @@ class ProcessTab(QWidget):
         if isinstance(executed, dict):
             self._recipe.trajectories[Recipe.TRAJ_EXECUTED] = executed
 
-        sides = self._compiled_sides()
-        for side in sides:
+        for side in self._compiled_sides():
             try:
                 if isinstance(self._recipe.trajectories.get(Recipe.TRAJ_TRAJ), dict):
                     self._recipe.evaluate_trajectory_against_compiled(traj_key=Recipe.TRAJ_TRAJ, side=side)
@@ -544,30 +601,6 @@ class ProcessTab(QWidget):
                     self._recipe.evaluate_trajectory_against_compiled(traj_key=Recipe.TRAJ_EXECUTED, side=side)
             except Exception:
                 pass
-
-    def _persist_runs_if_enabled(self) -> None:
-        if self._recipe is None or not self._recipe_key:
-            return
-
-        # save planned
-        if self.chkPersistTraj.isChecked():
-            traj = self._recipe.trajectories.get(Recipe.TRAJ_TRAJ)
-            if isinstance(traj, dict):
-                try:
-                    self.repo.save_traj_run(self._recipe_key, traj=traj)
-                    self._append_log("I persist: planned traj gespeichert (scored).")
-                except Exception as e:
-                    self._append_log(f"W persist: planned traj konnte nicht gespeichert werden: {e}")
-
-        # save executed
-        if self.chkPersistExecuted.isChecked():
-            ex = self._recipe.trajectories.get(Recipe.TRAJ_EXECUTED)
-            if isinstance(ex, dict):
-                try:
-                    self.repo.save_executed_run(self._recipe_key, executed=ex)
-                    self._append_log("I persist: executed traj gespeichert (scored).")
-                except Exception as e:
-                    self._append_log(f"W persist: executed traj konnte nicht gespeichert werden: {e}")
 
     def _render_run_yaml_views(self) -> None:
         if self._recipe is None:
@@ -594,17 +627,17 @@ class ProcessTab(QWidget):
 
         self._apply_payload_to_recipe_and_eval(payload)
 
-        self._update_spray_score_label(prefer_executed=True)
-        self._publish_layers()
-        self._render_run_yaml_views()
+        # publish all available after run
+        self._publish_all_available_layers()
 
-        self._persist_runs_if_enabled()
+        self._render_run_yaml_views()
+        self._update_recipe_box()
+        self._update_info_box()
 
         self._process_active = False
         self._active_mode = ""
         self._process_thread = None
         self._update_buttons()
-        self._update_layer_enablement()
         self._update_robot_status_widget()
 
     def _on_process_finished_error(self, msg: str) -> None:
@@ -613,103 +646,106 @@ class ProcessTab(QWidget):
         self._active_mode = ""
         self._process_thread = None
         self._update_buttons()
-        self._update_layer_enablement()
         self._update_robot_status_widget()
 
-    # ---------------- Marker layers / score ----------------
+    # ---------------- SprayPath publish ----------------
 
     def _clear_layers(self) -> None:
+        """
+        Clears all SprayPath caches/views best-effort.
+        Note: SprayPath node ignores empty messages for selection,
+        but publishing empty MarkerArrays is still useful to "visually clear"
+        in RViz if your display is set to replace.
+        """
         if self.ros is None:
             return
         try:
-            self.ros.publish_process_markers(MarkerArray())
+            empty = MarkerArray()
+            self.ros.spray_set_compiled(markers=empty)
+            self.ros.spray_set_traj(markers=empty)
+            self.ros.spray_set_executed(markers=empty)
+            # keep current view as-is (or clear if you add a "clear" command topic later)
         except Exception:
             pass
 
-    def _publish_layers(self) -> None:
+    def _publish_all_available_layers(self) -> None:
+        """
+        Beim Load/Run-Ende: publisht compiled/traj/executed sofern vorhanden.
+        Nutzt SprayPathBridge API (ros.spray_set_*).
+        """
         if self.ros is None or self._recipe is None:
             return
 
-        try:
-            ma = MarkerArray()
+        r = self._recipe
 
-            if self.chkCompiled.isChecked():
-                ma_c = build_marker_array_from_recipe(self._recipe, source=Recipe.TRAJ_COMPILED, frame_id="scene")
-                ma.markers.extend(ma_c.markers)
-
-            if self.chkTraj.isChecked():
-                if isinstance(self._recipe.trajectories.get(Recipe.TRAJ_TRAJ), dict):
-                    ma_t = build_marker_array_from_recipe(self._recipe, source=Recipe.TRAJ_TRAJ, frame_id="scene")
-                    ma.markers.extend(ma_t.markers)
-
-            if self.chkExecuted.isChecked():
-                if isinstance(self._recipe.trajectories.get(Recipe.TRAJ_EXECUTED), dict):
-                    ma_e = build_marker_array_from_recipe(self._recipe, source=Recipe.TRAJ_EXECUTED, frame_id="scene")
-                    ma.markers.extend(ma_e.markers)
-
-            self.ros.publish_process_markers(ma)
-        except Exception as e:
-            self._append_log(f"W publish_layers failed: {e}")
-
-    def _update_spray_score_label(self, *, prefer_executed: bool = True) -> None:
-        if self._recipe is None:
-            self.lblScore.setText("Score: –")
-            return
-
-        side = self._active_side()
-
-        def _score_for(traj_key: str) -> Optional[float]:
+        def _build(source: str) -> Optional[MarkerArray]:
             try:
-                t = self._recipe.trajectories.get(traj_key)
-                if not isinstance(t, dict):
+                part = build_marker_array_from_recipe(r, source=source, frame_id="scene")
+                if part is None:
                     return None
-                s = (t.get("sides") or {}).get(side) or {}
-                ev = s.get("eval") or {}
-                if isinstance(ev, dict) and "score" in ev:
-                    return float(ev.get("score"))
-            except Exception:
+                if getattr(part, "markers", None) is None:
+                    return None
+                # erlaub auch leere arrays (für clear)
+                return part
+            except Exception as e:
+                self._append_log(f"W markers ({source}) skipped: {e}")
                 return None
-            return None
 
-        score = None
-        src = ""
+        has_compiled = bool(isinstance(getattr(r, "paths_compiled", None), dict) and (r.paths_compiled or {}))
+        has_traj = bool(isinstance((r.trajectories or {}).get(Recipe.TRAJ_TRAJ), dict))
+        has_exec = bool(isinstance((r.trajectories or {}).get(Recipe.TRAJ_EXECUTED), dict))
 
-        if prefer_executed:
-            score = _score_for(Recipe.TRAJ_EXECUTED)
-            src = "executed"
-            if score is None:
-                score = _score_for(Recipe.TRAJ_TRAJ)
-                src = "traj"
-        else:
-            score = _score_for(Recipe.TRAJ_TRAJ)
-            src = "traj"
-            if score is None:
-                score = _score_for(Recipe.TRAJ_EXECUTED)
-                src = "executed"
+        ma_compiled = _build("compiled_path") if has_compiled else None
+        ma_traj = _build("traj") if has_traj else None
+        ma_exec = _build("executed_traj") if has_exec else None
 
-        if score is None:
-            self.lblScore.setText("Score: –")
-        else:
-            self.lblScore.setText(f"Score ({src}/{side}): {score:.1f}")
+        # publish into the three input slots
+        try:
+            if ma_compiled is not None:
+                self.ros.spray_set_compiled(markers=ma_compiled)
+        except Exception as e:
+            self._append_log(f"W spray_set_compiled failed: {e}")
+
+        try:
+            if ma_traj is not None:
+                self.ros.spray_set_traj(markers=ma_traj)
+        except Exception as e:
+            self._append_log(f"W spray_set_traj failed: {e}")
+
+        try:
+            if ma_exec is not None:
+                self.ros.spray_set_executed(markers=ma_exec)
+        except Exception as e:
+            self._append_log(f"W spray_set_executed failed: {e}")
+
+        # choose a reasonable default view if nothing selected yet or after load:
+        # prefer compiled > traj > executed
+        try:
+            if has_compiled:
+                self.ros.spray_set_view("compiled_path")
+            elif has_traj:
+                self.ros.spray_set_view("traj")
+            elif has_exec:
+                self.ros.spray_set_view("executed_traj")
+        except Exception:
+            pass
 
     # ---------------- UI gating ----------------
 
-    def _update_layer_enablement(self) -> None:
-        enabled = bool(self._recipe is not None)
-        for w in (self.chkCompiled, self.chkTraj, self.chkExecuted):
-            w.setEnabled(enabled)
-
     def _update_buttons(self) -> None:
-        has_recipe = bool(self._recipe_key)
         ros_ok = self.ros is not None
+        has_recipe = bool(self._recipe_key)
 
-        # Load ist immer möglich, wenn nicht aktiv und ROS existiert (du willst ja danach direkt Marker/Bridge triggern)
         self.btnLoad.setEnabled((not self._process_active) and ros_ok)
 
-        self.btnInit.setEnabled((not self._process_active) and ros_ok and has_recipe and (self._init_thread is not None))
+        # Init immer möglich (wenn ROS + init_thread)
+        self.btnInit.setEnabled((not self._process_active) and ros_ok and (self._init_thread is not None))
+
         self.btnValidate.setEnabled((not self._process_active) and ros_ok and has_recipe and self._robot_ready)
         self.btnOptimize.setEnabled((not self._process_active) and ros_ok and has_recipe and self._robot_ready)
         self.btnExecute.setEnabled(
             (not self._process_active) and ros_ok and has_recipe and self._robot_ready and (self.plc is not None)
         )
-        self.btnStop.setEnabled(self._process_active or (self._init_thread is not None and self._init_thread.isRunning()))
+
+        # Stop immer möglich (best-effort)
+        self.btnStop.setEnabled(ros_ok or (self._init_thread is not None))

@@ -1,57 +1,43 @@
 # -*- coding: utf-8 -*-
+# File: app/widgets/planner_groupbox.py
 from __future__ import annotations
 
-from typing import Dict, Any
-from PyQt6 import QtWidgets, QtCore
-from model.recipe.recipe_store import RecipeStore
+from typing import Any, Dict, Optional, Tuple
+
+from PyQt6 import QtCore, QtWidgets
+
+try:
+    from model.recipe.recipe_store import RecipeStore  # type: ignore
+except Exception:  # pragma: no cover
+    RecipeStore = Any  # type: ignore
 
 
-def _get(cfg: Dict[str, Any], dotted: str, default=None):
-    """Einfacher Helper für verschachtelte Keys (kann auch 'a.b.c')."""
-    if dotted in cfg:
-        return cfg[dotted]
-    cur = cfg
-    for p in dotted.split("."):
-        if not isinstance(cur, dict) or p not in cur:
-            return default
-        cur = cur[p]
-    return cur
+def _intish(*vals: Any) -> bool:
+    """True, wenn alle Werte integer-kompatibel sind."""
+    try:
+        return all(float(v).is_integer() for v in vals)
+    except Exception:
+        return False
 
 
-def _hexp_vmin(widget: QtWidgets.QWidget):
-    """Horizontal Expanding (breit wie es will), Vertikal Minimum (so flach wie möglich)."""
-    sp = widget.sizePolicy()
-    sp.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding)
-    sp.setVerticalPolicy(QtWidgets.QSizePolicy.Policy.Minimum)
-    widget.setSizePolicy(sp)
-
-
-def _hmin_vmin(widget: QtWidgets.QWidget):
-    """Für einzelne Feld-Widgets: Horizontal minimal, Vertikal minimal (drückt Höhe)."""
-    sp = widget.sizePolicy()
-    sp.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Minimum)
-    sp.setVerticalPolicy(QtWidgets.QSizePolicy.Policy.Minimum)
-    widget.setSizePolicy(sp)
+def _safe_dict(x: Any) -> Dict[str, Any]:
+    return dict(x or {}) if isinstance(x, dict) else {}
 
 
 class PlannerGroupBox(QtWidgets.QGroupBox):
     """
-    Kompakte Planner-Box für GENAU EINE Rolle, z.B.:
-        - role="move"      → validate_move
-        - role="path"      → validate_path
-        - role="optimize"  → optimize
-        - role="service"   → service
+    Planner-Box (neu) basierend auf planner_catalog.yaml.
 
-    Die Box kennt nur ihre Rolle und verwaltet:
-        - pipeline (ompl / chomp / stomp / pilz)
-        - planner_id        (z.B. RRTConnectkConfigDefault)
-        - generische Parameter:
-            planning_time_s, attempts, velocity/acceleration_scaling,
-            cartesian.eef_step_mm, allow_replanning,
-        - pipeline-spezifische Unter-Parameter (ompl/chomp/stomp/pilz).
+    Model-Schema (was in recipe.planner[...] gespeichert wird):
+      {
+        "role": "validate_move" | "validate_path" | "optimize" | "service" | ...,
+        "pipeline": "ompl" | "pilz" | "chomp" | "stomp" | "post",
+        "planner_id": "RRTConnectkConfigDefault" | "PTP" | ...,
+        "params": { "<param_key>": <value>, ... }
+      }
 
-    Sie weiß NICHTS über Rezepte, Sides, path_overrides etc.
-    Das kommt alles von außen über apply_planner_model()/collect_planner().
+    - role wird im Konstruktor festgelegt (move/path/optimize/service)
+    - planner + params sind strikt aus catalog ableitbar
     """
 
     _ROLE_MAP = {
@@ -63,381 +49,346 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
         "service": "service",
     }
 
+    _PIPELINE_ORDER = ["ompl", "pilz", "chomp", "stomp", "post"]
+
     def __init__(
         self,
-        parent: QtWidgets.QWidget | None = None,
+        parent: Optional[QtWidgets.QWidget] = None,
         *,
         title: str = "Planner",
         role: str = "move",
-        store: RecipeStore | None = None,
-        **kwargs,
-    ):
-        """
-        role: logische Planner-Rolle, z.B. "move", "path", "optimize", "service".
-              Für Kompatibilität kann auch type="move" über kwargs übergeben werden.
-        """
-        # type="..." als Alias akzeptieren (wie im Aufrufer vorgeschlagen)
-        if "type" in kwargs and not role:
-            role = str(kwargs.pop("type"))
+        store: Optional["RecipeStore"] = None,
+        catalog: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        super().__init__(title, parent)
 
-        super().__init__(parent)
+        self.store = store
+        self.catalog = _safe_dict(catalog) if catalog is not None else _safe_dict(getattr(store, "planner_catalog", None))
+        if not self.catalog:
+            raise ValueError("PlannerGroupBox: planner_catalog ist leer (store.planner_catalog fehlt?).")
 
-        if store is None:
-            raise ValueError("PlannerGroupBox: RecipeStore ist Pflicht (store=None).")
+        self.role_raw = str(role or "").strip()
+        self.role = self._ROLE_MAP.get(self.role_raw, self.role_raw)
 
-        self.store: RecipeStore = store
-        self.role_raw: str = str(role)
-        self.role: str = self._ROLE_MAP.get(self.role_raw, self.role_raw)
-
-        self.setTitle(title)
-        self.setFlat(False)
-
-        _hexp_vmin(self)
-
-        # Pipelines → Seiten im Stack
-        self._stack_map = {
-            "ompl": 0,
-            "chomp": 1,
-            "stomp": 2,
-            "pilz": 3,
-        }
+        # UI state
+        self._param_widgets: Dict[str, Tuple[QtWidgets.QWidget, str, Dict[str, Any]]] = {}
 
         self._build_ui()
-        # Default-Werte aus Store (falls definiert, sonst bleiben Qt-Defaults)
-        self.apply_store_defaults()
+        self._apply_default_selection()
 
-    # ---------- UI ----------
-    def _build_ui(self):
-        form = QtWidgets.QFormLayout(self)
-        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        form.setFormAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        form.setContentsMargins(6, 4, 6, 4)
-        form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(3)
+    # ------------------------------------------------------------------ Catalog helpers
 
-        # --- COMMON (rollenunabhängig) ---
-        self.spinPlanningTime = QtWidgets.QDoubleSpinBox(self)
-        self.spinPlanningTime.setRange(0.10, 120.0)
-        self.spinPlanningTime.setSingleStep(0.10)
+    def _roles(self) -> Dict[str, Any]:
+        return _safe_dict(_safe_dict(self.catalog.get("planner_catalog", self.catalog)).get("roles"))
 
-        self.spinAttempts = QtWidgets.QSpinBox(self)
-        self.spinAttempts.setRange(1, 100)
+    def _param_profiles(self) -> Dict[str, Any]:
+        return _safe_dict(_safe_dict(self.catalog.get("planner_catalog", self.catalog)).get("param_profiles"))
 
-        self.spinVel = QtWidgets.QDoubleSpinBox(self)
-        self.spinVel.setRange(0.0, 1.0)
-        self.spinVel.setSingleStep(0.01)
+    def _pipelines(self) -> Dict[str, Any]:
+        return _safe_dict(_safe_dict(self.catalog.get("planner_catalog", self.catalog)).get("pipelines"))
 
-        self.spinAcc = QtWidgets.QDoubleSpinBox(self)
-        self.spinAcc.setRange(0.0, 1.0)
-        self.spinAcc.setSingleStep(0.01)
+    def _allowed_planners_for_role(self) -> list[str]:
+        roles = self._roles()
+        allowed = roles.get(self.role)
+        if isinstance(allowed, list):
+            return [str(x) for x in allowed if str(x).strip()]
+        # fallback: wenn Rolle nicht existiert -> alles erlauben
+        return []
 
-        self.checkCartesian = QtWidgets.QCheckBox(self)
-        self.checkReplan = QtWidgets.QCheckBox(self)
+    def _planners_for_pipeline(self, pipeline: str) -> Dict[str, Any]:
+        pipes = self._pipelines()
+        return _safe_dict(pipes.get(str(pipeline)))
 
-        for w in (
-            self.spinPlanningTime,
-            self.spinAttempts,
-            self.spinVel,
-            self.spinAcc,
-            self.checkCartesian,
-            self.checkReplan,
-        ):
-            _hmin_vmin(w)
+    def _planner_spec(self, pipeline: str, planner_id: str) -> Dict[str, Any]:
+        return _safe_dict(self._planners_for_pipeline(pipeline).get(str(planner_id)))
 
-        form.addRow("Planning time (s)", self.spinPlanningTime)
-        form.addRow("Attempts", self.spinAttempts)
-        form.addRow("Velocity scaling", self.spinVel)
-        form.addRow("Acceleration scaling", self.spinAcc)
-        form.addRow("Use Cartesian waypoints", self.checkCartesian)
-        form.addRow("Allow replanning", self.checkReplan)
+    # ------------------------------------------------------------------ UI
 
-        # --- Pipeline ---
+    def _build_ui(self) -> None:
+        self.setFlat(False)
+
+        sp = self.sizePolicy()
+        sp.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding)
+        sp.setVerticalPolicy(QtWidgets.QSizePolicy.Policy.Preferred)
+        self.setSizePolicy(sp)
+
+        self.form = QtWidgets.QFormLayout(self)
+        self.form.setContentsMargins(8, 6, 8, 6)
+        self.form.setHorizontalSpacing(8)
+        self.form.setVerticalSpacing(4)
+        self.form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
         self.pipelineCombo = QtWidgets.QComboBox(self)
-        self.pipelineCombo.addItems(["ompl", "chomp", "stomp", "pilz"])
         self.pipelineCombo.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
-        _hmin_vmin(self.pipelineCombo)
+        self.form.addRow("Pipeline", self.pipelineCombo)
+
+        self.plannerCombo = QtWidgets.QComboBox(self)
+        self.plannerCombo.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.form.addRow("Planner", self.plannerCombo)
+
+        self.paramsHost = QtWidgets.QWidget(self)
+        self.paramsForm = QtWidgets.QFormLayout(self.paramsHost)
+        self.paramsForm.setContentsMargins(0, 0, 0, 0)
+        self.paramsForm.setHorizontalSpacing(8)
+        self.paramsForm.setVerticalSpacing(3)
+        self.paramsForm.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self.form.addRow("Params", self.paramsHost)
+
+        self.btnDefaults = QtWidgets.QPushButton("Reset defaults", self)
+        self.form.addRow("", self.btnDefaults)
+
         self.pipelineCombo.currentTextChanged.connect(self._on_pipeline_changed)
-        form.addRow("Pipeline", self.pipelineCombo)
+        self.plannerCombo.currentTextChanged.connect(self._on_planner_changed)
+        self.btnDefaults.clicked.connect(self._apply_defaults_for_current)
 
-        # --- Planner-ID (OMPL-Planner, Pilz-Name etc.) ---
-        self._lblPlannerId = QtWidgets.QLabel("Planner ID", self)
-        self._lblPlannerId.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        _hmin_vmin(self._lblPlannerId)
+    def _apply_default_selection(self) -> None:
+        pipes = self._pipelines()
+        available_pipes = [p for p in self._PIPELINE_ORDER if p in pipes]
+        if not available_pipes:
+            available_pipes = sorted(list(pipes.keys()))
 
-        self.plannerIdCombo = QtWidgets.QComboBox(self)
-        # Default-Liste – später kannst du sie dynamisch setzen (allowed_planners_for_side)
-        self.plannerIdCombo.addItems(
-            [
-                "RRTConnectkConfigDefault",
-                "RRTstarkConfigDefault",
-                "PRMstarkConfigDefault",
-                "KPIECEkConfigDefault",
-                "BKPIECEkConfigDefault",
-            ]
-        )
-        self.plannerIdCombo.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
-        _hmin_vmin(self.plannerIdCombo)
-        form.addRow(self._lblPlannerId, self.plannerIdCombo)
+        self.pipelineCombo.blockSignals(True)
+        self.pipelineCombo.clear()
+        for p in available_pipes:
+            self.pipelineCombo.addItem(p)
+        self.pipelineCombo.blockSignals(False)
 
-        # --- paramsStack: pro Pipeline eigene Zusatz-Parameter ---
-        self.paramsStack = QtWidgets.QStackedWidget(self)
-        _hexp_vmin(self.paramsStack)
-        form.addRow("Parameters", self.paramsStack)
-
-        # OMPL-Seite
-        self.pageOmpl = QtWidgets.QWidget(self)
-        self.formOmpl = QtWidgets.QFormLayout(self.pageOmpl)
-        self._leftify(self.formOmpl)
-        self.spinOmplRange = QtWidgets.QDoubleSpinBox(self.pageOmpl)
-        self.spinOmplRange.setRange(0.0, 1.0)
-        self.spinOmplRange.setSingleStep(0.01)
-        self.spinOmplGoalBias = QtWidgets.QDoubleSpinBox(self.pageOmpl)
-        self.spinOmplGoalBias.setRange(0.0, 1.0)
-        self.spinOmplGoalBias.setSingleStep(0.01)
-        for w in (self.spinOmplRange, self.spinOmplGoalBias):
-            _hmin_vmin(w)
-        self.formOmpl.addRow("Range (m)", self.spinOmplRange)
-        self.formOmpl.addRow("Goal bias", self.spinOmplGoalBias)
-        self.paramsStack.addWidget(self.pageOmpl)
-
-        # CHOMP-Seite
-        self.pageChomp = QtWidgets.QWidget(self)
-        self.formChomp = QtWidgets.QFormLayout(self.pageChomp)
-        self._leftify(self.formChomp)
-        self.spinChompTime = QtWidgets.QDoubleSpinBox(self.pageChomp)
-        self.spinChompTime.setRange(0.10, 120.0)
-        self.spinChompTime.setSingleStep(0.10)
-        self.spinChompLR = QtWidgets.QDoubleSpinBox(self.pageChomp)
-        self.spinChompLR.setDecimals(4)
-        self.spinChompLR.setRange(0.0001, 1.0)
-        self.spinChompLR.setSingleStep(0.0010)
-        self.spinChompSmooth = QtWidgets.QDoubleSpinBox(self.pageChomp)
-        self.spinChompSmooth.setRange(0.0, 100.0)
-        self.spinChompObs = QtWidgets.QDoubleSpinBox(self.pageChomp)
-        self.spinChompObs.setRange(0.0, 100.0)
-        for w in (self.spinChompTime, self.spinChompLR, self.spinChompSmooth, self.spinChompObs):
-            _hmin_vmin(w)
-        self.formChomp.addRow("Time limit (s)", self.spinChompTime)
-        self.formChomp.addRow("Learning rate", self.spinChompLR)
-        self.formChomp.addRow("Smoothness weight", self.spinChompSmooth)
-        self.formChomp.addRow("Obstacle weight", self.spinChompObs)
-        self.paramsStack.addWidget(self.pageChomp)
-
-        # STOMP-Seite
-        self.pageStomp = QtWidgets.QWidget(self)
-        self.formStomp = QtWidgets.QFormLayout(self.pageStomp)
-        self._leftify(self.formStomp)
-        self.spinStompIter = QtWidgets.QSpinBox(self.pageStomp)
-        self.spinStompIter.setRange(1, 10000)
-        self.spinStompRoll = QtWidgets.QSpinBox(self.pageStomp)
-        self.spinStompRoll.setRange(1, 1000)
-        self.spinStompStd = QtWidgets.QDoubleSpinBox(self.pageStomp)
-        self.spinStompStd.setRange(0.000, 1.000)
-        self.spinStompStd.setSingleStep(0.001)
-        for w in (self.spinStompIter, self.spinStompRoll, self.spinStompStd):
-            _hmin_vmin(w)
-        self.formStomp.addRow("Iterations", self.spinStompIter)
-        self.formStomp.addRow("Rollouts", self.spinStompRoll)
-        self.formStomp.addRow("Noise stddev", self.spinStompStd)
-        self.paramsStack.addWidget(self.pageStomp)
-
-        # Pilz-Seite
-        self.pagePilz = QtWidgets.QWidget(self)
-        self.formPilz = QtWidgets.QFormLayout(self.pagePilz)
-        self._leftify(self.formPilz)
-        self.spinPilzVel = QtWidgets.QDoubleSpinBox(self.pagePilz)
-        self.spinPilzVel.setRange(0.0, 1.0)
-        self.spinPilzAcc = QtWidgets.QDoubleSpinBox(self.pagePilz)
-        self.spinPilzAcc.setRange(0.0, 1.0)
-        for w in (self.spinPilzVel, self.spinPilzAcc):
-            _hmin_vmin(w)
-        self.formPilz.addRow("Max vel. scaling", self.spinPilzVel)
-        self.formPilz.addRow("Max acc. scaling", self.spinPilzAcc)
-        self.paramsStack.addWidget(self.pagePilz)
-
-        # Reset-Button (lädt nur die YAML-Defaults aus dem Store)
-        self.btnDefaults = QtWidgets.QPushButton("Reset from YAML", self)
-        _hmin_vmin(self.btnDefaults)
-        self.btnDefaults.clicked.connect(self.apply_store_defaults)
-        form.addRow("", self.btnDefaults)
-
-        # initiale Pipeline-Einstellung anwenden
+        # initial fill planner list + params
         self._on_pipeline_changed(self.pipelineCombo.currentText())
 
-    @staticmethod
-    def _leftify(form: QtWidgets.QFormLayout):
-        form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        form.setFormAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        form.setContentsMargins(0, 0, 0, 0)
-        form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(3)
+    # ------------------------------------------------------------------ Dynamic content
 
-    # ---------- Intern ----------
-    def _on_pipeline_changed(self, name: str):
-        idx = self._stack_map.get(name, 0)
-        self.paramsStack.setCurrentIndex(idx)
-        # Planner-ID ist aktuell nur für OMPL wirklich sinnvoll sichtbar
-        vis = (name == "ompl")
-        self._lblPlannerId.setVisible(vis)
-        self.plannerIdCombo.setVisible(vis)
+    def _on_pipeline_changed(self, pipeline: str) -> None:
+        pipeline = str(pipeline or "").strip()
+        pmap = self._planners_for_pipeline(pipeline)
 
-    # ---------- Store-Integration ----------
-    def set_store(self, store: RecipeStore):
-        if store is None:
-            raise ValueError("PlannerGroupBox.set_store: store=None ist nicht erlaubt.")
-        self.store = store
+        allowed = set(self._allowed_planners_for_role())
+        items = sorted(list(pmap.keys()))
+        if allowed:
+            items = [x for x in items if x in allowed]
 
-    def _store_defaults(self) -> Dict[str, Any]:
+        self.plannerCombo.blockSignals(True)
+        self.plannerCombo.clear()
+        for pid in items:
+            self.plannerCombo.addItem(pid)
+        self.plannerCombo.blockSignals(False)
+
+        if self.plannerCombo.count() > 0:
+            self.plannerCombo.setCurrentIndex(0)
+        self._on_planner_changed(self.plannerCombo.currentText())
+
+    def _on_planner_changed(self, planner_id: str) -> None:
+        self._rebuild_params_ui()
+        self._apply_defaults_for_current()
+
+    def _merged_param_schema(self, pipeline: str, planner_id: str) -> Dict[str, Any]:
         """
-        Holt ggf. globale Planner-Defaults aus dem Store.
-        Im neuen Schema kann das leer sein – dann bleiben die Qt-Defaults.
+        Merge aus:
+          - param_profiles aus params_ref[]
+          - params_override (nur default override + zusätzliche keys)
         """
-        try:
-            # collect_planner_defaults kann im neuen Schema leer sein, ist ok
-            d = self.store.collect_planner_defaults()
-            return d if isinstance(d, dict) else {}
-        except Exception:
-            return {}
+        spec = self._planner_spec(pipeline, planner_id)
+        profiles = self._param_profiles()
 
-    def apply_store_defaults(self):
-        self.set_params(self._store_defaults())
+        merged: Dict[str, Any] = {}
 
-    # ---------- Public API ----------
+        refs = spec.get("params_ref") or []
+        if isinstance(refs, (list, tuple)):
+            for ref in refs:
+                rname = str(ref)
+                prof = profiles.get(rname)
+                if isinstance(prof, dict):
+                    for k, v in prof.items():
+                        if isinstance(v, dict):
+                            merged[str(k)] = dict(v)
+
+        overrides = spec.get("params_override")
+        if isinstance(overrides, dict):
+            for k, v in overrides.items():
+                if isinstance(v, dict):
+                    if k in merged and isinstance(merged.get(k), dict):
+                        # override default only (oder neue Felder)
+                        merged[k] = {**merged[k], **dict(v)}
+                    else:
+                        merged[k] = dict(v)
+
+        return merged
+
+    def _clear_params_ui(self) -> None:
+        self._param_widgets.clear()
+        while self.paramsForm.rowCount() > 0:
+            self.paramsForm.removeRow(0)
+
+    def _rebuild_params_ui(self) -> None:
+        self._clear_params_ui()
+
+        pipeline = self.pipelineCombo.currentText().strip()
+        planner_id = self.plannerCombo.currentText().strip()
+        schema = self._merged_param_schema(pipeline, planner_id)
+
+        # stabile Reihenfolge: erst ohne '.' dann mit '.'
+        keys = sorted(schema.keys(), key=lambda s: (1 if "." in str(s) else 0, str(s)))
+
+        for key in keys:
+            pspec = dict(schema.get(key) or {})
+            t = str(pspec.get("type", "number")).strip().lower()
+
+            w: Optional[QtWidgets.QWidget] = None
+            kind: str = ""
+
+            if t in ("int", "integer"):
+                sb = QtWidgets.QSpinBox(self.paramsHost)
+                sb.setRange(int(pspec.get("min", 0)), int(pspec.get("max", 999999)))
+                sb.setSingleStep(int(pspec.get("step", 1)))
+                w = sb
+                kind = "int"
+
+            elif t == "boolean":
+                cb = QtWidgets.QCheckBox(self.paramsHost)
+                w = cb
+                kind = "bool"
+
+            elif t == "enum":
+                cbx = QtWidgets.QComboBox(self.paramsHost)
+                vals = pspec.get("values") or []
+                if isinstance(vals, list):
+                    cbx.addItems([str(v) for v in vals])
+                w = cbx
+                kind = "enum"
+
+            else:
+                # number (default)
+                minv = float(pspec.get("min", 0.0))
+                maxv = float(pspec.get("max", 0.0))
+                step = float(pspec.get("step", 0.1))
+                if _intish(minv, maxv, step):
+                    sb = QtWidgets.QSpinBox(self.paramsHost)
+                    sb.setRange(int(minv), int(maxv))
+                    sb.setSingleStep(int(step))
+                    w = sb
+                    kind = "int"
+                else:
+                    dsb = QtWidgets.QDoubleSpinBox(self.paramsHost)
+                    dsb.setRange(minv, maxv)
+                    dsb.setSingleStep(step)
+
+                    s = str(pspec.get("step", "0.1"))
+                    decimals = 0 if "." not in s else min(6, max(1, len(s.split(".")[1])))
+                    dsb.setDecimals(decimals)
+
+                    w = dsb
+                    kind = "float"
+
+            assert w is not None
+
+            unit = str(pspec.get("unit", "") or "").strip()
+            if unit and hasattr(w, "setSuffix"):
+                suf = (" " + unit) if not unit.startswith(" ") else unit
+                try:
+                    w.setSuffix(suf)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+            if pspec.get("description") and hasattr(w, "setToolTip"):
+                w.setToolTip(str(pspec["description"]))
+
+            sp = w.sizePolicy()
+            sp.setHorizontalPolicy(QtWidgets.QSizePolicy.Policy.Expanding)
+            sp.setVerticalPolicy(QtWidgets.QSizePolicy.Policy.Minimum)
+            w.setSizePolicy(sp)
+
+            self._param_widgets[str(key)] = (w, kind, pspec)
+            self.paramsForm.addRow(str(key), w)
+
+    def _apply_defaults_for_current(self) -> None:
+        pipeline = self.pipelineCombo.currentText().strip()
+        planner_id = self.plannerCombo.currentText().strip()
+        schema = self._merged_param_schema(pipeline, planner_id)
+
+        for key, (w, kind, pspec) in self._param_widgets.items():
+            default = schema.get(key, pspec).get("default", None)
+
+            if default is None:
+                continue
+
+            try:
+                if kind == "int" and isinstance(w, QtWidgets.QSpinBox):
+                    w.setValue(int(default))
+                elif kind == "float" and isinstance(w, QtWidgets.QDoubleSpinBox):
+                    w.setValue(float(default))
+                elif kind == "bool" and isinstance(w, QtWidgets.QCheckBox):
+                    w.setChecked(bool(default))
+                elif kind == "enum" and isinstance(w, QtWidgets.QComboBox):
+                    ix = w.findText(str(default))
+                    if ix >= 0:
+                        w.setCurrentIndex(ix)
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------ Public API
+
     @property
     def role_name(self) -> str:
-        """Kanonsiche Rollenbezeichnung (validate_move / validate_path / optimize / service)."""
         return self.role
 
-    def apply_planner_model(self, planner_cfg: Dict[str, Any] | None):
-        """
-        Setzt alle Felder anhand eines Planner-Config-Dicts.
-        Das Dict kommt typischerweise aus recipe.planner[role].
-        """
-        base = self._store_defaults()
-        merged = dict(base)
-        if isinstance(planner_cfg, dict):
-            merged.update(planner_cfg)
-        self.set_params(merged)
+    def apply_planner_model(self, cfg: Dict[str, Any] | None) -> None:
+        cfg = cfg if isinstance(cfg, dict) else {}
+        pipeline = str(cfg.get("pipeline") or "").strip()
+        planner_id = str(cfg.get("planner_id") or "").strip()
+        params = cfg.get("params") or {}
+
+        # pipeline set (if available)
+        if pipeline:
+            ix = self.pipelineCombo.findText(pipeline)
+            if ix >= 0:
+                self.pipelineCombo.setCurrentIndex(ix)
+
+        # planner set
+        if planner_id:
+            ix = self.plannerCombo.findText(planner_id)
+            if ix >= 0:
+                self.plannerCombo.setCurrentIndex(ix)
+
+        # ensure params ui is ready
+        self._rebuild_params_ui()
+
+        if isinstance(params, dict):
+            for k, v in params.items():
+                if k not in self._param_widgets:
+                    continue
+                w, kind, _pspec = self._param_widgets[k]
+                try:
+                    if kind == "int" and isinstance(w, QtWidgets.QSpinBox):
+                        w.setValue(int(v))
+                    elif kind == "float" and isinstance(w, QtWidgets.QDoubleSpinBox):
+                        w.setValue(float(v))
+                    elif kind == "bool" and isinstance(w, QtWidgets.QCheckBox):
+                        w.setChecked(bool(v))
+                    elif kind == "enum" and isinstance(w, QtWidgets.QComboBox):
+                        ix = w.findText(str(v))
+                        if ix >= 0:
+                            w.setCurrentIndex(ix)
+                except Exception:
+                    pass
 
     def collect_planner(self) -> Dict[str, Any]:
-        """
-        Liefert das Config-Dict zurück, das direkt in recipe.planner[role] geschrieben werden kann.
-        """
-        return self.get_params()
+        pipeline = self.pipelineCombo.currentText().strip()
+        planner_id = self.plannerCombo.currentText().strip()
 
-    # ---------- Getter/Setter ----------
-    def get_planner(self) -> str:
-        """Liefert die aktuelle Pipeline (ompl/chomp/stomp/pilz)."""
-        return self.pipelineCombo.currentText()
+        out_params: Dict[str, Any] = {}
+        for k, (w, kind, _pspec) in self._param_widgets.items():
+            if kind == "int" and isinstance(w, QtWidgets.QSpinBox):
+                out_params[k] = int(w.value())
+            elif kind == "float" and isinstance(w, QtWidgets.QDoubleSpinBox):
+                out_params[k] = float(w.value())
+            elif kind == "bool" and isinstance(w, QtWidgets.QCheckBox):
+                out_params[k] = bool(w.isChecked())
+            elif kind == "enum" and isinstance(w, QtWidgets.QComboBox):
+                out_params[k] = str(w.currentText())
 
-    def set_planner(self, pipeline: str):
-        ix = self.pipelineCombo.findText(str(pipeline))
-        if ix >= 0:
-            self.pipelineCombo.setCurrentIndex(ix)
-
-    def get_params(self) -> Dict[str, Any]:
-        pipeline = self.pipelineCombo.currentText()
         return {
             "role": self.role,
             "pipeline": pipeline,
-            "planner_id": self.plannerIdCombo.currentText(),
-            "planning_time_s": float(self.spinPlanningTime.value()),
-            "attempts": int(self.spinAttempts.value()),
-            "velocity_scaling": float(self.spinVel.value()),
-            "acceleration_scaling": float(self.spinAcc.value()),
-            "cartesian.eef_step_mm": 1.0 if self.checkCartesian.isChecked() else 0.0,
-            "allow_replanning": bool(self.checkReplan.isChecked()),
-            "ompl": {
-                "range": float(self.spinOmplRange.value()),
-                "goal_bias": float(self.spinOmplGoalBias.value()),
-            },
-            "chomp": {
-                "planning_time_limit": float(self.spinChompTime.value()),
-                "learning_rate": float(self.spinChompLR.value()),
-                "smoothness_weight": float(self.spinChompSmooth.value()),
-                "obstacle_cost_weight": float(self.spinChompObs.value()),
-            },
-            "stomp": {
-                "num_iterations": int(self.spinStompIter.value()),
-                "num_rollouts": int(self.spinStompRoll.value()),
-                "noise_stddev": float(self.spinStompStd.value()),
-            },
-            "pilz": {
-                "max_velocity_scaling": float(self.spinPilzVel.value()),
-                "max_acceleration_scaling": float(self.spinPilzAcc.value()),
-            },
+            "planner_id": planner_id,
+            "params": out_params,
         }
-
-    def set_params(self, cfg: Dict[str, Any]):
-        if not isinstance(cfg, dict):
-            return
-
-        # Rolle ignorieren – ist im Konstruktor festgelegt
-
-        v = _get(cfg, "pipeline")
-        if v is not None:
-            self.set_planner(str(v))
-
-        v = _get(cfg, "planner_id")
-        if v is not None:
-            ix = self.plannerIdCombo.findText(str(v))
-            if ix >= 0:
-                self.plannerIdCombo.setCurrentIndex(ix)
-
-        v = _get(cfg, "planning_time_s")
-        if v is not None:
-            self.spinPlanningTime.setValue(float(v))
-        v = _get(cfg, "attempts")
-        if v is not None:
-            self.spinAttempts.setValue(int(v))
-        v = _get(cfg, "velocity_scaling")
-        if v is not None:
-            self.spinVel.setValue(float(v))
-        v = _get(cfg, "acceleration_scaling")
-        if v is not None:
-            self.spinAcc.setValue(float(v))
-
-        v = _get(cfg, "allow_replanning")
-        if v is not None:
-            self.checkReplan.setChecked(bool(v))
-        v = _get(cfg, "cartesian.eef_step_mm")
-        if v is not None:
-            self.checkCartesian.setChecked(float(v) > 0.0)
-
-        ompl = _get(cfg, "ompl", {})
-        if isinstance(ompl, dict):
-            if "range" in ompl:
-                self.spinOmplRange.setValue(float(ompl["range"]))
-            if "goal_bias" in ompl:
-                self.spinOmplGoalBias.setValue(float(ompl["goal_bias"]))
-
-        chomp = _get(cfg, "chomp", {})
-        if isinstance(chomp, dict):
-            if "planning_time_limit" in chomp:
-                self.spinChompTime.setValue(float(chomp["planning_time_limit"]))
-            if "learning_rate" in chomp:
-                self.spinChompLR.setValue(float(chomp["learning_rate"]))
-            if "smoothness_weight" in chomp:
-                self.spinChompSmooth.setValue(float(chomp["smoothness_weight"]))
-            if "obstacle_cost_weight" in chomp:
-                self.spinChompObs.setValue(float(chomp["obstacle_cost_weight"]))
-
-        stomp = _get(cfg, "stomp", {})
-        if isinstance(stomp, dict):
-            if "num_iterations" in stomp:
-                self.spinStompIter.setValue(int(stomp["num_iterations"]))
-            if "num_rollouts" in stomp:
-                self.spinStompRoll.setValue(int(stomp["num_rollouts"]))
-            if "noise_stddev" in stomp:
-                self.spinStompStd.setValue(float(stomp["noise_stddev"]))
-
-        pilz = _get(cfg, "pilz", {})
-        if isinstance(pilz, dict):
-            if "max_velocity_scaling" in pilz:
-                self.spinPilzVel.setValue(float(pilz["max_velocity_scaling"]))
-            if "max_acceleration_scaling" in pilz:
-                self.spinPilzAcc.setValue(float(pilz["max_acceleration_scaling"]))
-
-        self._on_pipeline_changed(self.pipelineCombo.currentText())

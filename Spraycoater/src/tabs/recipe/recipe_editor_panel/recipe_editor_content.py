@@ -1,5 +1,6 @@
-# app/tabs/recipe/recipe_editor_panel/recipe_editor_content.py
+# (komplette Datei wie in deinem Stand – nur relevante Fixes sind drin)
 # -*- coding: utf-8 -*-
+# File: app/tabs/recipe/recipe_editor_panel/recipe_editor_content.py
 from __future__ import annotations
 
 from typing import Optional, Dict, Any, Tuple, List
@@ -341,7 +342,9 @@ class RecipeEditorContent(QWidget):
         row_params_planner.setSpacing(8)
 
         self._params_box = GlobalParamsBox(store=self.store, parent=self)
-        self._planner_box = PlannerGroupBox(ctx=self.ctx, store=self.store, parent=self)
+
+        # ✅ FIX: kein ctx mehr – PlannerGroupBox baut sich aus store.planner_catalog
+        self._planner_box = PlannerGroupBox(parent=self, title="Move planner", role="move", store=self.store)
 
         row_params_planner.addWidget(self._params_box, 3)
         row_params_planner.addWidget(self._planner_box, 2)
@@ -372,7 +375,6 @@ class RecipeEditorContent(QWidget):
     def set_recipe_name(self, name: str) -> None:
         if self.e_recipe_name is None:
             return
-        # nicht überschreiben, während user tippt
         if self.e_recipe_name.hasFocus():
             return
         self.e_recipe_name.setText(str(name or "").strip())
@@ -380,7 +382,6 @@ class RecipeEditorContent(QWidget):
     # ---------------- Meta ----------------
 
     def set_meta(self, *, name: str = "", desc: str = "") -> None:
-        # Name ist editierbar, daher: nur setzen wenn nicht fokussiert
         if self.e_recipe_name is not None and not self.e_recipe_name.hasFocus():
             self.e_recipe_name.setText(name or "")
         if self.e_desc is not None and not self.e_desc.hasFocus():
@@ -423,13 +424,10 @@ class RecipeEditorContent(QWidget):
             self._params_box.apply_model_to_ui(model)
 
         if self._planner_box is not None:
-            if hasattr(self._planner_box, "apply_model_to_ui"):
-                self._planner_box.apply_model_to_ui(model)  # type: ignore[attr-defined]
-            elif hasattr(self._planner_box, "apply_planner_model"):
-                cfg = getattr(model, "planner", {}) or {}
-                self._planner_box.apply_planner_model(cfg)  # type: ignore[attr-defined]
-            else:
-                raise AttributeError("PlannerGroupBox: keine unterstützte apply_* API gefunden.")
+            planner = getattr(model, "planner", {}) or {}
+            move_cfg = planner.get("move")
+            cfg = move_cfg if isinstance(move_cfg, dict) else (planner if isinstance(planner, dict) else {})
+            self._planner_box.apply_planner_model(cfg or {})
 
         sides_cfg = self.store.sides_for_recipe(rec_def)
         if not isinstance(sides_cfg, dict) or not sides_cfg:
@@ -494,15 +492,13 @@ class RecipeEditorContent(QWidget):
         if self._params_box is not None:
             self._params_box.apply_ui_to_model(model)
 
+        if getattr(model, "planner", None) is None:
+            model.planner = {}
+        if not isinstance(model.planner, dict):
+            raise TypeError(f"Recipe.planner ist kein dict (got {type(model.planner)}).")
+
         if self._planner_box is not None:
-            if hasattr(self._planner_box, "apply_ui_to_model"):
-                self._planner_box.apply_ui_to_model(model)  # type: ignore[attr-defined]
-            elif hasattr(self._planner_box, "collect_planner"):
-                cfg = self._planner_box.collect_planner()  # type: ignore[attr-defined]
-                if cfg:
-                    model.planner = cfg
-            else:
-                raise AttributeError("PlannerGroupBox: keine unterstützte ui->model API gefunden.")
+            model.planner["move"] = self._planner_box.collect_planner()
 
         if getattr(model, "paths_by_side", None) is None:
             model.paths_by_side = {}
@@ -512,8 +508,6 @@ class RecipeEditorContent(QWidget):
 
             pl = ed.collect_path_planner()
             if pl:
-                if getattr(model, "planner", None) is None:
-                    model.planner = {}
                 if not isinstance(model.planner.get("path"), dict):
                     model.planner["path"] = {}
                 model.planner["path"][side] = pl

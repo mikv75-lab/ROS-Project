@@ -131,7 +131,6 @@ class RecipeEditorPanel(QWidget):
     # ---------------------------------------------------------
 
     def _split_key(self, key: str) -> Tuple[str, str]:
-        # use bundle implementation (SSoT)
         return self.repo.bundle.split_key(key)
 
     def _make_key(self, rid: str, name: str) -> str:
@@ -271,7 +270,7 @@ class RecipeEditorPanel(QWidget):
 
         return Recipe.from_dict(
             {
-                "id": rid,  # catalog recipe_id
+                "id": rid,
                 "description": rec_def.get("description") or "",
                 "tool": str(tools[0]),
                 "substrate": str(subs[0]),
@@ -292,18 +291,35 @@ class RecipeEditorPanel(QWidget):
         sample_step_mm = float(g.get("sample_step_mm", 1.0))
         max_points = int(g.get("max_points", 500))
 
+        tool_frame = (model.planner or {}).get("tool_frame", "tool_mount")
+
         out: dict = {
             "frame": "scene",
-            "tool_frame": (model.planner or {}).get("tool_frame", "tool_mount"),
+            "tool_frame": tool_frame,
             "sides": {},
-            "meta": {"sample_step_mm": sample_step_mm, "max_points": max_points},
+            "meta": {
+                "sample_step_mm": float(sample_step_mm),
+                "max_points": int(max_points),
+            },
         }
 
-        pb = PathBuilder(sample_step_mm=sample_step_mm, max_points=max_points)
         for side in sides:
-            path = (model.paths_by_side or {}).get(side) or {}
-            pts = pb.build_points_mm(path)
-            out["sides"][side] = {"points_mm": pts.tolist() if hasattr(pts, "tolist") else pts}
+            pd = PathBuilder.from_side(
+                model,
+                side=str(side),
+                globals_params=g,
+                sample_step_mm=float(sample_step_mm),
+                max_points=int(max_points),
+            )
+            P = pd.points_mm  # Nx3 mm
+
+            poses_quat = [
+                {"x": float(x), "y": float(y), "z": float(z), "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}
+                for x, y, z in P.reshape(-1, 3)
+            ]
+
+            out["sides"][str(side)] = {"poses_quat": poses_quat, "meta": dict(pd.meta or {})}
+
         return out
 
     # ---------------------------------------------------------
@@ -340,7 +356,6 @@ class RecipeEditorPanel(QWidget):
         rec_def = self._recipe_def_for_rid(rid)
         model = self._active_model or self._new_model_from_rec_def(rec_def)
 
-        # ALWAYS keep id == catalog rid
         model.id = rid
         self._active_rid = rid
 
@@ -357,14 +372,11 @@ class RecipeEditorPanel(QWidget):
         return model
 
     def _apply_loaded(self, *, key: str, model: Recipe) -> None:
-        # key is SSoT: rid/rname
         rid, rname = self._split_key(key)
 
-        # selection from key
         self._select_rid_in_combo_blocked(rid)
         rec_def = self._recipe_def_for_rid(rid)
 
-        # bundle already normalizes model.id=rid, but keep it explicit
         model.id = rid
 
         self._active_rid = rid
@@ -376,14 +388,12 @@ class RecipeEditorPanel(QWidget):
         self.content.set_meta(name=rname, desc=desc)
         self.content.apply_model_to_ui(model, rec_def)
 
-        # optional compiled cache
         try:
             full = self.repo.load_for_process(key)
             self._active_compiled = (full.paths_compiled or None)
         except Exception:
             self._active_compiled = None
 
-        # ✅ Load triggers preview
         self.updatePreviewRequested.emit(model)
 
     # ---------------------------------------------------------
@@ -404,7 +414,6 @@ class RecipeEditorPanel(QWidget):
         self._load_default_into_editor(trigger_preview=True)
 
     def _on_recipe_select_changed(self, *_args) -> None:
-        # switching catalog recipe resets to default name
         self._load_default_into_editor(trigger_preview=True)
 
     def _on_load_clicked(self) -> None:
@@ -413,7 +422,6 @@ class RecipeEditorPanel(QWidget):
             QMessageBox.information(self, "Load", "Keine gespeicherten Rezepte gefunden.")
             return
 
-        # suggest current key if it exists
         rid = self._current_rid() or self._active_rid or self._first_rid()
         rname = self._active_name or "default"
         suggest_key = self._make_key(rid, rname)
@@ -452,16 +460,19 @@ class RecipeEditorPanel(QWidget):
             QMessageBox.warning(self, "Save", "Recipe Name ist leer.")
             return
 
-        # ✅ key = rid/name  (SSoT)
         key = self._make_key(rid, name)
 
         if self._active_compiled is None:
             try:
                 self._active_compiled = self._compile_from_model(model)
-            except Exception:
+            except Exception as e:
                 self._active_compiled = None
+                QMessageBox.warning(
+                    self,
+                    "Save",
+                    f"Compile fehlgeschlagen – compiled.yaml wird nicht geschrieben:\n{e}",
+                )
 
-        # save (only place writing files)
         self.repo.save_from_editor(
             key,
             draft=model,
