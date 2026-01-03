@@ -1,3 +1,4 @@
+# app/tabs/recipe/coating_preview_panel/coating_preview_panel.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from PyQt6.sip import isdeleted
 
 from model.recipe.recipe import Recipe
 from model.recipe.recipe_store import RecipeStore
-import model.recipe.path_builder as pb  # ✅ modulbasiert, verhindert Shadowing
+from model.recipe.path_builder import PathBuilder
 
 from widgets.info_groupbox import InfoGroupBox
 
@@ -29,6 +30,7 @@ _LOG = logging.getLogger("tabs.recipe.preview.panel")
 
 Bounds = Tuple[float, float, float, float, float, float]
 
+# ✅ bei dir kommen "helix" UND teils "polyhelix"
 _ALLOWED_SIDES = ("top", "front", "back", "left", "right", "polyhelix", "helix")
 
 
@@ -73,6 +75,11 @@ def _bounds_center(bounds: Bounds) -> np.ndarray:
     return np.array([0.5 * (xmin + xmax), 0.5 * (ymin + ymax), 0.5 * (zmin + zmax)], dtype=float)
 
 
+# ---------------------------------------------------------------------
+# Side embedding:
+#  - plane-sides: lokales 2D Muster in Side-Ebene einbetten
+#  - helix/polyhelix: PathBuilder liefert bereits 3D -> nur ins Objektzentrum verschieben
+# ---------------------------------------------------------------------
 def _side_cfg(side: str):
     s = str(side or "").lower()
     cfgs = {
@@ -107,6 +114,7 @@ def _embed_path_on_face(P_local: np.ndarray, side: str, bounds: Bounds) -> np.nd
     out = np.empty((P0.shape[0], 3), dtype=float)
 
     def place(axis_name: str, arr: np.ndarray):
+        # lokales Muster um Bounds-Center herum zentrieren
         if axis_name == "x":
             return cx + arr
         if axis_name == "y":
@@ -115,6 +123,7 @@ def _embed_path_on_face(P_local: np.ndarray, side: str, bounds: Bounds) -> np.nd
             return cz + arr
         return arr
 
+    # Muster-2D: local.x, local.y
     a0 = P0[:, 0]
     a1 = P0[:, 1]
 
@@ -149,6 +158,7 @@ def _tangents_from_path(P: np.ndarray) -> np.ndarray:
     if n > 2:
         T[1:-1] = P[2:] - P[:-2]
 
+    # normalize + stabilisieren
     for i in range(n):
         ln = float(np.linalg.norm(T[i]))
         if ln > 1e-12:
@@ -164,11 +174,23 @@ def _tangents_from_path(P: np.ndarray) -> np.ndarray:
 
 
 def _call_cast_rays_for_side_robust(*args, **kwargs):
+    """
+    Robust gegen unterschiedliche Rückgaben:
+
+    Unterstützt:
+      - (rc, hit_poly, tcp_poly)
+      - (rc, hit_poly, miss_poly, tcp_poly)
+
+    Wir liefern:
+      rc, hit_poly, miss_poly, tcp_poly
+    """
     ret = cast_rays_for_side(*args, **kwargs)
     if not isinstance(ret, tuple) or len(ret) < 2:
         raise RuntimeError("cast_rays_for_side returned invalid result")
 
     rc = ret[0]
+
+    # Standard defaults
     hit_poly = pv.PolyData()
     miss_poly = pv.PolyData()
     tcp_poly = pv.PolyData()
@@ -183,10 +205,12 @@ def _call_cast_rays_for_side_robust(*args, **kwargs):
         return rc, hit_poly, miss_poly, tcp_poly
 
     if len(polys) == 2:
+        # älterer Fall: (hit, tcp)
         hit_poly = polys[0]
         tcp_poly = polys[1]
         return rc, hit_poly, miss_poly, tcp_poly
 
+    # neuer/aktueller Fall: (hit, miss, tcp) oder mehr -> nimm die ersten 3
     hit_poly = polys[0]
     miss_poly = polys[1]
     tcp_poly = polys[2]
@@ -202,6 +226,41 @@ def _is_empty_poly(mesh) -> bool:
     except Exception:
         return True
     return False
+
+
+def _substrate_origin_world(scene: PreviewScene, substrate_mesh: pv.DataSet) -> np.ndarray:
+    """
+    Definiert den Ursprung eines Substrate-Frames in WORLD:
+      - XY = Center des MOUNT (wenn vorhanden), sonst Center des Substrats
+      - Z  = Top-Fläche des MOUNT (zmax), sonst zmin vom Substrat
+
+    Damit ist:
+      - Auflagefläche => z = 0
+      - Mitte => x=y=0
+
+    Genau das brauchst du für compiled.yaml.
+    """
+    # Versuche Mount-Mesh zu finden (verschiedene mögliche Namen)
+    mount = None
+    for attr in ("mount_mesh", "substrate_mount_mesh", "mount", "substrate_mount"):
+        m = getattr(scene, attr, None)
+        if isinstance(m, pv.DataSet):
+            mount = m
+            break
+
+    if isinstance(mount, pv.DataSet):
+        b = mount.bounds
+        cx = 0.5 * (float(b[0]) + float(b[1]))
+        cy = 0.5 * (float(b[2]) + float(b[3]))
+        z_top = float(b[5])  # zmax
+        return np.array([cx, cy, z_top], dtype=float)
+
+    # Fallback: Substrat
+    sb = substrate_mesh.bounds
+    cx = 0.5 * (float(sb[0]) + float(sb[1]))
+    cy = 0.5 * (float(sb[2]) + float(sb[3]))
+    z0 = float(sb[4])  # zmin ~ Auflage
+    return np.array([cx, cy, z0], dtype=float)
 
 
 class CoatingPreviewPanel(QWidget):
@@ -231,6 +290,7 @@ class CoatingPreviewPanel(QWidget):
             "frames": True,
         }
 
+        # ✅ Debug: log PathBuilder origin once
         self._logged_pathbuilder_origin: bool = False
 
         root = QVBoxLayout(self)
@@ -246,6 +306,7 @@ class CoatingPreviewPanel(QWidget):
         split.setSpacing(8)
         root.addLayout(split, 1)
 
+        # ---------------- Left (2D) ----------------
         vleft = QVBoxLayout()
         vleft.setContentsMargins(0, 0, 0, 0)
         vleft.setSpacing(6)
@@ -276,8 +337,9 @@ class CoatingPreviewPanel(QWidget):
         _set_policy(self.views2d, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
         vleft.insertWidget(0, self.views2d, 0)
 
+        # ---------------- Right (3D) ----------------
         vright = QVBoxLayout()
-        vright.setContentsMargins(0,  0, 0, 0)
+        vright.setContentsMargins(0, 0, 0, 0)
         vright.setSpacing(6)
         split.addLayout(vright, 1)
 
@@ -373,14 +435,15 @@ class CoatingPreviewPanel(QWidget):
             try:
                 _LOG.info(
                     "PathBuilder loaded from module=%s file=%s",
-                    getattr(pb.PathBuilder, "__module__", "?"),
-                    inspect.getsourcefile(pb.PathBuilder),
+                    getattr(PathBuilder, "__module__", "?"),
+                    inspect.getsourcefile(PathBuilder),
                 )
             except Exception:
                 _LOG.exception("Could not log PathBuilder origin")
 
         cam_snap = self.snapshot_camera()
 
+        # 1) Szene
         try:
             scene: PreviewScene = self.scene.build_scene(self.ctx, model, grid_step_mm=10.0)
         except Exception:
@@ -408,12 +471,13 @@ class CoatingPreviewPanel(QWidget):
         max_points = int(globals_params.get("max_points", 500))
         stand_off_mm = float(globals_params.get("stand_off_mm", 10.0))
 
+        # ✅ Mask konstant 50mm über TCP (entlang Normalen)
         MASK_OFFSET_MM = 50.0
 
         pbs = getattr(model, "paths_by_side", {}) or {}
         sides = [str(k).lower() for k in pbs.keys() if str(k).lower() in _ALLOWED_SIDES]
 
-        built = pb.PathBuilder.from_recipe_paths(
+        built = PathBuilder.from_recipe_paths(
             recipe=model,
             sides=sides,
             globals_params=globals_params,
@@ -421,6 +485,7 @@ class CoatingPreviewPanel(QWidget):
             max_points=max_points,
         )
 
+        # Clear overlays
         for lyr in (
             "path", "path_markers",
             "mask", "mask_markers",
@@ -430,7 +495,10 @@ class CoatingPreviewPanel(QWidget):
         ):
             self.scene.clear_layer(lyr)
 
-        tcp_all: List[np.ndarray] = []
+        tcp_all_world: List[np.ndarray] = []
+
+        # ✅ Welt->Substrate-Origin (Mount-Top-Center)
+        origin_world = _substrate_origin_world(scene, substrate_mesh)
 
         for side_id, pdata in built:
             side = str(side_id).lower()
@@ -454,10 +522,14 @@ class CoatingPreviewPanel(QWidget):
             except Exception:
                 source = ""
 
+            # ✅ Startpunkte + Raycast-Side bestimmen:
             if side in ("helix", "polyhelix"):
                 P_start = _embed_3d_world_centered(P_local, substrate_mesh.bounds)
+
+                # Raycaster radial XY via source trigger
                 if side == "helix" and (not source):
                     source = "helix"
+
                 side_for_rays = "top"
             else:
                 P_start = _embed_path_on_face(P_local, side, substrate_mesh.bounds)
@@ -485,39 +557,16 @@ class CoatingPreviewPanel(QWidget):
 
             hit = np.asarray(rc.hit_mm, float).reshape(-1, 3)[valid]
             nrm = _normalize(np.asarray(rc.normal, float).reshape(-1, 3)[valid])
-            tcp = np.asarray(rc.tcp_mm, float).reshape(-1, 3)[valid]
+            tcp_world = np.asarray(rc.tcp_mm, float).reshape(-1, 3)[valid]
 
-            tcp_all.append(tcp)
+            tcp_all_world.append(tcp_world)
 
-            # Persist final TCP points into model.paths_compiled
-            try:
-                model.paths_compiled = model.paths_compiled or {}
-                if not model.paths_compiled.get("frame"):
-                    model.paths_compiled["frame"] = "scene"
+            # ✅ Mask = TCP + Normal * 50mm (WORLD, fürs Overlay)
+            mask_world = tcp_world + nrm * float(MASK_OFFSET_MM)
 
-                tool_frame: str = getattr(model, "tool_frame", None) or "tool_mount"
-                if isinstance(getattr(model, "planner", None), dict):
-                    tool_frame = model.planner.get("tool_frame", tool_frame)
-                model.paths_compiled["tool_frame"] = tool_frame
-
-                model.paths_compiled.setdefault("sides", {})
-
-                tcp_pts = tcp.reshape(-1, 3)
-                poses_quat = [
-                    {"x": float(x), "y": float(y), "z": float(z), "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}
-                    for (x, y, z) in tcp_pts
-                ]
-                model.paths_compiled["sides"][str(side)] = {
-                    "poses_quat": poses_quat,
-                    "meta": {"num_points": len(poses_quat)},
-                }
-            except Exception:
-                _LOG.exception("Persisting model.paths_compiled failed")
-
-            mask_world = tcp + nrm * float(MASK_OFFSET_MM)
-
+            # -------- Draw (WORLD) --------
             if vis.get("path", True):
-                self.scene.add_path_polyline(tcp, layer="path", color="#2ecc71", line_width=2.2, lighting=False)
+                self.scene.add_path_polyline(tcp_world, layer="path", color="#2ecc71", line_width=2.2, lighting=False)
 
             if vis.get("mask", True):
                 self.scene.add_path_polyline(mask_world, layer="mask", color="royalblue", line_width=3.0, lighting=False)
@@ -529,16 +578,16 @@ class CoatingPreviewPanel(QWidget):
                 self.scene.add_mesh(rays_miss_poly, layer="rays_miss", color="#e74c3c", line_width=1.2, lighting=False)
 
             if vis.get("normals", False):
-                st = _polydata_from_segments(hit, tcp)
+                st = _polydata_from_segments(hit, tcp_world)
                 if not _is_empty_poly(st):
                     self.scene.add_mesh(st, layer="normals", color="#f39c12", line_width=1.2, lighting=False)
 
-                nm = _polydata_from_segments(tcp, tcp + nrm * 10.0)
+                nm = _polydata_from_segments(tcp_world, tcp_world + nrm * 10.0)
                 if not _is_empty_poly(nm):
                     self.scene.add_mesh(nm, layer="normals", color="#f1c40f", line_width=1.2, lighting=False)
 
             if vis.get("frames", False):
-                T = _tangents_from_path(tcp)
+                T = _tangents_from_path(tcp_world)
                 X = T - nrm * np.sum(T * nrm, axis=1, keepdims=True)
                 X = _normalize(X)
 
@@ -549,14 +598,14 @@ class CoatingPreviewPanel(QWidget):
 
                 Y = _normalize(np.cross(nrm, X))
 
-                n_pts = len(tcp)
+                n_pts = len(tcp_world)
                 sstep = max(1, int(round(max(1, n_pts // 60))))
-                O2 = tcp[::sstep]
+                O2 = tcp_world[::sstep]
                 X2 = X[::sstep]
                 Y2 = Y[::sstep]
                 Z2 = nrm[::sstep]
 
-                sx = 12.0
+                sx = 12.0  # mm
                 mx = _polydata_from_segments(O2, O2 + X2 * sx)
                 my = _polydata_from_segments(O2, O2 + Y2 * sx)
                 mz = _polydata_from_segments(O2, O2 + Z2 * sx)
@@ -568,10 +617,56 @@ class CoatingPreviewPanel(QWidget):
                 if not _is_empty_poly(mz):
                     self.scene.add_mesh(mz, layer="frames_z", color="#2980b9", line_width=1.0, lighting=False)
 
-        path_xyz = None
-        if tcp_all:
+            # ------------------------------------------------------------------
+            # 💾 Persist final TCP points into model.paths_compiled
+            #     IMPORTANT: speichern in SUBSTRATE-FRAME (Mount-Top-Center)
             try:
-                path_xyz = np.vstack(tcp_all)
+                tcp_local = tcp_world - origin_world[None, :]
+
+                model.paths_compiled = model.paths_compiled or {}
+
+                # ✅ jetzt ist es NICHT world/scene, sondern substrate-origin
+                model.paths_compiled["frame"] = "substrate"
+
+                tool_frame: str = getattr(model, "tool_frame", None) or "tool_mount"
+                if isinstance(getattr(model, "planner", None), dict):
+                    tool_frame = model.planner.get("tool_frame", tool_frame)
+                model.paths_compiled["tool_frame"] = tool_frame
+
+                model.paths_compiled.setdefault("sides", {})
+                model.paths_compiled.setdefault("meta", {})
+
+                # hilfreich fürs Debuggen/ROS:
+                model.paths_compiled["meta"]["origin_world_mm"] = [float(origin_world[0]), float(origin_world[1]), float(origin_world[2])]
+                model.paths_compiled["meta"]["origin_definition"] = "mount_top_center_xy__zmax"
+                model.paths_compiled["meta"]["note"] = "poses are tcp in substrate frame (origin subtracted from WORLD tcp)"
+
+                poses_quat = [
+                    {
+                        "x": float(x),
+                        "y": float(y),
+                        "z": float(z),
+                        "qx": 0.0,
+                        "qy": 0.0,
+                        "qz": 0.0,
+                        "qw": 1.0,
+                    }
+                    for (x, y, z) in tcp_local.reshape(-1, 3)
+                ]
+
+                model.paths_compiled["sides"][str(side)] = {
+                    "poses_quat": poses_quat,
+                    "meta": {"num_points": len(poses_quat), "side": str(side), "source": source},
+                }
+            except Exception:
+                _LOG.exception("Persisting model.paths_compiled failed")
+            # ------------------------------------------------------------------
+
+        # 2D update (WORLD fürs Preview)
+        path_xyz = None
+        if tcp_all_world:
+            try:
+                path_xyz = np.vstack(tcp_all_world)
             except Exception:
                 path_xyz = None
 
@@ -597,6 +692,8 @@ class CoatingPreviewPanel(QWidget):
             _LOG.exception("restore_camera failed")
 
         self.scene.update_current_views_once(refresh_2d=self._mat2d.refresh)
+
+    # -------- Helpers --------
 
     def _set_info_defaults(self) -> None:
         try:
@@ -679,6 +776,7 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("update_2d_scene failed")
 
+    # SceneManager passthroughs
     def clear(self) -> None:
         self.scene.clear()
 

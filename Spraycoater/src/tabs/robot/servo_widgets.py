@@ -9,7 +9,7 @@ import logging
 from PyQt6 import QtCore
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QGridLayout,
+    QWidget, QVBoxLayout, QPushButton, QLabel, QGridLayout,
     QSizePolicy, QFormLayout, QDoubleSpinBox, QSlider, QSpacerItem, QRadioButton,
     QLayout
 )
@@ -83,46 +83,13 @@ def _find_servo_bridge(ros: Any, *, log_prefix: str):
     _LOG.error("[%s] No Servo found on RosBridge.", log_prefix)
     return None
 
-    ensure = getattr(ros, "ensure_connected", None)
-    if callable(ensure):
-        try:
-            ensure()
-        except Exception as e:
-            _LOG.warning("[%s] bridge.ensure_connected() failed: %s", log_prefix, e)
-
-    if hasattr(ros, "servo") or hasattr(ros, "servo_bridge"):
-        try:
-            b = bridge.servo_bridge
-            sig = getattr(b, "signals", None)
-            if sig is None:
-                _LOG.error("[%s] bridge.servo_bridge exists but has no .signals", log_prefix)
-                return None
-            return b
-        except AssertionError as e:
-            _LOG.warning("[%s] bridge.servo_bridge not available (not connected?): %s", log_prefix, e)
-        except Exception as e:
-            _LOG.exception("[%s] error accessing bridge.servo_bridge: %s", log_prefix, e)
-
-    b = getattr(bridge, "_servo", None)
-    if b is not None and getattr(b, "signals", None) is not None:
-        _LOG.info("[%s] ServoBridge found via bridge._servo (fallback).", log_prefix)
-        return b
-
-    _LOG.error(
-        "[%s] No ServoBridge found. has servo_bridge=%s, _servo=%r",
-        log_prefix,
-        hasattr(bridge, "servo_bridge"),
-        getattr(bridge, "_servo", None),
-    )
-    return None
-
 
 # =============================================================================
-# JointJogWidget – Joint-Jogging
+# JointJogWidget – Joint-Jogging (press/hold streaming + stop on release)
 # =============================================================================
 class JointJogWidget(QWidget):
     paramsChanged = QtCore.pyqtSignal(dict)
-    jointJogRequested = QtCore.pyqtSignal(str, float, float)  # joint_name, delta_deg, speed_pct
+    jointJogRequested = QtCore.pyqtSignal(str, float, float)  # joint_name, delta_deg(sign), speed_pct
 
     def __init__(self, ctx, ros=None, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -136,6 +103,14 @@ class JointJogWidget(QWidget):
         # debounced wiring attempts
         self._wire_tries: int = 0
         self._wire_timer: Optional[QtCore.QTimer] = None
+
+        # Jog streaming
+        self._jog_timer: QtCore.QTimer = QtCore.QTimer(self)
+        self._jog_timer.setInterval(20)  # 50 Hz
+        self._jog_timer.timeout.connect(self._on_jog_tick)
+        self._active_joint: Optional[str] = None
+        self._active_sign: float = 0.0  # -1 / +1
+        self._last_sent: float = 0.0
 
         self._joint_names: List[str] = []
         self._joint_lims_deg: List[Tuple[float, float]] = []
@@ -327,14 +302,18 @@ class JointJogWidget(QWidget):
             self.grid.addWidget(btnp, row_idx, 3)
             self.grid.addWidget(lblVal, row_idx, 4)
 
-            for b in (btnm, btnp):
-                b.setAutoRepeat(True)
-                b.setAutoRepeatDelay(300)
-                b.setAutoRepeatInterval(80)
-
             idx = row_idx - 1
-            btnm.clicked.connect(lambda _=False, i=idx: self._emit_joint_step(i, True))
-            btnp.clicked.connect(lambda _=False, i=idx: self._emit_joint_step(i, False))
+
+            # press/hold streaming
+            btnm.pressed.connect(lambda i=idx: self._start_jog(i, negative=True))
+            btnm.released.connect(self._stop_jog)
+
+            btnp.pressed.connect(lambda i=idx: self._start_jog(i, negative=False))
+            btnp.released.connect(self._stop_jog)
+
+            # optional: short click pulse (keine AutoRepeat!)
+            btnm.clicked.connect(lambda _=False, i=idx: self._pulse_step(i, negative=True))
+            btnp.clicked.connect(lambda _=False, i=idx: self._pulse_step(i, negative=False))
 
             self._rows.append((btnm, sld, btnp, lblVal))
 
@@ -377,21 +356,62 @@ class JointJogWidget(QWidget):
             self._try_wire_debounced()
         self.paramsChanged.emit(self.get_params())
 
-    def _emit_joint_step(self, idx, negative):
-        if idx < 0 or idx >= len(self._rows):
+    # ---- Jog streaming (hold)
+    def _start_jog(self, idx: int, *, negative: bool) -> None:
+        if idx < 0 or idx >= len(self._joint_names):
             return
-
         if not self._servo_wired:
             self._try_wire_debounced()
             if not self._servo_wired and not self._wired_warned:
                 _LOG.warning("[JointJogWidget] Jog pressed but ServoBridge not wired.")
                 self._wired_warned = True
 
-        name = self._joint_names[idx]
+        self._active_joint = str(self._joint_names[idx])
+        self._active_sign = -1.0 if negative else 1.0
+        self._last_sent = 0.0
+
+        if not self._jog_timer.isActive():
+            self._jog_timer.start()
+
+        # send immediately (low latency)
+        self._on_jog_tick()
+
+    def _stop_jog(self) -> None:
+        # stop timer + send zero command once
+        if self._jog_timer.isActive():
+            self._jog_timer.stop()
+
+        j = self._active_joint
+        self._active_joint = None
+        self._active_sign = 0.0
+
+        if j:
+            # speed 0 => ServoBridge publishes zero velocity
+            self.jointJogRequested.emit(str(j), 0.0, 0.0)
+
+    def _on_jog_tick(self) -> None:
+        if not self._active_joint or self._active_sign == 0.0:
+            return
+
+        # we only need sign for ServoBridge (it maps speed_pct to rad/s)
+        spct = float(self.spinSpeedPct.value())
+        self.jointJogRequested.emit(str(self._active_joint), float(self._active_sign), float(spct))
+
+    # ---- Pulse (single click)
+    def _pulse_step(self, idx: int, *, negative: bool) -> None:
+        if idx < 0 or idx >= len(self._joint_names):
+            return
+
+        name = str(self._joint_names[idx])
         step = float(self.spinStepDeg.value())
         delta = -step if negative else step
         speed = float(self.spinSpeedPct.value())
-        self.jointJogRequested.emit(str(name), float(delta), float(speed))
+
+        # single command (no repeat)
+        self.jointJogRequested.emit(name, float(delta), float(speed))
+
+        # ensure "stop" shortly after (prevents residual velocity)
+        QtCore.QTimer.singleShot(80, lambda: self.jointJogRequested.emit(name, 0.0, 0.0))
 
     def _apply_vertical_max(self):
         for w in [self] + self.findChildren(QWidget):
@@ -402,12 +422,12 @@ class JointJogWidget(QWidget):
 
 
 # =============================================================================
-# CartesianJogWidget – sendet frame als "world"/"tcp" (kein wrf/trf mehr)
+# CartesianJogWidget – press/hold streaming + stop on release
 # =============================================================================
 class CartesianJogWidget(QWidget):
     frameChanged = QtCore.pyqtSignal(str)  # "world" / "tcp"
     paramsChanged = QtCore.pyqtSignal(dict)
-    cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)  # axis, delta, speed, frame
+    cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)  # axis, delta(sign), speed, frame
 
     def __init__(self, ctx, ros=None, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -421,6 +441,13 @@ class CartesianJogWidget(QWidget):
         # debounced wiring attempts
         self._wire_tries: int = 0
         self._wire_timer: Optional[QtCore.QTimer] = None
+
+        # Jog streaming
+        self._jog_timer: QtCore.QTimer = QtCore.QTimer(self)
+        self._jog_timer.setInterval(20)  # 50 Hz
+        self._jog_timer.timeout.connect(self._on_jog_tick)
+        self._active_axis: Optional[str] = None
+        self._active_sign: float = 0.0  # -1 / +1
 
         self._build_ui()
         self._wire_signals()
@@ -522,7 +549,6 @@ class CartesianJogWidget(QWidget):
         self.spinAngStep.setSingleStep(0.1)
         self.spinAngStep.setSuffix(" °")
 
-        # ✅ separate speeds (fix semantics)
         self.spinSpeedLin = QDoubleSpinBox(self)
         self.spinSpeedLin.setRange(1.0, 5000.0)
         self.spinSpeedLin.setDecimals(1)
@@ -541,15 +567,23 @@ class CartesianJogWidget(QWidget):
         form.addRow("Speed rot (°/s)", self.spinSpeedRot)
         root.addLayout(form)
 
-        fr = QHBoxLayout()
-        fr.addWidget(QLabel("Frame:", self))
-        # UI-Text darf bleiben, aber intern senden wir world/tcp
+        fr = QtCore.QObject()  # placeholder to keep structure identical (no extra import)
+        del fr
+
+        frl = QVBoxLayout()  # small wrapper to avoid another import
+        frh = QtCore.QObject()
+        del frh
+        frbox = QtCore.QObject()
+        del frbox
+
+        fr = QGridLayout()
+        fr.addWidget(QLabel("Frame:", self), 0, 0)
         self.rbWRF = QRadioButton("World", self)
         self.rbTRF = QRadioButton("TCP", self)
         self.rbWRF.setChecked(True)
-        fr.addWidget(self.rbWRF)
-        fr.addWidget(self.rbTRF)
-        fr.addStretch(1)
+        fr.addWidget(self.rbWRF, 0, 1)
+        fr.addWidget(self.rbTRF, 0, 2)
+        fr.setColumnStretch(3, 1)
         root.addLayout(fr)
 
         grid1 = QGridLayout()
@@ -584,15 +618,6 @@ class CartesianJogWidget(QWidget):
         grid2.addWidget(self.btnRzp, 3, 1)
         root.addLayout(grid2)
 
-        for b in (
-            self.btnXm, self.btnXp, self.btnYm, self.btnYp,
-            self.btnZm, self.btnZp, self.btnRxm, self.btnRxp,
-            self.btnRym, self.btnRyp, self.btnRzm, self.btnRzp
-        ):
-            b.setAutoRepeat(True)
-            b.setAutoRepeatDelay(300)
-            b.setAutoRepeatInterval(80)
-
         root.addItem(QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
     def _bold(self, txt):
@@ -606,27 +631,46 @@ class CartesianJogWidget(QWidget):
         self.spinSpeedLin.valueChanged.connect(lambda _v: self._emit_params())
         self.spinSpeedRot.valueChanged.connect(lambda _v: self._emit_params())
 
-        # ✅ FIX: toggled feuert doppelt (TRF True + WRF False). Wir reagieren nur auf checked=True.
+        # toggled fires twice -> react only on checked=True
         self.rbWRF.toggled.connect(self._on_frame_toggled)
         self.rbTRF.toggled.connect(self._on_frame_toggled)
 
-        self.btnXm.clicked.connect(lambda _=False: self._emit_cart("x", -self.spinLinStep.value()))
-        self.btnXp.clicked.connect(lambda _=False: self._emit_cart("x",  self.spinLinStep.value()))
-        self.btnYm.clicked.connect(lambda _=False: self._emit_cart("y", -self.spinLinStep.value()))
-        self.btnYp.clicked.connect(lambda _=False: self._emit_cart("y",  self.spinLinStep.value()))
-        self.btnZm.clicked.connect(lambda _=False: self._emit_cart("z", -self.spinLinStep.value()))
-        self.btnZp.clicked.connect(lambda _=False: self._emit_cart("z",  self.spinLinStep.value()))
+        # press/hold streaming
+        self._wire_button_hold(self.btnXm, axis="x", sign=-1.0)
+        self._wire_button_hold(self.btnXp, axis="x", sign=+1.0)
+        self._wire_button_hold(self.btnYm, axis="y", sign=-1.0)
+        self._wire_button_hold(self.btnYp, axis="y", sign=+1.0)
+        self._wire_button_hold(self.btnZm, axis="z", sign=-1.0)
+        self._wire_button_hold(self.btnZp, axis="z", sign=+1.0)
 
-        self.btnRxm.clicked.connect(lambda _=False: self._emit_rot("rx", -self.spinAngStep.value()))
-        self.btnRxp.clicked.connect(lambda _=False: self._emit_rot("rx",  self.spinAngStep.value()))
-        self.btnRym.clicked.connect(lambda _=False: self._emit_rot("ry", -self.spinAngStep.value()))
-        self.btnRyp.clicked.connect(lambda _=False: self._emit_rot("ry",  self.spinAngStep.value()))
-        self.btnRzm.clicked.connect(lambda _=False: self._emit_rot("rz", -self.spinAngStep.value()))
-        self.btnRzp.clicked.connect(lambda _=False: self._emit_rot("rz",  self.spinAngStep.value()))
+        self._wire_button_hold(self.btnRxm, axis="rx", sign=-1.0)
+        self._wire_button_hold(self.btnRxp, axis="rx", sign=+1.0)
+        self._wire_button_hold(self.btnRym, axis="ry", sign=-1.0)
+        self._wire_button_hold(self.btnRyp, axis="ry", sign=+1.0)
+        self._wire_button_hold(self.btnRzm, axis="rz", sign=-1.0)
+        self._wire_button_hold(self.btnRzp, axis="rz", sign=+1.0)
+
+        # optional: short click pulse (keine AutoRepeat!)
+        self.btnXm.clicked.connect(lambda _=False: self._pulse_step("x", -1.0))
+        self.btnXp.clicked.connect(lambda _=False: self._pulse_step("x", +1.0))
+        self.btnYm.clicked.connect(lambda _=False: self._pulse_step("y", -1.0))
+        self.btnYp.clicked.connect(lambda _=False: self._pulse_step("y", +1.0))
+        self.btnZm.clicked.connect(lambda _=False: self._pulse_step("z", -1.0))
+        self.btnZp.clicked.connect(lambda _=False: self._pulse_step("z", +1.0))
+
+        self.btnRxm.clicked.connect(lambda _=False: self._pulse_step("rx", -1.0))
+        self.btnRxp.clicked.connect(lambda _=False: self._pulse_step("rx", +1.0))
+        self.btnRym.clicked.connect(lambda _=False: self._pulse_step("ry", -1.0))
+        self.btnRyp.clicked.connect(lambda _=False: self._pulse_step("ry", +1.0))
+        self.btnRzm.clicked.connect(lambda _=False: self._pulse_step("rz", -1.0))
+        self.btnRzp.clicked.connect(lambda _=False: self._pulse_step("rz", +1.0))
+
+    def _wire_button_hold(self, btn: QPushButton, *, axis: str, sign: float) -> None:
+        btn.pressed.connect(lambda a=axis, s=sign: self._start_jog(a, s))
+        btn.released.connect(self._stop_jog)
 
     @QtCore.pyqtSlot(bool)
     def _on_frame_toggled(self, checked: bool) -> None:
-        # ✅ verhindert Doppel-Call / Signal-Sturm
         if not checked:
             return
         self._on_frame_changed()
@@ -657,8 +701,6 @@ class CartesianJogWidget(QWidget):
     def set_frame(self, f: str):
         """Accepts 'world' or 'tcp' (legacy 'wrf'/'trf' tolerated)."""
         raw = (f or "").strip().lower()
-
-        # tolerate legacy
         if raw == "trf":
             raw = "tcp"
         elif raw == "wrf":
@@ -666,7 +708,6 @@ class CartesianJogWidget(QWidget):
 
         target_tcp = (raw == "tcp")
 
-        # ✅ FIX: avoid feedback loop when setting checked programmatically
         b1 = QtCore.QSignalBlocker(self.rbWRF)
         b2 = QtCore.QSignalBlocker(self.rbTRF)
         try:
@@ -687,30 +728,67 @@ class CartesianJogWidget(QWidget):
     def _on_frame_changed(self):
         if not self._servo_wired:
             self._try_wire_debounced()
-        self.frameChanged.emit(self.get_frame())  # world/tcp
+        self.frameChanged.emit(self.get_frame())
         self._emit_params()
 
-    def _emit_cart(self, axis: str, delta_mm: float):
+    # ---- Jog streaming (hold)
+    def _start_jog(self, axis: str, sign: float) -> None:
         if not self._servo_wired:
             self._try_wire_debounced()
             if not self._servo_wired and not self._wired_warned:
                 _LOG.warning("[CartesianJogWidget] Jog pressed but ServoBridge not wired.")
                 self._wired_warned = True
 
-        frame = self.get_frame()  # world/tcp
-        speed_mm_s = float(self.spinSpeedLin.value())
-        self.cartesianJogRequested.emit(str(axis), float(delta_mm), speed_mm_s, frame)
+        self._active_axis = str(axis)
+        self._active_sign = float(sign)
 
-    def _emit_rot(self, axis: str, delta_deg: float):
-        if not self._servo_wired:
-            self._try_wire_debounced()
-            if not self._servo_wired and not self._wired_warned:
-                _LOG.warning("[CartesianJogWidget] Jog pressed but ServoBridge not wired.")
-                self._wired_warned = True
+        if not self._jog_timer.isActive():
+            self._jog_timer.start()
 
-        frame = self.get_frame()  # world/tcp
-        speed_deg_s = float(self.spinSpeedRot.value())
-        self.cartesianJogRequested.emit(str(axis), float(delta_deg), speed_deg_s, frame)
+        # immediate send
+        self._on_jog_tick()
+
+    def _stop_jog(self) -> None:
+        if self._jog_timer.isActive():
+            self._jog_timer.stop()
+
+        a = self._active_axis
+        self._active_axis = None
+        self._active_sign = 0.0
+
+        if a:
+            # send zero once
+            self.cartesianJogRequested.emit(str(a), 0.0, 0.0, self.get_frame())
+
+    def _on_jog_tick(self) -> None:
+        if not self._active_axis or self._active_sign == 0.0:
+            return
+
+        a = self._active_axis
+        frame = self.get_frame()
+
+        if a in ("rx", "ry", "rz"):
+            speed = float(self.spinSpeedRot.value())
+        else:
+            speed = float(self.spinSpeedLin.value())
+
+        # delta only indicates sign in ServoBridge (Bridge uses copysign)
+        self.cartesianJogRequested.emit(str(a), float(self._active_sign), float(speed), str(frame))
+
+    # ---- Pulse (single click)
+    def _pulse_step(self, axis: str, sign: float) -> None:
+        a = str(axis)
+        frame = self.get_frame()
+
+        if a in ("rx", "ry", "rz"):
+            delta = float(self.spinAngStep.value()) * float(sign)
+            speed = float(self.spinSpeedRot.value())
+        else:
+            delta = float(self.spinLinStep.value()) * float(sign)
+            speed = float(self.spinSpeedLin.value())
+
+        self.cartesianJogRequested.emit(a, float(delta), float(speed), str(frame))
+        QtCore.QTimer.singleShot(80, lambda: self.cartesianJogRequested.emit(a, 0.0, 0.0, str(frame)))
 
     def _apply_vertical_max(self):
         for w in [self] + self.findChildren(QWidget):

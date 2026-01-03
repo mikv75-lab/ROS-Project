@@ -73,12 +73,10 @@ class ServoBridge(BaseBridge):
 
     GROUP = "servo"
 
-    # Frames: nur diese beiden sind erlaubt
     FRAME_WORLD = "world"
     FRAME_TCP = "tcp"
 
     def __init__(self, content: AppContent, *, namespace: str = ""):
-        # Signale müssen existieren bevor UI_bridge.reemit_cached() kommt
         self.signals = ServoSignals()
 
         self._ui_to_node_pubs: Dict[str, Any] = {}
@@ -93,7 +91,6 @@ class ServoBridge(BaseBridge):
         self._joint_step_deg: float = 2.0
         self._joint_speed_pct: float = 40.0
 
-        # Nur noch world/tcp, default world
         self._frame: str = self.FRAME_WORLD
         self._last_mode_txt: Optional[str] = None
         self._last_frame_txt: Optional[str] = None
@@ -117,7 +114,6 @@ class ServoBridge(BaseBridge):
         self._ensure_sub("twist_out", TwistStamped, self._on_twist_out)
         self._ensure_sub("joint_out", JointJog, self._on_joint_out)
 
-        # Detect JointJog.duration type once (SSoT)
         tmp = JointJog()
         self._duration_field_type = tmp.get_fields_and_field_types().get("duration", "")
         self.get_logger().info(f"[servo] JointJog.duration field type = {self._duration_field_type!r}")
@@ -132,16 +128,11 @@ class ServoBridge(BaseBridge):
     # ─────────────────────────────────────────────────────────────
 
     def _normalize_frame(self, frame: str) -> str:
-        """
-        Erlaubt NUR "world" und "tcp".
-        Alles andere wird auf "world" gemappt.
-        """
         raw = (frame or "").strip().lower()
         if raw == self.FRAME_TCP:
             return self.FRAME_TCP
         if raw == self.FRAME_WORLD:
             return self.FRAME_WORLD
-        # harte Policy: alles raus -> world
         return self.FRAME_WORLD
 
     # ─────────────────────────────────────────────────────────────
@@ -154,8 +145,7 @@ class ServoBridge(BaseBridge):
     def _ensure_pub(self, topic_id: str, msg_type: Type) -> None:
         if topic_id in self._ui_to_node_pubs:
             return
-
-        spec = self._spec("subscribe", topic_id)  # Node subscribt => UI published
+        spec = self._spec("subscribe", topic_id)  # Node subscribes => UI publishes
         qos = self._content.qos(spec.qos_key)
         self._ui_to_node_pubs[topic_id] = self.create_publisher(msg_type, spec.name, qos)
         self.get_logger().info(f"[servo] PUB ui->node id={topic_id} topic={spec.name} qos={spec.qos_key}")
@@ -163,8 +153,7 @@ class ServoBridge(BaseBridge):
     def _ensure_sub(self, topic_id: str, msg_type: Type, cb: Callable) -> None:
         if topic_id in self._node_to_ui_subs:
             return
-
-        spec = self._spec("publish", topic_id)  # Node publisht => UI subscribt
+        spec = self._spec("publish", topic_id)  # Node publishes => UI subscribes
         qos = self._content.qos(spec.qos_key)
         self._node_to_ui_subs[topic_id] = self.create_subscription(msg_type, spec.name, cb, qos)
         self.get_logger().info(f"[servo] SUB node->ui id={topic_id} topic={spec.name} qos={spec.qos_key}")
@@ -180,11 +169,6 @@ class ServoBridge(BaseBridge):
     # ─────────────────────────────────────────────────────────────
 
     def _set_jointjog_duration(self, msg: JointJog, seconds: float) -> None:
-        """
-        Kompatibel mit beiden Varianten:
-        - duration: double  -> float setzen
-        - duration: builtin_interfaces/Duration -> Duration(sec,nanosec)
-        """
         t = self._duration_field_type or ""
         seconds = float(seconds)
 
@@ -192,15 +176,13 @@ class ServoBridge(BaseBridge):
             msg.duration = float(seconds)
             return
 
-        # Fallback: try Duration message
         try:
-            from builtin_interfaces.msg import Duration as MsgDuration  # lazy import
+            from builtin_interfaces.msg import Duration as MsgDuration
             sec = int(seconds)
             nanosec = int((seconds - sec) * 1_000_000_000)
             msg.duration = MsgDuration(sec=sec, nanosec=nanosec)
             return
         except Exception as e:
-            # last resort: set float
             self.get_logger().warn(f"[servo] duration type unknown ({t!r}), fallback float: {e}")
             msg.duration = float(seconds)
 
@@ -209,10 +191,6 @@ class ServoBridge(BaseBridge):
     # ─────────────────────────────────────────────────────────────
 
     def set_command_type(self, mode: str, *, force: bool = False) -> None:
-        """
-        publish auf set_mode (String).
-        Akzeptiert: "joint"/"cart" oder direkt "JOINT_JOG"/"TWIST"/...
-        """
         raw = (mode or "").strip().lower()
         if raw in ("joint", "j", "joint_jog"):
             txt = "JOINT_JOG"
@@ -229,11 +207,6 @@ class ServoBridge(BaseBridge):
         self.get_logger().info(f"[servo_bridge] PUB set_mode -> {txt} (force={force})")
 
     def set_frame(self, frame: str, *, force: bool = False) -> str:
-        """
-        publish auf set_frame (String).
-        Frames: NUR "world" oder "tcp".
-        Returns: normalisierter Frame ("world"|"tcp")
-        """
         txt = self._normalize_frame(frame)
         self._frame = txt
 
@@ -266,65 +239,67 @@ class ServoBridge(BaseBridge):
         if "cart_speed_deg_s" in cfg:
             self._cart_speed_deg_s = float(cfg["cart_speed_deg_s"])
 
-        # frames: nur world/tcp
         if "frame" in cfg:
             self._frame = self._normalize_frame(str(cfg["frame"]))
 
     def _on_frame_changed(self, frame: str) -> None:
-        # Frame muss "world" oder "tcp" sein
         self.set_frame(frame, force=False)
 
     def _on_joint_jog_requested(self, joint_name: str, delta_deg: float, speed_pct: float) -> None:
-        # robust: always publish mode on jog (wrapper may have restarted)
-        self.set_command_type("joint", force=True)
-        # joint jog braucht keinen Frame, aber wir halten policy-konform "world"
+        # DO NOT force spam set_mode each tick (widgets stream at 50 Hz)
+        self.set_command_type("joint", force=False)
         self.set_frame(self.FRAME_WORLD, force=False)
 
-        # harte Casts (PyQt-Signale können komische Typen liefern)
         j = str(joint_name)
         ddeg = float(delta_deg)
         spct = float(speed_pct) if speed_pct is not None else float(self._joint_speed_pct)
 
-        # MoveIt Servo JointJog (command_in_type: speed_units):
-        # velocities sind rad/s. Wir mappen 0..100% auf 0..1 rad/s (wie vorher),
-        # und setzen das Vorzeichen über delta_deg.
-        v_mag = float(max(0.0, min(1.0, spct / 100.0)))  # 0..1
+        # STOP command
+        if spct <= 0.0 or ddeg == 0.0:
+            msg = JointJog()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = self.FRAME_WORLD
+            msg.joint_names = [j]
+            msg.velocities = [0.0]
+            msg.displacements = []
+            self._set_jointjog_duration(msg, seconds=0.1)
+            self._pub("joint_jog").publish(msg)
+            return
+
+        v_mag = float(max(0.0, min(1.0, spct / 100.0)))  # 0..1 rad/s (as before)
         v = math.copysign(v_mag, ddeg)
 
         msg = JointJog()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = self.FRAME_WORLD  # NIE leer lassen
+        msg.header.frame_id = self.FRAME_WORLD
 
         msg.joint_names = [j]
         msg.velocities = [float(v)]
-
-        # IMPORTANT: displacements wird von moveit_servo (Humble) aktuell nicht unterstützt
-        # -> leer lassen, sonst kommt Warnung und es wird ignoriert.
         msg.displacements = []
 
         self._set_jointjog_duration(msg, seconds=0.1)
 
         self._pub("joint_jog").publish(msg)
-        self.get_logger().info(
-            f"[servo_bridge] PUB joint_jog joint={j} delta_deg={ddeg:+.3f} "
-            f"speed_pct={spct:.1f} vel_rad_s={v:+.6f} duration={msg.duration!r}"
-        )
 
     def _on_cart_jog_requested(self, axis: str, delta: float, speed: float, frame: str) -> None:
-        # robust: always publish mode + frame on jog
-        self.set_command_type("cart", force=True)
-        frame_txt = self.set_frame(frame, force=True)  # -> "world"|"tcp"
+        # DO NOT force spam set_mode/frame each tick
+        self.set_command_type("cart", force=False)
+        frame_txt = self.set_frame(frame, force=False)
 
         a = (axis or "").strip().lower()
         d = float(delta)
-
         s = float(speed) if speed is not None else (
             self._cart_speed_deg_s if a in ("rx", "ry", "rz") else self._cart_speed_mm_s
         )
 
         msg = TwistStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = frame_txt  # NIE leer lassen (sonst tf2 Fehler)
+        msg.header.frame_id = frame_txt  # never empty
+
+        # STOP command
+        if s <= 0.0 or d == 0.0:
+            self._pub("cartesian_mm").publish(msg)
+            return
 
         if a in ("x", "y", "z"):
             lin_v = float(s / 1000.0)  # mm/s -> m/s
@@ -336,10 +311,6 @@ class ServoBridge(BaseBridge):
                 msg.twist.linear.z = math.copysign(lin_v, d)
 
             self._pub("cartesian_mm").publish(msg)
-            self.get_logger().info(
-                f"[servo_bridge] PUB cartesian_mm axis={a} delta_mm={d:+.3f} speed_mm_s={s:.1f} "
-                f"frame={frame_txt} lin_v={lin_v:.4f}"
-            )
             return
 
         if a in ("rx", "ry", "rz"):
@@ -352,10 +323,6 @@ class ServoBridge(BaseBridge):
                 msg.twist.angular.z = math.copysign(ang_v, d)
 
             self._pub("cartesian_mm").publish(msg)
-            self.get_logger().info(
-                f"[servo_bridge] PUB cartesian_mm axis={a} delta_deg={d:+.3f} speed_deg_s={s:.1f} "
-                f"frame={frame_txt} ang_v={ang_v:.4f}"
-            )
             return
 
         self.get_logger().warning(f"[servo_bridge] unknown cart axis: {axis!r}")

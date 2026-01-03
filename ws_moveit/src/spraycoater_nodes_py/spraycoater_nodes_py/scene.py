@@ -28,6 +28,9 @@ MAX_SCENE_WAIT = 30.0
 # ✅ Republish (nur CollisionObjects). 0.0 = aus
 REPUBLISH_PERIOD_S = 10.0
 
+# ✅ Delay zwischen TF(static) und CollisionObjects (Race-Condition vermeiden)
+CO_PUBLISH_DELAY_S = 0.2
+
 OID_ALIAS = {
     "cage": "cage",
     "mount": "substrate_mount",
@@ -72,10 +75,15 @@ class Scene(Node):
       - wartet stattdessen auf Subscriber (MoveItPy) auf collision_object und sendet dann die Szene
       - republished CollisionObjects periodisch (für Late-Joiner), wenn REPUBLISH_PERIOD_S > 0
 
-    WICHTIGES SPAWN-VERHALTEN (wie von dir gewünscht):
+    WICHTIGES SPAWN-VERHALTEN:
       - Jedes Objekt bekommt einen TF: parent_frame -> object_frame(id) mit position+rpy_deg
       - CollisionObject wird IM object_frame gespawnt (co.header.frame_id = object_frame)
       - mesh_pose enthält NUR mesh_offset + mesh_rpy (lokal im object_frame)
+
+    Fix für "Unknown frame: cage" (Servo/PSM Race-Condition):
+      - TFs bekommen stamp
+      - CollisionObjects bekommen stamp
+      - 2-Phase Publish: erst TFs, dann CollisionObjects nach CO_PUBLISH_DELAY_S
     """
 
     GROUP = "scene"
@@ -178,12 +186,16 @@ class Scene(Node):
         self.final_scene_sent = False
         self.initial_state_published = False
 
+        # ✅ 2-phase state
+        self._cos_sent = False
+        self._co_timer = None
+
         # ✅ logical keys verwenden (cage/mount/substrate)
         self.current_cage: str = self._initial_current_from_yaml("cage")
         self.current_mount: str = self._initial_current_from_yaml("mount")
         self.current_substrate: str = self._initial_current_from_yaml("substrate")
 
-        # Cache für Republish (wird nach _publish_scene gefüllt)
+        # Cache für Republish (wird nach _publish_collision_objects_once gefüllt)
         self._cached_cos: dict[str, CollisionObject] = {}
         self._republish_timer = None
 
@@ -325,6 +337,7 @@ class Scene(Node):
         """
         qx, qy, qz, qw = _quat_from_rpy_deg(*rpy_deg)
         tf = TransformStamped()
+        tf.header.stamp = self.get_clock().now().to_msg()  # ✅ WICHTIG
         tf.header.frame_id = self._F(parent)
         tf.child_frame_id = self._F(child)
         tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z = xyz
@@ -348,6 +361,7 @@ class Scene(Node):
 
         co = CollisionObject()
         co.id = oid
+        co.header.stamp = self.get_clock().now().to_msg()  # ✅ WICHTIG
         co.header.frame_id = self._F(oid)  # ✅ own TF frame
         co.meshes = [mesh_msg]
         co.mesh_poses = [self._pose_from_xyz_quat(mpos, q_mesh)]
@@ -460,6 +474,24 @@ class Scene(Node):
                     f"t=({tf.transform.translation.x:.3f},{tf.transform.translation.y:.3f},{tf.transform.translation.z:.3f})"
                 )
 
+        # ✅ CollisionObjects NICHT sofort (Race) – verzögert senden
+        if self._co_timer is None:
+            self._co_timer = self.create_timer(CO_PUBLISH_DELAY_S, self._publish_collision_objects_once)
+            self.get_logger().info(f"⏳ CollisionObjects folgen nach {CO_PUBLISH_DELAY_S:.2f}s (TF-Buffer warmup)")
+
+    def _publish_collision_objects_once(self):
+        """One-shot: CollisionObjects senden + Cache füllen + Republish starten."""
+        if self._cos_sent:
+            return
+        self._cos_sent = True
+
+        # optional: Timer stoppen, damit er nicht weiter feuert
+        try:
+            if self._co_timer is not None:
+                self._co_timer.cancel()
+        except Exception:
+            pass
+
         # ✅ CollisionObjects senden + Cache füllen
         self._cached_cos = {}
         sent = 0
@@ -506,14 +538,20 @@ class Scene(Node):
         self.wait_timer = self.create_timer(0.5, self._check_ready_by_subscribers)
 
     def _check_ready_by_subscribers(self):
-        if self.final_scene_sent:
-            self.wait_timer.cancel()
+        if self.final_scene_sent and self._cos_sent:
+            try:
+                self.wait_timer.cancel()
+            except Exception:
+                pass
             return
 
         sub_count = self.scene_pub.get_subscription_count()
         if sub_count > 0:
             self.get_logger().info(f"✅ Subscriber auf collision_object erkannt (count={sub_count}) – sende Szene.")
-            self.wait_timer.cancel()
+            try:
+                self.wait_timer.cancel()
+            except Exception:
+                pass
             self._publish_scene()
             return
 
@@ -521,7 +559,10 @@ class Scene(Node):
             self.get_logger().warning(
                 "⚠️ Timeout – kein Subscriber erkannt, sende Szene trotzdem (Republish fängt Late-Joiner)."
             )
-            self.wait_timer.cancel()
+            try:
+                self.wait_timer.cancel()
+            except Exception:
+                pass
             self._publish_scene()
             return
 

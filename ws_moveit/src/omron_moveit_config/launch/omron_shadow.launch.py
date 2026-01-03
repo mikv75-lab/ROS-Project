@@ -175,23 +175,41 @@ def generate_launch_description() -> LaunchDescription:
         "use_sim_time": use_sim_time,
         "update_period": 0.01,
 
-        # ✅ REQUIRED for online_signal_smoothing plugin (Rolling / MoveIt 2.14)
+        # Rolling / smoothing plugin requirement
         "planning_group_name": "omron_arm_group",
 
         "moveit_servo": {
+            # TwistStamped is SI (m/s, rad/s) -> must be "speed_units" in Humble
             "command_in_type": "speed_units",
+
             "move_group_name": "omron_arm_group",
-            "planning_frame": "world",
+
+            # Your URDF base link is robot_mount
+            "planning_frame": "robot_mount",
             "ee_frame_name": "tcp",
+
+            # IMPORTANT: this should be a robot link frame (used internally by Servo)
+            # For your model "robot_mount" is safe and consistent with planning_frame.
+            "robot_link_command_frame": "robot_mount",
+
             "joint_topic": "joint_states",
 
+            # IN topics (published by your wrapper)
             "cartesian_command_in_topic": "servo/delta_twist_cmds",
             "joint_command_in_topic": "servo/delta_joint_cmds",
             "pose_command_in_topic": "servo/delta_pose_cmds",
 
+            # OUT controller
             "command_out_topic": "omron_arm_controller/joint_trajectory",
+            "command_out_type": "trajectory_msgs/JointTrajectory",
 
             "use_servo_services": True,
+
+            # Scales are only used for "unitless".
+            # For "speed_units" they should be 1.0 to avoid unintended scaling.
+            "linear_scale": 1.0,
+            "rotational_scale": 1.0,
+            "joint_scale": 1.0,
 
             "use_smoothing": True,
             "smoothing_filter_plugin_name": "online_signal_smoothing::AccelerationLimitedPlugin",
@@ -204,9 +222,18 @@ def generate_launch_description() -> LaunchDescription:
             "publish_period": 0.01,
             "incoming_command_timeout": 0.2,
 
-            "enable_singularity_checking": False,
+            # ---- Singularity guard (Humble) ----
+            # There is NO enable_singularity_checking param in Humble.
+            # If you want it effectively "off", push thresholds very high:
+            "lower_singularity_threshold": 1.0e9,
+            "hard_stop_singularity_threshold": 2.0e9,
+            "leaving_singularity_threshold_multiplier": 2.0,
+
+            # Joint limits behaviour (keep reasonable)
+            "joint_limit_margin": 0.1,
         },
     }
+
 
     servo_parameters = [
         moveit_config.robot_description,

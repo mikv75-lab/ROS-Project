@@ -88,8 +88,12 @@ class SceneManager:
     def __init__(self, *, interactor_getter: Callable[[], Any]):
         self._get_ia = interactor_getter
         self._layers: Dict[str, List[Any]] = {}
-        self._last_grid_bounds: Optional[Bounds] = None
-        self._substrate_bounds: Optional[Bounds] = None
+
+        self._last_grid_bounds_world: Optional[Bounds] = None
+        self._substrate_bounds_world: Optional[Bounds] = None
+
+        # ✅ NEW: grid origin in WORLD (subtrate placement origin)
+        self._grid_origin_world: Optional[np.ndarray] = None
 
     # ------------------- Interactor / Layer mgmt -------------------
 
@@ -122,8 +126,9 @@ class SceneManager:
     def clear(self) -> None:
         for lyr in list(self._layers.keys()):
             self._remove_layer_actors(lyr)
-        self._last_grid_bounds = None
-        self._substrate_bounds = None
+        self._last_grid_bounds_world = None
+        self._substrate_bounds_world = None
+        self._grid_origin_world = None
 
     def set_layer_visible(self, layer: str, visible: bool) -> None:
         ia = self._ia()
@@ -314,52 +319,81 @@ class SceneManager:
         sxmin, sxmax, nx = self._snap_range(xmin, xmax, x_step)
         symin, symax, ny = self._snap_range(ymin, ymax, y_step)
 
-        # Z bottom hard-clamped to 0 (floor)
+        # Z bottom hard-clamped to 0 for substrate frame
         szmin, szmax, nz = self._snap_range(zmin, zmax, z_step, force_min=0.0)
 
         return (sxmin, sxmax, symin, symax, szmin, szmax), (nx, ny, nz)
 
-    # ------------------- CubeAxes -------------------
+    # ------------------- Grid origin helper -------------------
 
-    def _add_cube_axes_around_bounds(self, *, bounds: Bounds) -> Optional[Any]:
+    @staticmethod
+    def _grid_origin_from_mount_or_substrate(
+        mount_mesh: Optional[pv.PolyData],
+        substrate_mesh: Optional[pv.PolyData],
+    ) -> np.ndarray:
         """
-        Create and attach a cube axes actor around the given bounds.
+        Grid/Substrate frame origin (WORLD):
+          - XY = center of mount (if present) else center of substrate
+          - Z  = top of mount (zmax) if present else bottom of substrate (zmin)
 
-        This implementation aligns the origin of the Z-axis with the bottom of
-        the provided bounds (typically the substrate's base).  Internally we
-        construct relative bounds where the Z-range starts at zero and set
-        these on the cube axes actor.  The actor is then translated back
-        along the Z-axis by the original z-min so that gridlines and labels
-        correspond to world coordinates while the Z-axis labels begin at 0 mm
-        at the substrate base.
+        This matches "substrate placed here => 0/0/0".
+        """
+        if isinstance(mount_mesh, pv.DataSet):
+            b = mount_mesh.bounds
+            cx = 0.5 * (float(b[0]) + float(b[1]))
+            cy = 0.5 * (float(b[2]) + float(b[3]))
+            z0 = float(b[5])  # mount top
+            return np.array([cx, cy, z0], dtype=float)
 
-        Parameters
-        ----------
-        bounds : Bounds
-            (xmin, xmax, ymin, ymax, zmin, zmax) describing the target
-            object's world-coordinate bounds.
+        if isinstance(substrate_mesh, pv.DataSet):
+            b = substrate_mesh.bounds
+            cx = 0.5 * (float(b[0]) + float(b[1]))
+            cy = 0.5 * (float(b[2]) + float(b[3]))
+            z0 = float(b[4])  # substrate bottom
+            return np.array([cx, cy, z0], dtype=float)
+
+        return np.array([0.0, 0.0, 0.0], dtype=float)
+
+    # ------------------- CubeAxes (SUBSTRATE frame) -------------------
+
+    def _add_cube_axes_around_bounds(
+        self,
+        *,
+        bounds_world: Bounds,
+        origin_world: np.ndarray,
+    ) -> Optional[Any]:
+        """
+        CubeAxesActor in SUBSTRATE frame:
+          - labels are relative to origin_world (so 0/0/0 at substrate placement)
+          - actor is positioned at origin_world in WORLD
         """
         ia = self._ia()
         if ia is None or vtkCubeAxesActor is None:
             return None
 
         try:
-            xmin, xmax, ymin, ymax, zmin, zmax = bounds
-            # Construct bounds relative to the substrate's bottom.
-            rel_bounds = (xmin, xmax, ymin, ymax, 0.0, max(0.0, zmax - zmin))
-            # Snap the relative bounds (Z-min forced to 0)
-            snapped_bounds, (nx, ny, nz) = self._snap_bounds_dynamic(rel_bounds)
+            ox, oy, oz = map(float, np.asarray(origin_world, float).reshape(3))
+
+            # world -> local (substrate frame)
+            xmin, xmax, ymin, ymax, zmin, zmax = map(float, bounds_world)
+            rel_bounds: Bounds = (
+                xmin - ox, xmax - ox,
+                ymin - oy, ymax - oy,
+                zmin - oz, zmax - oz,
+            )
+
+            # snap in local coords; Z min forced to 0 (substrate base)
+            snapped_rel, (nx, ny, nz) = self._snap_bounds_dynamic(rel_bounds)
 
             axes = vtkCubeAxesActor()
-            # Apply snapped bounds (relative)
-            axes.SetBounds(snapped_bounds)
-            # Translate axes to world coordinates (align Z-origin to zmin)
+            axes.SetBounds(snapped_rel)
+
+            # Place actor at substrate origin in WORLD so it renders at the substrate position
             try:
-                axes.SetPosition(0.0, 0.0, float(zmin))
+                axes.SetPosition(ox, oy, oz)
             except Exception:
                 pass
 
-            # Camera association
             try:
                 axes.SetCamera(ia.camera)
             except Exception:
@@ -370,7 +404,6 @@ class SceneManager:
             axes.DrawYGridlinesOn()
             axes.DrawZGridlinesOn()
 
-            # Disable minor ticks if available
             for fn in (
                 "SetXAxisMinorTickVisibility",
                 "SetYAxisMinorTickVisibility",
@@ -379,7 +412,6 @@ class SceneManager:
                 if hasattr(axes, fn):
                     getattr(axes, fn)(0)
 
-            # Number of labels per axis
             if hasattr(axes, "SetXAxisNumberOfLabels"):
                 axes.SetXAxisNumberOfLabels(int(nx))
             if hasattr(axes, "SetYAxisNumberOfLabels"):
@@ -387,13 +419,11 @@ class SceneManager:
             if hasattr(axes, "SetZAxisNumberOfLabels"):
                 axes.SetZAxisNumberOfLabels(int(nz))
 
-            # Axis titles
             if hasattr(axes, "SetXTitle"):
                 axes.SetXTitle("X (mm)")
                 axes.SetYTitle("Y (mm)")
                 axes.SetZTitle("Z (mm)")
 
-            # Configure title and label text properties
             title_rgb = self._hex_to_rgb01(TITLE_COLOR)
             label_rgb = self._hex_to_rgb01(LABEL_COLOR)
             for i in (0, 1, 2):
@@ -420,7 +450,6 @@ class SceneManager:
                 except Exception:
                     pass
 
-            # Apply color settings to axes lines and gridlines
             r, g, bl = self._hex_to_rgb01(AXIS_LINE_COLOR)
             try:
                 p = axes.GetXAxesLinesProperty();          p and p.SetColor(r, g, bl)
@@ -439,39 +468,13 @@ class SceneManager:
             self.clear_layer(self.L_GRID)
             ia.renderer.AddActor(axes)
             self._ensure_layer(self.L_GRID).append(axes)
-            # Cache world-coordinate bounds for the last grid (restore Z-offset)
-            self._last_grid_bounds = (
-                snapped_bounds[0], snapped_bounds[1],
-                snapped_bounds[2], snapped_bounds[3],
-                float(snapped_bounds[4] + zmin),
-                float(snapped_bounds[5] + zmin),
-            )
 
-            # Optional: volume box for debugging.  This uses relative bounds
-            # (starting at zero) and is translated along Z to match the substrate.
-            try:
-                bx = list(snapped_bounds)
-                bx[4] = 0.0
-                bx[5] = max(0.0, bx[5])
-                if (bx[5] - bx[4]) < 1e-3:
-                    mid = 0.5 * (bx[4] + bx[5])
-                    eps = 0.5
-                    bx[4], bx[5] = mid - eps, mid + eps
-                box = pv.Box(bounds=tuple(bx))  # type: ignore[arg-type]
-                actor = self.add_mesh(
-                    box,
-                    layer=self.L_GRID,
-                    color="#e67e22",
-                    opacity=0.18,
-                    lighting=False,
-                )
-                if actor is not None:
-                    try:
-                        actor.SetPosition(0.0, 0.0, float(zmin))
-                    except Exception:
-                        pass
-            except Exception:
-                _LOG.exception("grid box creation failed")
+            # Cache in WORLD (for "grid changed?" checks)
+            self._last_grid_bounds_world = (
+                float(snapped_rel[0] + ox), float(snapped_rel[1] + ox),
+                float(snapped_rel[2] + oy), float(snapped_rel[3] + oy),
+                float(snapped_rel[4] + oz), float(snapped_rel[5] + oz),
+            )
 
             return axes
 
@@ -491,8 +494,9 @@ class SceneManager:
         # grid_step_mm currently unused (dynamic snap); kept for signature compatibility
         for lyr in (self.L_GROUND, self.L_GRID, self.L_MOUNT, self.L_SUBSTRATE):
             self.clear_layer(lyr)
-        self._last_grid_bounds = None
-        self._substrate_bounds = None
+        self._last_grid_bounds_world = None
+        self._substrate_bounds_world = None
+        self._grid_origin_world = None
 
         mount_key = model.substrate_mount
         substrate_key = model.substrate
@@ -520,32 +524,39 @@ class SceneManager:
                 _LOG.error("Substrat-Mesh Fehler: %s", e, exc_info=True)
 
         if smesh is not None:
-            bounds: Bounds = smesh.bounds  # type: ignore[assignment]
+            bounds_world: Bounds = smesh.bounds  # type: ignore[assignment]
         elif mmesh is not None:
-            bounds = mmesh.bounds  # type: ignore[assignment]
+            bounds_world = mmesh.bounds  # type: ignore[assignment]
         else:
-            bounds = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
+            bounds_world = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
 
-        xmin, xmax, ymin, ymax, zmin, zmax = bounds
+        xmin, xmax, ymin, ymax, zmin, zmax = bounds_world
         cx, cy = 0.5 * (xmin + xmax), 0.5 * (ymin + ymax)
 
-        ground = self._make_floor_plane_at_z0(bounds)
+        ground = self._make_floor_plane_at_z0(bounds_world)
         self.add_mesh(ground, layer=self.L_GROUND, color="#3a3a3a", opacity=1.0, lighting=False)
 
         if mmesh is not None:
             self.add_mesh(mmesh, layer=self.L_MOUNT, color="#5d5d5d", opacity=1.0, lighting=False)
 
         if smesh is not None:
-            # Compute bounds up front
-            self._substrate_bounds = smesh.bounds
-            # Build grid before adding the substrate
-            self._add_cube_axes_around_bounds(bounds=self._substrate_bounds)
-            # Now add the substrate mesh
             self.add_mesh(smesh, layer=self.L_SUBSTRATE, color="#d0d6dd", opacity=1.0, lighting=False)
+
+            self._substrate_bounds_world = smesh.bounds
+
+            # ✅ NEW: grid origin where substrate is placed
+            self._grid_origin_world = self._grid_origin_from_mount_or_substrate(mmesh, smesh)
+
+            # ✅ grid in SUBSTRATE frame (0/0/0 at placement)
+            self._add_cube_axes_around_bounds(
+                bounds_world=self._substrate_bounds_world,
+                origin_world=self._grid_origin_world,
+            )
         else:
             self.clear_layer(self.L_GRID)
-            self._substrate_bounds = None
-            self._last_grid_bounds = None
+            self._substrate_bounds_world = None
+            self._last_grid_bounds_world = None
+            self._grid_origin_world = None
 
         mesh_tris: Optional[int] = None
         if smesh is not None:
@@ -555,7 +566,7 @@ class SceneManager:
                 mesh_tris = None
 
         return PreviewScene(
-            bounds=bounds,
+            bounds=bounds_world,
             center=(cx, cy, 0.5 * (zmin + zmax)),
             ground_z=0.0,
             ground_mesh=ground,
@@ -665,8 +676,8 @@ class SceneManager:
             except Exception:
                 _LOG.exception("build_overlays: frames failed")
 
-        # Extend grid to include path bounds (union with substrate bounds)
-        if self._substrate_bounds is not None and path_xyz is not None:
+        # Extend grid to include path bounds (union with substrate bounds) – stays anchored to substrate origin
+        if self._substrate_bounds_world is not None and path_xyz is not None and self._grid_origin_world is not None:
             try:
                 P = np.asarray(path_xyz, float).reshape(-1, 3)
                 if len(P) > 0:
@@ -677,16 +688,20 @@ class SceneManager:
                         float(pymin), float(pymax),
                         float(pzmin), float(pzmax),
                     )
-                    sb = self._substrate_bounds
+                    sb = self._substrate_bounds_world
                     merged: Bounds = (
                         min(sb[0], pb[0]), max(sb[1], pb[1]),
                         min(sb[2], pb[2]), max(sb[3], pb[3]),
                         min(sb[4], pb[4]), max(sb[5], pb[5]),
                     )
-                    if self._last_grid_bounds is None or any(
-                        abs(a - b) > 1e-9 for a, b in zip(self._last_grid_bounds, merged)
+
+                    if self._last_grid_bounds_world is None or any(
+                        abs(a - b) > 1e-9 for a, b in zip(self._last_grid_bounds_world, merged)
                     ):
-                        self._add_cube_axes_around_bounds(bounds=merged)
+                        self._add_cube_axes_around_bounds(
+                            bounds_world=merged,
+                            origin_world=self._grid_origin_world,
+                        )
             except Exception:
                 _LOG.exception("build_overlays: extend grid to path failed")
 
