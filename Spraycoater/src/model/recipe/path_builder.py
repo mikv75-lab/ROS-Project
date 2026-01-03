@@ -1,4 +1,3 @@
-# app/model/recipe/path_builder.py
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
@@ -48,20 +47,18 @@ class PathBuilder:
 
     Alternativ:
       - points_mm oder polyline_mm im dict -> direkt übernommen
-
-    Hinweis:
-    - bewusst strikt: fehlende Pflichtparameter / unknown types => Exception
     """
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """
-        Kompatibilitäts-Init (no-op).
+    # ------------------------------------------------------------------
+    # 🔒 SUPER-ROBUST:
+    # Falls irgendwo im Code doch noch PathBuilder(...) instanziiert wird,
+    # darf es niemals "takes no arguments" werfen.
+    # ------------------------------------------------------------------
+    def __new__(cls, *args: Any, **kwargs: Any):
+        return super().__new__(cls)
 
-        In älterem Code wurde PathBuilder teils instanziiert (z.B. PathBuilder(...)).
-        Diese Klasse ist aber als statische Utility gedacht. Damit Save/Compile nicht
-        crasht, akzeptieren wir args/kwargs stillschweigend.
-        """
-        _ = args, kwargs
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        _ = args, kwargs  # no-op
 
     # ---------------------------
     # Public API
@@ -76,7 +73,6 @@ class PathBuilder:
         sample_step_mm: float,
         max_points: int,
     ) -> PathData:
-        """Erzeugt PathData für eine Side aus recipe.paths_by_side[side]."""
         PathBuilder._validate_inputs(globals_params, sample_step_mm, max_points)
         p = PathBuilder._extract_path_for_side(recipe, side)
 
@@ -86,13 +82,9 @@ class PathBuilder:
             max_points=int(max_points),
         )
 
-        # Postprocessing Hook (aktuell: no-op + cleanup)
         pd = PathBuilder._postprocess(pd)
-
-        # Globals in meta übernehmen (Eval/Debug)
         pd = PathBuilder._with_globals_meta(pd, globals_params)
 
-        # Safety: mind. 2 Punkte
         P = np.asarray(pd.points_mm, dtype=float).reshape(-1, 3)
         if P.shape[0] < 2:
             raise ValueError(f"PathBuilder: side '{side}' hat zu wenige Punkte ({P.shape[0]}).")
@@ -108,18 +100,20 @@ class PathBuilder:
         sample_step_mm: float,
         max_points: int,
     ) -> List[Tuple[str, PathData]]:
-        """Baut mehrere Sides und gibt Liste [(side, PathData), ...] zurück."""
         PathBuilder._validate_inputs(globals_params, sample_step_mm, max_points)
         out: List[Tuple[str, PathData]] = []
         for s in sides:
             out.append(
-                (s, PathBuilder.from_side(
-                    recipe,
-                    side=s,
-                    globals_params=globals_params,
-                    sample_step_mm=sample_step_mm,
-                    max_points=max_points,
-                ))
+                (
+                    s,
+                    PathBuilder.from_side(
+                        recipe,
+                        side=s,
+                        globals_params=globals_params,
+                        sample_step_mm=sample_step_mm,
+                        max_points=max_points,
+                    ),
+                )
             )
         return out
 
@@ -141,13 +135,6 @@ class PathBuilder:
 
     @staticmethod
     def _decimate(P: np.ndarray, max_points: int) -> np.ndarray:
-        """
-        Downsampling, deterministisch.
-
-        Vorteil ggü. Stride:
-        - garantiert erstes UND letztes Sample enthalten
-        - exakt <= max_points
-        """
         P = np.asarray(P, dtype=float).reshape(-1, 3)
         n = P.shape[0]
         if n <= max_points:
@@ -157,11 +144,9 @@ class PathBuilder:
 
     @staticmethod
     def _as_points_mm(pts: Any, max_points: int) -> np.ndarray:
-        """Konvertiert Punkte nach (N,3) float, filtert NaNs, begrenzt Punktzahl."""
         P = np.asarray(pts, dtype=float).reshape(-1, 3)
         if P.size == 0:
             return np.zeros((0, 3), dtype=float)
-
         mask = np.isfinite(P).all(axis=1)
         P = P[mask]
         return PathBuilder._decimate(P, max_points)
@@ -495,7 +480,6 @@ class PathBuilder:
 
     @staticmethod
     def _point_on_polyline_by_arclength(poly2d: np.ndarray, s: float) -> np.ndarray:
-        """Punkt auf Polyline per Bogenlänge (wrap modulo Gesamtlänge)."""
         poly2d = np.asarray(poly2d, dtype=float)
         if poly2d.shape[0] < 2:
             return np.array([0.0, 0.0], dtype=float)
@@ -578,67 +562,6 @@ class PathBuilder:
             poly_z = base2d * scale
             pt_xy = PathBuilder._point_on_polyline_by_arclength(
                 np.c_[poly_z, np.zeros((poly_z.shape[0],), dtype=float)],
-                s_acc,
-            )
-            pts.append([float(pt_xy[0]), float(pt_xy[1]), float(z)])
-
-            s_acc += ds_per_dz * dz
-            z += dz
-
-        return PathBuilder._decimate(np.asarray(pts, dtype=float), max_points)
-
-    @staticmethod
-    def _polyhelix_cube(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
-        """
-        Construct a polyhelix cube path.
-
-        Parameters:
-            p (Dict[str, Any]): The path definition dictionary with keys like
-                "edge_len_mm", "height_mm", "pitch_mm", "dz_mm", "start_phase_deg",
-                "stand_off_mm", and "corner_roll_radius_mm".
-            step (float): The sampling step size in millimetres.
-            max_points (int): The maximum number of points in the generated path.
-
-        Returns:
-            np.ndarray: Array of shape (N, 3) containing the 3D path points.
-        """
-        edge = float(p.get("edge_len_mm", 100.0))
-        height = float(p.get("height_mm", 100.0))
-        pitch = max(1e-6, float(p.get("pitch_mm", 6.0)))
-        dz = max(1e-6, float(p.get("dz_mm", 1.0)))
-
-        phase = math.radians(float(p.get("start_phase_deg", 0.0)))
-        stand_off = float(p.get("stand_off_mm", 25.0))
-        corner_r = float(p.get("corner_roll_radius_mm", 8.0))
-
-        hx = 0.5 * edge + stand_off
-        hy = 0.5 * edge + stand_off
-
-        base_poly = PathBuilder._polyline_rounded_rect(
-            0.0, 0.0, hx, hy, corner_r, step=max(1.0, step)
-        )
-        base_xy = base_poly[:, :2]
-
-        if abs(phase) > 1e-12:
-            R2 = np.array([[math.cos(phase), -math.sin(phase)],
-                           [math.sin(phase),  math.cos(phase)]], dtype=float)
-            base_xy = base_xy @ R2.T
-
-        seg = base_xy[1:] - base_xy[:-1]
-        L = float(np.linalg.norm(seg, axis=1).sum())
-        if L <= 1e-9:
-            return np.zeros((0, 3), dtype=float)
-
-        z_min = -0.5 * height
-        z_max = 0.5 * height
-        ds_per_dz = L / pitch
-
-        pts: List[List[float]] = []
-        s_acc = 0.0
-        z = z_min
-        while z <= z_max + 1e-9:
-            pt_xy = PathBuilder._point_on_polyline_by_arclength(
-                np.c_[base_xy, np.zeros((base_xy.shape[0],), dtype=float)],
                 s_acc,
             )
             pts.append([float(pt_xy[0]), float(pt_xy[1]), float(z)])

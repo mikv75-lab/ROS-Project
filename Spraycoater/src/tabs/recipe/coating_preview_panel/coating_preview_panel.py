@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import inspect
 from typing import Optional, Any, Dict, Tuple, List
 
 import numpy as np
@@ -12,7 +13,7 @@ from PyQt6.sip import isdeleted
 
 from model.recipe.recipe import Recipe
 from model.recipe.recipe_store import RecipeStore
-from model.recipe.path_builder import PathBuilder
+import model.recipe.path_builder as pb  # ✅ modulbasiert, verhindert Shadowing
 
 from widgets.info_groupbox import InfoGroupBox
 
@@ -28,7 +29,6 @@ _LOG = logging.getLogger("tabs.recipe.preview.panel")
 
 Bounds = Tuple[float, float, float, float, float, float]
 
-# ✅ bei dir kommen "helix" UND teils "polyhelix"
 _ALLOWED_SIDES = ("top", "front", "back", "left", "right", "polyhelix", "helix")
 
 
@@ -73,11 +73,6 @@ def _bounds_center(bounds: Bounds) -> np.ndarray:
     return np.array([0.5 * (xmin + xmax), 0.5 * (ymin + ymax), 0.5 * (zmin + zmax)], dtype=float)
 
 
-# ---------------------------------------------------------------------
-# Side embedding:
-#  - plane-sides: lokales 2D Muster in Side-Ebene einbetten
-#  - helix/polyhelix: PathBuilder liefert bereits 3D -> nur ins Objektzentrum verschieben
-# ---------------------------------------------------------------------
 def _side_cfg(side: str):
     s = str(side or "").lower()
     cfgs = {
@@ -112,7 +107,6 @@ def _embed_path_on_face(P_local: np.ndarray, side: str, bounds: Bounds) -> np.nd
     out = np.empty((P0.shape[0], 3), dtype=float)
 
     def place(axis_name: str, arr: np.ndarray):
-        # lokales Muster um Bounds-Center herum zentrieren
         if axis_name == "x":
             return cx + arr
         if axis_name == "y":
@@ -121,7 +115,6 @@ def _embed_path_on_face(P_local: np.ndarray, side: str, bounds: Bounds) -> np.nd
             return cz + arr
         return arr
 
-    # Muster-2D: local.x, local.y
     a0 = P0[:, 0]
     a1 = P0[:, 1]
 
@@ -156,7 +149,6 @@ def _tangents_from_path(P: np.ndarray) -> np.ndarray:
     if n > 2:
         T[1:-1] = P[2:] - P[:-2]
 
-    # normalize + stabilisieren
     for i in range(n):
         ln = float(np.linalg.norm(T[i]))
         if ln > 1e-12:
@@ -172,28 +164,33 @@ def _tangents_from_path(P: np.ndarray) -> np.ndarray:
 
 
 def _call_cast_rays_for_side_robust(*args, **kwargs):
-    """
-    Robust gegen unterschiedliche Rückgaben:
-      - (rc, poly1, poly2)
-      - (rc, poly1, poly2, poly3)
-    Wir extrahieren:
-      rc, hit_poly, miss_poly
-
-    NOTE:
-    Dein aktueller raycaster gibt (rc, rays_hit_poly, tcp_poly) zurück.
-    "misses" existiert dort nicht -> wir liefern dafür ein leeres PolyData.
-    """
     ret = cast_rays_for_side(*args, **kwargs)
-    if not isinstance(ret, tuple) or len(ret) < 1:
+    if not isinstance(ret, tuple) or len(ret) < 2:
         raise RuntimeError("cast_rays_for_side returned invalid result")
 
     rc = ret[0]
+    hit_poly = pv.PolyData()
+    miss_poly = pv.PolyData()
+    tcp_poly = pv.PolyData()
+
     polys = [x for x in ret[1:] if isinstance(x, pv.PolyData)]
 
-    hit_poly = polys[0] if len(polys) >= 1 else pv.PolyData()
-    # 2. Poly ist bei dir tcp_poly, kein "misses"
-    miss_poly = pv.PolyData()
-    return rc, hit_poly, miss_poly
+    if len(polys) == 0:
+        return rc, hit_poly, miss_poly, tcp_poly
+
+    if len(polys) == 1:
+        hit_poly = polys[0]
+        return rc, hit_poly, miss_poly, tcp_poly
+
+    if len(polys) == 2:
+        hit_poly = polys[0]
+        tcp_poly = polys[1]
+        return rc, hit_poly, miss_poly, tcp_poly
+
+    hit_poly = polys[0]
+    miss_poly = polys[1]
+    tcp_poly = polys[2]
+    return rc, hit_poly, miss_poly, tcp_poly
 
 
 def _is_empty_poly(mesh) -> bool:
@@ -201,7 +198,7 @@ def _is_empty_poly(mesh) -> bool:
         if mesh is None:
             return True
         if isinstance(mesh, pv.DataSet):
-            return int(mesh.n_points) <= 0
+            return int(getattr(mesh, "n_points", 0)) <= 0
     except Exception:
         return True
     return False
@@ -234,6 +231,8 @@ class CoatingPreviewPanel(QWidget):
             "frames": True,
         }
 
+        self._logged_pathbuilder_origin: bool = False
+
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(6)
@@ -247,7 +246,6 @@ class CoatingPreviewPanel(QWidget):
         split.setSpacing(8)
         root.addLayout(split, 1)
 
-        # ---------------- Left (2D) ----------------
         vleft = QVBoxLayout()
         vleft.setContentsMargins(0, 0, 0, 0)
         vleft.setSpacing(6)
@@ -278,9 +276,8 @@ class CoatingPreviewPanel(QWidget):
         _set_policy(self.views2d, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
         vleft.insertWidget(0, self.views2d, 0)
 
-        # ---------------- Right (3D) ----------------
         vright = QVBoxLayout()
-        vright.setContentsMargins(0, 0, 0, 0)
+        vright.setContentsMargins(0,  0, 0, 0)
         vright.setSpacing(6)
         split.addLayout(vright, 1)
 
@@ -370,9 +367,20 @@ class CoatingPreviewPanel(QWidget):
             return
         self._retry_left = 10
 
+        # ✅ Debug einmalig: welcher PathBuilder wurde wirklich importiert?
+        if not self._logged_pathbuilder_origin:
+            self._logged_pathbuilder_origin = True
+            try:
+                _LOG.info(
+                    "PathBuilder loaded from module=%s file=%s",
+                    getattr(pb.PathBuilder, "__module__", "?"),
+                    inspect.getsourcefile(pb.PathBuilder),
+                )
+            except Exception:
+                _LOG.exception("Could not log PathBuilder origin")
+
         cam_snap = self.snapshot_camera()
 
-        # 1) Szene
         try:
             scene: PreviewScene = self.scene.build_scene(self.ctx, model, grid_step_mm=10.0)
         except Exception:
@@ -400,13 +408,12 @@ class CoatingPreviewPanel(QWidget):
         max_points = int(globals_params.get("max_points", 500))
         stand_off_mm = float(globals_params.get("stand_off_mm", 10.0))
 
-        # ✅ Mask konstant 50mm über TCP (entlang Normalen)
         MASK_OFFSET_MM = 50.0
 
         pbs = getattr(model, "paths_by_side", {}) or {}
         sides = [str(k).lower() for k in pbs.keys() if str(k).lower() in _ALLOWED_SIDES]
 
-        built = PathBuilder.from_recipe_paths(
+        built = pb.PathBuilder.from_recipe_paths(
             recipe=model,
             sides=sides,
             globals_params=globals_params,
@@ -414,7 +421,6 @@ class CoatingPreviewPanel(QWidget):
             max_points=max_points,
         )
 
-        # Clear overlays
         for lyr in (
             "path", "path_markers",
             "mask", "mask_markers",
@@ -448,25 +454,17 @@ class CoatingPreviewPanel(QWidget):
             except Exception:
                 source = ""
 
-            # ✅ Startpunkte + Raycast-Side bestimmen:
-            # - helix/polyhelix: PathBuilder liefert bereits 3D -> nur center-shift
-            # - sonst: in Side-Ebene einbetten
             if side in ("helix", "polyhelix"):
                 P_start = _embed_3d_world_centered(P_local, substrate_mesh.bounds)
-
-                # Bei helix muss der Raycaster radial XY nehmen.
-                # Der Raycaster triggert das über "source" containing "helix"/"spiral_cylinder".
                 if side == "helix" and (not source):
                     source = "helix"
-
-                # Side für Raycaster kann "top" bleiben (radial kommt über source)
                 side_for_rays = "top"
             else:
                 P_start = _embed_path_on_face(P_local, side, substrate_mesh.bounds)
                 side_for_rays = side
 
             try:
-                rc, rays_hit_poly, rays_miss_poly = _call_cast_rays_for_side_robust(
+                rc, rays_hit_poly, rays_miss_poly, _tcp_poly = _call_cast_rays_for_side_robust(
                     P_start,
                     sub_mesh_world=substrate_mesh,
                     side=side_for_rays,
@@ -491,17 +489,39 @@ class CoatingPreviewPanel(QWidget):
 
             tcp_all.append(tcp)
 
-            # ✅ Mask = TCP + Normal * 50mm
+            # Persist final TCP points into model.paths_compiled
+            try:
+                model.paths_compiled = model.paths_compiled or {}
+                if not model.paths_compiled.get("frame"):
+                    model.paths_compiled["frame"] = "scene"
+
+                tool_frame: str = getattr(model, "tool_frame", None) or "tool_mount"
+                if isinstance(getattr(model, "planner", None), dict):
+                    tool_frame = model.planner.get("tool_frame", tool_frame)
+                model.paths_compiled["tool_frame"] = tool_frame
+
+                model.paths_compiled.setdefault("sides", {})
+
+                tcp_pts = tcp.reshape(-1, 3)
+                poses_quat = [
+                    {"x": float(x), "y": float(y), "z": float(z), "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}
+                    for (x, y, z) in tcp_pts
+                ]
+                model.paths_compiled["sides"][str(side)] = {
+                    "poses_quat": poses_quat,
+                    "meta": {"num_points": len(poses_quat)},
+                }
+            except Exception:
+                _LOG.exception("Persisting model.paths_compiled failed")
+
             mask_world = tcp + nrm * float(MASK_OFFSET_MM)
 
-            # -------- Draw --------
             if vis.get("path", True):
                 self.scene.add_path_polyline(tcp, layer="path", color="#2ecc71", line_width=2.2, lighting=False)
 
             if vis.get("mask", True):
                 self.scene.add_path_polyline(mask_world, layer="mask", color="royalblue", line_width=3.0, lighting=False)
 
-            # ✅ NICHT mehr leere meshes plotten (vermeidet deine add_mesh Errors)
             if vis.get("hits", True) and (not _is_empty_poly(rays_hit_poly)):
                 self.scene.add_mesh(rays_hit_poly, layer="rays_hit", color="#3498db", line_width=1.2, lighting=False)
 
@@ -518,7 +538,6 @@ class CoatingPreviewPanel(QWidget):
                     self.scene.add_mesh(nm, layer="normals", color="#f1c40f", line_width=1.2, lighting=False)
 
             if vis.get("frames", False):
-                # Lokales KS: z = normal, x = proj(tangent), y = z×x
                 T = _tangents_from_path(tcp)
                 X = T - nrm * np.sum(T * nrm, axis=1, keepdims=True)
                 X = _normalize(X)
@@ -537,7 +556,7 @@ class CoatingPreviewPanel(QWidget):
                 Y2 = Y[::sstep]
                 Z2 = nrm[::sstep]
 
-                sx = 12.0  # mm
+                sx = 12.0
                 mx = _polydata_from_segments(O2, O2 + X2 * sx)
                 my = _polydata_from_segments(O2, O2 + Y2 * sx)
                 mz = _polydata_from_segments(O2, O2 + Z2 * sx)
@@ -549,7 +568,6 @@ class CoatingPreviewPanel(QWidget):
                 if not _is_empty_poly(mz):
                     self.scene.add_mesh(mz, layer="frames_z", color="#2980b9", line_width=1.0, lighting=False)
 
-        # 2D update
         path_xyz = None
         if tcp_all:
             try:
@@ -579,8 +597,6 @@ class CoatingPreviewPanel(QWidget):
             _LOG.exception("restore_camera failed")
 
         self.scene.update_current_views_once(refresh_2d=self._mat2d.refresh)
-
-    # -------- Helpers --------
 
     def _set_info_defaults(self) -> None:
         try:
@@ -663,7 +679,6 @@ class CoatingPreviewPanel(QWidget):
         except Exception:
             _LOG.exception("update_2d_scene failed")
 
-    # SceneManager passthroughs
     def clear(self) -> None:
         self.scene.clear()
 

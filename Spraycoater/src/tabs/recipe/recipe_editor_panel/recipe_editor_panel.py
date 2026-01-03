@@ -283,6 +283,53 @@ class RecipeEditorPanel(QWidget):
         )
 
     def _compile_from_model(self, model: Recipe) -> dict:
+        """
+        ✅ Compile fürs Speichern:
+
+        Priorität:
+          1) model.paths_compiled (TCP-Punkte aus Preview/Raycast) -> korrekte z != 0
+          2) Fallback: PathBuilder plane points (z=0) wenn preview noch nicht gelaufen ist
+        """
+        # ----------------------------
+        # 1) Prefer TCP compiled from preview
+        # ----------------------------
+        pc = getattr(model, "paths_compiled", None) or {}
+        sides_pc: Dict[str, Any] = {}
+        if isinstance(pc, dict):
+            sp = pc.get("sides")
+            if isinstance(sp, dict):
+                sides_pc = sp
+
+        if isinstance(sides_pc, dict) and len(sides_pc) > 0:
+            # tool_frame: recipe.tool_frame -> planner.tool_frame -> fallback
+            tool_frame: str = getattr(model, "tool_frame", None) or "tool_mount"
+            if isinstance(getattr(model, "planner", None), dict):
+                tool_frame = model.planner.get("tool_frame", tool_frame)
+
+            out: dict = {
+                "frame": (pc.get("frame") if isinstance(pc, dict) else None) or "scene",
+                "tool_frame": (pc.get("tool_frame") if isinstance(pc, dict) else None) or tool_frame,
+                "sides": {},
+                "meta": dict(pc.get("meta") or {}) if isinstance(pc, dict) else {},
+            }
+
+            for side, data in sides_pc.items():
+                if not isinstance(data, dict):
+                    continue
+                poses = data.get("poses_quat") or []
+                meta = data.get("meta") or {}
+                out["sides"][str(side)] = {
+                    "poses_quat": list(poses),
+                    "meta": dict(meta),
+                }
+
+            # Optional: Meta-Info, dass es TCP ist
+            out["meta"].setdefault("compiled_source", "paths_compiled_tcp")
+            return out
+
+        # ----------------------------
+        # 2) Fallback: build from PathBuilder (plane z=0)
+        # ----------------------------
         sides: List[str] = list((model.paths_by_side or {}).keys())
         if not sides:
             return {}
@@ -291,7 +338,9 @@ class RecipeEditorPanel(QWidget):
         sample_step_mm = float(g.get("sample_step_mm", 1.0))
         max_points = int(g.get("max_points", 500))
 
-        tool_frame = (model.planner or {}).get("tool_frame", "tool_mount")
+        tool_frame = "tool_mount"
+        if isinstance(getattr(model, "planner", None), dict):
+            tool_frame = model.planner.get("tool_frame", tool_frame)
 
         out: dict = {
             "frame": "scene",
@@ -300,6 +349,7 @@ class RecipeEditorPanel(QWidget):
             "meta": {
                 "sample_step_mm": float(sample_step_mm),
                 "max_points": int(max_points),
+                "compiled_source": "fallback_pathbuilder_plane_z0",
             },
         }
 
@@ -311,7 +361,7 @@ class RecipeEditorPanel(QWidget):
                 sample_step_mm=float(sample_step_mm),
                 max_points=int(max_points),
             )
-            P = pd.points_mm  # Nx3 mm
+            P = pd.points_mm  # Nx3 mm (plane => z=0)
 
             poses_quat = [
                 {"x": float(x), "y": float(y), "z": float(z), "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}
@@ -404,10 +454,9 @@ class RecipeEditorPanel(QWidget):
         model = self.current_model()
         if model is None:
             return
-        try:
-            self._active_compiled = self._compile_from_model(model)
-        except Exception:
-            self._active_compiled = None
+
+        # ✅ Preview neu triggern. Compiled wird beim Save aus model.paths_compiled gezogen.
+        self._active_compiled = None
         self.updatePreviewRequested.emit(model)
 
     def _on_new_clicked(self) -> None:
@@ -462,16 +511,18 @@ class RecipeEditorPanel(QWidget):
 
         key = self._make_key(rid, name)
 
-        if self._active_compiled is None:
-            try:
-                self._active_compiled = self._compile_from_model(model)
-            except Exception as e:
-                self._active_compiled = None
-                QMessageBox.warning(
-                    self,
-                    "Save",
-                    f"Compile fehlgeschlagen – compiled.yaml wird nicht geschrieben:\n{e}",
-                )
+        # ✅ WICHTIG: beim Save IMMER frisch compile'n:
+        # - bevorzugt model.paths_compiled (TCP z!=0)
+        # - fallback PathBuilder (z=0) falls preview nicht gelaufen
+        try:
+            self._active_compiled = self._compile_from_model(model)
+        except Exception as e:
+            self._active_compiled = None
+            QMessageBox.warning(
+                self,
+                "Save",
+                f"Compile fehlgeschlagen – compiled.yaml wird nicht geschrieben:\n{e}",
+            )
 
         self.repo.save_from_editor(
             key,
