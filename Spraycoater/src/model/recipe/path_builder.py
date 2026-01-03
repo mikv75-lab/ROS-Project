@@ -589,6 +589,67 @@ class PathBuilder:
 
     @staticmethod
     def _polyhelix_cube(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
+        """
+        Construct a polyhelix cube path.
+
+        Parameters:
+            p (Dict[str, Any]): The path definition dictionary with keys like
+                "edge_len_mm", "height_mm", "pitch_mm", "dz_mm", "start_phase_deg",
+                "stand_off_mm", and "corner_roll_radius_mm".
+            step (float): The sampling step size in millimetres.
+            max_points (int): The maximum number of points in the generated path.
+
+        Returns:
+            np.ndarray: Array of shape (N, 3) containing the 3D path points.
+        """
+        edge = float(p.get("edge_len_mm", 100.0))
+        height = float(p.get("height_mm", 100.0))
+        pitch = max(1e-6, float(p.get("pitch_mm", 6.0)))
+        dz = max(1e-6, float(p.get("dz_mm", 1.0)))
+
+        phase = math.radians(float(p.get("start_phase_deg", 0.0)))
+        stand_off = float(p.get("stand_off_mm", 25.0))
+        corner_r = float(p.get("corner_roll_radius_mm", 8.0))
+
+        hx = 0.5 * edge + stand_off
+        hy = 0.5 * edge + stand_off
+
+        base_poly = PathBuilder._polyline_rounded_rect(
+            0.0, 0.0, hx, hy, corner_r, step=max(1.0, step)
+        )
+        base_xy = base_poly[:, :2]
+
+        if abs(phase) > 1e-12:
+            R2 = np.array([[math.cos(phase), -math.sin(phase)],
+                           [math.sin(phase),  math.cos(phase)]], dtype=float)
+            base_xy = base_xy @ R2.T
+
+        seg = base_xy[1:] - base_xy[:-1]
+        L = float(np.linalg.norm(seg, axis=1).sum())
+        if L <= 1e-9:
+            return np.zeros((0, 3), dtype=float)
+
+        z_min = -0.5 * height
+        z_max = 0.5 * height
+        ds_per_dz = L / pitch
+
+        pts: List[List[float]] = []
+        s_acc = 0.0
+        z = z_min
+        while z <= z_max + 1e-9:
+            pt_xy = PathBuilder._point_on_polyline_by_arclength(
+                np.c_[base_xy, np.zeros((base_xy.shape[0],), dtype=float)],
+                s_acc,
+            )
+            pts.append([float(pt_xy[0]), float(pt_xy[1]), float(z)])
+
+            s_acc += ds_per_dz * dz
+            z += dz
+
+        return PathBuilder._decimate(np.asarray(pts, dtype=float), max_points)
+
+    @staticmethod
+    def _polyhelix_cube(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
         edge = float(p.get("edge_len_mm", 100.0))
         height = float(p.get("height_mm", 100.0))
         pitch = max(1e-6, float(p.get("pitch_mm", 6.0)))

@@ -322,16 +322,44 @@ class SceneManager:
     # ------------------- CubeAxes -------------------
 
     def _add_cube_axes_around_bounds(self, *, bounds: Bounds) -> Optional[Any]:
+        """
+        Create and attach a cube axes actor around the given bounds.
+
+        This implementation aligns the origin of the Z-axis with the bottom of
+        the provided bounds (typically the substrate's base).  Internally we
+        construct relative bounds where the Z-range starts at zero and set
+        these on the cube axes actor.  The actor is then translated back
+        along the Z-axis by the original z-min so that gridlines and labels
+        correspond to world coordinates while the Z-axis labels begin at 0 mm
+        at the substrate base.
+
+        Parameters
+        ----------
+        bounds : Bounds
+            (xmin, xmax, ymin, ymax, zmin, zmax) describing the target
+            object's world-coordinate bounds.
+        """
         ia = self._ia()
         if ia is None or vtkCubeAxesActor is None:
             return None
 
         try:
-            snapped_bounds, (nx, ny, nz) = self._snap_bounds_dynamic(bounds)
+            xmin, xmax, ymin, ymax, zmin, zmax = bounds
+            # Construct bounds relative to the substrate's bottom.
+            rel_bounds = (xmin, xmax, ymin, ymax, 0.0, max(0.0, zmax - zmin))
+            # Snap the relative bounds (Z-min forced to 0)
+            snapped_bounds, (nx, ny, nz) = self._snap_bounds_dynamic(rel_bounds)
 
             axes = vtkCubeAxesActor()
+            # Apply snapped bounds (relative)
             axes.SetBounds(snapped_bounds)
+            # Translate axes to world coordinates (align Z-origin to zmin)
+            try:
+                axes.SetPosition(0.0, 0.0, float(zmin))
+            except Exception:
+                pass
 
+            # Camera association
             try:
                 axes.SetCamera(ia.camera)
             except Exception:
@@ -342,7 +370,7 @@ class SceneManager:
             axes.DrawYGridlinesOn()
             axes.DrawZGridlinesOn()
 
-            # Minor ticks off (if available)
+            # Disable minor ticks if available
             for fn in (
                 "SetXAxisMinorTickVisibility",
                 "SetYAxisMinorTickVisibility",
@@ -351,6 +379,7 @@ class SceneManager:
                 if hasattr(axes, fn):
                     getattr(axes, fn)(0)
 
+            # Number of labels per axis
             if hasattr(axes, "SetXAxisNumberOfLabels"):
                 axes.SetXAxisNumberOfLabels(int(nx))
             if hasattr(axes, "SetYAxisNumberOfLabels"):
@@ -358,11 +387,13 @@ class SceneManager:
             if hasattr(axes, "SetZAxisNumberOfLabels"):
                 axes.SetZAxisNumberOfLabels(int(nz))
 
+            # Axis titles
             if hasattr(axes, "SetXTitle"):
                 axes.SetXTitle("X (mm)")
                 axes.SetYTitle("Y (mm)")
                 axes.SetZTitle("Z (mm)")
 
+            # Configure title and label text properties
             title_rgb = self._hex_to_rgb01(TITLE_COLOR)
             label_rgb = self._hex_to_rgb01(LABEL_COLOR)
             for i in (0, 1, 2):
@@ -389,6 +420,7 @@ class SceneManager:
                 except Exception:
                     pass
 
+            # Apply color settings to axes lines and gridlines
             r, g, bl = self._hex_to_rgb01(AXIS_LINE_COLOR)
             try:
                 p = axes.GetXAxesLinesProperty();          p and p.SetColor(r, g, bl)
@@ -403,31 +435,41 @@ class SceneManager:
             except Exception:
                 pass
 
-            # Replace previous grid actors
+            # Replace previous grid actors and register the new one
             self.clear_layer(self.L_GRID)
             ia.renderer.AddActor(axes)
             self._ensure_layer(self.L_GRID).append(axes)
-            self._last_grid_bounds = snapped_bounds
+            # Cache world-coordinate bounds for the last grid (restore Z-offset)
+            self._last_grid_bounds = (
+                snapped_bounds[0], snapped_bounds[1],
+                snapped_bounds[2], snapped_bounds[3],
+                float(snapped_bounds[4] + zmin),
+                float(snapped_bounds[5] + zmin),
+            )
 
-            # Optional: volume box for visual bounds debugging
+            # Optional: volume box for debugging.  This uses relative bounds
+            # (starting at zero) and is translated along Z to match the substrate.
             try:
                 bx = list(snapped_bounds)
                 bx[4] = 0.0
                 bx[5] = max(0.0, bx[5])
-
                 if (bx[5] - bx[4]) < 1e-3:
                     mid = 0.5 * (bx[4] + bx[5])
                     eps = 0.5
                     bx[4], bx[5] = mid - eps, mid + eps
-
                 box = pv.Box(bounds=tuple(bx))  # type: ignore[arg-type]
-                self.add_mesh(
+                actor = self.add_mesh(
                     box,
                     layer=self.L_GRID,
                     color="#e67e22",
                     opacity=0.18,
                     lighting=False,
                 )
+                if actor is not None:
+                    try:
+                        actor.SetPosition(0.0, 0.0, float(zmin))
+                    except Exception:
+                        pass
             except Exception:
                 _LOG.exception("grid box creation failed")
 
@@ -494,9 +536,12 @@ class SceneManager:
             self.add_mesh(mmesh, layer=self.L_MOUNT, color="#5d5d5d", opacity=1.0, lighting=False)
 
         if smesh is not None:
-            self.add_mesh(smesh, layer=self.L_SUBSTRATE, color="#d0d6dd", opacity=1.0, lighting=False)
+            # Compute bounds up front
             self._substrate_bounds = smesh.bounds
+            # Build grid before adding the substrate
             self._add_cube_axes_around_bounds(bounds=self._substrate_bounds)
+            # Now add the substrate mesh
+            self.add_mesh(smesh, layer=self.L_SUBSTRATE, color="#d0d6dd", opacity=1.0, lighting=False)
         else:
             self.clear_layer(self.L_GRID)
             self._substrate_bounds = None

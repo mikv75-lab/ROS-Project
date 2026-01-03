@@ -1,10 +1,38 @@
-# -*- coding: utf-8 -*-
+"""
+This module contains a modified version of the Matplot2DView class used in
+the coating preview panel.  The modifications adjust how Z‑coordinates are
+handled so that the substrate sits at Z = 0 in all 2D views and the path
+heights are displayed relative to the substrate.  Previously, the Z‑axis
+assumed a fixed world coordinate range (0–200 mm) which resulted in the
+substrate appearing at an offset (typically around 50 mm).  The changes
+introduced here allow dynamic re‑anchoring of the Z‑axis based on the
+currently loaded substrate bounds and path extents:
+
+* A new attribute ``_z_offset`` stores the world‑space Z coordinate of the
+  substrate base.  This offset is determined whenever new bounds are set via
+  ``set_bounds``.
+* When paths or meshes are provided, their Z coordinates are shifted by
+  ``_z_offset`` so that they are plotted relative to the substrate base.
+* The internal ``_world['z']`` range is updated to reflect the height of
+  the substrate and any path above it, starting from zero.  This ensures the
+  axes labels in front/back/left/right views read "0 mm" at the substrate
+  rather than some arbitrary world height (e.g. 50 mm).
+
+These adjustments align the 2D projection with the 3D scene where the
+CubeAxes grid origin is likewise translated to the substrate base.  Users
+should substitute this file for the original ``matplot2d.py`` in their
+project to obtain the corrected behaviour.
+"""
+
 from __future__ import annotations
+
 import logging
 from typing import Optional, Tuple, Dict, Any, List
 
 import numpy as np
 import matplotlib
+
+# Use the QtAgg backend because this module is intended to run inside a Qt GUI
 matplotlib.use("QtAgg")
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavToolbar
@@ -15,12 +43,28 @@ from matplotlib.ticker import MultipleLocator
 
 _LOG = logging.getLogger("tabs.recipe.preview.matplot2d")
 
-# Unterstützte Projektions-Ansichten (2D) für die 3D-Daten
+# Supported 2D projection planes for the 3D data
 PLANES = ("top", "front", "back", "left", "right")
 
 
 def _project_xyz_to_plane(P: np.ndarray, plane: str) -> np.ndarray:
-    """Projiziert Nx3 Punkte (XYZ) in eine 2D-Ebene (Nx2), abhängig vom gewählten View-Plane."""
+    """Project an (N,3) array of XYZ points into a 2D plane depending
+    on the selected view.  For top views, X and Y are used; for front/back,
+    X and Z; and for left/right, Y and Z.
+
+    Parameters
+    ----------
+    P : np.ndarray
+        The (N,3) array of points.
+    plane : str
+        One of "top", "front", "back", "left", "right" specifying the
+        projection plane.
+
+    Returns
+    -------
+    np.ndarray
+        An (N,2) array of projected coordinates.
+    """
     if plane == "top":
         return P[:, [0, 1]]          # X,Y
     if plane in ("front", "back"):
@@ -31,9 +75,23 @@ def _project_xyz_to_plane(P: np.ndarray, plane: str) -> np.ndarray:
 
 
 def _vtk_faces_to_tris(faces: np.ndarray) -> np.ndarray:
-    """
-    Konvertiert VTK/PyVista 'faces' (k0,i0,i1,i2, k1,...) in eine (M,3) Tri-Liste.
-    Es werden nur Dreiecke (n==3) übernommen.
+    """Convert a VTK/PyVista faces array into a list of triangle indices.
+
+    PyVista stores faces in a flat array where each polygon is preceded by
+    the number of vertices, followed by that many indices.  This helper
+    extracts only faces with exactly three vertices (triangles) and returns
+    them as a (M,3) integer array.
+
+    Parameters
+    ----------
+    faces : np.ndarray
+        The faces array from a PyVista mesh (k0,i0,i1,i2,k1,i3,i4,i5,...).
+
+    Returns
+    -------
+    np.ndarray
+        An (M,3) array of triangle vertex indices, or an empty array if
+        no triangles were found.
     """
     faces = np.asarray(faces, dtype=np.int64).ravel()
     tris: List[List[int]] = []
@@ -49,56 +107,86 @@ def _vtk_faces_to_tris(faces: np.ndarray) -> np.ndarray:
 
 class Matplot2DView(FigureCanvas):
     """
-    Matplotlib-Canvas für eine einfache 2D-Vorschau:
-      - Substrat-Mesh als gefüllte Polygone (grau)
-      - Pfad als Linie (grün)
-      - Start/End als Marker
-      - Legende unter der x-Achse
-      - bewusst keine Interaktionslogik (Limits werden intern gemerkt)
+    A Matplotlib canvas for a simplified 2D preview of 3D coating data.  It
+    draws the substrate mesh as filled polygons, the spray path as a green
+    polyline, and start/end markers.  The class caches projected 2D data
+    for the different viewing planes and supports switching between views.
+
+    This modified version introduces a Z‑offset to ensure that the substrate
+    appears at Z = 0 in front/back/left/right views and that the path heights
+    are plotted relative to the substrate base.  Without this offset, the
+    Z‑axis tick labels and path positions reflected the raw world coordinates
+    (e.g. the substrate might appear at 50 mm).  The offset is updated
+    whenever new bounds are supplied via ``set_bounds``, and the path/mesh
+    points are shifted accordingly when set via ``set_path_xyz`` or
+    ``_set_mesh``.
     """
 
     def __init__(self, parent=None):
-        # Figure/Canvas mit constrained layout, damit Plot möglichst viel Fläche nutzt
+        # Create a figure with constrained layout so that subplots (single
+        # axes) use available space efficiently.  DPI 100 yields crisp
+        # rendering in most Qt applications.
         self._fig: Figure = Figure(figsize=(6, 6), dpi=100, layout="constrained")
         super().__init__(self._fig)
         self.setParent(parent)
 
-        # Eine Achse (single view), Aspect=equal für metrische Darstellung
+        # Single Axes for the 2D view; maintain equal aspect ratio so that
+        # distances on both axes are measured in millimetres.  Navigation
+        # is enabled (pan/zoom with right/middle mouse by default).
         self._ax = self._fig.add_subplot(111)
         self._ax.set_aspect("equal", adjustable="box")
         self._ax.set_navigate(True)
 
-        # Extra Platz unterhalb der Achse, damit die Legende nicht überlappt
+        # Extra vertical space below the axes so that the legend fits
+        # comfortably without overlapping the plot.
         self._legend_pad_frac = 0.18
 
-        # Default-Ranges (in mm), derzeit als feste "Welt" verwendet
+        # World coordinate extents (min,max) for each axis.  These values
+        # define the default plot limits when no data is present.  The
+        # Z‑range is updated dynamically based on the scene bounds and the
+        # Z‑offset.
         self._world = {
             "x": (-120.0, 120.0),
             "y": (-120.0, 120.0),
             "z": (0.0, 200.0),
         }
 
-        # Bounds werden aktuell gespeichert, aber fürs Plot-Limit noch nicht genutzt (Welt-Extents)
+        # Store the complete bounds of the current scene (world coordinates).
+        # These are updated via ``set_bounds`` and used to derive the
+        # Z‑offset and to recalculate the world extents.  The tuple is
+        # (xmin, xmax, ymin, ymax, zmin, zmax).
         self._bounds: Tuple[float, float, float, float, float, float] = (
             self._world["x"][0], self._world["x"][1],
             self._world["y"][0], self._world["y"][1],
-            self._world["z"][0], self._world["z"][1]
+            self._world["z"][0], self._world["z"][1],
         )
+
+        # Viewing plane currently selected.  One of the entries from PLANES.
         self._plane: str = "top"
 
-        # Caches für Szenedaten (3D)
+        # Cache of 3D data for the current scene.  ``_path_xyz`` holds an
+        # (N,3) array of points for the spray path.  ``_mesh_pts`` and
+        # ``_mesh_tris`` store the substrate mesh geometry.  These values
+        # reflect the *world coordinates* of the data (not offset).
         self._path_xyz: Optional[np.ndarray] = None
         self._mesh_pts: Optional[np.ndarray] = None
         self._mesh_tris: Optional[np.ndarray] = None
 
-        # Caches für vorprojizierte 2D-Daten pro Plane
+        # Cache of pre‑projected 2D data per plane.  Each entry is
+        # recalculated when the underlying 3D points change or when the
+        # Z‑offset changes.  For the mesh, the entry is a tuple (V2, tris)
+        # where V2 is (M,2) projected vertices and tris is (K,3) indices.
         self._path2d: Dict[str, Optional[np.ndarray]] = {p: None for p in PLANES}
         self._mesh2d: Dict[str, Optional[Tuple[np.ndarray, np.ndarray]]] = {p: None for p in PLANES}
 
-        # Letzte gesetzte Achsenlimits (werden beim Redraw optional wieder verwendet)
+        # User limits (xmin,xmax,ymin,ymax) are stored when the user
+        # interacts with the axes (e.g. zoom/pan).  When refreshing or
+        # switching planes, these limits are restored if present.  A value
+        # of None indicates that the plot should be reset to the default
+        # extents derived from the world coordinate range.
         self._user_limits: Optional[Tuple[float, float, float, float]] = None
 
-        # Style-Parameter für Grid, Farben, Linienstärken und Markergrößen
+        # Style parameters for grid, colors, line widths and marker sizes.
         self._style = {
             "grid_alpha_major": 0.35,
             "grid_alpha_minor": 0.15,
@@ -114,19 +202,27 @@ class Matplot2DView(FigureCanvas):
             "marker_size": 28.0,
         }
 
-        # Initiale Layout-Settings anwenden
+        # Initialize Z‑offset to zero.  When bounds are set for the first
+        # time, this value is updated to the world coordinate of the
+        # substrate base (zmin).  All subsequent path and mesh points will
+        # be shifted by this amount for plotting.
+        self._z_offset: float = 0.0
+
+        # Apply initial layout margins for a bit of breathing room around
+        # the axes.  Without this call, elements like tick labels can
+        # overlap the edges of the figure.
         self._apply_layout_margins()
 
     # ---------- Toolbar (optional) ----------
     def make_toolbar(self, parent=None):
-        """Erzeugt optional eine Matplotlib-Toolbar für das Canvas."""
+        """Create an optional Matplotlib toolbar for the canvas."""
         tb = NavToolbar(self, parent)
         self.toolbar = tb
         return tb
 
     # ---------- Public API ----------
     def dispose(self):
-        """Räumt Canvas/Toolbar/Figure auf (Qt-Seite: Widget lösen + deleteLater)."""
+        """Clean up the canvas, toolbar and figure (for Qt lifetime)."""
         tb = getattr(self, "toolbar", None)
         if tb is not None:
             tb.setParent(None)
@@ -134,12 +230,11 @@ class Matplot2DView(FigureCanvas):
             self.toolbar = None  # type: ignore[assignment]
 
         self._fig.clf()
-
         self.setParent(None)
         self.deleteLater()
 
     def set_plane(self, plane: str):
-        """Wechselt die Ansichtsebene und zeichnet neu."""
+        """Switch the view to a different projection plane and redraw."""
         if plane not in PLANES:
             _LOG.warning("Unknown plane '%s'", plane)
             return
@@ -148,48 +243,87 @@ class Matplot2DView(FigureCanvas):
         self._redraw(keep_limits=keep)
 
     def get_plane(self) -> str:
-        """Gibt den aktuell aktiven Plane zurück."""
+        """Return the currently active plane."""
         return self._plane
 
     def refresh(self):
-        """Erzwingt einen Redraw (mit beibehaltenen Limits)."""
+        """Force a redraw, preserving current axis limits."""
         self._redraw(keep_limits=True)
 
     def set_bounds(self, bounds: Tuple[float, float, float, float, float, float]):
-        """Speichert Bounds und zeichnet neu (Limits werden optional beibehalten)."""
+        """
+        Store the scene bounds and update the Z‑offset.  The bounds are
+        expected to be world coordinate values (xmin,xmax,ymin,ymax,zmin,zmax).
+        The Z‑offset is set to zmin so that subsequent plotting operations
+        display the substrate at Z=0.  The internal world Z range is
+        redefined to start at zero and extend to zmax - zmin.  A redraw is
+        triggered to update the plot.
+        """
+        # Store the raw bounds
         self._bounds = tuple(map(float, bounds))
+        # Unpack for clarity
+        xmin, xmax, ymin, ymax, zmin, zmax = self._bounds
+        # Update Z‑offset to align the substrate base with Z=0
+        self._z_offset = zmin
+        # Update world extents: Z starts at 0 and goes to the height of the
+        # scene above the substrate
+        self._world["z"] = (0.0, max(10.0, float(zmax - zmin)))
+        # Trigger a redraw (preserve user limits if set)
         self._redraw(keep_limits=self._user_limits is not None)
 
     def set_path_xyz(self, path_xyz: np.ndarray | None):
         """
-        Setzt den Pfad als Nx3 Array und berechnet die 2D-Projektionen für alle Planes vor.
+        Store the path as an (N,3) array and compute its 2D projections.  If
+        the path is not None, Z coordinates are shifted by the current
+        Z‑offset so that the path is plotted relative to the substrate base.
+
+        Parameters
+        ----------
+        path_xyz : np.ndarray or None
+            The path points in world coordinates.  If None, any cached
+            path data will be cleared.
         """
-        self._path_xyz = None if path_xyz is None else np.asarray(path_xyz, float).reshape(-1, 3)
+        # Store the raw world coordinates
+        if path_xyz is not None:
+            P = np.asarray(path_xyz, float).reshape(-1, 3).copy()
+            # Shift Z by the offset so that Z=0 corresponds to substrate base
+            P[:, 2] -= self._z_offset
+            self._path_xyz = P
+        else:
+            self._path_xyz = None
+        # Invalidate cached projections
         for p in PLANES:
             self._path2d[p] = None if self._path_xyz is None else _project_xyz_to_plane(self._path_xyz, p)
         self._redraw(keep_limits=True)
 
     def _set_mesh(self, mesh: Any | None):
         """
-        Extrahiert aus einem Mesh-Objekt (z.B. PyVista) Punkte + Dreiecksindices.
-        Danach werden die 2D-Projektionen pro Plane vorgehalten.
+        Extract points and triangle indices from a PyVista mesh and update
+        the cached 2D projections.  Z coordinates are shifted by the
+        current Z‑offset before projection.  If no mesh is provided, any
+        existing mesh data is cleared.
         """
         if mesh is None or not hasattr(mesh, "points"):
             self._mesh_pts = None
             self._mesh_tris = None
         else:
             try:
-                P = np.asarray(mesh.points, dtype=float).reshape(-1, 3)
+                # Copy points so that we can modify them without affecting
+                # the original mesh.  Reshape to ensure (N,3) shape.
+                P = np.asarray(mesh.points, dtype=float).reshape(-1, 3).copy()
+                # Subtract Z‑offset from world coordinates
+                P[:, 2] -= self._z_offset
                 tris = None
                 if hasattr(mesh, "faces"):
                     tris = _vtk_faces_to_tris(np.asarray(mesh.faces))
                 self._mesh_pts = P
+                # Only store triangles if they are present and non‑empty
                 self._mesh_tris = tris if tris is not None and tris.size else None
             except Exception:
                 _LOG.exception("Failed to extract triangles from substrate mesh")
                 self._mesh_pts = None
                 self._mesh_tris = None
-
+        # Update 2D cache
         for p in PLANES:
             if self._mesh_pts is None or self._mesh_tris is None:
                 self._mesh2d[p] = None
@@ -199,18 +333,19 @@ class Matplot2DView(FigureCanvas):
 
     def set_scene(self, *, substrate_mesh=None, path_xyz=None, bounds=None, **_kwargs):
         """
-        Setzt mehrere Szenekomponenten auf einmal:
-          - bounds (optional)
-          - path_xyz (optional)
-          - substrate_mesh (optional)
+        Convenience method to set multiple scene components at once.  You
+        can pass any combination of ``bounds``, ``path_xyz`` and
+        ``substrate_mesh``.  All three are optional.
         """
         if bounds is not None:
-            self._bounds = tuple(map(float, bounds))
+            self.set_bounds(bounds)
+        # Order matters: set path and mesh after updating bounds (so they
+        # use the latest Z‑offset).
         self.set_path_xyz(path_xyz)
         self._set_mesh(substrate_mesh)
         self._redraw(keep_limits=True)
 
-    # Convenience: Plane wechseln
+    # Convenience functions to switch planes
     def show_top(self):   self.set_plane("top")
     def show_front(self): self.set_plane("front")
     def show_back(self):  self.set_plane("back")
@@ -219,13 +354,13 @@ class Matplot2DView(FigureCanvas):
 
     # ---------- layout & labels ----------
     def _apply_layout_margins(self):
-        """Feintuning für constrained layout (Abstände)."""
+        """Fine‑tune the constrained layout (padding/hspacing)."""
         engine = self._fig.get_layout_engine()
         if engine is not None:
             engine.set(w_pad=0.02, h_pad=0.08, hspace=0.02, wspace=0.02)
 
     def _set_labels(self):
-        """Setzt Title und Achsenbeschriftungen passend zur aktiven Projektion."""
+        """Set the title and axis labels according to the current view."""
         if self._plane == "top":
             self._ax.set_title("Top (Z in depth)")
             self._ax.set_xlabel("X (mm)")
@@ -240,7 +375,11 @@ class Matplot2DView(FigureCanvas):
             self._ax.set_ylabel("Z (mm)")
 
     def _fixed_plane_extents(self) -> Tuple[float, float, float, float]:
-        """Gibt feste Plot-Limits abhängig vom Plane zurück (aus _world)."""
+        """
+        Return default plot limits for the current plane.  These are derived
+        from the internal ``_world`` range.  For front/back/left/right
+        views, the Z range uses the dynamic values updated by ``set_bounds``.
+        """
         X = self._world["x"]
         Y = self._world["y"]
         Z = self._world["z"]
@@ -248,15 +387,21 @@ class Matplot2DView(FigureCanvas):
             return X[0], X[1], Y[0], Y[1]
         if self._plane in ("front", "back"):
             return X[0], X[1], Z[0], Z[1]
+        # left/right planes use Y for horizontal and Z for vertical
         return Y[0], Y[1], Z[0], Z[1]
 
     def _extents_from_data(self) -> Tuple[float, float, float, float]:
-        """Aktuell werden die festen Welt-Extents genutzt (später ggf. datengetrieben)."""
+        """
+        Determine plot limits based on stored data.  Currently this
+        implementation simply uses the fixed world extents, but could be
+        extended to compute extents from the actual data points if
+        desired.
+        """
         return self._fixed_plane_extents()
 
     # ---------- drawing ----------
     def _configure_grid(self):
-        """Konfiguriert Major/Minor Grid (10 mm / 1 mm) für beide Achsen."""
+        """Configure the major/minor grid lines with 10 mm and 1 mm spacing."""
         self._ax.xaxis.set_major_locator(MultipleLocator(10.0))
         self._ax.yaxis.set_major_locator(MultipleLocator(10.0))
         self._ax.xaxis.set_minor_locator(MultipleLocator(1.0))
@@ -269,7 +414,10 @@ class Matplot2DView(FigureCanvas):
                       linestyle=":", linewidth=0.5)
 
     def _draw_substrate(self):
-        """Zeichnet das Substrat-Mesh als PolyCollection in der aktuellen 2D-Projektion."""
+        """
+        Draw the substrate mesh as a PolyCollection in the current 2D
+        projection.  If no mesh or triangles exist, nothing is drawn.
+        """
         item = self._mesh2d.get(self._plane)
         if not item:
             return
@@ -288,20 +436,23 @@ class Matplot2DView(FigureCanvas):
         self._ax.add_collection(pc)
 
     def _draw_path(self):
-        """Zeichnet den Pfad als Linie sowie Start/End-Marker."""
+        """
+        Draw the path polyline and the start/end markers.  Path points
+        have been shifted by Z‑offset in ``set_path_xyz``.
+        """
         U = self._path2d.get(self._plane)
         if U is None or len(U) == 0:
             return
-
         self._ax.plot(
             U[:, 0], U[:, 1],
             color=self._style["path_color"],
             linewidth=self._style["path_lw"],
             zorder=2,
         )
-
+        # Marker size calculation: convert the marker area into a diameter in
+        # points squared, then scale for better visibility.
         ms = (self._style["marker_size"] ** 0.5) * 1.2
-
+        # Start marker
         self._ax.plot(
             [U[0, 0]], [U[0, 1]],
             marker="o",
@@ -311,7 +462,7 @@ class Matplot2DView(FigureCanvas):
             markeredgecolor=self._style["start_edge"],
             zorder=3,
         )
-
+        # End marker
         self._ax.plot(
             [U[-1, 0]], [U[-1, 1]],
             marker="o",
@@ -323,7 +474,11 @@ class Matplot2DView(FigureCanvas):
         )
 
     def _add_legend(self):
-        """Legende unterhalb der Achse (4 Spalten: Substrate/Path/Start/End)."""
+        """
+        Add a legend beneath the axes with four columns: Substrate, Path,
+        Start, End.  The location is anchored just below the axes using
+        ``bbox_to_anchor`` and the legend pad fraction.
+        """
         handles = [
             Line2D([0], [0], marker='s', linestyle='None',
                    markersize=10,
@@ -356,17 +511,20 @@ class Matplot2DView(FigureCanvas):
 
     def _redraw(self, *, keep_limits: bool = False):
         """
-        Zeichnet die Szene neu.
-        Fehler werden nur geloggt (damit Plot-Probleme die GUI nicht abschießen).
+        Redraw the scene.  This method clears the axes, sets up labels,
+        grid lines, draws the substrate and path, and updates the legend.
+        If ``keep_limits`` is True and user limits exist, those limits are
+        preserved; otherwise, the axes limits are reset to the default
+        extents derived from ``_world``.
         """
         try:
             saved = self._user_limits if keep_limits and (self._user_limits is not None) else None
-
+            # Clear current axes contents
             self._ax.clear()
             self._ax.set_aspect("equal", adjustable="box")
             self._apply_layout_margins()
             self._set_labels()
-
+            # Set limits either from saved user settings or default extents
             if saved is None:
                 x0, x1, y0, y1 = self._extents_from_data()
                 self._ax.set_xlim(x0, x1)
@@ -374,12 +532,14 @@ class Matplot2DView(FigureCanvas):
             else:
                 self._ax.set_xlim(saved[0], saved[1])
                 self._ax.set_ylim(saved[2], saved[3])
-
+            # Configure the grid
             self._configure_grid()
+            # Draw the substrate and path
             self._draw_substrate()
             self._draw_path()
+            # Add a legend below the plot
             self._add_legend()
-
+            # Save limits if not already saved (when no user limits exist)
             if saved is None:
                 x0, x1 = self._ax.get_xlim()
                 y0, y1 = self._ax.get_ylim()
@@ -387,4 +547,5 @@ class Matplot2DView(FigureCanvas):
         except Exception:
             _LOG.exception("Matplot2DView._redraw failed")
         finally:
+            # Always trigger a redraw of the canvas
             self.draw_idle()

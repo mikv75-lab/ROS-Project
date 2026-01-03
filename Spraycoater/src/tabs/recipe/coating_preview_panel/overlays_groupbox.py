@@ -63,12 +63,13 @@ class OverlaysGroupBox(QGroupBox):
             lay.addWidget(chk)
             return chk
 
-        self.chkShowMask = add_toggle("Mask", False)
+        # All toggles default to checked so overlays are visible initially
+        self.chkShowMask = add_toggle("Mask", True)
         self.chkShowPath = add_toggle("Path", True)
         self.chkShowHits = add_toggle("Hits", True)
         self.chkShowMisses = add_toggle("Misses", True)
-        self.chkShowNormals = add_toggle("Normals", False)
-        self.chkShowLocalFrames = add_toggle("Lokale KS", False)
+        self.chkShowNormals = add_toggle("Normals", True)
+        self.chkShowLocalFrames = add_toggle("Lokale KS", True)
 
         lay.addStretch(1)
 
