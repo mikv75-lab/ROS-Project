@@ -6,7 +6,6 @@ import logging
 from typing import Any, Optional, List, Tuple
 
 from PyQt6 import QtCore
-
 from geometry_msgs.msg import PoseStamped
 
 from .base_statemachine import (
@@ -161,7 +160,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             self._signal_error(f"Validate: MoveItPySignals.moveToPoseRequested fehlt (seg={self._pending_seg}).")
             return
 
-        # Emit queued (thread-safe enough; signal crosses threads)
         try:
             sig.moveToPoseRequested.emit(ps)
         except Exception as e:
@@ -170,11 +168,9 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
     def _on_enter_segment(self, seg_name: str) -> None:
         n = int(self._pts_mm.shape[0])
 
-        # HOME: neuer RosBridge Call
         if seg_name == STATE_MOVE_HOME:
             ok = self._call_first(["moveit_move_home", "moveit_home", "moveit_go_home"])
             if not ok:
-                # Wenn Home nicht verfügbar ist, segment als "done" behandeln
                 QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
 
@@ -188,7 +184,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
 
-        # Segment queue (Pose für Pose)
         self._start_pose_queue_for_segment(seg_name, a, b)
 
     def _should_transition_on_ok(self, seg_name: str, result: str) -> bool:
@@ -199,13 +194,11 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         if seg_name != self._pending_seg or not self._pending_poses:
             return True
 
-        # current pose finished -> next?
         if self._pending_idx < len(self._pending_poses) - 1:
             self._pending_idx += 1
             QtCore.QTimer.singleShot(0, self._emit_pending_pose)
             return False
 
-        # last pose done -> clear queue and allow transition
         self._pending_poses = []
         self._pending_seg = ""
         self._pending_idx = 0

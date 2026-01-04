@@ -68,12 +68,8 @@ class PosesGroupBox(QGroupBox):
 
     def _wire_inbound(self) -> None:
         # erwartet: signals.homePoseChanged(PoseStamped), signals.servicePoseChanged(PoseStamped)
-        self._sig.homePoseChanged.connect(
-            lambda ps: self._set_pose_label_from_ps(self.lblHome, ps)
-        )
-        self._sig.servicePoseChanged.connect(
-            lambda ps: self._set_pose_label_from_ps(self.lblService, ps)
-        )
+        self._sig.homePoseChanged.connect(lambda ps: self._set_pose_label_from_ps(self.lblHome, ps))
+        self._sig.servicePoseChanged.connect(lambda ps: self._set_pose_label_from_ps(self.lblService, ps))
 
     # ------------------------------------------------------------------ Outbound (Widget -> Bridge)
 
@@ -82,10 +78,10 @@ class PosesGroupBox(QGroupBox):
         self.btnHome.clicked.connect(self.setHomeRequested.emit)
         self.btnService.clicked.connect(self.setServiceRequested.emit)
 
-        # Widget-Signale -> Bridge-Signale (ohne .emit im connect!)
-        # erwartet: signals.setHomeRequested, signals.setServiceRequested
-        self.setHomeRequested.connect(self._sig.setHomeRequested)
-        self.setServiceRequested.connect(self._sig.setServiceRequested)
+        # Widget-Signale -> Bridge-Signale
+        # WICHTIG: In PyQt robust nur via .emit verbinden
+        self.setHomeRequested.connect(self._sig.setHomeRequested.emit)
+        self.setServiceRequested.connect(self._sig.setServiceRequested.emit)
 
     # ------------------------------------------------------------------ Helpers
 

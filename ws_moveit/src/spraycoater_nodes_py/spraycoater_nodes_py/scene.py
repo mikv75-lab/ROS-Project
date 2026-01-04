@@ -31,6 +31,10 @@ REPUBLISH_PERIOD_S = 10.0
 # ✅ Delay zwischen TF(static) und CollisionObjects (Race-Condition vermeiden)
 CO_PUBLISH_DELAY_S = 0.2
 
+# ✅ Robust UI Republish, falls QoS/Start-Reihenfolge nicht "latched" ist
+UI_REPUBLISH_PERIOD_S = 1.0
+UI_REPUBLISH_DURATION_S = 15.0
+
 OID_ALIAS = {
     "cage": "cage",
     "mount": "substrate_mount",
@@ -84,6 +88,10 @@ class Scene(Node):
       - TFs bekommen stamp
       - CollisionObjects bekommen stamp
       - 2-Phase Publish: erst TFs, dann CollisionObjects nach CO_PUBLISH_DELAY_S
+
+    Zusatz (UI Robustheit):
+      - Listen+Current werden in den ersten UI_REPUBLISH_DURATION_S Sekunden periodisch republished,
+        damit UI/Bridge auch ohne transient_local QoS zuverlässig initialisiert wird.
     """
 
     GROUP = "scene"
@@ -199,8 +207,13 @@ class Scene(Node):
         self._cached_cos: dict[str, CollisionObject] = {}
         self._republish_timer = None
 
+        # Initial publish
         self._publish_lists_once()
         self._publish_current_once()
+
+        # ✅ Robust UI republish for late-joiner / non-latched QoS
+        self._ui_repub_deadline = time.time() + float(UI_REPUBLISH_DURATION_S)
+        self._ui_repub_timer = self.create_timer(float(UI_REPUBLISH_PERIOD_S), self._republish_ui_state_until_seen)
 
         ns = self.get_namespace() or "/"
         self.get_logger().info(
@@ -247,6 +260,47 @@ class Scene(Node):
         self.pub_mount_current.publish(String(data=self.current_mount))
         self.pub_substrate_current.publish(String(data=self.current_substrate))
         self.initial_state_published = True
+
+    def _republish_ui_state_until_seen(self):
+        """
+        Robustness: publish lists+current for a short window so UI/bridge sees them
+        even if QoS is not transient_local or startup order differs.
+        """
+        # stop after deadline
+        if time.time() > self._ui_repub_deadline:
+            try:
+                self._ui_repub_timer.cancel()
+            except Exception:
+                pass
+            return
+
+        # Always republish (cheap)
+        cages = self._scan_assets(self._roots_cage)
+        mounts = self._scan_assets(self._roots_mount)
+        subs = self._scan_assets(self._roots_substrate)
+
+        self.pub_cage_list.publish(String(data=self._list_to_string(cages)))
+        self.pub_mount_list.publish(String(data=self._list_to_string(mounts)))
+        self.pub_substrate_list.publish(String(data=self._list_to_string(subs)))
+
+        self.pub_cage_current.publish(String(data=self.current_cage))
+        self.pub_mount_current.publish(String(data=self.current_mount))
+        self.pub_substrate_current.publish(String(data=self.current_substrate))
+
+        # optional early stop if any subscriber is present
+        subs_count = (
+            self.pub_cage_list.get_subscription_count()
+            + self.pub_mount_list.get_subscription_count()
+            + self.pub_substrate_list.get_subscription_count()
+            + self.pub_cage_current.get_subscription_count()
+            + self.pub_mount_current.get_subscription_count()
+            + self.pub_substrate_current.get_subscription_count()
+        )
+        if subs_count > 0:
+            try:
+                self._ui_repub_timer.cancel()
+            except Exception:
+                pass
 
     def _save_scene_yaml(self):
         try:

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# app/tabs/service/scene_box.py  (oder wo es liegt)
+# app/tabs/service/scene_box.py
 from __future__ import annotations
 
 from typing import Optional, Sequence
@@ -110,10 +110,10 @@ class SceneGroupBox(QGroupBox):
         self.btnClrMount.clicked.connect(lambda: self.setMountRequested.emit(""))
         self.btnClrSub.clicked.connect(lambda: self.setSubstrateRequested.emit(""))
 
-        # Widget-Signals -> Bridge Signals (direkt, event-driven)
-        self.setCageRequested.connect(self._sig.setCageRequested)
-        self.setMountRequested.connect(self._sig.setMountRequested)
-        self.setSubstrateRequested.connect(self._sig.setSubstrateRequested)
+        # Widget-Signals -> Bridge Signals (PyQt robust: via .emit)
+        self.setCageRequested.connect(self._sig.setCageRequested.emit)
+        self.setMountRequested.connect(self._sig.setMountRequested.emit)
+        self.setSubstrateRequested.connect(self._sig.setSubstrateRequested.emit)
 
     # ------------------------------------------------------------------ Helpers
 
