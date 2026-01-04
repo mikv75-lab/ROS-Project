@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, List, Tuple
 
 from PyQt6 import QtCore
-from geometry_msgs.msg import PoseArray, Pose
+
+from geometry_msgs.msg import PoseStamped
 
 from .base_statemachine import (
     BaseProcessStatemachine,
@@ -23,8 +24,11 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
     """
     Validate:
       - nimmt compiled points (mm) aus Recipe
-      - fährt Segmente (predispense/recipe/retreat/home) via plan+execute
-      - dadurch entstehen planned/executed snapshots in RosBridge
+      - fährt Segmente (predispense/recipe/retreat/home)
+      - nutzt die "neuen" RosBridge / MoveItPySignals Calls:
+          - moveit_move_home()
+          - moveitpy.signals.moveToPoseRequested(PoseStamped)
+      - Segment-Queue: Pose für Pose, Transition erst nach letzter Pose im Segment.
     """
 
     ROLE = "validate"
@@ -38,9 +42,15 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         max_retries: int = 3,
     ) -> None:
         super().__init__(recipe=recipe, ros=ros, parent=parent, max_retries=max_retries, skip_home=False)
+
         self._side: str = "top"
         self._frame: str = "scene"
         self._pts_mm = None  # numpy array
+
+        # --- per segment pose queue ---
+        self._pending_poses: List[PoseStamped] = []
+        self._pending_seg: str = ""
+        self._pending_idx: int = 0
 
     def _prepare_run(self) -> bool:
         try:
@@ -67,6 +77,11 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
                 self._error_msg = "Validate: Zu wenige Punkte."
                 return False
 
+            # reset queue
+            self._pending_poses = []
+            self._pending_seg = ""
+            self._pending_idx = 0
+
             return True
         except Exception as e:
             self._error_msg = f"Validate: Prepare failed: {e}"
@@ -80,62 +95,118 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
                 return True
         return False
 
-    def _pose_array_slice(self, a: int, b: int) -> Optional[PoseArray]:
-        n = int(self._pts_mm.shape[0])
-        a = max(0, min(a, n - 1))
-        b = max(0, min(b, n - 1))
-        if b < a:
+    def _build_pose(self, xyz_mm: Tuple[float, float, float]) -> PoseStamped:
+        """compiled_points_mm_for_side liefert mm; MoveItPy erwartet Meter."""
+        x_mm, y_mm, z_mm = xyz_mm
+        ps = PoseStamped()
+        ps.header.frame_id = self._frame
+
+        ps.pose.position.x = float(x_mm) * 1e-3
+        ps.pose.position.y = float(y_mm) * 1e-3
+        ps.pose.position.z = float(z_mm) * 1e-3
+
+        # TODO: Orientation aus normals/tangents übernehmen, sobald verfügbar.
+        ps.pose.orientation.w = 1.0
+        return ps
+
+    def _segment_indices(self, seg_name: str, n: int) -> Optional[Tuple[int, int]]:
+        """
+        Liefert [a,b] inklusive, im Sinne deines bisherigen Slicings:
+          - predispense: 0..1
+          - recipe:      1..n-2
+          - retreat:     n-2..n-1
+        """
+        if n < 2:
             return None
 
-        pa = PoseArray()
-        pa.header.frame_id = self._frame
+        if seg_name == STATE_MOVE_PREDISPENSE:
+            return (0, 1)
+
+        if seg_name == STATE_MOVE_RECIPE:
+            if n < 3:
+                return None
+            return (1, n - 2)
+
+        if seg_name == STATE_MOVE_RETREAT:
+            return (max(n - 2, 0), n - 1)
+
+        return None
+
+    def _start_pose_queue_for_segment(self, seg_name: str, a: int, b: int) -> None:
+        """Initialisiert Queue und sendet die erste Pose."""
+        self._pending_seg = seg_name
+        self._pending_idx = 0
+        self._pending_poses = []
 
         for i in range(a, b + 1):
-            x, y, z = float(self._pts_mm[i, 0]), float(self._pts_mm[i, 1]), float(self._pts_mm[i, 2])
-            p = Pose()
-            p.position.x = x * 1e-3
-            p.position.y = y * 1e-3
-            p.position.z = z * 1e-3
-            p.orientation.w = 1.0
-            pa.poses.append(p)
+            xyz = (float(self._pts_mm[i, 0]), float(self._pts_mm[i, 1]), float(self._pts_mm[i, 2]))
+            self._pending_poses.append(self._build_pose(xyz))
 
-        if len(pa.poses) < 2:
-            return None
-        return pa
+        if not self._pending_poses:
+            QtCore.QTimer.singleShot(0, self._sig_done.emit)
+            return
+
+        self._emit_pending_pose()
+
+    def _emit_pending_pose(self) -> None:
+        """Sendet die aktuelle Pose aus der Queue via MoveItPySignals."""
+        if not self._pending_poses or self._pending_idx < 0 or self._pending_idx >= len(self._pending_poses):
+            QtCore.QTimer.singleShot(0, self._sig_done.emit)
+            return
+
+        ps = self._pending_poses[self._pending_idx]
+
+        sig = self._moveitpy_signals
+        if sig is None or not hasattr(sig, "moveToPoseRequested"):
+            self._signal_error(f"Validate: MoveItPySignals.moveToPoseRequested fehlt (seg={self._pending_seg}).")
+            return
+
+        # Emit queued (thread-safe enough; signal crosses threads)
+        try:
+            sig.moveToPoseRequested.emit(ps)
+        except Exception as e:
+            self._signal_error(f"Validate: moveToPoseRequested emit failed: {e}")
 
     def _on_enter_segment(self, seg_name: str) -> None:
         n = int(self._pts_mm.shape[0])
 
+        # HOME: neuer RosBridge Call
         if seg_name == STATE_MOVE_HOME:
-            ok = self._call_first(["moveit_home", "moveit_go_home"])
+            ok = self._call_first(["moveit_move_home", "moveit_home", "moveit_go_home"])
             if not ok:
+                # Wenn Home nicht verfügbar ist, segment als "done" behandeln
                 QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
 
-        if seg_name == STATE_MOVE_PREDISPENSE:
-            pa = self._pose_array_slice(0, 1)
-        elif seg_name == STATE_MOVE_RECIPE:
-            if n < 3:
-                QtCore.QTimer.singleShot(0, self._sig_done.emit)
-                return
-            pa = self._pose_array_slice(1, n - 2)
-        elif seg_name == STATE_MOVE_RETREAT:
-            pa = self._pose_array_slice(max(n - 2, 0), n - 1)
-        else:
-            pa = None
-
-        if pa is None:
+        idx = self._segment_indices(seg_name, n)
+        if idx is None:
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
 
-        ok = self._call_first(
-            [
-                "moveit_plan_execute_pose_array",
-                "moveit_plan_execute_poses",
-                "moveit_execute_pose_array",
-                "moveit_execute_poses",
-            ],
-            pa,
-        )
-        if not ok:
-            self._signal_error(f"Validate: ROS API fehlt für Segment {seg_name}.")
+        a, b = idx
+        if b < a:
+            QtCore.QTimer.singleShot(0, self._sig_done.emit)
+            return
+
+        # Segment queue (Pose für Pose)
+        self._start_pose_queue_for_segment(seg_name, a, b)
+
+    def _should_transition_on_ok(self, seg_name: str, result: str) -> bool:
+        """
+        Wird bei 'EXECUTED:OK' aufgerufen.
+        Wenn wir noch Posen im aktuellen Segment haben -> nächste Pose senden und NICHT transitionen.
+        """
+        if seg_name != self._pending_seg or not self._pending_poses:
+            return True
+
+        # current pose finished -> next?
+        if self._pending_idx < len(self._pending_poses) - 1:
+            self._pending_idx += 1
+            QtCore.QTimer.singleShot(0, self._emit_pending_pose)
+            return False
+
+        # last pose done -> clear queue and allow transition
+        self._pending_poses = []
+        self._pending_seg = ""
+        self._pending_idx = 0
+        return True

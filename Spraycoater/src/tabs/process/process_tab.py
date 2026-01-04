@@ -468,6 +468,13 @@ class ProcessTab(QWidget):
     # ---------------- Robot Init ----------------
 
     def _setup_init_thread(self) -> None:
+        """Create the persistent RobotInitThread exactly once.
+
+        The RobotInitThread itself owns a persistent QThread + a single worker instance.
+        ProcessTab must therefore NOT recreate it on repeated UI actions.
+        """
+        if self._init_thread is not None:
+            return
         if self.ros is None:
             return
         try:
@@ -478,6 +485,7 @@ class ProcessTab(QWidget):
             self._init_thread.stateChanged.connect(lambda s: self.lblInit.setText(f"Init: {s}"))
         except Exception:
             _LOG.exception("RobotInitThread setup failed")
+            self._init_thread = None
 
     def _on_init_clicked(self) -> None:
         if self._init_thread is None:

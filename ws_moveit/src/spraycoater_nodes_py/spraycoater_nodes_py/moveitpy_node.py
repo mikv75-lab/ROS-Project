@@ -26,6 +26,8 @@ from moveit.planning import MoveItPy, PlanRequestParameters
 from moveit.core.robot_trajectory import RobotTrajectory as RobotTrajectoryCore
 
 from tf2_ros import Buffer, TransformListener
+
+# Fallback Transform (Pose, nicht PoseStamped!)
 from tf2_geometry_msgs import do_transform_pose
 
 from controller_manager_msgs.srv import SwitchController
@@ -178,6 +180,11 @@ class MoveItPyNode(Node):
     NEW (2026-01):
       - Auto-switch controller mode:
           execute=True -> ensure TRAJ (trajectory controller ON)
+
+    TF FIX (2026-01-04):
+      - tf2_geometry_msgs Varianten sind inkonsistent bzgl. PoseStamped.
+      - Primär: tf_buffer.transform(PoseStamped, target_frame)
+      - Fallback: lookup_transform + do_transform_pose(msg.pose, tf)
     """
 
     def __init__(self) -> None:
@@ -561,6 +568,47 @@ class MoveItPyNode(Node):
         except Exception as e:
             self.log.error(f"[config] set_planner_cfg: invalid JSON '{raw}': {e}")
 
+    def _transform_pose_stamped_to_world(self, msg: PoseStamped) -> PoseStamped:
+        """
+        Robust TF transform for PoseStamped -> self.frame_world.
+
+        Primary: tf_buffer.transform(PoseStamped, target_frame)
+        Fallback: lookup_transform + do_transform_pose(msg.pose, tf)
+        """
+        in_frame = (msg.header.frame_id or "").strip() or self.frame_world
+
+        # already in world -> clone header/stamp
+        if in_frame == self.frame_world:
+            out = PoseStamped()
+            out.header.frame_id = self.frame_world
+            out.header.stamp = self.get_clock().now().to_msg()
+            out.pose = msg.pose
+            return out
+
+        # 1) primary: tf2_ros Buffer.transform supports PoseStamped
+        try:
+            out = self.tf_buffer.transform(
+                msg,
+                self.frame_world,
+                timeout=Duration(seconds=1.0),
+            )
+            # ensure header sane
+            out.header.frame_id = self.frame_world
+            out.header.stamp = self.get_clock().now().to_msg()
+            return out
+        except Exception as e_primary:
+            self.log.warn(f"[tf] buffer.transform failed ({in_frame} -> {self.frame_world}): {e_primary!r}")
+
+        # 2) fallback: transform Pose (NOT PoseStamped)
+        tf = self._lookup_tf(self.frame_world, in_frame)
+        p = do_transform_pose(msg.pose, tf)  # Pose -> Pose
+
+        out = PoseStamped()
+        out.header.frame_id = self.frame_world
+        out.header.stamp = self.get_clock().now().to_msg()
+        out.pose = p
+        return out
+
     def _on_plan_pose(self, msg: PoseStamped) -> None:
         if self._busy:
             self._emit("ERROR:BUSY")
@@ -575,16 +623,7 @@ class MoveItPyNode(Node):
         self.log.info(f"[plan_pose] in_frame={in_frame} → world={self.frame_world}")
 
         try:
-            if in_frame != self.frame_world:
-                tf = self._lookup_tf(self.frame_world, in_frame)
-                goal = do_transform_pose(msg, tf)
-                goal.header.frame_id = self.frame_world
-                goal.header.stamp = self.get_clock().now().to_msg()
-            else:
-                goal = PoseStamped()
-                goal.header.frame_id = self.frame_world
-                goal.header.stamp = self.get_clock().now().to_msg()
-                goal.pose = msg.pose
+            goal = self._transform_pose_stamped_to_world(msg)
 
             self.arm.set_start_state_to_current_state()
             self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
