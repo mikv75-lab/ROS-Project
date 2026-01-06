@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict, List, Tuple
 
 import yaml
 
@@ -105,7 +105,7 @@ class _SprayPathBoxDisabled(QGroupBox):
             return box, cb
 
         b1, self.chkCompiled = _mk_group("Compiled")
-        b2, self.chkTraj = _mk_group("Traj")
+        b2, self.chkTraj = _mk_group("Planned")
         b3, self.chkExecuted = _mk_group("Executed")
 
         row.addWidget(b1)
@@ -127,7 +127,6 @@ class _SprayPathBoxDisabled(QGroupBox):
         self.set_defaults(compiled=True, traj=True, executed=True)
 
     def publish_current(self) -> None:
-        # no ROS, intentionally no-op
         return
 
 
@@ -135,28 +134,15 @@ class ProcessTab(QWidget):
     """
     ProcessTab
 
-    Layout:
-      - Top Row: Recipe (links) | Process (mitte) | Robot Status (rechts)
-      - Row: InfoGroupBox (links) | Spray Paths (rechts)
-      - Run Data (scored)
-      - Log
+    NEU (Contract, relevant für Validate):
+      - Validate liefert ZWEI SegmentRunPayload v1 (JOINT-only, timestamped):
+          planned_run  -> planned_traj.yaml
+          executed_run -> executed_traj.yaml
 
-    NEU (Contract):
-      - Worker liefert SegmentRunPayload (dict):
-          {
-            "version": 1,
-            "meta": {...},
-            "segments": {
-              "<STATE>": { "tcp": <traj-segment>, "meta": {...} },
-              ...
-            }
-          }
-
-      - Persistenz speichert genau dieses Payload (segments-only).
-        (traj.yaml vs executed_traj.yaml: gleicher Inhalt, nur anderer Name)
-
-      - Für Visualisierung/Eval kann daraus ein "total" Traj on-the-fly gebaut werden
-        (Concatenate der Segment-TCP poses in State-Reihenfolge).
+      - Optimize/Execute können weiterhin EIN Payload liefern (mode-abhängig).
+      - Persistenz passiert hier (über Repo/Bundle).
+      - Visualisierung (Marker) kann nur aus TCP-basierten Trajs gebaut werden.
+        Bei joint-only Payloads gibt es keine TCP-Posen -> keine Traj/Executed Marker.
     """
 
     _SEG_ORDER = (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME)
@@ -197,7 +183,7 @@ class ProcessTab(QWidget):
         self._show_executed: bool = True
 
         # ---- last run payloads (segments-only) for UI/save ----
-        self._last_run_payload_traj: Dict[str, Any] = {}
+        self._last_run_payload_planned: Dict[str, Any] = {}
         self._last_run_payload_executed: Dict[str, Any] = {}
 
         root = QVBoxLayout(self)
@@ -275,7 +261,6 @@ class ProcessTab(QWidget):
         row_info.addWidget(self.infoBox, 2)
 
         # ---------------- SprayPath GroupBox (rechts) ----------------
-        # IMPORTANT: darf NICHT crashen, wenn ros=None oder ros.spray fehlt.
         try:
             self.sprayPathBox = SprayPathBox(ros=self.ros, parent=self, title="Spray Paths")
         except Exception as e:
@@ -291,11 +276,11 @@ class ProcessTab(QWidget):
 
         self.txtPlanned = QTextEdit(grp_res)
         self.txtPlanned.setReadOnly(True)
-        self.txtPlanned.setPlaceholderText("traj.yaml payload (segments-only) – inkl. eval/score")
+        self.txtPlanned.setPlaceholderText("planned_traj.yaml payload (segments-only, joint-only)")
 
         self.txtExecuted = QTextEdit(grp_res)
         self.txtExecuted.setReadOnly(True)
-        self.txtExecuted.setPlaceholderText("executed_traj.yaml payload (segments-only) – inkl. eval/score")
+        self.txtExecuted.setPlaceholderText("executed_traj.yaml payload (segments-only, joint-only)")
 
         row_res.addWidget(self.txtPlanned, 1)
         row_res.addWidget(self.txtExecuted, 1)
@@ -321,7 +306,6 @@ class ProcessTab(QWidget):
         self.btnStop.clicked.connect(self._on_stop_clicked)
 
         # SprayPathBox -> ProcessTab cache
-        # (Fallback Widget bietet dieselben Signale)
         self.sprayPathBox.showCompiledToggled.connect(self._on_show_compiled_toggled)
         self.sprayPathBox.showTrajToggled.connect(self._on_show_traj_toggled)
         self.sprayPathBox.showExecutedToggled.connect(self._on_show_executed_toggled)
@@ -403,6 +387,10 @@ class ProcessTab(QWidget):
         return isinstance(payload, dict) and isinstance(payload.get("segments"), dict)
 
     def _segment_tcp_traj(self, payload: Dict[str, Any], seg: str) -> Dict[str, Any]:
+        """
+        Optional: Only available if the payload actually contains TCP data.
+        For joint-only runs this will return {}.
+        """
         try:
             segs = payload.get("segments") or {}
             s = segs.get(seg) or {}
@@ -411,22 +399,34 @@ class ProcessTab(QWidget):
         except Exception:
             return {}
 
+    def _run_has_any_tcp(self, payload: Dict[str, Any]) -> bool:
+        if not self._is_run_payload(payload):
+            return False
+        try:
+            for seg in (payload.get("segments") or {}).values():
+                if isinstance(seg, dict) and isinstance(seg.get("tcp"), dict) and seg.get("tcp"):
+                    return True
+        except Exception:
+            return False
+        return False
+
     def _concat_total_traj_from_run(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
         Build a 'total' trajectory dict compatible with Recipe.trajectory_points_mm_for_side()
         by concatenating segment TCP poses in _SEG_ORDER.
 
-        Output:
-          {"frame":..., "tool_frame":..., "sides":{side:{"poses_quat":[...]}}}
+        NOTE:
+          - For JOINT-only payloads: returns {} (no tcp data to concatenate).
         """
         if not self._is_run_payload(payload):
+            return {}
+        if not self._run_has_any_tcp(payload):
             return {}
 
         meta = payload.get("meta") or {}
         frame = str(meta.get("frame") or "scene")
         tool_frame = str(meta.get("tool_frame") or "tool_mount")
 
-        # decide side from recipe parameters (or fallback)
         side = "top"
         try:
             if self._recipe is not None:
@@ -460,6 +460,57 @@ class ProcessTab(QWidget):
             "sides": {side: {"poses_quat": poses}},
             "meta": {"source": "concat_segments", "n_points": int(len(poses))},
         }
+
+    # ---------------- Result object normalization ----------------
+
+    def _extract_planned_and_executed_from_result(self, result_obj: object) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Normalize worker result into (planned_payload, executed_payload).
+
+        Accepted shapes:
+          - {"planned_run": {...}, "executed_run": {...}}   (RunResult.to_process_payload())
+          - {"planned": {...}, "executed": {...}}
+          - {"traj": {...}, "executed": {...}}             (legacy-ish)
+          - {"run": {...}}                                 (single payload -> planned)
+          - single SegmentRunPayload dict                   (single payload -> planned)
+          - (planned, executed) tuple/list
+        """
+        planned: Dict[str, Any] = {}
+        executed: Dict[str, Any] = {}
+
+        if isinstance(result_obj, (list, tuple)) and len(result_obj) >= 2:
+            a, b = result_obj[0], result_obj[1]
+            if isinstance(a, dict):
+                planned = a
+            if isinstance(b, dict):
+                executed = b
+            return planned, executed
+
+        if isinstance(result_obj, dict):
+            for k_pl, k_ex in (
+                ("planned_run", "executed_run"),
+                ("planned", "executed"),
+                ("traj", "executed"),
+                ("planned_traj", "executed_traj"),
+            ):
+                a = result_obj.get(k_pl)
+                b = result_obj.get(k_ex)
+                if isinstance(a, dict) or isinstance(b, dict):
+                    planned = a if isinstance(a, dict) else {}
+                    executed = b if isinstance(b, dict) else {}
+                    return planned, executed
+
+            one = result_obj.get("run")
+            if isinstance(one, dict):
+                planned = one
+                return planned, executed
+
+            # if the dict itself looks like a run payload -> planned
+            if self._is_run_payload(result_obj):
+                planned = result_obj
+                return planned, executed
+
+        return planned, executed
 
     # ---------------- Spray toggles (cache only; publish is done by SprayPathBox) ----------------
 
@@ -511,6 +562,14 @@ class ProcessTab(QWidget):
     # ---------------- Run persistence helpers ----------------
 
     def _run_file_path(self, kind: str) -> str:
+        """
+        kind:
+          - "planned"   -> planned_traj.yaml
+          - "executed"  -> executed_traj.yaml
+          - legacy:
+              "traj"      -> traj.yaml
+              "executed"  -> executed_traj.yaml
+        """
         key = self._recipe_key or ""
         if not key:
             return ""
@@ -519,6 +578,14 @@ class ProcessTab(QWidget):
             return ""
         try:
             p = bundle.paths(key)
+
+            # preferred new names
+            if kind == "planned":
+                return str(getattr(p, "planned_yaml", "") or getattr(p, "planned_traj_yaml", "") or "")
+            if kind == "executed":
+                return str(getattr(p, "executed_yaml", "") or getattr(p, "executed_traj_yaml", "") or "")
+
+            # legacy fallbacks
             if kind == "traj":
                 return str(getattr(p, "traj_yaml", "") or "")
             if kind == "executed":
@@ -527,10 +594,47 @@ class ProcessTab(QWidget):
             return ""
         return ""
 
+    def _repo_save_run(self, *, kind: str, data: dict) -> None:
+        """
+        Calls repo save with compatibility:
+          - preferred:
+              repo.save_planned_run(..., run=data)
+              repo.save_executed_run(..., run=data)
+          - fallback legacy:
+              repo.save_traj_run(..., run=data)
+              repo.save_executed_run(..., run=data)
+        """
+        if not self._recipe_key:
+            return
+        if not isinstance(data, dict) or not data:
+            return
+
+        # planned
+        if kind == "planned":
+            fn = getattr(self.repo, "save_planned_run", None)
+            if callable(fn):
+                fn(self._recipe_key, run=data)
+                return
+            # fallback to old name
+            fn2 = getattr(self.repo, "save_traj_run", None)
+            if callable(fn2):
+                fn2(self._recipe_key, run=data)
+                return
+            raise RuntimeError("Repo: save_planned_run/save_traj_run not available")
+
+        # executed
+        if kind == "executed":
+            fn = getattr(self.repo, "save_executed_run", None)
+            if callable(fn):
+                fn(self._recipe_key, run=data)
+                return
+            raise RuntimeError("Repo: save_executed_run not available")
+
+        raise ValueError(f"_repo_save_run: unknown kind={kind}")
+
     def _maybe_save_run(self, *, kind: str, data: dict) -> None:
         """
-        Persist segments-only payload. Contents for traj/executed are identical;
-        only the filename differs (repo policy).
+        Persist segments-only payload into planned_traj.yaml or executed_traj.yaml.
         """
         if not self._recipe_key:
             return
@@ -553,14 +657,8 @@ class ProcessTab(QWidget):
                 return
 
         try:
-            if kind == "traj":
-                # same payload, different API name
-                self.repo.save_traj_run(self._recipe_key, traj=data)
-                self._append_log(f"Save: OK -> {os.path.basename(path) or 'traj.yaml'}")
-            elif kind == "executed":
-                # same payload, different API name
-                self.repo.save_executed_run(self._recipe_key, executed=data)
-                self._append_log(f"Save: OK -> {os.path.basename(path) or 'executed_traj.yaml'}")
+            self._repo_save_run(kind=kind, data=data)
+            self._append_log(f"Save: OK -> {os.path.basename(path) or kind}")
         except Exception as e:
             self._append_log(f"Save: ERROR ({kind}): {e}")
 
@@ -639,7 +737,7 @@ class ProcessTab(QWidget):
         self._update_info_box()
         self._update_buttons()
 
-        self._last_run_payload_traj = {}
+        self._last_run_payload_planned = {}
         self._last_run_payload_executed = {}
         self._render_run_yaml_views()
 
@@ -792,7 +890,7 @@ class ProcessTab(QWidget):
         self._process_active = True
         self._active_mode = mode
         self.txtLog.clear()
-        self._last_run_payload_traj = {}
+        self._last_run_payload_planned = {}
         self._last_run_payload_executed = {}
         self._render_run_yaml_views()
 
@@ -814,68 +912,55 @@ class ProcessTab(QWidget):
 
     # ---------------- Process result handling ----------------
 
-    def _apply_run_payload_to_recipe_and_eval(self, run_payload: Dict[str, Any], *, traj_slot: str) -> None:
+    def _apply_run_payload_to_recipe_and_eval(self, run_payload: Dict[str, Any], *, slot: str) -> None:
         """
-        - Speichert segments-only payload für Save/UI.
-        - Baut zusätzlich total_traj (concat segments) für Visualization/Eval-Kompatibilität.
-        - Eval:
-            1) bevorzugt: Recipe.evaluate_run_against_compiled(...) falls vorhanden
-            2) fallback: Recipe.evaluate_trajectory_against_compiled(...) auf total_traj
+        - Stasht segments-only payload für Save/UI.
+        - Optional: baut total_traj (concat segments) NUR wenn TCP vorhanden ist
+          (z.B. Optimize/Execute können TCP liefern; Validate (joint-only) nicht).
+
+        Hinweis:
+          - Für joint-only Validate ist "Eval" typischerweise joint-basiert und passiert außerhalb
+            (oder über separate Evaluator-Logik). Hier wird nur der legacy TCP-Fallback gemacht,
+            falls TCP existiert.
         """
         if self._recipe is None:
             return
         if not self._is_run_payload(run_payload):
             return
 
-        # 1) stash payload for UI/save
-        if traj_slot == "traj":
-            self._last_run_payload_traj = dict(run_payload)
-        elif traj_slot == "executed":
+        if slot == "planned":
+            self._last_run_payload_planned = dict(run_payload)
+        elif slot == "executed":
             self._last_run_payload_executed = dict(run_payload)
 
-        # 2) create total trajectory for existing marker/eval pipeline
         total_traj = self._concat_total_traj_from_run(run_payload)
         if isinstance(total_traj, dict) and total_traj:
             try:
-                # Keep existing keys for marker builder and legacy eval code.
-                if traj_slot == "traj":
+                if slot == "planned":
                     self._recipe.trajectories[Recipe.TRAJ_TRAJ] = total_traj
-                elif traj_slot == "executed":
+                elif slot == "executed":
                     self._recipe.trajectories[Recipe.TRAJ_EXECUTED] = total_traj
             except Exception:
                 pass
 
-        # 3) evaluate (segmentwise + total) if available, else fallback total-only
-        for side in self._compiled_sides():
-            # preferred new API (your new eval module can hang here)
-            try:
-                fn = getattr(self._recipe, "evaluate_run_against_compiled", None)
-                if callable(fn):
-                    fn(run=run_payload, side=side)  # expected to write eval into run/meta or recipe.info
-                    continue
-            except Exception:
-                pass
-
-            # fallback legacy API on total traj
-            try:
-                if isinstance(total_traj, dict) and total_traj:
-                    if traj_slot == "traj":
+            # legacy TCP eval against compiled (only meaningful if total_traj exists)
+            for side in self._compiled_sides():
+                try:
+                    if slot == "planned":
                         self._recipe.evaluate_trajectory_against_compiled(traj_key=Recipe.TRAJ_TRAJ, side=side)
-                    elif traj_slot == "executed":
+                    elif slot == "executed":
                         self._recipe.evaluate_trajectory_against_compiled(traj_key=Recipe.TRAJ_EXECUTED, side=side)
-            except Exception:
-                pass
+                except Exception:
+                    pass
 
     def _render_run_yaml_views(self) -> None:
-        """
-        UI shows the persisted payloads (segments-only), not the derived total traj.
-        """
-        self.txtPlanned.setPlainText(self._yaml_dump(self._last_run_payload_traj))
+        self.txtPlanned.setPlainText(self._yaml_dump(self._last_run_payload_planned))
         self.txtExecuted.setPlainText(self._yaml_dump(self._last_run_payload_executed))
 
     def _on_process_finished_success(self, result_obj: object) -> None:
-        run_payload: Dict[str, Any] = result_obj if isinstance(result_obj, dict) else {}
         self._append_log("=== Process finished ===")
+
+        planned_payload, executed_payload = self._extract_planned_and_executed_from_result(result_obj)
 
         # reload recipe fresh (compiled etc.)
         if self._recipe_key:
@@ -884,16 +969,34 @@ class ProcessTab(QWidget):
             except Exception:
                 pass
 
-        # decide slot + save-kind by mode
-        if self._active_mode in (ProcessThread.MODE_VALIDATE, ProcessThread.MODE_OPTIMIZE):
-            if self._is_run_payload(run_payload):
-                self._apply_run_payload_to_recipe_and_eval(run_payload, traj_slot="traj")
-                self._maybe_save_run(kind="traj", data=run_payload)
+        if self._active_mode == ProcessThread.MODE_VALIDATE:
+            # Validate: always two files (planned + executed)
+            if self._is_run_payload(planned_payload):
+                self._apply_run_payload_to_recipe_and_eval(planned_payload, slot="planned")
+                self._maybe_save_run(kind="planned", data=planned_payload)
+            if self._is_run_payload(executed_payload):
+                self._apply_run_payload_to_recipe_and_eval(executed_payload, slot="executed")
+                self._maybe_save_run(kind="executed", data=executed_payload)
 
-        if self._active_mode == ProcessThread.MODE_EXECUTE:
-            if self._is_run_payload(run_payload):
-                self._apply_run_payload_to_recipe_and_eval(run_payload, traj_slot="executed")
-                self._maybe_save_run(kind="executed", data=run_payload)
+        elif self._active_mode == ProcessThread.MODE_OPTIMIZE:
+            # Optimize: treat as planned (single payload), unless worker provides both
+            if self._is_run_payload(planned_payload):
+                self._apply_run_payload_to_recipe_and_eval(planned_payload, slot="planned")
+                self._maybe_save_run(kind="planned", data=planned_payload)
+            elif self._is_run_payload(executed_payload):
+                # fallback if optimize only provides "executed"
+                self._apply_run_payload_to_recipe_and_eval(executed_payload, slot="planned")
+                self._maybe_save_run(kind="planned", data=executed_payload)
+
+        elif self._active_mode == ProcessThread.MODE_EXECUTE:
+            # Execute: store executed
+            if self._is_run_payload(executed_payload):
+                self._apply_run_payload_to_recipe_and_eval(executed_payload, slot="executed")
+                self._maybe_save_run(kind="executed", data=executed_payload)
+            elif self._is_run_payload(planned_payload):
+                # fallback if worker returns single payload in planned slot
+                self._apply_run_payload_to_recipe_and_eval(planned_payload, slot="executed")
+                self._maybe_save_run(kind="executed", data=planned_payload)
 
             # ensure executed is ON at end of execute
             self._show_executed = True
@@ -902,7 +1005,7 @@ class ProcessTab(QWidget):
             except Exception:
                 pass
 
-        # publish layers based on recipe.trajectories (total/legacy) + compiled
+        # publish layers (compiled always; traj/executed only if recipe has TCP totals)
         self._publish_all_available_layers()
 
         # show payload yaml in UI panes
@@ -937,9 +1040,12 @@ class ProcessTab(QWidget):
 
     def _publish_all_available_layers(self) -> None:
         """
-        Marker builder currently consumes Recipe + source in {"compiled_path","traj","executed_traj"}.
-        Therefore we publish from recipe.trajectories[TRAJ_TRAJ/TRAJ_EXECUTED] (derived total).
-        Persisted YAML remains segments-only in _last_run_payload_* and repo files.
+        Marker builder consumes Recipe + source in {"compiled_path","traj","executed_traj"}.
+
+        IMPORTANT:
+          - planned/executed run payloads are JOINT-only (no TCP poses) -> cannot generate markers.
+          - Therefore traj/executed markers are only published if recipe.trajectories[*] contains TCP totals
+            (e.g. from other modes, or legacy behavior).
         """
         if self.ros is None or self._recipe is None:
             return
@@ -959,12 +1065,14 @@ class ProcessTab(QWidget):
                 return None
 
         has_compiled = bool(isinstance(getattr(r, "paths_compiled", None), dict) and (r.paths_compiled or {}))
-        has_traj = bool(isinstance((r.trajectories or {}).get(Recipe.TRAJ_TRAJ), dict) and (r.trajectories[Recipe.TRAJ_TRAJ] or {}))
-        has_exec = bool(isinstance((r.trajectories or {}).get(Recipe.TRAJ_EXECUTED), dict) and (r.trajectories[Recipe.TRAJ_EXECUTED] or {}))
+        has_traj_tcp = bool(isinstance((r.trajectories or {}).get(Recipe.TRAJ_TRAJ), dict) and (r.trajectories[Recipe.TRAJ_TRAJ] or {}))
+        has_exec_tcp = bool(
+            isinstance((r.trajectories or {}).get(Recipe.TRAJ_EXECUTED), dict) and (r.trajectories[Recipe.TRAJ_EXECUTED] or {})
+        )
 
         ma_compiled = _build("compiled_path") if has_compiled else None
-        ma_traj = _build("traj") if has_traj else None
-        ma_exec = _build("executed_traj") if has_exec else None
+        ma_traj = _build("traj") if has_traj_tcp else None
+        ma_exec = _build("executed_traj") if has_exec_tcp else None
 
         try:
             if ma_compiled is not None:

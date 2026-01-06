@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 from PyQt6 import QtCore
 from PyQt6.QtStateMachine import QStateMachine, QState, QFinalState
@@ -43,21 +43,14 @@ class BaseProcessStatemachine(QtCore.QObject):
     """
     Gemeinsame Basis für Validate / Optimize / Execute.
 
-    Subklassen:
-      - setzen ROLE = "validate" | "optimize" | "execute"
-      - implementieren _on_enter_segment(seg_name)
-      - optional: _prepare_run(), _segment_exists(), _should_transition_on_ok()
+    Ziel dieser Base:
+      - Jedes MoveIt-Command (plan+execute) pro Segment als "events" sammeln (Arrays).
+      - Zusätzlich pro Segment ein Snapshot (typisch: merged/concat) erzeugen.
 
     Contract:
-      - StateMachine triggert Bewegungs-Calls via ros.*
       - Transition passiert über moveitpy.signals.motionResultChanged:
-          - "EXECUTED:OK"  -> next / or stay in segment (override _should_transition_on_ok)
+          - "EXECUTED:OK"  -> snapshot step + optional next / done
           - "ERROR..."     -> retry / fail
-      - Eval/Score passiert NICHT hier (macht ProcessTab).
-
-    Output:
-      - notifyFinished emit() liefert dict payload (RunResult.to_process_payload()).
-        (Robust: falls _build_result() bereits dict liefert, wird direkt emittiert.)
     """
 
     ROLE = "process"
@@ -97,11 +90,13 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._current_state: str = ""
         self._retry_count: int = 0
 
-        # per-run snapshot stores (final per segment, may already be concatenated)
+        # per-run snapshot stores (final per segment, typically merged/concat)
+        # NOTE: we store JT-DICTS here (best effort), not raw objects.
         self._planned_by_segment: Dict[str, Any] = {}
         self._executed_by_segment: Dict[str, Any] = {}
 
-        # per-step buffers (captures every EXECUTED:OK inside same segment)
+        # per-segment event buffers (captures every EXECUTED:OK inside same segment)
+        # NOTE: lists of JT-DICTS
         self._planned_steps_by_segment: Dict[str, List[Any]] = {}
         self._executed_steps_by_segment: Dict[str, List[Any]] = {}
 
@@ -170,9 +165,6 @@ class BaseProcessStatemachine(QtCore.QObject):
     # ---------------- Result ----------------
 
     def _build_result(self) -> RunResult:
-        last_planned = self._safe_call("moveit_planned_trajectory")
-        last_executed = self._safe_call("moveit_executed_trajectory")
-
         rr = RunResult(
             role=self._role,
             ok=not self._stopped and not bool(self._error_msg),
@@ -184,13 +176,20 @@ class BaseProcessStatemachine(QtCore.QObject):
                 "status": "stopped" if self._stopped else "finished",
                 "planned_by_segment": dict(self._planned_by_segment),
                 "executed_by_segment": dict(self._executed_by_segment),
+                "planned_steps_by_segment": dict(self._planned_steps_by_segment),
+                "executed_steps_by_segment": dict(self._executed_steps_by_segment),
             }
         )
 
-        if isinstance(last_planned, dict):
-            rr.planned_traj = last_planned
-        if isinstance(last_executed, dict):
-            rr.executed_traj = last_executed
+        # for compatibility: keep last snapshots if someone expects rr.planned_traj/executed_traj
+        last_seg = self._current_state or (SEG_ORDER[-1] if SEG_ORDER else "")
+        if last_seg:
+            p = self._planned_by_segment.get(last_seg)
+            e = self._executed_by_segment.get(last_seg)
+            if isinstance(p, dict):
+                rr.planned_traj = p
+            if isinstance(e, dict):
+                rr.executed_traj = e
 
         rid = getattr(self._recipe, "id", None)
         if rid is not None:
@@ -199,11 +198,6 @@ class BaseProcessStatemachine(QtCore.QObject):
         return rr
 
     def _result_payload(self) -> Dict[str, Any]:
-        """
-        Robust conversion:
-          - if _build_result() returns RunResult -> use to_process_payload()
-          - if something returns dict already -> pass through
-        """
         rr = self._build_result()
         if hasattr(rr, "to_process_payload"):
             try:
@@ -213,7 +207,6 @@ class BaseProcessStatemachine(QtCore.QObject):
             except Exception:
                 pass
 
-        # fallback (should not normally happen)
         if isinstance(rr, dict):
             return rr
         return {"role": self._role, "ok": not self._stopped and not bool(self._error_msg), "message": "finished"}
@@ -297,8 +290,16 @@ class BaseProcessStatemachine(QtCore.QObject):
     # ---------------- Snapshot helpers ----------------
 
     def _snapshot_step_for_segment(self, seg_name: str) -> None:
-        planned = self._safe_call("moveit_planned_trajectory")
-        executed = self._safe_call("moveit_executed_trajectory")
+        """
+        Capture one completed command (EXECUTED:OK) into per-segment arrays.
+
+        We intentionally do BEST EFFORT extraction into a JT-dict:
+          {"joint_names":[...], "points":[...]}
+        """
+        planned_raw, executed_raw = self._get_step_sources()
+
+        planned = self._jt_from_any(planned_raw)
+        executed = self._jt_from_any(executed_raw)
 
         if planned is not None:
             self._planned_steps_by_segment.setdefault(seg_name, []).append(copy.deepcopy(planned))
@@ -309,122 +310,289 @@ class BaseProcessStatemachine(QtCore.QObject):
         planned_steps = self._planned_steps_by_segment.get(seg_name) or []
         executed_steps = self._executed_steps_by_segment.get(seg_name) or []
 
-        planned = self._concat_joint_traj_dicts(planned_steps) if planned_steps else self._safe_call("moveit_planned_trajectory")
-        executed = (
-            self._concat_joint_traj_dicts(executed_steps) if executed_steps else self._safe_call("moveit_executed_trajectory")
-        )
+        planned = self._concat_joint_traj_dicts(planned_steps) if planned_steps else None
+        executed = self._concat_joint_traj_dicts(executed_steps) if executed_steps else None
+
+        # fallback: if no steps were captured, try to pull last-known directly
+        if planned is None or executed is None:
+            pr, er = self._get_step_sources()
+            if planned is None:
+                planned = self._jt_from_any(pr)
+            if executed is None:
+                executed = self._jt_from_any(er)
 
         if planned is not None:
             self._planned_by_segment[seg_name] = planned
         if executed is not None:
             self._executed_by_segment[seg_name] = executed
 
-    def _concat_joint_traj_dicts(self, items: List[Any]) -> Any:
+    def _get_step_sources(self) -> Tuple[Any, Any]:
         """
-        Best-effort concatenation for the dict schema returned by ros.moveit_*_trajectory().
+        Try multiple sources for planned/executed trajectory objects.
 
-        Expected (typical) structure:
-          {
-            "joint_names": [...],
-            "points": [ { "positions": [...], "velocities": [...], "time_from_start": <float|int|{sec,nsec}|str> }, ... ],
-            ...
-          }
-
-        If schema is unknown, we fall back to:
-          - return last non-empty element
+        Priority:
+          1) ros.moveit_planned_trajectory() / ros.moveit_executed_trajectory()
+          2) moveitpy wrapper common attributes (last_*, planned_*, executed_*)
         """
-        dicts = [d for d in items if isinstance(d, dict) and d]
-        if not dicts:
-            # return last raw item if any
-            for it in reversed(items):
-                if it is not None:
-                    return it
+        planned = self._safe_call("moveit_planned_trajectory")
+        executed = self._safe_call("moveit_executed_trajectory")
+
+        if planned is not None or executed is not None:
+            return planned, executed
+
+        mp = self._moveitpy
+        # Best-effort attribute probing (covers many wrappers)
+        for p_attr, e_attr in (
+            ("last_planned", "last_executed"),
+            ("planned_trajectory", "executed_trajectory"),
+            ("planned", "executed"),
+            ("last_plan_result", "last_exec_result"),
+            ("last_plan", "last_exec"),
+        ):
+            try:
+                p = getattr(mp, p_attr, None) if mp is not None else None
+                e = getattr(mp, e_attr, None) if mp is not None else None
+                if p is not None or e is not None:
+                    return p, e
+            except Exception:
+                pass
+
+        return None, None
+
+    # ---------------- JointTrajectory serialization helpers ----------------
+
+    @staticmethod
+    def _duration_to_dict(dur: Any) -> Dict[str, int]:
+        try:
+            return {"sec": int(getattr(dur, "sec")), "nanosec": int(getattr(dur, "nanosec"))}
+        except Exception:
+            return {"sec": 0, "nanosec": 0}
+
+    @classmethod
+    def _jt_msg_to_dict(cls, jt_msg: Any) -> Optional[Dict[str, Any]]:
+        if jt_msg is None:
+            return None
+        if not hasattr(jt_msg, "joint_names") or not hasattr(jt_msg, "points"):
             return None
 
-        base = copy.deepcopy(dicts[0])
-        pts_out: List[dict] = []
-        joint_names = base.get("joint_names")
+        try:
+            joint_names = [str(x) for x in list(getattr(jt_msg, "joint_names") or [])]
+            points_msg = list(getattr(jt_msg, "points") or [])
+        except Exception:
+            return None
 
-        t_offset = 0.0
-
-        def _tfs_to_float(tfs: Any) -> float:
-            if tfs is None:
-                return 0.0
-            if isinstance(tfs, (int, float)):
-                return float(tfs)
-            if isinstance(tfs, str):
-                try:
-                    return float(tfs)
-                except Exception:
-                    return 0.0
-            if isinstance(tfs, dict):
-                # ROS-style: {"sec": int, "nanosec": int} or {"secs":...}
-                sec = tfs.get("sec", tfs.get("secs", 0))
-                nsec = tfs.get("nanosec", tfs.get("nsec", 0))
-                try:
-                    return float(sec) + float(nsec) * 1e-9
-                except Exception:
-                    return 0.0
-            return 0.0
-
-        def _float_to_tfs_like(example: Any, val: float) -> Any:
-            if example is None:
-                return val
-            if isinstance(example, (int, float)):
-                return float(val)
-            if isinstance(example, str):
-                return str(val)
-            if isinstance(example, dict):
-                sec = int(val)
-                nsec = int(round((val - sec) * 1e9))
-                # preserve key naming if possible
-                if "nanosec" in example or "sec" in example:
-                    return {"sec": sec, "nanosec": nsec}
-                if "nsec" in example or "secs" in example:
-                    return {"secs": sec, "nsec": nsec}
-                return {"sec": sec, "nanosec": nsec}
-            return float(val)
-
-        for d in dicts:
-            if joint_names is not None and d.get("joint_names") is not None and d.get("joint_names") != joint_names:
-                # incompatible -> cannot concatenate reliably
+        pts: List[Dict[str, Any]] = []
+        for p in points_msg:
+            try:
+                pts.append(
+                    {
+                        "positions": [float(x) for x in list(getattr(p, "positions", []) or [])],
+                        "velocities": [float(x) for x in list(getattr(p, "velocities", []) or [])],
+                        "accelerations": [float(x) for x in list(getattr(p, "accelerations", []) or [])],
+                        "effort": [float(x) for x in list(getattr(p, "effort", []) or [])],
+                        "time_from_start": cls._duration_to_dict(getattr(p, "time_from_start", None)),
+                    }
+                )
+            except Exception:
                 continue
 
-            pts = d.get("points")
-            if not isinstance(pts, list) or not pts:
+        if not joint_names or not pts:
+            return None
+        return {"joint_names": joint_names, "points": pts}
+
+    @classmethod
+    def _jt_from_any(cls, obj: Any, *, _depth: int = 0, _max_depth: int = 8) -> Optional[Dict[str, Any]]:
+        """
+        Finds JointTrajectory in many wrappers.
+
+        Returns a dict:
+          {"joint_names":[...], "points":[{...,"time_from_start":{sec,nanosec}}, ...]}
+        """
+        if obj is None:
+            return None
+        if _depth > _max_depth:
+            return None
+
+        # JointTrajectory msg
+        try:
+            if hasattr(obj, "joint_names") and hasattr(obj, "points"):
+                out = cls._jt_msg_to_dict(obj)
+                if out:
+                    return out
+        except Exception:
+            pass
+
+        # RobotTrajectory msg
+        try:
+            jt = getattr(obj, "joint_trajectory", None)
+            if jt is not None:
+                out = cls._jt_msg_to_dict(jt)
+                if out:
+                    return out
+        except Exception:
+            pass
+
+        # dict JT
+        if isinstance(obj, dict) and obj:
+            try:
+                if isinstance(obj.get("joint_names"), list) and isinstance(obj.get("points"), list):
+                    return obj
+            except Exception:
+                pass
+
+            for k in (
+                "joint_trajectory",
+                "jointTrajectory",
+                "jt",
+                "trajectory",
+                "robot_trajectory",
+                "robotTrajectory",
+                "planned",
+                "executed",
+                "plan",
+                "execution",
+                "result",
+                "data",
+                "solution",
+                "response",
+            ):
+                try:
+                    v = obj.get(k)
+                except Exception:
+                    v = None
+                out = cls._jt_from_any(v, _depth=_depth + 1, _max_depth=_max_depth)
+                if out:
+                    return out
+
+            for v in obj.values():
+                out = cls._jt_from_any(v, _depth=_depth + 1, _max_depth=_max_depth)
+                if out:
+                    return out
+
+        # Common MoveIt-ish attributes
+        for attr in (
+            "trajectory",
+            "robot_trajectory",
+            "robotTrajectory",
+            "planned_trajectory",
+            "executed_trajectory",
+            "plan",
+            "result",
+            "data",
+            "solution",
+            "response",
+        ):
+            try:
+                v = getattr(obj, attr, None)
+            except Exception:
+                v = None
+            out = cls._jt_from_any(v, _depth=_depth + 1, _max_depth=_max_depth)
+            if out:
+                return out
+
+        # scan lists/tuples
+        if isinstance(obj, (list, tuple)) and obj:
+            for v in obj:
+                out = cls._jt_from_any(v, _depth=_depth + 1, _max_depth=_max_depth)
+                if out:
+                    return out
+
+        # scan object __dict__
+        try:
+            d = getattr(obj, "__dict__", None)
+            if isinstance(d, dict) and d:
+                for v in d.values():
+                    out = cls._jt_from_any(v, _depth=_depth + 1, _max_depth=_max_depth)
+                    if out:
+                        return out
+        except Exception:
+            pass
+
+        return None
+
+    # ---------------- concatenation (merged JT per segment) ----------------
+
+    def _concat_joint_traj_dicts(self, items: List[Any]) -> Optional[Dict[str, Any]]:
+        """
+        Concatenates a list of JT-dicts into one JT-dict.
+        This is used as the per-segment snapshot (e.g. RECIPE: many commands -> one merged JT).
+        """
+        dicts = [d for d in (items or []) if isinstance(d, dict) and d.get("joint_names") and d.get("points")]
+        if not dicts:
+            return None
+
+        base_names = list(dicts[0].get("joint_names") or [])
+        if not base_names:
+            return None
+
+        def dur_to_ns(d: Any) -> int:
+            if d is None:
+                return 0
+            if isinstance(d, dict):
+                try:
+                    return int(d.get("sec", 0)) * 1_000_000_000 + int(d.get("nanosec", 0))
+                except Exception:
+                    return 0
+            if isinstance(d, (int, float)):
+                # seconds
+                return int(float(d) * 1_000_000_000)
+            if isinstance(d, str):
+                try:
+                    return int(float(d) * 1_000_000_000)
+                except Exception:
+                    return 0
+            return 0
+
+        def ns_to_dur(ns: int) -> Dict[str, int]:
+            ns = int(max(ns, 0))
+            return {"sec": ns // 1_000_000_000, "nanosec": ns % 1_000_000_000}
+
+        merged_pts: List[Dict[str, Any]] = []
+        last_global_ns = 0
+        t_offset_ns = 0
+
+        for jt in dicts:
+            names = list(jt.get("joint_names") or [])
+            pts = list(jt.get("points") or [])
+
+            if not pts:
+                continue
+            if names != base_names:
+                # incompatible -> skip (optional: reorder, if you want)
                 continue
 
-            # determine last time in current output
-            if pts_out:
-                last_ex = pts_out[-1].get("time_from_start")
-                t_offset = _tfs_to_float(last_ex)
-            else:
-                t_offset = 0.0
-
-            # append points with offset, but avoid duplicating the first point if it's identical to last
-            for j, p in enumerate(pts):
+            local_times = [dur_to_ns(p.get("time_from_start")) if isinstance(p, dict) else 0 for p in pts]
+            for i, p in enumerate(pts):
                 if not isinstance(p, dict):
                     continue
-                p2 = copy.deepcopy(p)
-                ex = p2.get("time_from_start")
-                if ex is not None:
-                    t = _tfs_to_float(ex)
-                    if pts_out:
-                        t = t + t_offset
-                    p2["time_from_start"] = _float_to_tfs_like(ex, t)
+                t_local_ns = local_times[i] if i < len(local_times) else 0
+                t_global_ns = t_offset_ns + t_local_ns
 
-                # de-dup first point (common when concatenating segments)
-                if pts_out and j == 0:
+                # enforce monotonic
+                if merged_pts and t_global_ns <= last_global_ns:
+                    t_global_ns = last_global_ns + 1_000_000  # +1ms
+
+                q = copy.deepcopy(p)
+                q["time_from_start"] = ns_to_dur(t_global_ns)
+
+                # de-dup first point if same positions as last
+                if merged_pts and i == 0:
                     try:
-                        if p2.get("positions") == pts_out[-1].get("positions"):
+                        if q.get("positions") == merged_pts[-1].get("positions"):
+                            last_global_ns = t_global_ns
                             continue
                     except Exception:
                         pass
 
-                pts_out.append(p2)
+                merged_pts.append(q)
+                last_global_ns = t_global_ns
 
-        base["points"] = pts_out
-        return base
+            t_offset_ns = last_global_ns
+
+        if not merged_pts:
+            return None
+
+        return {"joint_names": base_names, "points": merged_pts}
 
     # ---------------- Final ----------------
 

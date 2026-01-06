@@ -22,15 +22,26 @@ class ProcessThread(QtCore.QObject):
     """
     Führt Validate/Optimize/Execute in einem Worker-Thread aus.
 
-    NEU (Contract):
-      - Worker liefert ein Ergebnisobjekt zurück, typischerweise ein SegmentRunPayload (dict):
+    Ergebnis-Contract:
+      - validate:
+          {
+            "planned":  <SegmentRunPayload v1 (joint-only)>,
+            "executed": <SegmentRunPayload v1 (joint-only)>,
+          }
+
+      - optimize:
+          typischerweise SegmentRunPayload v1 (dict):
           { "version": 1, "meta": {...}, "segments": {...} }
 
-      - Persistenz passiert NICHT hier.
-      - ProcessTab übernimmt:
-          - eval (segmentweise + optional gesamt)
-          - UI
-          - optional save (traj.yaml oder executed_traj.yaml; Inhalt identisch, nur anderer Name)
+      - execute:
+          typischerweise SegmentRunPayload v1 (dict):
+          { "version": 1, "meta": {...}, "segments": {...} }
+
+    Persistenz passiert NICHT hier.
+    ProcessTab übernimmt:
+      - eval (segmentweise + optional gesamt)
+      - UI
+      - save (z.B. planned_traj.yaml / executed_traj.yaml / optimized_traj.yaml policy)
     """
 
     MODE_VALIDATE = "validate"

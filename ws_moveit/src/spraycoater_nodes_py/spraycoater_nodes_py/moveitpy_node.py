@@ -26,9 +26,7 @@ from moveit.planning import MoveItPy, PlanRequestParameters
 from moveit.core.robot_trajectory import RobotTrajectory as RobotTrajectoryCore
 
 from tf2_ros import Buffer, TransformListener
-
-# Fallback Transform (Pose, nicht PoseStamped!)
-from tf2_geometry_msgs import do_transform_pose
+from tf2_geometry_msgs import do_transform_pose  # Fallback Transform (Pose, nicht PoseStamped!)
 
 from controller_manager_msgs.srv import SwitchController
 
@@ -185,6 +183,10 @@ class MoveItPyNode(Node):
       - tf2_geometry_msgs Varianten sind inkonsistent bzgl. PoseStamped.
       - Primär: tf_buffer.transform(PoseStamped, target_frame)
       - Fallback: lookup_transform + do_transform_pose(msg.pose, tf)
+
+    IMPORTANT (2026-01-06):
+      - publish planned/executed BEFORE emitting motion_result to avoid race conditions
+      - publish target_trajectory as well (helps UI/recorder fallback)
     """
 
     def __init__(self) -> None:
@@ -592,7 +594,6 @@ class MoveItPyNode(Node):
                 self.frame_world,
                 timeout=Duration(seconds=1.0),
             )
-            # ensure header sane
             out.header.frame_id = self.frame_world
             out.header.stamp = self.get_clock().now().to_msg()
             return out
@@ -641,7 +642,13 @@ class MoveItPyNode(Node):
             self._planned = core
             self._last_goal_pose = goal
 
+            # publish BEFORE result to avoid races in UI/state machine
             self.pub_planned.publish(msg_traj)
+            try:
+                self.pub_target_traj.publish(msg_traj.joint_trajectory)
+            except Exception:
+                pass
+
             self._publish_preview(goal)
             self._emit("PLANNED:OK pose")
 
@@ -692,7 +699,13 @@ class MoveItPyNode(Node):
             self._planned = core
             self._last_goal_pose = goal
 
+            # publish BEFORE result to avoid races in UI/state machine
             self.pub_planned.publish(msg_traj)
+            try:
+                self.pub_target_traj.publish(msg_traj.joint_trajectory)
+            except Exception:
+                pass
+
             self._publish_preview(goal)
             self._emit(f"PLANNED:OK named='{name}'")
 
@@ -704,7 +717,7 @@ class MoveItPyNode(Node):
             self._on_stop(MsgEmpty())
             return
 
-        # NEW: Execute request => ensure TRAJ mode (trajectory controller ON)
+        # Execute request => ensure TRAJ mode (trajectory controller ON)
         self._mode_mgr.ensure_mode("TRAJ")
 
         if self._busy:
@@ -732,7 +745,13 @@ class MoveItPyNode(Node):
                 return
 
             if ok:
+                # publish executed BEFORE emitting result to avoid consumer races
+                try:
+                    self.pub_target_traj.publish(msg_traj.joint_trajectory)
+                except Exception:
+                    pass
                 self.pub_executed.publish(msg_traj)
+
                 self._emit("EXECUTED:OK")
             else:
                 self._emit("ERROR:EXEC")

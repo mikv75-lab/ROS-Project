@@ -59,18 +59,29 @@ class RecipeRepo:
             delete_compiled_on_hash_change=delete_compiled_on_hash_change,
         )
 
-    def save_traj_run(self, key: str, *, run: Optional[Dict[str, Any]] = None, traj: Optional[Dict[str, Any]] = None) -> None:
+    def save_planned_run(
+        self,
+        key: str,
+        *,
+        run: Optional[Dict[str, Any]] = None,
+        planned: Optional[Dict[str, Any]] = None,
+        traj: Optional[Dict[str, Any]] = None,  # legacy alias
+    ) -> None:
         """
-        Speichert run in traj.yaml (Schema: SegmentRunPayload).
+        Speichert run in planned_traj.yaml (Schema: SegmentRunPayload JOINT-only).
 
         Robustness:
-          - offizielles Keyword: run=
-          - legacy/alias: traj= (wird auf run gemappt)
+          - offizielles Keyword: run=... oder planned=...
+          - legacy alias: traj=... (wird auf planned gemappt)
         """
-        payload = run if isinstance(run, dict) else (traj if isinstance(traj, dict) else None)
+        payload = (
+            run
+            if isinstance(run, dict)
+            else (planned if isinstance(planned, dict) else (traj if isinstance(traj, dict) else None))
+        )
         if payload is None:
-            raise TypeError("save_traj_run: missing payload (use run=... or traj=...)")
-        self.bundle.save_run(key, kind="traj", run=payload)
+            raise TypeError("save_planned_run: missing payload (use run=... or planned=... or traj=...)")
+        self.bundle.save_run(key, kind="planned", run=payload)
 
     def save_executed_run(
         self,
@@ -80,16 +91,23 @@ class RecipeRepo:
         executed: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
-        Speichert run in executed_traj.yaml (Schema identisch).
+        Speichert run in executed_traj.yaml (Schema: SegmentRunPayload JOINT-only).
 
         Robustness:
-          - offizielles Keyword: run=
-          - legacy/alias: executed= (wird auf run gemappt)
+          - offizielles Keyword: run=...
+          - legacy/alias: executed=... (wird auf run gemappt)
         """
         payload = run if isinstance(run, dict) else (executed if isinstance(executed, dict) else None)
         if payload is None:
             raise TypeError("save_executed_run: missing payload (use run=... or executed=...)")
         self.bundle.save_run(key, kind="executed", run=payload)
+
+    # Backwards-compatible names (older call-sites)
+    def save_traj_run(self, key: str, *, run: Optional[Dict[str, Any]] = None, traj: Optional[Dict[str, Any]] = None) -> None:
+        """
+        LEGACY: Speichert run als "planned" (planned_traj.yaml).
+        """
+        self.save_planned_run(key, run=run, traj=traj)
 
     def clear_runs(self, key: str) -> None:
         self.bundle.clear_runs(key)

@@ -378,18 +378,19 @@ class RosBridge:
             sig.tcpPoseChanged.connect(self.robot_state._set_tcp_pose)
             sig.jointsChanged.connect(self.robot_state._set_joints)
 
+        # ✅ FIX: correct MoveItPySignals wiring (your signals are *TrajectoryChanged, not *Changed)
         if self.moveitpy is not None:
             sig = self.moveitpy.signals
-            if hasattr(sig, "targetChanged"):
-                sig.targetChanged.connect(self.moveit_state._set_target)
-            if hasattr(sig, "plannedChanged"):
-                sig.plannedChanged.connect(self.moveit_state._set_planned)
-            if hasattr(sig, "executedChanged"):
-                sig.executedChanged.connect(self.moveit_state._set_executed)
-            if hasattr(sig, "previewChanged"):
-                sig.previewChanged.connect(self.moveit_state._set_preview)
-            if hasattr(sig, "srdfChanged"):
-                sig.srdfChanged.connect(self.moveit_state._set_srdf)
+
+            # These exist in your MoveItPySignals
+            sig.targetTrajectoryChanged.connect(self.moveit_state._set_target)
+            sig.plannedTrajectoryChanged.connect(self.moveit_state._set_planned)
+            sig.executedTrajectoryChanged.connect(self.moveit_state._set_executed)
+            sig.previewMarkersChanged.connect(self.moveit_state._set_preview)
+            sig.robotDescriptionSemanticChanged.connect(self.moveit_state._set_srdf)
+
+            # Optional: keep result text around if you want (already stored in sig.last_result)
+            # sig.motionResultChanged.connect(lambda _txt: None)
 
     def _reemit_cached(self) -> None:
         try:

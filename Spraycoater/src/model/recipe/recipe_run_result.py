@@ -1,5 +1,5 @@
-# app/model/recipe/run_result.py
 # -*- coding: utf-8 -*-
+# File: app/model/recipe/recipe_run_result.py
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -11,9 +11,17 @@ class RunResult:
     """
     Ergebniscontainer für einen Prozesslauf.
 
-    Design-Entscheid (nach deinen Vorgaben):
-    - RunResult enthält NUR executed Trajectories (gesamt + pro Segment).
-    - Eval-Ergebnisse werden in metrics abgelegt (z.B. metrics["eval_total"], metrics["eval_by_segment"]).
+    NEU (nach deiner aktuellen Policy):
+      - Validate liefert zwei SegmentRunPayload v1 (joint-only):
+          planned_run  (soll/replay)
+          executed_run (ist/trace)
+
+      - Optimize/Execute dürfen weiterhin "ein" Payload liefern (je nach Statemachine),
+        aber RunResult kann beide aufnehmen.
+
+    Hinweis:
+      - Persistenz (welche Files) soll außerhalb passieren (ProcessTab/Repo/Bundle).
+      - RunResult ist nur Transport + UI/Logging.
     """
 
     ROLE_VALIDATE = "validate"
@@ -27,15 +35,17 @@ class RunResult:
     meta: Dict[str, Any] = field(default_factory=dict)
     metrics: Dict[str, Any] = field(default_factory=dict)
 
-    # Executed only
-    executed_traj: Optional[Dict[str, Any]] = None
-    executed_by_segment: Dict[str, Any] = field(default_factory=dict)
+    # SegmentRunPayload v1 (strict)
+    planned_run: Optional[Dict[str, Any]] = None
+    executed_run: Optional[Dict[str, Any]] = None
 
     def set_eval(
         self,
         *,
         eval_total: Optional[Dict[str, Any]] = None,
         eval_by_segment: Optional[Dict[str, Any]] = None,
+        key_total: str = "eval_total",
+        key_by_segment: str = "eval_by_segment",
     ) -> None:
         """
         Convenience: Eval-Ergebnisse strukturiert in metrics ablegen.
@@ -45,13 +55,26 @@ class RunResult:
           eval_by_segment: {SEG: EvalResult.to_dict(), ...}
         """
         if isinstance(eval_total, dict):
-            self.metrics["eval_total"] = dict(eval_total)
+            self.metrics[str(key_total)] = dict(eval_total)
         if isinstance(eval_by_segment, dict):
-            self.metrics["eval_by_segment"] = dict(eval_by_segment)
+            self.metrics[str(key_by_segment)] = dict(eval_by_segment)
 
     def to_process_payload(self) -> Dict[str, Any]:
         """
-        Serialisierbares Payload für UI/Logging/Persistenz.
+        Serialisierbares Payload für UI/Logging.
+
+        Validate:
+          {
+            "role": "...",
+            "ok": bool,
+            "message": "...",
+            "meta": {...},
+            "metrics": {...},
+            "planned_run":  <SegmentRunPayload v1>,
+            "executed_run": <SegmentRunPayload v1>,
+          }
+
+        Für Optimize/Execute kann optional nur executed_run oder planned_run gesetzt sein.
         """
         out: Dict[str, Any] = {
             "role": str(self.role or ""),
@@ -60,8 +83,8 @@ class RunResult:
             "meta": dict(self.meta or {}),
             "metrics": dict(self.metrics or {}),
         }
-        if isinstance(self.executed_traj, dict):
-            out["executed_traj"] = self.executed_traj
-        if self.executed_by_segment:
-            out["executed_by_segment"] = dict(self.executed_by_segment)
+        if isinstance(self.planned_run, dict):
+            out["planned_run"] = self.planned_run
+        if isinstance(self.executed_run, dict):
+            out["executed_run"] = self.executed_run
         return out

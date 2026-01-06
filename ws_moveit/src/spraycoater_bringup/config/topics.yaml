@@ -88,17 +88,17 @@ topics:
       - id: target_trajectory
         name: moveit_py/target_trajectory
         type: trajectory_msgs/msg/JointTrajectory
-        qos: default
+        qos: latched   # ✅ optional aber empfohlen (JT immer da)
 
       - id: planned_trajectory_rt
         name: moveit_py/planned_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
-        qos: default
+        qos: latched   # ✅ wichtig
 
       - id: executed_trajectory_rt
         name: moveit_py/executed_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
-        qos: default
+        qos: latched   # ✅ wichtig
 
       - id: preview_markers
         name: moveit_py/preview_markers

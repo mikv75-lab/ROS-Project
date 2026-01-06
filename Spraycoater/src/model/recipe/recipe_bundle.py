@@ -46,41 +46,51 @@ class RecipePaths:
     def compiled_yaml(self) -> str:
         return os.path.join(self.folder, "compiled.yaml")
 
+    # NEW: planned + executed split (JOINT-only runs)
     @property
-    def traj_yaml(self) -> str:
-        return os.path.join(self.folder, "traj.yaml")
+    def planned_yaml(self) -> str:
+        return os.path.join(self.folder, "planned_traj.yaml")
 
     @property
     def executed_yaml(self) -> str:
         return os.path.join(self.folder, "executed_traj.yaml")
 
+    # LEGACY alias (older code may still call it)
+    @property
+    def traj_yaml(self) -> str:
+        # keep compatibility: "traj.yaml" is now "planned_traj.yaml"
+        return self.planned_yaml
 
-RunKind = Literal["traj", "executed"]
+
+# NOTE: accept legacy "traj" as alias for "planned"
+RunKind = Literal["planned", "executed", "traj"]
 
 
 class RecipeBundle:
     """
-    STRICT storage, segment-only. Traj und Executed sind identisch, nur anderer Speicherort.
+    STRICT storage (JOINT-only), deterministic replay ready.
 
     Files:
-      - traj.yaml          -> trajectories[Recipe.TRAJ_TRAJ]       = SegmentRunPayload
-      - executed_traj.yaml -> trajectories[Recipe.TRAJ_EXECUTED]   = SegmentRunPayload
+      - planned_traj.yaml   -> trajectories[Recipe.TRAJ_TRAJ]       = SegmentRunPayload (JOINT-only)
+      - executed_traj.yaml  -> trajectories[Recipe.TRAJ_EXECUTED]   = SegmentRunPayload (JOINT-only)
 
-    SegmentRunPayload:
+    SegmentRunPayload (JOINT-only):
       {
         "version": 1,
         "meta": {...},
         "segments": {
           "<STATE>": {
-             "tcp": {...},          # optional
-             "joint": {...},        # optional  (JointTrajectory als dict)
+             "joint": {...},        # required for persisted segments (JointTrajectory dict)
              "eval": {...},         # optional
+             "meta": {...},         # optional
           },
           ...
         }
       }
 
-    Kein total. Kein legacy. Total wird aus segments zusammengesetzt.
+    Wichtig:
+      - TCP wird NICHT gespeichert (kein "tcp" key erlaubt).
+      - Timestamps sind Teil der JointTrajectory points[*].time_from_start (sec/nanosec).
     """
 
     def __init__(self, *, recipes_root_dir: str) -> None:
@@ -149,16 +159,23 @@ class RecipeBundle:
         r.save_yaml(p.editor_yaml)
 
         self._try_remove(p.compiled_yaml)
-        self._try_remove(p.traj_yaml)
+        self._try_remove(p.planned_yaml)
         self._try_remove(p.executed_yaml)
+
+        # remove historic legacy name if it exists somewhere
+        self._try_remove(os.path.join(p.folder, "traj.yaml"))
+
         return r
 
     def delete(self, key: str) -> None:
         p = self.paths(key)
         if not os.path.isdir(p.folder):
             return
-        for fn in (p.editor_yaml, p.compiled_yaml, p.traj_yaml, p.executed_yaml):
+
+        # remove known files (incl. legacy "traj.yaml")
+        for fn in (p.editor_yaml, p.compiled_yaml, p.planned_yaml, p.executed_yaml, os.path.join(p.folder, "traj.yaml")):
             self._try_remove(fn)
+
         for e in os.listdir(p.folder):
             self._try_remove(os.path.join(p.folder, e))
         try:
@@ -202,8 +219,8 @@ class RecipeBundle:
 
     def load_full(self, key: str) -> Recipe:
         """
-        Lädt draft + optional compiled + optional traj + optional executed.
-        STRICT: run payload muss SegmentRunPayload sein.
+        Lädt draft + optional compiled + optional planned + optional executed.
+        STRICT: run payload muss SegmentRunPayload (JOINT-only) sein.
         """
         p = self.paths(key)
         r = self.load_draft(key)
@@ -212,12 +229,22 @@ class RecipeBundle:
             c = Recipe.load_yaml(p.compiled_yaml)
             r.paths_compiled = c.paths_compiled or {}
 
-        if os.path.isfile(p.traj_yaml):
-            t = Recipe.load_yaml(p.traj_yaml)
+        # planned (preferred new filename)
+        planned_path = p.planned_yaml
+        legacy_traj_path = os.path.join(p.folder, "traj.yaml")  # older deployments might still have this file
+        if os.path.isfile(planned_path):
+            t = Recipe.load_yaml(planned_path)
             payload = (t.trajectories.get(Recipe.TRAJ_TRAJ) or {})
-            self._validate_run_payload(payload, context=f"{p.traj_yaml}:{Recipe.TRAJ_TRAJ}")
+            self._validate_run_payload(payload, context=f"{planned_path}:{Recipe.TRAJ_TRAJ}")
+            r.trajectories[Recipe.TRAJ_TRAJ] = payload
+        elif os.path.isfile(legacy_traj_path):
+            # optional legacy import
+            t = Recipe.load_yaml(legacy_traj_path)
+            payload = (t.trajectories.get(Recipe.TRAJ_TRAJ) or {})
+            self._validate_run_payload(payload, context=f"{legacy_traj_path}:{Recipe.TRAJ_TRAJ}")
             r.trajectories[Recipe.TRAJ_TRAJ] = payload
 
+        # executed
         if os.path.isfile(p.executed_yaml):
             e = Recipe.load_yaml(p.executed_yaml)
             payload = (e.trajectories.get(Recipe.TRAJ_EXECUTED) or {})
@@ -246,6 +273,41 @@ class RecipeBundle:
             raise ValueError(f"{context}: '{name}' muss int sein, ist {type(x).__name__}")
         return x
 
+    @staticmethod
+    def _require_list(x: Any, name: str, context: str) -> list:
+        if not isinstance(x, list):
+            raise ValueError(f"{context}: '{name}' muss list sein, ist {type(x).__name__}")
+        return x
+
+    def _validate_joint_trajectory(self, jt: Any, *, context: str) -> None:
+        jt = self._require_dict(jt, "joint", context)
+
+        joint_names = jt.get("joint_names", None)
+        points = jt.get("points", None)
+
+        self._require_list(joint_names, "joint.joint_names", context)
+        self._require_list(points, "joint.points", context)
+
+        if not joint_names:
+            raise ValueError(f"{context}: joint.joint_names darf nicht leer sein")
+        if not points:
+            raise ValueError(f"{context}: joint.points darf nicht leer sein")
+
+        # minimal checks for replay: time_from_start present and numeric
+        for i, p in enumerate(points):
+            if not isinstance(p, dict):
+                raise ValueError(f"{context}: joint.points[{i}] muss dict sein")
+            tfs = p.get("time_from_start", None)
+            if not isinstance(tfs, dict):
+                raise ValueError(f"{context}: joint.points[{i}].time_from_start muss dict sein")
+            if "sec" not in tfs or "nanosec" not in tfs:
+                raise ValueError(f"{context}: joint.points[{i}].time_from_start braucht sec/nanosec")
+            try:
+                int(tfs.get("sec"))
+                int(tfs.get("nanosec"))
+            except Exception:
+                raise ValueError(f"{context}: joint.points[{i}].time_from_start sec/nanosec müssen int sein")
+
     def _validate_run_payload(self, payload: Any, *, context: str) -> None:
         payload = self._require_dict(payload, "payload", context)
 
@@ -261,28 +323,36 @@ class RecipeBundle:
         if not segments:
             raise ValueError(f"{context}: segments darf nicht leer sein")
 
-        # segment content checks (minimal strict)
+        # JOINT-ONLY strict: tcp is forbidden
         for seg_key, seg_val in segments.items():
             if not isinstance(seg_key, str) or not seg_key.strip():
                 raise ValueError(f"{context}: segments key ungültig: {repr(seg_key)}")
             seg_val = self._require_dict(seg_val, f"segments['{seg_key}']", context)
 
-            allowed = {"tcp", "joint", "eval", "meta"}
+            allowed = {"joint", "eval", "meta"}
             extra = set(seg_val.keys()) - allowed
             if extra:
                 raise ValueError(f"{context}: segments['{seg_key}'] hat unbekannte keys: {sorted(extra)}")
 
-            if "tcp" in seg_val:
-                self._require_dict(seg_val["tcp"], f"segments['{seg_key}'].tcp", context)
-            if "joint" in seg_val:
-                self._require_dict(seg_val["joint"], f"segments['{seg_key}'].joint", context)
+            if "joint" not in seg_val:
+                raise ValueError(f"{context}: segments['{seg_key}'] muss 'joint' enthalten (joint-only)")
+            self._validate_joint_trajectory(seg_val["joint"], context=f"{context}:segments['{seg_key}'].joint")
+
             if "eval" in seg_val:
                 self._require_dict(seg_val["eval"], f"segments['{seg_key}'].eval", context)
             if "meta" in seg_val:
                 self._require_dict(seg_val["meta"], f"segments['{seg_key}'].meta", context)
 
         # forbid old/other top-level keys to keep schema clean
-        forbidden = {"by_segment", "executed_by_segment", "traj", "executed_traj", "eval_total", "eval_by_segment"}
+        forbidden = {
+            "by_segment",
+            "executed_by_segment",
+            "traj",
+            "executed_traj",
+            "eval_total",
+            "eval_by_segment",
+            "tcp",
+        }
         bad = forbidden.intersection(set(payload.keys()))
         if bad:
             raise ValueError(f"{context}: verbotene top-level Felder: {sorted(bad)}")
@@ -314,9 +384,10 @@ class RecipeBundle:
 
         hash_changed = bool(old_hash) and (old_hash != new_hash)
 
-        # editor save invalidates runs
-        self._try_remove(p.traj_yaml)
+        # editor save invalidates runs (planned + executed, plus legacy name)
+        self._try_remove(p.planned_yaml)
         self._try_remove(p.executed_yaml)
+        self._try_remove(os.path.join(p.folder, "traj.yaml"))
 
         if hash_changed and delete_compiled_on_hash_change and compiled is None:
             self._try_remove(p.compiled_yaml)
@@ -334,17 +405,21 @@ class RecipeBundle:
     def save_run(self, key: str, *, kind: RunKind, run: dict) -> None:
         """
         Einziger Writer für runs.
-        kind='traj' schreibt traj.yaml / trajectories[Recipe.TRAJ_TRAJ]
+
+        kind='planned' (oder legacy 'traj') schreibt planned_traj.yaml / trajectories[Recipe.TRAJ_TRAJ]
         kind='executed' schreibt executed_traj.yaml / trajectories[Recipe.TRAJ_EXECUTED]
         """
         p = self.paths(key)
         os.makedirs(p.folder, exist_ok=True)
         rid, rname = self.split_key(key)
 
+        if kind == "traj":
+            kind = "planned"
+
         self._validate_run_payload(run, context=f"save_run({key}, kind={kind})")
 
-        if kind == "traj":
-            file_path = p.traj_yaml
+        if kind == "planned":
+            file_path = p.planned_yaml
             traj_key = Recipe.TRAJ_TRAJ
         elif kind == "executed":
             file_path = p.executed_yaml
@@ -359,8 +434,9 @@ class RecipeBundle:
 
     def clear_runs(self, key: str) -> None:
         p = self.paths(key)
-        self._try_remove(p.traj_yaml)
+        self._try_remove(p.planned_yaml)
         self._try_remove(p.executed_yaml)
+        self._try_remove(os.path.join(p.folder, "traj.yaml"))
 
     def clear_compiled(self, key: str) -> None:
         p = self.paths(key)
