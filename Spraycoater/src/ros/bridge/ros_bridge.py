@@ -354,11 +354,16 @@ class RosBridge:
 
         if self.spray is not None:
             sig = self.spray.signals
-            sig.currentChanged.connect(self.spraypath_state._set_current)
-            sig.posesChanged.connect(self.spraypath_state._set_poses)
-            sig.markersChanged.connect(self.spraypath_state._set_markers)
-            sig.executedPosesChanged.connect(self.spraypath_state._set_executed_poses)
-            sig.executedMarkersChanged.connect(self.spraypath_state._set_executed_markers)
+            if hasattr(sig, "currentChanged"):
+                sig.currentChanged.connect(self.spraypath_state._set_current)
+            if hasattr(sig, "posesChanged"):
+                sig.posesChanged.connect(self.spraypath_state._set_poses)
+            if hasattr(sig, "markersChanged"):
+                sig.markersChanged.connect(self.spraypath_state._set_markers)
+            if hasattr(sig, "executedPosesChanged"):
+                sig.executedPosesChanged.connect(self.spraypath_state._set_executed_poses)
+            if hasattr(sig, "executedMarkersChanged"):
+                sig.executedMarkersChanged.connect(self.spraypath_state._set_executed_markers)
 
         if self.robot is not None:
             sig = self.robot.signals

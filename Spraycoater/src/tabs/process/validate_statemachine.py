@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 from PyQt6 import QtCore
-from geometry_msgs.msg import PoseStamped
 
 from .base_statemachine import (
     BaseProcessStatemachine,
@@ -16,18 +16,15 @@ from .base_statemachine import (
     STATE_MOVE_HOME,
 )
 
-_LOG = logging.getLogger("tabs.process.validate_sm")
+_LOG = logging.getLogger("tabs.process.validate_statemachine")
 
 
 class ProcessValidateStatemachine(BaseProcessStatemachine):
     """
     Validate:
-      - nimmt compiled points (mm) aus Recipe
-      - fährt Segmente (predispense/recipe/retreat/home)
-      - nutzt die "neuen" RosBridge / MoveItPySignals Calls:
-          - moveit_move_home()
-          - moveitpy.signals.moveToPoseRequested(PoseStamped)
-      - Segment-Queue: Pose für Pose, Transition erst nach letzter Pose im Segment.
+      - nutzt compiled path (mm) aus Recipe.paths_compiled
+      - segmentiert in: predispense (erster Punkt), recipe (mittlere Punkte, gestreamt), retreat (letzter Punkt), home
+      - Transition-Logik läuft über BaseProcessStatemachine (motionResultChanged: "EXECUTED:OK")
     """
 
     ROLE = "validate"
@@ -38,168 +35,139 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         recipe: Any,
         ros: Any,
         parent: Optional[QtCore.QObject] = None,
-        max_retries: int = 3,
+        max_retries: int = 2,
+        skip_home: bool = False,
+        side: str = "top",
     ) -> None:
-        super().__init__(recipe=recipe, ros=ros, parent=parent, max_retries=max_retries, skip_home=False)
+        super().__init__(recipe=recipe, ros=ros, parent=parent, max_retries=max_retries, skip_home=skip_home)
 
-        self._side: str = "top"
-        self._frame: str = "scene"
-        self._pts_mm = None  # numpy array
+        self._side: str = str(side or "top")
 
-        # --- per segment pose queue ---
-        self._pending_poses: List[PoseStamped] = []
-        self._pending_seg: str = ""
-        self._pending_idx: int = 0
+        # compiled path points (mm)
+        self._compiled_pts_mm: List[Tuple[float, float, float]] = []
+
+        # segment points (mm)
+        self._pts_by_seg: Dict[str, List[Tuple[float, float, float]]] = {}
+
+        # streaming queue for MOVE_RECIPE
+        self._pending_recipe_mm: List[Tuple[float, float, float]] = []
+
+        # move meta (optional)
+        self._frame_id: str = ""
+        self._tool_frame_id: str = ""
+        self._vel_scale: float = 1.0
+
+    # ---------------- Hooks (Base) ----------------
 
     def _prepare_run(self) -> bool:
-        try:
-            try:
-                self._side = str(getattr(self._recipe, "parameters", {}).get("active_side", "top"))
-            except Exception:
-                self._side = "top"
+        # optional meta (falls vorhanden)
+        self._frame_id = getattr(self._recipe, "frame_id", "") or getattr(self._recipe, "frame", "") or ""
+        self._tool_frame_id = getattr(self._recipe, "tool_frame_id", "") or getattr(self._recipe, "tool_frame", "") or ""
+        self._vel_scale = float(getattr(self._recipe, "vel_scale", 1.0) or 1.0)
 
-            try:
-                self._frame = str((getattr(self._recipe, "paths_compiled", {}) or {}).get("frame") or "scene")
-            except Exception:
-                self._frame = "scene"
-
-            if not hasattr(self._recipe, "compiled_points_mm_for_side"):
-                self._error_msg = "Validate: Recipe.compiled_points_mm_for_side fehlt."
-                return False
-
-            self._pts_mm = self._recipe.compiled_points_mm_for_side(self._side)
-            if self._pts_mm is None or getattr(self._pts_mm, "size", 0) == 0:
-                self._error_msg = f"Validate: Keine compiled points für side='{self._side}'."
-                return False
-
-            if int(self._pts_mm.shape[0]) < 2:
-                self._error_msg = "Validate: Zu wenige Punkte."
-                return False
-
-            # reset queue
-            self._pending_poses = []
-            self._pending_seg = ""
-            self._pending_idx = 0
-
-            return True
-        except Exception as e:
-            self._error_msg = f"Validate: Prepare failed: {e}"
+        self._compiled_pts_mm = self._get_compiled_points_mm(self._side)
+        if not self._compiled_pts_mm:
+            self._error_msg = f"Validate: compiled path ist leer (side='{self._side}')."
             return False
 
-    def _call_first(self, names: list[str], *args, **kwargs) -> bool:
-        for n in names:
-            fn = getattr(self._ros, n, None)
-            if callable(fn):
-                fn(*args, **kwargs)
-                return True
-        return False
+        pts = self._compiled_pts_mm
+        n = len(pts)
 
-    def _build_pose(self, xyz_mm: Tuple[float, float, float]) -> PoseStamped:
-        """compiled_points_mm_for_side liefert mm; MoveItPy erwartet Meter."""
-        x_mm, y_mm, z_mm = xyz_mm
-        ps = PoseStamped()
-        ps.header.frame_id = self._frame
+        pre = [pts[0]] if n >= 1 else []
+        ret = [pts[-1]] if n >= 2 else []
+        mid = pts[1:-1] if n >= 3 else []
 
-        ps.pose.position.x = float(x_mm) * 1e-3
-        ps.pose.position.y = float(y_mm) * 1e-3
-        ps.pose.position.z = float(z_mm) * 1e-3
+        self._pts_by_seg = {
+            STATE_MOVE_PREDISPENSE: pre,
+            STATE_MOVE_RECIPE: list(mid),
+            STATE_MOVE_RETREAT: ret,
+            STATE_MOVE_HOME: [],
+        }
 
-        # TODO: Orientation aus normals/tangents übernehmen, sobald verfügbar.
-        ps.pose.orientation.w = 1.0
-        return ps
+        self._pending_recipe_mm = list(self._pts_by_seg[STATE_MOVE_RECIPE])
+        return True
 
-    def _segment_indices(self, seg_name: str, n: int) -> Optional[Tuple[int, int]]:
-        """
-        Liefert [a,b] inklusive, im Sinne deines bisherigen Slicings:
-          - predispense: 0..1
-          - recipe:      1..n-2
-          - retreat:     n-2..n-1
-        """
-        if n < 2:
-            return None
-
-        if seg_name == STATE_MOVE_PREDISPENSE:
-            return (0, 1)
+    def _segment_exists(self, seg_name: str) -> bool:
+        # Base kümmert sich um skip_home; wir erweitern nur um "leere Segmente skippen"
+        if self._skip_home and seg_name == STATE_MOVE_HOME:
+            return False
 
         if seg_name == STATE_MOVE_RECIPE:
-            if n < 3:
-                return None
-            return (1, n - 2)
+            # Segment existiert nur, wenn es wirklich Punkte zu streamen gibt
+            return bool(self._pending_recipe_mm)
 
-        if seg_name == STATE_MOVE_RETREAT:
-            return (max(n - 2, 0), n - 1)
-
-        return None
-
-    def _start_pose_queue_for_segment(self, seg_name: str, a: int, b: int) -> None:
-        """Initialisiert Queue und sendet die erste Pose."""
-        self._pending_seg = seg_name
-        self._pending_idx = 0
-        self._pending_poses = []
-
-        for i in range(a, b + 1):
-            xyz = (float(self._pts_mm[i, 0]), float(self._pts_mm[i, 1]), float(self._pts_mm[i, 2]))
-            self._pending_poses.append(self._build_pose(xyz))
-
-        if not self._pending_poses:
-            QtCore.QTimer.singleShot(0, self._sig_done.emit)
-            return
-
-        self._emit_pending_pose()
-
-    def _emit_pending_pose(self) -> None:
-        """Sendet die aktuelle Pose aus der Queue via MoveItPySignals."""
-        if not self._pending_poses or self._pending_idx < 0 or self._pending_idx >= len(self._pending_poses):
-            QtCore.QTimer.singleShot(0, self._sig_done.emit)
-            return
-
-        ps = self._pending_poses[self._pending_idx]
-
-        sig = self._moveitpy_signals
-        if sig is None or not hasattr(sig, "moveToPoseRequested"):
-            self._signal_error(f"Validate: MoveItPySignals.moveToPoseRequested fehlt (seg={self._pending_seg}).")
-            return
-
-        try:
-            sig.moveToPoseRequested.emit(ps)
-        except Exception as e:
-            self._signal_error(f"Validate: moveToPoseRequested emit failed: {e}")
+        return bool(self._pts_by_seg.get(seg_name))
 
     def _on_enter_segment(self, seg_name: str) -> None:
-        n = int(self._pts_mm.shape[0])
+        if seg_name == STATE_MOVE_PREDISPENSE:
+            self._run_single_point(seg_name)
+            return
+
+        if seg_name == STATE_MOVE_RECIPE:
+            # Wenn keine Punkte vorhanden: Segment sofort als done markieren (Base -> next state)
+            if not self._pending_recipe_mm:
+                QtCore.QTimer.singleShot(0, self._sig_done.emit)
+                return
+            self._send_next_recipe_point()
+            return
+
+        if seg_name == STATE_MOVE_RETREAT:
+            self._run_single_point(seg_name)
+            return
 
         if seg_name == STATE_MOVE_HOME:
-            ok = self._call_first(["moveit_move_home", "moveit_home", "moveit_go_home"])
-            if not ok:
+            # Home wird typischerweise als "named target" o.Ä. in ros implementiert.
+            # Falls dein ros-Wrapper einen anderen Namen hat, hier anpassen.
+            try:
+                self._ros.moveit_home()
+            except Exception:
+                # wenn nicht vorhanden, segment sofort durchlaufen
                 QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
 
-        idx = self._segment_indices(seg_name, n)
-        if idx is None:
-            QtCore.QTimer.singleShot(0, self._sig_done.emit)
-            return
-
-        a, b = idx
-        if b < a:
-            QtCore.QTimer.singleShot(0, self._sig_done.emit)
-            return
-
-        self._start_pose_queue_for_segment(seg_name, a, b)
+        self._signal_error(f"Validate: Unknown segment '{seg_name}'")
 
     def _should_transition_on_ok(self, seg_name: str, result: str) -> bool:
-        """
-        Wird bei 'EXECUTED:OK' aufgerufen.
-        Wenn wir noch Posen im aktuellen Segment haben -> nächste Pose senden und NICHT transitionen.
-        """
-        if seg_name != self._pending_seg or not self._pending_poses:
+        # MOVE_RECIPE: im selben Segment bleiben, bis alle Punkte gesendet wurden
+        if seg_name == STATE_MOVE_RECIPE:
+            if self._pending_recipe_mm:
+                self._send_next_recipe_point()
+                return False
             return True
-
-        if self._pending_idx < len(self._pending_poses) - 1:
-            self._pending_idx += 1
-            QtCore.QTimer.singleShot(0, self._emit_pending_pose)
-            return False
-
-        self._pending_poses = []
-        self._pending_seg = ""
-        self._pending_idx = 0
         return True
+
+    # ---------------- Internals ----------------
+
+    def _run_single_point(self, seg_name: str) -> None:
+        pts = self._pts_by_seg.get(seg_name) or []
+        if not pts:
+            QtCore.QTimer.singleShot(0, self._sig_done.emit)
+            return
+
+        x, y, z = pts[0]
+        self._move_pose_mm(x, y, z)
+
+    def _send_next_recipe_point(self) -> None:
+        if not self._pending_recipe_mm:
+            return
+        x, y, z = self._pending_recipe_mm.pop(0)
+        self._move_pose_mm(x, y, z)
+
+    def _move_pose_mm(self, x: float, y: float, z: float) -> None:
+        # Du hast in deinem Log: STOP:REQ / ModeManager / EXECUTED:OK, d.h. ros.move_pose_mm triggert MoveItPy.
+        # Base hört auf motionResultChanged und macht die Transitions.
+        self._ros.move_pose_mm(
+            x=float(x),
+            y=float(y),
+            z=float(z),
+            side=self._side,
+            frame_id=self._frame_id,
+            tool_frame_id=self._tool_frame_id,
+            vel_scale=float(self._vel_scale),
+        )
+
+    def _get_compiled_points_mm(self, side: str) -> List[Tuple[float, float, float]]:
+        # Recipe.compiled_points_mm_for_side(side) -> np.ndarray (N,3) float32
+        pts = self._recipe.compiled_points_mm_for_side(side)
+        pts = np.asarray(pts, dtype=float).reshape(-1, 3)
+        return [tuple(row) for row in pts]

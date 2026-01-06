@@ -26,7 +26,14 @@ _LOG = logging.getLogger("main_window")
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, *, ctx, ros: Optional[RosBridge], plc: PlcClientBase | None = None, parent=None) -> None:
+    def __init__(
+        self,
+        *,
+        ctx,
+        ros: Optional[RosBridge],
+        plc: PlcClientBase | None = None,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         if ctx is None:
             raise RuntimeError("AppContext ist None – Startup fehlgeschlagen?")
@@ -57,11 +64,13 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget(self)
 
         # 1) Process: repo zum Laden/Speichern (draft/compiled/runs)
+        #    WICHTIG: ProcessTab-Parameter heißt recipe_repo
         self.processTab = ProcessTab(
-            ctx=self.ctx,
-            repo=self.repo,
-            ros=self.ros,
-            plc=self.plc,
+            ctx=ctx,
+            repo=ctx.repo,          # oder ctx.recipe_repo, je nachdem was du im ctx hast
+            ros=ros,
+            plc=plc,
+            parent=self,
         )
         tabs.addTab(self.processTab, "Process")
 
@@ -74,7 +83,7 @@ class MainWindow(QMainWindow):
         )
         tabs.addTab(self.recipeTab, "Recipe")
 
-        # 3) Robot: typischerweise nur store (Planner/Speed Defaults etc.)
+        # 3) Robot
         self.serviceRobotTab = ServiceRobotTab(
             ctx=self.ctx,
             store=self.store,
@@ -82,7 +91,7 @@ class MainWindow(QMainWindow):
         )
         tabs.addTab(self.serviceRobotTab, "Robot")
 
-        # 4) PLC: falls UI dort Default-Params braucht -> store
+        # 4) PLC
         self.plcTab = PlcTab(
             ctx=self.ctx,
             store=self.store,

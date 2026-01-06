@@ -263,6 +263,7 @@ class ServoWrapper(Node):
     # status
     # -------------------------
     def _status_timer(self) -> None:
+        return
         twist_subs = self.count_subscribers(self._topic_out_twist)
         joint_subs = self.count_subscribers(self._topic_out_joint)
         age = -1.0 if self._last_rx_time is None else (time.time() - self._last_rx_time)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import logging
-from typing import Optional, Callable
+from typing import Optional
 
 from PyQt6 import QtCore
 from PyQt6.QtCore import QTimer
@@ -22,10 +22,10 @@ class RobotInitStatemachine(QtCore.QObject):
       - deterministisch: init -> home, mit sauberer Diagnose
       - nutzt PoseBridge (poses_state.home) und MoveItBridge (moveit_last_result/plan/execute)
 
-    Wichtige Fixes:
-      - wartet auf MoveIt ready (sonst gehen Plan/Execute gerne ins Leere)
-      - sendet HOME explizit über MoveIt-Bridge (plan_named 'home' oder plan_pose(home_pose)+execute)
-      - WAIT_HOME loggt Distanz (mm) periodisch, damit du sofort siehst ob TCP "stuck" ist
+    Fixes:
+      - wartet auf MoveIt ready
+      - wartet nach initialized auf eine "valide" TCP Pose (frame_id) um den 1st-run-fail zu vermeiden
+      - sendet HOME explizit über MoveIt-Bridge
       - ACK: snapshot last_result vor send; nur Änderung zählt als ACK
     """
 
@@ -40,6 +40,10 @@ class RobotInitStatemachine(QtCore.QObject):
     S_WAIT_MOVEIT_READY = "WAIT_MOVEIT_READY"
     S_INIT_REQUESTED = "INIT_REQUESTED"
     S_WAIT_INITIALIZED = "WAIT_INITIALIZED"
+
+    # ✅ Neu: verhindert 1st-run-fail wegen tcp_frame=''
+    S_WAIT_TCP_AVAILABLE = "WAIT_TCP_AVAILABLE"
+
     S_HOME_REQUESTED = "HOME_REQUESTED"
     S_WAIT_MOVEIT_ACK = "WAIT_MOVEIT_ACK"
     S_WAIT_HOME = "WAIT_HOME"
@@ -54,6 +58,7 @@ class RobotInitStatemachine(QtCore.QObject):
         init_timeout_s: float = 10.0,
         home_timeout_s: float = 60.0,
         home_pose_timeout_s: float = 2.0,
+        tcp_pose_timeout_s: float = 2.0,          # ✅ Neu
         moveit_ready_timeout_s: float = 10.0,
         moveit_ack_timeout_s: float = 5.0,
         pos_tol_mm: float = 1.0,
@@ -65,6 +70,7 @@ class RobotInitStatemachine(QtCore.QObject):
         self._init_timeout_s = float(init_timeout_s)
         self._home_timeout_s = float(home_timeout_s)
         self._home_pose_timeout_s = float(home_pose_timeout_s)
+        self._tcp_pose_timeout_s = float(tcp_pose_timeout_s)  # ✅ Neu
         self._moveit_ready_timeout_s = float(moveit_ready_timeout_s)
         self._moveit_ack_timeout_s = float(moveit_ack_timeout_s)
         self._pos_tol_mm = float(pos_tol_mm)
@@ -113,6 +119,7 @@ class RobotInitStatemachine(QtCore.QObject):
         self._log(
             f"RobotInit: start (init_timeout={self._init_timeout_s:.1f}s, "
             f"home_timeout={self._home_timeout_s:.1f}s, home_pose_timeout={self._home_pose_timeout_s:.1f}s, "
+            f"tcp_pose_timeout={self._tcp_pose_timeout_s:.1f}s, "
             f"moveit_ready_timeout={self._moveit_ready_timeout_s:.1f}s, moveit_ack_timeout={self._moveit_ack_timeout_s:.1f}s, "
             f"tol={self._pos_tol_mm:.2f}mm)"
         )
@@ -325,7 +332,7 @@ class RobotInitStatemachine(QtCore.QObject):
             return None
 
     # ------------------------------------------------------------------
-    # Pose math
+    # Pose helpers
     # ------------------------------------------------------------------
 
     def _dist_mm(self, a: PoseStamped, b: PoseStamped) -> float:
@@ -337,16 +344,32 @@ class RobotInitStatemachine(QtCore.QObject):
     def _poses_close(self, a: PoseStamped, b: PoseStamped) -> bool:
         return self._dist_mm(a, b) <= self._pos_tol_mm
 
+    def _tcp_pose_valid_for_home(self, tcp: Optional[PoseStamped], home: PoseStamped) -> bool:
+        """
+        Valide bedeutet:
+          - tcp ist PoseStamped
+          - wenn home einen frame_id hat -> tcp muss auch frame_id haben und matchen
+        """
+        if tcp is None:
+            return False
+        f_home = (home.header.frame_id or "").strip()
+        f_tcp = (tcp.header.frame_id or "").strip()
+
+        if f_home:
+            if not f_tcp:
+                return False
+            if f_tcp != f_home:
+                return False
+        return True
+
     def _is_at_home(self) -> bool:
         cur = self._get_tcp_pose()
         home = self._get_home_pose()
         if cur is None or home is None:
             return False
 
-        f_cur = (cur.header.frame_id or "").strip()
-        f_home = (home.header.frame_id or "").strip()
-        if f_cur and f_home and f_cur != f_home:
-            # Frame mismatch -> niemals "at home" behaupten
+        # ✅ streng: wenn home frame gesetzt ist, muss tcp frame gesetzt & gleich sein
+        if not self._tcp_pose_valid_for_home(cur, home):
             return False
 
         return self._poses_close(cur, home)
@@ -361,7 +384,6 @@ class RobotInitStatemachine(QtCore.QObject):
                 return (self._ros.moveit_last_result() or "").strip()
         except Exception:
             return ""
-        # optional via ros.moveit
         try:
             mv = getattr(self._ros, "moveit", None)
             if mv is not None and hasattr(mv, "last_result"):
@@ -384,7 +406,6 @@ class RobotInitStatemachine(QtCore.QObject):
         self._init_sent_once = True
         self._log("RobotInit: sending robot_init()")
 
-        # prefer structured API if available
         if hasattr(self._ros, "robot") and hasattr(self._ros.robot, "init"):
             self._ros.robot.init()
         elif hasattr(self._ros, "robot_init"):
@@ -404,12 +425,10 @@ class RobotInitStatemachine(QtCore.QObject):
             raise RuntimeError("Home-Pose ist None (cannot send home move).")
 
         self._log(f"RobotInit: sending HOME via MoveIt ({reason})")
-        # Snapshot vor dem Senden für ACK-Erkennung
         self._last_result_snapshot = self._last_motion_result()
 
         mv = getattr(self._ros, "moveit", None)
         if mv is not None:
-            # Varianten: plan_named/plan_pose/execute
             if hasattr(mv, "plan_named") and hasattr(mv, "execute"):
                 mv.plan_named("home")
                 mv.execute(True)
@@ -419,7 +438,6 @@ class RobotInitStatemachine(QtCore.QObject):
                 mv.execute(True)
                 return
 
-        # fallback: direkte ros-Methoden (alte API)
         if hasattr(self._ros, "moveit_plan_named") and hasattr(self._ros, "moveit_execute"):
             self._ros.moveit_plan_named("home")
             self._ros.moveit_execute(True)
@@ -461,7 +479,7 @@ class RobotInitStatemachine(QtCore.QObject):
                 )
             return
 
-        # 2) Wait MoveIt ready (important!)
+        # 2) Wait MoveIt ready
         if self._state == self.S_WAIT_MOVEIT_READY:
             if self._moveit_ready():
                 self._log("RobotInit: moveit ready")
@@ -490,8 +508,9 @@ class RobotInitStatemachine(QtCore.QObject):
             if self._state == self.S_WAIT_INITIALIZED:
                 if self._is_initialized():
                     self._log("RobotInit: robot initialized")
-                    self._set_state(self.S_IDLE)
-                    self._deadline_ms = 0
+                    # ✅ danach TCP kurz "warm-up" abwarten
+                    self._set_state(self.S_WAIT_TCP_AVAILABLE)
+                    self._set_deadline(self._tcp_pose_timeout_s)
                 elif self._deadline_passed():
                     self._finish_err(f"Timeout nach {self._init_timeout_s:.1f}s beim Warten auf initialized.")
                 return
@@ -499,19 +518,51 @@ class RobotInitStatemachine(QtCore.QObject):
             self._set_state(self.S_WAIT_INITIALIZED)
             return
 
+        # Wenn initialized bereits true ist (z.B. latched), trotzdem TCP warm-up erzwingen
+        if self._state == self.S_IDLE:
+            self._set_state(self.S_WAIT_TCP_AVAILABLE)
+            self._set_deadline(self._tcp_pose_timeout_s)
+            return
+
+        # 3b) Wait TCP available (prevents first-run fail)
+        if self._state == self.S_WAIT_TCP_AVAILABLE:
+            home = self._get_home_pose()
+            if home is None:
+                self._finish_err("Home-Pose ist None (Poses-State).")
+                return
+
+            tcp = self._get_tcp_pose()
+            if self._tcp_pose_valid_for_home(tcp, home):
+                self._log("RobotInit: tcp pose available")
+                self._set_state(self.S_IDLE)
+                self._deadline_ms = 0
+                # weiter in Home-Teil im selben Tick
+            elif self._deadline_passed():
+                # ✅ nicht failen: HOME darf trotzdem gesendet werden; TCP kommt oft erst danach sauber
+                self._log("RobotInit: tcp pose not ready yet -> proceed (will command HOME and wait)")
+                self._set_state(self.S_IDLE)
+                self._deadline_ms = 0
+            else:
+                return
+
         # 4) Home
         home = self._get_home_pose()
         if home is None:
             self._finish_err("Home-Pose ist None (Poses-State).")
             return
 
-        if self._is_at_home():
+        # Wenn TCP nicht valide ist (z.B. frame_id leer), nicht sofort auf 'at home' prüfen
+        tcp = self._get_tcp_pose()
+        tcp_valid = self._tcp_pose_valid_for_home(tcp, home)
+
+        if tcp_valid and self._is_at_home():
             self._finish_ok()
             return
 
         if self._state == self.S_IDLE:
             try:
-                self._send_home_move(reason="not at home")
+                # ✅ auch wenn tcp noch nicht valide ist, HOME senden (roboter fährt, tcp wird dann meist valide)
+                self._send_home_move(reason="not at home" if tcp_valid else "tcp not ready yet")
             except Exception as e:
                 self._finish_err(f"Home-Move fehlgeschlagen: {e}")
                 return
@@ -557,34 +608,33 @@ class RobotInitStatemachine(QtCore.QObject):
             return
 
         if self._state == self.S_WAIT_HOME:
-            # Fehler aus MoveIt?
             if self._has_motion_error():
                 self._finish_err(f"Home-Execute Fehler: {self._last_motion_result() or 'EXECUTE_FAILED'}")
                 return
 
             tcp = self._get_tcp_pose()
-            if tcp is not None:
-                # periodische Distanz-Logs (1 Hz)
+            tcp_valid = self._tcp_pose_valid_for_home(tcp, home)
+
+            if tcp is not None and tcp_valid:
                 now = self._now_ms()
                 if self._last_dist_log_ms == 0 or (now - self._last_dist_log_ms) >= 1000:
                     dist = self._dist_mm(tcp, home)
                     self._log(f"RobotInit: dist(TCP->HOME)={dist:.2f}mm (tol={self._pos_tol_mm:.2f}mm)")
                     self._last_dist_log_ms = now
 
-                # TCP-stuck detection (wenn TCP sich praktisch nicht bewegt)
                 if self._last_tcp_snapshot is None:
                     self._last_tcp_snapshot = tcp
                     self._tcp_stuck_since_ms = self._now_ms()
                 else:
                     d_tcp = self._dist_mm(tcp, self._last_tcp_snapshot)
-                    if d_tcp <= 0.2:  # 0.2mm Schwellwert
+                    if d_tcp <= 0.2:
                         if self._tcp_stuck_since_ms == 0:
                             self._tcp_stuck_since_ms = self._now_ms()
                     else:
                         self._last_tcp_snapshot = tcp
                         self._tcp_stuck_since_ms = self._now_ms()
 
-            if self._is_at_home():
+            if tcp_valid and self._is_at_home():
                 self._log("RobotInit: TCP is at home pose")
                 self._finish_ok()
                 return
@@ -599,5 +649,4 @@ class RobotInitStatemachine(QtCore.QObject):
                 )
             return
 
-        # converge
         self._set_state(self.S_WAIT_HOME)

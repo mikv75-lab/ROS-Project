@@ -2,8 +2,9 @@
 # File: tabs/process/base_statemachine.py
 from __future__ import annotations
 
+import copy
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from PyQt6 import QtCore
 from PyQt6.QtStateMachine import QStateMachine, QState, QFinalState
@@ -50,14 +51,18 @@ class BaseProcessStatemachine(QtCore.QObject):
     Contract:
       - StateMachine triggert Bewegungs-Calls via ros.*
       - Transition passiert über moveitpy.signals.motionResultChanged:
-          - "EXECUTED:OK"  -> next
+          - "EXECUTED:OK"  -> next / or stay in segment (override _should_transition_on_ok)
           - "ERROR..."     -> retry / fail
       - Eval/Score passiert NICHT hier (macht ProcessTab).
+
+    Output:
+      - notifyFinished emit() liefert dict payload (RunResult.to_process_payload()).
+        (Robust: falls _build_result() bereits dict liefert, wird direkt emittiert.)
     """
 
     ROLE = "process"
 
-    notifyFinished = QtCore.pyqtSignal(object)  # emits dict payload (RunResult.to_process_payload())
+    notifyFinished = QtCore.pyqtSignal(object)  # emits dict payload
     notifyError = QtCore.pyqtSignal(str)
 
     stateChanged = QtCore.pyqtSignal(str)
@@ -92,9 +97,13 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._current_state: str = ""
         self._retry_count: int = 0
 
-        # per-run snapshot stores
+        # per-run snapshot stores (final per segment, may already be concatenated)
         self._planned_by_segment: Dict[str, Any] = {}
         self._executed_by_segment: Dict[str, Any] = {}
+
+        # per-step buffers (captures every EXECUTED:OK inside same segment)
+        self._planned_steps_by_segment: Dict[str, List[Any]] = {}
+        self._executed_steps_by_segment: Dict[str, List[Any]] = {}
 
         self._moveitpy = getattr(self._ros, "moveitpy", None)
         self._moveitpy_signals = getattr(self._moveitpy, "signals", None)
@@ -123,6 +132,8 @@ class BaseProcessStatemachine(QtCore.QObject):
 
         self._planned_by_segment.clear()
         self._executed_by_segment.clear()
+        self._planned_steps_by_segment.clear()
+        self._executed_steps_by_segment.clear()
 
         if not self._prepare_run():
             self.notifyError.emit(self._error_msg or "Prepare failed")
@@ -150,6 +161,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         raise NotImplementedError
 
     def _on_segment_ok(self, seg_name: str) -> None:
+        # finalize segment buffers into *_by_segment
         self._snapshot_trajs_for_segment(seg_name)
 
     def _should_transition_on_ok(self, seg_name: str, result: str) -> bool:
@@ -185,6 +197,26 @@ class BaseProcessStatemachine(QtCore.QObject):
             rr.meta["recipe_id"] = rid
 
         return rr
+
+    def _result_payload(self) -> Dict[str, Any]:
+        """
+        Robust conversion:
+          - if _build_result() returns RunResult -> use to_process_payload()
+          - if something returns dict already -> pass through
+        """
+        rr = self._build_result()
+        if hasattr(rr, "to_process_payload"):
+            try:
+                payload = rr.to_process_payload()
+                if isinstance(payload, dict):
+                    return payload
+            except Exception:
+                pass
+
+        # fallback (should not normally happen)
+        if isinstance(rr, dict):
+            return rr
+        return {"role": self._role, "ok": not self._stopped and not bool(self._error_msg), "message": "finished"}
 
     # ---------------- Machine ----------------
 
@@ -231,6 +263,11 @@ class BaseProcessStatemachine(QtCore.QObject):
             return
 
         self._retry_count = 0
+
+        # reset per-segment step buffers on entry (important for retries)
+        self._planned_steps_by_segment[seg_name] = []
+        self._executed_steps_by_segment[seg_name] = []
+
         self._on_enter_segment(seg_name)
 
     @QtCore.pyqtSlot(str)
@@ -243,26 +280,151 @@ class BaseProcessStatemachine(QtCore.QObject):
         if result.startswith("ERROR"):
             if self._retry_count < self._max_retries:
                 self._retry_count += 1
+                # retry same state: keep buffers but append new steps as they come
                 self._on_enter_segment(self._current_state)
             else:
                 self._signal_error(result)
             return
 
         if result.startswith("EXECUTED:OK"):
+            # capture per-step trajectories first (so segment logic can send next move)
+            self._snapshot_step_for_segment(self._current_state)
+
             if self._should_transition_on_ok(self._current_state, result):
                 self._on_segment_ok(self._current_state)
                 QtCore.QTimer.singleShot(0, self._sig_done.emit)
 
     # ---------------- Snapshot helpers ----------------
 
-    def _snapshot_trajs_for_segment(self, seg_name: str) -> None:
+    def _snapshot_step_for_segment(self, seg_name: str) -> None:
         planned = self._safe_call("moveit_planned_trajectory")
         executed = self._safe_call("moveit_executed_trajectory")
+
+        if planned is not None:
+            self._planned_steps_by_segment.setdefault(seg_name, []).append(copy.deepcopy(planned))
+        if executed is not None:
+            self._executed_steps_by_segment.setdefault(seg_name, []).append(copy.deepcopy(executed))
+
+    def _snapshot_trajs_for_segment(self, seg_name: str) -> None:
+        planned_steps = self._planned_steps_by_segment.get(seg_name) or []
+        executed_steps = self._executed_steps_by_segment.get(seg_name) or []
+
+        planned = self._concat_joint_traj_dicts(planned_steps) if planned_steps else self._safe_call("moveit_planned_trajectory")
+        executed = (
+            self._concat_joint_traj_dicts(executed_steps) if executed_steps else self._safe_call("moveit_executed_trajectory")
+        )
 
         if planned is not None:
             self._planned_by_segment[seg_name] = planned
         if executed is not None:
             self._executed_by_segment[seg_name] = executed
+
+    def _concat_joint_traj_dicts(self, items: List[Any]) -> Any:
+        """
+        Best-effort concatenation for the dict schema returned by ros.moveit_*_trajectory().
+
+        Expected (typical) structure:
+          {
+            "joint_names": [...],
+            "points": [ { "positions": [...], "velocities": [...], "time_from_start": <float|int|{sec,nsec}|str> }, ... ],
+            ...
+          }
+
+        If schema is unknown, we fall back to:
+          - return last non-empty element
+        """
+        dicts = [d for d in items if isinstance(d, dict) and d]
+        if not dicts:
+            # return last raw item if any
+            for it in reversed(items):
+                if it is not None:
+                    return it
+            return None
+
+        base = copy.deepcopy(dicts[0])
+        pts_out: List[dict] = []
+        joint_names = base.get("joint_names")
+
+        t_offset = 0.0
+
+        def _tfs_to_float(tfs: Any) -> float:
+            if tfs is None:
+                return 0.0
+            if isinstance(tfs, (int, float)):
+                return float(tfs)
+            if isinstance(tfs, str):
+                try:
+                    return float(tfs)
+                except Exception:
+                    return 0.0
+            if isinstance(tfs, dict):
+                # ROS-style: {"sec": int, "nanosec": int} or {"secs":...}
+                sec = tfs.get("sec", tfs.get("secs", 0))
+                nsec = tfs.get("nanosec", tfs.get("nsec", 0))
+                try:
+                    return float(sec) + float(nsec) * 1e-9
+                except Exception:
+                    return 0.0
+            return 0.0
+
+        def _float_to_tfs_like(example: Any, val: float) -> Any:
+            if example is None:
+                return val
+            if isinstance(example, (int, float)):
+                return float(val)
+            if isinstance(example, str):
+                return str(val)
+            if isinstance(example, dict):
+                sec = int(val)
+                nsec = int(round((val - sec) * 1e9))
+                # preserve key naming if possible
+                if "nanosec" in example or "sec" in example:
+                    return {"sec": sec, "nanosec": nsec}
+                if "nsec" in example or "secs" in example:
+                    return {"secs": sec, "nsec": nsec}
+                return {"sec": sec, "nanosec": nsec}
+            return float(val)
+
+        for d in dicts:
+            if joint_names is not None and d.get("joint_names") is not None and d.get("joint_names") != joint_names:
+                # incompatible -> cannot concatenate reliably
+                continue
+
+            pts = d.get("points")
+            if not isinstance(pts, list) or not pts:
+                continue
+
+            # determine last time in current output
+            if pts_out:
+                last_ex = pts_out[-1].get("time_from_start")
+                t_offset = _tfs_to_float(last_ex)
+            else:
+                t_offset = 0.0
+
+            # append points with offset, but avoid duplicating the first point if it's identical to last
+            for j, p in enumerate(pts):
+                if not isinstance(p, dict):
+                    continue
+                p2 = copy.deepcopy(p)
+                ex = p2.get("time_from_start")
+                if ex is not None:
+                    t = _tfs_to_float(ex)
+                    if pts_out:
+                        t = t + t_offset
+                    p2["time_from_start"] = _float_to_tfs_like(ex, t)
+
+                # de-dup first point (common when concatenating segments)
+                if pts_out and j == 0:
+                    try:
+                        if p2.get("positions") == pts_out[-1].get("positions"):
+                            continue
+                    except Exception:
+                        pass
+
+                pts_out.append(p2)
+
+        base["points"] = pts_out
+        return base
 
     # ---------------- Final ----------------
 
@@ -271,8 +433,8 @@ class BaseProcessStatemachine(QtCore.QObject):
         QtCore.QTimer.singleShot(0, self._sig_error.emit)
 
     def _on_finished(self) -> None:
-        rr = self._build_result()
-        self.notifyFinished.emit(rr.to_process_payload())
+        payload = self._result_payload()
+        self.notifyFinished.emit(payload)
         self._cleanup()
 
     def _on_error(self) -> None:

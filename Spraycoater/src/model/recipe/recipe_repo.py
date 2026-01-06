@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from model.recipe.recipe import Recipe
 from model.recipe.recipe_bundle import RecipeBundle
@@ -15,11 +15,8 @@ class RecipeRepo:
     """
     Wrapper für Editor + ProcessTab.
 
-    key-Format (NEU):
+    key-Format:
       "<recipe_id>/<recipe_name>"
-
-    Legacy:
-      - ohne "/" -> wird als "<id>/<id>" behandelt.
     """
     bundle: RecipeBundle
 
@@ -62,11 +59,37 @@ class RecipeRepo:
             delete_compiled_on_hash_change=delete_compiled_on_hash_change,
         )
 
-    def save_traj_run(self, key: str, *, traj: dict) -> None:
-        self.bundle.save_traj(key, traj=traj)
+    def save_traj_run(self, key: str, *, run: Optional[Dict[str, Any]] = None, traj: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Speichert run in traj.yaml (Schema: SegmentRunPayload).
 
-    def save_executed_run(self, key: str, *, executed: dict) -> None:
-        self.bundle.save_executed(key, executed=executed)
+        Robustness:
+          - offizielles Keyword: run=
+          - legacy/alias: traj= (wird auf run gemappt)
+        """
+        payload = run if isinstance(run, dict) else (traj if isinstance(traj, dict) else None)
+        if payload is None:
+            raise TypeError("save_traj_run: missing payload (use run=... or traj=...)")
+        self.bundle.save_run(key, kind="traj", run=payload)
+
+    def save_executed_run(
+        self,
+        key: str,
+        *,
+        run: Optional[Dict[str, Any]] = None,
+        executed: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Speichert run in executed_traj.yaml (Schema identisch).
+
+        Robustness:
+          - offizielles Keyword: run=
+          - legacy/alias: executed= (wird auf run gemappt)
+        """
+        payload = run if isinstance(run, dict) else (executed if isinstance(executed, dict) else None)
+        if payload is None:
+            raise TypeError("save_executed_run: missing payload (use run=... or executed=...)")
+        self.bundle.save_run(key, kind="executed", run=payload)
 
     def clear_runs(self, key: str) -> None:
         self.bundle.clear_runs(key)

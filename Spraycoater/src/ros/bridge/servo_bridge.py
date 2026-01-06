@@ -1,42 +1,56 @@
 # -*- coding: utf-8 -*-
-# File: src/ros/bridge/servo_bridge.py
 from __future__ import annotations
 
-from typing import Optional, Dict, Any, Callable, Type
 import math
+from typing import Optional, Any, Dict
 
 from PyQt6 import QtCore
-
-from std_msgs.msg import String as MsgString
 from geometry_msgs.msg import TwistStamped
 from control_msgs.msg import JointJog
+from builtin_interfaces.msg import Duration as RosDuration
+from std_msgs.msg import String as MsgString
 
-from config.startup import AppContent, TopicSpec
-from .base_bridge import BaseBridge
+from config.startup import AppContent
+from .base_bridge import BaseBridge, sub_handler
 
 
 class ServoSignals(QtCore.QObject):
     """
-    Qt-Signale (UI -> ServoBridge -> ROS Topics)
+    HARD CONTRACT to match tabs/service/servo_widgets.py
 
-    topics.yaml (servo/subscribe)  => UI -> ROS-Servo-Wrapper-Node
-      - cartesian_mm  TwistStamped
-      - joint_jog     JointJog
-      - set_mode      String
-      - set_frame     String
+    JointJogWidget expects:
+      - paramsChanged(dict)
+      - jointJogRequested(str, float, float)          # joint_name, delta/sign, speed (pct)
 
-    topics.yaml (servo/publish)    => ROS-Servo-Wrapper-Node -> UI (optional Debug)
-      - twist_out     TwistStamped
-      - joint_out     JointJog
+    CartesianJogWidget expects:
+      - frameChanged(str)                              # "world" / "tcp"
+      - paramsChanged(dict)
+      - cartesianJogRequested(str, float, float, str) # axis, delta/sign, speed, frame
+
+    ServiceRobotTab expects:
+      - modeChanged(str) (used as "emit(mode)")
     """
+
+    # -------------------- UI -> Bridge (as widgets emit) --------------------
 
     paramsChanged = QtCore.pyqtSignal(dict)
 
-    jointJogRequested = QtCore.pyqtSignal(str, float, float)
-    cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)
+    # JointJogWidget
+    jointJogRequested = QtCore.pyqtSignal(str, float, float)  # joint_name, delta_or_sign, speed_pct
 
-    frameChanged = QtCore.pyqtSignal(str)
+    # CartesianJogWidget
+    frameChanged = QtCore.pyqtSignal(str)  # "world" / "tcp"
+    cartesianJogRequested = QtCore.pyqtSignal(str, float, float, str)  # axis, delta_or_sign, speed, frame
+
+    # expected by ServiceRobotTab
     modeChanged = QtCore.pyqtSignal(str)
+
+    # -------------------- Optional legacy (do NOT collide) --------------------
+
+    cartesianRequested = QtCore.pyqtSignal(object)        # TwistStamped direct
+    jointJogObjectRequested = QtCore.pyqtSignal(object)   # JointJog direct
+
+    # -------------------- Bridge -> UI (optional) --------------------
 
     twistOutChanged = QtCore.pyqtSignal(object)  # TwistStamped
     jointOutChanged = QtCore.pyqtSignal(object)  # JointJog
@@ -45,15 +59,19 @@ class ServoSignals(QtCore.QObject):
         super().__init__(parent)
         self._last_twist_out: Optional[TwistStamped] = None
         self._last_joint_out: Optional[JointJog] = None
-
-    def _set_twist_out(self, msg: TwistStamped) -> None:
-        self._last_twist_out = msg
-
-    def _set_joint_out(self, msg: JointJog) -> None:
-        self._last_joint_out = msg
+        self._last_params: Dict[str, Any] = {}
+        self._last_frame: str = "world"
+        self._last_mode: str = ""
 
     @QtCore.pyqtSlot()
     def reemit_cached(self) -> None:
+        if self._last_params:
+            self.paramsChanged.emit(dict(self._last_params))
+        if self._last_frame:
+            self.frameChanged.emit(self._last_frame)
+        if self._last_mode:
+            self.modeChanged.emit(self._last_mode)
+
         if self._last_twist_out is not None:
             self.twistOutChanged.emit(self._last_twist_out)
         if self._last_joint_out is not None:
@@ -62,279 +80,318 @@ class ServoSignals(QtCore.QObject):
 
 class ServoBridge(BaseBridge):
     """
-    UI-ServoBridge (PyQt-Seite)
-
-    WICHTIG:
-      - Single Source of Truth: topics.yaml + qos.yaml (über AppContent)
-      - KEIN manuelles Prefixing, KEIN Hardcode QoS
-      - Frames: NUR "world" und "tcp" (alles andere wird auf "world" geforced)
-      - TwistStamped.header.frame_id darf NIE leer sein (sonst tf2 Fehler in moveit_servo)
+    Bridge for servo widgets -> ROS topics (SSoT IDs):
+      publish:
+        - cartesian_mm (TwistStamped)
+        - joint_jog (JointJog)
+        - set_mode (MsgString)
+        - set_frame (MsgString)
+      subscribe (optional, for UI monitoring):
+        - twist_out (TwistStamped)
+        - joint_out (JointJog)
     """
 
     GROUP = "servo"
 
-    FRAME_WORLD = "world"
-    FRAME_TCP = "tcp"
-
-    def __init__(self, content: AppContent, *, namespace: str = ""):
+    def __init__(self, content: AppContent, namespace: str = "") -> None:
         self.signals = ServoSignals()
-
-        self._ui_to_node_pubs: Dict[str, Any] = {}
-        self._node_to_ui_subs: Dict[str, Any] = {}
-
-        # UI Params (Defaults)
-        self._cart_lin_step_mm: float = 1.0
-        self._cart_ang_step_deg: float = 2.0
-        self._cart_speed_mm_s: float = 50.0
-        self._cart_speed_deg_s: float = 30.0
-
-        self._joint_step_deg: float = 2.0
-        self._joint_speed_pct: float = 40.0
-
-        self._frame: str = self.FRAME_WORLD
-        self._last_mode_txt: Optional[str] = None
-        self._last_frame_txt: Optional[str] = None
-
         super().__init__("servo_bridge", content, namespace=namespace)
 
-        s = self.signals
-        s.paramsChanged.connect(self._on_params_changed)
-        s.frameChanged.connect(self._on_frame_changed)
-        s.modeChanged.connect(lambda m: self.set_command_type(m, force=False))
-        s.jointJogRequested.connect(self._on_joint_jog_requested)
-        s.cartesianJogRequested.connect(self._on_cart_jog_requested)
+        # ---- internal "last known" widget params (for reasonable conversions) ----
+        self._params: Dict[str, Any] = {
+            # JointJogWidget
+            "joint_step_deg": 2.0,
+            "joint_speed_pct": 40.0,
 
-        # UI -> Node
-        self._ensure_pub("cartesian_mm", TwistStamped)
-        self._ensure_pub("joint_jog", JointJog)
-        self._ensure_pub("set_mode", MsgString)
-        self._ensure_pub("set_frame", MsgString)
+            # CartesianJogWidget
+            "cart_lin_step_mm": 1.0,
+            "cart_ang_step_deg": 2.0,
+            "cart_speed_mm_s": 50.0,
+            "cart_speed_deg_s": 30.0,
+            "frame": "world",
+        }
+        self._frame: str = "world"
 
-        # Node -> UI (optional)
-        self._ensure_sub("twist_out", TwistStamped, self._on_twist_out)
-        self._ensure_sub("joint_out", JointJog, self._on_joint_out)
+        # ---------------- UI -> ROS ----------------
 
-        tmp = JointJog()
-        self._duration_field_type = tmp.get_fields_and_field_types().get("duration", "")
-        self.get_logger().info(f"[servo] JointJog.duration field type = {self._duration_field_type!r}")
+        # Params cache (widgets emit early/often)
+        self.signals.paramsChanged.connect(self._on_params_changed)
 
-        self.get_logger().info(
-            f"[servo] ServoBridge bereit (ns='{self.namespace or '/'}'): "
-            "pubs: cartesian_mm, joint_jog, set_mode, set_frame | subs: twist_out, joint_out"
-        )
+        # Frame changes -> set_frame topic (and cache)
+        self.signals.frameChanged.connect(self._on_frame_changed)
 
-    # ─────────────────────────────────────────────────────────────
-    # Frame handling (ONLY world/tcp)
-    # ─────────────────────────────────────────────────────────────
+        # Mode changes -> set_mode topic (ServiceRobotTab emits this)
+        self.signals.modeChanged.connect(self._on_mode_changed)
 
-    def _normalize_frame(self, frame: str) -> str:
-        raw = (frame or "").strip().lower()
-        if raw == self.FRAME_TCP:
-            return self.FRAME_TCP
-        if raw == self.FRAME_WORLD:
-            return self.FRAME_WORLD
-        return self.FRAME_WORLD
+        # JointJogWidget -> JointJog msg
+        self.signals.jointJogRequested.connect(self._on_joint_jog_widget)
 
-    # ─────────────────────────────────────────────────────────────
-    # SSoT Helpers: topics.yaml + qos.yaml (AppContent)
-    # ─────────────────────────────────────────────────────────────
+        # CartesianJogWidget -> TwistStamped msg
+        self.signals.cartesianJogRequested.connect(self._on_cartesian_jog_widget)
 
-    def _spec(self, direction: str, topic_id: str) -> TopicSpec:
-        return self._content.topic_by_id(self.GROUP, direction, topic_id)
+        # Optional legacy direct paths
+        self.signals.cartesianRequested.connect(self.publish_cartesian)
+        self.signals.jointJogObjectRequested.connect(self.publish_joint_jog)
 
-    def _ensure_pub(self, topic_id: str, msg_type: Type) -> None:
-        if topic_id in self._ui_to_node_pubs:
-            return
-        spec = self._spec("subscribe", topic_id)  # Node subscribes => UI publishes
-        qos = self._content.qos(spec.qos_key)
-        self._ui_to_node_pubs[topic_id] = self.create_publisher(msg_type, spec.name, qos)
-        self.get_logger().info(f"[servo] PUB ui->node id={topic_id} topic={spec.name} qos={spec.qos_key}")
+    # ---------------- inbound (ROS -> UI) ----------------
 
-    def _ensure_sub(self, topic_id: str, msg_type: Type, cb: Callable) -> None:
-        if topic_id in self._node_to_ui_subs:
-            return
-        spec = self._spec("publish", topic_id)  # Node publishes => UI subscribes
-        qos = self._content.qos(spec.qos_key)
-        self._node_to_ui_subs[topic_id] = self.create_subscription(msg_type, spec.name, cb, qos)
-        self.get_logger().info(f"[servo] SUB node->ui id={topic_id} topic={spec.name} qos={spec.qos_key}")
-
-    def _pub(self, topic_id: str):
-        p = self._ui_to_node_pubs.get(topic_id)
-        if p is None:
-            raise KeyError(f"[servo] Publisher '{topic_id}' fehlt (ensure_pub nicht gelaufen?)")
-        return p
-
-    # ─────────────────────────────────────────────────────────────
-    # JointJog helpers
-    # ─────────────────────────────────────────────────────────────
-
-    def _set_jointjog_duration(self, msg: JointJog, seconds: float) -> None:
-        t = self._duration_field_type or ""
-        seconds = float(seconds)
-
-        if t in ("double", "float", "float64"):
-            msg.duration = float(seconds)
-            return
-
-        try:
-            from builtin_interfaces.msg import Duration as MsgDuration
-            sec = int(seconds)
-            nanosec = int((seconds - sec) * 1_000_000_000)
-            msg.duration = MsgDuration(sec=sec, nanosec=nanosec)
-            return
-        except Exception as e:
-            self.get_logger().warn(f"[servo] duration type unknown ({t!r}), fallback float: {e}")
-            msg.duration = float(seconds)
-
-    # ─────────────────────────────────────────────────────────────
-    # Public API
-    # ─────────────────────────────────────────────────────────────
-
-    def set_command_type(self, mode: str, *, force: bool = False) -> None:
-        raw = (mode or "").strip().lower()
-        if raw in ("joint", "j", "joint_jog"):
-            txt = "JOINT_JOG"
-        elif raw in ("cart", "cartesian", "twist", "t"):
-            txt = "TWIST"
-        else:
-            txt = (mode or "").strip() or "JOINT_JOG"
-
-        if (not force) and (txt == self._last_mode_txt):
-            return
-        self._last_mode_txt = txt
-
-        self._pub("set_mode").publish(MsgString(data=txt))
-        self.get_logger().info(f"[servo_bridge] PUB set_mode -> {txt} (force={force})")
-
-    def set_frame(self, frame: str, *, force: bool = False) -> str:
-        txt = self._normalize_frame(frame)
-        self._frame = txt
-
-        if (not force) and (txt == self._last_frame_txt):
-            return txt
-        self._last_frame_txt = txt
-
-        self._pub("set_frame").publish(MsgString(data=txt))
-        self.get_logger().info(f"[servo_bridge] PUB set_frame -> {txt} (force={force})")
-        return txt
-
-    # ─────────────────────────────────────────────────────────────
-    # UI inbound (Signals aus Widgets)
-    # ─────────────────────────────────────────────────────────────
-
-    def _on_params_changed(self, cfg: dict) -> None:
-        cfg = cfg or {}
-
-        if "joint_step_deg" in cfg:
-            self._joint_step_deg = float(cfg["joint_step_deg"])
-        if "joint_speed_pct" in cfg:
-            self._joint_speed_pct = float(cfg["joint_speed_pct"])
-
-        if "cart_lin_step_mm" in cfg:
-            self._cart_lin_step_mm = float(cfg["cart_lin_step_mm"])
-        if "cart_ang_step_deg" in cfg:
-            self._cart_ang_step_deg = float(cfg["cart_ang_step_deg"])
-        if "cart_speed_mm_s" in cfg:
-            self._cart_speed_mm_s = float(cfg["cart_speed_mm_s"])
-        if "cart_speed_deg_s" in cfg:
-            self._cart_speed_deg_s = float(cfg["cart_speed_deg_s"])
-
-        if "frame" in cfg:
-            self._frame = self._normalize_frame(str(cfg["frame"]))
-
-    def _on_frame_changed(self, frame: str) -> None:
-        self.set_frame(frame, force=False)
-
-    def _on_joint_jog_requested(self, joint_name: str, delta_deg: float, speed_pct: float) -> None:
-        # DO NOT force spam set_mode each tick (widgets stream at 50 Hz)
-        self.set_command_type("joint", force=False)
-        self.set_frame(self.FRAME_WORLD, force=False)
-
-        j = str(joint_name)
-        ddeg = float(delta_deg)
-        spct = float(speed_pct) if speed_pct is not None else float(self._joint_speed_pct)
-
-        # STOP command
-        if spct <= 0.0 or ddeg == 0.0:
-            msg = JointJog()
-            msg.header.stamp = self.get_clock().now().to_msg()
-            msg.header.frame_id = self.FRAME_WORLD
-            msg.joint_names = [j]
-            msg.velocities = [0.0]
-            msg.displacements = []
-            self._set_jointjog_duration(msg, seconds=0.1)
-            self._pub("joint_jog").publish(msg)
-            return
-
-        v_mag = float(max(0.0, min(1.0, spct / 100.0)))  # 0..1 rad/s (as before)
-        v = math.copysign(v_mag, ddeg)
-
-        msg = JointJog()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = self.FRAME_WORLD
-
-        msg.joint_names = [j]
-        msg.velocities = [float(v)]
-        msg.displacements = []
-
-        self._set_jointjog_duration(msg, seconds=0.1)
-
-        self._pub("joint_jog").publish(msg)
-
-    def _on_cart_jog_requested(self, axis: str, delta: float, speed: float, frame: str) -> None:
-        # DO NOT force spam set_mode/frame each tick
-        self.set_command_type("cart", force=False)
-        frame_txt = self.set_frame(frame, force=False)
-
-        a = (axis or "").strip().lower()
-        d = float(delta)
-        s = float(speed) if speed is not None else (
-            self._cart_speed_deg_s if a in ("rx", "ry", "rz") else self._cart_speed_mm_s
-        )
-
-        msg = TwistStamped()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = frame_txt  # never empty
-
-        # STOP command
-        if s <= 0.0 or d == 0.0:
-            self._pub("cartesian_mm").publish(msg)
-            return
-
-        if a in ("x", "y", "z"):
-            lin_v = float(s / 1000.0)  # mm/s -> m/s
-            if a == "x":
-                msg.twist.linear.x = math.copysign(lin_v, d)
-            elif a == "y":
-                msg.twist.linear.y = math.copysign(lin_v, d)
-            else:
-                msg.twist.linear.z = math.copysign(lin_v, d)
-
-            self._pub("cartesian_mm").publish(msg)
-            return
-
-        if a in ("rx", "ry", "rz"):
-            ang_v = float(math.radians(abs(s)))  # deg/s -> rad/s
-            if a == "rx":
-                msg.twist.angular.x = math.copysign(ang_v, d)
-            elif a == "ry":
-                msg.twist.angular.y = math.copysign(ang_v, d)
-            else:
-                msg.twist.angular.z = math.copysign(ang_v, d)
-
-            self._pub("cartesian_mm").publish(msg)
-            return
-
-        self.get_logger().warning(f"[servo_bridge] unknown cart axis: {axis!r}")
-
-    # ─────────────────────────────────────────────────────────────
-    # Inbound vom ROS-Servo-Wrapper (optional Debug)
-    # ─────────────────────────────────────────────────────────────
-
+    @sub_handler("servo", "twist_out")
     def _on_twist_out(self, msg: TwistStamped) -> None:
-        self.signals._set_twist_out(msg)
+        self.signals._last_twist_out = msg
         self.signals.twistOutChanged.emit(msg)
 
+    @sub_handler("servo", "joint_out")
     def _on_joint_out(self, msg: JointJog) -> None:
-        self.signals._set_joint_out(msg)
+        self.signals._last_joint_out = msg
         self.signals.jointOutChanged.emit(msg)
+
+    # ---------------- internal helpers ----------------
+
+    def _set_duration(self, msg: JointJog, seconds: float) -> None:
+        """
+        Robustly set JointJog.duration across different Python IDL mappings.
+
+        Some environments expose JointJog.duration incorrectly (e.g. float),
+        so assignments like msg.duration.sec will crash. We handle:
+          - builtin_interfaces/Duration message
+          - assigning a new Duration
+          - dict/tuple fallback
+          - and finally "leave unset" without crashing
+        """
+        s = float(max(0.0, seconds))
+        sec = int(s)
+        nsec = int((s - sec) * 1e9)
+
+        # preferred: duration already a Duration message
+        try:
+            d = getattr(msg, "duration", None)
+            if isinstance(d, RosDuration):
+                d.sec = sec
+                d.nanosec = nsec
+                return
+        except Exception:
+            pass
+
+        # common: field exists but is not initialized as message
+        try:
+            msg.duration = RosDuration(sec=sec, nanosec=nsec)
+            return
+        except Exception:
+            pass
+
+        # alternative: some bindings accept dict/tuple
+        try:
+            msg.duration = {"sec": sec, "nanosec": nsec}
+            return
+        except Exception:
+            pass
+
+        try:
+            msg.duration = (sec, nsec)
+            return
+        except Exception:
+            pass
+
+        # last resort: do nothing
+        try:
+            self.get_logger().debug(
+                "[servo] JointJog.duration could not be set (mapping=%r)",
+                type(getattr(msg, "duration", None)),
+            )
+        except Exception:
+            pass
+
+    # ---------------- UI event handlers ----------------
+
+    def _on_params_changed(self, cfg: dict) -> None:
+        try:
+            if isinstance(cfg, dict):
+                self._params.update(cfg)
+                self.signals._last_params = dict(self._params)
+        except Exception:
+            # never crash on params
+            pass
+
+    def _on_frame_changed(self, frame: str) -> None:
+        f = (frame or "").strip().lower()
+        if not f:
+            return
+        if f not in ("world", "tcp", "trf", "wrf"):
+            return
+        if f == "trf":
+            f = "tcp"
+        if f == "wrf":
+            f = "world"
+
+        self._frame = f
+        self._params["frame"] = f
+        self.signals._last_frame = f
+        self.set_frame(f)
+
+    def _on_mode_changed(self, mode: str) -> None:
+        m = (mode or "").strip()
+        if not m:
+            return
+        self.signals._last_mode = m
+        self.set_mode(m)
+
+    def _on_joint_jog_widget(self, joint: str, delta_or_sign: float, speed_pct: float) -> None:
+        """
+        JointJogWidget contract:
+          jointJogRequested(joint_name, delta_deg OR sign, speed_pct)
+
+        We translate to JointJog (velocity command) and rely on widget streaming + stop.
+        - If delta_or_sign is near +/-1 -> treat as direction sign.
+        - Else treat as delta in deg; convert to sign and estimate duration from delta & speed.
+        """
+        j = (joint or "").strip()
+        if not j:
+            return
+
+        val = float(delta_or_sign)
+        sp = float(speed_pct)
+
+        # stop command (widget sends (name, 0, 0))
+        if abs(val) < 1e-9 or abs(sp) < 1e-9:
+            msg = JointJog()
+            msg.joint_names = [j]
+            msg.velocities = [0.0]
+            self._set_duration(msg, 0.0)
+            self.publish_joint_jog(msg)
+            return
+
+        # clamp speed percent
+        sp = abs(sp)
+        sp = max(0.0, min(100.0, sp))
+
+        # Heuristic: sign vs delta
+        if abs(val) <= 1.5:
+            sign = 1.0 if val >= 0.0 else -1.0
+            delta_deg = None
+        else:
+            sign = 1.0 if val >= 0.0 else -1.0
+            delta_deg = abs(val)
+
+        # Convert speed_pct to a reasonable rad/s.
+        # If you later want exact limits: add them to params and use them here.
+        max_rad_s = 1.5  # conservative default
+        vel = sign * (sp / 100.0) * max_rad_s
+
+        msg = JointJog()
+        msg.joint_names = [j]
+        msg.velocities = [float(vel)]
+
+        # Duration:
+        # - streaming (hold) -> short duration; widget ticks at 50 Hz
+        # - pulse (delta given) -> estimate duration from delta and speed
+        if delta_deg is None:
+            dur_s = 0.10
+        else:
+            vel_deg_s = abs(vel) * (180.0 / math.pi)
+            if vel_deg_s < 1e-6:
+                dur_s = 0.10
+            else:
+                dur_s = max(0.05, min(1.0, float(delta_deg) / vel_deg_s))
+
+        self._set_duration(msg, dur_s)
+        self.publish_joint_jog(msg)
+
+    def _on_cartesian_jog_widget(self, axis: str, delta_or_sign: float, speed: float, frame: str) -> None:
+        """
+        CartesianJogWidget contract:
+          cartesianJogRequested(axis, delta_or_sign, speed, frame)
+
+        We translate to TwistStamped on 'cartesian_mm'.
+        Your ServoWrapper already applies header.frame_id based on set_frame,
+        but we also set it here to be explicit.
+        """
+        a = (axis or "").strip().lower()
+        if not a:
+            return
+
+        v = float(delta_or_sign)
+        sp = float(speed)
+
+        # stop
+        if abs(v) < 1e-9 or abs(sp) < 1e-9:
+            msg = TwistStamped()
+            msg.header.frame_id = (frame or self._frame or "world")
+            self.publish_cartesian(msg)
+            return
+
+        # interpret sign vs delta
+        if abs(v) <= 1.5:
+            sign = 1.0 if v >= 0.0 else -1.0
+        else:
+            sign = 1.0 if v >= 0.0 else -1.0  # magnitude ignored; widget sends stop shortly after
+
+        msg = TwistStamped()
+        msg.header.frame_id = (frame or self._frame or "world")
+
+        # Linear axes are in mm/s for your pipeline (topic id: cartesian_mm)
+        # Rotational axes: widget uses deg/s; convert to rad/s.
+        if a == "x":
+            msg.twist.linear.x = sign * sp
+        elif a == "y":
+            msg.twist.linear.y = sign * sp
+        elif a == "z":
+            msg.twist.linear.z = sign * sp
+        elif a == "rx":
+            msg.twist.angular.x = sign * math.radians(sp)
+        elif a == "ry":
+            msg.twist.angular.y = sign * math.radians(sp)
+        elif a == "rz":
+            msg.twist.angular.z = sign * math.radians(sp)
+        else:
+            return
+
+        # Keep internal frame cache + publish set_frame so ServoWrapper updates too
+        f = (frame or "").strip().lower()
+        if f:
+            if f == "trf":
+                f = "tcp"
+            if f == "wrf":
+                f = "world"
+            if f in ("world", "tcp") and f != self._frame:
+                self._frame = f
+                self._params["frame"] = f
+                self.signals._last_frame = f
+                self.set_frame(f)
+
+        self.publish_cartesian(msg)
+
+    # ---------------- outbound (Bridge -> ROS) ----------------
+
+    def publish_cartesian(self, msg: Any) -> None:
+        if msg is None:
+            return
+        try:
+            self.pub("cartesian_mm").publish(msg)
+        except Exception as e:
+            self.get_logger().error(f"[servo] publish cartesian_mm failed: {e}")
+
+    def publish_joint_jog(self, msg: Any) -> None:
+        if msg is None:
+            return
+        try:
+            self.pub("joint_jog").publish(msg)
+        except Exception as e:
+            self.get_logger().error(f"[servo] publish joint_jog failed: {e}")
+
+    def set_mode(self, mode: str) -> None:
+        mode = (mode or "").strip()
+        if not mode:
+            return
+        try:
+            self.pub("set_mode").publish(MsgString(data=mode))
+        except Exception as e:
+            self.get_logger().error(f"[servo] set_mode failed: {e}")
+
+    def set_frame(self, frame: str) -> None:
+        frame = (frame or "").strip()
+        if not frame:
+            return
+        try:
+            self.pub("set_frame").publish(MsgString(data=frame))
+        except Exception as e:
+            self.get_logger().error(f"[servo] set_frame failed: {e}")

@@ -24,8 +24,8 @@ class InfoGroupBox(QGroupBox):
       - points / length_mm             (Panel-kompatibel)
     """
 
-    def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__("Info", parent)
+    def __init__(self, parent: Optional[QWidget] = None, *, title: str = "Info"):
+        super().__init__(title, parent)
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -78,57 +78,36 @@ class InfoGroupBox(QGroupBox):
         return f"{s} {unit}"
 
     @staticmethod
-    def _fmt_dims(dims: Any, nd: int = 1) -> str:
-        """Erwartet (L, B, H) in mm."""
+    def _pick(info: Dict[str, Any], *keys: str, default=None):
+        for k in keys:
+            if k in info and info.get(k) is not None:
+                return info.get(k)
+        return default
+
+    @staticmethod
+    def _fmt_dims_mm(dims: Any) -> str:
         try:
-            seq = list(dims) if dims is not None else []
-            if len(seq) < 3:
-                return "-"
-            L, B, H = (float(seq[0]), float(seq[1]), float(seq[2]))
-            return f"{L:.{nd}f} × {B:.{nd}f} × {H:.{nd}f}"
+            if isinstance(dims, (list, tuple)) and len(dims) == 3:
+                a, b, c = float(dims[0]), float(dims[1]), float(dims[2])
+                return f"{a:.1f} × {b:.1f} × {c:.1f}"
         except Exception:
-            return "-"
+            pass
+        return "-"
 
-    # ---- Public API ----
-    def set_values(self, info: Dict[str, Any] | None) -> None:
-        """
-        Erwartet recipe.info oder ein ähnliches Dict.
+    # ---- public API ----
+    def set_values(self, info: Dict[str, Any]) -> None:
+        info = dict(info or {}) if isinstance(info, dict) else {}
 
-        Unterstützte Keys:
-          - points          oder total_points
-          - length_mm       oder total_length_mm
-          - eta_s
-          - medium_ml
-          - mesh_tris
-          - mesh_bounds / mesh_bounds_mm / mesh_dims_mm / dims_mm (L,B,H in mm)
-
-        NICHT angezeigt:
-          - valid / is_valid / validation_*  (falls vorhanden)
-        """
-        info = info or {}
-
-        points = info.get("points")
-        if points is None:
-            points = info.get("total_points")
-
-        length_mm = info.get("length_mm")
-        if length_mm is None:
-            length_mm = info.get("total_length_mm")
-
-        eta_s = info.get("eta_s")
-        medium_ml = info.get("medium_ml")
-        mesh_tris = info.get("mesh_tris")
-
-        mesh_bounds = (
-            info.get("mesh_bounds")
-            or info.get("mesh_bounds_mm")
-            or info.get("mesh_dims_mm")
-            or info.get("dims_mm")
-        )
+        points = self._pick(info, "total_points", "points")
+        length_mm = self._pick(info, "total_length_mm", "length_mm")
+        eta_s = self._pick(info, "eta_s", "eta")
+        medium_ml = self._pick(info, "medium_ml", "medium")
+        mesh_tris = self._pick(info, "mesh_tris", "tris", "triangles")
+        mesh_dims = self._pick(info, "mesh_dims_mm", "mesh_dims", "dims_mm")
 
         self._v_points.setText(self._fmt_num(points, nd=0))
-        self._v_len_mm.setText(self._fmt_with_unit(length_mm, "mm", nd=3))
-        self._v_eta_s.setText(self._fmt_with_unit(eta_s, "s", nd=3))
-        self._v_medium_ml.setText(self._fmt_with_unit(medium_ml, "ml", nd=3))
+        self._v_len_mm.setText(self._fmt_with_unit(length_mm, "mm", nd=1))
+        self._v_eta_s.setText(self._fmt_with_unit(eta_s, "s", nd=1))
+        self._v_medium_ml.setText(self._fmt_with_unit(medium_ml, "ml", nd=2))
         self._v_mesh_tris.setText(self._fmt_num(mesh_tris, nd=0))
-        self._v_mesh_dims.setText(self._fmt_dims(mesh_bounds, nd=1))
+        self._v_mesh_dims.setText(self._fmt_dims_mm(mesh_dims))

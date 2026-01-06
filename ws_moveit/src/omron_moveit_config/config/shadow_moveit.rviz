@@ -4,18 +4,11 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /TF1
         - /TF1/Frames1
-        - /paPlanned1
-        - /maPlanned1
-        - /maExecuted1
-        - /maExecuted1/Topic1
-        - /paExecuted1
-        - /PlanningScene1
         - /PlanningScene1/Scene Geometry1
         - /PlanningScene1/Scene Robot1
       Splitter Ratio: 0.36193448305130005
-    Tree Height: 526
+    Tree Height: 294
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -118,70 +111,6 @@ Visualization Manager:
                 {}
       Update Interval: 0
       Value: true
-    - Alpha: 1
-      Arrow Length: 0
-      Axes Length: 0.0024999999441206455
-      Axes Radius: 0.0002500000118743628
-      Class: rviz_default_plugins/PoseArray
-      Color: 255; 25; 0
-      Enabled: true
-      Head Length: 0
-      Head Radius: 0
-      Name: paPlanned
-      Shaft Length: 0
-      Shaft Radius: 0
-      Shape: Axes
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /shadow/spraycoater/spray_path/poses
-      Value: true
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
-      Name: maPlanned
-      Namespaces: true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /shadow/spraycoater/spray_path/markers
-      Value: true
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
-      Name: maExecuted
-      Namespaces: true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /shadow/spraycoater/spray_path/executed_markers
-      Value: true
-    - Alpha: 1
-      Arrow Length: 0.30000001192092896
-      Axes Length: 0.0024999999441206455
-      Axes Radius: 0.0002500000118743628
-      Class: rviz_default_plugins/PoseArray
-      Color: 255; 25; 0
-      Enabled: true
-      Head Length: 0.07000000029802322
-      Head Radius: 0.029999999329447746
-      Name: paExecuted
-      Shaft Length: 0.23000000417232513
-      Shaft Radius: 0.009999999776482582
-      Shape: Axes
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /shadow/spraycoater/spray_path/executed_poses
-      Value: true
     - Class: moveit_rviz_plugin/PlanningScene
       Enabled: true
       Move Group Namespace: /shadow
@@ -259,6 +188,102 @@ Visualization Manager:
         Show Robot Collision: false
         Show Robot Visual: true
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /shadow/spraycoater/spray_path/compiled/markers
+      Value: true
+    - Alpha: 1
+      Arrow Length: 0.30000001192092896
+      Axes Length: 0.30000001192092896
+      Axes Radius: 0.009999999776482582
+      Class: rviz_default_plugins/PoseArray
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.07000000029802322
+      Head Radius: 0.029999999329447746
+      Name: PoseArray
+      Shaft Length: 0.23000000417232513
+      Shaft Radius: 0.009999999776482582
+      Shape: Arrow (Flat)
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /shadow/spraycoater/spray_path/compiled/poses
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /shadow/spraycoater/spray_path/executed/markers
+      Value: true
+    - Alpha: 1
+      Arrow Length: 0.30000001192092896
+      Axes Length: 0.30000001192092896
+      Axes Radius: 0.009999999776482582
+      Class: rviz_default_plugins/PoseArray
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.07000000029802322
+      Head Radius: 0.029999999329447746
+      Name: PoseArray
+      Shaft Length: 0.23000000417232513
+      Shaft Radius: 0.009999999776482582
+      Shape: Arrow (Flat)
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /shadow/spraycoater/spray_path/executed/poses
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /shadow/spraycoater/spray_path/traj/markers
+      Value: true
+    - Alpha: 1
+      Arrow Length: 0.30000001192092896
+      Axes Length: 0.30000001192092896
+      Axes Radius: 0.009999999776482582
+      Class: rviz_default_plugins/PoseArray
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.07000000029802322
+      Head Radius: 0.029999999329447746
+      Name: PoseArray
+      Shaft Length: 0.23000000417232513
+      Shaft Radius: 0.009999999776482582
+      Shape: Arrow (Flat)
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /shadow/spraycoater/spray_path/traj/poses
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -277,7 +302,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.828415632247925
+      Distance: 2.647383451461792
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -299,15 +324,15 @@ Visualization Manager:
     Saved: ~
 Window Geometry:
   Displays:
-    collapsed: false
-  Height: 1369
+    collapsed: true
+  Height: 933
   Help:
-    collapsed: false
-  Hide Left Dock: false
+    collapsed: true
+  Hide Left Dock: true
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd00000001000000000000028300000503fc0200000003fb000000100044006900730070006c006100790073010000003b00000249000000c700fffffffb0000000800480065006c0070010000028a000001360000006e00fffffffb0000000a0056006900650077007301000003c600000178000000a000ffffff000007770000050300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000100000000000002830000034ffc0200000003fb000000100044006900730070006c006100790073000000003b00000161000000c700fffffffb0000000800480065006c007000000001a2000000c60000006e00fffffffb0000000a00560069006500770073000000026e0000011c000000a000ffffff000003ee0000034f00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
-    collapsed: false
-  Width: 2560
-  X: 1928
-  Y: 31
+    collapsed: true
+  Width: 1006
+  X: 3477
+  Y: 506

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List
 
 import numpy as np
 
@@ -34,6 +34,11 @@ class RecipeEvaluator:
     """
     Vergleicht Test-Pfad gegen Referenz (mm).
     O(N*M) NN ist bewusst simpel; reicht für <= ~2000 Punkte gut.
+
+    Erweiterungen (für deine Anforderungen):
+    - evaluate_traj_dict_mm(): evaluiert zwei Traj-Dicts (dein YAML-Schema).
+    - evaluate_segments_and_total(): evaluiert pro Segment UND gesamt.
+      Referenzquelle wählbar: existing_reference (wenn gesetzt) sonst compiled_reference.
     """
 
     def __init__(
@@ -44,6 +49,10 @@ class RecipeEvaluator:
     ) -> None:
         self.weights = weights or EvalWeights()
         self.clamp_mean, self.clamp_p95, self.clamp_max = [float(x) for x in clamp_mm]
+
+    # -------------------------
+    # low level math helpers
+    # -------------------------
 
     @staticmethod
     def _path_length_mm(P: np.ndarray) -> float:
@@ -85,6 +94,10 @@ class RecipeEvaluator:
         x = err / target
         s = 100.0 * math.exp(-math.log(2.0) * x)
         return float(np.clip(s, 0.0, 100.0))
+
+    # -------------------------
+    # core point evaluation
+    # -------------------------
 
     def evaluate_points_mm(
         self,
@@ -131,3 +144,143 @@ class RecipeEvaluator:
         }
 
         return EvalResult(score=float(np.clip(score, 0.0, 100.0)), metrics=metrics, details=details)
+
+    # -------------------------
+    # traj dict extraction helpers
+    # -------------------------
+
+    @staticmethod
+    def _extract_points_from_traj_dict_mm(traj: Optional[Dict[str, Any]], *, side: str) -> np.ndarray:
+        """
+        Erwartet dein YAML/Dict-Schema:
+          traj["sides"][side]["poses_quat"] = [{x,y,z,qx,qy,qz,qw}, ...]
+
+        Gibt Nx3 float array (mm) zurück.
+        """
+        if not isinstance(traj, dict):
+            return np.zeros((0, 3), dtype=float)
+
+        sides = traj.get("sides") or {}
+        if not isinstance(sides, dict):
+            return np.zeros((0, 3), dtype=float)
+
+        side_obj = sides.get(side) or {}
+        if not isinstance(side_obj, dict):
+            return np.zeros((0, 3), dtype=float)
+
+        poses = side_obj.get("poses_quat") or []
+        if not isinstance(poses, list):
+            return np.zeros((0, 3), dtype=float)
+
+        pts: List[List[float]] = []
+        for p in poses:
+            if not isinstance(p, dict):
+                continue
+            try:
+                pts.append([float(p.get("x", 0.0)), float(p.get("y", 0.0)), float(p.get("z", 0.0))])
+            except Exception:
+                continue
+
+        if not pts:
+            return np.zeros((0, 3), dtype=float)
+        return np.asarray(pts, dtype=float).reshape(-1, 3)
+
+    def evaluate_traj_dict_mm(
+        self,
+        *,
+        ref_traj: Optional[Dict[str, Any]],
+        test_traj: Optional[Dict[str, Any]],
+        side: str,
+        label: str = "",
+    ) -> EvalResult:
+        """
+        Convenience: evaluiert 2 Traj-Dicts (dein YAML-Schema) für eine Side.
+        """
+        ref_pts = self._extract_points_from_traj_dict_mm(ref_traj, side=side)
+        test_pts = self._extract_points_from_traj_dict_mm(test_traj, side=side)
+        return self.evaluate_points_mm(ref_points_mm=ref_pts, test_points_mm=test_pts, label=label)
+
+    # -------------------------
+    # segments + total evaluation (your main requirement)
+    # -------------------------
+
+    def evaluate_segments_and_total(
+        self,
+        *,
+        executed_by_segment: Dict[str, Any],
+        executed_total: Optional[Dict[str, Any]] = None,
+        # reference selection: prefer existing_reference_* if provided, else compiled_reference_*
+        existing_reference_by_segment: Optional[Dict[str, Any]] = None,
+        existing_reference_total: Optional[Dict[str, Any]] = None,
+        compiled_reference_by_segment: Optional[Dict[str, Any]] = None,
+        compiled_reference_total: Optional[Dict[str, Any]] = None,
+        side: str = "top",
+        label_base: str = "traj",
+    ) -> Tuple[EvalResult, Dict[str, EvalResult]]:
+        """
+        Liefert:
+          (eval_total, eval_by_segment)
+
+        Regeln:
+          - Referenz: existing_reference_* (wenn vorhanden) sonst compiled_reference_*.
+          - Segment-Eval: nur wenn es für Segment sowohl ref als auch test Daten gibt (>=1 Punkt).
+          - Total-Eval: gegen reference_total; falls executed_total nicht geliefert, wird aus Segmenten concat gebaut.
+        """
+        # choose reference source
+        ref_by_seg = existing_reference_by_segment if isinstance(existing_reference_by_segment, dict) else None
+        ref_total = existing_reference_total if isinstance(existing_reference_total, dict) else None
+
+        if ref_by_seg is None and isinstance(compiled_reference_by_segment, dict):
+            ref_by_seg = compiled_reference_by_segment
+        if ref_total is None and isinstance(compiled_reference_total, dict):
+            ref_total = compiled_reference_total
+
+        # build executed_total if needed
+        if executed_total is None:
+            # concatenate in dict insertion order (caller should pass ordered dict if needed)
+            pts_all: List[np.ndarray] = []
+            for seg, traj_seg in (executed_by_segment or {}).items():
+                pts = self._extract_points_from_traj_dict_mm(traj_seg, side=side)
+                if pts.shape[0] > 0:
+                    pts_all.append(pts)
+            test_total_pts = np.vstack(pts_all) if pts_all else np.zeros((0, 3), dtype=float)
+        else:
+            test_total_pts = self._extract_points_from_traj_dict_mm(executed_total, side=side)
+
+        # total reference points
+        ref_total_pts = self._extract_points_from_traj_dict_mm(ref_total, side=side) if isinstance(ref_total, dict) else np.zeros((0, 3), dtype=float)
+        eval_total = self.evaluate_points_mm(
+            ref_points_mm=ref_total_pts,
+            test_points_mm=test_total_pts,
+            label=f"{label_base}/total",
+        )
+
+        # per segment
+        eval_by_segment: Dict[str, EvalResult] = {}
+        for seg, test_traj_seg in (executed_by_segment or {}).items():
+            if not isinstance(test_traj_seg, dict):
+                continue
+
+            # segment reference: prefer ref_by_seg[seg], else no eval
+            ref_traj_seg = None
+            if isinstance(ref_by_seg, dict):
+                cand = ref_by_seg.get(seg)
+                if isinstance(cand, dict):
+                    ref_traj_seg = cand
+
+            if not isinstance(ref_traj_seg, dict):
+                # no reference for this segment -> skip (explicit, avoids misleading scores)
+                continue
+
+            ref_pts = self._extract_points_from_traj_dict_mm(ref_traj_seg, side=side)
+            test_pts = self._extract_points_from_traj_dict_mm(test_traj_seg, side=side)
+            if ref_pts.shape[0] == 0 or test_pts.shape[0] == 0:
+                continue
+
+            eval_by_segment[seg] = self.evaluate_points_mm(
+                ref_points_mm=ref_pts,
+                test_points_mm=test_pts,
+                label=f"{label_base}/{seg}",
+            )
+
+        return eval_total, eval_by_segment
