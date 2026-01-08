@@ -21,6 +21,10 @@ UPDATE (planned/executed naming):
 - Wiring listens to both plannedAvailableChanged and legacy trajAvailableChanged.
 - Facade API uses spray_set_planned(...) (with legacy spray_set_traj(...) alias).
 - Bridge method signatures for setters are keyword-only: set_compiled(*, poses=None, markers=None) etc.
+
+MOVEITPY FIX (2026-01-08):
+- Start-order: executor thread starts BEFORE _reemit_cached() to avoid startup races.
+- Wiring uses hasattr() guards for MoveItPy signals to tolerate mixed versions.
 """
 
 from __future__ import annotations
@@ -55,7 +59,6 @@ class SceneState:
     cage_current: str = ""
     mount_current: str = ""
     substrate_current: str = ""
-
     def __post_init__(self):
         self.cage_list = self.cage_list or []
         self.mount_list = self.mount_list or []
@@ -304,13 +307,13 @@ class RosBridge:
             # wire bridge signals into states
             self._wire_all_into_states()
 
-            # reemit cached values so UI sees latched state immediately
-            self._reemit_cached()
-
-            # executor thread
+            # MOVEITPY FIX: start executor thread BEFORE reemit_cached() (avoid startup races)
             self._thread = threading.Thread(target=self._spin, daemon=True)
             self._running = True
             self._thread.start()
+
+            # reemit cached values so UI sees latched state immediately
+            self._reemit_cached()
 
     def _spin(self) -> None:
         try:
@@ -427,13 +430,18 @@ class RosBridge:
             sig.tcpPoseChanged.connect(self.robot_state._set_tcp_pose)
             sig.jointsChanged.connect(self.robot_state._set_joints)
 
-        # ✅ MoveItPyBridge (minimal + robot_description strings)
+        # ✅ MoveItPyBridge (minimal + robot_description strings) - guarded for mixed versions
         if self.moveitpy is not None:
             sig = self.moveitpy.signals
-            sig.plannedTrajectoryChanged.connect(self.moveit_state._set_planned)
-            sig.executedTrajectoryChanged.connect(self.moveit_state._set_executed)
-            sig.robotDescriptionChanged.connect(self.moveit_state._set_urdf)
-            sig.robotDescriptionSemanticChanged.connect(self.moveit_state._set_srdf)
+
+            if hasattr(sig, "plannedTrajectoryChanged"):
+                sig.plannedTrajectoryChanged.connect(self.moveit_state._set_planned)
+            if hasattr(sig, "executedTrajectoryChanged"):
+                sig.executedTrajectoryChanged.connect(self.moveit_state._set_executed)
+            if hasattr(sig, "robotDescriptionChanged"):
+                sig.robotDescriptionChanged.connect(self.moveit_state._set_urdf)
+            if hasattr(sig, "robotDescriptionSemanticChanged"):
+                sig.robotDescriptionSemanticChanged.connect(self.moveit_state._set_srdf)
 
     def _reemit_cached(self) -> None:
         try:

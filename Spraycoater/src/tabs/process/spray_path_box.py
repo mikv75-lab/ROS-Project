@@ -128,14 +128,9 @@ class SprayPathBox(QGroupBox):
         try:
             if hasattr(self._sig, "compiledAvailableChanged"):
                 self._sig.compiledAvailableChanged.connect(self._on_compiled_avail)
-
             # preferred
             if hasattr(self._sig, "plannedAvailableChanged"):
                 self._sig.plannedAvailableChanged.connect(self._on_planned_avail)
-            # legacy alias
-            elif hasattr(self._sig, "trajAvailableChanged"):
-                self._sig.trajAvailableChanged.connect(self._on_planned_avail)
-
             if hasattr(self._sig, "executedAvailableChanged"):
                 self._sig.executedAvailableChanged.connect(self._on_executed_avail)
         except Exception:
