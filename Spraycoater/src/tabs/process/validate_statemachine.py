@@ -85,7 +85,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
 
     def _prepare_run(self) -> bool:
         # frame
-        self._frame = "world"
+        self._frame = "scene"
         try:
             pc = getattr(self._recipe, "paths_compiled", None)
             if isinstance(pc, dict) and pc.get("frame"):

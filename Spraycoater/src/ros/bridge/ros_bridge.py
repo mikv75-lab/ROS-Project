@@ -22,9 +22,10 @@ UPDATE (planned/executed naming):
 - Facade API uses spray_set_planned(...) (with legacy spray_set_traj(...) alias).
 - Bridge method signatures for setters are keyword-only: set_compiled(*, poses=None, markers=None) etc.
 
-MOVEITPY FIX (2026-01-08):
-- Start-order: executor thread starts BEFORE _reemit_cached() to avoid startup races.
-- Wiring uses hasattr() guards for MoveItPy signals to tolerate mixed versions.
+MOVEITPY FIX (minimal, no refactor):
+- Provide RosBridge.moveit_planned_trajectory() / moveit_executed_trajectory()
+  so BaseProcessStatemachine can reliably capture JT/RobotTrajectory sources.
+- Keep existing MoveItPy state wiring; do not change frame semantics.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ from __future__ import annotations
 import threading
 import logging
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional, List, Any
 
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
@@ -59,6 +60,7 @@ class SceneState:
     cage_current: str = ""
     mount_current: str = ""
     substrate_current: str = ""
+
     def __post_init__(self):
         self.cage_list = self.cage_list or []
         self.mount_list = self.mount_list or []
@@ -307,13 +309,13 @@ class RosBridge:
             # wire bridge signals into states
             self._wire_all_into_states()
 
-            # MOVEITPY FIX: start executor thread BEFORE reemit_cached() (avoid startup races)
+            # reemit cached values so UI sees latched state immediately
+            self._reemit_cached()
+
+            # executor thread
             self._thread = threading.Thread(target=self._spin, daemon=True)
             self._running = True
             self._thread.start()
-
-            # reemit cached values so UI sees latched state immediately
-            self._reemit_cached()
 
     def _spin(self) -> None:
         try:
@@ -430,18 +432,13 @@ class RosBridge:
             sig.tcpPoseChanged.connect(self.robot_state._set_tcp_pose)
             sig.jointsChanged.connect(self.robot_state._set_joints)
 
-        # ✅ MoveItPyBridge (minimal + robot_description strings) - guarded for mixed versions
+        # ✅ MoveItPyBridge (minimal + robot_description strings)
         if self.moveitpy is not None:
             sig = self.moveitpy.signals
-
-            if hasattr(sig, "plannedTrajectoryChanged"):
-                sig.plannedTrajectoryChanged.connect(self.moveit_state._set_planned)
-            if hasattr(sig, "executedTrajectoryChanged"):
-                sig.executedTrajectoryChanged.connect(self.moveit_state._set_executed)
-            if hasattr(sig, "robotDescriptionChanged"):
-                sig.robotDescriptionChanged.connect(self.moveit_state._set_urdf)
-            if hasattr(sig, "robotDescriptionSemanticChanged"):
-                sig.robotDescriptionSemanticChanged.connect(self.moveit_state._set_srdf)
+            sig.plannedTrajectoryChanged.connect(self.moveit_state._set_planned)
+            sig.executedTrajectoryChanged.connect(self.moveit_state._set_executed)
+            sig.robotDescriptionChanged.connect(self.moveit_state._set_urdf)
+            sig.robotDescriptionSemanticChanged.connect(self.moveit_state._set_srdf)
 
     def _reemit_cached(self) -> None:
         try:
@@ -472,18 +469,77 @@ class RosBridge:
         except Exception:
             return bool(self._running)
 
+    # --- MoveIt trajectory accessors (FIX for BaseProcessStatemachine) ----
+
+    def moveit_planned_trajectory(self) -> Any:
+        """
+        Best-effort getter used by BaseProcessStatemachine.
+
+        Returns whatever the MoveItPyBridge last provided (RobotTrajectory or JT-like),
+        without enforcing a specific type.
+        """
+        try:
+            # primary: state captured via signals
+            if self._moveit_state.planned is not None:
+                return self._moveit_state.planned
+        except Exception:
+            pass
+
+        # fallback: common attributes on moveitpy bridge instance
+        mp = self.moveitpy
+        for attr in (
+            "last_planned",
+            "planned_trajectory",
+            "plannedTrajectory",
+            "planned",
+            "last_plan_result",
+            "last_plan",
+        ):
+            try:
+                v = getattr(mp, attr, None) if mp is not None else None
+                if v is not None:
+                    return v
+            except Exception:
+                continue
+        return None
+
+    def moveit_executed_trajectory(self) -> Any:
+        """
+        Best-effort getter used by BaseProcessStatemachine.
+        """
+        try:
+            if self._moveit_state.executed is not None:
+                return self._moveit_state.executed
+        except Exception:
+            pass
+
+        mp = self.moveitpy
+        for attr in (
+            "last_executed",
+            "executed_trajectory",
+            "executedTrajectory",
+            "executed",
+            "last_exec_result",
+            "last_exec",
+        ):
+            try:
+                v = getattr(mp, attr, None) if mp is not None else None
+                if v is not None:
+                    return v
+            except Exception:
+                continue
+        return None
+
     # --- SprayPath --------------------------------------------------------
     # NOTE: Bridge setter signatures are keyword-only: set_compiled(*, poses=None, markers=None)
 
     def spray_clear(self) -> None:
         if self.spray is None:
             raise RuntimeError("SprayPathBridge not started")
-        # preferred
         sig = getattr(self.spray, "signals", None)
         if sig is not None and hasattr(sig, "clearRequested"):
             sig.clearRequested.emit()
             return
-        # fallback
         fn = getattr(self.spray, "clear", None)
         if callable(fn):
             fn()
@@ -502,12 +558,10 @@ class RosBridge:
     def spray_set_planned(self, *, poses=None, markers=None) -> None:
         if self.spray is None:
             raise RuntimeError("SprayPathBridge not started")
-        # preferred
         fn = getattr(self.spray, "set_planned", None)
         if callable(fn):
             fn(poses=poses, markers=markers)
             return
-        # legacy alias
         fn2 = getattr(self.spray, "set_traj", None)
         if callable(fn2):
             fn2(poses=poses, markers=markers)
@@ -557,6 +611,10 @@ class RosBridge:
     # --- Robot ------------------------------------------------------------
 
     def robot_init(self) -> None:
+        """
+        Keep this facade method name stable.
+        RobotInitStatemachine calls ros.robot_init().
+        """
         if self.robot is None:
             raise RuntimeError("RobotBridge not started")
         self.robot.signals.initRequested.emit()
