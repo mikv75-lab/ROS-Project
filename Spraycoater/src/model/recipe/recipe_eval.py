@@ -105,6 +105,13 @@ class RecipeEvaluator:
         s = 100.0 * math.exp(-math.log(2.0) * x)
         return float(np.clip(s, 0.0, 100.0))
 
+    @staticmethod
+    def is_valid_score(score: float, *, min_score: float) -> bool:
+        try:
+            return float(score) >= float(min_score)
+        except Exception:
+            return False
+
     # -------------------------
     # A) TCP points evaluation (legacy)
     # -------------------------
@@ -228,7 +235,9 @@ class RecipeEvaluator:
             test_total_pts = self._extract_points_from_traj_dict_mm(executed_total, side=side)
 
         ref_total_pts = (
-            self._extract_points_from_traj_dict_mm(ref_total, side=side) if isinstance(ref_total, dict) else np.zeros((0, 3), dtype=float)
+            self._extract_points_from_traj_dict_mm(ref_total, side=side)
+            if isinstance(ref_total, dict)
+            else np.zeros((0, 3), dtype=float)
         )
         eval_total = self.evaluate_points_mm(
             ref_points_mm=ref_total_pts,
@@ -345,7 +354,6 @@ class RecipeEvaluator:
         jn_test = [str(x) for x in (test_joint.get("joint_names") or [])]
         metrics.update({"joint_names_ref": jn_ref, "joint_names_test": jn_test})
 
-        # Strict replay wants identical ordering; eval can still proceed only if the lists match.
         if jn_ref != jn_test:
             return EvalResult(score=0.0, metrics=metrics, details={"reason": "joint_names_mismatch"})
 
@@ -361,7 +369,7 @@ class RecipeEvaluator:
         Qt = Qt[:n, :]
 
         err = np.abs(Qt - Qr)  # rad
-        err_per_point = np.linalg.norm(err, axis=1)  # aggregate over joints
+        err_per_point = np.linalg.norm(err, axis=1)
 
         mean_e = float(np.mean(err_per_point)) if err_per_point.size else 0.0
         p95_e = float(np.percentile(err_per_point, 95.0)) if err_per_point.size else 0.0
@@ -378,7 +386,6 @@ class RecipeEvaluator:
             }
         )
 
-        # time metrics (informational)
         tr = self._times_seconds(ref_joint)
         tt = self._times_seconds(test_joint)
         metrics.update(
@@ -401,82 +408,3 @@ class RecipeEvaluator:
         }
 
         return EvalResult(score=float(np.clip(score, 0.0, 100.0)), metrics=metrics, details=details)
-
-    def evaluate_joint_run_payload(
-        self,
-        *,
-        ref_run: Optional[Dict[str, Any]],
-        test_run: Optional[Dict[str, Any]],
-        label_base: str = "run_joint",
-    ) -> Tuple[EvalResult, Dict[str, EvalResult]]:
-        """
-        Evaluiert SegmentRunPayload v1 (joint-only) segmentweise + gesamt (concat).
-
-        Erwartetes Segment-Schema:
-          payload["segments"][SEG]["joint"] = <JointTrajectory dict>
-        """
-        if not isinstance(ref_run, dict) or not isinstance(test_run, dict):
-            return (
-                EvalResult(score=0.0, metrics={"label": f"{label_base}/total"}, details={"reason": "missing_runs"}),
-                {},
-            )
-
-        ref_segments = ref_run.get("segments") or {}
-        test_segments = test_run.get("segments") or {}
-        if not isinstance(ref_segments, dict) or not isinstance(test_segments, dict):
-            return (
-                EvalResult(score=0.0, metrics={"label": f"{label_base}/total"}, details={"reason": "bad_segments"}),
-                {},
-            )
-
-        eval_by_segment: Dict[str, EvalResult] = {}
-
-        # segmentwise
-        for seg, ref_seg in ref_segments.items():
-            if seg not in test_segments:
-                continue
-            if not isinstance(ref_seg, dict) or not isinstance(test_segments.get(seg), dict):
-                continue
-            rj = self._extract_joint_traj_dict(ref_seg.get("joint"))
-            tj = self._extract_joint_traj_dict((test_segments.get(seg) or {}).get("joint"))
-            if rj is None or tj is None:
-                continue
-            eval_by_segment[str(seg)] = self.evaluate_joint_trajectory_dict(
-                ref_joint=rj,
-                test_joint=tj,
-                label=f"{label_base}/{seg}",
-            )
-
-        # total: concat positions/time (best-effort; time continuity not enforced)
-        def _concat_joints(seg_dict: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-            joint_names: Optional[List[str]] = None
-            points: List[Dict[str, Any]] = []
-            for seg in seg_dict.keys():
-                s = seg_dict.get(seg)
-                if not isinstance(s, dict):
-                    continue
-                jt = self._extract_joint_traj_dict(s.get("joint"))
-                if jt is None:
-                    continue
-                jn = [str(x) for x in (jt.get("joint_names") or [])]
-                if joint_names is None:
-                    joint_names = jn
-                if joint_names != jn:
-                    return None
-                for p in (jt.get("points") or []):
-                    if isinstance(p, dict):
-                        points.append(p)
-            if joint_names is None or not points:
-                return None
-            return {"joint_names": joint_names, "points": points}
-
-        ref_total = _concat_joints(ref_segments)
-        test_total = _concat_joints(test_segments)
-
-        eval_total = self.evaluate_joint_trajectory_dict(
-            ref_joint=ref_total,
-            test_joint=test_total,
-            label=f"{label_base}/total",
-        )
-
-        return eval_total, eval_by_segment

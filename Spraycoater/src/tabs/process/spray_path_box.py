@@ -4,6 +4,10 @@
 # SprayPathBox – besitzt Bridge, verdrahtet sich selbst, hat eigene Qt-Signals
 # Ziel: GUI sendet NUR Bool-Toggles (show_compiled/show_planned/show_executed) an die SprayPathBridge.
 # Default: alle drei True.
+#
+# Backward-Compat:
+# - ProcessTab erwartet historisch showTrajToggled/showTrajRequested (== planned).
+# - Wir exposen daher "planned" als Primary und halten "traj" als Alias.
 
 from __future__ import annotations
 
@@ -39,20 +43,24 @@ class SprayPathBox(QGroupBox):
       - signals.compiledAvailableChanged(bool)
       - signals.plannedAvailableChanged(bool)
       - signals.executedAvailableChanged(bool)
+
+    Backward-Compat (optional auf Bridge-Seite):
+      - signals.showTrajRequested(bool)          # alias für planned
+      - signals.trajAvailableChanged(bool)      # alias für plannedAvailableChanged
     """
 
-    # --- Public UI signals (ProcessTab erwartet *Toggled*) ---
+    # --- Public UI signals (Primary: Planned) ---
     showCompiledToggled = QtCore.pyqtSignal(bool)
-
-    # ProcessTab-Contract: heißt historisch "Traj" – semantisch bei dir jetzt "Planned"
-    showTrajToggled = QtCore.pyqtSignal(bool)
-
+    showPlannedToggled = QtCore.pyqtSignal(bool)
     showExecutedToggled = QtCore.pyqtSignal(bool)
 
-    # --- Alias/Backwards: Requested ---
     showCompiledRequested = QtCore.pyqtSignal(bool)
-    showTrajRequested = QtCore.pyqtSignal(bool)  # == Planned
+    showPlannedRequested = QtCore.pyqtSignal(bool)
     showExecutedRequested = QtCore.pyqtSignal(bool)
+
+    # --- Backward-Compat for ProcessTab (Traj == Planned) ---
+    showTrajToggled = QtCore.pyqtSignal(bool)
+    showTrajRequested = QtCore.pyqtSignal(bool)
 
     def __init__(self, ros, parent: Optional[QWidget] = None, title: str = "Spray Paths"):
         super().__init__(title, parent)
@@ -63,7 +71,7 @@ class SprayPathBox(QGroupBox):
             raise RuntimeError("SprayPathBox: ros.spray is None (SprayPathBridge not started?)")
         self._sig = self._sb.signals
 
-        # Hard requirement (weil du umbenannt hast):
+        # Hard requirement: planned/executed naming
         for name in ("showCompiledRequested", "showPlannedRequested", "showExecutedRequested"):
             if not hasattr(self._sig, name):
                 raise RuntimeError(f"SprayPathBox: Bridge missing signals.{name}")
@@ -80,7 +88,7 @@ class SprayPathBox(QGroupBox):
         self._wire_outbound()
 
         # Default: always all True, and publish once
-        self.set_defaults(compiled=True, traj=True, executed=True)
+        self.set_defaults(compiled=True, planned=True, executed=True)
 
     # ------------------------------------------------------------------ UI
 
@@ -102,7 +110,7 @@ class SprayPathBox(QGroupBox):
         self.lblCompiledAvail = QLabel("–", self)
         g.addWidget(self.lblCompiledAvail, 1, 2)
 
-        g.addWidget(QLabel("Planned (saved/validate/optimize)", self), 2, 0)
+        g.addWidget(QLabel("Planned (validate/optimize)", self), 2, 0)
         self.chkPlanned = QCheckBox("", self)
         g.addWidget(self.chkPlanned, 2, 1)
         self.lblPlannedAvail = QLabel("–", self)
@@ -120,8 +128,14 @@ class SprayPathBox(QGroupBox):
         try:
             if hasattr(self._sig, "compiledAvailableChanged"):
                 self._sig.compiledAvailableChanged.connect(self._on_compiled_avail)
+
+            # preferred
             if hasattr(self._sig, "plannedAvailableChanged"):
                 self._sig.plannedAvailableChanged.connect(self._on_planned_avail)
+            # legacy alias
+            elif hasattr(self._sig, "trajAvailableChanged"):
+                self._sig.trajAvailableChanged.connect(self._on_planned_avail)
+
             if hasattr(self._sig, "executedAvailableChanged"):
                 self._sig.executedAvailableChanged.connect(self._on_executed_avail)
         except Exception:
@@ -159,51 +173,66 @@ class SprayPathBox(QGroupBox):
         self.chkPlanned.toggled.connect(self._on_chk_planned_toggled)
         self.chkExecuted.toggled.connect(self._on_chk_executed_toggled)
 
-        # UI signals -> Bridge signals
+        # UI signals -> Bridge signals (publish Bool toggles)
         self.showCompiledRequested.connect(self._sig.showCompiledRequested.emit)
-        self.showTrajRequested.connect(self._sig.showPlannedRequested.emit)  # Planned
+        self.showPlannedRequested.connect(self._sig.showPlannedRequested.emit)
         self.showExecutedRequested.connect(self._sig.showExecutedRequested.emit)
+
+        # IMPORTANT:
+        # Do NOT connect showTrajRequested back into the bridge, otherwise planned gets published twice.
+        # Legacy listeners can still connect to showTrajRequested externally.
 
     @QtCore.pyqtSlot(bool)
     def _on_chk_compiled_toggled(self, v: bool) -> None:
         if self._block:
             return
-        self.showCompiledToggled.emit(bool(v))
-        self.showCompiledRequested.emit(bool(v))
+        v = bool(v)
+        self.showCompiledToggled.emit(v)
+        self.showCompiledRequested.emit(v)
 
     @QtCore.pyqtSlot(bool)
     def _on_chk_planned_toggled(self, v: bool) -> None:
         if self._block:
             return
-        # ProcessTab expects "Traj" toggled; map planned -> traj
-        self.showTrajToggled.emit(bool(v))
-        self.showTrajRequested.emit(bool(v))
+        v = bool(v)
+
+        # Primary planned (this is the ONLY one that must hit the bridge)
+        self.showPlannedToggled.emit(v)
+        self.showPlannedRequested.emit(v)
+
+        # Backward-Compat (ProcessTab expects "Traj") - emitted for legacy listeners only
+        self.showTrajToggled.emit(v)
+        self.showTrajRequested.emit(v)
 
     @QtCore.pyqtSlot(bool)
     def _on_chk_executed_toggled(self, v: bool) -> None:
         if self._block:
             return
-        self.showExecutedToggled.emit(bool(v))
-        self.showExecutedRequested.emit(bool(v))
+        v = bool(v)
+        self.showExecutedToggled.emit(v)
+        self.showExecutedRequested.emit(v)
 
     # ------------------------------------------------------------------ Public API
 
-    def set_defaults(self, *, compiled: bool = True, traj: bool = True, executed: bool = True) -> None:
+    def set_defaults(self, *, compiled: bool = True, planned: bool = True, executed: bool = True) -> None:
         """
         Setzt Checkboxen (ohne Toggle-Sturm) und publiziert anschließend die Zustände einmal in ROS.
-        traj == planned
         """
         self._block = True
         try:
             self.chkCompiled.setChecked(bool(compiled))
-            self.chkPlanned.setChecked(bool(traj))
+            self.chkPlanned.setChecked(bool(planned))
             self.chkExecuted.setChecked(bool(executed))
         finally:
             self._block = False
         self.publish_current()
 
+    # Legacy API name kept for callers that still pass traj=
+    def set_defaults_legacy(self, *, compiled: bool = True, traj: bool = True, executed: bool = True) -> None:
+        self.set_defaults(compiled=compiled, planned=traj, executed=executed)
+
     def reset_defaults(self) -> None:
-        self.set_defaults(compiled=True, traj=True, executed=True)
+        self.set_defaults(compiled=True, planned=True, executed=True)
 
     def publish_current(self) -> None:
         try:

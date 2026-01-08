@@ -184,22 +184,23 @@ topics:
         name: spraycoater/poses/service
         type: geometry_msgs/msg/PoseStamped
         qos: latched
-
+        
   spray_path:
     subscribe:
-    
+
       # --- Toggles (GUI -> Node), NUR true/false ---
       - id: clear
         name: spraycoater/spray_path/clear
         type: std_msgs/msg/Empty
         qos: latched   # oder default; latched ist ok
+
       - id: show_compiled
         name: spraycoater/spray_path/show_compiled
         type: std_msgs/msg/Bool
         qos: latched
 
-      - id: show_traj
-        name: spraycoater/spray_path/show_traj
+      - id: show_planned
+        name: spraycoater/spray_path/show_planned
         type: std_msgs/msg/Bool
         qos: latched
 
@@ -219,13 +220,13 @@ topics:
         type: visualization_msgs/msg/MarkerArray
         qos: latched
 
-      - id: traj_poses_in
-        name: spraycoater/spray_path/traj/poses_in
+      - id: planned_poses_in
+        name: spraycoater/spray_path/planned/poses_in
         type: geometry_msgs/msg/PoseArray
         qos: latched
 
-      - id: traj_markers_in
-        name: spraycoater/spray_path/traj/markers_in
+      - id: planned_markers_in
+        name: spraycoater/spray_path/planned/markers_in
         type: visualization_msgs/msg/MarkerArray
         qos: latched
 
@@ -251,13 +252,13 @@ topics:
         type: visualization_msgs/msg/MarkerArray
         qos: latched
 
-      - id: traj_poses
-        name: spraycoater/spray_path/traj/poses
+      - id: planned_poses
+        name: spraycoater/spray_path/planned/poses
         type: geometry_msgs/msg/PoseArray
         qos: latched
 
-      - id: traj_markers
-        name: spraycoater/spray_path/traj/markers
+      - id: planned_markers
+        name: spraycoater/spray_path/planned/markers
         type: visualization_msgs/msg/MarkerArray
         qos: latched
 
@@ -270,6 +271,7 @@ topics:
         name: spraycoater/spray_path/executed/markers
         type: visualization_msgs/msg/MarkerArray
         qos: latched
+
 
   robot:
     subscribe:

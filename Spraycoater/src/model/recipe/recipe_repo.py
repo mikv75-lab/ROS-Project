@@ -10,6 +10,7 @@ import yaml
 
 from model.recipe.recipe import Recipe, Draft, JTBySegment
 from model.recipe.recipe_bundle import RecipeBundle
+from model.recipe.recipe_run_result import RunResult
 
 
 @dataclass
@@ -177,7 +178,7 @@ class RecipeRepo:
         return self.bundle.save_from_editor(rid, draft=draft)
 
     # ------------------------------------------------------------
-    # NEW: Option A API (one-shot run persistence)
+    # Option A: persist run artifacts (traj + tcp)
     # ------------------------------------------------------------
 
     def save_run_artifacts(
@@ -189,18 +190,6 @@ class RecipeRepo:
         planned_tcp: Optional[Draft] = None,
         executed_tcp: Optional[Draft] = None,
     ) -> None:
-        """
-        Persists run-derived artifacts in one call (traj + tcp).
-
-        Typical usage (GUI side after FK):
-          repo.save_run_artifacts(
-              recipe.id,
-              planned_traj=recipe.planned_traj,
-              executed_traj=recipe.executed_traj,
-              planned_tcp=recipe.planned_tcp,
-              executed_tcp=recipe.executed_tcp,
-          )
-        """
         rid = self._norm_rid(recipe_id)
         if not rid:
             raise KeyError("save_run_artifacts: recipe_id leer")
@@ -214,7 +203,6 @@ class RecipeRepo:
                 executed_tcp=executed_tcp,
             )
 
-        # Fallback (should not happen): write via existing per-file methods if available
         if planned_traj is not None and hasattr(self.bundle, "save_planned_traj"):
             self.bundle.save_planned_traj(rid, planned_traj)
         if executed_traj is not None and hasattr(self.bundle, "save_executed_traj"):
@@ -223,6 +211,54 @@ class RecipeRepo:
             self.bundle.save_planned_tcp(rid, planned_tcp)
         if executed_tcp is not None and hasattr(self.bundle, "save_executed_tcp"):
             self.bundle.save_executed_tcp(rid, executed_tcp)
+
+    # ------------------------------------------------------------
+    # NEW: persist from RunResult (ONLY if valid)
+    # ------------------------------------------------------------
+
+    def save_run_result_if_valid(
+        self,
+        recipe_id: str,
+        *,
+        run_result: RunResult,
+    ) -> bool:
+        """
+        Saves run artifacts derived from RunResult ONLY if run_result.valid is True.
+
+        Writes:
+          - planned_traj.yaml / executed_traj.yaml   (JTBySegment schema)
+          - planned_tcp.yaml / executed_tcp.yaml     (Draft schema)
+
+        Returns:
+          True if saved, False if skipped (invalid).
+        """
+        rid = self._norm_rid(recipe_id)
+        if not rid:
+            raise KeyError("save_run_result_if_valid: recipe_id leer")
+        if run_result is None or not isinstance(run_result, RunResult):
+            raise TypeError(f"save_run_result_if_valid: run_result invalid: {type(run_result)}")
+
+        if not bool(getattr(run_result, "valid", False)):
+            return False
+
+        planned_traj_dict = dict((run_result.planned_run or {}).get("traj") or {})
+        executed_traj_dict = dict((run_result.executed_run or {}).get("traj") or {})
+        planned_tcp_dict = dict((run_result.planned_run or {}).get("tcp") or {})
+        executed_tcp_dict = dict((run_result.executed_run or {}).get("tcp") or {})
+
+        planned_traj = JTBySegment.from_yaml_dict(planned_traj_dict) if planned_traj_dict else None
+        executed_traj = JTBySegment.from_yaml_dict(executed_traj_dict) if executed_traj_dict else None
+        planned_tcp = Draft.from_yaml_dict(planned_tcp_dict) if planned_tcp_dict else None
+        executed_tcp = Draft.from_yaml_dict(executed_tcp_dict) if executed_tcp_dict else None
+
+        self.save_run_artifacts(
+            rid,
+            planned_traj=planned_traj,
+            executed_traj=executed_traj,
+            planned_tcp=planned_tcp,
+            executed_tcp=executed_tcp,
+        )
+        return True
 
     # ------------------------------------------------------------
     # Delete (rid-only)

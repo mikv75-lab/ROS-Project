@@ -15,6 +15,12 @@ PosesSignals renamed signals:
   - old: homeChanged, serviceChanged
   - new: homePoseChanged, servicePoseChanged
 We wire these backward-compatible to avoid crashes on mixed versions.
+
+UPDATE (planned/executed naming):
+- SprayPathState uses planned_* (not traj_*)
+- Wiring listens to both plannedAvailableChanged and legacy trajAvailableChanged.
+- Facade API uses spray_set_planned(...) (with legacy spray_set_traj(...) alias).
+- Bridge method signatures for setters are keyword-only: set_compiled(*, poses=None, markers=None) etc.
 """
 
 from __future__ import annotations
@@ -99,10 +105,19 @@ class PosesStateAdapter:
 @dataclass
 class SprayPathState:
     current: str = ""
-    poses: Optional[object] = None
-    markers: Optional[object] = None
+
+    # payloads
+    compiled_poses: Optional[object] = None
+    compiled_markers: Optional[object] = None
+    planned_poses: Optional[object] = None
+    planned_markers: Optional[object] = None
     executed_poses: Optional[object] = None
     executed_markers: Optional[object] = None
+
+    # availability flags (for SprayPathBox "Available" column)
+    compiled_available: bool = False
+    planned_available: bool = False
+    executed_available: bool = False
 
 
 class SprayPathStateAdapter:
@@ -112,17 +127,32 @@ class SprayPathStateAdapter:
     def _set_current(self, v: str) -> None:
         self.st.current = v or ""
 
-    def _set_poses(self, msg) -> None:
-        self.st.poses = msg
+    def _set_compiled_poses(self, msg) -> None:
+        self.st.compiled_poses = msg
 
-    def _set_markers(self, msg) -> None:
-        self.st.markers = msg
+    def _set_compiled_markers(self, msg) -> None:
+        self.st.compiled_markers = msg
+
+    def _set_planned_poses(self, msg) -> None:
+        self.st.planned_poses = msg
+
+    def _set_planned_markers(self, msg) -> None:
+        self.st.planned_markers = msg
 
     def _set_executed_poses(self, msg) -> None:
         self.st.executed_poses = msg
 
     def _set_executed_markers(self, msg) -> None:
         self.st.executed_markers = msg
+
+    def _set_compiled_available(self, v: bool) -> None:
+        self.st.compiled_available = bool(v)
+
+    def _set_planned_available(self, v: bool) -> None:
+        self.st.planned_available = bool(v)
+
+    def _set_executed_available(self, v: bool) -> None:
+        self.st.executed_available = bool(v)
 
 
 @dataclass
@@ -350,16 +380,39 @@ class RosBridge:
 
         if self.spray is not None:
             sig = self.spray.signals
+
             if hasattr(sig, "currentChanged"):
                 sig.currentChanged.connect(self.spraypath_state._set_current)
+
+            # inbound outputs (recommended: node publishes these to UI/rviz)
+            for name, fn in (
+                ("compiledPosesChanged", self.spraypath_state._set_compiled_poses),
+                ("compiledMarkersChanged", self.spraypath_state._set_compiled_markers),
+                ("plannedPosesChanged", self.spraypath_state._set_planned_poses),
+                ("plannedMarkersChanged", self.spraypath_state._set_planned_markers),
+                ("executedPosesChanged", self.spraypath_state._set_executed_poses),
+                ("executedMarkersChanged", self.spraypath_state._set_executed_markers),
+            ):
+                if hasattr(sig, name):
+                    getattr(sig, name).connect(fn)
+
+            # Backward-compat (older SprayPathBridge may still emit posesChanged/markersChanged as "planned")
             if hasattr(sig, "posesChanged"):
-                sig.posesChanged.connect(self.spraypath_state._set_poses)
+                sig.posesChanged.connect(self.spraypath_state._set_planned_poses)
             if hasattr(sig, "markersChanged"):
-                sig.markersChanged.connect(self.spraypath_state._set_markers)
-            if hasattr(sig, "executedPosesChanged"):
-                sig.executedPosesChanged.connect(self.spraypath_state._set_executed_poses)
-            if hasattr(sig, "executedMarkersChanged"):
-                sig.executedMarkersChanged.connect(self.spraypath_state._set_executed_markers)
+                sig.markersChanged.connect(self.spraypath_state._set_planned_markers)
+
+            # Availability (preferred + legacy)
+            if hasattr(sig, "compiledAvailableChanged"):
+                sig.compiledAvailableChanged.connect(self.spraypath_state._set_compiled_available)
+
+            if hasattr(sig, "plannedAvailableChanged"):
+                sig.plannedAvailableChanged.connect(self.spraypath_state._set_planned_available)
+            elif hasattr(sig, "trajAvailableChanged"):
+                sig.trajAvailableChanged.connect(self.spraypath_state._set_planned_available)
+
+            if hasattr(sig, "executedAvailableChanged"):
+                sig.executedAvailableChanged.connect(self.spraypath_state._set_executed_available)
 
         if self.robot is not None:
             sig = self.robot.signals
@@ -377,14 +430,10 @@ class RosBridge:
         # ✅ MoveItPyBridge (minimal + robot_description strings)
         if self.moveitpy is not None:
             sig = self.moveitpy.signals
-
             sig.plannedTrajectoryChanged.connect(self.moveit_state._set_planned)
             sig.executedTrajectoryChanged.connect(self.moveit_state._set_executed)
             sig.robotDescriptionChanged.connect(self.moveit_state._set_urdf)
             sig.robotDescriptionSemanticChanged.connect(self.moveit_state._set_srdf)
-
-            # (motion_result is stored in sig.last_result; wire if needed)
-            # sig.motionResultChanged.connect(lambda _txt: None)
 
     def _reemit_cached(self) -> None:
         try:
@@ -416,51 +465,59 @@ class RosBridge:
             return bool(self._running)
 
     # --- SprayPath --------------------------------------------------------
+    # NOTE: Bridge setter signatures are keyword-only: set_compiled(*, poses=None, markers=None)
 
-    def spray_set_compiled(self, *, markers) -> None:
+    def spray_clear(self) -> None:
+        if self.spray is None:
+            raise RuntimeError("SprayPathBridge not started")
+        # preferred
+        sig = getattr(self.spray, "signals", None)
+        if sig is not None and hasattr(sig, "clearRequested"):
+            sig.clearRequested.emit()
+            return
+        # fallback
+        fn = getattr(self.spray, "clear", None)
+        if callable(fn):
+            fn()
+            return
+        raise AttributeError("SprayPathBridge has no clear()")
+
+    def spray_set_compiled(self, *, poses=None, markers=None) -> None:
         if self.spray is None:
             raise RuntimeError("SprayPathBridge not started")
         fn = getattr(self.spray, "set_compiled", None)
         if callable(fn):
-            fn(markers)
+            fn(poses=poses, markers=markers)
             return
-        sig = getattr(self.spray, "signals", None)
-        for name in ("setCompiledRequested", "compiledRequested", "compiledMarkersRequested"):
-            s = getattr(sig, name, None)
-            if s is not None and hasattr(s, "emit"):
-                s.emit(markers)
-                return
-        raise AttributeError("SprayPathBridge has no compiled setter")
+        raise AttributeError("SprayPathBridge has no set_compiled()")
 
-    def spray_set_traj(self, *, markers) -> None:
+    def spray_set_planned(self, *, poses=None, markers=None) -> None:
         if self.spray is None:
             raise RuntimeError("SprayPathBridge not started")
-        fn = getattr(self.spray, "set_traj", None)
+        # preferred
+        fn = getattr(self.spray, "set_planned", None)
         if callable(fn):
-            fn(markers)
+            fn(poses=poses, markers=markers)
             return
-        sig = getattr(self.spray, "signals", None)
-        for name in ("setTrajRequested", "trajRequested", "trajMarkersRequested"):
-            s = getattr(sig, name, None)
-            if s is not None and hasattr(s, "emit"):
-                s.emit(markers)
-                return
-        raise AttributeError("SprayPathBridge has no traj setter")
+        # legacy alias
+        fn2 = getattr(self.spray, "set_traj", None)
+        if callable(fn2):
+            fn2(poses=poses, markers=markers)
+            return
+        raise AttributeError("SprayPathBridge has no planned/traj setter")
 
-    def spray_set_executed(self, *, markers) -> None:
+    # legacy facade alias (keep callers working)
+    def spray_set_traj(self, *, poses=None, markers=None) -> None:
+        self.spray_set_planned(poses=poses, markers=markers)
+
+    def spray_set_executed(self, *, poses=None, markers=None) -> None:
         if self.spray is None:
             raise RuntimeError("SprayPathBridge not started")
         fn = getattr(self.spray, "set_executed", None)
         if callable(fn):
-            fn(markers)
+            fn(poses=poses, markers=markers)
             return
-        sig = getattr(self.spray, "signals", None)
-        for name in ("setExecutedRequested", "executedRequested", "executedMarkersRequested"):
-            s = getattr(sig, name, None)
-            if s is not None and hasattr(s, "emit"):
-                s.emit(markers)
-                return
-        raise AttributeError("SprayPathBridge has no executed setter")
+        raise AttributeError("SprayPathBridge has no set_executed()")
 
     def spray_set_view(self, view: str) -> None:
         if self.spray is None:

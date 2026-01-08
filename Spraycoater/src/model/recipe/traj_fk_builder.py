@@ -39,26 +39,17 @@ def _quat_dot(a: Tuple[float, float, float, float], b: Tuple[float, float, float
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
 
 
-def _quat_slerp(
-    qa: Tuple[float, float, float, float],
-    qb: Tuple[float, float, float, float],
-    t: float,
-) -> Tuple[float, float, float, float]:
-    """
-    Standard SLERP, robust (shortest path).
-    """
+def _quat_slerp(qa: Tuple[float, float, float, float], qb: Tuple[float, float, float, float], t: float) -> Tuple[float, float, float, float]:
     t = _clamp(float(t), 0.0, 1.0)
     qa = _quat_normalize(qa)
     qb = _quat_normalize(qb)
 
     dot = _quat_dot(qa, qb)
 
-    # shortest path
     if dot < 0.0:
         qb = (-qb[0], -qb[1], -qb[2], -qb[3])
         dot = -dot
 
-    # if very close: lerp
     if dot > 0.9995:
         out = (
             qa[0] + t * (qb[0] - qa[0]),
@@ -119,17 +110,12 @@ def _safe_quat_xyzw(q: Any) -> Optional[Tuple[float, float, float, float]]:
 
 
 def _tf_to_posequat_mm(tf: Any, *, meters_to_mm: float = 1000.0) -> Optional[PoseQuat]:
-    """
-    Extract PoseQuat from MoveIt transform wrappers.
-    Assumes FK returns meters -> converts to mm.
-    """
     if tf is None:
         return None
 
     t = None
     q = None
 
-    # translation
     for getter in ("translation", "get_translation"):
         try:
             t = getattr(tf, getter)
@@ -142,7 +128,6 @@ def _tf_to_posequat_mm(tf: Any, *, meters_to_mm: float = 1000.0) -> Optional[Pos
         except Exception:
             t = None
 
-    # rotation
     for getter in ("rotation", "get_rotation"):
         try:
             q = getattr(tf, getter)
@@ -158,7 +143,6 @@ def _tf_to_posequat_mm(tf: Any, *, meters_to_mm: float = 1000.0) -> Optional[Pos
     xyz = _safe_vec3(t)
     xyzw = _safe_quat_xyzw(q)
 
-    # fallback: matrix
     if xyz is None:
         try:
             m = tf.matrix()  # type: ignore[attr-defined]
@@ -201,21 +185,10 @@ class TrajFkBuilder:
     """
     JTBySegment -> TCP-Pfad (Draft-Schema) via FK.
 
-    - FK wird nur auf den JT Punkten gemacht (kein time-resampling)
-    - danach wird die resultierende TCP-Polyline in mm auf step_mm resampled
-      (Draft-ähnlich, vergleichbar zu deinem draft sampling)
-    - Output: Draft(version=1, sides[*].poses_quat=[...]) ohne normals/meta
+    Output:
+      - Draft(version=1, sides={...poses_quat...})
+      - oder als YAML dict via build_tcp_draft_yaml()
     """
-
-    def __new__(cls, *args: Any, **kwargs: Any):
-        return super().__new__(cls)
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        _ = args, kwargs
-
-    # ------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------
 
     @staticmethod
     def build_tcp_draft(
@@ -242,12 +215,10 @@ class TrajFkBuilder:
                 side = str(segment_to_side[seg_id] or default_side)
             side = side.strip() or default_side
 
-            # 1) FK on segment points (raw polyline in mm)
             raw_poses = TrajFkBuilder._fk_segment_raw(seg, robot_model=robot_model, cfg=cfg)
             if len(raw_poses) < 2:
                 continue
 
-            # 2) Resample in TCP-space by arclength (step_mm)
             sampled = TrajFkBuilder._resample_posequats_by_step_mm(
                 raw_poses,
                 step_mm=float(cfg.step_mm),
@@ -256,12 +227,11 @@ class TrajFkBuilder:
             if not sampled:
                 continue
 
-            # 3) Option: drop duplicate at side boundary (segment stitching)
             if drop_duplicate_boundary and side in by_side and by_side[side]:
                 a = by_side[side][-1]
                 b = sampled[0]
                 if _vec_norm3(b.x - a.x, b.y - a.y, b.z - a.z) <= 1e-9:
-                    sampled = sampled[1:]  # remove first (duplicate)
+                    sampled = sampled[1:]
                     if not sampled:
                         continue
 
@@ -273,9 +243,62 @@ class TrajFkBuilder:
         sides: Dict[str, PathSide] = {s: PathSide(poses_quat=list(poses)) for s, poses in by_side.items()}
         return Draft(version=1, sides=sides)
 
+    @staticmethod
+    def build_tcp_draft_yaml(
+        traj: JTBySegment | Mapping[str, Any],
+        *,
+        robot_model: Any,
+        cfg: TrajFkConfig,
+        segment_to_side: Optional[Dict[str, str]] = None,
+        default_side: str = "top",
+        drop_duplicate_boundary: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Convenience: gibt Draft als YAML-dict zurück (für Persistenz/Qt payload).
+        """
+        d = TrajFkBuilder.build_tcp_draft(
+            traj,
+            robot_model=robot_model,
+            cfg=cfg,
+            segment_to_side=segment_to_side,
+            default_side=default_side,
+            drop_duplicate_boundary=drop_duplicate_boundary,
+        )
+        return TrajFkBuilder._draft_to_yaml_dict(d)
+
     # ------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------
+
+    @staticmethod
+    def _draft_to_yaml_dict(d: Draft) -> Dict[str, Any]:
+        # bevorzugt: echtes API, falls vorhanden
+        for fn_name in ("to_yaml_dict", "to_dict", "as_dict"):
+            fn = getattr(d, fn_name, None)
+            if callable(fn):
+                out = fn()
+                return out if isinstance(out, dict) else {}
+        # fallback: best-effort
+        sides_out: Dict[str, Any] = {}
+        try:
+            for side, side_obj in (getattr(d, "sides", {}) or {}).items():
+                poses = []
+                for p in (getattr(side_obj, "poses_quat", []) or []):
+                    poses.append(
+                        {
+                            "x": float(getattr(p, "x", 0.0)),
+                            "y": float(getattr(p, "y", 0.0)),
+                            "z": float(getattr(p, "z", 0.0)),
+                            "qx": float(getattr(p, "qx", 0.0)),
+                            "qy": float(getattr(p, "qy", 0.0)),
+                            "qz": float(getattr(p, "qz", 0.0)),
+                            "qw": float(getattr(p, "qw", 1.0)),
+                        }
+                    )
+                sides_out[str(side)] = {"poses_quat": poses}
+        except Exception:
+            sides_out = {}
+        return {"version": int(getattr(d, "version", 1) or 1), "sides": sides_out}
 
     @staticmethod
     def _coerce_jt_by_segment(traj: JTBySegment | Mapping[str, Any]) -> JTBySegment:
@@ -286,10 +309,6 @@ class TrajFkBuilder:
 
     @staticmethod
     def _fk_segment_raw(seg: JTSegment, *, robot_model: Any, cfg: TrajFkConfig) -> List[PoseQuat]:
-        """
-        FK exactly on the JT points (no time resampling).
-        Produces a raw TCP polyline in mm.
-        """
         if robot_model is None:
             raise ValueError("TrajFkBuilder: robot_model ist None (MoveIt RobotModel benötigt).")
 
@@ -315,7 +334,6 @@ class TrajFkBuilder:
                 continue
 
             try:
-                # joint_names: list[str]; positions list[float]
                 state.set_variable_positions(seg.joint_names, q)
                 state.update()
                 tf = state.get_global_link_transform(cfg.ee_link)
@@ -325,7 +343,6 @@ class TrajFkBuilder:
             except Exception:
                 continue
 
-        # drop consecutive duplicates (position-wise)
         if len(out) >= 2:
             filtered = [out[0]]
             for i in range(1, len(out)):
@@ -339,19 +356,7 @@ class TrajFkBuilder:
         return out
 
     @staticmethod
-    def _resample_posequats_by_step_mm(
-        poses: List[PoseQuat],
-        *,
-        step_mm: float,
-        max_points: int,
-    ) -> List[PoseQuat]:
-        """
-        Resample PoseQuat list to fixed arclength step (mm), draft-like.
-
-        - Position: linear interpolation along segment
-        - Orientation: SLERP between neighbor quaternions
-        - Includes first and last
-        """
+    def _resample_posequats_by_step_mm(poses: List[PoseQuat], *, step_mm: float, max_points: int) -> List[PoseQuat]:
         if len(poses) < 2:
             return list(poses)
 
@@ -359,7 +364,6 @@ class TrajFkBuilder:
         if step_mm <= 0.0:
             return list(poses)
 
-        # cumulative arclength
         s: List[float] = [0.0]
         for i in range(1, len(poses)):
             a = poses[i - 1]
@@ -371,7 +375,6 @@ class TrajFkBuilder:
         if total <= 1e-9:
             return [poses[0]]
 
-        # targets: 0, step, 2*step, ..., total (ensure end)
         n = int(math.floor(total / step_mm)) + 1
         targets = [i * step_mm for i in range(n)]
         if targets[-1] < total:
@@ -392,7 +395,6 @@ class TrajFkBuilder:
             alpha = 0.0 if s1 <= s0 else (st - s0) / (s1 - s0)
             alpha = _clamp(alpha, 0.0, 1.0)
 
-            # position lerp
             x = a.x + (b.x - a.x) * alpha
             y = a.y + (b.y - a.y) * alpha
             z = a.z + (b.z - a.z) * alpha

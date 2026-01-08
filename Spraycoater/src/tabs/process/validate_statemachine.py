@@ -13,7 +13,6 @@ from .base_statemachine import (
     STATE_MOVE_RECIPE,
     STATE_MOVE_RETREAT,
     STATE_MOVE_HOME,
-    SEG_ORDER,
 )
 
 _LOG = logging.getLogger("tabs.process.validate_statemachine")
@@ -27,8 +26,16 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
       - Trajectory capture is handled by BaseProcessStatemachine on each "EXECUTED:OK" via:
           _snapshot_step_for_segment() -> uses ros.moveit_planned_trajectory/moveit_executed_trajectory
         Therefore we do NOT need to wire plannedTrajectoryChanged/executedTrajectoryChanged here.
-      - Base notifyFinished emits TRAJ-ONLY payload:
-          {"planned_traj": {...JTBySegment yaml...}, "executed_traj": {...}}
+
+      - Base notifyFinished emits STRICT RunResult payload (NOT traj-only):
+          {
+            "planned_run":  {"traj": <JTBySegment v1 yaml dict>, "tcp": <Draft v1 yaml dict or {}>},
+            "executed_run": {"traj": <JTBySegment v1 yaml dict>, "tcp": <Draft v1 yaml dict or {}>},
+            "fk_meta": {...}
+          }
+
+        For Validate, "tcp" is intentionally left {} here; it is computed later
+        (e.g. in ProcessTab via TrajFkBuilder) to ensure reproducibility/compare.
     """
 
     ROLE = "validate"

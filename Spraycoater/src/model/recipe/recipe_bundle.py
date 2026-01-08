@@ -85,13 +85,6 @@ class RecipeBundle:
     Semantics:
       - When draft.yaml is saved: delete ALL derived artifacts (planned/executed traj + tcp).
       - planned/executed saves always overwrite their files.
-
-    Schema:
-      - draft.yaml, planned_tcp.yaml, executed_tcp.yaml share the SAME schema (Draft/Path v1):
-          version: 1
-          sides:
-            <side>:
-              poses_quat: [ ... ]
     """
 
     def __init__(
@@ -106,21 +99,15 @@ class RecipeBundle:
             _err("RecipeBundle: recipes_root_dir/root_dir muss ein nicht-leerer String sein.")
         self.recipes_root_dir = _require_dir(base)
 
-        # aliases some code probes for
         self.root_dir = self.recipes_root_dir
         self.base_dir = self.recipes_root_dir
-        self.recipe_dir = self.recipes_root_dir  # legacy name used in some places
+        self.recipe_dir = self.recipes_root_dir
 
     # ------------------------------------------------------------
     # UI key helpers
     # ------------------------------------------------------------
 
     def split_key(self, key: str) -> Tuple[str, str]:
-        """
-        Accept:
-          - "rid"        -> ("rid", "default")
-          - "rid/name"   -> ("rid", "name")   # name is ignored by persistence
-        """
         key = str(key or "").strip()
         if not key:
             return "", ""
@@ -132,9 +119,6 @@ class RecipeBundle:
         return key, "default"
 
     def make_key(self, rid: str, name: str) -> str:
-        """
-        Persistence is rid-only; ignore name.
-        """
         rid = str(rid or "").strip()
         if not rid:
             _err("make_key: rid leer")
@@ -225,8 +209,6 @@ class RecipeBundle:
         p = self.paths(recipe_id)
         _ensure_dir(p.recipe_dir)
         _save_yaml(p.draft_yaml, draft.to_yaml_dict())
-
-        # Requirement: whenever a draft is saved, all derived results are stale.
         self.clear_artifacts(recipe_id, what="all")
 
     # ------------------------------------------------------------
@@ -241,7 +223,6 @@ class RecipeBundle:
         return JTBySegment.from_yaml_dict(data)
 
     def save_planned_traj(self, recipe_id: str, traj: JTBySegment) -> None:
-        # always overwrite
         p = self.paths(recipe_id)
         _ensure_dir(p.recipe_dir)
         _save_yaml(p.planned_traj_yaml, traj.to_yaml_dict())
@@ -254,7 +235,6 @@ class RecipeBundle:
         return JTBySegment.from_yaml_dict(data)
 
     def save_executed_traj(self, recipe_id: str, traj: JTBySegment) -> None:
-        # always overwrite
         p = self.paths(recipe_id)
         _ensure_dir(p.recipe_dir)
         _save_yaml(p.executed_traj_yaml, traj.to_yaml_dict())
@@ -271,7 +251,6 @@ class RecipeBundle:
         return Draft.from_yaml_dict(data)
 
     def save_planned_tcp(self, recipe_id: str, tcp: Draft) -> None:
-        # always overwrite
         p = self.paths(recipe_id)
         _ensure_dir(p.recipe_dir)
         _save_yaml(p.planned_tcp_yaml, tcp.to_yaml_dict())
@@ -284,13 +263,12 @@ class RecipeBundle:
         return Draft.from_yaml_dict(data)
 
     def save_executed_tcp(self, recipe_id: str, tcp: Draft) -> None:
-        # always overwrite
         p = self.paths(recipe_id)
         _ensure_dir(p.recipe_dir)
         _save_yaml(p.executed_tcp_yaml, tcp.to_yaml_dict())
 
     # ------------------------------------------------------------
-    # NEW: one-shot run persistence (Option A target)
+    # one-shot run persistence (traj + tcp)
     # ------------------------------------------------------------
 
     def save_run_artifacts(
@@ -302,14 +280,6 @@ class RecipeBundle:
         planned_tcp: Optional[Draft] = None,
         executed_tcp: Optional[Draft] = None,
     ) -> None:
-        """
-        Persist run-derived artifacts in one call.
-
-        Contract:
-          - only writes the artifacts that are not None
-          - each written file is overwritten
-          - does NOT delete anything implicitly (draft save handles staleness deletion)
-        """
         rid = str(recipe_id or "").strip()
         if not rid:
             _err("save_run_artifacts: recipe_id leer")
@@ -331,18 +301,9 @@ class RecipeBundle:
     # ------------------------------------------------------------
 
     def clear_traj(self, recipe_id: str) -> None:
-        # Backwards-compatible API: historically only trajectories.
         self.clear_artifacts(recipe_id, what="traj")
 
     def clear_artifacts(self, recipe_id: str, *, what: str = "all") -> None:
-        """
-        Deletes computed artifacts for a recipe.
-
-        what:
-          - "traj"  : planned_traj.yaml + executed_traj.yaml
-          - "tcp"   : planned_tcp.yaml + executed_tcp.yaml
-          - "all"   : traj + tcp
-        """
         p = self.paths(recipe_id)
 
         what = (what or "").strip().lower() or "all"
@@ -364,9 +325,6 @@ class RecipeBundle:
     # ------------------------------------------------------------
 
     def list_recipes(self) -> List[str]:
-        """
-        Returns a list of recipe_ids (keys for UI).
-        """
         root = self.recipes_root_dir
         if not os.path.isdir(root):
             return []
@@ -427,6 +385,8 @@ class RecipeBundle:
         compiled: Optional[Dict[str, Any]] = None,
         delete_compiled_on_hash_change: bool = True,
     ) -> None:
+        _ = compiled, delete_compiled_on_hash_change
+
         rid, _name = self.split_key(key)
         rid = rid.strip()
         if not rid:

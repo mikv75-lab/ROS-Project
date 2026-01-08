@@ -9,6 +9,7 @@ from typing import Optional, Any, Dict, List, Tuple
 import yaml
 
 from PyQt6 import QtCore
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -22,6 +23,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
 )
 
+from geometry_msgs.msg import PoseArray  # NEW: for clearing layers fully
 from visualization_msgs.msg import MarkerArray
 
 from plc.plc_client import PlcClientBase
@@ -29,6 +31,10 @@ from ros.bridge.ros_bridge import RosBridge
 
 from model.recipe.recipe import Recipe, Draft, JTBySegment
 from model.recipe.recipe_markers import build_marker_array_from_recipe
+
+# NEW: FK + Eval
+from model.recipe.traj_fk_builder import TrajFkBuilder, TrajFkConfig
+from model.recipe.recipe_eval import RecipeEvaluator
 
 from widgets.robot_status_box import RobotStatusInfoBox
 from widgets.info_groupbox import InfoGroupBox
@@ -52,18 +58,25 @@ class ProcessTab(QWidget):
     """
     ProcessTab (strict, no fallbacks)
 
-    Worker result contract (strict):
-      result_obj is dict with:
+    Worker result contract (NEW, strict, traj-only):
+      result_obj is dict with exactly:
         {
-          "planned_run":  RunPayload v1  (segments -> LIST of JT-event dicts),
-          "executed_run": RunPayload v1  (segments -> LIST of JT-event dicts),
+          "planned_traj":  <JTBySegment v1 YAML-dict> | {},
+          "executed_traj": <JTBySegment v1 YAML-dict> | {},
         }
 
     Persistence contract (SSoT, Option A):
-      repo.save_run_artifacts(recipe_id, planned_traj=JTBySegment, executed_traj=JTBySegment, ...)
+      repo.save_run_artifacts(recipe_id,
+                              planned_traj=JTBySegment,
+                              executed_traj=JTBySegment,
+                              planned_tcp=Draft,
+                              executed_tcp=Draft,
+                              eval=<dict optional>)
       -> Bundle writes:
-          planned_traj.yaml
-          executed_traj.yaml
+          planned_traj.yaml   (with optional top-level eval:)
+          executed_traj.yaml  (with optional top-level eval:)
+          planned_tcp.yaml
+          executed_tcp.yaml
     """
 
     _SEG_ORDER = (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME)
@@ -112,9 +125,11 @@ class ProcessTab(QWidget):
         self._show_traj: bool = True
         self._show_executed: bool = True
 
-        # ---- last run payloads (raw run payloads for UI) ----
-        self._last_run_payload_planned: Dict[str, Any] = {}
-        self._last_run_payload_executed: Dict[str, Any] = {}
+        # ---- last run views (raw yaml dicts for UI) ----
+        self._last_planned_traj_yaml: Dict[str, Any] = {}
+        self._last_executed_traj_yaml: Dict[str, Any] = {}
+        self._last_eval: Dict[str, Any] = {}
+        self._last_valid: Optional[bool] = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
@@ -202,15 +217,19 @@ class ProcessTab(QWidget):
 
         self.txtPlanned = QTextEdit(grp_res)
         self.txtPlanned.setReadOnly(True)
-        self.txtPlanned.setPlaceholderText("planned_run payload (raw)")
+        self.txtPlanned.setPlaceholderText("planned_traj.yaml (JTBySegment yaml dict)")
 
         self.txtExecuted = QTextEdit(grp_res)
         self.txtExecuted.setReadOnly(True)
-        self.txtExecuted.setPlaceholderText("executed_run payload (raw)")
+        self.txtExecuted.setPlaceholderText("executed_traj.yaml (JTBySegment yaml dict)")
 
         row_res.addWidget(self.txtPlanned, 1)
         row_res.addWidget(self.txtExecuted, 1)
         vres.addLayout(row_res)
+
+        # eval / valid
+        self.lblEval = QLabel("Eval: –", grp_res)
+        vres.addWidget(self.lblEval)
 
         root.addWidget(grp_res)
 
@@ -242,13 +261,51 @@ class ProcessTab(QWidget):
         # RobotStatus wiring
         self._wire_robot_status_inbound()
 
-        # Ensure defaults are published once
-        self.sprayPathBox.set_defaults(compiled=True, traj=True, executed=True)
+        # Ensure defaults are published once (compat: traj vs planned)
+        self._spray_defaults_publish(compiled=True, planned=True, executed=True)
 
         self._update_buttons()
         self._update_recipe_box()
         self._update_info_box()
         self._render_run_yaml_views()
+
+    # ---------------------------------------------------------------------
+    # SprayPathBox compat helpers (traj vs planned)
+    # ---------------------------------------------------------------------
+
+    def _spray_defaults_publish(self, *, compiled: bool, planned: bool, executed: bool) -> None:
+        """
+        SprayPathBox API changed historically. Support:
+          - set_defaults(compiled=..., traj=..., executed=...)
+          - set_defaults(compiled=..., planned=..., executed=...)
+          - set_defaults(compiled, planned, executed)  (positional legacy)
+        """
+        sb = getattr(self, "sprayPathBox", None)
+        if sb is None:
+            return
+        fn = getattr(sb, "set_defaults", None)
+        if not callable(fn):
+            return
+
+        # 1) prefer "planned"
+        try:
+            fn(compiled=bool(compiled), planned=bool(planned), executed=bool(executed))
+            return
+        except TypeError:
+            pass
+
+        # 2) fallback to "traj"
+        try:
+            fn(compiled=bool(compiled), traj=bool(planned), executed=bool(executed))
+            return
+        except TypeError:
+            pass
+
+        # 3) last resort: positional
+        try:
+            fn(bool(compiled), bool(planned), bool(executed))
+        except Exception:
+            _LOG.exception("ProcessTab: SprayPathBox.set_defaults compat call failed")
 
     # ---------------- Utils ----------------
 
@@ -298,34 +355,49 @@ class ProcessTab(QWidget):
                     return True
         return False
 
-    # ---------------- Run payload helpers ----------------
+    # ------------------------------------------------------------
+    # NEW: result extraction (traj-only dict)
+    # ------------------------------------------------------------
 
-    def _is_run_payload(self, payload: Any) -> bool:
-        return isinstance(payload, dict) and isinstance(payload.get("segments"), dict)
+    @staticmethod
+    def _is_jtbysegment_yaml(d: Any) -> bool:
+        return isinstance(d, dict) and isinstance(d.get("segments"), dict)
 
-    def _extract_planned_and_executed_from_result(self, result_obj: object) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    def _extract_traj_yaml_from_result(self, result_obj: object) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Preferred (NEW): {"planned_traj": {...}, "executed_traj": {...}}
+
+        Backward-compat (OLD): {"planned_run": runpayload, "executed_run": runpayload}
+          -> converted later via _runpayload_to_jtbysegment_yaml()
+        """
         planned: Dict[str, Any] = {}
         executed: Dict[str, Any] = {}
 
-        if isinstance(result_obj, dict):
-            a = result_obj.get("planned_run")
-            b = result_obj.get("executed_run")
+        if not isinstance(result_obj, dict):
+            return planned, executed
+
+        if "planned_traj" in result_obj or "executed_traj" in result_obj:
+            a = result_obj.get("planned_traj")
+            b = result_obj.get("executed_traj")
             planned = a if isinstance(a, dict) else {}
             executed = b if isinstance(b, dict) else {}
             return planned, executed
 
+        # old payload mode
+        a = result_obj.get("planned_run")
+        b = result_obj.get("executed_run")
+        if isinstance(a, dict) and isinstance(b, dict):
+            # will convert downstream
+            return a, b
+
         return planned, executed
 
-    def _require_both_runs(self, planned: Dict[str, Any], executed: Dict[str, Any], *, context: str) -> None:
-        if not self._is_run_payload(planned) or not self._is_run_payload(executed):
-            raise RuntimeError(
-                f"{context}: planned/executed payload fehlt oder invalid "
-                f"(planned_ok={self._is_run_payload(planned)}, executed_ok={self._is_run_payload(executed)})"
-            )
+    # ------------------------------------------------------------
+    # Backward-compat: RunPayload v1 -> JTBySegment YAML dict
+    # ------------------------------------------------------------
 
-    # ------------------------------------------------------------
-    # JTBySegment conversion (RunPayload v1 -> JTBySegment YAML dict)
-    # ------------------------------------------------------------
+    def _is_run_payload(self, payload: Any) -> bool:
+        return isinstance(payload, dict) and isinstance(payload.get("segments"), dict)
 
     @staticmethod
     def _dur_to_ns(d: Any) -> int:
@@ -346,9 +418,6 @@ class ProcessTab(QWidget):
         return {"sec": ns // 1_000_000_000, "nanosec": ns % 1_000_000_000}
 
     def _concat_joint_traj_dicts(self, dicts: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """
-        Merge multiple JT dicts (same joint_names) into one JT dict with monotonic time_from_start.
-        """
         items = [d for d in (dicts or []) if isinstance(d, dict) and d.get("joint_names") and d.get("points")]
         if not items:
             return None
@@ -401,13 +470,6 @@ class ProcessTab(QWidget):
         return {"joint_names": base_names, "points": merged_pts}
 
     def _runpayload_to_jtbysegment_yaml(self, run_payload: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        RunPayload v1:
-          segments[SEG] = [jt_event_dict, jt_event_dict, ...]
-
-        JTBySegment YAML expects:
-          segments[SEG] = jt_dict (single)
-        """
         if not self._is_run_payload(run_payload):
             return {}
 
@@ -418,7 +480,11 @@ class ProcessTab(QWidget):
             evs = segs.get(seg) or []
             if not isinstance(evs, list) or not evs:
                 continue
-            evs2 = [e for e in evs if isinstance(e, dict) and isinstance(e.get("joint_names"), list) and isinstance(e.get("points"), list)]
+            evs2 = [
+                e
+                for e in evs
+                if isinstance(e, dict) and isinstance(e.get("joint_names"), list) and isinstance(e.get("points"), list)
+            ]
             if not evs2:
                 continue
             merged = self._concat_joint_traj_dicts(evs2)
@@ -430,6 +496,155 @@ class ProcessTab(QWidget):
             "meta": dict(run_payload.get("meta") or {}),
             "segments": seg_out,
         }
+
+    # ------------------------------------------------------------
+    # NEW: Eval (joint domain) + valid threshold
+    # ------------------------------------------------------------
+
+    def _get_validate_threshold(self, recipe: Recipe) -> float:
+        # default 80; allow override in params
+        try:
+            params = getattr(recipe, "parameters", {}) or {}
+            v = params.get("validate_min_score", 80.0)
+            return float(v)
+        except Exception:
+            return 80.0
+
+    def _eval_joint_planned_vs_executed(
+        self,
+        *,
+        planned_yaml: Dict[str, Any],
+        executed_yaml: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], float]:
+        """
+        Returns (eval_dict, total_score).
+        eval_dict stored in traj yamls under top-level 'eval'.
+        """
+        ev = RecipeEvaluator()
+
+        # total: concat all segment points in the order
+        def _concat_total(jt_by_seg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+            if not isinstance(jt_by_seg, dict):
+                return None
+            segs = jt_by_seg.get("segments") or {}
+            if not isinstance(segs, dict):
+                return None
+
+            joint_names: Optional[List[str]] = None
+            points: List[Dict[str, Any]] = []
+
+            for seg in self._SEG_ORDER:
+                jt = segs.get(seg)
+                if not isinstance(jt, dict):
+                    continue
+                jn = jt.get("joint_names")
+                pts = jt.get("points")
+                if not isinstance(jn, list) or not isinstance(pts, list) or not jn or not pts:
+                    continue
+                if joint_names is None:
+                    joint_names = [str(x) for x in jn]
+                if joint_names != [str(x) for x in jn]:
+                    return None
+                for p in pts:
+                    if isinstance(p, dict):
+                        points.append(p)
+
+            if joint_names is None or not points:
+                return None
+            return {"joint_names": joint_names, "points": points}
+
+        # segmentwise
+        by_segment: Dict[str, Any] = {}
+        p_segs = (planned_yaml.get("segments") or {}) if isinstance(planned_yaml, dict) else {}
+        e_segs = (executed_yaml.get("segments") or {}) if isinstance(executed_yaml, dict) else {}
+
+        if isinstance(p_segs, dict) and isinstance(e_segs, dict):
+            for seg in self._SEG_ORDER:
+                pj = p_segs.get(seg)
+                ej = e_segs.get(seg)
+                if not (isinstance(pj, dict) and isinstance(ej, dict)):
+                    continue
+                res = ev.evaluate_joint_trajectory_dict(ref_joint=pj, test_joint=ej, label=f"joint/{seg}")
+                by_segment[seg] = res.to_dict()
+
+        # total
+        p_total = _concat_total(planned_yaml)
+        e_total = _concat_total(executed_yaml)
+        total_res = ev.evaluate_joint_trajectory_dict(ref_joint=p_total, test_joint=e_total, label="joint/total")
+
+        eval_dict = {
+            "domain": "joint",
+            "total": total_res.to_dict(),
+            "by_segment": dict(by_segment),
+        }
+        return eval_dict, float(total_res.score)
+
+    # ------------------------------------------------------------
+    # NEW: FK (JTBySegment -> Draft TCP)
+    # ------------------------------------------------------------
+
+    def _get_robot_model_best_effort(self) -> Any:
+        """
+        Try common places where MoveIt RobotModel is reachable in your stack.
+        Returns None if not available.
+        """
+        ros = self.ros
+        candidates = [
+            ("moveitpy", "robot_model"),
+            ("moveitpy", "_robot_model"),
+            ("moveit_py", "robot_model"),
+            ("moveit_py", "_robot_model"),
+        ]
+        for a, b in candidates:
+            try:
+                obj = getattr(ros, a, None)
+                if obj is None:
+                    continue
+                rm = getattr(obj, b, None)
+                if rm is not None:
+                    return rm
+            except Exception:
+                continue
+
+        # last resort: ros.robot / ros.scene etc
+        for attr in ("robot_model", "_robot_model"):
+            try:
+                rm = getattr(ros, attr, None)
+                if rm is not None:
+                    return rm
+            except Exception:
+                pass
+        return None
+
+    def _fk_tcp_best_effort(
+        self,
+        *,
+        traj: JTBySegment,
+        recipe: Recipe,
+    ) -> Optional[Draft]:
+        robot_model = self._get_robot_model_best_effort()
+        if robot_model is None:
+            return None
+
+        # FK config: allow overriding ee_link/step in recipe.parameters
+        ee_link = "tcp"
+        step_mm = 1.0
+        max_points = 0
+        try:
+            params = getattr(recipe, "parameters", {}) or {}
+            ee_link = str(params.get("fk_ee_link", ee_link) or ee_link)
+            step_mm = float(params.get("fk_step_mm", step_mm))
+            max_points = int(params.get("fk_max_points", max_points))
+        except Exception:
+            pass
+
+        cfg = TrajFkConfig(ee_link=ee_link, step_mm=step_mm, max_points=max_points)
+        try:
+            draft = TrajFkBuilder.build_tcp_draft(traj, robot_model=robot_model, cfg=cfg, default_side="top")
+            return draft
+        except Exception as e:
+            self._append_log(f"W FK skipped: {e}")
+            return None
 
     # ---------------- Spray toggles (cache only; publish is done by SprayPathBox) ----------------
 
@@ -534,15 +749,17 @@ class ProcessTab(QWidget):
         self._update_info_box()
         self._update_buttons()
 
-        self._last_run_payload_planned = {}
-        self._last_run_payload_executed = {}
+        self._last_planned_traj_yaml = {}
+        self._last_executed_traj_yaml = {}
+        self._last_eval = {}
+        self._last_valid = None
         self._render_run_yaml_views()
 
         # defaults always true + publish to ROS (latched)
         self._show_compiled = True
         self._show_traj = True
         self._show_executed = True
-        self.sprayPathBox.set_defaults(compiled=True, traj=True, executed=True)
+        self._spray_defaults_publish(compiled=True, planned=True, executed=True)
 
         if recipe is None:
             self._clear_layers()
@@ -584,9 +801,9 @@ class ProcessTab(QWidget):
             r = self.repo.load_for_process(key)
             self.set_recipe(r, key=key)
 
-            # Clear and publish current truth (compiled only; traj markers require TCP trajectories)
+            # IMPORTANT: clear + republish via UI-loop (Qt/ROS thread ordering)
             self._clear_layers()
-            self._publish_all_available_layers()
+            QTimer.singleShot(0, self._publish_all_available_layers)
 
             self._append_log("Load: OK")
         except Exception as e:
@@ -677,8 +894,10 @@ class ProcessTab(QWidget):
         self._active_mode = mode
         self.txtLog.clear()
 
-        self._last_run_payload_planned = {}
-        self._last_run_payload_executed = {}
+        self._last_planned_traj_yaml = {}
+        self._last_executed_traj_yaml = {}
+        self._last_eval = {}
+        self._last_valid = None
         self._render_run_yaml_views()
 
         self._append_log(f"=== {mode.upper()} gestartet ===")
@@ -699,8 +918,21 @@ class ProcessTab(QWidget):
     # ---------------- Process result handling ----------------
 
     def _render_run_yaml_views(self) -> None:
-        self.txtPlanned.setPlainText(self._yaml_dump(self._last_run_payload_planned))
-        self.txtExecuted.setPlainText(self._yaml_dump(self._last_run_payload_executed))
+        self.txtPlanned.setPlainText(self._yaml_dump(self._last_planned_traj_yaml))
+        self.txtExecuted.setPlainText(self._yaml_dump(self._last_executed_traj_yaml))
+
+        if isinstance(self._last_eval, dict) and self._last_eval:
+            try:
+                total = (
+                    ((self._last_eval.get("total") or {}).get("score"))
+                    if isinstance(self._last_eval.get("total"), dict)
+                    else None
+                )
+            except Exception:
+                total = None
+            self.lblEval.setText(f"Eval: total_score={total} | valid={self._last_valid}")
+        else:
+            self.lblEval.setText(f"Eval: – | valid={self._last_valid}")
 
     def _maybe_overwrite_prompt(self, *, title: str, filename: str) -> bool:
         if not filename:
@@ -719,58 +951,132 @@ class ProcessTab(QWidget):
     def _on_process_finished_success(self, result_obj: object) -> None:
         self._append_log("=== Process finished ===")
 
-        planned_run, executed_run = self._extract_planned_and_executed_from_result(result_obj)
-        try:
-            self._require_both_runs(planned_run, executed_run, context=self._active_mode or "process")
-        except Exception as e:
-            self._append_log(f"ERROR: {e}")
+        planned_obj, executed_obj = self._extract_traj_yaml_from_result(result_obj)
+
+        # If old runpayload: convert
+        if self._is_run_payload(planned_obj) and self._is_run_payload(executed_obj):
+            planned_yaml = self._runpayload_to_jtbysegment_yaml(planned_obj)
+            executed_yaml = self._runpayload_to_jtbysegment_yaml(executed_obj)
+        else:
+            planned_yaml = planned_obj if self._is_jtbysegment_yaml(planned_obj) else {}
+            executed_yaml = executed_obj if self._is_jtbysegment_yaml(executed_obj) else {}
+
+        self._last_planned_traj_yaml = dict(planned_yaml or {})
+        self._last_executed_traj_yaml = dict(executed_yaml or {})
+        self._render_run_yaml_views()
+
+        if not planned_yaml or not executed_yaml:
+            self._append_log("ERROR: result missing planned_traj/executed_traj (JTBySegment yaml). Persist skipped.")
             self._process_active = False
             self._active_mode = ""
             self._process_thread = None
             self._update_buttons()
             return
 
-        # keep raw run payloads visible
-        self._last_run_payload_planned = dict(planned_run)
-        self._last_run_payload_executed = dict(executed_run)
-        self._render_run_yaml_views()
-
-        # Convert to JTBySegment (schema expected by RecipeBundle persistence)
-        planned_jt_yaml = self._runpayload_to_jtbysegment_yaml(planned_run)
-        executed_jt_yaml = self._runpayload_to_jtbysegment_yaml(executed_run)
-
+        # Build JTBySegment objects
         try:
-            planned_jt = JTBySegment.from_yaml_dict(planned_jt_yaml)
+            planned_jt = JTBySegment.from_yaml_dict(planned_yaml)
         except Exception as e:
             self._append_log(f"ERROR: planned JTBySegment build failed: {e}")
             planned_jt = None
 
         try:
-            executed_jt = JTBySegment.from_yaml_dict(executed_jt_yaml)
+            executed_jt = JTBySegment.from_yaml_dict(executed_yaml)
         except Exception as e:
             self._append_log(f"ERROR: executed JTBySegment build failed: {e}")
             executed_jt = None
 
         if planned_jt is None or executed_jt is None:
-            # strict: both required for storage
             self._append_log("ERROR: Persist skipped (planned/executed JTBySegment missing).")
-        else:
-            # Determine target file paths for overwrite prompt (strict, no repo fallbacks)
+            self._process_active = False
+            self._active_mode = ""
+            self._process_thread = None
+            self._update_buttons()
+            return
+
+        # FK TCP (best-effort)
+        recipe_run = None
+        try:
+            recipe_run = self.repo.load_for_process(self._recipe_key) if self._recipe_key else None
+        except Exception:
+            recipe_run = None
+
+        recipe_for_eval = (
+            recipe_run if isinstance(recipe_run, Recipe) else (self._recipe if isinstance(self._recipe, Recipe) else None)
+        )
+
+        planned_tcp: Optional[Draft] = None
+        executed_tcp: Optional[Draft] = None
+        if recipe_for_eval is not None:
+            planned_tcp = self._fk_tcp_best_effort(traj=planned_jt, recipe=recipe_for_eval)
+            executed_tcp = self._fk_tcp_best_effort(traj=executed_jt, recipe=recipe_for_eval)
+
+        # Eval + valid
+        eval_dict: Dict[str, Any] = {}
+        valid = False
+        if recipe_for_eval is not None:
+            eval_dict, total_score = self._eval_joint_planned_vs_executed(
+                planned_yaml=planned_yaml,
+                executed_yaml=executed_yaml,
+            )
+            thr = self._get_validate_threshold(recipe_for_eval)
+            valid = bool(total_score >= thr)
+            eval_dict["threshold"] = float(thr)
+            eval_dict["valid"] = bool(valid)
+
+        self._last_eval = dict(eval_dict or {})
+        self._last_valid = bool(valid)
+        self._render_run_yaml_views()
+
+        # Prompt overwrite paths
+        try:
             p = self.repo.bundle.paths(self._recipe_key)  # rid-only key
             planned_path = str(getattr(p, "planned_traj_yaml"))
             executed_path = str(getattr(p, "executed_traj_yaml"))
+            planned_tcp_path = str(getattr(p, "planned_tcp_yaml", ""))
+            executed_tcp_path = str(getattr(p, "executed_tcp_yaml", ""))
+        except Exception:
+            planned_path = ""
+            executed_path = ""
+            planned_tcp_path = ""
+            executed_tcp_path = ""
 
+        # Only save if valid
+        if not valid:
+            self._append_log("Save: übersprungen (RunResult invalid).")
+        else:
             ok_pl = self._maybe_overwrite_prompt(title="Run speichern", filename=planned_path)
             ok_ex = self._maybe_overwrite_prompt(title="Run speichern", filename=executed_path)
 
-            if ok_pl and ok_ex:
+            ok_tcp = True
+            if planned_tcp_path:
+                ok_tcp = ok_tcp and self._maybe_overwrite_prompt(title="Run speichern", filename=planned_tcp_path)
+            if executed_tcp_path:
+                ok_tcp = ok_tcp and self._maybe_overwrite_prompt(title="Run speichern", filename=executed_tcp_path)
+
+            if ok_pl and ok_ex and ok_tcp:
                 try:
-                    self.repo.save_run_artifacts(
-                        self._recipe_key,
-                        planned_traj=planned_jt,
-                        executed_traj=executed_jt,
-                    )
-                    self._append_log("Save: OK -> planned_traj.yaml + executed_traj.yaml")
+                    # Preferred: repo supports eval injection
+                    try:
+                        self.repo.save_run_artifacts(
+                            self._recipe_key,
+                            planned_traj=planned_jt,
+                            executed_traj=executed_jt,
+                            planned_tcp=planned_tcp,
+                            executed_tcp=executed_tcp,
+                            eval=eval_dict if eval_dict else None,
+                        )
+                    except TypeError:
+                        # fallback if repo hasn't been updated yet
+                        self.repo.save_run_artifacts(
+                            self._recipe_key,
+                            planned_traj=planned_jt,
+                            executed_traj=executed_jt,
+                            planned_tcp=planned_tcp,
+                            executed_tcp=executed_tcp,
+                        )
+
+                    self._append_log("Save: OK -> planned/executed traj (+tcp best-effort) (+eval if supported)")
                 except Exception as e:
                     self._append_log(f"Save: ERROR: {e}")
             else:
@@ -783,7 +1089,7 @@ class ProcessTab(QWidget):
         except Exception:
             pass
 
-        # republish markers (compiled only unless tcp trajectories exist elsewhere)
+        # republish markers (draft lines + planned/executed text markers)
         self._clear_layers()
         self._publish_all_available_layers()
 
@@ -812,92 +1118,102 @@ class ProcessTab(QWidget):
                 return
 
     def _clear_layers(self) -> None:
+        """
+        Clear BOTH markers and poses so SprayPathBridge cache node definitely resets.
+        """
         try:
-            empty = MarkerArray()
-            self._ros_call_first(("spray_set_compiled",), markers=empty)
-            self._ros_call_first(("spray_set_planned", "spray_set_traj"), markers=empty)
-            self._ros_call_first(("spray_set_executed",), markers=empty)
+            empty_ma = MarkerArray()
+            empty_pa = PoseArray()
+            self._ros_call_first(("spray_set_compiled",), poses=empty_pa, markers=empty_ma)
+            self._ros_call_first(("spray_set_planned", "spray_set_traj"), poses=empty_pa, markers=empty_ma)
+            self._ros_call_first(("spray_set_executed",), poses=empty_pa, markers=empty_ma)
         except Exception:
             pass
 
-    def _build_markers_compat(self, *, recipe: Recipe, source: str, frame_id: str = "scene") -> Optional[MarkerArray]:
-        fn = build_marker_array_from_recipe
+    def _build_all_markers(self, *, recipe: Recipe, frame_id: str = "scene") -> Optional[MarkerArray]:
+        """
+        NEW API (2026-01):
+          build_marker_array_from_recipe(recipe, frame_id, show_draft/show_planned/show_executed)
+        Returns a single MarkerArray with namespaces:
+          - draft/<side>
+          - planned_traj
+          - executed_traj
+        """
         try:
-            import inspect
-
-            sig = inspect.signature(fn)
-            params = sig.parameters
-
-            kw: Dict[str, Any] = {}
-
-            if "source" in params:
-                kw["source"] = source
-            elif "kind" in params:
-                kw["kind"] = source
-            elif "layer" in params:
-                kw["layer"] = source
-            elif "which" in params:
-                kw["which"] = source
-
-            if "frame_id" in params:
-                kw["frame_id"] = frame_id
-            elif "frame" in params:
-                kw["frame"] = frame_id
-
-            if kw:
-                part = fn(recipe, **kw)
-            else:
-                part = fn(recipe, source)
-
-            if part is None or getattr(part, "markers", None) is None:
-                return None
-            return part
+            return build_marker_array_from_recipe(
+                recipe,
+                frame_id=frame_id,
+                show_draft=True,
+                show_planned=True,
+                show_executed=True,
+            )
         except Exception as e:
-            self._append_log(f"W markers ({source}) skipped: {e}")
+            self._append_log(f"W markers build skipped: {e}")
             return None
+
+    @staticmethod
+    def _filter_markers(arr: MarkerArray, *, ns_prefix: Optional[str] = None, ns_exact: Optional[str] = None) -> MarkerArray:
+        out = MarkerArray()
+        if arr is None or not getattr(arr, "markers", None):
+            return out
+
+        for m in arr.markers:
+            ns = getattr(m, "ns", "") or ""
+            if ns_exact is not None:
+                if ns == ns_exact:
+                    out.markers.append(m)
+            elif ns_prefix is not None:
+                if ns.startswith(ns_prefix):
+                    out.markers.append(m)
+
+        return out
 
     def _publish_all_available_layers(self) -> None:
         """
-        Marker builder consumes Recipe + layer id in {"compiled_path","traj","executed_traj"}.
+        Publish layers to SprayPathBridge cache node.
 
-        Here:
-          - compiled: available if Draft has poses_quat
-          - traj/executed: only if recipe.trajectories contains tcp totals (not generated here yet)
+        With current recipe_markers.py:
+          - compiled == draft paths -> ns "draft/<side>" (LINE_STRIP)
+          - planned/executed == summary TEXT markers -> ns "planned_traj"/"executed_traj"
         """
         if self._recipe is None:
             return
 
         r = self._recipe
-        has_compiled = bool(self._has_compiled_in_draft())
+        all_ma = self._build_all_markers(recipe=r, frame_id="scene")
+        if all_ma is None:
+            try:
+                self.sprayPathBox.publish_current()
+            except Exception:
+                pass
+            return
 
-        trajectories = getattr(r, "trajectories", {}) or {}
-        has_traj_tcp = bool(isinstance(trajectories.get("planned"), dict) and trajectories.get("planned"))
-        has_exec_tcp = bool(isinstance(trajectories.get("executed"), dict) and trajectories.get("executed"))
-
-        ma_compiled = self._build_markers_compat(recipe=r, source="compiled_path", frame_id="scene") if has_compiled else None
-        ma_traj = self._build_markers_compat(recipe=r, source="traj", frame_id="scene") if has_traj_tcp else None
-        ma_exec = self._build_markers_compat(recipe=r, source="executed_traj", frame_id="scene") if has_exec_tcp else None
+        ma_compiled = self._filter_markers(all_ma, ns_prefix="draft/")
+        ma_planned = self._filter_markers(all_ma, ns_exact="planned_traj")
+        ma_exec = self._filter_markers(all_ma, ns_exact="executed_traj")
 
         try:
-            if ma_compiled is not None:
+            if ma_compiled.markers:
                 self._ros_call_first(("spray_set_compiled",), markers=ma_compiled)
         except Exception as e:
             self._append_log(f"W spray_set_compiled failed: {e}")
 
         try:
-            if ma_traj is not None:
-                self._ros_call_first(("spray_set_planned", "spray_set_traj"), markers=ma_traj)
+            if ma_planned.markers:
+                self._ros_call_first(("spray_set_planned", "spray_set_traj"), markers=ma_planned)
         except Exception as e:
             self._append_log(f"W spray_set_planned/traj failed: {e}")
 
         try:
-            if ma_exec is not None:
+            if ma_exec.markers:
                 self._ros_call_first(("spray_set_executed",), markers=ma_exec)
         except Exception as e:
             self._append_log(f"W spray_set_executed failed: {e}")
 
-        # Always republish current toggles (idempotent, latched)
-        self.sprayPathBox.publish_current()
+        try:
+            self.sprayPathBox.publish_current()
+        except Exception:
+            pass
 
     # ---------------- UI gating ----------------
 

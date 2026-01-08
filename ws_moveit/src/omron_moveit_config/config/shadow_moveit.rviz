@@ -7,8 +7,14 @@ Panels:
         - /TF1/Frames1
         - /PlanningScene1/Scene Geometry1
         - /PlanningScene1/Scene Robot1
+        - /MarkerArray1
+        - /PoseArray1
+        - /MarkerArray2
+        - /PoseArray2
+        - /MarkerArray3
+        - /PoseArray3
       Splitter Ratio: 0.36193448305130005
-    Tree Height: 294
+    Tree Height: 842
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -261,7 +267,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /shadow/spraycoater/spray_path/traj/markers
+        Value: /shadow/spraycoater/spray_path/planned/markers
       Value: true
     - Alpha: 1
       Arrow Length: 0.30000001192092896
@@ -282,7 +288,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /shadow/spraycoater/spray_path/traj/poses
+        Value: /shadow/spraycoater/spray_path/planned/poses
       Value: true
   Enabled: true
   Global Options:
@@ -317,22 +323,22 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5503979921340942
+      Pitch: 0.5303980112075806
       Target Frame: scene
       Value: Orbit (rviz_default_plugins)
-      Yaw: 6.26858377456665
+      Yaw: 6.253583908081055
     Saved: ~
 Window Geometry:
   Displays:
-    collapsed: true
-  Height: 933
+    collapsed: false
+  Height: 1369
   Help:
-    collapsed: true
-  Hide Left Dock: true
+    collapsed: false
+  Hide Left Dock: false
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000002830000034ffc0200000003fb000000100044006900730070006c006100790073000000003b00000161000000c700fffffffb0000000800480065006c007000000001a2000000c60000006e00fffffffb0000000a00560069006500770073000000026e0000011c000000a000ffffff000003ee0000034f00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd00000001000000000000028300000503fc0200000003fb000000100044006900730070006c006100790073010000003b00000385000000c700fffffffb0000000800480065006c007001000003c60000008b0000006e00fffffffb0000000a005600690065007700730100000457000000e7000000a000ffffff000007770000050300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
-    collapsed: true
-  Width: 1006
-  X: 3477
-  Y: 506
+    collapsed: false
+  Width: 2560
+  X: 1920
+  Y: 23
