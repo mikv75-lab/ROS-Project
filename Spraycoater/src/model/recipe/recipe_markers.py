@@ -73,27 +73,30 @@ def build_marker_array_from_recipe(
     show_executed: bool = True,
 ) -> MarkerArray:
     """
-    Visualisierung im UI:
+    UI visualization:
+      - draft.yaml -> LINE_STRIP per side (workspace TCP poses in mm -> meters)
+      - planned_traj / executed_traj -> summary TEXT marker (segments/points)
 
-    - draft.yaml: Workspace LineStrip (TCP-Posen in mm -> m)
-    - planned_traj.yaml / executed_traj.yaml: replay JT (Joint-Space). Ohne FK können wir
-      daraus keinen TCP-Workspace-Pfad rekonstruieren. Daher werden diese als Text-Summary
-      dargestellt (Segmente/Punkte).
-
-    Wenn du TCP-Workspace-Markierung auch für planned/executed willst, musst du FK
-    im UI-Kontext bereitstellen (z.B. MoveIt RobotModel) oder zusätzlich TCP-Posen speichern.
+    Marker namespaces used for downstream splitting:
+      - "draft/<side>"
+      - "planned_traj"
+      - "executed_traj"
     """
     arr = MarkerArray()
     mid = 0
 
     # --- Draft (workspace path) ---
-    if show_draft and recipe.draft is not None:
-        for side, s in recipe.draft.sides.items():
-            m = _line_strip_marker(frame_id=frame_id, ns=f"draft/{side}", mid=mid)
-            mid += 1
-            for pose in s.poses_quat:
-                m.points.append(_make_point(pose.x, pose.y, pose.z))
-            arr.markers.append(m)
+    if show_draft and getattr(recipe, "draft", None) is not None:
+        try:
+            for side, s in recipe.draft.sides.items():  # type: ignore[union-attr]
+                m = _line_strip_marker(frame_id=frame_id, ns=f"draft/{side}", mid=mid)
+                mid += 1
+                for pose in s.poses_quat:
+                    m.points.append(_make_point(pose.x, pose.y, pose.z))
+                arr.markers.append(m)
+        except Exception:
+            # draft schema mismatch -> just skip draft markers
+            pass
 
     def _traj_summary(kind: str) -> Optional[str]:
         traj = recipe.planned_traj if kind == "planned" else recipe.executed_traj
@@ -108,14 +111,17 @@ def build_marker_array_from_recipe(
 
     # anchor text near first draft point (if available)
     anchor_x = anchor_y = anchor_z = 0.0
-    if recipe.draft is not None:
-        for s in recipe.draft.sides.values():
-            if s.poses_quat:
-                p0 = s.poses_quat[0]
-                anchor_x = float(p0.x) / 1000.0
-                anchor_y = float(p0.y) / 1000.0
-                anchor_z = float(p0.z) / 1000.0 + 0.05
-                break
+    try:
+        if getattr(recipe, "draft", None) is not None:
+            for s in recipe.draft.sides.values():  # type: ignore[union-attr]
+                if s.poses_quat:
+                    p0 = s.poses_quat[0]
+                    anchor_x = float(p0.x) / 1000.0
+                    anchor_y = float(p0.y) / 1000.0
+                    anchor_z = float(p0.z) / 1000.0 + 0.05
+                    break
+    except Exception:
+        pass
 
     # --- Planned / Executed (text markers) ---
     if show_planned:

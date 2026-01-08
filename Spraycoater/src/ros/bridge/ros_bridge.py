@@ -176,10 +176,9 @@ class RobotStateAdapter:
 
 @dataclass
 class MoveItState:
-    target: Optional[object] = None
     planned: Optional[object] = None
     executed: Optional[object] = None
-    preview: Optional[object] = None
+    urdf: str = ""
     srdf: str = ""
 
 
@@ -187,17 +186,14 @@ class MoveItStateAdapter:
     def __init__(self, st: MoveItState):
         self.st = st
 
-    def _set_target(self, msg) -> None:
-        self.st.target = msg
-
     def _set_planned(self, msg) -> None:
         self.st.planned = msg
 
     def _set_executed(self, msg) -> None:
         self.st.executed = msg
 
-    def _set_preview(self, msg) -> None:
-        self.st.preview = msg
+    def _set_urdf(self, v: str) -> None:
+        self.st.urdf = v or ""
 
     def _set_srdf(self, v: str) -> None:
         self.st.srdf = v or ""
@@ -378,18 +374,16 @@ class RosBridge:
             sig.tcpPoseChanged.connect(self.robot_state._set_tcp_pose)
             sig.jointsChanged.connect(self.robot_state._set_joints)
 
-        # ✅ FIX: correct MoveItPySignals wiring (your signals are *TrajectoryChanged, not *Changed)
+        # ✅ MoveItPyBridge (minimal + robot_description strings)
         if self.moveitpy is not None:
             sig = self.moveitpy.signals
 
-            # These exist in your MoveItPySignals
-            sig.targetTrajectoryChanged.connect(self.moveit_state._set_target)
             sig.plannedTrajectoryChanged.connect(self.moveit_state._set_planned)
             sig.executedTrajectoryChanged.connect(self.moveit_state._set_executed)
-            sig.previewMarkersChanged.connect(self.moveit_state._set_preview)
+            sig.robotDescriptionChanged.connect(self.moveit_state._set_urdf)
             sig.robotDescriptionSemanticChanged.connect(self.moveit_state._set_srdf)
 
-            # Optional: keep result text around if you want (already stored in sig.last_result)
+            # (motion_result is stored in sig.last_result; wire if needed)
             # sig.motionResultChanged.connect(lambda _txt: None)
 
     def _reemit_cached(self) -> None:

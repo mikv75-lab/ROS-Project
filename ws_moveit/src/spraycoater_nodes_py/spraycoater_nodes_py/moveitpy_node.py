@@ -1,5 +1,33 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+spraycoater_nodes_py/moveit_py_node.py
+
+MoveItPy wrapper node (MINIMAL TOPICS for GUI Offline-FK)
+
+Publishes (per config_hub topics.yaml):
+  - planned_trajectory_rt   (moveit_msgs/msg/RobotTrajectory) [latched]
+  - executed_trajectory_rt  (moveit_msgs/msg/RobotTrajectory) [latched]
+  - motion_result           (std_msgs/msg/String)             [default]
+
+Subscribes:
+  - plan_pose       (geometry_msgs/msg/PoseStamped)
+  - plan_named      (std_msgs/msg/String)
+  - execute         (std_msgs/msg/Bool)
+  - stop            (std_msgs/msg/Empty)
+  - set_speed_mm_s  (std_msgs/msg/Float64)
+  - set_planner_cfg (std_msgs/msg/String)
+
+Design:
+  - publish trajectories BEFORE motion_result (race-free for statemachine)
+  - TF robust transform for incoming goal PoseStamped
+  - MoveItPy init async
+  - optional Omron execution (real backend) uses last JT point (MOVEJ)
+
+NOTE:
+  - TCP sampling/markers are removed. GUI performs Offline-FK based on:
+      planned_trajectory_rt/executed_trajectory_rt + robot_description(+semantic).
+"""
 
 from __future__ import annotations
 
@@ -12,12 +40,9 @@ import rclpy
 from rclpy.node import Node
 from rclpy.time import Time as RclpyTime
 from rclpy.duration import Duration
-from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 
 from std_msgs.msg import String as MsgString, Bool as MsgBool, Empty as MsgEmpty, Float64 as MsgFloat64
 from geometry_msgs.msg import PoseStamped
-from trajectory_msgs.msg import JointTrajectory
-from visualization_msgs.msg import Marker, MarkerArray
 
 from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg, PlanningScene
 from moveit_msgs.srv import GetPlanningScene
@@ -26,18 +51,20 @@ from moveit.planning import MoveItPy, PlanRequestParameters
 from moveit.core.robot_trajectory import RobotTrajectory as RobotTrajectoryCore
 
 from tf2_ros import Buffer, TransformListener
-from tf2_geometry_msgs import do_transform_pose  # Fallback Transform (Pose, nicht PoseStamped!)
+from tf2_geometry_msgs import do_transform_pose
 
 from controller_manager_msgs.srv import SwitchController
 
 from spraycoater_nodes_py.utils.config_hub import topics, frames
 
+# ----------------------------
+# Constants / Defaults
+# ----------------------------
 NODE_KEY = "moveit_py"
 GROUP_NAME = "omron_arm_group"
 EE_LINK = "tcp"
 WORLD_FRAME = "world"
 
-# ✅ hard default: ompl until overwritten (and empty overrides are ignored)
 DEFAULT_PLANNER_CFG: Dict[str, Any] = {
     "pipeline": "ompl",
     "planner_id": "RRTConnectkConfigDefault",
@@ -48,22 +75,15 @@ DEFAULT_PLANNER_CFG: Dict[str, Any] = {
 }
 
 
+# ----------------------------
+# Controller Mode Manager
+# ----------------------------
 class _ModeManager:
     """
     Minimal controller mode arbiter (embedded).
     Modes:
       - "JOG":  Trajectory controller OFF
       - "TRAJ": Trajectory controller ON
-
-    ROS2-control API drift handling:
-      - some distros use req.start_asap (old)
-      - newer use req.activate_asap (current)
-      - timeout may be float OR builtin_interfaces/Duration
-
-    FIX (2026-01):
-      - do NOT spam-activate joint_state_broadcaster
-      - use BEST_EFFORT strictness (avoid failing when already in desired state)
-      - only toggle the trajectory controller
     """
 
     def __init__(
@@ -80,7 +100,6 @@ class _ModeManager:
         ns = (node.get_namespace() or "").rstrip("/")
         cm_base = f"{ns}/controller_manager" if ns else "/controller_manager"
         self._srv_name = f"{cm_base}/switch_controller"
-
         self._cli = node.create_client(SwitchController, self._srv_name)
 
         self._current_mode: Optional[str] = None
@@ -88,13 +107,11 @@ class _ModeManager:
         self._last_req_t = 0.0
 
     def _set_asap_and_timeout(self, req: SwitchController.Request, *, timeout_s: float) -> None:
-        # asap flag (activate_asap preferred, start_asap legacy)
         if hasattr(req, "activate_asap"):
             setattr(req, "activate_asap", True)
         elif hasattr(req, "start_asap"):
             setattr(req, "start_asap", True)
 
-        # timeout (Duration msg preferred in newer distros, float in older)
         if hasattr(req, "timeout"):
             try:
                 setattr(req, "timeout", Duration(seconds=float(timeout_s)).to_msg())
@@ -109,7 +126,7 @@ class _ModeManager:
 
         mode = (mode or "").strip().upper()
         if mode not in ("JOG", "TRAJ"):
-            self.node.get_logger().warn(f"[ModeManager] unknown mode '{mode}'")
+            self.node.get_logger().warning(f"[ModeManager] unknown mode '{mode}'")
             return
 
         now = _time.time()
@@ -121,12 +138,11 @@ class _ModeManager:
         if not self._cli.service_is_ready():
             self._cli.wait_for_service(timeout_sec=0.0)
             if not self._cli.service_is_ready():
-                self.node.get_logger().warn(f"[ModeManager] switch_controller not ready: {self._srv_name}")
+                self.node.get_logger().warning(f"[ModeManager] switch_controller not ready: {self._srv_name}")
                 return
 
         activate: List[str] = []
         deactivate: List[str] = []
-
         if mode == "JOG":
             deactivate = [self.traj_controller]
         else:
@@ -135,8 +151,6 @@ class _ModeManager:
         req = SwitchController.Request()
         req.activate_controllers = activate
         req.deactivate_controllers = deactivate
-
-        # FIX: do not hard-fail if controller already active/inactive
         req.strictness = SwitchController.Request.BEST_EFFORT
         self._set_asap_and_timeout(req, timeout_s=2.0)
 
@@ -162,36 +176,22 @@ class _ModeManager:
         fut.add_done_callback(_done)
 
 
+# ----------------------------
+# MoveItPy Node
+# ----------------------------
 class MoveItPyNode(Node):
     """
-    Wrapper-Node (rclpy), der MoveItPy initialisiert.
+    MoveItPy wrapper node (minimal topics).
 
-    Fixes:
-      (2) get_planning_scene Cache-Service SOFORT bereitstellen (RViz-safe)
-      (3) MoveItPy init im Background-Thread (damit rclpy sofort spinnen kann)
-
-    Additional fixes:
-      - never allow empty planning pipeline name -> defaults to 'ompl'
-      - set PlanRequestParameters.planning_pipeline
-      - ignore empty JSON overrides for 'pipeline' and 'planner_id'
-
-    NEW (2026-01):
-      - Auto-switch controller mode:
-          execute=True -> ensure TRAJ (trajectory controller ON)
-
-    TF FIX (2026-01-04):
-      - tf2_geometry_msgs Varianten sind inkonsistent bzgl. PoseStamped.
-      - Primär: tf_buffer.transform(PoseStamped, target_frame)
-      - Fallback: lookup_transform + do_transform_pose(msg.pose, tf)
-
-    IMPORTANT (2026-01-06):
-      - publish planned/executed BEFORE emitting motion_result to avoid race conditions
-      - publish target_trajectory as well (helps UI/recorder fallback)
+    Publishes:
+      - planned_trajectory_rt (RobotTrajectoryMsg, latched)
+      - executed_trajectory_rt (RobotTrajectoryMsg, latched)
+      - motion_result (String) published LAST
     """
 
     def __init__(self) -> None:
         super().__init__(
-            "moveit_py",  # ❗ bleibt so (topics hängen an moveit_py)
+            "moveit_py",
             automatically_declare_parameters_from_overrides=True,
         )
         self.log = self.get_logger()
@@ -202,16 +202,7 @@ class MoveItPyNode(Node):
         self.frame_world = self.cfg_frames.resolve(self.cfg_frames.get("world", WORLD_FRAME))
         self.frame_scene = self.cfg_frames.resolve(self.cfg_frames.get("scene", "scene"))
 
-        # NEW: controller mode manager
-        self._mode_mgr = _ModeManager(
-            self,
-            traj_controller="omron_arm_controller",
-            debounce_s=0.25,
-        )
-
-        # -------------------------------------------------
-        # App-Params (werden im bringup gesetzt)
-        # -------------------------------------------------
+        # parameters
         if not self.has_parameter("backend"):
             self.declare_parameter("backend", "default")
         self.backend = self.get_parameter("backend").value or "default"
@@ -225,23 +216,26 @@ class MoveItPyNode(Node):
 
         if not self.has_parameter("plan_request_preset"):
             self.declare_parameter("plan_request_preset", "default_ompl")
-        self.plan_request_preset = str(self.get_parameter("plan_request_preset").value or "default_ompl").strip()
-        if not self.plan_request_preset:
-            self.plan_request_preset = "default_ompl"
+        self.plan_request_preset = (
+            str(self.get_parameter("plan_request_preset").value or "default_ompl").strip() or "default_ompl"
+        )
 
         backend_lower = str(self.backend).lower()
         self.is_real_backend = ("omron" in backend_lower) and ("sim" not in backend_lower)
 
         ns = self.get_namespace() or "/"
         self.log.info(
-            f"MoveItPyMotionNode starting (backend='{self.backend}', is_real_backend={self.is_real_backend}, ns='{ns}')"
+            f"MoveItPyNode starting (backend='{self.backend}', is_real_backend={self.is_real_backend}, ns='{ns}')"
         )
 
-        # --- TF listener
+        # controller mode manager
+        self._mode_mgr = _ModeManager(self, traj_controller="omron_arm_controller", debounce_s=0.25)
+
+        # TF listener
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=False)
 
-        # ---------------- intern: Motion-Config (Speed + Planner) ----------------
+        # motion config
         self._speed_mm_s: float = 100.0
         self._planner_cfg: Dict[str, Any] = DEFAULT_PLANNER_CFG.copy()
         self._plan_params: Optional[PlanRequestParameters] = None
@@ -252,51 +246,34 @@ class MoveItPyNode(Node):
         self._cancel = False
         self._last_goal_pose: Optional[PoseStamped] = None
 
-        # ---------------- Publishers ----------------
-        self.pub_target_traj = self.create_publisher(
-            JointTrajectory,
-            self.cfg_topics.publish_topic(NODE_KEY, "target_trajectory"),
-            self.cfg_topics.qos_by_id("publish", NODE_KEY, "target_trajectory"),
-        )
-
+        # publishers (ONLY the minimal set)
         self.pub_planned = self.create_publisher(
             RobotTrajectoryMsg,
             self.cfg_topics.publish_topic(NODE_KEY, "planned_trajectory_rt"),
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "planned_trajectory_rt"),
         )
-
         self.pub_executed = self.create_publisher(
             RobotTrajectoryMsg,
             self.cfg_topics.publish_topic(NODE_KEY, "executed_trajectory_rt"),
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "executed_trajectory_rt"),
         )
-
-        self.pub_preview = self.create_publisher(
-            MarkerArray,
-            self.cfg_topics.publish_topic(NODE_KEY, "preview_markers"),
-            self.cfg_topics.qos_by_id("publish", NODE_KEY, "preview_markers"),
-        )
-
         self.pub_result = self.create_publisher(
             MsgString,
             self.cfg_topics.publish_topic(NODE_KEY, "motion_result"),
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "motion_result"),
         )
 
-        # ✅ Option: Omron Topics nur im REAL-Backend erzeugen
+        # omron cmd publisher (optional)
         self.pub_omron_cmd: Optional[Any] = None
-        self._topic_omron_cmd: Optional[str] = None
-
         if self.is_real_backend:
             topic_omron_cmd = self.cfg_topics.publish_topic("omron", "command")
             qos_omron_cmd = self.cfg_topics.qos_by_id("publish", "omron", "command")
             self.pub_omron_cmd = self.create_publisher(MsgString, topic_omron_cmd, qos_omron_cmd)
-            self._topic_omron_cmd = topic_omron_cmd
             self.log.info(f"[{self.backend}] Omron cmd topic enabled: {topic_omron_cmd}")
         else:
             self.log.info(f"[{self.backend}] Omron cmd topic disabled (sim/shadow backend)")
 
-        # --------------- Subscribers ----------------
+        # subscribers
         self.create_subscription(
             PoseStamped,
             self.cfg_topics.subscribe_topic(NODE_KEY, "plan_pose"),
@@ -334,18 +311,14 @@ class MoveItPyNode(Node):
             self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "set_planner_cfg"),
         )
 
-        # ----------------------------------------------------------
-        # (2) get_planning_scene Cache-Service SOFORT bereitstellen
-        # ----------------------------------------------------------
+        # planning scene cache service (optional but useful)
         self._gps_srv = None
         self._gps_sub = None
         self._last_scene: Optional[PlanningScene] = None
         self._warned_no_scene = False
         self._ensure_get_planning_scene_cache_service()
 
-        # ----------------------------------------------------------
-        # (3) MoveItPy init im Background-Thread
-        # ----------------------------------------------------------
+        # MoveItPy init in background
         self.moveit: Optional[MoveItPy] = None
         self.arm = None
         self.robot_model = None
@@ -357,11 +330,13 @@ class MoveItPyNode(Node):
 
         self._name_space = "" if ns == "/" else ns.strip("/")
         self.log.info(f"[moveitpy] init async: node_ns='{ns}', name_space='{self._name_space}'")
-
         Thread(target=self._init_moveitpy_background, daemon=True).start()
 
         self.log.info("MoveItPyNode init done (MoveItPy is initializing in background).")
 
+    # ------------------------------------------------------------
+    # Init / Params
+    # ------------------------------------------------------------
     def _default_pipeline_id(self) -> str:
         try:
             v = (self._planner_cfg.get("pipeline") or "").strip()
@@ -369,11 +344,7 @@ class MoveItPyNode(Node):
                 return v
         except Exception:
             pass
-
-        for key in (
-            "planning_pipelines.default_planning_pipeline",
-            "default_planning_pipeline",
-        ):
+        for key in ("planning_pipelines.default_planning_pipeline", "default_planning_pipeline"):
             try:
                 if self.has_parameter(key):
                     v = self.get_parameter(key).value
@@ -381,7 +352,6 @@ class MoveItPyNode(Node):
                         return v.strip()
             except Exception:
                 pass
-
         return "ompl"
 
     def _init_moveitpy_background(self) -> None:
@@ -392,12 +362,11 @@ class MoveItPyNode(Node):
                     name_space=self._name_space,
                     provide_planning_service=True,
                 )
-
                 self.arm = self.moveit.get_planning_component(GROUP_NAME)
                 self.robot_model = self.moveit.get_robot_model()
 
                 try:
-                    preset = (self.plan_request_preset or "default_ompl").strip() or "default_ompl"
+                    preset = self.plan_request_preset
                     self._plan_params = PlanRequestParameters(self.moveit, preset)
                     self._apply_planner_cfg_to_params()
                     self.log.info(f"[config] PlanRequestParameters loaded preset='{preset}'")
@@ -409,7 +378,7 @@ class MoveItPyNode(Node):
 
             self._moveit_ready.set()
             self.log.info(f"MoveItPy ready (group={GROUP_NAME}, ns='{self.get_namespace() or '/'}')")
-            self.log.info(f"MoveItPyMotionNode online (backend='{self.backend}').")
+            self.log.info(f"MoveItPyNode online (backend='{self.backend}').")
 
         except Exception as e:
             self._moveit_err = repr(e)
@@ -425,12 +394,14 @@ class MoveItPyNode(Node):
         self._emit("ERROR:MOVEIT_NOT_READY")
         return False
 
+    # ------------------------------------------------------------
+    # Planning scene cache service (optional)
+    # ------------------------------------------------------------
     def _ensure_get_planning_scene_cache_service(self) -> None:
         if self._gps_srv is not None:
             return
 
-        ns = self.get_namespace() or "/"
-        srv_name = f"{ns.rstrip('/')}/get_planning_scene" if ns != "/" else "/get_planning_scene"
+        from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 
         qos_scene = QoSProfile(depth=1)
         qos_scene.history = HistoryPolicy.KEEP_LAST
@@ -443,14 +414,12 @@ class MoveItPyNode(Node):
             self._on_monitored_planning_scene,
             qos_scene,
         )
-
         self._gps_srv = self.create_service(
             GetPlanningScene,
             "get_planning_scene",
             self._on_get_planning_scene,
         )
-
-        self.log.info(f"[psm] ✅ Cache get_planning_scene Service aktiv: {srv_name}")
+        self.log.info("[psm] Cache get_planning_scene Service aktiv: get_planning_scene")
 
     def _on_monitored_planning_scene(self, msg: PlanningScene) -> None:
         self._last_scene = msg
@@ -464,43 +433,18 @@ class MoveItPyNode(Node):
             res.scene = self._last_scene
             res.scene.is_diff = False
             return res
-
         if not self._warned_no_scene:
             self._warned_no_scene = True
-            self.log.warn("[psm] get_planning_scene requested, aber noch kein monitored_planning_scene empfangen.")
+            self.log.warning("[psm] get_planning_scene requested, aber noch kein monitored_planning_scene empfangen.")
         res.scene = PlanningScene()
         res.scene.is_diff = False
         return res
 
-    def _lookup_tf(self, target: str, source: str):
-        if not self.tf_buffer.can_transform(target, source, RclpyTime(), Duration(seconds=1.0)):
-            raise RuntimeError(f"TF not available {target} <- {source}")
-        return self.tf_buffer.lookup_transform(target, source, RclpyTime())
-
-    def _ns_prefix(self) -> str:
-        ns = (self.get_namespace() or "/").strip().strip("/")
-        return ns
-
-    def _resolve_named_candidates(self, name: str) -> List[str]:
-        name = (name or "").strip().strip("/")
-        if not name:
-            return []
-        cand = [name]
-        ns = self._ns_prefix()
-        if ns:
-            cand.append(f"{ns}/{name}")
-        return cand
-
-    def _lookup_tf_named(self, name: str):
-        last_err: Optional[Exception] = None
-        for cand in self._resolve_named_candidates(name):
-            try:
-                return self._lookup_tf(self.frame_world, cand), cand
-            except Exception as e:
-                last_err = e
-        raise RuntimeError(str(last_err) if last_err else f"TF not available {self.frame_world} <- {name}")
-
+    # ------------------------------------------------------------
+    # Utility
+    # ------------------------------------------------------------
     def _emit(self, text: str) -> None:
+        # motion_result is the state-machine signal; keep it LAST per event.
         self.pub_result.publish(MsgString(data=text))
         self.log.info(text)
 
@@ -570,16 +514,39 @@ class MoveItPyNode(Node):
         except Exception as e:
             self.log.error(f"[config] set_planner_cfg: invalid JSON '{raw}': {e}")
 
-    def _transform_pose_stamped_to_world(self, msg: PoseStamped) -> PoseStamped:
-        """
-        Robust TF transform for PoseStamped -> self.frame_world.
+    # ------------------------------------------------------------
+    # TF helpers for goal input
+    # ------------------------------------------------------------
+    def _lookup_tf(self, target: str, source: str):
+        if not self.tf_buffer.can_transform(target, source, RclpyTime(), Duration(seconds=1.0)):
+            raise RuntimeError(f"TF not available {target} <- {source}")
+        return self.tf_buffer.lookup_transform(target, source, RclpyTime())
 
-        Primary: tf_buffer.transform(PoseStamped, target_frame)
-        Fallback: lookup_transform + do_transform_pose(msg.pose, tf)
-        """
+    def _ns_prefix(self) -> str:
+        return (self.get_namespace() or "/").strip().strip("/")
+
+    def _resolve_named_candidates(self, name: str) -> List[str]:
+        name = (name or "").strip().strip("/")
+        if not name:
+            return []
+        cand = [name]
+        ns = self._ns_prefix()
+        if ns:
+            cand.append(f"{ns}/{name}")
+        return cand
+
+    def _lookup_tf_named(self, name: str):
+        last_err: Optional[Exception] = None
+        for cand in self._resolve_named_candidates(name):
+            try:
+                return self._lookup_tf(self.frame_world, cand), cand
+            except Exception as e:
+                last_err = e
+        raise RuntimeError(str(last_err) if last_err else f"TF not available {self.frame_world} <- {name}")
+
+    def _transform_pose_stamped_to_world(self, msg: PoseStamped) -> PoseStamped:
         in_frame = (msg.header.frame_id or "").strip() or self.frame_world
 
-        # already in world -> clone header/stamp
         if in_frame == self.frame_world:
             out = PoseStamped()
             out.header.frame_id = self.frame_world
@@ -587,29 +554,25 @@ class MoveItPyNode(Node):
             out.pose = msg.pose
             return out
 
-        # 1) primary: tf2_ros Buffer.transform supports PoseStamped
         try:
-            out = self.tf_buffer.transform(
-                msg,
-                self.frame_world,
-                timeout=Duration(seconds=1.0),
-            )
+            out = self.tf_buffer.transform(msg, self.frame_world, timeout=Duration(seconds=1.0))
             out.header.frame_id = self.frame_world
             out.header.stamp = self.get_clock().now().to_msg()
             return out
         except Exception as e_primary:
-            self.log.warn(f"[tf] buffer.transform failed ({in_frame} -> {self.frame_world}): {e_primary!r}")
+            self.log.warning(f"[tf] buffer.transform failed ({in_frame} -> {self.frame_world}): {e_primary!r}")
 
-        # 2) fallback: transform Pose (NOT PoseStamped)
         tf = self._lookup_tf(self.frame_world, in_frame)
-        p = do_transform_pose(msg.pose, tf)  # Pose -> Pose
-
+        p = do_transform_pose(msg.pose, tf)
         out = PoseStamped()
         out.header.frame_id = self.frame_world
         out.header.stamp = self.get_clock().now().to_msg()
         out.pose = p
         return out
 
+    # ------------------------------------------------------------
+    # Planning / Execution handlers
+    # ------------------------------------------------------------
     def _on_plan_pose(self, msg: PoseStamped) -> None:
         if self._busy:
             self._emit("ERROR:BUSY")
@@ -642,14 +605,8 @@ class MoveItPyNode(Node):
             self._planned = core
             self._last_goal_pose = goal
 
-            # publish BEFORE result to avoid races in UI/state machine
+            # publish artifact BEFORE result
             self.pub_planned.publish(msg_traj)
-            try:
-                self.pub_target_traj.publish(msg_traj.joint_trajectory)
-            except Exception:
-                pass
-
-            self._publish_preview(goal)
             self._emit("PLANNED:OK pose")
 
         except Exception as e:
@@ -699,14 +656,8 @@ class MoveItPyNode(Node):
             self._planned = core
             self._last_goal_pose = goal
 
-            # publish BEFORE result to avoid races in UI/state machine
+            # publish artifact BEFORE result
             self.pub_planned.publish(msg_traj)
-            try:
-                self.pub_target_traj.publish(msg_traj.joint_trajectory)
-            except Exception:
-                pass
-
-            self._publish_preview(goal)
             self._emit(f"PLANNED:OK named='{name}'")
 
         except Exception as e:
@@ -717,7 +668,6 @@ class MoveItPyNode(Node):
             self._on_stop(MsgEmpty())
             return
 
-        # Execute request => ensure TRAJ mode (trajectory controller ON)
         self._mode_mgr.ensure_mode("TRAJ")
 
         if self._busy:
@@ -745,13 +695,8 @@ class MoveItPyNode(Node):
                 return
 
             if ok:
-                # publish executed BEFORE emitting result to avoid consumer races
-                try:
-                    self.pub_target_traj.publish(msg_traj.joint_trajectory)
-                except Exception:
-                    pass
+                # publish executed artifact BEFORE result
                 self.pub_executed.publish(msg_traj)
-
                 self._emit("EXECUTED:OK")
             else:
                 self._emit("ERROR:EXEC")
@@ -795,28 +740,6 @@ class MoveItPyNode(Node):
     def _on_stop(self, _msg: MsgEmpty) -> None:
         self._cancel = True
         self._emit("STOP:REQ")
-
-    def _publish_preview(self, goal: PoseStamped) -> None:
-        m = Marker()
-        m.header.frame_id = goal.header.frame_id
-        m.header.stamp = self.get_clock().now().to_msg()
-        m.ns = "goal"
-        m.id = 0
-        m.type = Marker.SPHERE
-        m.action = Marker.ADD
-        m.pose = goal.pose
-
-        if (
-            m.pose.orientation.x == 0.0 and
-            m.pose.orientation.y == 0.0 and
-            m.pose.orientation.z == 0.0 and
-            m.pose.orientation.w == 0.0
-        ):
-            m.pose.orientation.w = 1.0
-
-        m.scale.x = m.scale.y = m.scale.z = 0.02
-        m.color.r, m.color.g, m.color.b, m.color.a = 0.2, 1.0, 0.2, 1.0
-        self.pub_preview.publish(MarkerArray(markers=[m]))
 
 
 def main(args=None) -> None:

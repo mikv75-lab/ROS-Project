@@ -3,17 +3,24 @@
 """
 spraycoater_nodes_py/spray_path.py
 
-SprayPath Cache Node with PARALLEL outputs + BOOL toggles.
+SprayPath Cache Node with PARALLEL outputs + BOOL toggles + EXPLICIT CLEAR.
 
-- RViz can show all 3 simultaneously (each on its own topic).
-- GUI sends:
-    - compiled/traj/executed poses_in + markers_in (latched)
-    - show_compiled/show_traj/show_executed as Bool (latched)
-- Node handles:
-    - caching
-    - (re)publishing on toggle ON
-    - clearing outputs on toggle OFF (PoseArray empty + Marker.DELETEALL)
-    - new recipe detection driven by compiled signature change
+Goal:
+- ProcessTab Load can always do:
+    1) publish spray_path/clear
+    2) publish compiled/traj/executed (if available; else empty)
+  -> guarantees RViz/UI never keeps stale markers from previous recipe.
+
+GUI sends:
+  - compiled/traj/executed poses_in + markers_in (latched)
+  - show_compiled/show_traj/show_executed as Bool (latched)
+  - clear as Empty
+
+Node handles:
+  - caching
+  - (re)publishing on toggle ON
+  - clearing outputs on toggle OFF (PoseArray empty + Marker.DELETEALL)
+  - clear: hard reset caches + outputs (+ optional signature state)
 
 QoS:
 - expected transient-local/latched via config_hub for all path topics
@@ -28,7 +35,7 @@ from typing import Dict, Optional, Tuple
 import rclpy
 from rclpy.node import Node
 
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Empty
 from geometry_msgs.msg import PoseArray
 from visualization_msgs.msg import MarkerArray, Marker
 
@@ -54,10 +61,16 @@ class SprayPath(Node):
         self.declare_parameter("backend", "default")
         self.backend: str = self.get_parameter("backend").get_parameter_value().string_value or "default"
 
+        # Optional legacy behavior (signature-based auto clear). Recommended OFF when using explicit clear.
+        self.declare_parameter("auto_clear_on_compiled_change", False)
+        self.auto_clear_on_compiled_change: bool = bool(
+            self.get_parameter("auto_clear_on_compiled_change").get_parameter_value().bool_value
+        )
+
         self.loader = topics()
         self.frames = frames()
 
-        # ---------------- SUB (toggles) ----------------
+        # ---------------- SUB (toggles + clear) ----------------
         t_show_compiled = self.loader.subscribe_topic(self.GROUP, "show_compiled")
         q_show_compiled = self.loader.qos_by_id("subscribe", self.GROUP, "show_compiled")
 
@@ -66,6 +79,10 @@ class SprayPath(Node):
 
         t_show_executed = self.loader.subscribe_topic(self.GROUP, "show_executed")
         q_show_executed = self.loader.qos_by_id("subscribe", self.GROUP, "show_executed")
+
+        # NEW: explicit clear
+        t_clear = self.loader.subscribe_topic(self.GROUP, "clear")
+        q_clear = self.loader.qos_by_id("subscribe", self.GROUP, "clear")
 
         # ---------------- SUB (inputs) ----------------
         t_compiled_poses_in = self.loader.subscribe_topic(self.GROUP, "compiled_poses_in")
@@ -119,6 +136,9 @@ class SprayPath(Node):
         self.sub_show_traj = self.create_subscription(Bool, t_show_traj, self._on_show_traj, q_show_traj)
         self.sub_show_executed = self.create_subscription(Bool, t_show_executed, self._on_show_executed, q_show_executed)
 
+        # explicit clear
+        self.sub_clear = self.create_subscription(Empty, t_clear, self._on_clear, q_clear)
+
         self.sub_compiled_poses = self.create_subscription(
             PoseArray, t_compiled_poses_in, self._on_compiled_poses_in, q_compiled_poses_in
         )
@@ -154,7 +174,7 @@ class SprayPath(Node):
             self.L_EXECUTED: True,
         }
 
-        # NEW-RECIPE detection (cheap signature)
+        # Optional signature tracking (only used if auto_clear_on_compiled_change=True)
         self._last_compiled_sig: Optional[Tuple[str, int]] = None
         self._last_compiled_marker_sig: Optional[Tuple[str, int]] = None
 
@@ -162,8 +182,8 @@ class SprayPath(Node):
         self._timer = self.create_timer(1.0, self._republish_all)
 
         self.get_logger().info(
-            f"✅ SprayPath ready (backend='{self.backend}'): parallel outputs + bool toggles "
-            f"(default show_compiled/show_traj/show_executed = True)."
+            f"✅ SprayPath ready (backend='{self.backend}'): parallel outputs + bool toggles + clear "
+            f"(auto_clear_on_compiled_change={self.auto_clear_on_compiled_change})."
         )
 
     # ------------------------------------------------------------------
@@ -221,48 +241,63 @@ class SprayPath(Node):
             self.pub_executed_markers.publish(msg)
 
     # ------------------------------------------------------------------
-    # New recipe detection
+    # Explicit clear (ProcessTab should call this on Load)
+    # ------------------------------------------------------------------
+
+    def _on_clear(self, _msg: Empty) -> None:
+        self._last_compiled_sig = None
+        self._last_compiled_marker_sig = None
+        self._on_new_recipe(frame_id="")
+        self.get_logger().info(f"[{self.backend}] 🧹 clear -> reset caches + outputs")
+
+    # ------------------------------------------------------------------
+    # Optional auto-clear on compiled change (legacy; recommended OFF)
     # ------------------------------------------------------------------
 
     def _on_new_recipe(self, *, frame_id: str = "") -> None:
-        # clear caches
         self._clear_cache_layer(self.L_COMPILED)
         self._clear_cache_layer(self.L_TRAJ)
         self._clear_cache_layer(self.L_EXECUTED)
 
-        # hard-clear RViz layers (regardless of show flags)
         self._publish_layer_clear(self.L_COMPILED, frame_id=frame_id)
         self._publish_layer_clear(self.L_TRAJ, frame_id=frame_id)
         self._publish_layer_clear(self.L_EXECUTED, frame_id=frame_id)
 
-        self.get_logger().info(f"[{self.backend}] 🧹 new recipe -> cleared all layers + DELETEALL")
+    def _maybe_auto_clear_from_compiled_poses(self, msg: PoseArray) -> None:
+        if not self.auto_clear_on_compiled_change:
+            return
 
-    def _maybe_trigger_new_recipe_from_compiled_poses(self, msg: PoseArray) -> None:
         frame_id = (msg.header.frame_id or "").strip()
         sig = (frame_id, int(len(msg.poses)))
+
+        # First observation: only set signature; DO NOT clear (explicit clear is the contract)
         if self._last_compiled_sig is None:
             self._last_compiled_sig = sig
-            self._on_new_recipe(frame_id=frame_id)
             return
+
         if sig != self._last_compiled_sig:
             self._last_compiled_sig = sig
             self._on_new_recipe(frame_id=frame_id)
 
-    def _maybe_trigger_new_recipe_from_compiled_markers(self, msg: MarkerArray) -> None:
+    def _maybe_auto_clear_from_compiled_markers(self, msg: MarkerArray) -> None:
+        if not self.auto_clear_on_compiled_change:
+            return
+
         frame_id = ""
         if msg.markers:
             frame_id = (msg.markers[0].header.frame_id or "").strip()
         sig = (frame_id, int(len(msg.markers)))
+
         if self._last_compiled_marker_sig is None:
             self._last_compiled_marker_sig = sig
-            self._on_new_recipe(frame_id=frame_id)
             return
+
         if sig != self._last_compiled_marker_sig:
             self._last_compiled_marker_sig = sig
             self._on_new_recipe(frame_id=frame_id)
 
     # ------------------------------------------------------------------
-    # Toggle handlers (GUI -> Node), Bool only
+    # Toggle handlers
     # ------------------------------------------------------------------
 
     def _set_show(self, key: str, v: bool) -> None:
@@ -271,22 +306,16 @@ class SprayPath(Node):
         self._show[key] = v
 
         if v and not prev:
-            # turned ON: publish cached if any (otherwise keep empty)
             self._publish_layer_cached_if_shown(key)
-            self.get_logger().info(f"[{self.backend}] 👁️ show_{key}=True -> republish cached")
             return
 
         if (not v) and prev:
-            # turned OFF: clear output topics now
             frame_id = ""
             c = self._cache.get(key)
             if c and c.poses is not None:
                 frame_id = (c.poses.header.frame_id or "").strip()
             self._publish_layer_clear(key, frame_id=frame_id)
-            self.get_logger().info(f"[{self.backend}] 🙈 show_{key}=False -> clear outputs (DELETEALL)")
             return
-
-        self.get_logger().info(f"[{self.backend}] show_{key}={v} (no change)")
 
     def _on_show_compiled(self, msg: Bool) -> None:
         self._set_show(self.L_COMPILED, bool(getattr(msg, "data", False)))
@@ -298,38 +327,33 @@ class SprayPath(Node):
         self._set_show(self.L_EXECUTED, bool(getattr(msg, "data", False)))
 
     # ------------------------------------------------------------------
-    # Input handlers (GUI -> Node) : compiled/traj/executed data
+    # Input handlers (GUI -> Node)
     # ------------------------------------------------------------------
 
     def _on_compiled_poses_in(self, msg: PoseArray) -> None:
         if msg is None or len(msg.poses) == 0:
             frame_id = (msg.header.frame_id if msg else "") or ""
             self._cache[self.L_COMPILED].poses = None
-            # if shown: clear poses output (markers handled separately)
             if self._show[self.L_COMPILED]:
                 self.pub_compiled_poses.publish(self._mk_empty_pose_array(frame_id))
-            self.get_logger().info(f"[{self.backend}] 🧹 compiled poses cleared")
             return
 
-        self._maybe_trigger_new_recipe_from_compiled_poses(msg)
+        self._maybe_auto_clear_from_compiled_poses(msg)
         self._cache[self.L_COMPILED].poses = msg
         if self._show[self.L_COMPILED]:
             self.pub_compiled_poses.publish(msg)
-        self.get_logger().info(f"[{self.backend}] 📌 compiled poses cached: {len(msg.poses)} (show={self._show[self.L_COMPILED]})")
 
     def _on_compiled_markers_in(self, msg: MarkerArray) -> None:
         if msg is None or len(msg.markers) == 0:
             self._cache[self.L_COMPILED].markers = None
             if self._show[self.L_COMPILED]:
                 self.pub_compiled_markers.publish(self._mk_deleteall_marker_array(""))
-            self.get_logger().info(f"[{self.backend}] 🧹 compiled markers cleared (DELETEALL)")
             return
 
-        self._maybe_trigger_new_recipe_from_compiled_markers(msg)
+        self._maybe_auto_clear_from_compiled_markers(msg)
         self._cache[self.L_COMPILED].markers = msg
         if self._show[self.L_COMPILED]:
             self.pub_compiled_markers.publish(msg)
-        self.get_logger().info(f"[{self.backend}] 📌 compiled markers cached: {len(msg.markers)} (show={self._show[self.L_COMPILED]})")
 
     def _on_traj_poses_in(self, msg: PoseArray) -> None:
         if msg is None or len(msg.poses) == 0:
@@ -337,26 +361,22 @@ class SprayPath(Node):
             self._cache[self.L_TRAJ].poses = None
             if self._show[self.L_TRAJ]:
                 self.pub_traj_poses.publish(self._mk_empty_pose_array(frame_id))
-            self.get_logger().info(f"[{self.backend}] 🧹 traj poses cleared")
             return
 
         self._cache[self.L_TRAJ].poses = msg
         if self._show[self.L_TRAJ]:
             self.pub_traj_poses.publish(msg)
-        self.get_logger().info(f"[{self.backend}] 🧭 traj poses cached: {len(msg.poses)} (show={self._show[self.L_TRAJ]})")
 
     def _on_traj_markers_in(self, msg: MarkerArray) -> None:
         if msg is None or len(msg.markers) == 0:
             self._cache[self.L_TRAJ].markers = None
             if self._show[self.L_TRAJ]:
                 self.pub_traj_markers.publish(self._mk_deleteall_marker_array(""))
-            self.get_logger().info(f"[{self.backend}] 🧹 traj markers cleared (DELETEALL)")
             return
 
         self._cache[self.L_TRAJ].markers = msg
         if self._show[self.L_TRAJ]:
             self.pub_traj_markers.publish(msg)
-        self.get_logger().info(f"[{self.backend}] 🧭 traj markers cached: {len(msg.markers)} (show={self._show[self.L_TRAJ]})")
 
     def _on_executed_poses_in(self, msg: PoseArray) -> None:
         if msg is None or len(msg.poses) == 0:
@@ -364,33 +384,28 @@ class SprayPath(Node):
             self._cache[self.L_EXECUTED].poses = None
             if self._show[self.L_EXECUTED]:
                 self.pub_executed_poses.publish(self._mk_empty_pose_array(frame_id))
-            self.get_logger().info(f"[{self.backend}] 🧹 executed poses cleared")
             return
 
         self._cache[self.L_EXECUTED].poses = msg
         if self._show[self.L_EXECUTED]:
             self.pub_executed_poses.publish(msg)
-        self.get_logger().info(f"[{self.backend}] ▶ executed poses cached: {len(msg.poses)} (show={self._show[self.L_EXECUTED]})")
 
     def _on_executed_markers_in(self, msg: MarkerArray) -> None:
         if msg is None or len(msg.markers) == 0:
             self._cache[self.L_EXECUTED].markers = None
             if self._show[self.L_EXECUTED]:
                 self.pub_executed_markers.publish(self._mk_deleteall_marker_array(""))
-            self.get_logger().info(f"[{self.backend}] 🧹 executed markers cleared (DELETEALL)")
             return
 
         self._cache[self.L_EXECUTED].markers = msg
         if self._show[self.L_EXECUTED]:
             self.pub_executed_markers.publish(msg)
-        self.get_logger().info(f"[{self.backend}] ▶ executed markers cached: {len(msg.markers)} (show={self._show[self.L_EXECUTED]})")
 
     # ------------------------------------------------------------------
     # 1 Hz republish safety net
     # ------------------------------------------------------------------
 
     def _republish_all(self) -> None:
-        # Only republish layers that are currently shown
         if self._show.get(self.L_COMPILED, True):
             self._publish_layer_cached_if_shown(self.L_COMPILED)
         if self._show.get(self.L_TRAJ, True):

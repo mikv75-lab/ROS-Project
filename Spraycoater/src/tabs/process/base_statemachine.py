@@ -9,7 +9,12 @@ from typing import Optional, Dict, Any, List, Tuple
 from PyQt6 import QtCore
 from PyQt6.QtStateMachine import QStateMachine, QState, QFinalState
 
-from model.recipe.recipe_run_result import RunResult
+# IMPORTANT: adjust this import to your actual module path
+# If your package root is "model", use:
+#   from model.recipe.recipe_run_result import RunResult
+# If your package root is "app.model", use:
+#   from app.model.recipe.recipe_run_result import RunResult
+from model.recipe.recipe_run_result import RunResult  # <-- adjust if needed
 
 _LOG = logging.getLogger("tabs.process.base_statemachine")
 
@@ -51,11 +56,24 @@ class BaseProcessStatemachine(QtCore.QObject):
       - Transition passiert über moveitpy.signals.motionResultChanged:
           - "EXECUTED:OK"  -> snapshot step + optional next / done
           - "ERROR..."     -> retry / fail
+
+    RESULT CONTRACT (RunResult payload, strict keys always present):
+      - notifyFinished emits dict payload:
+          {
+            "planned_run":  {"traj": <JTBySegment yaml dict>, "tcp": <Draft yaml dict or {}>},
+            "executed_run": {"traj": <JTBySegment yaml dict>, "tcp": <Draft yaml dict or {}>},
+            "fk_meta": {...}   # may be {} here; ProcessTab fills FK details
+          }
+
+    NOTE:
+      - Diese Base liefert NUR "traj" (JTBySegment) gefüllt.
+      - "tcp" wird hier bewusst NICHT berechnet (RobotModel/URDF/SRDF management ist ProcessTab/Bridge-Sache),
+        aber die Keys existieren bereits (Hard-Contract), damit TCP später strikt ergänzt werden kann.
     """
 
     ROLE = "process"
 
-    notifyFinished = QtCore.pyqtSignal(object)  # emits dict payload
+    notifyFinished = QtCore.pyqtSignal(object)  # emits RunResult payload dict (see contract)
     notifyError = QtCore.pyqtSignal(str)
 
     stateChanged = QtCore.pyqtSignal(str)
@@ -96,7 +114,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._executed_by_segment: Dict[str, Any] = {}
 
         # per-segment event buffers (captures every EXECUTED:OK inside same segment)
-        # NOTE: lists of JT-DICTS
+        # NOTE: lists of JT-DICTS (each entry is ONE command completion)
         self._planned_steps_by_segment: Dict[str, List[Any]] = {}
         self._executed_steps_by_segment: Dict[str, List[Any]] = {}
 
@@ -162,54 +180,89 @@ class BaseProcessStatemachine(QtCore.QObject):
     def _should_transition_on_ok(self, seg_name: str, result: str) -> bool:
         return True
 
-    # ---------------- Result ----------------
+    # ---------------- Result (JTBySegment YAML dicts) ----------------
 
-    def _build_result(self) -> RunResult:
-        rr = RunResult(
-            role=self._role,
-            ok=not self._stopped and not bool(self._error_msg),
-            message="stopped" if self._stopped else "finished",
-        )
+    def _build_traj_payload(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Returns (planned, executed) as JTBySegment YAML dicts:
 
-        rr.meta.update(
-            {
-                "status": "stopped" if self._stopped else "finished",
-                "planned_by_segment": dict(self._planned_by_segment),
-                "executed_by_segment": dict(self._executed_by_segment),
-                "planned_steps_by_segment": dict(self._planned_steps_by_segment),
-                "executed_steps_by_segment": dict(self._executed_steps_by_segment),
-            }
-        )
+          planned  = {"version":1, "segments": {...}}
+          executed = {"version":1, "segments": {...}}
 
-        # for compatibility: keep last snapshots if someone expects rr.planned_traj/executed_traj
-        last_seg = self._current_state or (SEG_ORDER[-1] if SEG_ORDER else "")
-        if last_seg:
-            p = self._planned_by_segment.get(last_seg)
-            e = self._executed_by_segment.get(last_seg)
-            if isinstance(p, dict):
-                rr.planned_traj = p
-            if isinstance(e, dict):
-                rr.executed_traj = e
+        NOTE: time_from_start is normalized to [sec, nanosec] list for persistence schema.
+        """
+        planned = self._jt_by_segment_yaml(which="planned")
+        executed = self._jt_by_segment_yaml(which="executed")
+        return planned, executed
 
-        rid = getattr(self._recipe, "id", None)
-        if rid is not None:
-            rr.meta["recipe_id"] = rid
+    def _jt_by_segment_yaml(self, *, which: str) -> Dict[str, Any]:
+        if which not in ("planned", "executed"):
+            raise ValueError(f"_jt_by_segment_yaml: invalid which={which}")
 
-        return rr
+        src = self._planned_by_segment if which == "planned" else self._executed_by_segment
 
-    def _result_payload(self) -> Dict[str, Any]:
-        rr = self._build_result()
-        if hasattr(rr, "to_process_payload"):
-            try:
-                payload = rr.to_process_payload()
-                if isinstance(payload, dict):
-                    return payload
-            except Exception:
-                pass
+        segments: Dict[str, Any] = {}
+        for seg in SEG_ORDER:
+            jt = src.get(seg)
+            seg_yaml = self._jt_dict_to_segment_yaml(jt)
+            if seg_yaml is not None:
+                segments[seg] = seg_yaml
 
-        if isinstance(rr, dict):
-            return rr
-        return {"role": self._role, "ok": not self._stopped and not bool(self._error_msg), "message": "finished"}
+        return {"version": 1, "segments": segments}
+
+    @staticmethod
+    def _jt_dict_to_segment_yaml(jt: Any) -> Optional[Dict[str, Any]]:
+        """
+        Convert internal JT-dict (joint_names + points with time_from_start dict)
+        into strict recipe schema JTSegment dict:
+
+          {"joint_names":[...],
+           "points":[{"positions":[...], "time_from_start":[sec,nanosec]}, ...]}
+
+        Drops velocities/accelerations/effort.
+        """
+        if not (isinstance(jt, dict) and isinstance(jt.get("joint_names"), list) and isinstance(jt.get("points"), list)):
+            return None
+
+        jn = [str(x) for x in (jt.get("joint_names") or [])]
+        if not jn:
+            return None
+
+        out_pts: List[Dict[str, Any]] = []
+        for p in (jt.get("points") or []):
+            if not isinstance(p, dict):
+                continue
+            pos = p.get("positions") or []
+            if not isinstance(pos, list) or len(pos) != len(jn):
+                continue
+
+            tfs = p.get("time_from_start")
+            sec = 0
+            nsec = 0
+            if isinstance(tfs, dict):
+                try:
+                    sec = int(tfs.get("sec", 0))
+                    nsec = int(tfs.get("nanosec", 0))
+                except Exception:
+                    sec, nsec = 0, 0
+            elif isinstance(tfs, (list, tuple)) and len(tfs) == 2:
+                try:
+                    sec = int(tfs[0])
+                    nsec = int(tfs[1])
+                except Exception:
+                    sec, nsec = 0, 0
+
+            out_pts.append(
+                {
+                    "positions": [float(x) for x in pos],
+                    "time_from_start": [int(sec), int(nsec)],
+                }
+            )
+
+        if not out_pts:
+            return None
+
+        return {"joint_names": jn, "points": out_pts}
 
     # ---------------- Machine ----------------
 
@@ -293,7 +346,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         """
         Capture one completed command (EXECUTED:OK) into per-segment arrays.
 
-        We intentionally do BEST EFFORT extraction into a JT-dict:
+        BEST EFFORT extraction into a JT-dict:
           {"joint_names":[...], "points":[...]}
         """
         planned_raw, executed_raw = self._get_step_sources()
@@ -341,7 +394,6 @@ class BaseProcessStatemachine(QtCore.QObject):
             return planned, executed
 
         mp = self._moveitpy
-        # Best-effort attribute probing (covers many wrappers)
         for p_attr, e_attr in (
             ("last_planned", "last_executed"),
             ("planned_trajectory", "executed_trajectory"),
@@ -402,12 +454,6 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     @classmethod
     def _jt_from_any(cls, obj: Any, *, _depth: int = 0, _max_depth: int = 8) -> Optional[Dict[str, Any]]:
-        """
-        Finds JointTrajectory in many wrappers.
-
-        Returns a dict:
-          {"joint_names":[...], "points":[{...,"time_from_start":{sec,nanosec}}, ...]}
-        """
         if obj is None:
             return None
         if _depth > _max_depth:
@@ -513,10 +559,6 @@ class BaseProcessStatemachine(QtCore.QObject):
     # ---------------- concatenation (merged JT per segment) ----------------
 
     def _concat_joint_traj_dicts(self, items: List[Any]) -> Optional[Dict[str, Any]]:
-        """
-        Concatenates a list of JT-dicts into one JT-dict.
-        This is used as the per-segment snapshot (e.g. RECIPE: many commands -> one merged JT).
-        """
         dicts = [d for d in (items or []) if isinstance(d, dict) and d.get("joint_names") and d.get("points")]
         if not dicts:
             return None
@@ -534,7 +576,6 @@ class BaseProcessStatemachine(QtCore.QObject):
                 except Exception:
                     return 0
             if isinstance(d, (int, float)):
-                # seconds
                 return int(float(d) * 1_000_000_000)
             if isinstance(d, str):
                 try:
@@ -554,11 +595,9 @@ class BaseProcessStatemachine(QtCore.QObject):
         for jt in dicts:
             names = list(jt.get("joint_names") or [])
             pts = list(jt.get("points") or [])
-
             if not pts:
                 continue
             if names != base_names:
-                # incompatible -> skip (optional: reorder, if you want)
                 continue
 
             local_times = [dur_to_ns(p.get("time_from_start")) if isinstance(p, dict) else 0 for p in pts]
@@ -568,14 +607,12 @@ class BaseProcessStatemachine(QtCore.QObject):
                 t_local_ns = local_times[i] if i < len(local_times) else 0
                 t_global_ns = t_offset_ns + t_local_ns
 
-                # enforce monotonic
                 if merged_pts and t_global_ns <= last_global_ns:
                     t_global_ns = last_global_ns + 1_000_000  # +1ms
 
                 q = copy.deepcopy(p)
                 q["time_from_start"] = ns_to_dur(t_global_ns)
 
-                # de-dup first point if same positions as last
                 if merged_pts and i == 0:
                     try:
                         if q.get("positions") == merged_pts[-1].get("positions"):
@@ -601,8 +638,14 @@ class BaseProcessStatemachine(QtCore.QObject):
         QtCore.QTimer.singleShot(0, self._sig_error.emit)
 
     def _on_finished(self) -> None:
-        payload = self._result_payload()
-        self.notifyFinished.emit(payload)
+        planned, executed = self._build_traj_payload()
+
+        rr = RunResult()
+        rr.set_planned(traj=planned)     # tcp keys exist already (empty dict)
+        rr.set_executed(traj=executed)  # tcp keys exist already (empty dict)
+        # rr.fk_meta stays {} here; ProcessTab fills it after FK.
+
+        self.notifyFinished.emit(rr.to_process_payload())
         self._cleanup()
 
     def _on_error(self) -> None:

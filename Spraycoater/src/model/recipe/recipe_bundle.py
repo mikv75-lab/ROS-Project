@@ -65,11 +65,13 @@ class RecipePaths:
     draft_yaml: str
     planned_traj_yaml: str
     executed_traj_yaml: str
+    planned_tcp_yaml: str
+    executed_tcp_yaml: str
 
 
 class RecipeBundle:
     """
-    Legacy persistence layout (SSoT):
+    Persistence layout (SSoT):
 
       <recipes_root_dir>/
         <recipe_id>/
@@ -77,10 +79,19 @@ class RecipeBundle:
           draft.yaml
           planned_traj.yaml
           executed_traj.yaml
+          planned_tcp.yaml
+          executed_tcp.yaml
 
-    UI-compatibility:
-      - UI may use keys "<rid>/<name>"
-      - persistence is rid-only; name is ignored (treated as "default")
+    Semantics:
+      - When draft.yaml is saved: delete ALL derived artifacts (planned/executed traj + tcp).
+      - planned/executed saves always overwrite their files.
+
+    Schema:
+      - draft.yaml, planned_tcp.yaml, executed_tcp.yaml share the SAME schema (Draft/Path v1):
+          version: 1
+          sides:
+            <side>:
+              poses_quat: [ ... ]
     """
 
     def __init__(
@@ -133,7 +144,7 @@ class RecipeBundle:
         return self.make_key(rid, name)
 
     # ------------------------------------------------------------
-    # paths (legacy)
+    # paths
     # ------------------------------------------------------------
 
     def _recipe_dir(self, recipe_id: str) -> str:
@@ -150,10 +161,12 @@ class RecipeBundle:
             draft_yaml=os.path.join(d, "draft.yaml"),
             planned_traj_yaml=os.path.join(d, "planned_traj.yaml"),
             executed_traj_yaml=os.path.join(d, "executed_traj.yaml"),
+            planned_tcp_yaml=os.path.join(d, "planned_tcp.yaml"),
+            executed_tcp_yaml=os.path.join(d, "executed_tcp.yaml"),
         )
 
     # ------------------------------------------------------------
-    # lifecycle (legacy)
+    # lifecycle
     # ------------------------------------------------------------
 
     def create_new(self, recipe_id: str, *, overwrite: bool = False) -> RecipePaths:
@@ -167,7 +180,14 @@ class RecipeBundle:
         p = self.paths(recipe_id)
         if not os.path.isdir(p.recipe_dir):
             return
-        for fn in (p.params_yaml, p.draft_yaml, p.planned_traj_yaml, p.executed_traj_yaml):
+        for fn in (
+            p.params_yaml,
+            p.draft_yaml,
+            p.planned_traj_yaml,
+            p.executed_traj_yaml,
+            p.planned_tcp_yaml,
+            p.executed_tcp_yaml,
+        ):
             if os.path.exists(fn):
                 try:
                     os.remove(fn)
@@ -193,7 +213,7 @@ class RecipeBundle:
         _save_yaml(p.params_yaml, recipe.to_params_dict())
 
     # ------------------------------------------------------------
-    # draft.yaml (strict)
+    # draft.yaml (strict) + semantics: delete all derived artifacts
     # ------------------------------------------------------------
 
     def load_draft(self, recipe_id: str) -> Draft:
@@ -205,6 +225,9 @@ class RecipeBundle:
         p = self.paths(recipe_id)
         _ensure_dir(p.recipe_dir)
         _save_yaml(p.draft_yaml, draft.to_yaml_dict())
+
+        # Requirement: whenever a draft is saved, all derived results are stale.
+        self.clear_artifacts(recipe_id, what="all")
 
     # ------------------------------------------------------------
     # planned_traj.yaml / executed_traj.yaml (strict)
@@ -218,6 +241,7 @@ class RecipeBundle:
         return JTBySegment.from_yaml_dict(data)
 
     def save_planned_traj(self, recipe_id: str, traj: JTBySegment) -> None:
+        # always overwrite
         p = self.paths(recipe_id)
         _ensure_dir(p.recipe_dir)
         _save_yaml(p.planned_traj_yaml, traj.to_yaml_dict())
@@ -230,13 +254,105 @@ class RecipeBundle:
         return JTBySegment.from_yaml_dict(data)
 
     def save_executed_traj(self, recipe_id: str, traj: JTBySegment) -> None:
+        # always overwrite
         p = self.paths(recipe_id)
         _ensure_dir(p.recipe_dir)
         _save_yaml(p.executed_traj_yaml, traj.to_yaml_dict())
 
-    def clear_traj(self, recipe_id: str) -> None:
+    # ------------------------------------------------------------
+    # planned_tcp.yaml / executed_tcp.yaml (strict; SAME schema as draft)
+    # ------------------------------------------------------------
+
+    def load_planned_tcp(self, recipe_id: str) -> Optional[Draft]:
         p = self.paths(recipe_id)
-        for fp in (p.planned_traj_yaml, p.executed_traj_yaml):
+        if not os.path.exists(p.planned_tcp_yaml):
+            return None
+        data = _load_yaml(p.planned_tcp_yaml)
+        return Draft.from_yaml_dict(data)
+
+    def save_planned_tcp(self, recipe_id: str, tcp: Draft) -> None:
+        # always overwrite
+        p = self.paths(recipe_id)
+        _ensure_dir(p.recipe_dir)
+        _save_yaml(p.planned_tcp_yaml, tcp.to_yaml_dict())
+
+    def load_executed_tcp(self, recipe_id: str) -> Optional[Draft]:
+        p = self.paths(recipe_id)
+        if not os.path.exists(p.executed_tcp_yaml):
+            return None
+        data = _load_yaml(p.executed_tcp_yaml)
+        return Draft.from_yaml_dict(data)
+
+    def save_executed_tcp(self, recipe_id: str, tcp: Draft) -> None:
+        # always overwrite
+        p = self.paths(recipe_id)
+        _ensure_dir(p.recipe_dir)
+        _save_yaml(p.executed_tcp_yaml, tcp.to_yaml_dict())
+
+    # ------------------------------------------------------------
+    # NEW: one-shot run persistence (Option A target)
+    # ------------------------------------------------------------
+
+    def save_run_artifacts(
+        self,
+        recipe_id: str,
+        *,
+        planned_traj: Optional[JTBySegment] = None,
+        executed_traj: Optional[JTBySegment] = None,
+        planned_tcp: Optional[Draft] = None,
+        executed_tcp: Optional[Draft] = None,
+    ) -> None:
+        """
+        Persist run-derived artifacts in one call.
+
+        Contract:
+          - only writes the artifacts that are not None
+          - each written file is overwritten
+          - does NOT delete anything implicitly (draft save handles staleness deletion)
+        """
+        rid = str(recipe_id or "").strip()
+        if not rid:
+            _err("save_run_artifacts: recipe_id leer")
+
+        p = self.paths(rid)
+        _ensure_dir(p.recipe_dir)
+
+        if planned_traj is not None:
+            _save_yaml(p.planned_traj_yaml, planned_traj.to_yaml_dict())
+        if executed_traj is not None:
+            _save_yaml(p.executed_traj_yaml, executed_traj.to_yaml_dict())
+        if planned_tcp is not None:
+            _save_yaml(p.planned_tcp_yaml, planned_tcp.to_yaml_dict())
+        if executed_tcp is not None:
+            _save_yaml(p.executed_tcp_yaml, executed_tcp.to_yaml_dict())
+
+    # ------------------------------------------------------------
+    # artifact deletion helpers
+    # ------------------------------------------------------------
+
+    def clear_traj(self, recipe_id: str) -> None:
+        # Backwards-compatible API: historically only trajectories.
+        self.clear_artifacts(recipe_id, what="traj")
+
+    def clear_artifacts(self, recipe_id: str, *, what: str = "all") -> None:
+        """
+        Deletes computed artifacts for a recipe.
+
+        what:
+          - "traj"  : planned_traj.yaml + executed_traj.yaml
+          - "tcp"   : planned_tcp.yaml + executed_tcp.yaml
+          - "all"   : traj + tcp
+        """
+        p = self.paths(recipe_id)
+
+        what = (what or "").strip().lower() or "all"
+        files: List[str] = []
+        if what in ("traj", "all"):
+            files += [p.planned_traj_yaml, p.executed_traj_yaml]
+        if what in ("tcp", "all"):
+            files += [p.planned_tcp_yaml, p.executed_tcp_yaml]
+
+        for fp in files:
             if os.path.exists(fp):
                 try:
                     os.remove(fp)
@@ -244,7 +360,7 @@ class RecipeBundle:
                     pass
 
     # ------------------------------------------------------------
-    # UI compatibility API (key-based) mapped to legacy
+    # UI compatibility API (key-based)
     # ------------------------------------------------------------
 
     def list_recipes(self) -> List[str]:
@@ -259,15 +375,11 @@ class RecipeBundle:
             d = os.path.join(root, rid)
             if not os.path.isdir(d):
                 continue
-            # Consider it a "recipe" if params.yaml exists (authoritative)
             if os.path.isfile(os.path.join(d, "params.yaml")):
                 out.append(str(rid))
         return out
 
     def load_for_editor(self, key: str) -> Recipe:
-        """
-        UI editor load: params + (optional) draft.
-        """
         rid, _name = self.split_key(key)
         rid = rid.strip()
         if not rid:
@@ -275,7 +387,6 @@ class RecipeBundle:
 
         recipe = self.load_params(rid)
 
-        # draft optional for editor (UI may generate preview without it)
         p = self.paths(rid)
         if os.path.isfile(p.draft_yaml):
             recipe.draft = self.load_draft(rid)
@@ -283,9 +394,6 @@ class RecipeBundle:
         return recipe
 
     def load_for_process(self, key: str) -> Recipe:
-        """
-        Processing load: params + draft + optional trajectories.
-        """
         rid, _name = self.split_key(key)
         rid = rid.strip()
         if not rid:
@@ -293,13 +401,21 @@ class RecipeBundle:
 
         recipe = self.load_for_editor(rid)
 
-        # planned/executed optional
         planned = self.load_planned_traj(rid)
         if planned is not None:
             recipe.planned_traj = planned
+
         executed = self.load_executed_traj(rid)
         if executed is not None:
             recipe.executed_traj = executed
+
+        planned_tcp = self.load_planned_tcp(rid)
+        if planned_tcp is not None:
+            setattr(recipe, "planned_tcp", planned_tcp)
+
+        executed_tcp = self.load_executed_tcp(rid)
+        if executed_tcp is not None:
+            setattr(recipe, "executed_tcp", executed_tcp)
 
         return recipe
 
@@ -311,24 +427,15 @@ class RecipeBundle:
         compiled: Optional[Dict[str, Any]] = None,
         delete_compiled_on_hash_change: bool = True,
     ) -> None:
-        """
-        Legacy-only save:
-          - params.yaml always (authoritative)
-          - draft.yaml if draft.draft exists AND is Draft
-        compiled/delete_compiled_on_hash_change are ignored (no compiled.yaml in legacy).
-        """
         rid, _name = self.split_key(key)
         rid = rid.strip()
         if not rid:
             _err("save_from_editor: rid/key leer")
 
-        # Ensure recipe.id consistency
         draft.id = rid
 
-        # params.yaml always
         self.save_params(draft)
 
-        # draft.yaml optional (only if UI/preview has produced Draft)
         if isinstance(draft.draft, Draft):
             self.save_draft(rid, draft.draft)
 

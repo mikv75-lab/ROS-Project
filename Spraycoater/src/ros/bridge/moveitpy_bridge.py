@@ -10,8 +10,6 @@ from PyQt6 import QtCore
 from std_msgs.msg import String as MsgString, Bool as MsgBool, Float64 as MsgFloat64, Empty as MsgEmpty
 from geometry_msgs.msg import PoseStamped
 from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg
-from trajectory_msgs.msg import JointTrajectory
-from visualization_msgs.msg import MarkerArray
 
 from config.startup import AppContent, TopicSpec
 from .base_bridge import BaseBridge
@@ -22,6 +20,17 @@ class MoveItPySignals(QtCore.QObject):
     Qt-Signale für MoveItPy Planning / Execution.
 
     SSoT: Node <-> UI über topics.yaml
+
+    Minimal Contract (no fallbacks):
+      Node -> UI:
+        - motion_result
+        - planned_trajectory_rt
+        - executed_trajectory_rt
+        - robot_description (latched)
+        - robot_description_semantic (latched)
+
+      UI -> Node:
+        - plan_pose, plan_named, execute, stop, set_speed_mm_s, set_planner_cfg
     """
 
     # UI -> Node
@@ -39,27 +48,20 @@ class MoveItPySignals(QtCore.QObject):
 
     # Node -> UI
     motionResultChanged = QtCore.pyqtSignal(str)
-
-    targetTrajectoryChanged = QtCore.pyqtSignal(object)          # JointTrajectory
-    plannedTrajectoryChanged = QtCore.pyqtSignal(object)         # RobotTrajectoryMsg
-    executedTrajectoryChanged = QtCore.pyqtSignal(object)        # RobotTrajectoryMsg
-    previewMarkersChanged = QtCore.pyqtSignal(object)            # MarkerArray
-    robotDescriptionSemanticChanged = QtCore.pyqtSignal(str)     # SRDF string (latched)
+    plannedTrajectoryChanged = QtCore.pyqtSignal(object)   # RobotTrajectoryMsg
+    executedTrajectoryChanged = QtCore.pyqtSignal(object)  # RobotTrajectoryMsg
+    robotDescriptionChanged = QtCore.pyqtSignal(str)       # URDF string (latched)
+    robotDescriptionSemanticChanged = QtCore.pyqtSignal(str)  # SRDF string (latched)
 
     def __init__(self, parent: Optional[QtCore.QObject] = None) -> None:
         super().__init__(parent)
 
         # cached values (für reemit_cached)
         self.last_result: str = ""
-
-        self._last_target: Optional[JointTrajectory] = None
         self._last_planned: Optional[RobotTrajectoryMsg] = None
         self._last_executed: Optional[RobotTrajectoryMsg] = None
-        self._last_preview: Optional[MarkerArray] = None
+        self._last_urdf: str = ""
         self._last_srdf: str = ""
-
-    def _set_last_target(self, msg: JointTrajectory) -> None:
-        self._last_target = msg
 
     def _set_last_planned(self, msg: RobotTrajectoryMsg) -> None:
         self._last_planned = msg
@@ -67,8 +69,8 @@ class MoveItPySignals(QtCore.QObject):
     def _set_last_executed(self, msg: RobotTrajectoryMsg) -> None:
         self._last_executed = msg
 
-    def _set_last_preview(self, msg: MarkerArray) -> None:
-        self._last_preview = msg
+    def _set_last_urdf(self, text: str) -> None:
+        self._last_urdf = text or ""
 
     def _set_last_srdf(self, text: str) -> None:
         self._last_srdf = text or ""
@@ -77,15 +79,12 @@ class MoveItPySignals(QtCore.QObject):
     def reemit_cached(self) -> None:
         if self.last_result:
             self.motionResultChanged.emit(self.last_result)
-
-        if self._last_target is not None:
-            self.targetTrajectoryChanged.emit(self._last_target)
         if self._last_planned is not None:
             self.plannedTrajectoryChanged.emit(self._last_planned)
         if self._last_executed is not None:
             self.executedTrajectoryChanged.emit(self._last_executed)
-        if self._last_preview is not None:
-            self.previewMarkersChanged.emit(self._last_preview)
+        if self._last_urdf:
+            self.robotDescriptionChanged.emit(self._last_urdf)
         if self._last_srdf:
             self.robotDescriptionSemanticChanged.emit(self._last_srdf)
 
@@ -98,6 +97,8 @@ class MoveItPyBridge(BaseBridge):
       - Topic-Namen kommen direkt aus topics.yaml
       - QoS kommt direkt aus qos.yaml
       - KEIN manuelles Namespace-Prefixing hier!
+
+    No fallback topics. If YAML says a topic exists, we bind it.
     """
 
     GROUP = "moveit_py"
@@ -108,10 +109,9 @@ class MoveItPyBridge(BaseBridge):
         self._pending_named: Optional[str] = None
         self._pending_pose: bool = False
 
-        self._last_target_traj: Optional[JointTrajectory] = None
         self._last_planned_traj: Optional[RobotTrajectoryMsg] = None
         self._last_executed_traj: Optional[RobotTrajectoryMsg] = None
-        self._last_preview_markers: Optional[MarkerArray] = None
+        self._last_urdf: str = ""
         self._last_srdf: str = ""
 
         self._ui_to_node_pubs: Dict[str, Any] = {}
@@ -138,12 +138,11 @@ class MoveItPyBridge(BaseBridge):
         self._ensure_pub("set_speed_mm_s", MsgFloat64)
         self._ensure_pub("set_planner_cfg", MsgString)
 
-        # Node -> UI (Node publisht)  ✅ alle aus YAML implementiert
+        # Node -> UI (Node publisht) — MINIMAL SET (+ robot_description)
         self._ensure_sub("motion_result", MsgString, self._on_motion_result)
-        self._ensure_sub("target_trajectory", JointTrajectory, self._on_target_trajectory)
         self._ensure_sub("planned_trajectory_rt", RobotTrajectoryMsg, self._on_planned_traj)
         self._ensure_sub("executed_trajectory_rt", RobotTrajectoryMsg, self._on_executed_traj)
-        self._ensure_sub("preview_markers", MarkerArray, self._on_preview_markers)
+        self._ensure_sub("robot_description", MsgString, self._on_robot_description)
         self._ensure_sub("robot_description_semantic", MsgString, self._on_robot_description_semantic)
 
         self.get_logger().info(
@@ -215,11 +214,6 @@ class MoveItPyBridge(BaseBridge):
 
         self.signals.motionResultChanged.emit(text)
 
-    def _on_target_trajectory(self, msg: JointTrajectory) -> None:
-        self._last_target_traj = msg
-        self.signals._set_last_target(msg)
-        self.signals.targetTrajectoryChanged.emit(msg)
-
     def _on_planned_traj(self, msg: RobotTrajectoryMsg) -> None:
         self._last_planned_traj = msg
         self.signals._set_last_planned(msg)
@@ -230,10 +224,11 @@ class MoveItPyBridge(BaseBridge):
         self.signals._set_last_executed(msg)
         self.signals.executedTrajectoryChanged.emit(msg)
 
-    def _on_preview_markers(self, msg: MarkerArray) -> None:
-        self._last_preview_markers = msg
-        self.signals._set_last_preview(msg)
-        self.signals.previewMarkersChanged.emit(msg)
+    def _on_robot_description(self, msg: MsgString) -> None:
+        text = (msg.data or "").strip()
+        self._last_urdf = text
+        self.signals._set_last_urdf(text)
+        self.signals.robotDescriptionChanged.emit(text)
 
     def _on_robot_description_semantic(self, msg: MsgString) -> None:
         text = (msg.data or "").strip()
@@ -298,17 +293,14 @@ class MoveItPyBridge(BaseBridge):
     # Public getters (optional)
     # ─────────────────────────────────────────────────────────────
 
-    def last_target_trajectory(self) -> Optional[JointTrajectory]:
-        return self._last_target_traj
-
     def last_planned_trajectory(self) -> Optional[RobotTrajectoryMsg]:
         return self._last_planned_traj
 
     def last_executed_trajectory(self) -> Optional[RobotTrajectoryMsg]:
         return self._last_executed_traj
 
-    def last_preview_markers(self) -> Optional[MarkerArray]:
-        return self._last_preview_markers
+    def last_robot_description(self) -> str:
+        return self._last_urdf
 
     def last_robot_description_semantic(self) -> str:
         return self._last_srdf

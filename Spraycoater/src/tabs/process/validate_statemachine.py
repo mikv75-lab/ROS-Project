@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, Any, Dict, List, Tuple
+from typing import Optional, Any, Dict, List, Tuple, Iterable
 
 from PyQt6 import QtCore
 
@@ -13,12 +13,24 @@ from .base_statemachine import (
     STATE_MOVE_RECIPE,
     STATE_MOVE_RETREAT,
     STATE_MOVE_HOME,
+    SEG_ORDER,
 )
 
 _LOG = logging.getLogger("tabs.process.validate_statemachine")
 
 
 class ProcessValidateStatemachine(BaseProcessStatemachine):
+    """
+    Validate run: streams recipe points as consecutive MoveIt pose commands.
+
+    IMPORTANT:
+      - Trajectory capture is handled by BaseProcessStatemachine on each "EXECUTED:OK" via:
+          _snapshot_step_for_segment() -> uses ros.moveit_planned_trajectory/moveit_executed_trajectory
+        Therefore we do NOT need to wire plannedTrajectoryChanged/executedTrajectoryChanged here.
+      - Base notifyFinished emits TRAJ-ONLY payload:
+          {"planned_traj": {...JTBySegment yaml...}, "executed_traj": {...}}
+    """
+
     ROLE = "validate"
 
     _NEXT_POSE_QT_DELAY_MS = 0
@@ -53,9 +65,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._joint_fallback_timer.setSingleShot(True)
         self._joint_fallback_timer.timeout.connect(self._on_joint_fallback_timeout)
 
-        # trajectory capture wiring flag
-        self._traj_sig_connected: bool = False
-
         # robot joints gating (recipe streaming)
         try:
             self._ros.robot.signals.jointsChanged.connect(self._on_joints_changed)
@@ -63,155 +72,12 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         except Exception:
             self._joint_sig_connected = False
 
-        # IMPORTANT: capture MoveIt trajectories (planned/executed) per segment
-        self._connect_moveit_traj_signals()
-
-    # ------------------------------------------------------------------
-    # Wiring: MoveIt planned/executed (RobotTrajectory messages)
-    # ------------------------------------------------------------------
-
-    def _connect_moveit_traj_signals(self) -> None:
-        """
-        Ensure we collect trajectories into BaseProcessStatemachine buffers.
-        Without this, payload segments stay empty => save_run fails.
-        """
-        try:
-            sig = self._ros.moveitpy.signals
-        except Exception:
-            _LOG.exception("Validate: cannot access ros.moveitpy.signals")
-            self._traj_sig_connected = False
-            return
-
-        try:
-            # MoveItPyBridge signals:
-            # - plannedTrajectoryChanged(RobotTrajectoryMsg)
-            # - executedTrajectoryChanged(RobotTrajectoryMsg)
-            sig.plannedTrajectoryChanged.connect(self._on_planned_traj_changed)
-            sig.executedTrajectoryChanged.connect(self._on_executed_traj_changed)
-            self._traj_sig_connected = True
-            _LOG.info("Validate: connected MoveItPy trajectory signals (planned/executed).")
-        except Exception:
-            _LOG.exception("Validate: connecting MoveItPy trajectory signals failed")
-            self._traj_sig_connected = False
-
-    def _ensure_traj_maps(self) -> None:
-        """
-        BaseProcessStatemachine should already provide these.
-        If not, create them so Validate can still run.
-        """
-        if not hasattr(self, "_planned_steps_by_segment") or getattr(self, "_planned_steps_by_segment") is None:
-            self._planned_steps_by_segment = {}
-        if not hasattr(self, "_executed_steps_by_segment") or getattr(self, "_executed_steps_by_segment") is None:
-            self._executed_steps_by_segment = {}
-        if not hasattr(self, "_planned_by_segment") or getattr(self, "_planned_by_segment") is None:
-            self._planned_by_segment = {}
-        if not hasattr(self, "_executed_by_segment") or getattr(self, "_executed_by_segment") is None:
-            self._executed_by_segment = {}
-
-    @staticmethod
-    def _jt_msg_to_event_dict(jt_msg) -> Dict[str, Any]:
-        """
-        Convert trajectory_msgs/JointTrajectory -> JSON-serializable "event" dict.
-        (This dict is an EVENT entry inside segments[SEG] list.)
-        """
-        out: Dict[str, Any] = {
-            "joint_names": list(getattr(jt_msg, "joint_names", []) or []),
-            "points": [],
-        }
-
-        pts = getattr(jt_msg, "points", None) or []
-        for p in pts:
-            tfs = getattr(p, "time_from_start", None)
-            sec = int(getattr(tfs, "sec", 0) or 0) if tfs is not None else 0
-            nsec = int(getattr(tfs, "nanosec", 0) or 0) if tfs is not None else 0
-
-            out["points"].append(
-                {
-                    "positions": list(getattr(p, "positions", []) or []),
-                    "velocities": list(getattr(p, "velocities", []) or []),
-                    "accelerations": list(getattr(p, "accelerations", []) or []),
-                    "effort": list(getattr(p, "effort", []) or []),
-                    "time_from_start": {"sec": sec, "nanosec": nsec},
-                }
-            )
-
-        return out
-
-    def _append_step_and_merge(self, *, which: str, seg: str, jt_event: Dict[str, Any]) -> None:
-        """
-        Store per-step JT event dict and keep merged JT in *_by_segment updated.
-        """
-        self._ensure_traj_maps()
-
-        if which == "planned":
-            steps_map = self._planned_steps_by_segment
-            merged_map = self._planned_by_segment
-        else:
-            steps_map = self._executed_steps_by_segment
-            merged_map = self._executed_by_segment
-
-        steps = steps_map.get(seg)
-        if steps is None:
-            steps = []
-            steps_map[seg] = steps
-
-        steps.append(jt_event)
-
-        # update merged (internal only; not necessarily written into payload)
-        try:
-            merged_map[seg] = self._concat_joint_traj_dicts(list(steps))
-        except Exception:
-            merged_map[seg] = jt_event
-
-    @QtCore.pyqtSlot(object)
-    def _on_planned_traj_changed(self, rt_msg: object) -> None:
-        if not self._machine or not self._machine.isRunning():
-            return
-        if self._stop_requested:
-            return
-
-        seg = getattr(self, "_current_state", "") or ""
-        if seg not in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME):
-            return
-
-        try:
-            jt_msg = getattr(rt_msg, "joint_trajectory", None)
-            if jt_msg is None:
-                return
-            ev = self._jt_msg_to_event_dict(jt_msg)
-            if not (ev.get("points") or []):
-                return
-            self._append_step_and_merge(which="planned", seg=seg, jt_event=ev)
-        except Exception:
-            _LOG.exception("Validate: planned trajectory capture failed")
-
-    @QtCore.pyqtSlot(object)
-    def _on_executed_traj_changed(self, rt_msg: object) -> None:
-        if not self._machine or not self._machine.isRunning():
-            return
-        if self._stop_requested:
-            return
-
-        seg = getattr(self, "_current_state", "") or ""
-        if seg not in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME):
-            return
-
-        try:
-            jt_msg = getattr(rt_msg, "joint_trajectory", None)
-            if jt_msg is None:
-                return
-            ev = self._jt_msg_to_event_dict(jt_msg)
-            if not (ev.get("points") or []):
-                return
-            self._append_step_and_merge(which="executed", seg=seg, jt_event=ev)
-        except Exception:
-            _LOG.exception("Validate: executed trajectory capture failed")
-
     # ------------------------------------------------------------------
     # Hooks
     # ------------------------------------------------------------------
 
     def _prepare_run(self) -> bool:
+        # frame
         self._frame = "world"
         try:
             pc = getattr(self._recipe, "paths_compiled", None)
@@ -220,6 +86,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         except Exception:
             pass
 
+        # speed
         self._speed_mm_s = 200.0
         try:
             params = getattr(self._recipe, "parameters", {}) or {}
@@ -227,19 +94,20 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         except Exception:
             pass
 
+        # compiled points (mm)
         self._compiled_pts_mm = self._get_compiled_points_mm(self._side)
 
+        # reset segment plans
         self._cmd_pts_by_seg.clear()
         self._pending_recipe_mm.clear()
         self._await_joint_update_for_next_pose = False
         self._joint_fallback_timer.stop()
 
-        # IMPORTANT: clear collected trajectories per run
-        self._ensure_traj_maps()
-        self._planned_steps_by_segment.clear()
-        self._executed_steps_by_segment.clear()
+        # ensure Base buffers are clean (Base.start() already clears, but keep strictness here)
         self._planned_by_segment.clear()
         self._executed_by_segment.clear()
+        self._planned_steps_by_segment.clear()
+        self._executed_steps_by_segment.clear()
 
         if not self._compiled_pts_mm:
             self._signal_error(f"Validate: compiled path ist leer (side='{self._side}').")
@@ -389,7 +257,11 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         from geometry_msgs.msg import PoseStamped
 
         try:
-            self._ros.moveitpy.signals.motionSpeedChanged.emit(float(self._speed_mm_s))
+            # optional: speed signal (if supported by MoveItPyBridge)
+            try:
+                self._ros.moveitpy.signals.motionSpeedChanged.emit(float(self._speed_mm_s))
+            except Exception:
+                pass
 
             ps = PoseStamped()
             ps.header.frame_id = str(self._frame or "world")
@@ -405,6 +277,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             except Exception:
                 pass
 
+            # mm -> m
             ps.pose.position.x = float(x) / 1000.0
             ps.pose.position.y = float(y) / 1000.0
             ps.pose.position.z = float(z) / 1000.0
@@ -418,83 +291,50 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             self._signal_error(f"Validate: move_pose failed ({x:.1f},{y:.1f},{z:.1f}): {ex}")
 
     # ------------------------------------------------------------------
-    # Payloads
-    # ------------------------------------------------------------------
-
-    def _build_run_payload(self, *, which: str) -> Dict[str, Any]:
-        """
-        Schema FIX for save_run validator:
-
-        segments[SEG] MUST be a LIST (events), not a dict.
-
-        We therefore export:
-          segments:
-            MOVE_PREDISPENSE: [ <jt_event_dict>, ... ]
-            MOVE_RECIPE:      [ <jt_event_dict>, ... ]
-            ...
-
-        Merged trajectories remain available internally (self._planned_by_segment etc.)
-        but are NOT emitted in the payload, because your validator rejects dict keys.
-        """
-        if which not in ("planned", "executed"):
-            raise ValueError(f"_build_run_payload: invalid which={which}")
-
-        frame = self._frame or "world"
-        steps_map = self._planned_steps_by_segment if which == "planned" else self._executed_steps_by_segment
-
-        segs: Dict[str, List[Dict[str, Any]]] = {}
-        dbg: List[str] = []
-
-        for s in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME):
-            events = list((steps_map or {}).get(s) or [])
-            if not events:
-                dbg.append(f"{which}:{s}: no events")
-                continue
-
-            # IMPORTANT: segment value is a LIST of event dicts
-            segs[s] = events
-
-            # debug counts
-            try:
-                n_pts = int(len((events[-1].get("points") or []))) if events else 0
-            except Exception:
-                n_pts = 0
-            dbg.append(f"{which}:{s}: ok (events={len(events)}, last_points={n_pts})")
-
-        if not segs:
-            msg = "Validate: keine JointTrajectory erfasst (payload leer). " + "; ".join(dbg[:50])
-            _LOG.error(msg)
-
-        return {
-            "version": 1,
-            "meta": {
-                "role": self.ROLE,
-                "side": str(self._side),
-                "frame": frame,
-                "source": "validate_statemachine",
-                "format": "joint_events_by_segment",
-                "kind": which,
-            },
-            "segments": segs,
-            "debug": dbg[:200],
-        }
-
-    def _build_result(self) -> Dict[str, Any]:
-        planned = self._build_run_payload(which="planned")
-        executed = self._build_run_payload(which="executed")
-        return {"planned_run": planned, "executed_run": executed}
-
-    # ------------------------------------------------------------------
-    # Compiled points extraction
+    # Compiled points extraction (robust for ndarray OR list)
     # ------------------------------------------------------------------
 
     def _get_compiled_points_mm(self, side: str) -> List[Tuple[float, float, float]]:
+        """
+        Accepts:
+          - numpy ndarray (has .tolist())
+          - list/tuple of rows (already list)
+          - any iterable of rows
+
+        Expects rows shaped like [x,y,z] in mm (as produced by Recipe.draft_poses_quat()).
+        """
         out: List[Tuple[float, float, float]] = []
-        pts = self._recipe.compiled_points_mm_for_side(str(side))
+        try:
+            pts = self._recipe.compiled_points_mm_for_side(str(side))
+        except Exception:
+            pts = None
+
         if pts is None:
             return out
-        for row in pts.tolist():
-            out.append((float(row[0]), float(row[1]), float(row[2])))
+
+        rows: Iterable[Any]
+        if hasattr(pts, "tolist"):
+            try:
+                rows = pts.tolist()  # numpy-like
+            except Exception:
+                rows = pts  # fallback
+        else:
+            rows = pts  # already list-like
+
+        try:
+            for row in rows:
+                if row is None:
+                    continue
+                try:
+                    x = float(row[0])
+                    y = float(row[1])
+                    z = float(row[2])
+                except Exception:
+                    continue
+                out.append((x, y, z))
+        except Exception:
+            return out
+
         return out
 
     # ------------------------------------------------------------------
@@ -513,14 +353,5 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             except Exception:
                 pass
             self._joint_sig_connected = False
-
-        if self._traj_sig_connected:
-            try:
-                sig = self._ros.moveitpy.signals
-                sig.plannedTrajectoryChanged.disconnect(self._on_planned_traj_changed)
-                sig.executedTrajectoryChanged.disconnect(self._on_executed_traj_changed)
-            except Exception:
-                pass
-            self._traj_sig_connected = False
 
         super()._cleanup()

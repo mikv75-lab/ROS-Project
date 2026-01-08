@@ -52,6 +52,9 @@ topics:
         type: std_msgs/msg/String
         qos: latched
 
+# -----------------------------
+# config_hub topics.yaml snippet (minimal: GUI macht Offline-FK)
+# -----------------------------
   moveit_py:
     subscribe:
       - id: plan_pose
@@ -85,35 +88,35 @@ topics:
         qos: default
 
     publish:
-      - id: target_trajectory
-        name: moveit_py/target_trajectory
-        type: trajectory_msgs/msg/JointTrajectory
-        qos: latched   # ✅ optional aber empfohlen (JT immer da)
-
+      # SSoT for runs (joint space)
       - id: planned_trajectory_rt
         name: moveit_py/planned_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
-        qos: latched   # ✅ wichtig
+        qos: latched
 
       - id: executed_trajectory_rt
         name: moveit_py/executed_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
-        qos: latched   # ✅ wichtig
+        qos: latched
 
-      - id: preview_markers
-        name: moveit_py/preview_markers
-        type: visualization_msgs/msg/MarkerArray
-        qos: default
-
-      - id: motion_result
-        name: moveit_py/motion_result
+      # Robot model strings for Offline-FK in GUI
+      - id: robot_description
+        name: robot_description
         type: std_msgs/msg/String
-        qos: default
+        qos: latched
 
       - id: robot_description_semantic
         name: robot_description_semantic
         type: std_msgs/msg/String
         qos: latched
+
+      # State machine trigger (published last by node)
+      - id: motion_result
+        name: moveit_py/motion_result
+        type: std_msgs/msg/String
+        qos: default
+
+
   scene:
     publish:
       - id: cage_list
@@ -184,7 +187,12 @@ topics:
 
   spray_path:
     subscribe:
+    
       # --- Toggles (GUI -> Node), NUR true/false ---
+      - id: clear
+        name: spraycoater/spray_path/clear
+        type: std_msgs/msg/Empty
+        qos: latched   # oder default; latched ist ok
       - id: show_compiled
         name: spraycoater/spray_path/show_compiled
         type: std_msgs/msg/Bool

@@ -3,88 +3,102 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict
+
+
+def _ensure_dict(v: Any) -> Dict[str, Any]:
+    return v if isinstance(v, dict) else {}
 
 
 @dataclass
 class RunResult:
     """
-    Ergebniscontainer für einen Prozesslauf.
+    Ergebniscontainer für Vergleich + Persistenz (strict, forward-compatible).
 
-    NEU (nach deiner aktuellen Policy):
-      - Validate liefert zwei SegmentRunPayload v1 (joint-only):
-          planned_run  (soll/replay)
-          executed_run (ist/trace)
+    Hard-Contract:
+      - planned_run, executed_run existieren immer (dict)
+      - planned_run["traj"] existiert immer (dict)   # JTBySegment YAML dict
+      - executed_run["traj"] existiert immer (dict)
+      - planned_run["tcp"] existiert immer (dict)    # Draft YAML dict (v1)
+      - executed_run["tcp"] existiert immer (dict)
+      - fk_meta existiert immer (dict)               # FK config + model hashes etc.
 
-      - Optimize/Execute dürfen weiterhin "ein" Payload liefern (je nach Statemachine),
-        aber RunResult kann beide aufnehmen.
-
-    Hinweis:
-      - Persistenz (welche Files) soll außerhalb passieren (ProcessTab/Repo/Bundle).
-      - RunResult ist nur Transport + UI/Logging.
+    Semantik:
+      - BaseStatemachine füllt NUR traj.
+      - ProcessTab (oder eine FK-Schicht) berechnet tcp strikt und setzt:
+          planned_run["tcp"], executed_run["tcp"], fk_meta
+        und persistiert anschließend über Repo/Bundle.
     """
 
-    ROLE_VALIDATE = "validate"
-    ROLE_OPTIMIZE = "optimize"
-    ROLE_EXECUTE = "execute"
+    planned_run: Dict[str, Any] = field(default_factory=dict)
+    executed_run: Dict[str, Any] = field(default_factory=dict)
+    fk_meta: Dict[str, Any] = field(default_factory=dict)
 
-    role: str
-    ok: bool = False
-    message: str = ""
+    def __post_init__(self) -> None:
+        # normalize root
+        self.planned_run = _ensure_dict(self.planned_run)
+        self.executed_run = _ensure_dict(self.executed_run)
+        self.fk_meta = _ensure_dict(self.fk_meta)
 
-    meta: Dict[str, Any] = field(default_factory=dict)
-    metrics: Dict[str, Any] = field(default_factory=dict)
+        # hard keys
+        self.planned_run.setdefault("traj", {})
+        self.executed_run.setdefault("traj", {})
+        self.planned_run.setdefault("tcp", {})
+        self.executed_run.setdefault("tcp", {})
 
-    # SegmentRunPayload v1 (strict)
-    planned_run: Optional[Dict[str, Any]] = None
-    executed_run: Optional[Dict[str, Any]] = None
+        # normalize children
+        self.planned_run["traj"] = _ensure_dict(self.planned_run["traj"])
+        self.executed_run["traj"] = _ensure_dict(self.executed_run["traj"])
+        self.planned_run["tcp"] = _ensure_dict(self.planned_run["tcp"])
+        self.executed_run["tcp"] = _ensure_dict(self.executed_run["tcp"])
 
-    def set_eval(
+    # ---------------- Convenience setters ----------------
+
+    def set_planned(
         self,
         *,
-        eval_total: Optional[Dict[str, Any]] = None,
-        eval_by_segment: Optional[Dict[str, Any]] = None,
-        key_total: str = "eval_total",
-        key_by_segment: str = "eval_by_segment",
+        traj: Dict[str, Any] | None = None,
+        tcp: Dict[str, Any] | None = None,
     ) -> None:
-        """
-        Convenience: Eval-Ergebnisse strukturiert in metrics ablegen.
+        if traj is not None:
+            self.planned_run["traj"] = _ensure_dict(traj)
+        if tcp is not None:
+            self.planned_run["tcp"] = _ensure_dict(tcp)
 
-        Erwartetes Format:
-          eval_total: EvalResult.to_dict()
-          eval_by_segment: {SEG: EvalResult.to_dict(), ...}
-        """
-        if isinstance(eval_total, dict):
-            self.metrics[str(key_total)] = dict(eval_total)
-        if isinstance(eval_by_segment, dict):
-            self.metrics[str(key_by_segment)] = dict(eval_by_segment)
+    def set_executed(
+        self,
+        *,
+        traj: Dict[str, Any] | None = None,
+        tcp: Dict[str, Any] | None = None,
+    ) -> None:
+        if traj is not None:
+            self.executed_run["traj"] = _ensure_dict(traj)
+        if tcp is not None:
+            self.executed_run["tcp"] = _ensure_dict(tcp)
+
+    def set_fk_meta(self, meta: Dict[str, Any] | None) -> None:
+        self.fk_meta = _ensure_dict(meta)
+
+    # ---------------- Stable payload for Qt/UI/logging ----------------
 
     def to_process_payload(self) -> Dict[str, Any]:
         """
-        Serialisierbares Payload für UI/Logging.
+        Stable payload schema for Qt signals and logging:
 
-        Validate:
           {
-            "role": "...",
-            "ok": bool,
-            "message": "...",
-            "meta": {...},
-            "metrics": {...},
-            "planned_run":  <SegmentRunPayload v1>,
-            "executed_run": <SegmentRunPayload v1>,
+            "planned_run":  {"traj": {...}, "tcp": {...}},
+            "executed_run": {"traj": {...}, "tcp": {...}},
+            "fk_meta": {...}
           }
-
-        Für Optimize/Execute kann optional nur executed_run oder planned_run gesetzt sein.
         """
-        out: Dict[str, Any] = {
-            "role": str(self.role or ""),
-            "ok": bool(self.ok),
-            "message": str(self.message or ""),
-            "meta": dict(self.meta or {}),
-            "metrics": dict(self.metrics or {}),
+        return {
+            "planned_run": {
+                "traj": dict(_ensure_dict(self.planned_run.get("traj"))),
+                "tcp": dict(_ensure_dict(self.planned_run.get("tcp"))),
+            },
+            "executed_run": {
+                "traj": dict(_ensure_dict(self.executed_run.get("traj"))),
+                "tcp": dict(_ensure_dict(self.executed_run.get("tcp"))),
+            },
+            "fk_meta": dict(_ensure_dict(self.fk_meta)),
         }
-        if isinstance(self.planned_run, dict):
-            out["planned_run"] = self.planned_run
-        if isinstance(self.executed_run, dict):
-            out["executed_run"] = self.executed_run
-        return out
