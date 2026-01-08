@@ -28,7 +28,7 @@ from visualization_msgs.msg import MarkerArray
 from plc.plc_client import PlcClientBase
 from ros.bridge.ros_bridge import RosBridge
 
-from model.recipe.recipe import Recipe
+from model.recipe.recipe import Recipe, Draft
 from model.recipe.recipe_markers import build_marker_array_from_recipe
 
 from widgets.robot_status_box import RobotStatusInfoBox
@@ -261,6 +261,8 @@ class ProcessTab(QWidget):
         row_info.addWidget(self.infoBox, 2)
 
         # ---------------- SprayPath GroupBox (rechts) ----------------
+        # NOTE: Die "falsche" SprayPaths GroupBox (oben/links) wird hier NICHT erzeugt.
+        #       Es gibt nur diese eine Box in der zweiten Zeile.
         try:
             self.sprayPathBox = SprayPathBox(ros=self.ros, parent=self, title="Spray Paths")
         except Exception as e:
@@ -350,10 +352,62 @@ class ProcessTab(QWidget):
         except Exception:
             return []
 
-    def _compiled_sides(self) -> list[str]:
+    # ---------------- Draft/Compiled helpers ----------------
+
+    def _draft_sides_dict(self) -> Dict[str, Any]:
+        """
+        Return draft['sides'] dict if available; else {}.
+
+        Supports:
+          - recipe.draft is Draft object
+          - recipe.draft is dict (legacy)
+        """
+        r = self._recipe
+        if r is None:
+            return {}
+        d = getattr(r, "draft", None)
+
+        # Draft object
+        if isinstance(d, Draft):
+            try:
+                yd = d.to_yaml_dict() or {}
+                sides = yd.get("sides") or {}
+                return sides if isinstance(sides, dict) else {}
+            except Exception:
+                return {}
+
+        # dict fallback
+        if isinstance(d, dict):
+            sides = (d.get("sides") or {})
+            return sides if isinstance(sides, dict) else {}
+
+        return {}
+
+    def _has_compiled_in_draft(self) -> bool:
+        """
+        "compiled" layer is now Draft-based (draft.yaml).
+        We treat it as available if there is at least one side with poses_quat list.
+        """
+        sides = self._draft_sides_dict()
+        if not sides:
+            return False
         try:
-            pc = getattr(self._recipe, "paths_compiled", {}) or {}
-            sides = pc.get("sides") or {}
+            for _side, sd in sides.items():
+                if isinstance(sd, dict):
+                    pq = sd.get("poses_quat") or []
+                    if isinstance(pq, list) and len(pq) > 0:
+                        return True
+        except Exception:
+            return False
+        return False
+
+    def _compiled_sides(self) -> list[str]:
+        """
+        Previously: recipe.paths_compiled['sides'].
+        Now: recipe.draft['sides'].
+        """
+        try:
+            sides = self._draft_sides_dict()
             if isinstance(sides, dict) and sides:
                 return [str(k) for k in sides.keys()]
         except Exception:
@@ -412,8 +466,7 @@ class ProcessTab(QWidget):
 
     def _concat_total_traj_from_run(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Build a 'total' trajectory dict compatible with Recipe.trajectory_points_mm_for_side()
-        by concatenating segment TCP poses in _SEG_ORDER.
+        Build a 'total' trajectory dict compatible with marker builder by concatenating segment TCP poses.
 
         NOTE:
           - For JOINT-only payloads: returns {} (no tcp data to concatenate).
@@ -464,17 +517,6 @@ class ProcessTab(QWidget):
     # ---------------- Result object normalization ----------------
 
     def _extract_planned_and_executed_from_result(self, result_obj: object) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """
-        Normalize worker result into (planned_payload, executed_payload).
-
-        Accepted shapes:
-          - {"planned_run": {...}, "executed_run": {...}}   (RunResult.to_process_payload())
-          - {"planned": {...}, "executed": {...}}
-          - {"traj": {...}, "executed": {...}}             (legacy-ish)
-          - {"run": {...}}                                 (single payload -> planned)
-          - single SegmentRunPayload dict                   (single payload -> planned)
-          - (planned, executed) tuple/list
-        """
         planned: Dict[str, Any] = {}
         executed: Dict[str, Any] = {}
 
@@ -505,7 +547,6 @@ class ProcessTab(QWidget):
                 planned = one
                 return planned, executed
 
-            # if the dict itself looks like a run payload -> planned
             if self._is_run_payload(result_obj):
                 planned = result_obj
                 return planned, executed
@@ -552,7 +593,6 @@ class ProcessTab(QWidget):
             sig.estopChanged.connect(self.robotStatusBox.set_estop)
             sig.errorsChanged.connect(self.robotStatusBox.set_errors)
             sig.tcpPoseChanged.connect(self.robotStatusBox.set_tcp_from_ps)
-
             sig.jointsChanged.connect(self._on_joints)
 
         except Exception:
@@ -579,13 +619,11 @@ class ProcessTab(QWidget):
         try:
             p = bundle.paths(key)
 
-            # preferred new names
             if kind == "planned":
                 return str(getattr(p, "planned_yaml", "") or getattr(p, "planned_traj_yaml", "") or "")
             if kind == "executed":
                 return str(getattr(p, "executed_yaml", "") or getattr(p, "executed_traj_yaml", "") or "")
 
-            # legacy fallbacks
             if kind == "traj":
                 return str(getattr(p, "traj_yaml", "") or "")
             if kind == "executed":
@@ -595,34 +633,22 @@ class ProcessTab(QWidget):
         return ""
 
     def _repo_save_run(self, *, kind: str, data: dict) -> None:
-        """
-        Calls repo save with compatibility:
-          - preferred:
-              repo.save_planned_run(..., run=data)
-              repo.save_executed_run(..., run=data)
-          - fallback legacy:
-              repo.save_traj_run(..., run=data)
-              repo.save_executed_run(..., run=data)
-        """
         if not self._recipe_key:
             return
         if not isinstance(data, dict) or not data:
             return
 
-        # planned
         if kind == "planned":
             fn = getattr(self.repo, "save_planned_run", None)
             if callable(fn):
                 fn(self._recipe_key, run=data)
                 return
-            # fallback to old name
             fn2 = getattr(self.repo, "save_traj_run", None)
             if callable(fn2):
                 fn2(self._recipe_key, run=data)
                 return
             raise RuntimeError("Repo: save_planned_run/save_traj_run not available")
 
-        # executed
         if kind == "executed":
             fn = getattr(self.repo, "save_executed_run", None)
             if callable(fn):
@@ -633,9 +659,6 @@ class ProcessTab(QWidget):
         raise ValueError(f"_repo_save_run: unknown kind={kind}")
 
     def _maybe_save_run(self, *, kind: str, data: dict) -> None:
-        """
-        Persist segments-only payload into planned_traj.yaml or executed_traj.yaml.
-        """
         if not self._recipe_key:
             return
         if not isinstance(data, dict) or not data:
@@ -662,6 +685,88 @@ class ProcessTab(QWidget):
         except Exception as e:
             self._append_log(f"Save: ERROR ({kind}): {e}")
 
+    # ---------------- Load helpers (NEW: existence-driven) ----------------
+
+    def _try_load_run_from_repo_or_file(self, *, kind: str) -> Dict[str, Any]:
+        """
+        Load planned/executed segments-only payload if it exists.
+
+        Order:
+          1) try repo methods (if available): try_load_planned_run / try_load_executed_run
+          2) fallback to bundle file path (planned_traj.yaml / executed_traj.yaml) if exists
+
+        Returns {} if not available.
+        """
+        if not self._recipe_key:
+            return {}
+
+        if kind == "planned":
+            fn = getattr(self.repo, "try_load_planned_run", None)
+            if callable(fn):
+                try:
+                    d = fn(self._recipe_key)
+                    return d if isinstance(d, dict) else {}
+                except Exception:
+                    return {}
+        if kind == "executed":
+            fn = getattr(self.repo, "try_load_executed_run", None)
+            if callable(fn):
+                try:
+                    d = fn(self._recipe_key)
+                    return d if isinstance(d, dict) else {}
+                except Exception:
+                    return {}
+
+        path = self._run_file_path(kind)
+        if not path or not os.path.isfile(path):
+            return {}
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _load_optional_runs_for_current_recipe(self) -> None:
+        """
+        After recipe load: also load planned/executed ONLY if files exist.
+        If TCP exists inside payload, derive total traj and store into recipe.trajectories
+        under keys expected by marker builder: "planned" and "executed".
+        """
+        if self._recipe is None:
+            return
+
+        self._last_run_payload_planned = {}
+        self._last_run_payload_executed = {}
+
+        planned = self._try_load_run_from_repo_or_file(kind="planned")
+        executed = self._try_load_run_from_repo_or_file(kind="executed")
+
+        if self._is_run_payload(planned):
+            self._last_run_payload_planned = planned
+
+            total = self._concat_total_traj_from_run(planned)
+            if isinstance(total, dict) and total:
+                try:
+                    if not isinstance(getattr(self._recipe, "trajectories", None), dict):
+                        self._recipe.trajectories = {}
+                    self._recipe.trajectories["planned"] = total
+                except Exception:
+                    pass
+
+        if self._is_run_payload(executed):
+            self._last_run_payload_executed = executed
+
+            total = self._concat_total_traj_from_run(executed)
+            if isinstance(total, dict) and total:
+                try:
+                    if not isinstance(getattr(self._recipe, "trajectories", None), dict):
+                        self._recipe.trajectories = {}
+                    self._recipe.trajectories["executed"] = total
+                except Exception:
+                    pass
+
     # ---------------- Recipe UI ----------------
 
     def _update_recipe_box(self) -> None:
@@ -675,8 +780,7 @@ class ProcessTab(QWidget):
         key = self._recipe_key or "-"
         self.lblRecipeKey.setText(f"Key: {key}")
 
-        parts = []
-        parts.append(f"id={r.id}")
+        parts = [f"id={r.id}"]
         if r.tool:
             parts.append(f"tool={r.tool}")
         if r.substrate:
@@ -708,6 +812,7 @@ class ProcessTab(QWidget):
             "planner": r.planner or {},
             "paths_by_side": r.paths_by_side or {},
             "meta": r.meta or {},
+            "draft_present": bool(isinstance(getattr(r, "draft", None), (Draft, dict))),
         }
         self.txtRecipeDraft.setPlainText(self._yaml_dump(draft_view))
 
@@ -751,7 +856,7 @@ class ProcessTab(QWidget):
             pass
 
         if recipe:
-            self._publish_all_available_layers()
+            # Important: do not publish here based on stale markers; caller decides sequence (clear->publish)
             self._trigger_ros_on_loaded_recipe()
         else:
             self._clear_layers()
@@ -791,7 +896,18 @@ class ProcessTab(QWidget):
 
         try:
             r = self.repo.load_for_process(key)
+
+            # 1) Set recipe model (UI update, toggles publish)
             self.set_recipe(r, key=key)
+
+            # 2) Load optional planned/executed runs by existence
+            self._load_optional_runs_for_current_recipe()
+            self._render_run_yaml_views()
+
+            # 3) Clear ALL markers, then republish what exists now
+            self._clear_layers()
+            self._publish_all_available_layers()
+
             self._append_log("Load: OK")
         except Exception as e:
             QMessageBox.critical(self, "Load", f"Load fehlgeschlagen: {e}")
@@ -895,7 +1011,6 @@ class ProcessTab(QWidget):
         self._render_run_yaml_views()
 
         self._append_log(f"=== {mode.upper()} gestartet ===")
-
         self._update_buttons()
 
         self._process_thread = ProcessThread(
@@ -912,16 +1027,11 @@ class ProcessTab(QWidget):
 
     # ---------------- Process result handling ----------------
 
-    def _apply_run_payload_to_recipe_and_eval(self, run_payload: Dict[str, Any], *, slot: str) -> None:
+    def _apply_run_payload_to_recipe(self, run_payload: Dict[str, Any], *, slot: str) -> None:
         """
-        - Stasht segments-only payload für Save/UI.
-        - Optional: baut total_traj (concat segments) NUR wenn TCP vorhanden ist
-          (z.B. Optimize/Execute können TCP liefern; Validate (joint-only) nicht).
-
-        Hinweis:
-          - Für joint-only Validate ist "Eval" typischerweise joint-basiert und passiert außerhalb
-            (oder über separate Evaluator-Logik). Hier wird nur der legacy TCP-Fallback gemacht,
-            falls TCP existiert.
+        Store run payload into UI cache. If it contains TCP, also derive total trajectory and store:
+          - slot "planned"  -> recipe.trajectories["planned"]
+          - slot "executed" -> recipe.trajectories["executed"]
         """
         if self._recipe is None:
             return
@@ -933,25 +1043,17 @@ class ProcessTab(QWidget):
         elif slot == "executed":
             self._last_run_payload_executed = dict(run_payload)
 
-        total_traj = self._concat_total_traj_from_run(run_payload)
-        if isinstance(total_traj, dict) and total_traj:
+        total = self._concat_total_traj_from_run(run_payload)
+        if isinstance(total, dict) and total:
             try:
+                if not isinstance(getattr(self._recipe, "trajectories", None), dict):
+                    self._recipe.trajectories = {}
                 if slot == "planned":
-                    self._recipe.trajectories[Recipe.TRAJ_TRAJ] = total_traj
+                    self._recipe.trajectories["planned"] = total
                 elif slot == "executed":
-                    self._recipe.trajectories[Recipe.TRAJ_EXECUTED] = total_traj
+                    self._recipe.trajectories["executed"] = total
             except Exception:
                 pass
-
-            # legacy TCP eval against compiled (only meaningful if total_traj exists)
-            for side in self._compiled_sides():
-                try:
-                    if slot == "planned":
-                        self._recipe.evaluate_trajectory_against_compiled(traj_key=Recipe.TRAJ_TRAJ, side=side)
-                    elif slot == "executed":
-                        self._recipe.evaluate_trajectory_against_compiled(traj_key=Recipe.TRAJ_EXECUTED, side=side)
-                except Exception:
-                    pass
 
     def _render_run_yaml_views(self) -> None:
         self.txtPlanned.setPlainText(self._yaml_dump(self._last_run_payload_planned))
@@ -962,7 +1064,7 @@ class ProcessTab(QWidget):
 
         planned_payload, executed_payload = self._extract_planned_and_executed_from_result(result_obj)
 
-        # reload recipe fresh (compiled etc.)
+        # reload recipe fresh (draft etc.)
         if self._recipe_key:
             try:
                 self._recipe = self.repo.load_for_process(self._recipe_key)
@@ -970,45 +1072,39 @@ class ProcessTab(QWidget):
                 pass
 
         if self._active_mode == ProcessThread.MODE_VALIDATE:
-            # Validate: always two files (planned + executed)
             if self._is_run_payload(planned_payload):
-                self._apply_run_payload_to_recipe_and_eval(planned_payload, slot="planned")
+                self._apply_run_payload_to_recipe(planned_payload, slot="planned")
                 self._maybe_save_run(kind="planned", data=planned_payload)
             if self._is_run_payload(executed_payload):
-                self._apply_run_payload_to_recipe_and_eval(executed_payload, slot="executed")
+                self._apply_run_payload_to_recipe(executed_payload, slot="executed")
                 self._maybe_save_run(kind="executed", data=executed_payload)
 
         elif self._active_mode == ProcessThread.MODE_OPTIMIZE:
-            # Optimize: treat as planned (single payload), unless worker provides both
             if self._is_run_payload(planned_payload):
-                self._apply_run_payload_to_recipe_and_eval(planned_payload, slot="planned")
+                self._apply_run_payload_to_recipe(planned_payload, slot="planned")
                 self._maybe_save_run(kind="planned", data=planned_payload)
             elif self._is_run_payload(executed_payload):
-                # fallback if optimize only provides "executed"
-                self._apply_run_payload_to_recipe_and_eval(executed_payload, slot="planned")
+                self._apply_run_payload_to_recipe(executed_payload, slot="planned")
                 self._maybe_save_run(kind="planned", data=executed_payload)
 
         elif self._active_mode == ProcessThread.MODE_EXECUTE:
-            # Execute: store executed
             if self._is_run_payload(executed_payload):
-                self._apply_run_payload_to_recipe_and_eval(executed_payload, slot="executed")
+                self._apply_run_payload_to_recipe(executed_payload, slot="executed")
                 self._maybe_save_run(kind="executed", data=executed_payload)
             elif self._is_run_payload(planned_payload):
-                # fallback if worker returns single payload in planned slot
-                self._apply_run_payload_to_recipe_and_eval(planned_payload, slot="executed")
+                self._apply_run_payload_to_recipe(planned_payload, slot="executed")
                 self._maybe_save_run(kind="executed", data=planned_payload)
 
-            # ensure executed is ON at end of execute
             self._show_executed = True
             try:
                 self.sprayPathBox.set_defaults(compiled=self._show_compiled, traj=self._show_traj, executed=True)
             except Exception:
                 pass
 
-        # publish layers (compiled always; traj/executed only if recipe has TCP totals)
+        # clear then publish current truth
+        self._clear_layers()
         self._publish_all_available_layers()
 
-        # show payload yaml in UI panes
         self._render_run_yaml_views()
         self._update_recipe_box()
         self._update_info_box()
@@ -1027,14 +1123,23 @@ class ProcessTab(QWidget):
 
     # ---------------- SprayPath publish ----------------
 
+    def _ros_call_first(self, candidates: Tuple[str, ...], *args, **kwargs) -> None:
+        if self.ros is None:
+            return
+        for name in candidates:
+            fn = getattr(self.ros, name, None)
+            if callable(fn):
+                fn(*args, **kwargs)
+                return
+
     def _clear_layers(self) -> None:
         if self.ros is None:
             return
         try:
             empty = MarkerArray()
-            self.ros.spray_set_compiled(markers=empty)
-            self.ros.spray_set_traj(markers=empty)
-            self.ros.spray_set_executed(markers=empty)
+            self._ros_call_first(("spray_set_compiled",), markers=empty)
+            self._ros_call_first(("spray_set_planned", "spray_set_traj"), markers=empty)
+            self._ros_call_first(("spray_set_executed",), markers=empty)
         except Exception:
             pass
 
@@ -1042,10 +1147,10 @@ class ProcessTab(QWidget):
         """
         Marker builder consumes Recipe + source in {"compiled_path","traj","executed_traj"}.
 
-        IMPORTANT:
-          - planned/executed run payloads are JOINT-only (no TCP poses) -> cannot generate markers.
-          - Therefore traj/executed markers are only published if recipe.trajectories[*] contains TCP totals
-            (e.g. from other modes, or legacy behavior).
+        compiled:
+          - available if Draft has poses_quat
+        planned/executed:
+          - available only if recipe.trajectories["planned"/"executed"] contains TCP total trajectory
         """
         if self.ros is None or self._recipe is None:
             return
@@ -1064,11 +1169,11 @@ class ProcessTab(QWidget):
                 self._append_log(f"W markers ({source}) skipped: {e}")
                 return None
 
-        has_compiled = bool(isinstance(getattr(r, "paths_compiled", None), dict) and (r.paths_compiled or {}))
-        has_traj_tcp = bool(isinstance((r.trajectories or {}).get(Recipe.TRAJ_TRAJ), dict) and (r.trajectories[Recipe.TRAJ_TRAJ] or {}))
-        has_exec_tcp = bool(
-            isinstance((r.trajectories or {}).get(Recipe.TRAJ_EXECUTED), dict) and (r.trajectories[Recipe.TRAJ_EXECUTED] or {})
-        )
+        has_compiled = bool(self._has_compiled_in_draft())
+
+        trajectories = getattr(r, "trajectories", {}) or {}
+        has_traj_tcp = bool(isinstance(trajectories.get("planned"), dict) and trajectories.get("planned"))
+        has_exec_tcp = bool(isinstance(trajectories.get("executed"), dict) and trajectories.get("executed"))
 
         ma_compiled = _build("compiled_path") if has_compiled else None
         ma_traj = _build("traj") if has_traj_tcp else None
@@ -1076,19 +1181,19 @@ class ProcessTab(QWidget):
 
         try:
             if ma_compiled is not None:
-                self.ros.spray_set_compiled(markers=ma_compiled)
+                self._ros_call_first(("spray_set_compiled",), markers=ma_compiled)
         except Exception as e:
             self._append_log(f"W spray_set_compiled failed: {e}")
 
         try:
             if ma_traj is not None:
-                self.ros.spray_set_traj(markers=ma_traj)
+                self._ros_call_first(("spray_set_planned", "spray_set_traj"), markers=ma_traj)
         except Exception as e:
-            self._append_log(f"W spray_set_traj failed: {e}")
+            self._append_log(f"W spray_set_planned/traj failed: {e}")
 
         try:
             if ma_exec is not None:
-                self.ros.spray_set_executed(markers=ma_exec)
+                self._ros_call_first(("spray_set_executed",), markers=ma_exec)
         except Exception as e:
             self._append_log(f"W spray_set_executed failed: {e}")
 
@@ -1105,7 +1210,6 @@ class ProcessTab(QWidget):
         has_recipe = bool(self._recipe_key)
 
         self.btnLoad.setEnabled((not self._process_active) and ros_ok)
-
         self.btnInit.setEnabled((not self._process_active) and ros_ok and (self._init_thread is not None))
 
         self.btnValidate.setEnabled((not self._process_active) and ros_ok and has_recipe and self._robot_ready)

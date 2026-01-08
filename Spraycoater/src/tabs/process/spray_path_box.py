@@ -2,7 +2,7 @@
 # File: tabs/process/spray_path_box.py
 #
 # SprayPathBox – besitzt Bridge, verdrahtet sich selbst, hat eigene Qt-Signals
-# Ziel: GUI sendet NUR Bool-Toggles (show_compiled/show_traj/show_executed) an die SprayPathBridge.
+# Ziel: GUI sendet NUR Bool-Toggles (show_compiled/show_planned/show_executed) an die SprayPathBridge.
 # Default: alle drei True.
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ _LOG = logging.getLogger("tabs.process.spray_path_box")
 
 class SprayPathBox(QGroupBox):
     """
-    UI für SprayPath Layer Toggles (Compiled / Traj / Executed).
+    UI für SprayPath Layer Toggles (Compiled / Planned / Executed).
 
     - Verdrahtet direkt zur SprayPathBridge (ros.spray.signals).
     - Checkboxen senden ausschließlich True/False (std_msgs/Bool) via Bridge.
@@ -32,23 +32,26 @@ class SprayPathBox(QGroupBox):
 
     Erwartete Bridge-Signale (Outbound, UI->ROS):
       - signals.showCompiledRequested(bool)
-      - signals.showTrajRequested(bool)
+      - signals.showPlannedRequested(bool)
       - signals.showExecutedRequested(bool)
 
     Optional (Inbound, ROS->UI):
       - signals.compiledAvailableChanged(bool)
-      - signals.trajAvailableChanged(bool)
+      - signals.plannedAvailableChanged(bool)
       - signals.executedAvailableChanged(bool)
     """
 
     # --- Public UI signals (ProcessTab erwartet *Toggled*) ---
     showCompiledToggled = QtCore.pyqtSignal(bool)
+
+    # ProcessTab-Contract: heißt historisch "Traj" – semantisch bei dir jetzt "Planned"
     showTrajToggled = QtCore.pyqtSignal(bool)
+
     showExecutedToggled = QtCore.pyqtSignal(bool)
 
-    # --- Backward/alias: "Requested" (falls an anderen Stellen genutzt) ---
+    # --- Alias/Backwards: Requested ---
     showCompiledRequested = QtCore.pyqtSignal(bool)
-    showTrajRequested = QtCore.pyqtSignal(bool)
+    showTrajRequested = QtCore.pyqtSignal(bool)  # == Planned
     showExecutedRequested = QtCore.pyqtSignal(bool)
 
     def __init__(self, ros, parent: Optional[QWidget] = None, title: str = "Spray Paths"):
@@ -60,11 +63,16 @@ class SprayPathBox(QGroupBox):
             raise RuntimeError("SprayPathBox: ros.spray is None (SprayPathBridge not started?)")
         self._sig = self._sb.signals
 
+        # Hard requirement (weil du umbenannt hast):
+        for name in ("showCompiledRequested", "showPlannedRequested", "showExecutedRequested"):
+            if not hasattr(self._sig, name):
+                raise RuntimeError(f"SprayPathBox: Bridge missing signals.{name}")
+
         self._block: bool = False
 
         # optional availability state
         self._avail_compiled: Optional[bool] = None
-        self._avail_traj: Optional[bool] = None
+        self._avail_planned: Optional[bool] = None
         self._avail_executed: Optional[bool] = None
 
         self._build_ui()
@@ -94,11 +102,11 @@ class SprayPathBox(QGroupBox):
         self.lblCompiledAvail = QLabel("–", self)
         g.addWidget(self.lblCompiledAvail, 1, 2)
 
-        g.addWidget(QLabel("Traj (saved/validate/optimize)", self), 2, 0)
-        self.chkTraj = QCheckBox("", self)
-        g.addWidget(self.chkTraj, 2, 1)
-        self.lblTrajAvail = QLabel("–", self)
-        g.addWidget(self.lblTrajAvail, 2, 2)
+        g.addWidget(QLabel("Planned (saved/validate/optimize)", self), 2, 0)
+        self.chkPlanned = QCheckBox("", self)
+        g.addWidget(self.chkPlanned, 2, 1)
+        self.lblPlannedAvail = QLabel("–", self)
+        g.addWidget(self.lblPlannedAvail, 2, 2)
 
         g.addWidget(QLabel("Executed (last executed)", self), 3, 0)
         self.chkExecuted = QCheckBox("", self)
@@ -112,8 +120,8 @@ class SprayPathBox(QGroupBox):
         try:
             if hasattr(self._sig, "compiledAvailableChanged"):
                 self._sig.compiledAvailableChanged.connect(self._on_compiled_avail)
-            if hasattr(self._sig, "trajAvailableChanged"):
-                self._sig.trajAvailableChanged.connect(self._on_traj_avail)
+            if hasattr(self._sig, "plannedAvailableChanged"):
+                self._sig.plannedAvailableChanged.connect(self._on_planned_avail)
             if hasattr(self._sig, "executedAvailableChanged"):
                 self._sig.executedAvailableChanged.connect(self._on_executed_avail)
         except Exception:
@@ -125,8 +133,8 @@ class SprayPathBox(QGroupBox):
         self._refresh_avail_labels()
 
     @QtCore.pyqtSlot(bool)
-    def _on_traj_avail(self, v: bool) -> None:
-        self._avail_traj = bool(v)
+    def _on_planned_avail(self, v: bool) -> None:
+        self._avail_planned = bool(v)
         self._refresh_avail_labels()
 
     @QtCore.pyqtSlot(bool)
@@ -141,81 +149,66 @@ class SprayPathBox(QGroupBox):
             return "yes" if x else "no"
 
         self.lblCompiledAvail.setText(_fmt(self._avail_compiled))
-        self.lblTrajAvail.setText(_fmt(self._avail_traj))
+        self.lblPlannedAvail.setText(_fmt(self._avail_planned))
         self.lblExecutedAvail.setText(_fmt(self._avail_executed))
 
     # ------------------------------------------------------------------ Outbound (Widget -> Bridge)
 
     def _wire_outbound(self) -> None:
-        # Checkbox toggles -> internal handler (guarded)
         self.chkCompiled.toggled.connect(self._on_chk_compiled_toggled)
-        self.chkTraj.toggled.connect(self._on_chk_traj_toggled)
+        self.chkPlanned.toggled.connect(self._on_chk_planned_toggled)
         self.chkExecuted.toggled.connect(self._on_chk_executed_toggled)
 
-        # UI signals -> Bridge signals (robust via .emit)
-        # Bridge MUST provide these three.
+        # UI signals -> Bridge signals
         self.showCompiledRequested.connect(self._sig.showCompiledRequested.emit)
-        self.showTrajRequested.connect(self._sig.showTrajRequested.emit)
+        self.showTrajRequested.connect(self._sig.showPlannedRequested.emit)  # Planned
         self.showExecutedRequested.connect(self._sig.showExecutedRequested.emit)
 
     @QtCore.pyqtSlot(bool)
     def _on_chk_compiled_toggled(self, v: bool) -> None:
         if self._block:
             return
-        self._emit_compiled(bool(v))
+        self.showCompiledToggled.emit(bool(v))
+        self.showCompiledRequested.emit(bool(v))
 
     @QtCore.pyqtSlot(bool)
-    def _on_chk_traj_toggled(self, v: bool) -> None:
+    def _on_chk_planned_toggled(self, v: bool) -> None:
         if self._block:
             return
-        self._emit_traj(bool(v))
+        # ProcessTab expects "Traj" toggled; map planned -> traj
+        self.showTrajToggled.emit(bool(v))
+        self.showTrajRequested.emit(bool(v))
 
     @QtCore.pyqtSlot(bool)
     def _on_chk_executed_toggled(self, v: bool) -> None:
         if self._block:
             return
-        self._emit_executed(bool(v))
-
-    # ------------------------------------------------------------------ Emit helpers
-
-    def _emit_compiled(self, v: bool) -> None:
-        # Public + alias
-        self.showCompiledToggled.emit(v)
-        self.showCompiledRequested.emit(v)
-
-    def _emit_traj(self, v: bool) -> None:
-        self.showTrajToggled.emit(v)
-        self.showTrajRequested.emit(v)
-
-    def _emit_executed(self, v: bool) -> None:
-        self.showExecutedToggled.emit(v)
-        self.showExecutedRequested.emit(v)
+        self.showExecutedToggled.emit(bool(v))
+        self.showExecutedRequested.emit(bool(v))
 
     # ------------------------------------------------------------------ Public API
 
     def set_defaults(self, *, compiled: bool = True, traj: bool = True, executed: bool = True) -> None:
         """
-        Default ist IMMER alle True. Diese Methode setzt die Checkboxen (ohne Toggle-Sturm)
-        und publiziert anschließend die Zustände einmal in ROS (latched).
+        Setzt Checkboxen (ohne Toggle-Sturm) und publiziert anschließend die Zustände einmal in ROS.
+        traj == planned
         """
         self._block = True
         try:
             self.chkCompiled.setChecked(bool(compiled))
-            self.chkTraj.setChecked(bool(traj))
+            self.chkPlanned.setChecked(bool(traj))
             self.chkExecuted.setChecked(bool(executed))
         finally:
             self._block = False
         self.publish_current()
 
     def reset_defaults(self) -> None:
-        """Alias für ältere Call-Sites."""
         self.set_defaults(compiled=True, traj=True, executed=True)
 
     def publish_current(self) -> None:
-        """Publiziert die aktuellen Checkbox-Zustände (auch nach recipe load / republish)."""
         try:
             self._sig.showCompiledRequested.emit(bool(self.chkCompiled.isChecked()))
-            self._sig.showTrajRequested.emit(bool(self.chkTraj.isChecked()))
+            self._sig.showPlannedRequested.emit(bool(self.chkPlanned.isChecked()))
             self._sig.showExecutedRequested.emit(bool(self.chkExecuted.isChecked()))
         except Exception:
             _LOG.exception("SprayPathBox: publish_current failed")

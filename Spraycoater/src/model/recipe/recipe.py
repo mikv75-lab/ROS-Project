@@ -1,271 +1,420 @@
 # -*- coding: utf-8 -*-
-# File: app/model/recipe/recipe.py
+# File: src/model/recipe/recipe.py
 from __future__ import annotations
 
-import os
-import hashlib
-import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
-
-import yaml
-import numpy as np
-
-from model.recipe.recipe_eval import RecipeEvaluator
-
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 # ============================================================
-# Recipe
+# YAML Schemas (v1, strict; no legacy)
 # ============================================================
+#
+# params.yaml  (authoritative parameters/meta; stored separately)
+#   id: str
+#   description: str
+#   tool: str | null
+#   substrate: str | null
+#   substrate_mount: str | null
+#   parameters: dict
+#   planner: dict
+#   paths_by_side: dict
+#   meta: dict (optional)
+#   info: dict (optional)
+#
+# draft.yaml  (coordinates only; no meta)
+#   version: 1
+#   sides:
+#     <side>:
+#       poses_quat:
+#         - {x: float, y: float, z: float, qx: float, qy: float, qz: float, qw: float}
+#       normals_xyz:            # optional (same length as poses_quat)
+#         - {x: float, y: float, z: float}
+#
+# planned_traj.yaml / executed_traj.yaml  (replay-able JointTrajectory by segment)
+#   version: 1
+#   segments:
+#     <SEGMENT_ID>:
+#       joint_names: [str, ...]
+#       points:
+#         - positions: [float, ...]
+#           time_from_start: [sec:int, nanosec:int]
+#         - ...
+
+
+def _as_dict(x: Any, *, name: str) -> Dict[str, Any]:
+    if not isinstance(x, dict):
+        raise ValueError(f"{name} muss dict sein, ist {type(x).__name__}")
+    return x
+
+
+def _as_list(x: Any, *, name: str) -> List[Any]:
+    if not isinstance(x, list):
+        raise ValueError(f"{name} muss list sein, ist {type(x).__name__}")
+    return x
+
+
+def _require_int(x: Any, *, name: str) -> int:
+    try:
+        return int(x)
+    except Exception:
+        raise ValueError(f"{name} muss int sein, ist {x!r}")
+
+
+def _require_float(x: Any, *, name: str) -> float:
+    try:
+        return float(x)
+    except Exception:
+        raise ValueError(f"{name} muss float sein, ist {x!r}")
+
+
+@dataclass(frozen=True)
+class PoseQuat:
+    x: float
+    y: float
+    z: float
+    qx: float
+    qy: float
+    qz: float
+    qw: float
+
+    @staticmethod
+    def from_dict(d: Mapping[str, Any]) -> "PoseQuat":
+        return PoseQuat(
+            x=_require_float(d.get("x"), name="pose.x"),
+            y=_require_float(d.get("y"), name="pose.y"),
+            z=_require_float(d.get("z"), name="pose.z"),
+            qx=_require_float(d.get("qx"), name="pose.qx"),
+            qy=_require_float(d.get("qy"), name="pose.qy"),
+            qz=_require_float(d.get("qz"), name="pose.qz"),
+            qw=_require_float(d.get("qw"), name="pose.qw"),
+        )
+
+    def to_dict(self) -> Dict[str, float]:
+        return {
+            "x": float(self.x),
+            "y": float(self.y),
+            "z": float(self.z),
+            "qx": float(self.qx),
+            "qy": float(self.qy),
+            "qz": float(self.qz),
+            "qw": float(self.qw),
+        }
+
+
+@dataclass(frozen=True)
+class Vec3:
+    x: float
+    y: float
+    z: float
+
+    @staticmethod
+    def from_dict(d: Mapping[str, Any]) -> "Vec3":
+        return Vec3(
+            x=_require_float(d.get("x"), name="vec.x"),
+            y=_require_float(d.get("y"), name="vec.y"),
+            z=_require_float(d.get("z"), name="vec.z"),
+        )
+
+    def to_dict(self) -> Dict[str, float]:
+        return {"x": float(self.x), "y": float(self.y), "z": float(self.z)}
+
+
+@dataclass(frozen=True)
+class DraftSide:
+    poses_quat: List[PoseQuat] = field(default_factory=list)
+    normals_xyz: Optional[List[Vec3]] = None
+
+    @staticmethod
+    def from_dict(d: Mapping[str, Any]) -> "DraftSide":
+        poses = [_as_dict(p, name="draft.pose") for p in _as_list(d.get("poses_quat", []), name="poses_quat")]
+        poses_q = [PoseQuat.from_dict(p) for p in poses]
+
+        normals_raw = d.get("normals_xyz", None)
+        normals: Optional[List[Vec3]] = None
+        if normals_raw is not None:
+            normals_list = _as_list(normals_raw, name="normals_xyz")
+            normals = [Vec3.from_dict(_as_dict(n, name="draft.normal")) for n in normals_list]
+            if len(normals) != len(poses_q):
+                raise ValueError(
+                    f"draft.normals_xyz muss gleiche Länge wie poses_quat haben "
+                    f"({len(normals)} != {len(poses_q)})"
+                )
+
+        return DraftSide(poses_quat=poses_q, normals_xyz=normals)
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {"poses_quat": [p.to_dict() for p in self.poses_quat]}
+        if self.normals_xyz is not None:
+            out["normals_xyz"] = [n.to_dict() for n in self.normals_xyz]
+        return out
+
+
+@dataclass(frozen=True)
+class Draft:
+    version: int = 1
+    sides: Dict[str, DraftSide] = field(default_factory=dict)
+
+    @staticmethod
+    def from_yaml_dict(d: Mapping[str, Any]) -> "Draft":
+        root = _as_dict(dict(d), name="draft.yaml")
+        version = _require_int(root.get("version", 1), name="draft.version")
+        if version != 1:
+            raise ValueError(f"draft.yaml: version muss 1 sein, ist {version}")
+
+        sides_raw = _as_dict(root.get("sides", {}), name="draft.sides")
+        sides: Dict[str, DraftSide] = {}
+        for side, v in sides_raw.items():
+            sides[str(side)] = DraftSide.from_dict(_as_dict(v, name=f"draft.sides[{side}]"))
+        if not sides:
+            raise ValueError("draft.yaml: sides ist leer.")
+        return Draft(version=version, sides=sides)
+
+    def to_yaml_dict(self) -> Dict[str, Any]:
+        return {
+            "version": 1,
+            "sides": {k: v.to_dict() for k, v in self.sides.items()},
+        }
+
+
+@dataclass(frozen=True)
+class JTPoint:
+    positions: List[float]
+    time_from_start: Tuple[int, int]  # (sec, nanosec)
+
+    @staticmethod
+    def from_dict(d: Mapping[str, Any]) -> "JTPoint":
+        dd = _as_dict(d, name="jt.point")
+        pos = _as_list(dd.get("positions", None), name="positions")
+        positions = [_require_float(x, name="positions[]") for x in pos]
+        tfs = _as_list(dd.get("time_from_start", None), name="time_from_start")
+        if len(tfs) != 2:
+            raise ValueError("time_from_start muss [sec, nanosec] sein.")
+        sec = _require_int(tfs[0], name="time_from_start[0]")
+        nsec = _require_int(tfs[1], name="time_from_start[1]")
+        if sec < 0 or nsec < 0:
+            raise ValueError("time_from_start darf nicht negativ sein.")
+        return JTPoint(positions=positions, time_from_start=(sec, nsec))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "positions": [float(x) for x in self.positions],
+            "time_from_start": [int(self.time_from_start[0]), int(self.time_from_start[1])],
+        }
+
+
+@dataclass(frozen=True)
+class JTSegment:
+    joint_names: List[str]
+    points: List[JTPoint]
+
+    @staticmethod
+    def from_dict(d: Mapping[str, Any]) -> "JTSegment":
+        dd = _as_dict(d, name="jt.segment")
+        jn = _as_list(dd.get("joint_names", None), name="joint_names")
+        joint_names = [str(x) for x in jn]
+        pts = _as_list(dd.get("points", None), name="points")
+        points = [JTPoint.from_dict(_as_dict(p, name="jt.point")) for p in pts]
+        if not joint_names:
+            raise ValueError("jt.segment.joint_names ist leer.")
+        if not points:
+            raise ValueError("jt.segment.points ist leer.")
+        for p in points:
+            if len(p.positions) != len(joint_names):
+                raise ValueError(
+                    f"jt.point.positions Länge passt nicht zu joint_names "
+                    f"({len(p.positions)} != {len(joint_names)})"
+                )
+        return JTSegment(joint_names=joint_names, points=points)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "joint_names": list(self.joint_names),
+            "points": [p.to_dict() for p in self.points],
+        }
+
+
+@dataclass(frozen=True)
+class JTBySegment:
+    version: int = 1
+    segments: Dict[str, JTSegment] = field(default_factory=dict)
+
+    @staticmethod
+    def from_yaml_dict(d: Mapping[str, Any]) -> "JTBySegment":
+        root = _as_dict(dict(d), name="traj.yaml")
+        version = _require_int(root.get("version", 1), name="traj.version")
+        if version != 1:
+            raise ValueError(f"traj.yaml: version muss 1 sein, ist {version}")
+
+        segs_raw = _as_dict(root.get("segments", {}), name="traj.segments")
+        segs: Dict[str, JTSegment] = {}
+        for seg_id, seg in segs_raw.items():
+            segs[str(seg_id)] = JTSegment.from_dict(_as_dict(seg, name=f"traj.segments[{seg_id}]"))
+        if not segs:
+            raise ValueError("traj.yaml: segments ist leer.")
+        return JTBySegment(version=version, segments=segs)
+
+    def to_yaml_dict(self) -> Dict[str, Any]:
+        return {
+            "version": 1,
+            "segments": {k: v.to_dict() for k, v in self.segments.items()},
+        }
+
 
 @dataclass
 class Recipe:
     """
-    Persistentes Rezeptmodell (SSoT).
+    Recipe = params + optional attachments (draft/planned/executed).
 
-    Bundle-Philosophie:
-      - draft.yaml          -> Editorzustand (paths_by_side etc.)
-      - compiled_path.yaml  -> Referenz (paths_compiled + info)
-      - traj.yaml           -> geplanter Pfad (trajectories["traj"])
-      - executed_traj.yaml  -> letzter Ist-Pfad (trajectories["executed_traj"])
-
-    Keine History. Immer nur "letzter Stand".
+    Persistence lives in RecipeRepo/RecipeBundle.
     """
 
-    # Keys
-    TRAJ_COMPILED: str = "compiled_path"   # Alias auf paths_compiled (nicht in trajectories)
-    TRAJ_TRAJ: str = "traj"                # geplant (Soll)
-    TRAJ_EXECUTED: str = "executed_traj"   # ausgeführt (Ist)
-
-    # Meta
-    id: str = "recipe"
+    # params (authoritative)
+    id: str
     description: str = ""
     tool: Optional[str] = None
     substrate: Optional[str] = None
     substrate_mount: Optional[str] = None
-
     parameters: Dict[str, Any] = field(default_factory=dict)
     planner: Dict[str, Any] = field(default_factory=dict)
-    paths_by_side: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-
-    # Hashes etc. (vom Bundle-Manager gepflegt)
+    paths_by_side: Dict[str, Any] = field(default_factory=dict)
     meta: Dict[str, Any] = field(default_factory=dict)
-
-    # compiled reference
-    paths_compiled: Dict[str, Any] = field(default_factory=dict)
     info: Dict[str, Any] = field(default_factory=dict)
 
-    # last planned/executed
-    trajectories: Dict[str, Any] = field(default_factory=dict)
+    # UI/runtime convenience (not part of strict YAML schemas)
+    trajectories: Dict[str, Any] = field(default_factory=dict)          # Editor setzt das zurück
+    tool_frame: Optional[str] = None                                   # optional
+    paths_compiled: Optional[Dict[str, Any]] = None                     # optional (Preview/TCP compiled)
 
-    # ---------- YAML ----------
+    # attachments (optional; strict schemas)
+    draft: Optional[Draft] = None
+    planned_traj: Optional[JTBySegment] = None
+    executed_traj: Optional[JTBySegment] = None
+
+    # ----------------------------
+    # Constructors / converters
+    # ----------------------------
 
     @staticmethod
-    def from_dict(d: Dict[str, Any]) -> "Recipe":
-        traj = d.get("trajectories") or {}
-        if traj and not isinstance(traj, dict):
-            raise TypeError("Recipe: trajectories must be a dict")
-
+    def from_params_dict(d: Mapping[str, Any]) -> "Recipe":
+        dd = _as_dict(d, name="params.yaml")
+        rid = str(dd.get("id", "")).strip()
+        if not rid:
+            raise ValueError("params.yaml: id fehlt/leer.")
         return Recipe(
-            id=str(d.get("id") or "recipe"),
-            description=str(d.get("description") or ""),
-            tool=d.get("tool"),
-            substrate=d.get("substrate"),
-            substrate_mount=d.get("substrate_mount"),
-            parameters=dict(d.get("parameters") or {}),
-            planner=dict(d.get("planner") or {}),
-            paths_by_side=dict(d.get("paths_by_side") or {}),
-            meta=dict(d.get("meta") or {}),
-            paths_compiled=dict(d.get("paths_compiled") or {}),
-            info=dict(d.get("info") or {}),
-            trajectories=dict(traj or {}),
+            id=rid,
+            description=str(dd.get("description", "") or ""),
+            tool=dd.get("tool", None),
+            substrate=dd.get("substrate", None),
+            substrate_mount=dd.get("substrate_mount", None),
+            parameters=_as_dict(dd.get("parameters", {}), name="parameters"),
+            planner=_as_dict(dd.get("planner", {}), name="planner"),
+            paths_by_side=_as_dict(dd.get("paths_by_side", {}), name="paths_by_side"),
+            meta=_as_dict(dd.get("meta", {}), name="meta"),
+            info=_as_dict(dd.get("info", {}), name="info"),
         )
 
     @staticmethod
-    def _to_plain(obj: Any) -> Any:
-        if isinstance(obj, np.generic):
-            return obj.item()
-        if isinstance(obj, (str, bool, int, float)) or obj is None:
-            return obj
-        if isinstance(obj, dict):
-            return {str(k): Recipe._to_plain(v) for k, v in obj.items()}
-        if isinstance(obj, (list, tuple)):
-            return [Recipe._to_plain(x) for x in obj]
-        if isinstance(obj, np.ndarray):
-            return [Recipe._to_plain(x) for x in obj.tolist()]
-        return str(obj)
+    def from_dict(d: Mapping[str, Any]) -> "Recipe":
+        """
+        UI-compat constructor.
 
-    def to_dict(self) -> Dict[str, Any]:
-        out: Dict[str, Any] = {
+        RecipeEditorPanel baut ein Dict mit Keys:
+          id, description, tool, substrate, substrate_mount,
+          parameters, planner, paths_by_side,
+          trajectories (optional)
+        Zusätzlich tolerieren wir:
+          meta, info, tool_frame, paths_compiled
+        """
+        dd = _as_dict(dict(d), name="recipe")
+        rid = str(dd.get("id", "")).strip()
+        if not rid:
+            raise ValueError("recipe: id fehlt/leer.")
+
+        params = dd.get("parameters", {})
+        planner = dd.get("planner", {})
+        pbs = dd.get("paths_by_side", {})
+
+        # trajectories kann beliebig sein (Editor nutzt es als Scratch)
+        traj = dd.get("trajectories", {})
+        if traj is None:
+            traj = {}
+        if not isinstance(traj, dict):
+            raise ValueError("recipe.trajectories muss dict sein (oder fehlen).")
+
+        meta = dd.get("meta", {}) or {}
+        info = dd.get("info", {}) or {}
+
+        tf = dd.get("tool_frame", None)
+        pc = dd.get("paths_compiled", None)
+
+        return Recipe(
+            id=rid,
+            description=str(dd.get("description", "") or ""),
+            tool=dd.get("tool", None),
+            substrate=dd.get("substrate", None),
+            substrate_mount=dd.get("substrate_mount", None),
+            parameters=_as_dict(params, name="recipe.parameters"),
+            planner=_as_dict(planner, name="recipe.planner"),
+            paths_by_side=_as_dict(pbs, name="recipe.paths_by_side"),
+            meta=_as_dict(meta, name="recipe.meta"),
+            info=_as_dict(info, name="recipe.info"),
+            trajectories=dict(traj),
+            tool_frame=(str(tf) if tf is not None else None),
+            paths_compiled=(dict(pc) if isinstance(pc, dict) else None),
+        )
+
+    def to_params_dict(self) -> Dict[str, Any]:
+        return {
             "id": self.id,
-            "description": self.description,
+            "description": self.description or "",
             "tool": self.tool,
             "substrate": self.substrate,
             "substrate_mount": self.substrate_mount,
-            "parameters": Recipe._to_plain(self.parameters or {}),
-            "planner": Recipe._to_plain(self.planner or {}),
-            "paths_by_side": Recipe._to_plain(self.paths_by_side or {}),
+            "parameters": dict(self.parameters or {}),
+            "planner": dict(self.planner or {}),
+            "paths_by_side": dict(self.paths_by_side or {}),
+            "meta": dict(self.meta or {}),
+            "info": dict(self.info or {}),
         }
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        UI-friendly export (mirrors from_dict inputs).
+        Not intended as strict persistence format.
+        """
+        out: Dict[str, Any] = {
+            "id": self.id,
+            "description": self.description or "",
+            "tool": self.tool,
+            "substrate": self.substrate,
+            "substrate_mount": self.substrate_mount,
+            "parameters": dict(self.parameters or {}),
+            "planner": dict(self.planner or {}),
+            "paths_by_side": dict(self.paths_by_side or {}),
+            "trajectories": dict(self.trajectories or {}),
+        }
+        if self.tool_frame is not None:
+            out["tool_frame"] = self.tool_frame
+        if self.paths_compiled is not None:
+            out["paths_compiled"] = dict(self.paths_compiled)
         if self.meta:
-            out["meta"] = Recipe._to_plain(self.meta or {})
-
-        if self.paths_compiled:
-            out["paths_compiled"] = Recipe._to_plain(self.paths_compiled)
+            out["meta"] = dict(self.meta)
         if self.info:
-            out["info"] = Recipe._to_plain(self.info)
-
-        traj_out: Dict[str, Any] = {}
-        for k in (self.TRAJ_TRAJ, self.TRAJ_EXECUTED):
-            if isinstance(self.trajectories.get(k), dict):
-                traj_out[k] = Recipe._to_plain(self.trajectories[k])
-        if traj_out:
-            out["trajectories"] = traj_out
-
+            out["info"] = dict(self.info)
         return out
 
-    @staticmethod
-    def load_yaml(path: str) -> "Recipe":
-        with open(path, "r", encoding="utf-8") as f:
-            return Recipe.from_dict(yaml.safe_load(f) or {})
+    # ----------------------------
+    # convenience used by planning/process code
+    # ----------------------------
 
-    def save_yaml(self, path: str) -> None:
-        if self.paths_compiled:
-            self._recompute_info_from_compiled()
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(self.to_dict(), f, allow_unicode=True, sort_keys=False)
+    def draft_poses_quat(self, side: str) -> List[PoseQuat]:
+        if not self.draft:
+            raise KeyError("Recipe hat kein draft geladen.")
+        if side not in self.draft.sides:
+            raise KeyError(f"draft.sides hat keinen Eintrag für side={side!r}")
+        return self.draft.sides[side].poses_quat
 
-    # ---------- Hashing (bundle uses it) ----------
-
-    @staticmethod
-    def _stable_hash(obj: Any) -> str:
-        """
-        Stabiler Hash über "plain" JSON (sort_keys) – geeignet für
-        change detection (paths changed? compiled changed?).
-        """
-        plain = Recipe._to_plain(obj)
-        data = json.dumps(plain, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        return hashlib.sha256(data).hexdigest()
-
-    def compute_paths_hash(self) -> str:
-        return self._stable_hash(self.paths_by_side or {})
-
-    def compute_compiled_hash(self) -> str:
-        return self._stable_hash(self.paths_compiled or {})
-
-    # ---------- Helpers ----------
-
-    def _assert_valid_traj_key(self, traj_key: str) -> str:
-        if traj_key == self.TRAJ_COMPILED:
-            raise ValueError("compiled_path ist Alias auf paths_compiled")
-        if traj_key not in (self.TRAJ_TRAJ, self.TRAJ_EXECUTED):
-            raise ValueError(f"Invalid traj_key '{traj_key}'")
-        return traj_key
-
-    def clear_trajectories(self) -> None:
-        """Löscht geplante + ausgeführte Traj aus dem Modell (in-memory)."""
-        self.trajectories.pop(self.TRAJ_TRAJ, None)
-        self.trajectories.pop(self.TRAJ_EXECUTED, None)
-
-    def clear_compiled(self) -> None:
-        """Löscht compiled Reference (in-memory)."""
-        self.paths_compiled.clear()
-        self.info.clear()
-
-    # ---------- Points ----------
-
-    def compiled_points_mm_for_side(self, side: str) -> Optional[np.ndarray]:
-        sdata = (self.paths_compiled.get("sides") or {}).get(str(side))
-        if not isinstance(sdata, dict):
-            return None
-        poses = sdata.get("poses_quat") or []
-        if not poses:
-            return None
-        return np.array([[p["x"], p["y"], p["z"]] for p in poses], dtype=float)
-
-    def trajectory_points_mm_for_side(self, traj_key: str, side: str) -> Optional[np.ndarray]:
-        if traj_key == self.TRAJ_COMPILED:
-            return self.compiled_points_mm_for_side(side)
-
-        t = self.trajectories.get(traj_key)
-        if not isinstance(t, dict):
-            return None
-        sdata = (t.get("sides") or {}).get(str(side))
-        if not isinstance(sdata, dict):
-            return None
-        poses = sdata.get("poses_quat") or []
-        if not poses:
-            return None
-        return np.array([[p["x"], p["y"], p["z"]] for p in poses], dtype=float)
-
-    # ---------- Setters ----------
-
-    def set_trajectory_points_mm(
-        self,
-        *,
-        traj_key: str,
-        side: str,
-        points_mm: np.ndarray,
-        frame: str = "scene",
-        tool_frame: Optional[str] = None,
-        meta: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        traj_key = self._assert_valid_traj_key(traj_key)
-        P = np.asarray(points_mm, float).reshape(-1, 3)
-
-        t = self.trajectories.setdefault(traj_key, {})
-        t["frame"] = frame
-        t["tool_frame"] = tool_frame or self.planner.get("tool_frame", "tool_mount")
-        t.setdefault("sides", {})[str(side)] = {
-            "poses_quat": [
-                {"x": float(x), "y": float(y), "z": float(z), "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}
-                for x, y, z in P
-            ]
-        }
-        if meta:
-            t["meta"] = dict(meta)
-
-    # ---------- Eval ----------
-
-    def evaluate_trajectory_against_compiled(
-        self,
-        *,
-        traj_key: str,
-        side: str,
-        clamp_mm: Tuple[float, float, float] = (1.0, 3.0, 8.0),
-    ) -> Optional[Dict[str, Any]]:
-        traj_key = self._assert_valid_traj_key(traj_key)
-
-        ref = self.compiled_points_mm_for_side(side)
-        test = self.trajectory_points_mm_for_side(traj_key, side)
-        if ref is None or test is None:
-            return None
-
-        ev = RecipeEvaluator(clamp_mm=clamp_mm)
-        res = ev.evaluate_points_mm(
-            ref_points_mm=ref,
-            test_points_mm=test,
-            label=f"{traj_key}/{side}",
-        ).to_dict()
-
-        self.trajectories.setdefault(traj_key, {}).setdefault("sides", {}).setdefault(str(side), {})["eval"] = res
-        return res
-
-    # ---------- Info ----------
-
-    def _recompute_info_from_compiled(self) -> None:
-        sides = self.paths_compiled.get("sides") or {}
-        total_points = 0
-        total_length = 0.0
-        sides_info: Dict[str, Any] = {}
-
-        for side, sdata in sides.items():
-            poses = (sdata or {}).get("poses_quat") or []
-            P = np.array([[p["x"], p["y"], p["z"]] for p in poses], dtype=float)
-            num = int(P.shape[0])
-            length = float(np.linalg.norm(P[1:] - P[:-1], axis=1).sum()) if num >= 2 else 0.0
-            sides_info[str(side)] = {"num_points": num, "length_mm": length}
-            total_points += num
-            total_length += length
-
-        self.info = {"total_points": total_points, "total_length_mm": total_length, "sides": sides_info}
+    def compiled_points_mm_for_side(self, side: str) -> List[List[float]]:
+        # Backwards-friendly accessor: returns [[x,y,z], ...] in mm.
+        poses = self.draft_poses_quat(side)
+        return [[p.x, p.y, p.z] for p in poses]

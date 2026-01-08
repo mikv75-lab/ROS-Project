@@ -12,7 +12,7 @@ from PyQt6.QtCore import pyqtSignal, QTimer
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QSpacerItem
 from PyQt6.sip import isdeleted
 
-from model.recipe.recipe import Recipe
+from model.recipe.recipe import Recipe, Draft  # ✅ Draft statt paths_compiled
 from model.recipe.recipe_store import RecipeStore
 from model.recipe.path_builder import PathBuilder
 
@@ -83,10 +83,10 @@ def _bounds_center(bounds: Bounds) -> np.ndarray:
 def _side_cfg(side: str):
     s = str(side or "").lower()
     cfgs = {
-        "top":   {"anchor": ("z", "max"), "axes": ("x", "y")},
+        "top": {"anchor": ("z", "max"), "axes": ("x", "y")},
         "front": {"anchor": ("y", "min"), "axes": ("x", "z")},
-        "back":  {"anchor": ("y", "max"), "axes": ("x", "z")},
-        "left":  {"anchor": ("x", "min"), "axes": ("y", "z")},
+        "back": {"anchor": ("y", "max"), "axes": ("x", "z")},
+        "left": {"anchor": ("x", "min"), "axes": ("y", "z")},
         "right": {"anchor": ("x", "max"), "axes": ("y", "z")},
     }
     return cfgs.get(s)
@@ -237,8 +237,6 @@ def _substrate_origin_world(scene: PreviewScene, substrate_mesh: pv.DataSet) -> 
     Damit ist:
       - Auflagefläche => z = 0
       - Mitte => x=y=0
-
-    Genau das brauchst du für compiled.yaml.
     """
     # Versuche Mount-Mesh zu finden (verschiedene mögliche Namen)
     mount = None
@@ -618,48 +616,42 @@ class CoatingPreviewPanel(QWidget):
                     self.scene.add_mesh(mz, layer="frames_z", color="#2980b9", line_width=1.0, lighting=False)
 
             # ------------------------------------------------------------------
-            # 💾 Persist final TCP points into model.paths_compiled
-            #     IMPORTANT: speichern in SUBSTRATE-FRAME (Mount-Top-Center)
+            # 💾 Persist final TCP points into model.draft (Draft) -> draft.yaml
+            #     STRICT Draft schema: {"version":1,"sides":{side:{poses_quat:[...], normals_xyz:[...]?}}}
             try:
                 tcp_local = tcp_world - origin_world[None, :]
 
-                model.paths_compiled = model.paths_compiled or {}
-
-                # ✅ jetzt ist es NICHT world/scene, sondern substrate-origin
-                model.paths_compiled["frame"] = "substrate"
-
-                tool_frame: str = getattr(model, "tool_frame", None) or "tool_mount"
-                if isinstance(getattr(model, "planner", None), dict):
-                    tool_frame = model.planner.get("tool_frame", tool_frame)
-                model.paths_compiled["tool_frame"] = tool_frame
-
-                model.paths_compiled.setdefault("sides", {})
-                model.paths_compiled.setdefault("meta", {})
-
-                # hilfreich fürs Debuggen/ROS:
-                model.paths_compiled["meta"]["origin_world_mm"] = [float(origin_world[0]), float(origin_world[1]), float(origin_world[2])]
-                model.paths_compiled["meta"]["origin_definition"] = "mount_top_center_xy__zmax"
-                model.paths_compiled["meta"]["note"] = "poses are tcp in substrate frame (origin subtracted from WORLD tcp)"
-
                 poses_quat = [
-                    {
-                        "x": float(x),
-                        "y": float(y),
-                        "z": float(z),
-                        "qx": 0.0,
-                        "qy": 0.0,
-                        "qz": 0.0,
-                        "qw": 1.0,
-                    }
+                    {"x": float(x), "y": float(y), "z": float(z), "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}
                     for (x, y, z) in tcp_local.reshape(-1, 3)
                 ]
+                normals_xyz = [{"x": float(nx), "y": float(ny), "z": float(nz)} for (nx, ny, nz) in nrm.reshape(-1, 3)]
 
-                model.paths_compiled["sides"][str(side)] = {
+                # existing draft -> dict (merge), else start new
+                base: Dict[str, Any]
+                if isinstance(getattr(model, "draft", None), Draft):
+                    try:
+                        base = dict(model.draft.to_yaml_dict() or {})  # type: ignore[attr-defined]
+                    except Exception:
+                        base = {}
+                else:
+                    base = {}
+
+                base.setdefault("version", 1)
+                base.setdefault("sides", {})
+
+                if not isinstance(base.get("sides"), dict):
+                    base["sides"] = {}
+
+                base["sides"][str(side)] = {
                     "poses_quat": poses_quat,
-                    "meta": {"num_points": len(poses_quat), "side": str(side), "source": source},
+                    "normals_xyz": normals_xyz,
                 }
+
+                model.draft = Draft.from_yaml_dict(base)
+
             except Exception:
-                _LOG.exception("Persisting model.paths_compiled failed")
+                _LOG.exception("Persisting model.draft failed")
             # ------------------------------------------------------------------
 
         # 2D update (WORLD fürs Preview)

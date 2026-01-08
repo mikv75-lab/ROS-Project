@@ -1,4 +1,3 @@
-# (komplette Datei wie in deinem Stand – nur relevante Fixes sind drin)
 # -*- coding: utf-8 -*-
 # File: app/tabs/recipe/recipe_editor_panel/recipe_editor_content.py
 from __future__ import annotations
@@ -27,7 +26,6 @@ from model.recipe.recipe import Recipe
 from model.recipe.recipe_store import RecipeStore
 from widgets.planner_groupbox import PlannerGroupBox
 from .side_path_editor import SidePathEditor
-
 
 Bounds = Tuple[float, float, float, float, float, float]
 
@@ -260,9 +258,12 @@ class _TabBarWithChecks(QTabBar):
 
 class RecipeEditorContent(QWidget):
     """
-    UI: KEIN "Recipe ID" Feld.
-    - Recipe Name: editierbar (das ist der Ordner-/Key-Name)
-    - Recipe (Combo): ist das "recipe_id" aus dem Catalog (intern), aber wird nicht als Meta angezeigt.
+    Legacy storage model:
+      - Recipe ID (recipe_id) kommt aus Selection->Recipe (Catalog)
+      - Speicherung passiert NUR unter <recipes_root_dir>/<recipe_id>/
+
+    Meta:
+      - "Recipe Name" ist nur UI-Text (z.B. für Humans), NICHT Teil des Storage-Keys.
     """
 
     def __init__(self, *, ctx, store: RecipeStore, parent: Optional[QWidget] = None) -> None:
@@ -300,7 +301,7 @@ class RecipeEditorContent(QWidget):
         gb_meta_l.setSpacing(6)
 
         self.e_recipe_name = QLineEdit(gb_meta)
-        self.e_recipe_name.setPlaceholderText("Recipe name (folder/key) ...")
+        self.e_recipe_name.setPlaceholderText("Recipe name (UI only) ...")
 
         self.e_desc = QLineEdit(gb_meta)
         self.e_desc.setPlaceholderText("Short description ...")
@@ -343,7 +344,7 @@ class RecipeEditorContent(QWidget):
 
         self._params_box = GlobalParamsBox(store=self.store, parent=self)
 
-        # ✅ FIX: kein ctx mehr – PlannerGroupBox baut sich aus store.planner_catalog
+        # PlannerGroupBox baut sich aus store.planner_catalog
         self._planner_box = PlannerGroupBox(parent=self, title="Move planner", role="move", store=self.store)
 
         row_params_planner.addWidget(self._params_box, 3)
@@ -367,7 +368,7 @@ class RecipeEditorContent(QWidget):
         if self._side_tabbar is not None:
             self._side_tabbar.currentChanged.connect(self._on_side_tab_changed)
 
-    # ---------------- Recipe Name API (für Panel) ----------------
+    # ---------------- Recipe Name API (UI only) ----------------
 
     def get_recipe_name(self) -> str:
         return str(self.e_recipe_name.text() if self.e_recipe_name is not None else "").strip()

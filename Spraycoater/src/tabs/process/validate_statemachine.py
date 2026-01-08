@@ -48,25 +48,27 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._await_joint_update_for_next_pose: bool = False
         self._joint_sig_connected: bool = False
 
-        # --- timers
+        # timers
         self._joint_fallback_timer = QtCore.QTimer(self)
         self._joint_fallback_timer.setSingleShot(True)
         self._joint_fallback_timer.timeout.connect(self._on_joint_fallback_timeout)
 
-        # --- trajectory capture wiring flags
+        # trajectory capture wiring flag
         self._traj_sig_connected: bool = False
 
-        # --- robot joints gating (recipe streaming)
+        # robot joints gating (recipe streaming)
         try:
             self._ros.robot.signals.jointsChanged.connect(self._on_joints_changed)
             self._joint_sig_connected = True
         except Exception:
             self._joint_sig_connected = False
 
-        # --- IMPORTANT: capture MoveIt trajectories (planned/executed) per segment
+        # IMPORTANT: capture MoveIt trajectories (planned/executed) per segment
         self._connect_moveit_traj_signals()
 
-    # ---------------- Wiring: MoveIt planned/executed ----------------
+    # ------------------------------------------------------------------
+    # Wiring: MoveIt planned/executed (RobotTrajectory messages)
+    # ------------------------------------------------------------------
 
     def _connect_moveit_traj_signals(self) -> None:
         """
@@ -107,9 +109,10 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             self._executed_by_segment = {}
 
     @staticmethod
-    def _jt_msg_to_dict(jt_msg) -> Dict[str, Any]:
+    def _jt_msg_to_event_dict(jt_msg) -> Dict[str, Any]:
         """
-        Convert trajectory_msgs/JointTrajectory to a JSON-serializable dict.
+        Convert trajectory_msgs/JointTrajectory -> JSON-serializable "event" dict.
+        (This dict is an EVENT entry inside segments[SEG] list.)
         """
         out: Dict[str, Any] = {
             "joint_names": list(getattr(jt_msg, "joint_names", []) or []),
@@ -134,9 +137,9 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
 
         return out
 
-    def _append_step_and_merge(self, *, which: str, seg: str, jt_dict: Dict[str, Any]) -> None:
+    def _append_step_and_merge(self, *, which: str, seg: str, jt_event: Dict[str, Any]) -> None:
         """
-        Store per-step JT dict and keep merged JT in *_by_segment updated.
+        Store per-step JT event dict and keep merged JT in *_by_segment updated.
         """
         self._ensure_traj_maps()
 
@@ -152,13 +155,13 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             steps = []
             steps_map[seg] = steps
 
-        steps.append(jt_dict)
+        steps.append(jt_event)
 
-        # update merged
+        # update merged (internal only; not necessarily written into payload)
         try:
             merged_map[seg] = self._concat_joint_traj_dicts(list(steps))
         except Exception:
-            merged_map[seg] = jt_dict
+            merged_map[seg] = jt_event
 
     @QtCore.pyqtSlot(object)
     def _on_planned_traj_changed(self, rt_msg: object) -> None:
@@ -175,10 +178,10 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             jt_msg = getattr(rt_msg, "joint_trajectory", None)
             if jt_msg is None:
                 return
-            jt_dict = self._jt_msg_to_dict(jt_msg)
-            if not (jt_dict.get("points") or []):
+            ev = self._jt_msg_to_event_dict(jt_msg)
+            if not (ev.get("points") or []):
                 return
-            self._append_step_and_merge(which="planned", seg=seg, jt_dict=jt_dict)
+            self._append_step_and_merge(which="planned", seg=seg, jt_event=ev)
         except Exception:
             _LOG.exception("Validate: planned trajectory capture failed")
 
@@ -197,14 +200,16 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             jt_msg = getattr(rt_msg, "joint_trajectory", None)
             if jt_msg is None:
                 return
-            jt_dict = self._jt_msg_to_dict(jt_msg)
-            if not (jt_dict.get("points") or []):
+            ev = self._jt_msg_to_event_dict(jt_msg)
+            if not (ev.get("points") or []):
                 return
-            self._append_step_and_merge(which="executed", seg=seg, jt_dict=jt_dict)
+            self._append_step_and_merge(which="executed", seg=seg, jt_event=ev)
         except Exception:
             _LOG.exception("Validate: executed trajectory capture failed")
 
-    # ---------------- Hooks ----------------
+    # ------------------------------------------------------------------
+    # Hooks
+    # ------------------------------------------------------------------
 
     def _prepare_run(self) -> bool:
         self._frame = "world"
@@ -229,7 +234,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._await_joint_update_for_next_pose = False
         self._joint_fallback_timer.stop()
 
-        # IMPORTANT: also clear collected trajectories per run
+        # IMPORTANT: clear collected trajectories per run
         self._ensure_traj_maps()
         self._planned_steps_by_segment.clear()
         self._executed_steps_by_segment.clear()
@@ -291,7 +296,9 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             return True
         return True
 
-    # ---------------- Segment runners ----------------
+    # ------------------------------------------------------------------
+    # Segment runners
+    # ------------------------------------------------------------------
 
     def _run_single_pose_segment(self, seg_name: str) -> None:
         pts = self._cmd_pts_by_seg.get(seg_name) or []
@@ -325,7 +332,9 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         except Exception as ex:
             self._signal_error(f"Validate: move_home failed: {ex}")
 
-    # ---------------- Robot state gating ----------------
+    # ------------------------------------------------------------------
+    # Robot state gating
+    # ------------------------------------------------------------------
 
     def _arm_joint_fallback_timer(self) -> None:
         self._joint_fallback_timer.stop()
@@ -372,7 +381,9 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._await_joint_update_for_next_pose = False
         QtCore.QTimer.singleShot(self._NEXT_POSE_QT_DELAY_MS, self._send_next_recipe_pose)
 
-    # ---------------- ROS facade helpers ----------------
+    # ------------------------------------------------------------------
+    # ROS facade helpers
+    # ------------------------------------------------------------------
 
     def _ros_move_pose_mm(self, x: float, y: float, z: float) -> None:
         from geometry_msgs.msg import PoseStamped
@@ -406,61 +417,49 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         except Exception as ex:
             self._signal_error(f"Validate: move_pose failed ({x:.1f},{y:.1f},{z:.1f}): {ex}")
 
-    # ---------------- payloads (STRICT SegmentRunPayload v1) ----------------
+    # ------------------------------------------------------------------
+    # Payloads
+    # ------------------------------------------------------------------
 
     def _build_run_payload(self, *, which: str) -> Dict[str, Any]:
         """
-        STRICT SegmentRunPayload v1 (schema-compatible with save_run validator):
+        Schema FIX for save_run validator:
 
-        segments:
-          {
-            "MOVE_PREDISPENSE": <JointTrajectoryDict>,
-            "MOVE_RECIPE":      <JointTrajectoryDict>,
+        segments[SEG] MUST be a LIST (events), not a dict.
+
+        We therefore export:
+          segments:
+            MOVE_PREDISPENSE: [ <jt_event_dict>, ... ]
+            MOVE_RECIPE:      [ <jt_event_dict>, ... ]
             ...
-          }
 
-        IMPORTANT:
-          - segments[seg] MUST be the JT-dict directly.
-          - Do NOT put wrapper keys like 'events'/'merged' inside segments[seg].
+        Merged trajectories remain available internally (self._planned_by_segment etc.)
+        but are NOT emitted in the payload, because your validator rejects dict keys.
         """
         if which not in ("planned", "executed"):
             raise ValueError(f"_build_run_payload: invalid which={which}")
 
         frame = self._frame or "world"
         steps_map = self._planned_steps_by_segment if which == "planned" else self._executed_steps_by_segment
-        merged_map = self._planned_by_segment if which == "planned" else self._executed_by_segment
 
-        segs: Dict[str, Dict[str, Any]] = {}
+        segs: Dict[str, List[Dict[str, Any]]] = {}
         dbg: List[str] = []
 
         for s in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME):
             events = list((steps_map or {}).get(s) or [])
-            merged = (merged_map or {}).get(s)
-
-            # best-effort: if merged missing but events exist, recompute merge
-            if merged is None and events:
-                try:
-                    merged = self._concat_joint_traj_dicts(events)
-                except Exception as ex:
-                    dbg.append(f"{which}:{s}: merge failed: {ex!r}")
-                    merged = None
-
-            if merged is None:
-                if not events:
-                    dbg.append(f"{which}:{s}: no events and no merged")
-                else:
-                    dbg.append(f"{which}:{s}: events exist but merged is None")
+            if not events:
+                dbg.append(f"{which}:{s}: no events")
                 continue
 
-            # Schema-required: JT dict directly
-            segs[s] = merged
+            # IMPORTANT: segment value is a LIST of event dicts
+            segs[s] = events
 
-            # debug
+            # debug counts
             try:
-                n_pts = int(len((merged.get("points") or []))) if isinstance(merged, dict) else 0
+                n_pts = int(len((events[-1].get("points") or []))) if events else 0
             except Exception:
                 n_pts = 0
-            dbg.append(f"{which}:{s}: ok (events={len(events)}, merged_points={n_pts})")
+            dbg.append(f"{which}:{s}: ok (events={len(events)}, last_points={n_pts})")
 
         if not segs:
             msg = "Validate: keine JointTrajectory erfasst (payload leer). " + "; ".join(dbg[:50])
@@ -473,7 +472,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
                 "side": str(self._side),
                 "frame": frame,
                 "source": "validate_statemachine",
-                "format": "joint_trajectory_by_segment",
+                "format": "joint_events_by_segment",
                 "kind": which,
             },
             "segments": segs,
@@ -485,7 +484,9 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         executed = self._build_run_payload(which="executed")
         return {"planned_run": planned, "executed_run": executed}
 
-    # ---------------- compiled points extraction ----------------
+    # ------------------------------------------------------------------
+    # Compiled points extraction
+    # ------------------------------------------------------------------
 
     def _get_compiled_points_mm(self, side: str) -> List[Tuple[float, float, float]]:
         out: List[Tuple[float, float, float]] = []
@@ -496,7 +497,9 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             out.append((float(row[0]), float(row[1]), float(row[2])))
         return out
 
-    # ---------------- Cleanup ----------------
+    # ------------------------------------------------------------------
+    # Cleanup
+    # ------------------------------------------------------------------
 
     def _cleanup(self) -> None:
         try:

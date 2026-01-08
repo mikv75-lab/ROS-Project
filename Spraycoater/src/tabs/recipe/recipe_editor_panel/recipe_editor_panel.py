@@ -1,8 +1,8 @@
-# app/tabs/recipe/recipe_editor_panel/recipe_editor_panel.py
 # -*- coding: utf-8 -*-
+# File: app/tabs/recipe/recipe_editor_panel/recipe_editor_panel.py
 from __future__ import annotations
 
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
@@ -19,7 +19,6 @@ from PyQt6.QtWidgets import (
 from model.recipe.recipe import Recipe
 from model.recipe.recipe_store import RecipeStore
 from model.recipe.recipe_repo import RecipeRepo
-from model.recipe.path_builder import PathBuilder
 
 from .recipe_editor_content import RecipeEditorContent
 
@@ -38,19 +37,14 @@ def _set_policy(
 
 class RecipeEditorPanel(QWidget):
     """
-    Storage key Format (SSoT):
-      key = "<recipe_id>/<recipe_name>"
+    Editor (Folder-name based).
+
+    Persistence:
+      <recipes_root_dir>/<recipe_name>/{params.yaml,draft.yaml,planned_traj.yaml,executed_traj.yaml}
 
     UI:
-      - Selection->Recipe = recipe_id (Catalog / constraints)
-      - Meta->Recipe Name = recipe_name (folder/key suffix)
-
-    Verhalten:
-      - Start: Default state (name="default") + Preview (keine Files)
-      - New: reset default + Preview (keine Files)
-      - Load: lädt key (rid/rname) + Preview
-      - Save: schreibt (rid/rname) - EINZIGE Stelle die Files erstellt/überschreibt
-      - Delete: löscht key (rid/rname) und reset auf Default + Preview
+      - Meta->Recipe name = folder name (SSoT key)
+      - Selection->Recipe = template/type from store.recipes (drives defaults)
     """
 
     updatePreviewRequested = pyqtSignal(object)  # Recipe
@@ -74,14 +68,12 @@ class RecipeEditorPanel(QWidget):
         self.store: RecipeStore = store
         self.repo: RecipeRepo = repo
 
+        # Catalog templates by template-id (e.g. "cube")
         self._recipes_by_id: Dict[str, Dict[str, Any]] = {}
 
         self._active_model: Optional[Recipe] = None
-        self._active_compiled: Optional[dict] = None
-
-        # active selection and name
-        self._active_rid: str = ""          # recipe_id (Selection->Recipe)
-        self._active_name: str = "default"  # recipe_name (Meta field)
+        self._active_template_id: str = ""  # template/type from store
+        self._active_name: str = ""         # folder name (persistence key)
 
         # ---------------- UI ----------------
         root = QVBoxLayout(self)
@@ -119,25 +111,15 @@ class RecipeEditorPanel(QWidget):
         self.btn_update_preview.clicked.connect(self._on_update_preview_clicked)
 
         if getattr(self.content, "sel_recipe", None) is not None:
-            self.content.sel_recipe.currentIndexChanged.connect(self._on_recipe_select_changed)
+            self.content.sel_recipe.currentIndexChanged.connect(self._on_template_select_changed)
 
         # init
         self._rebuild_recipe_defs()
-        self._populate_recipe_combo()
+        self._populate_template_combo()
         self._load_default_into_editor(trigger_preview=True)
 
     # ---------------------------------------------------------
-    # Key helpers
-    # ---------------------------------------------------------
-
-    def _split_key(self, key: str) -> Tuple[str, str]:
-        return self.repo.bundle.split_key(key)
-
-    def _make_key(self, rid: str, name: str) -> str:
-        return self.repo.make_key(rid, name)
-
-    # ---------------------------------------------------------
-    # Catalog / Selection
+    # Catalog / Selection (templates)
     # ---------------------------------------------------------
 
     def _rebuild_recipe_defs(self) -> None:
@@ -149,7 +131,7 @@ class RecipeEditorPanel(QWidget):
             if rid:
                 self._recipes_by_id[rid] = dict(r)
 
-    def _populate_recipe_combo(self) -> None:
+    def _populate_template_combo(self) -> None:
         cb = getattr(self.content, "sel_recipe", None)
         if cb is None:
             return
@@ -164,69 +146,54 @@ class RecipeEditorPanel(QWidget):
         if cb.currentIndex() < 0:
             cb.setCurrentIndex(0)
 
-    def _current_rid(self) -> str:
+    def _current_template_id(self) -> str:
         cb = getattr(self.content, "sel_recipe", None)
         if cb is None or cb.currentIndex() < 0:
             return ""
         return str(cb.currentText() or "").strip()
 
-    def _select_rid_in_combo_blocked(self, rid: str) -> None:
-        cb = getattr(self.content, "sel_recipe", None)
-        if cb is None:
-            return
-        rid = str(rid or "").strip()
-        if not rid:
-            return
-        idx = cb.findText(rid)
-        if idx < 0:
-            return
-        cb.blockSignals(True)
-        cb.setCurrentIndex(idx)
-        cb.blockSignals(False)
-
-    def _recipe_def_for_rid(self, rid: str) -> Dict[str, Any]:
-        rid = str(rid or "").strip()
-        if not rid:
-            raise KeyError("rid leer")
-        rec_def = self._recipes_by_id.get(rid)
+    def _template_def_for_id(self, template_id: str) -> Dict[str, Any]:
+        template_id = str(template_id or "").strip()
+        if not template_id:
+            raise KeyError("template_id leer")
+        rec_def = self._recipes_by_id.get(template_id)
         if not rec_def:
-            raise KeyError(f"RecipeDef für '{rid}' nicht gefunden")
+            raise KeyError(f"RecipeDef für '{template_id}' nicht gefunden")
         return rec_def
 
-    def _first_rid(self) -> str:
+    def _first_template_id(self) -> str:
         rids = sorted(self._recipes_by_id.keys())
         return rids[0] if rids else ""
 
     # ---------------------------------------------------------
-    # Meta name helpers
+    # Helpers (name / id)
     # ---------------------------------------------------------
 
-    def _recipe_name_from_ui(self, fallback: str = "default") -> str:
-        fn = getattr(self.content, "get_recipe_name", None)
-        if callable(fn):
-            try:
-                s = str(fn() or "").strip()
-                if s:
-                    return s
-            except Exception:
-                pass
-        return (fallback or "default").strip() or "default"
+    def _current_recipe_name(self) -> str:
+        # Meta->Recipe name (folder key)
+        try:
+            return str(self.content.get_recipe_name() or "").strip()
+        except Exception:
+            return ""
 
-    def _set_recipe_name_in_ui(self, name: str) -> None:
-        fn = getattr(self.content, "set_recipe_name", None)
-        if callable(fn):
-            try:
-                fn(name)
-            except Exception:
-                pass
+    def _require_recipe_name(self) -> str:
+        name = self._current_recipe_name()
+        if not name:
+            raise ValueError("Recipe name ist leer. Bitte oben im Meta-Block setzen (Ordnername unter wafer/...).")
+        return name
+
+    def _default_recipe_name_for_template(self, template_id: str) -> str:
+        # deterministic placeholder to satisfy strict Recipe.from_dict()
+        tid = str(template_id or "recipe").strip() or "recipe"
+        return f"{tid}_01"
 
     # ---------------------------------------------------------
-    # Model creation / compile
+    # Model creation (from template)
     # ---------------------------------------------------------
 
-    def _new_model_from_rec_def(self, rec_def: Dict[str, Any]) -> Recipe:
-        rid = str(rec_def.get("id") or "").strip()
-        if not rid:
+    def _new_model_from_template(self, rec_def: Dict[str, Any]) -> Recipe:
+        template_id = str(rec_def.get("id") or "").strip()
+        if not template_id:
             raise KeyError("rec_def.id fehlt/leer")
 
         params = self.store.collect_global_defaults()
@@ -237,7 +204,7 @@ class RecipeEditorPanel(QWidget):
 
         sides_cfg = self.store.sides_for_recipe(rec_def)
         if not isinstance(sides_cfg, dict) or not sides_cfg:
-            raise KeyError(f"Recipe '{rid}': sides fehlt/leer")
+            raise KeyError(f"Recipe '{template_id}': sides fehlt/leer")
 
         pbs: Dict[str, Any] = {}
         for side in sides_cfg.keys():
@@ -247,13 +214,13 @@ class RecipeEditorPanel(QWidget):
 
             allowed = scfg.get("allowed_path_types")
             if not isinstance(allowed, list) or not [x for x in allowed if str(x).strip()]:
-                raise KeyError(f"Recipe '{rid}' side '{side}': allowed_path_types fehlt/leer")
+                raise KeyError(f"Recipe '{template_id}' side '{side}': allowed_path_types fehlt/leer")
 
             dp = scfg.get("default_path")
             if not isinstance(dp, dict):
-                raise KeyError(f"Recipe '{rid}' side '{side}': default_path fehlt/kein dict")
+                raise KeyError(f"Recipe '{template_id}' side '{side}': default_path fehlt/kein dict")
             if "type" not in dp or not str(dp.get("type") or "").strip():
-                raise KeyError(f"Recipe '{rid}' side '{side}': default_path.type fehlt/leer")
+                raise KeyError(f"Recipe '{template_id}' side '{side}': default_path.type fehlt/leer")
 
             pbs[str(side)] = dict(dp)
 
@@ -262,15 +229,20 @@ class RecipeEditorPanel(QWidget):
         mounts = rec_def.get("substrate_mounts")
 
         if not isinstance(tools, list) or not tools:
-            raise KeyError(f"Recipe '{rid}': tools fehlt/leer")
+            raise KeyError(f"Recipe '{template_id}': tools fehlt/leer")
         if not isinstance(subs, list) or not subs:
-            raise KeyError(f"Recipe '{rid}': substrates fehlt/leer")
+            raise KeyError(f"Recipe '{template_id}': substrates fehlt/leer")
         if not isinstance(mounts, list) or not mounts:
-            raise KeyError(f"Recipe '{rid}': substrate_mounts fehlt/leer")
+            raise KeyError(f"Recipe '{template_id}': substrate_mounts fehlt/leer")
+
+        # IMPORTANT:
+        # Recipe.from_dict() ist strikt: id darf NICHT leer sein.
+        # Wir setzen einen deterministischen Default; später wird id durch Meta->Recipe name überschrieben.
+        placeholder_id = self._current_recipe_name() or self._default_recipe_name_for_template(template_id)
 
         return Recipe.from_dict(
             {
-                "id": rid,
+                "id": placeholder_id,
                 "description": rec_def.get("description") or "",
                 "tool": str(tools[0]),
                 "substrate": str(subs[0]),
@@ -279,170 +251,109 @@ class RecipeEditorPanel(QWidget):
                 "planner": move_planner,
                 "paths_by_side": pbs,
                 "trajectories": {},
+                "meta": {"template_id": template_id},
             }
         )
-
-    def _compile_from_model(self, model: Recipe) -> dict:
-        """
-        ✅ Compile fürs Speichern:
-
-        Priorität:
-          1) model.paths_compiled (TCP-Punkte aus Preview/Raycast) -> korrekte z != 0
-          2) Fallback: PathBuilder plane points (z=0) wenn preview noch nicht gelaufen ist
-        """
-        # ----------------------------
-        # 1) Prefer TCP compiled from preview
-        # ----------------------------
-        pc = getattr(model, "paths_compiled", None) or {}
-        sides_pc: Dict[str, Any] = {}
-        if isinstance(pc, dict):
-            sp = pc.get("sides")
-            if isinstance(sp, dict):
-                sides_pc = sp
-
-        if isinstance(sides_pc, dict) and len(sides_pc) > 0:
-            # tool_frame: recipe.tool_frame -> planner.tool_frame -> fallback
-            tool_frame: str = getattr(model, "tool_frame", None) or "tool_mount"
-            if isinstance(getattr(model, "planner", None), dict):
-                tool_frame = model.planner.get("tool_frame", tool_frame)
-
-            out: dict = {
-                "frame": (pc.get("frame") if isinstance(pc, dict) else None) or "scene",
-                "tool_frame": (pc.get("tool_frame") if isinstance(pc, dict) else None) or tool_frame,
-                "sides": {},
-                "meta": dict(pc.get("meta") or {}) if isinstance(pc, dict) else {},
-            }
-
-            for side, data in sides_pc.items():
-                if not isinstance(data, dict):
-                    continue
-                poses = data.get("poses_quat") or []
-                meta = data.get("meta") or {}
-                out["sides"][str(side)] = {
-                    "poses_quat": list(poses),
-                    "meta": dict(meta),
-                }
-
-            # Optional: Meta-Info, dass es TCP ist
-            out["meta"].setdefault("compiled_source", "paths_compiled_tcp")
-            return out
-
-        # ----------------------------
-        # 2) Fallback: build from PathBuilder (plane z=0)
-        # ----------------------------
-        sides: List[str] = list((model.paths_by_side or {}).keys())
-        if not sides:
-            return {}
-
-        g = dict(model.parameters or {})
-        sample_step_mm = float(g.get("sample_step_mm", 1.0))
-        max_points = int(g.get("max_points", 500))
-
-        tool_frame = "tool_mount"
-        if isinstance(getattr(model, "planner", None), dict):
-            tool_frame = model.planner.get("tool_frame", tool_frame)
-
-        out: dict = {
-            "frame": "scene",
-            "tool_frame": tool_frame,
-            "sides": {},
-            "meta": {
-                "sample_step_mm": float(sample_step_mm),
-                "max_points": int(max_points),
-                "compiled_source": "fallback_pathbuilder_plane_z0",
-            },
-        }
-
-        for side in sides:
-            pd = PathBuilder.from_side(
-                model,
-                side=str(side),
-                globals_params=g,
-                sample_step_mm=float(sample_step_mm),
-                max_points=int(max_points),
-            )
-            P = pd.points_mm  # Nx3 mm (plane => z=0)
-
-            poses_quat = [
-                {"x": float(x), "y": float(y), "z": float(z), "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}
-                for x, y, z in P.reshape(-1, 3)
-            ]
-
-            out["sides"][str(side)] = {"poses_quat": poses_quat, "meta": dict(pd.meta or {})}
-
-        return out
 
     # ---------------------------------------------------------
     # UI apply
     # ---------------------------------------------------------
 
     def _load_default_into_editor(self, *, trigger_preview: bool) -> None:
-        rid = self._current_rid() or self._first_rid()
-        if not rid:
+        template_id = self._current_template_id() or self._first_template_id()
+        if not template_id:
             return
 
-        self._select_rid_in_combo_blocked(rid)
-        rec_def = self._recipe_def_for_rid(rid)
-        model = self._new_model_from_rec_def(rec_def)
+        rec_def = self._template_def_for_id(template_id)
+        model = self._new_model_from_template(rec_def)
 
-        self._active_rid = rid
+        self._active_template_id = template_id
         self._active_model = model
-        self._active_compiled = None
-        self._active_name = "default"
 
-        desc = (rec_def.get("description") or "").strip()
-        self._set_recipe_name_in_ui("default")
-        self.content.set_meta(name="default", desc=desc)
+        # Suggest a name only if empty
+        if not self._current_recipe_name():
+            suggested = self._default_recipe_name_for_template(template_id)
+            self.content.set_meta(name=suggested, desc=(rec_def.get("description") or "").strip())
+        else:
+            self.content.set_meta(desc=(rec_def.get("description") or "").strip())
+
+        # Apply template to UI (selection lists etc.)
         self.content.apply_model_to_ui(model, rec_def)
 
         if trigger_preview:
-            self.updatePreviewRequested.emit(model)
+            m = self.current_model()
+            if m is not None:
+                self.updatePreviewRequested.emit(m)
 
     def current_model(self) -> Optional[Recipe]:
-        rid = self._current_rid() or self._first_rid()
-        if not rid:
+        template_id = self._current_template_id() or self._first_template_id()
+        if not template_id:
             return None
 
-        rec_def = self._recipe_def_for_rid(rid)
-        model = self._active_model or self._new_model_from_rec_def(rec_def)
+        rec_def = self._template_def_for_id(template_id)
+        model = self._active_model or self._new_model_from_template(rec_def)
 
-        model.id = rid
-        self._active_rid = rid
-
-        name = self._recipe_name_from_ui(fallback=self._active_name or "default")
-        self._active_name = name
-
-        desc = (rec_def.get("description") or "").strip()
-        self.content.set_meta(name=name, desc=desc)
-
+        # UI -> model
         self.content.apply_ui_to_model(model)
+
+        # Enforce persistence key from Meta->Recipe name (Folder Key)
+        name_ui = self._current_recipe_name()
+        if name_ui:
+            model.id = name_ui
+        else:
+            # still keep it non-empty (shouldn't happen, but keep strict invariants)
+            model.id = str(model.id or "").strip() or self._default_recipe_name_for_template(template_id)
+
+        self._active_name = model.id
+        self._active_template_id = template_id
+
+        # Clear trajectories in editor context
         model.trajectories = {}
 
         self._active_model = model
         return model
 
-    def _apply_loaded(self, *, key: str, model: Recipe) -> None:
-        rid, rname = self._split_key(key)
+    def _apply_loaded(self, *, recipe_name: str, model: Recipe) -> None:
+        recipe_name = str(recipe_name or "").strip()
+        if not recipe_name:
+            return
 
-        self._select_rid_in_combo_blocked(rid)
-        rec_def = self._recipe_def_for_rid(rid)
-
-        model.id = rid
-
-        self._active_rid = rid
-        self._active_model = model
-        self._active_name = rname
-
-        desc = (rec_def.get("description") or "").strip()
-        self._set_recipe_name_in_ui(rname)
-        self.content.set_meta(name=rname, desc=desc)
-        self.content.apply_model_to_ui(model, rec_def)
-
+        # Try to restore template_id if stored
+        template_id = ""
         try:
-            full = self.repo.load_for_process(key)
-            self._active_compiled = (full.paths_compiled or None)
+            meta = getattr(model, "meta", {}) or {}
+            if isinstance(meta, dict):
+                template_id = str(meta.get("template_id") or "").strip()
         except Exception:
-            self._active_compiled = None
+            template_id = ""
+
+        if template_id and template_id in self._recipes_by_id:
+            rec_def = self._template_def_for_id(template_id)
+            # update combo to match template
+            if getattr(self.content, "sel_recipe", None) is not None:
+                try:
+                    self.content.sel_recipe.blockSignals(True)
+                    self.content.sel_recipe.setCurrentText(template_id)
+                finally:
+                    self.content.sel_recipe.blockSignals(False)
+        else:
+            # fallback: use currently selected template for UI lists
+            template_id = self._current_template_id() or self._first_template_id()
+            rec_def = self._template_def_for_id(template_id) if template_id else {}
+
+        # Ensure id is the loaded folder name
+        model.id = recipe_name
+
+        self._active_name = recipe_name
+        self._active_template_id = template_id
+        self._active_model = model
+
+        # Set meta fields (name above description)
+        self.content.set_meta(name=recipe_name, desc=str(getattr(model, "description", "") or ""))
+
+        # Apply model to UI using best available template definition
+        if rec_def:
+            self.content.apply_model_to_ui(model, rec_def)
 
         self.updatePreviewRequested.emit(model)
 
@@ -454,110 +365,104 @@ class RecipeEditorPanel(QWidget):
         model = self.current_model()
         if model is None:
             return
-
-        # ✅ Preview neu triggern. Compiled wird beim Save aus model.paths_compiled gezogen.
-        self._active_compiled = None
+        if not str(model.id or "").strip():
+            QMessageBox.warning(self, "Preview", "Recipe name ist leer (Meta).")
+            return
         self.updatePreviewRequested.emit(model)
 
     def _on_new_clicked(self) -> None:
+        self._active_model = None
+        self._active_name = ""
         self._load_default_into_editor(trigger_preview=True)
 
-    def _on_recipe_select_changed(self, *_args) -> None:
+    def _on_template_select_changed(self, *_args) -> None:
+        # template changes -> keep current recipe name; rebuild defaults for everything else
+        keep_name = self._current_recipe_name()
         self._load_default_into_editor(trigger_preview=True)
+        if keep_name:
+            self.content.set_meta(name=keep_name)
 
     def _on_load_clicked(self) -> None:
-        keys = self.repo.list_recipes() or []
-        if not keys:
-            QMessageBox.information(self, "Load", "Keine gespeicherten Rezepte gefunden.")
+        # List existing folders (recipe names)
+        names = self.repo.list_recipes() or []
+        names = [str(x) for x in names if str(x).strip()]
+        if not names:
+            QMessageBox.information(self, "Load", "Keine gespeicherten Rezepte gefunden (params.yaml fehlt).")
             return
 
-        rid = self._current_rid() or self._active_rid or self._first_rid()
-        rname = self._active_name or "default"
-        suggest_key = self._make_key(rid, rname)
-        idx = keys.index(suggest_key) if suggest_key in keys else 0
+        suggest = self._current_recipe_name() or self._active_name or (names[0] if names else "")
+        idx = names.index(suggest) if suggest in names else 0
 
         choice, ok = QInputDialog.getItem(
             self,
             "Recipe laden",
-            "Rezept auswählen (recipe_id/recipe_name):",
-            keys,
+            "Rezept auswählen (Ordnername):",
+            names,
             idx,
             editable=False,
         )
         if not ok:
             return
 
-        key = str(choice).strip()
-        if not key:
+        name = str(choice).strip()
+        if not name:
             return
 
-        model = self.repo.load_for_editor(key)
-        self._apply_loaded(key=key, model=model)
+        try:
+            model = self.repo.load_for_editor(name)
+        except Exception as e:
+            QMessageBox.warning(self, "Load", f"Laden fehlgeschlagen:\n{e}")
+            return
+
+        self._apply_loaded(recipe_name=name, model=model)
 
     def _on_save_clicked(self) -> None:
         model = self.current_model()
         if model is None:
             return
 
-        rid = self._current_rid() or self._active_rid or self._first_rid()
-        if not rid:
-            QMessageBox.warning(self, "Save", "Kein Recipe (Catalog-ID) ausgewählt.")
-            return
-
-        name = self._recipe_name_from_ui(fallback=self._active_name or "default").strip()
-        if not name:
-            QMessageBox.warning(self, "Save", "Recipe Name ist leer.")
-            return
-
-        key = self._make_key(rid, name)
-
-        # ✅ WICHTIG: beim Save IMMER frisch compile'n:
-        # - bevorzugt model.paths_compiled (TCP z!=0)
-        # - fallback PathBuilder (z=0) falls preview nicht gelaufen
         try:
-            self._active_compiled = self._compile_from_model(model)
+            name = self._require_recipe_name()
         except Exception as e:
-            self._active_compiled = None
-            QMessageBox.warning(
-                self,
-                "Save",
-                f"Compile fehlgeschlagen – compiled.yaml wird nicht geschrieben:\n{e}",
-            )
+            QMessageBox.warning(self, "Save", str(e))
+            return
 
-        self.repo.save_from_editor(
-            key,
-            draft=model,
-            compiled=self._active_compiled,
-            delete_compiled_on_hash_change=True,
-        )
+        # Save by folder key
+        try:
+            self.repo.save_from_editor(name, draft=model, compiled=getattr(model, "paths_compiled", None))
+        except TypeError:
+            # backward compatibility if repo.save_from_editor(key, draft=..., compiled=...) differs
+            self.repo.save_from_editor(name, draft=model)  # type: ignore[arg-type]
+        except Exception as e:
+            QMessageBox.warning(self, "Save", f"Speichern fehlgeschlagen:\n{e}")
+            return
 
-        self._active_rid = rid
         self._active_name = name
-
-        QMessageBox.information(self, "Gespeichert", f"{key} (recipe.yaml + compiled.yaml)")
+        QMessageBox.information(self, "Gespeichert", f"{name} (params.yaml; draft.yaml falls vorhanden)")
 
     def _on_delete_clicked(self) -> None:
-        rid = self._current_rid() or self._active_rid or self._first_rid()
-        name = (self._active_name or "").strip()
-
-        if not rid or not name or name == "default":
-            QMessageBox.information(self, "Delete", "Kein gespeichertes Rezept ausgewählt (name != default).")
+        name = self._current_recipe_name() or self._active_name
+        name = str(name or "").strip()
+        if not name:
+            QMessageBox.information(self, "Delete", "Kein recipe name ausgewählt (Meta).")
             return
 
-        key = self._make_key(rid, name)
         reply = QMessageBox.question(
             self,
             "Löschen",
-            f"Rezept '{key}' wirklich löschen? (draft + compiled + runs)",
+            f"Rezept '{name}' wirklich löschen?\n(params + draft + trajectories)",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        self.repo.delete(key)
+        try:
+            self.repo.delete(name)
+        except Exception as e:
+            QMessageBox.warning(self, "Delete", f"Löschen fehlgeschlagen:\n{e}")
+            return
 
         self._active_model = None
-        self._active_compiled = None
-        self._active_name = "default"
+        self._active_name = ""
         self._load_default_into_editor(trigger_preview=True)

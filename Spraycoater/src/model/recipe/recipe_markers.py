@@ -1,287 +1,153 @@
-# app/model/recipe/recipe_markers.py
 # -*- coding: utf-8 -*-
+# File: src/model/recipe/recipe_markers.py
 from __future__ import annotations
 
-from typing import Iterable, List, Optional, Literal
+from typing import Optional
 
-import numpy as np
-from geometry_msgs.msg import Point
-from visualization_msgs.msg import Marker, MarkerArray
+from geometry_msgs.msg import Point  # type: ignore
+from visualization_msgs.msg import Marker, MarkerArray  # type: ignore
 
 from .recipe import Recipe
 
 
-# ----------------------------
-# Types
-# ----------------------------
-
-SourceKey = Literal["compiled_path", "traj", "executed_traj"]
-
-
-# ----------------------------
-# Marker helpers
-# ----------------------------
-
-def _make_point(x: float, y: float, z: float) -> Point:
+def _make_point(x_mm: float, y_mm: float, z_mm: float) -> Point:
+    # RViz expects meters
     p = Point()
-    p.x = float(x)
-    p.y = float(y)
-    p.z = float(z)
+    p.x = float(x_mm) / 1000.0
+    p.y = float(y_mm) / 1000.0
+    p.z = float(z_mm) / 1000.0
     return p
 
 
-def _points_mm_to_markerarray(
-    points_mm: np.ndarray,
+def _line_strip_marker(*, frame_id: str, ns: str, mid: int) -> Marker:
+    m = Marker()
+    m.header.frame_id = frame_id
+    m.ns = ns
+    m.id = int(mid)
+    m.type = Marker.LINE_STRIP
+    m.action = Marker.ADD
+    m.pose.orientation.w = 1.0
+    m.scale.x = 0.0015  # line width in meters
+    m.color.a = 1.0
+    m.color.r = 0.2
+    m.color.g = 0.9
+    m.color.b = 0.2
+    return m
+
+
+def _text_marker(
     *,
     frame_id: str,
-    name: str,
-    ns: Optional[str] = None,
-    line_id: int = 0,
-    dots_id: int = 1,
-    text_id: int = 2,
-) -> MarkerArray:
-    """
-    Baut aus mm-Punkten ein MarkerArray:
-      - LINE_STRIP für den Verlauf
-      - SPHERE_LIST für einzelne Punkte
-      - optional TEXT_VIEW_FACING am Startpunkt (name)
-
-    IDs sind parametrisierbar, damit mehrere Quellen in einem gemeinsamen Array
-    nicht kollidieren.
-    """
-    ma = MarkerArray()
-    if points_mm is None or np.size(points_mm) == 0:
-        return ma
-
-    P = np.asarray(points_mm, dtype=float).reshape(-1, 3)
-    if P.shape[0] == 0:
-        return ma
-
-    # mm -> m (ROS/RViz)
-    Pm = P * 1e-3
-
-    ns = ns or (name or "recipe_path")
-
-    # ---------------- LINE_STRIP ----------------
-    line = Marker()
-    line.header.frame_id = frame_id
-    line.ns = ns
-    line.id = int(line_id)
-    line.type = Marker.LINE_STRIP
-    line.action = Marker.ADD
-    line.scale.x = 0.002  # 2 mm
-    line.color.r = 0.0
-    line.color.g = 1.0
-    line.color.b = 0.0
-    line.color.a = 1.0
-    line.pose.orientation.w = 1.0
-    for x, y, z in Pm:
-        line.points.append(_make_point(x, y, z))
-    ma.markers.append(line)
-
-    # ---------------- SPHERE_LIST ----------------
-    dots = Marker()
-    dots.header.frame_id = frame_id
-    dots.ns = ns
-    dots.id = int(dots_id)
-    dots.type = Marker.SPHERE_LIST
-    dots.action = Marker.ADD
-    dots.scale.x = 0.004  # 4 mm
-    dots.scale.y = 0.004
-    dots.scale.z = 0.004
-    dots.color.r = 1.0
-    dots.color.g = 0.0
-    dots.color.b = 0.0
-    dots.color.a = 1.0
-    dots.pose.orientation.w = 1.0
-    for x, y, z in Pm:
-        dots.points.append(_make_point(x, y, z))
-    ma.markers.append(dots)
-
-    # ---------------- Text am Startpunkt ----------------
-    if name:
-        txt = Marker()
-        txt.header.frame_id = frame_id
-        txt.ns = ns
-        txt.id = int(text_id)
-        txt.type = Marker.TEXT_VIEW_FACING
-        txt.action = Marker.ADD
-        txt.text = name
-        txt.scale.z = 0.02  # 20 mm
-        txt.color.r = 1.0
-        txt.color.g = 1.0
-        txt.color.b = 1.0
-        txt.color.a = 1.0
-        txt.pose.orientation.w = 1.0
-
-        x0, y0, z0 = Pm[0]
-        txt.pose.position.x = float(x0)
-        txt.pose.position.y = float(y0)
-        txt.pose.position.z = float(z0) + 0.01  # 10 mm darüber
-        ma.markers.append(txt)
-
-    return ma
-
-
-# ----------------------------
-# Strict extraction
-# ----------------------------
-
-def _poses_quat_to_points_mm(poses: list) -> np.ndarray:
-    """
-    Erwartet: Liste von Dicts mit x/y/z (mm).
-    """
-    if not poses:
-        return np.zeros((0, 3), dtype=float)
-    return np.array(
-        [[float(p["x"]), float(p["y"]), float(p["z"])] for p in poses],
-        dtype=float,
-    ).reshape(-1, 3)
-
-
-def _require_dict(obj, path: str) -> dict:
-    if not isinstance(obj, dict):
-        raise TypeError(f"Expected dict at {path}, got {type(obj).__name__}")
-    return obj
-
-
-def _points_mm_for_source_side(recipe: Recipe, source: SourceKey, side: str) -> np.ndarray:
-    """
-    Strict reader für Punkte (mm).
-
-    source:
-      - "compiled_path" -> recipe.paths_compiled["sides"][side]["poses_quat"]
-      - "traj"          -> recipe.trajectories["traj"]["sides"][side]["poses_quat"]
-      - "executed_traj" -> recipe.trajectories["executed_traj"]["sides"][side]["poses_quat"]
-    """
-    side = str(side)
-
-    if source == "compiled_path":
-        pc = _require_dict(recipe.paths_compiled, "recipe.paths_compiled")
-        sides = _require_dict(pc.get("sides"), "recipe.paths_compiled['sides']")
-        sdata = _require_dict(sides.get(side), f"recipe.paths_compiled['sides']['{side}']")
-        poses = sdata.get("poses_quat")
-        if poses is None:
-            raise KeyError(f"Missing poses_quat at recipe.paths_compiled['sides']['{side}']['poses_quat']")
-        return _poses_quat_to_points_mm(poses)
-
-    traj_root = _require_dict(recipe.trajectories, "recipe.trajectories")
-    tdata = _require_dict(traj_root.get(source), f"recipe.trajectories['{source}']")
-    sides = _require_dict(tdata.get("sides"), f"recipe.trajectories['{source}']['sides']")
-    sdata = _require_dict(sides.get(side), f"recipe.trajectories['{source}']['sides']['{side}']")
-    poses = sdata.get("poses_quat")
-    if poses is None:
-        raise KeyError(f"Missing poses_quat at recipe.trajectories['{source}']['sides']['{side}']['poses_quat']")
-    return _poses_quat_to_points_mm(poses)
-
-
-def _frame_for_source(recipe: Recipe, source: SourceKey, default: str) -> str:
-    """
-    Strict frame reader:
-      - compiled_path -> recipe.paths_compiled["frame"]
-      - traj/executed -> recipe.trajectories[source]["frame"]
-    """
-    if source == "compiled_path":
-        pc = _require_dict(recipe.paths_compiled, "recipe.paths_compiled")
-        return str(pc.get("frame") or default)
-
-    traj_root = _require_dict(recipe.trajectories, "recipe.trajectories")
-    tdata = _require_dict(traj_root.get(source), f"recipe.trajectories['{source}']")
-    return str(tdata.get("frame") or default)
-
-
-# ----------------------------
-# Public API
-# ----------------------------
-
-def build_marker_array_for_recipe_side(
-    recipe: Recipe,
-    *,
-    side: str,
-    frame_id: str,
-    source: SourceKey = "compiled_path",
-    name: Optional[str] = None,
-    ns: Optional[str] = None,
-) -> MarkerArray:
-    """
-    Baut Marker für *eine Side* aus einer Quelle.
-
-    source (strict):
-      - "compiled_path" | "traj" | "executed_traj"
-    """
-    pts_mm = _points_mm_for_source_side(recipe, source, side)
-    if pts_mm.size == 0:
-        return MarkerArray()
-
-    base_name = (name if name is not None else (recipe.id or "")).strip()
-    label = base_name if base_name else f"{source}:{side}"
-    ns_out = (ns or base_name or f"{source}_{side}").strip()
-
-    frame = _frame_for_source(recipe, source, frame_id)
-
-    return _points_mm_to_markerarray(
-        pts_mm,
-        frame_id=frame,
-        name=label,
-        ns=ns_out,
-    )
+    ns: str,
+    mid: int,
+    text: str,
+    x_m: float = 0.0,
+    y_m: float = 0.0,
+    z_m: float = 0.0,
+) -> Marker:
+    m = Marker()
+    m.header.frame_id = frame_id
+    m.ns = ns
+    m.id = int(mid)
+    m.type = Marker.TEXT_VIEW_FACING
+    m.action = Marker.ADD
+    m.pose.position.x = float(x_m)
+    m.pose.position.y = float(y_m)
+    m.pose.position.z = float(z_m)
+    m.pose.orientation.w = 1.0
+    m.scale.z = 0.03
+    m.color.a = 1.0
+    m.color.r = 1.0
+    m.color.g = 1.0
+    m.color.b = 1.0
+    m.text = text
+    return m
 
 
 def build_marker_array_from_recipe(
     recipe: Recipe,
     *,
-    sides: Optional[Iterable[str]] = None,
-    frame_id: str = "scene",
-    source: SourceKey = "compiled_path",
-    name: Optional[str] = None,
-    ns_prefix: Optional[str] = None,
+    frame_id: str = "substrate",
+    show_draft: bool = True,
+    show_planned: bool = True,
+    show_executed: bool = True,
 ) -> MarkerArray:
     """
-    Baut ein gemeinsames MarkerArray für mehrere Seiten aus einer Quelle.
+    Visualisierung im UI:
 
-    source (strict):
-      - "compiled_path" | "traj" | "executed_traj"
+    - draft.yaml: Workspace LineStrip (TCP-Posen in mm -> m)
+    - planned_traj.yaml / executed_traj.yaml: replay JT (Joint-Space). Ohne FK können wir
+      daraus keinen TCP-Workspace-Pfad rekonstruieren. Daher werden diese als Text-Summary
+      dargestellt (Segmente/Punkte).
+
+    Wenn du TCP-Workspace-Markierung auch für planned/executed willst, musst du FK
+    im UI-Kontext bereitstellen (z.B. MoveIt RobotModel) oder zusätzlich TCP-Posen speichern.
     """
-    ma = MarkerArray()
+    arr = MarkerArray()
+    mid = 0
 
-    if sides is not None:
-        side_list: List[str] = [str(s) for s in sides]
-    else:
-        if source == "compiled_path":
-            pc = _require_dict(recipe.paths_compiled, "recipe.paths_compiled")
-            sdata = _require_dict(pc.get("sides"), "recipe.paths_compiled['sides']")
-        else:
-            traj_root = _require_dict(recipe.trajectories, "recipe.trajectories")
-            tdata = _require_dict(traj_root.get(source), f"recipe.trajectories['{source}']")
-            sdata = _require_dict(tdata.get("sides"), f"recipe.trajectories['{source}']['sides']")
+    # --- Draft (workspace path) ---
+    if show_draft and recipe.draft is not None:
+        for side, s in recipe.draft.sides.items():
+            m = _line_strip_marker(frame_id=frame_id, ns=f"draft/{side}", mid=mid)
+            mid += 1
+            for pose in s.poses_quat:
+                m.points.append(_make_point(pose.x, pose.y, pose.z))
+            arr.markers.append(m)
 
-        side_list = list(sdata.keys())
+    def _traj_summary(kind: str) -> Optional[str]:
+        traj = recipe.planned_traj if kind == "planned" else recipe.executed_traj
+        if traj is None:
+            return None
+        segs = traj.segments
+        total_pts = sum(len(s.points) for s in segs.values())
+        seg_names = ", ".join(segs.keys())
+        if len(seg_names) > 80:
+            seg_names = seg_names[:77] + "..."
+        return f"{kind}_traj: segments={len(segs)}, points={total_pts}\n{seg_names}"
 
-    if not side_list:
-        return ma
+    # anchor text near first draft point (if available)
+    anchor_x = anchor_y = anchor_z = 0.0
+    if recipe.draft is not None:
+        for s in recipe.draft.sides.values():
+            if s.poses_quat:
+                p0 = s.poses_quat[0]
+                anchor_x = float(p0.x) / 1000.0
+                anchor_y = float(p0.y) / 1000.0
+                anchor_z = float(p0.z) / 1000.0 + 0.05
+                break
 
-    frame = _frame_for_source(recipe, source, frame_id)
+    # --- Planned / Executed (text markers) ---
+    if show_planned:
+        txt = _traj_summary("planned")
+        if txt:
+            arr.markers.append(
+                _text_marker(
+                    frame_id=frame_id,
+                    ns="planned_traj",
+                    mid=mid,
+                    text=txt,
+                    x_m=anchor_x,
+                    y_m=anchor_y,
+                    z_m=anchor_z,
+                )
+            )
+            mid += 1
 
-    global_id = 0
-    for side in side_list:
-        base_name = (name if name is not None else (recipe.id or "")).strip()
-        label = base_name if base_name else f"{source}:{side}"
-        ns = (ns_prefix or base_name or source).strip()
+    if show_executed:
+        txt = _traj_summary("executed")
+        if txt:
+            arr.markers.append(
+                _text_marker(
+                    frame_id=frame_id,
+                    ns="executed_traj",
+                    mid=mid,
+                    text=txt,
+                    x_m=anchor_x,
+                    y_m=anchor_y,
+                    z_m=anchor_z + 0.05,
+                )
+            )
+            mid += 1
 
-        pts_mm = _points_mm_for_source_side(recipe, source, side)
-        if pts_mm.size == 0:
-            continue
-
-        side_ma = _points_mm_to_markerarray(
-            pts_mm,
-            frame_id=frame,
-            name=label,
-            ns=f"{ns}/{side}",
-            line_id=global_id + 0,
-            dots_id=global_id + 1,
-            text_id=global_id + 2,
-        )
-        ma.markers.extend(side_ma.markers)
-        global_id += 3
-
-    return ma
+    return arr
