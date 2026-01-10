@@ -160,12 +160,36 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
+        """
+        FIX: Stop muss den StateMachine-Run deterministisch beenden,
+        sonst bleibt der QThread in ProcessThread hängen.
+
+        Strategie:
+          - set stop flags
+          - best-effort moveit_stop()
+          - force terminal transition über _signal_error("Gestoppt")
+            (queued, um Reentrancy zu vermeiden)
+        """
+        if self._stop_requested:
+            return
+
         self._stop_requested = True
         self._stopped = True
+
         try:
             self._ros.moveit_stop()
         except Exception:
             pass
+
+        # Force SM to go to s_err -> notifyError -> ProcessThread ends
+        try:
+            QtCore.QTimer.singleShot(0, lambda: self._signal_error("Gestoppt"))
+        except Exception:
+            # last resort
+            try:
+                self._signal_error("Gestoppt")
+            except Exception:
+                pass
 
     # ---------------- Hooks ----------------
 

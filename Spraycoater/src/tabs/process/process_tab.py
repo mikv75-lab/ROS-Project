@@ -265,6 +265,25 @@ class ProcessTab(QWidget):
         self._clear_eval_views()
 
     # ---------------------------------------------------------------------
+    # PLC availability (Execute) - supports sim mode even if plc is None
+    # ---------------------------------------------------------------------
+
+    def _plc_execute_available(self) -> bool:
+        """
+        Execute requires PLC in live mode, BUT:
+          - if ctx.plc.sim == True -> Execute is allowed even if self.plc is None
+        """
+        if self.plc is not None:
+            return True
+        try:
+            plc_cfg = getattr(self.ctx, "plc", None)
+            if plc_cfg is not None and bool(getattr(plc_cfg, "sim", False)):
+                return True
+        except Exception:
+            pass
+        return False
+
+    # ---------------------------------------------------------------------
     # SprayPathBox compat helpers (traj vs planned) - UI only
     # ---------------------------------------------------------------------
 
@@ -351,8 +370,6 @@ class ProcessTab(QWidget):
         """
         Returns:
           planned_traj_yaml, executed_traj_yaml, eval_dict, valid, invalid_reason
-
-        Raises ValueError if payload shape/schema is wrong.
         """
         if not isinstance(result_obj, dict):
             raise ValueError("RunResult muss dict sein (strict).")
@@ -734,8 +751,14 @@ class ProcessTab(QWidget):
                 QMessageBox.warning(self, "Process", "Robot nicht initialisiert. Bitte zuerst Init.")
                 return
 
-        if mode == ProcessThread.MODE_EXECUTE and self.plc is None:
-            QMessageBox.warning(self, "Execute", "PLC ist nicht verfügbar (Execute benötigt PLC).")
+        # FIX: Execute allowed in PLC sim mode even if plc is None
+        if mode == ProcessThread.MODE_EXECUTE and not self._plc_execute_available():
+            QMessageBox.warning(
+                self,
+                "Execute",
+                "PLC ist nicht verfügbar (Execute benötigt PLC).\n\n"
+                "Hinweis: Im PLC-Simulationsmodus (ctx.plc.sim=true) ist Execute erlaubt.",
+            )
             return
 
         try:
@@ -767,7 +790,7 @@ class ProcessTab(QWidget):
         self._process_thread = ProcessThread(
             recipe=recipe_run,
             ros=self.ros,
-            plc=self.plc,
+            plc=self.plc,   # may be None in sim mode; ExecuteSM must tolerate that
             mode=mode,
         )
         self._process_thread.stateChanged.connect(lambda s: self._append_log(f"STATE: {s}"))
@@ -1027,6 +1050,10 @@ class ProcessTab(QWidget):
 
         self.btnValidate.setEnabled((not self._process_active) and ros_ok and has_recipe and self._robot_ready)
         self.btnOptimize.setEnabled((not self._process_active) and ros_ok and has_recipe and self._robot_ready)
-        self.btnExecute.setEnabled((not self._process_active) and ros_ok and has_recipe and self._robot_ready)
+
+        # FIX: Execute also allowed if PLC is simulated (ctx.plc.sim=true)
+        self.btnExecute.setEnabled(
+            (not self._process_active) and ros_ok and has_recipe and self._robot_ready and self._plc_execute_available()
+        )
 
         self.btnStop.setEnabled(True)

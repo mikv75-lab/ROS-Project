@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-# src/plc/plc_client.py
+# File: src/plc/plc_client.py
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Callable
 
-from config.startup import PlcConfig  # <– kommt jetzt aus config.startup
+from config.startup import PlcConfig  # kommt aus config.startup
 
 LOG = logging.getLogger(__name__)
 
@@ -46,26 +46,12 @@ class PlcClientBase:
 
     WICHTIG:
       - self._spec    : aktuelle PLC-Spezifikation (aus plc.yaml über PlcConfig.spec)
-        → hier kannst du beliebige Sections nutzen, z.B.:
-            common:   {...}   # Commands, Defaults, Meta
-            error:    {...}   # Fehlercodes/-texte
-            io:
-              outputs: {...}  # Signale mit Typ, Beschreibung, ads_symbol, min/max…
-              inputs:  {...}
-            ads_mapping:
-              recipe_params: {...}
-              outputs:       {...}
-              inputs:        {...}
-
       - self._ads_mapping:
           {
             "recipe_params": { key -> ads_symbol },
             "outputs":      { key -> ads_symbol },
             "inputs":       { key -> ads_symbol },
           }
-
-      Min/Max, Units usw. stehen einfach in self._spec und werden 1:1
-      beim Export nach YAML wieder ausgegeben.
     """
 
     def __init__(self, cfg: PlcConfig):
@@ -73,7 +59,7 @@ class PlcClientBase:
         self._connected = False
 
         # Roh-Spec aus Config (z.B. aus plc.yaml)
-        self._spec: Dict[str, Any] = dict(cfg.spec or {})
+        self._spec: Dict[str, Any] = dict(getattr(cfg, "spec", None) or {})
         self._ads_mapping: Dict[str, Dict[str, str]] = self._spec.get("ads_mapping", {}) or {}
         self._recipe_map: Dict[str, str] = self._ads_mapping.get("recipe_params", {}) or {}
         self._out_map: Dict[str, str] = self._ads_mapping.get("outputs", {}) or {}
@@ -85,21 +71,15 @@ class PlcClientBase:
 
     @property
     def is_connected(self) -> bool:
-        return self._connected
+        return bool(self._connected)
 
     @property
     def spec(self) -> Dict[str, Any]:
-        """
-        Aktuelle PLC-Spezifikation (aus plc.yaml und evtl. modifiziert zur Laufzeit).
-        """
+        """Aktuelle PLC-Spezifikation (aus plc.yaml und evtl. modifiziert zur Laufzeit)."""
         return self._spec
 
     def _update_spec(self, new_spec: Dict[str, Any]) -> None:
-        """
-        Interne Helper-Funktion, um die Spec konsistent auszutauschen.
-        (Aktuell nicht von der SPS überschrieben, aber z.B. nutzbar,
-         falls du später dynamisch etwas änderst.)
-        """
+        """Interner Helper, um die Spec konsistent auszutauschen."""
         self._spec = dict(new_spec or {})
         self._ads_mapping = self._spec.get("ads_mapping", {}) or {}
         self._recipe_map = self._ads_mapping.get("recipe_params", {}) or {}
@@ -119,12 +99,7 @@ class PlcClientBase:
         raise NotImplementedError
 
     def set_media_state(self, media_on: bool, syringe_only: bool = False) -> None:
-        """
-        Medienkette ein/aus.
-        Vereinfachung:
-            media_on=True  -> N2 + US + Kartusche ON
-            media_on=False -> Kartusche STOP + US OFF + N2 OFF
-        """
+        """Medienkette ein/aus."""
         raise NotImplementedError
 
     def send_process_start(self) -> None:
@@ -136,10 +111,7 @@ class PlcClientBase:
         raise NotImplementedError
 
     def read_status(self) -> PlcStatus:
-        """
-        Status-Bits aus der SPS lesen und als PlcStatus zurückgeben.
-        Wird z.B. in init_plc() der Tabs verwendet.
-        """
+        """Status-Bits aus der SPS lesen und als PlcStatus zurückgeben."""
         raise NotImplementedError
 
     # ------------------------------------------------------------------
@@ -147,15 +119,7 @@ class PlcClientBase:
     # ------------------------------------------------------------------
 
     def export_spec_to_yaml(self, path: str) -> None:
-        """
-        Exportiert die aktuelle Spec (self._spec) als YAML-Datei.
-
-        Usecase: System-Tab "PLC-Spec nach YAML exportieren" → ruft
-          plc.export_spec_to_yaml(ctx.paths.plc_yaml_path)
-
-        Die Datei enthält ALLE Sections (common, error, io, ads_mapping, …),
-        genau so wie sie aktuell im Speicher stehen.
-        """
+        """Exportiert die aktuelle Spec (self._spec) als YAML-Datei."""
         if yaml is None:
             LOG.warning("export_spec_to_yaml: yaml-Modul nicht verfügbar, Export übersprungen.")
             return
@@ -222,11 +186,7 @@ class PlcClientBase:
         return {}
 
     def send_recipe_params(self, recipe: Any) -> None:
-        """
-        Convenience für den ProcessTab:
-        - extrahiert PLC-Parameter aus dem Recipe (siehe _recipe_to_param_dict)
-        - ruft write_recipe_params(params)
-        """
+        """Convenience: extrahiert PLC-Parameter aus dem Recipe und ruft write_recipe_params(params)."""
         params = self._recipe_to_param_dict(recipe)
         if not params:
             return
@@ -234,19 +194,11 @@ class PlcClientBase:
         self.write_recipe_params(params)
 
     def send_process_init(self) -> None:
-        """
-        Separates Init-Kommando an die SPS.
-        Default-Implementierung macht nichts – AdsPlcClient
-        kann das überschreiben.
-        """
+        """Separates Init-Kommando an die SPS. Default: no-op."""
         LOG.debug("PlcClientBase.send_process_init(): nicht implementiert (no-op).")
 
     def send_process_stop(self) -> None:
-        """
-        Separates Stop-Kommando an die SPS (unabhängig vom Prozess-Abbruch).
-        Default-Implementierung macht nichts – AdsPlcClient
-        kann das überschreiben.
-        """
+        """Separates Stop-Kommando an die SPS. Default: no-op."""
         LOG.debug("PlcClientBase.send_process_stop(): nicht implementiert (no-op).")
 
     # ------------------------------------------------------------------
@@ -254,10 +206,7 @@ class PlcClientBase:
     # ------------------------------------------------------------------
 
     def register_bool_callback(self, key: str, cb: Callable[[bool], None]) -> None:
-        """
-        Default: keine Callbacks.
-        AdsPlcClient implementiert das via pyads-device-notification.
-        """
+        """Default: keine Callbacks."""
         LOG.debug("PlcClientBase.register_bool_callback(%s, %s) – nicht implementiert", key, cb)
 
     def register_int_callback(self, key: str, cb: Callable[[int], None]) -> None:
@@ -265,7 +214,59 @@ class PlcClientBase:
 
 
 # ======================================================================
-# ADS-Implementierung (einzige konkrete PLC-Klasse)
+# SIM / OFFLINE Implementierung
+# ======================================================================
+
+class SimPlcClient(PlcClientBase):
+    """
+    Simulation/Offline PLC:
+    - Exists as an object so UI/Process does not block on plc is None
+    - No ADS, no real IO; everything is no-op and returns benign status.
+    """
+
+    def __init__(self, cfg: PlcConfig):
+        super().__init__(cfg)
+        self._connected = True  # "available" im UI-Sinn
+
+    def connect(self) -> None:
+        self._connected = True
+
+    def disconnect(self) -> None:
+        self._connected = False
+
+    def write_recipe_params(self, params: Dict[str, Any]) -> None:
+        return
+
+    def set_media_state(self, media_on: bool, syringe_only: bool = False) -> None:
+        return
+
+    def send_process_start(self) -> None:
+        return
+
+    def send_process_abort(self) -> None:
+        return
+
+    def read_status(self) -> PlcStatus:
+        # "gesund" im Simu-Modus
+        return PlcStatus(
+            connected=self._connected,
+            process_active=False,
+            process_done=False,
+            process_error=False,
+            interlock_ok=True,
+            vacuum_ok=True,
+            alarm_code=0,
+        )
+
+    def send_process_init(self) -> None:
+        return
+
+    def send_process_stop(self) -> None:
+        return
+
+
+# ======================================================================
+# ADS-Implementierung (einzige "echte" PLC-Klasse)
 # ======================================================================
 
 class AdsPlcClient(PlcClientBase):
@@ -273,12 +274,9 @@ class AdsPlcClient(PlcClientBase):
     Echte Beckhoff-SPS via PyADS.
 
     Erwartet cfg aus config.startup.PlcConfig:
-
       - cfg.mode: "ads" oder "umrt"
       - cfg.ads / cfg.umrt: PlcEndpoint mit ams_net_id, ip, port
-      - cfg.spec mit:
-          * ads_mapping.* aus plc.yaml
-          * io.inputs/outputs, common, error, ... (frei definierbar)
+      - cfg.spec mit ads_mapping.* etc.
     """
 
     def __init__(self, cfg: PlcConfig):
@@ -290,23 +288,19 @@ class AdsPlcClient(PlcClientBase):
         mode = getattr(cfg, "mode", "ads")
         ep = None
         if mode == "ads":
-            ep = cfg.ads
+            ep = getattr(cfg, "ads", None)
         elif mode == "umrt":
-            ep = cfg.umrt
+            ep = getattr(cfg, "umrt", None)
 
         if ep is None:
-            raise ValueError(
-                f"AdsPlcClient: kein Endpoint für Modus '{mode}' definiert (ads/umrt)."
-            )
+            raise ValueError(f"AdsPlcClient: kein Endpoint für Modus '{mode}' definiert (ads/umrt).")
 
-        if not ep.ams_net_id or not ep.ip:
-            raise ValueError(
-                "AdsPlcClient: AMS-Net-ID oder IP im ausgewählten Endpoint fehlen."
-            )
+        if not getattr(ep, "ams_net_id", None) or not getattr(ep, "ip", None):
+            raise ValueError("AdsPlcClient: AMS-Net-ID oder IP im ausgewählten Endpoint fehlen.")
 
         self._net_id = ep.ams_net_id
         self._ip = ep.ip
-        self._port = ep.port or 851
+        self._port = getattr(ep, "port", None) or 851
         self._conn: Optional[pyads.Connection] = None
 
         # Notification-Handles nach key (inputs-keys aus ads_mapping.inputs)
@@ -341,12 +335,7 @@ class AdsPlcClient(PlcClientBase):
     def connect(self) -> None:
         if self._conn is not None:
             return
-        LOG.info(
-            "AdsPlcClient: Verbinde zu %s:%s (AMS=%s)",
-            self._ip,
-            self._port,
-            self._net_id,
-        )
+        LOG.info("AdsPlcClient: Verbinde zu %s:%s (AMS=%s)", self._ip, self._port, self._net_id)
         self._conn = pyads.Connection(self._net_id, self._port, self._ip)
         self._conn.open()
         self._connected = True
@@ -378,7 +367,6 @@ class AdsPlcClient(PlcClientBase):
             try:
                 self._write_by_symbol(sym, val)
             except Exception:
-                # Fehler schon geloggt
                 continue
 
     def set_media_state(self, media_on: bool, syringe_only: bool = False) -> None:
@@ -461,10 +449,9 @@ class AdsPlcClient(PlcClientBase):
         st = PlcStatus(connected=self._connected)
 
         if not self._connected:
-            # Keine Verbindung -> default Status (nur connected=False)
             return st
 
-        def _read_bool(key: str, attr: str):
+        def _read_bool(key: str, attr: str) -> None:
             sym = self._in_map.get(key)
             if not sym:
                 return
@@ -472,10 +459,9 @@ class AdsPlcClient(PlcClientBase):
                 val = bool(self._read_by_symbol(sym))
                 setattr(st, attr, val)
             except Exception:
-                # Fehler wurde im _read_by_symbol geloggt
                 pass
 
-        def _read_int(key: str, attr: str):
+        def _read_int(key: str, attr: str) -> None:
             sym = self._in_map.get(key)
             if not sym:
                 return
@@ -523,10 +509,6 @@ class AdsPlcClient(PlcClientBase):
             pass
 
     def send_recipe_params(self, recipe: Any) -> None:
-        """
-        Verwendet die Basis-Logik (_recipe_to_param_dict + write_recipe_params),
-        loggt nur etwas detaillierter.
-        """
         params = self._recipe_to_param_dict(recipe)
         if not params:
             LOG.info("AdsPlcClient: send_recipe_params() – keine Parameter gefunden.")
@@ -557,11 +539,7 @@ class AdsPlcClient(PlcClientBase):
                 LOG.error("Bool-Callback für '%s' fehlgeschlagen: %s", key, e)
 
         try:
-            handle = conn.add_device_notification(
-                sym,
-                pyads.PLCTYPE_BOOL,
-                _notify
-            )
+            handle = conn.add_device_notification(sym, pyads.PLCTYPE_BOOL, _notify)
             self._bool_notification_handles[key] = handle
             LOG.info("AdsPlcClient: Bool-Notification für '%s' (%s) registriert", key, sym)
         except Exception as e:
@@ -586,11 +564,7 @@ class AdsPlcClient(PlcClientBase):
                 LOG.error("Int-Callback für '%s' fehlgeschlagen: %s", key, e)
 
         try:
-            handle = conn.add_device_notification(
-                sym,
-                pyads.PLCTYPE_INT,
-                _notify
-            )
+            handle = conn.add_device_notification(sym, pyads.PLCTYPE_INT, _notify)
             self._int_notification_handles[key] = handle
             LOG.info("AdsPlcClient: Int-Notification für '%s' (%s) registriert", key, sym)
         except Exception as e:
@@ -603,22 +577,11 @@ class AdsPlcClient(PlcClientBase):
 
 def create_plc_client(cfg: PlcConfig) -> PlcClientBase:
     """
-    Erzeugt immer einen AdsPlcClient.
+    Erzeugt standardmäßig einen AdsPlcClient.
 
-    Wenn:
-      - pyads nicht verfügbar ist ODER
-      - Konfiguration unvollständig ist
-
-    wird eine Exception geworfen. Der Aufrufer (StartupMachine) kann das
-    abfangen und die Anwendung dann ohne PLC-Funktionalität starten.
-
-    Fallback-Logik (deine Seite):
-      - Wenn create_plc_client() / connect() fehlschlägt:
-          * plc = None
-          * Tabs sehen plc=None → reine Anzeige / lokale Spec
-      - Wenn Verbindung klappt:
-          * Spec bleibt wie aus plc.yaml geladen
-          * export_spec_to_yaml() kann sie auf Wunsch wieder überschreiben
+    Hinweis:
+      - Simu-Mode wird typischerweise im Startup-FSM abgefangen und als SimPlcClient
+        instanziert. (Damit ProcessTab Execute nicht blockt.)
     """
     LOG.info("create_plc_client: Erzeuge AdsPlcClient (mode=%r)", getattr(cfg, "mode", None))
     return AdsPlcClient(cfg)
