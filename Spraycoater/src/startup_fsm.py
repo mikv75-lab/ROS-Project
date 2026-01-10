@@ -2,10 +2,11 @@
 # File: src/app/startup_fsm.py
 #
 # Fixes:
-# - Bridge ist RosBridge, Variable/Semantik konsistent
-# - ready(ctx, bridge_shadow, bridge_live, plc) bleibt, aber intern sauber benannt
-# - Bridge wird nur gestartet wenn ros.launch_ros true ist
-# - Jede StepState fängt Exceptions, optional abort_on_error
+# - PLC sim-mode uses SimPlcClient (plc is never None in sim mode)
+# - connect_on_start respected (live mode)
+# - Bridge is RosBridge, naming/semantics consistent
+# - Bridge starts only if ros.launch_ros true is set
+# - Each StepState catches exceptions, optional abort_on_error
 
 from __future__ import annotations
 
@@ -27,7 +28,7 @@ from ros.ros_launcher import (
 
 from ros.bridge.ros_bridge import RosBridge
 
-from plc.plc_client import PlcClientBase, create_plc_client
+from plc.plc_client import PlcClientBase, create_plc_client, SimPlcClient  # <-- FIX: SimPlcClient
 
 _LOG = logging.getLogger("startup")
 
@@ -198,14 +199,20 @@ class StartupMachine(QtCore.QObject):
             self.plc = None
             return
 
-        if getattr(plc_cfg, "sim", False):
-            self._log.info("PLC im Simulationsmodus (sim=true) -> keine ADS-Verbindung.")
-            self.plc = None
+        # FIX: SIM mode -> provide a SimPlcClient object (plc is not None)
+        if bool(getattr(plc_cfg, "sim", False)):
+            self._log.info("PLC im Simulationsmodus (sim=true) -> SimPlcClient, keine ADS-Verbindung.")
+            self.plc = SimPlcClient(plc_cfg)
             return
 
+        # LIVE PLC
         try:
             self.plc = create_plc_client(plc_cfg)
-            self.plc.connect()
+
+            # Respect connect_on_start if present (strict default True in cfg)
+            if bool(getattr(plc_cfg, "connect_on_start", True)):
+                self.plc.connect()
+
             self._log.info(
                 "PLC-Backend initialisiert (%s, connected=%s)",
                 type(self.plc).__name__,

@@ -118,6 +118,7 @@ class MoveItPyBridge(BaseBridge):
         self._pending_named: Optional[str] = None
         self._pending_pose: bool = False
 
+        # synchronous caches (read by RosBridge getters)
         self._last_planned_traj: Optional[RobotTrajectoryMsg] = None
         self._last_executed_traj: Optional[RobotTrajectoryMsg] = None
         self._last_urdf: str = ""
@@ -143,7 +144,7 @@ class MoveItPyBridge(BaseBridge):
         s.executeTrajectoryRequested.connect(self._on_execute_trajectory_requested)
         s.segmentChanged.connect(self._on_segment_changed)
 
-        # ---------------- UI -> Node (Node subscribt) ----------------
+        # ---------------- UI -> Node (Node subscribes) ----------------
         self._ensure_pub("plan_named", MsgString)
         self._ensure_pub("plan_pose", PoseStamped)
         self._ensure_pub("execute", MsgBool)
@@ -151,12 +152,11 @@ class MoveItPyBridge(BaseBridge):
         self._ensure_pub("set_speed_mm_s", MsgFloat64)
         self._ensure_pub("set_planner_cfg", MsgString)
 
-        # NEW: replay/optimize
-        # Requires topics.yaml subscribe entries: execute_trajectory, set_segment
-        self._ensure_pub("execute_trajectory", RobotTrajectoryMsg)
-        self._ensure_pub("set_segment", MsgString)
+        # NEW: replay/optimize (only if present in topics.yaml)
+        self._maybe_ensure_pub("execute_trajectory", RobotTrajectoryMsg)
+        self._maybe_ensure_pub("set_segment", MsgString)
 
-        # ---------------- Node -> UI (Node publisht) ----------------
+        # ---------------- Node -> UI (Node publishes) ----------------
         self._ensure_sub("motion_result", MsgString, self._on_motion_result)
         self._ensure_sub("planned_trajectory_rt", RobotTrajectoryMsg, self._on_planned_traj)
         self._ensure_sub("executed_trajectory_rt", RobotTrajectoryMsg, self._on_executed_traj)
@@ -193,6 +193,21 @@ class MoveItPyBridge(BaseBridge):
         self._ui_to_node_pubs[topic_id] = self.create_publisher(msg_type, topic, qos)
         self.get_logger().info(f"[moveitpy] PUB ui->node id={topic_id} topic={self._resolve_full(topic)}")
 
+    def _maybe_ensure_pub(self, topic_id: str, msg_type: Type) -> None:
+        """
+        Optional topic binding: bind ONLY if topic exists in topics.yaml.
+        This keeps the bridge usable with older minimal topics.yaml.
+        """
+        if topic_id in self._ui_to_node_pubs:
+            return
+        try:
+            topic, qos = self._topic_and_qos("subscribe", topic_id)
+        except Exception as e:
+            self.get_logger().warning(f"[moveitpy] optional PUB missing id={topic_id} ({e})")
+            return
+        self._ui_to_node_pubs[topic_id] = self.create_publisher(msg_type, topic, qos)
+        self.get_logger().info(f"[moveitpy] PUB ui->node id={topic_id} topic={self._resolve_full(topic)}")
+
     def _ensure_sub(self, topic_id: str, msg_type: Type, cb: Callable) -> None:
         if topic_id in self._node_to_ui_subs:
             return
@@ -202,6 +217,9 @@ class MoveItPyBridge(BaseBridge):
 
     def _pub_ui_to_node(self, topic_id: str):
         return self._ui_to_node_pubs[topic_id]
+
+    def _has_pub(self, topic_id: str) -> bool:
+        return topic_id in self._ui_to_node_pubs
 
     def _resolve_full(self, rel: str) -> str:
         ns = (self.namespace or "").strip().strip("/")
@@ -309,18 +327,27 @@ class MoveItPyBridge(BaseBridge):
     def _on_execute_trajectory_requested(self, traj: object) -> None:
         """
         Expects RobotTrajectoryMsg. Publishes to moveit_py/execute_trajectory.
+        If topics.yaml does not provide execute_trajectory, we raise a clear error.
         """
         if traj is None:
             return
         if not isinstance(traj, RobotTrajectoryMsg):
             raise TypeError(f"executeTrajectoryRequested expects RobotTrajectoryMsg, got {type(traj)!r}")
+        if not self._has_pub("execute_trajectory"):
+            raise RuntimeError(
+                "MoveItPyBridge: topic 'execute_trajectory' nicht gebunden. "
+                "Prüfe topics.yaml (moveit_py.subscribe id=execute_trajectory)."
+            )
         self._pub_ui_to_node("execute_trajectory").publish(traj)
 
     def _on_segment_changed(self, seg: str) -> None:
         """
         Optional. Allows statemachine to tag current segment so node emits:
           EXECUTED:OK seg=...
+        If topic is missing in topics.yaml, we silently ignore (best-effort).
         """
+        if not self._has_pub("set_segment"):
+            return
         seg = (seg or "").strip()
         self._pub_ui_to_node("set_segment").publish(MsgString(data=seg))
 
@@ -340,7 +367,7 @@ class MoveItPyBridge(BaseBridge):
         self._on_execute_trajectory_requested(traj)
 
     # ─────────────────────────────────────────────────────────────
-    # Public getters (optional)
+    # Public getters (used by RosBridge accessors)
     # ─────────────────────────────────────────────────────────────
 
     def last_planned_trajectory(self) -> Optional[RobotTrajectoryMsg]:

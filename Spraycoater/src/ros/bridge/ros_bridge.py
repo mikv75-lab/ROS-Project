@@ -30,6 +30,13 @@ MOVEITPY FIX (minimal, no refactor):
 MOVEITPY EXT (replay/optimize):
 - Expose RosBridge.moveit_execute_trajectory(traj, segment=...) that forwards to MoveItPyBridge
   (topics: execute_trajectory, set_segment).
+
+UPDATE (2026-01 signals):
+- MoveItPyBridge uses:
+    - plannedTrajectoryChanged / executedTrajectoryChanged
+    - robotDescriptionChanged / robotDescriptionSemanticChanged
+    - segmentChanged / executeTrajectoryRequested
+  These are wired here without legacy fallbacks (bridge enforces topic binding).
 """
 
 from __future__ import annotations
@@ -436,11 +443,15 @@ class RosBridge:
             sig.tcpPoseChanged.connect(self.robot_state._set_tcp_pose)
             sig.jointsChanged.connect(self.robot_state._set_joints)
 
-        # ✅ MoveItPyBridge (minimal + robot_description strings)
+        # ✅ MoveItPyBridge state wiring (correct signals per MoveItPySignals)
         if self.moveitpy is not None:
             sig = self.moveitpy.signals
+
+            # trajectories
             sig.plannedTrajectoryChanged.connect(self.moveit_state._set_planned)
             sig.executedTrajectoryChanged.connect(self.moveit_state._set_executed)
+
+            # URDF/SRDF strings (for Offline-FK in GUI)
             sig.robotDescriptionChanged.connect(self.moveit_state._set_urdf)
             sig.robotDescriptionSemanticChanged.connect(self.moveit_state._set_srdf)
 
@@ -565,25 +576,21 @@ class RosBridge:
         """
         Execute a given RobotTrajectory message via MoveItPyNode (no extra follow_joint node).
 
-        This is the key facade for Optimize/Replay:
-          - state machine builds RobotTrajectoryMsg from YAML (JTBySegment)
-          - calls ros.moveit_execute_trajectory(traj, segment=SEG)
-          - MoveItPyNode executes and publishes executed_trajectory_rt + motion_result
-
-        Requires topics.yaml subscribe id: execute_trajectory (moveit_msgs/msg/RobotTrajectory)
-        Optional: set_segment (std_msgs/msg/String)
+        Requires:
+          - MoveItPyBridge bound topics.yaml subscribe id=execute_trajectory
+          - optional: set_segment for tagging
         """
         if self.moveitpy is None:
             raise RuntimeError("MoveItPyBridge not started")
 
         if segment:
+            # segmentChanged is best-effort; bridge ignores if topic missing
             try:
                 self.moveitpy.signals.segmentChanged.emit(str(segment))
             except Exception:
-                # keep best-effort: segment tag is optional
                 pass
 
-        # strict type checking should happen in MoveItPyBridge; keep here best-effort
+        # ExecuteTrajectoryRequested enforces RobotTrajectoryMsg type in bridge
         self.moveitpy.signals.executeTrajectoryRequested.emit(traj)
 
     # --- SprayPath --------------------------------------------------------

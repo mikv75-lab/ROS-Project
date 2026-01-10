@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import logging
 import copy
-from typing import Any, Optional, Dict, List, Tuple, Iterable
+from typing import Any, Optional, Dict, List, Tuple
 
 from PyQt6 import QtCore
-from geometry_msgs.msg import PoseArray, Pose
 
 from plc.plc_client import PlcClientBase
-
 from model.recipe.recipe_run_result import RunResult
 
 from .base_statemachine import (
@@ -19,22 +17,35 @@ from .base_statemachine import (
     STATE_MOVE_RECIPE,
     STATE_MOVE_RETREAT,
     STATE_MOVE_HOME,
-    SEG_ORDER,
 )
+
+# JTBySegment -> RobotTrajectoryMsg
+from builtin_interfaces.msg import Duration as RosDuration
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg
 
 _LOG = logging.getLogger("tabs.process.execute_sm")
 
 
 class ProcessExecuteStatemachine(BaseProcessStatemachine):
     """
-    Execute run:
-      - executes the already-loaded compiled path
-      - returns executed trajectories captured during execution
-      - planned trajectory is taken from the loaded recipe (planned_traj.yaml), not from capture
+    Execute run (STRICT, NO FALLBACKS):
 
-    Rationale:
-      - execute should be "truth = executed"
-      - planned is a reference baseline (loaded artifact)
+      Input:
+        - recipe.planned_traj MUST be present and must provide a JTBySegment-like API:
+            - to_yaml_dict() -> dict (JTBySegment YAML v1)
+        - ros MUST expose:
+            - moveit_execute_trajectory(traj: RobotTrajectoryMsg, segment: str = "") -> None
+
+      Behavior:
+        - planned baseline is exactly recipe.planned_traj (as YAML dict)
+        - for each segment in Base SEG_ORDER:
+            - build RobotTrajectoryMsg from YAML segment data
+            - execute via ros.moveit_execute_trajectory(..., segment=SEG)
+        - executed truth is captured by BaseProcessStatemachine (MoveItPy executed callbacks)
+
+    NOTE (API-Compat):
+      - 'skip_home' accepted and forwarded to Base.
     """
 
     ROLE = "execute"
@@ -47,54 +58,64 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         plc: PlcClientBase,
         parent: Optional[QtCore.QObject] = None,
         max_retries: int = 2,
+        skip_home: bool = False,
         side: str = "top",
     ) -> None:
-        super().__init__(recipe=recipe, ros=ros, parent=parent, max_retries=max_retries, skip_home=False)
+        super().__init__(
+            recipe=recipe,
+            ros=ros,
+            parent=parent,
+            max_retries=max_retries,
+            skip_home=bool(skip_home),
+        )
         self._plc = plc
-
         self._side: str = str(side or "top")
-        self._frame: str = "scene"
 
-        # robust list of points in mm: [(x,y,z), ...]
-        self._pts_mm: List[Tuple[float, float, float]] = []
-
-        # planned traj loaded from recipe (JTBySegment yaml dict)
+        # planned baseline (loaded from recipe.planned_traj)
         self._planned_loaded_yaml: Dict[str, Any] = {}
+        self._yaml_segments_present: Dict[str, bool] = {}
 
     # ------------------------------------------------------------------
     # Prepare
     # ------------------------------------------------------------------
 
     def _prepare_run(self) -> bool:
-        # side / frame from params if present
+        # side kept for compat (does not affect joint-trajectory execution)
         try:
             params = getattr(self._recipe, "parameters", {}) or {}
             self._side = str(params.get("active_side", self._side) or self._side)
         except Exception:
             pass
 
-        try:
-            pc = getattr(self._recipe, "paths_compiled", None)
-            if isinstance(pc, dict) and pc.get("frame"):
-                self._frame = str(pc.get("frame") or self._frame)
-        except Exception:
-            pass
-
-        # compiled points (mm) robust
-        self._pts_mm = self._get_compiled_points_mm(self._side)
-        if len(self._pts_mm) < 2:
-            self._error_msg = f"Execute: Zu wenige compiled points für side='{self._side}' (n={len(self._pts_mm)})."
+        # REQUIRE recipe.planned_traj (no filesystem, no fallbacks)
+        planned_traj = getattr(self._recipe, "planned_traj", None)
+        if planned_traj is None:
+            self._error_msg = "Execute: recipe.planned_traj fehlt (planned_traj.yaml nicht geladen?)."
             return False
 
-        # planned trajectory baseline (loaded artifact)
-        self._planned_loaded_yaml = {}
+        fn = getattr(planned_traj, "to_yaml_dict", None)
+        if not callable(fn):
+            self._error_msg = "Execute: recipe.planned_traj hat kein to_yaml_dict() (JTBySegment API fehlt)."
+            return False
+
+        d = fn()
+        if not isinstance(d, dict):
+            self._error_msg = "Execute: planned_traj.to_yaml_dict() returned non-dict."
+            return False
+
+        # strict validate schema (JTBySegment YAML v1)
         try:
-            planned_traj = getattr(self._recipe, "planned_traj", None)
-            if planned_traj is not None and hasattr(planned_traj, "to_yaml_dict"):
-                d = planned_traj.to_yaml_dict()
-                self._planned_loaded_yaml = d if isinstance(d, dict) else {}
-        except Exception:
-            self._planned_loaded_yaml = {}
+            self._validate_jtbysegment_yaml_v1(d)
+        except Exception as e:
+            self._error_msg = f"Execute: planned_traj YAML invalid: {e}"
+            return False
+
+        self._planned_loaded_yaml = d
+
+        # precompute segment availability (>=2 points)
+        self._yaml_segments_present = {}
+        for seg_name in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME):
+            self._yaml_segments_present[seg_name] = self._segment_has_points(seg_name)
 
         # clear base capture buffers (strict)
         self._planned_by_segment.clear()
@@ -102,187 +123,177 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         self._planned_steps_by_segment.clear()
         self._executed_steps_by_segment.clear()
 
+        # REQUIRE ROS API
+        if not callable(getattr(self._ros, "moveit_execute_trajectory", None)):
+            self._error_msg = "Execute: ros.moveit_execute_trajectory(traj, segment=...) fehlt (strict)."
+            return False
+
         return True
 
     # ------------------------------------------------------------------
-    # Segment existence
+    # Strict YAML validation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_jtbysegment_yaml_v1(d: Dict[str, Any]) -> None:
+        if not isinstance(d, dict):
+            raise ValueError("root is not dict")
+
+        try:
+            ver = int(d.get("version", 0))
+        except Exception:
+            raise ValueError("missing/invalid version")
+
+        if ver != 1:
+            raise ValueError(f"version must be 1, got {ver!r}")
+
+        segs = d.get("segments", None)
+        if not isinstance(segs, dict) or not segs:
+            raise ValueError("missing/empty segments")
+
+        for seg_name, seg in segs.items():
+            if not isinstance(seg, dict):
+                raise ValueError(f"segment {seg_name!r} is not dict")
+
+            jn = seg.get("joint_names", None)
+            if not (isinstance(jn, list) and jn and all(isinstance(x, str) and x.strip() for x in jn)):
+                raise ValueError(f"segment {seg_name!r}: invalid joint_names")
+
+            pts = seg.get("points", None)
+            if not isinstance(pts, list) or len(pts) < 2:
+                raise ValueError(f"segment {seg_name!r}: needs >=2 points")
+
+            last_t = None
+            for i, p in enumerate(pts):
+                if not isinstance(p, dict):
+                    raise ValueError(f"segment {seg_name!r}: point[{i}] not dict")
+
+                pos = p.get("positions", None)
+                if not isinstance(pos, list) or len(pos) != len(jn):
+                    raise ValueError(
+                        f"segment {seg_name!r}: point[{i}] positions length "
+                        f"{0 if not isinstance(pos, list) else len(pos)} != {len(jn)}"
+                    )
+                # float-castable
+                _ = [float(x) for x in pos]
+
+                tfs = p.get("time_from_start", None)
+                if not (isinstance(tfs, (list, tuple)) and len(tfs) >= 2):
+                    raise ValueError(f"segment {seg_name!r}: point[{i}] time_from_start must be [sec,nsec]")
+
+                sec = int(tfs[0])
+                nsec = int(tfs[1])
+                if sec < 0 or nsec < 0:
+                    raise ValueError(f"segment {seg_name!r}: point[{i}] negative time_from_start")
+
+                t_key = (sec, nsec)
+                if last_t is not None and t_key < last_t:
+                    raise ValueError(f"segment {seg_name!r}: time_from_start not monotonic at point[{i}]")
+                last_t = t_key
+
+    def _segment_has_points(self, seg_name: str) -> bool:
+        seg = self._planned_loaded_yaml["segments"].get(seg_name, None)
+        if not isinstance(seg, dict):
+            return False
+        pts = seg.get("points", None)
+        return isinstance(pts, list) and len(pts) >= 2
+
+    # ------------------------------------------------------------------
+    # Segment gating
     # ------------------------------------------------------------------
 
     def _segment_exists(self, seg_name: str) -> bool:
-        # We always run HOME unless explicitly skipped (Execute uses skip_home=False in ctor)
-        if seg_name == STATE_MOVE_HOME:
-            return True
-
-        n = len(self._pts_mm)
-        if seg_name == STATE_MOVE_PREDISPENSE:
-            return n >= 2
-        if seg_name == STATE_MOVE_RECIPE:
-            return n >= 3  # needs at least one middle point
-        if seg_name == STATE_MOVE_RETREAT:
-            return n >= 2
-        return True
+        if seg_name == STATE_MOVE_HOME and bool(self._skip_home):
+            return False
+        return bool(self._yaml_segments_present.get(seg_name, False))
 
     # ------------------------------------------------------------------
-    # Execution calls
+    # YAML -> RobotTrajectoryMsg
     # ------------------------------------------------------------------
 
-    def _call_first(self, names: List[str], *args, **kwargs) -> bool:
-        for n in names:
-            fn = getattr(self._ros, n, None)
-            if callable(fn):
-                fn(*args, **kwargs)
-                return True
-        return False
+    @staticmethod
+    def _duration_from_yaml(tfs: Any) -> RosDuration:
+        d = RosDuration()
+        d.sec = int(tfs[0])
+        d.nanosec = int(tfs[1])
+        return d
 
-    def _pose_array_slice(self, a: int, b: int) -> Optional[PoseArray]:
-        n = len(self._pts_mm)
-        if n <= 0:
-            return None
+    def _robot_trajectory_from_yaml(self, seg_name: str) -> RobotTrajectoryMsg:
+        seg = self._planned_loaded_yaml["segments"].get(seg_name, None)
+        if not isinstance(seg, dict):
+            raise ValueError(f"Execute: Segment '{seg_name}' fehlt in planned_traj.")
 
-        a = max(0, min(int(a), n - 1))
-        b = max(0, min(int(b), n - 1))
-        if b < a:
-            return None
+        joint_names = seg["joint_names"]
+        points = seg["points"]
 
-        pa = PoseArray()
-        pa.header.frame_id = str(self._frame or "scene")
+        jt = JointTrajectory()
+        jt.joint_names = [str(x) for x in joint_names]
 
-        for i in range(a, b + 1):
-            x, y, z = self._pts_mm[i]
-            p = Pose()
-            p.position.x = float(x) * 1e-3
-            p.position.y = float(y) * 1e-3
-            p.position.z = float(z) * 1e-3
-            p.orientation.w = 1.0
-            pa.poses.append(p)
+        for p in points:
+            pt = JointTrajectoryPoint()
+            pt.positions = [float(x) for x in p["positions"]]
+            pt.time_from_start = self._duration_from_yaml(p["time_from_start"])
 
-        if len(pa.poses) < 2:
-            return None
-        return pa
+            # optional fields only if present
+            if "velocities" in p:
+                pt.velocities = [float(x) for x in p["velocities"]]
+            if "accelerations" in p:
+                pt.accelerations = [float(x) for x in p["accelerations"]]
+            if "effort" in p:
+                pt.effort = [float(x) for x in p["effort"]]
+
+            jt.points.append(pt)
+
+        if len(jt.points) < 2:
+            raise ValueError(f"Execute: Segment '{seg_name}' hat <2 Punkte.")
+
+        msg = RobotTrajectoryMsg()
+        msg.joint_trajectory = jt
+        return msg
+
+    # ------------------------------------------------------------------
+    # Execution per segment
+    # ------------------------------------------------------------------
 
     def _on_enter_segment(self, seg_name: str) -> None:
-        n = len(self._pts_mm)
-
-        if seg_name == STATE_MOVE_HOME:
-            ok = self._call_first(["moveit_home", "moveit_go_home"])
-            if not ok:
-                QtCore.QTimer.singleShot(0, self._sig_done.emit)
-            return
-
-        if seg_name == STATE_MOVE_PREDISPENSE:
-            pa = self._pose_array_slice(0, 1)
-        elif seg_name == STATE_MOVE_RECIPE:
-            if n < 3:
-                QtCore.QTimer.singleShot(0, self._sig_done.emit)
-                return
-            pa = self._pose_array_slice(1, n - 2)
-        elif seg_name == STATE_MOVE_RETREAT:
-            pa = self._pose_array_slice(max(n - 2, 0), n - 1)
-        else:
-            pa = None
-
-        if pa is None:
+        if seg_name == STATE_MOVE_HOME and bool(self._skip_home):
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
 
-        # execute: plan+execute oder execute-only, je nach ROS API
-        ok = self._call_first(
-            [
-                "moveit_plan_execute_pose_array",
-                "moveit_plan_execute_poses",
-                "moveit_execute_pose_array",
-                "moveit_execute_poses",
-            ],
-            pa,
-        )
-        if not ok:
-            self._signal_error(f"Execute: ROS API fehlt für Segment {seg_name}.")
+        try:
+            traj_msg = self._robot_trajectory_from_yaml(seg_name)
+        except Exception as e:
+            self._signal_error(f"Execute: YAML->RobotTrajectory failed for {seg_name}: {e}")
+            return
+
+        # strict (validated in _prepare_run)
+        self._ros.moveit_execute_trajectory(traj_msg, segment=str(seg_name))
 
     # ------------------------------------------------------------------
     # Planned/Executed payload override
     # ------------------------------------------------------------------
 
     def _build_traj_payload(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """
-        planned:
-          - primarily from loaded recipe.planned_traj (planned_traj.yaml)
-          - fallback: base captured planned (if any)
-        executed:
-          - base captured executed
-        """
+        planned = copy.deepcopy(self._planned_loaded_yaml)
         executed = self._jt_by_segment_yaml(which="executed")
-
-        planned = {}
-        if isinstance(self._planned_loaded_yaml, dict) and self._planned_loaded_yaml:
-            planned = copy.deepcopy(self._planned_loaded_yaml)
-        else:
-            planned = self._jt_by_segment_yaml(which="planned")
-
         return planned, executed
 
     def _on_finished(self) -> None:
         planned, executed = self._build_traj_payload()
 
-        # Guard: executed must exist (this is the whole point of Execute)
+        # executed must exist (point of Execute)
         e_segs = executed.get("segments") if isinstance(executed, dict) else None
         if not (isinstance(e_segs, dict) and e_segs):
             self.notifyError.emit(
-                "Execute finished, but executed trajectory capture is empty (segments={}). "
-                "Check MoveItPyBridge executedTrajectoryChanged / ros.moveit_executed_trajectory() accessors."
+                "Execute finished, but executed trajectory capture is empty. "
+                "Check MoveItPyNode executed_trajectory_rt publish + BaseProcessStatemachine capture."
             )
             self._cleanup()
             return
 
         rr = RunResult()
-        rr.set_planned(traj=planned)     # baseline from loaded artifact (best effort)
-        rr.set_executed(traj=executed)  # captured truth
+        rr.set_planned(traj=planned)
+        rr.set_executed(traj=executed)
 
         self.notifyFinished.emit(rr.to_process_payload())
         self._cleanup()
-
-    # ------------------------------------------------------------------
-    # Compiled points extraction (robust for ndarray OR list)
-    # ------------------------------------------------------------------
-
-    def _get_compiled_points_mm(self, side: str) -> List[Tuple[float, float, float]]:
-        """
-        Accepts:
-          - numpy ndarray (has .tolist())
-          - list/tuple of rows (already list)
-          - any iterable of rows
-
-        Expects rows shaped like [x,y,z] in mm (as produced by Recipe.draft_poses_quat()).
-        """
-        out: List[Tuple[float, float, float]] = []
-        try:
-            pts = self._recipe.compiled_points_mm_for_side(str(side))
-        except Exception:
-            pts = None
-
-        if pts is None:
-            return out
-
-        rows: Iterable[Any]
-        if hasattr(pts, "tolist"):
-            try:
-                rows = pts.tolist()
-            except Exception:
-                rows = pts
-        else:
-            rows = pts
-
-        try:
-            for row in rows:
-                if row is None:
-                    continue
-                try:
-                    x = float(row[0])
-                    y = float(row[1])
-                    z = float(row[2])
-                except Exception:
-                    continue
-                out.append((x, y, z))
-        except Exception:
-            return out
-
-        return out

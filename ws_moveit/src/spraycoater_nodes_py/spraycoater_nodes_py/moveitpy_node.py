@@ -260,8 +260,8 @@ class MoveItPyNode(Node):
 
         # state
         self._planned: Optional[RobotTrajectoryCore] = None
-        self._busy = False
-        self._cancel = False
+        self._busy: bool = False
+        self._cancel: bool = False
         self._last_goal_pose: Optional[PoseStamped] = None
 
         # NEW: segment tag + external trajectory exec state
@@ -342,9 +342,6 @@ class MoveItPyNode(Node):
         )
 
         # NEW: execute arbitrary trajectory (from YAML / optimize output)
-        # Requires topics.yaml:
-        #   - id: execute_trajectory (moveit_msgs/msg/RobotTrajectory)
-        #   - id: set_segment (std_msgs/msg/String) [optional]
         try:
             self.create_subscription(
                 RobotTrajectoryMsg,
@@ -356,6 +353,7 @@ class MoveItPyNode(Node):
         except Exception as e:
             self.log.warning(f"[topics] execute_trajectory not wired (topics.yaml missing?): {e!r}")
 
+        # Optional segment tagging
         try:
             self.create_subscription(
                 MsgString,
@@ -365,7 +363,6 @@ class MoveItPyNode(Node):
             )
             self.log.info("[topics] subscribed: set_segment")
         except Exception:
-            # optional
             pass
 
         # planning scene cache service (optional but useful)
@@ -415,6 +412,7 @@ class MoveItPyNode(Node):
         if ns:
             out.append(f"/{ns}/{c}/follow_joint_trajectory")
         out.append(f"/{c}/follow_joint_trajectory")
+
         # de-dup preserve order
         seen = set()
         uniq = []
@@ -841,7 +839,9 @@ class MoveItPyNode(Node):
             self._emit_with_segment("ERROR:EMPTY_TRAJ")
             return
 
+        # ensure controller enabled
         self._mode_mgr.ensure_mode("TRAJ")
+
         self._busy = True
         self._cancel = False
         self._external_active_goal = None
@@ -864,6 +864,8 @@ class MoveItPyNode(Node):
             picked = self._pick_ready_followjt()
 
         if picked is None:
+            self._external_active_goal = None
+            self._external_active_traj = None
             self._busy = False
             self._emit_with_segment("ERROR:NO_FOLLOWJT_SERVER")
             return
@@ -880,11 +882,15 @@ class MoveItPyNode(Node):
             try:
                 gh = fut.result()
             except Exception as e:
+                self._external_active_goal = None
+                self._external_active_traj = None
                 self._busy = False
                 self._emit_with_segment(f"ERROR:FOLLOWJT_SEND {e}")
                 return
 
             if gh is None or not getattr(gh, "accepted", False):
+                self._external_active_goal = None
+                self._external_active_traj = None
                 self._busy = False
                 self._emit_with_segment("ERROR:GOAL_REJECTED")
                 return
@@ -983,6 +989,7 @@ class MoveItPyNode(Node):
             except Exception as e:
                 self.log.warning(f"[stop] cancel_goal_async failed: {e!r}")
 
+        # keep existing semantics
         self._emit_with_segment("STOP:REQ")
 
 
