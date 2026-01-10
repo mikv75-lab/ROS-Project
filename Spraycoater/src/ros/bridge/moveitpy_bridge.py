@@ -31,9 +31,14 @@ class MoveItPySignals(QtCore.QObject):
 
       UI -> Node:
         - plan_pose, plan_named, execute, stop, set_speed_mm_s, set_planner_cfg
+
+    EXTENDED (Replay/Optimize without extra node):
+      UI -> Node:
+        - execute_trajectory (RobotTrajectoryMsg)   # execute given joint trajectory
+        - set_segment (String)                     # optional tagging for motion_result
     """
 
-    # UI -> Node
+    # ---------------- UI -> Node ----------------
     motionSpeedChanged = QtCore.pyqtSignal(float)
     plannerCfgChanged = QtCore.pyqtSignal(object)
 
@@ -46,7 +51,11 @@ class MoveItPySignals(QtCore.QObject):
     moveToPoseRequested = QtCore.pyqtSignal(object)  # PoseStamped
     stopRequested = QtCore.pyqtSignal()              # -> publish stop topic
 
-    # Node -> UI
+    # NEW: replay/optimize path (joint-space)
+    executeTrajectoryRequested = QtCore.pyqtSignal(object)  # RobotTrajectoryMsg
+    segmentChanged = QtCore.pyqtSignal(str)                 # "MOVE_RECIPE" etc. (optional)
+
+    # ---------------- Node -> UI ----------------
     motionResultChanged = QtCore.pyqtSignal(str)
     plannedTrajectoryChanged = QtCore.pyqtSignal(object)   # RobotTrajectoryMsg
     executedTrajectoryChanged = QtCore.pyqtSignal(object)  # RobotTrajectoryMsg
@@ -130,7 +139,11 @@ class MoveItPyBridge(BaseBridge):
         s.motionSpeedChanged.connect(self._on_motion_speed_changed)
         s.plannerCfgChanged.connect(self._on_planner_cfg_changed)
 
-        # UI -> Node (Node subscribt)
+        # NEW
+        s.executeTrajectoryRequested.connect(self._on_execute_trajectory_requested)
+        s.segmentChanged.connect(self._on_segment_changed)
+
+        # ---------------- UI -> Node (Node subscribt) ----------------
         self._ensure_pub("plan_named", MsgString)
         self._ensure_pub("plan_pose", PoseStamped)
         self._ensure_pub("execute", MsgBool)
@@ -138,7 +151,12 @@ class MoveItPyBridge(BaseBridge):
         self._ensure_pub("set_speed_mm_s", MsgFloat64)
         self._ensure_pub("set_planner_cfg", MsgString)
 
-        # Node -> UI (Node publisht) — MINIMAL SET (+ robot_description)
+        # NEW: replay/optimize
+        # Requires topics.yaml subscribe entries: execute_trajectory, set_segment
+        self._ensure_pub("execute_trajectory", RobotTrajectoryMsg)
+        self._ensure_pub("set_segment", MsgString)
+
+        # ---------------- Node -> UI (Node publisht) ----------------
         self._ensure_sub("motion_result", MsgString, self._on_motion_result)
         self._ensure_sub("planned_trajectory_rt", RobotTrajectoryMsg, self._on_planned_traj)
         self._ensure_sub("executed_trajectory_rt", RobotTrajectoryMsg, self._on_executed_traj)
@@ -286,8 +304,40 @@ class MoveItPyBridge(BaseBridge):
     def _publish_execute(self, flag: bool) -> None:
         self._pub_ui_to_node("execute").publish(MsgBool(data=bool(flag)))
 
+    # ---------------- NEW: execute trajectory / segment tagging ----------------
+
+    def _on_execute_trajectory_requested(self, traj: object) -> None:
+        """
+        Expects RobotTrajectoryMsg. Publishes to moveit_py/execute_trajectory.
+        """
+        if traj is None:
+            return
+        if not isinstance(traj, RobotTrajectoryMsg):
+            raise TypeError(f"executeTrajectoryRequested expects RobotTrajectoryMsg, got {type(traj)!r}")
+        self._pub_ui_to_node("execute_trajectory").publish(traj)
+
+    def _on_segment_changed(self, seg: str) -> None:
+        """
+        Optional. Allows statemachine to tag current segment so node emits:
+          EXECUTED:OK seg=...
+        """
+        seg = (seg or "").strip()
+        self._pub_ui_to_node("set_segment").publish(MsgString(data=seg))
+
+    # ---------------- Public API ----------------
+
     def publish_stop(self) -> None:
         self._pub_ui_to_node("stop").publish(MsgEmpty())
+
+    def publish_execute_trajectory(self, traj: RobotTrajectoryMsg, *, segment: str = "") -> None:
+        """
+        Convenience helper for statemachines:
+          - optionally set segment tag
+          - publish execute_trajectory
+        """
+        if segment:
+            self._on_segment_changed(segment)
+        self._on_execute_trajectory_requested(traj)
 
     # ─────────────────────────────────────────────────────────────
     # Public getters (optional)

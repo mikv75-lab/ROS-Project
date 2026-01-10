@@ -26,6 +26,10 @@ MOVEITPY FIX (minimal, no refactor):
 - Provide RosBridge.moveit_planned_trajectory() / moveit_executed_trajectory()
   so BaseProcessStatemachine can reliably capture JT/RobotTrajectory sources.
 - Keep existing MoveItPy state wiring; do not change frame semantics.
+
+MOVEITPY EXT (replay/optimize):
+- Expose RosBridge.moveit_execute_trajectory(traj, segment=...) that forwards to MoveItPyBridge
+  (topics: execute_trajectory, set_segment).
 """
 
 from __future__ import annotations
@@ -475,60 +479,112 @@ class RosBridge:
         """
         Best-effort getter used by BaseProcessStatemachine.
 
-        Returns whatever the MoveItPyBridge last provided (RobotTrajectory or JT-like),
-        without enforcing a specific type.
+        Prefer synchronous caches on MoveItPyBridge (set in ROS callback thread)
+        to avoid Qt queued-signal races where motion_result arrives before state update.
         """
+        mp = self.moveitpy
+
+        # 0) strongest: direct bridge getter (sync, no Qt queue)
         try:
-            # primary: state captured via signals
+            if mp is not None:
+                fn = getattr(mp, "last_planned_trajectory", None)
+                if callable(fn):
+                    v = fn()
+                    if v is not None:
+                        return v
+        except Exception:
+            pass
+
+        # 0b) direct cache attribute (sync)
+        try:
+            if mp is not None:
+                v = getattr(mp, "_last_planned_traj", None)
+                if v is not None:
+                    return v
+        except Exception:
+            pass
+
+        # 1) UI state (may be delayed due to queued Qt signals)
+        try:
             if self._moveit_state.planned is not None:
                 return self._moveit_state.planned
         except Exception:
             pass
 
-        # fallback: common attributes on moveitpy bridge instance
-        mp = self.moveitpy
-        for attr in (
-            "last_planned",
-            "planned_trajectory",
-            "plannedTrajectory",
-            "planned",
-            "last_plan_result",
-            "last_plan",
-        ):
-            try:
-                v = getattr(mp, attr, None) if mp is not None else None
-                if v is not None:
-                    return v
-            except Exception:
-                continue
         return None
 
     def moveit_executed_trajectory(self) -> Any:
         """
         Best-effort getter used by BaseProcessStatemachine.
+
+        Prefer synchronous caches on MoveItPyBridge to avoid Qt queued-signal races.
         """
+        mp = self.moveitpy
+
+        # 0) strongest: direct bridge getter (sync, no Qt queue)
+        try:
+            if mp is not None:
+                fn = getattr(mp, "last_executed_trajectory", None)
+                if callable(fn):
+                    v = fn()
+                    if v is not None:
+                        return v
+        except Exception:
+            pass
+
+        # 0b) direct cache attribute (sync)
+        try:
+            if mp is not None:
+                v = getattr(mp, "_last_executed_traj", None)
+                if v is not None:
+                    return v
+        except Exception:
+            pass
+
+        # 1) UI state (may be delayed)
         try:
             if self._moveit_state.executed is not None:
                 return self._moveit_state.executed
         except Exception:
             pass
 
-        mp = self.moveitpy
-        for attr in (
-            "last_executed",
-            "executed_trajectory",
-            "executedTrajectory",
-            "executed",
-            "last_exec_result",
-            "last_exec",
-        ):
-            try:
-                v = getattr(mp, attr, None) if mp is not None else None
-                if v is not None:
-                    return v
-            except Exception:
-                continue
         return None
+
+    # --- NEW: direct replay/optimize execution through MoveItPyBridge -----
+
+    def moveit_set_segment(self, seg: str) -> None:
+        """
+        Optional tagging for motion_result (helps statemachine logs / replay debugging).
+        Requires topics.yaml subscribe id: set_segment.
+        """
+        if self.moveitpy is None:
+            raise RuntimeError("MoveItPyBridge not started")
+        self.moveitpy.signals.segmentChanged.emit(str(seg or ""))
+
+    def moveit_execute_trajectory(self, traj: Any, *, segment: str = "") -> None:
+        """
+        Execute a given RobotTrajectory message via MoveItPyNode (no extra follow_joint node).
+
+        This is the key facade for Optimize/Replay:
+          - state machine builds RobotTrajectoryMsg from YAML (JTBySegment)
+          - calls ros.moveit_execute_trajectory(traj, segment=SEG)
+          - MoveItPyNode executes and publishes executed_trajectory_rt + motion_result
+
+        Requires topics.yaml subscribe id: execute_trajectory (moveit_msgs/msg/RobotTrajectory)
+        Optional: set_segment (std_msgs/msg/String)
+        """
+        if self.moveitpy is None:
+            raise RuntimeError("MoveItPyBridge not started")
+
+        if segment:
+            try:
+                self.moveitpy.signals.segmentChanged.emit(str(segment))
+            except Exception:
+                # keep best-effort: segment tag is optional
+                pass
+
+        # strict type checking should happen in MoveItPyBridge; keep here best-effort
+        self.moveitpy.signals.executeTrajectoryRequested.emit(traj)
 
     # --- SprayPath --------------------------------------------------------
     # NOTE: Bridge setter signatures are keyword-only: set_compiled(*, poses=None, markers=None)

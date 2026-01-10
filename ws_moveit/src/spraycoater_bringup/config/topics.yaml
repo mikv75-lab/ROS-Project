@@ -87,6 +87,22 @@ topics:
         type: std_msgs/msg/String
         qos: default
 
+      # ---------------------------
+      # NEW: Execute arbitrary trajectory (e.g. from JTBySegment YAML)
+      # ---------------------------
+
+      - id: execute_trajectory
+        name: moveit_py/execute_trajectory
+        type: moveit_msgs/msg/RobotTrajectory
+        qos: default
+
+      # Optional but strongly recommended:
+      # lets GUI/SM tell the node which segment is being executed (for logging/motion_result tagging)
+      - id: set_segment
+        name: moveit_py/set_segment
+        type: std_msgs/msg/String
+        qos: default
+
     publish:
       # SSoT for runs (joint space)
       - id: planned_trajectory_rt
@@ -115,6 +131,7 @@ topics:
         name: moveit_py/motion_result
         type: std_msgs/msg/String
         qos: default
+
 
 
   scene:

@@ -2,7 +2,7 @@
 # File: src/model/recipe/recipe_markers.py
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Any, Dict
 
 from geometry_msgs.msg import Point  # type: ignore
 from visualization_msgs.msg import Marker, MarkerArray  # type: ignore
@@ -44,6 +44,7 @@ def _text_marker(
     x_m: float = 0.0,
     y_m: float = 0.0,
     z_m: float = 0.0,
+    size_m: float = 0.03,
 ) -> Marker:
     m = Marker()
     m.header.frame_id = frame_id
@@ -55,13 +56,59 @@ def _text_marker(
     m.pose.position.y = float(y_m)
     m.pose.position.z = float(z_m)
     m.pose.orientation.w = 1.0
-    m.scale.z = 0.03
+    m.scale.z = float(size_m)
     m.color.a = 1.0
     m.color.r = 1.0
     m.color.g = 1.0
     m.color.b = 1.0
-    m.text = text
+    m.text = str(text or "")
     return m
+
+
+def _score_from_eval(ev: Dict[str, Any]) -> Optional[float]:
+    if not isinstance(ev, dict):
+        return None
+    total = ev.get("total")
+    if isinstance(total, dict):
+        s = total.get("score")
+        if isinstance(s, (int, float)):
+            return float(s)
+    s = ev.get("score")
+    if isinstance(s, (int, float)):
+        return float(s)
+    return None
+
+
+def _threshold_from_eval(ev: Dict[str, Any]) -> Optional[float]:
+    if not isinstance(ev, dict):
+        return None
+    t = ev.get("threshold")
+    if isinstance(t, (int, float)):
+        return float(t)
+    return None
+
+
+def _valid_from_eval(ev: Dict[str, Any]) -> Optional[bool]:
+    if not isinstance(ev, dict):
+        return None
+    v = ev.get("valid")
+    if isinstance(v, bool):
+        return bool(v)
+    return None
+
+
+def _fmt_eval_line(prefix: str, ev: Dict[str, Any]) -> str:
+    s = _score_from_eval(ev)
+    t = _threshold_from_eval(ev)
+    v = _valid_from_eval(ev)
+    parts = [prefix]
+    if s is not None:
+        parts.append(f"score={s:.3f}")
+    if t is not None:
+        parts.append(f"thr={t:.3f}")
+    if v is not None:
+        parts.append(f"valid={v}")
+    return " | ".join(parts)
 
 
 def build_marker_array_from_recipe(
@@ -75,9 +122,10 @@ def build_marker_array_from_recipe(
     """
     UI visualization:
       - draft.yaml -> LINE_STRIP per side (workspace TCP poses in mm -> meters)
-      - planned_traj / executed_traj -> summary TEXT marker (segments/points)
-
-    Marker namespaces used for downstream splitting:
+      - planned_traj / executed_traj:
+          * summary TEXT marker (segments/points)
+          * optional eval TEXT line (from recipe.meta["planned_eval"]/["executed_eval"])
+    Marker namespaces used for downstream splitting (IMPORTANT):
       - "draft/<side>"
       - "planned_traj"
       - "executed_traj"
@@ -95,7 +143,6 @@ def build_marker_array_from_recipe(
                     m.points.append(_make_point(pose.x, pose.y, pose.z))
                 arr.markers.append(m)
         except Exception:
-            # draft schema mismatch -> just skip draft markers
             pass
 
     def _traj_summary(kind: str) -> Optional[str]:
@@ -123,6 +170,13 @@ def build_marker_array_from_recipe(
     except Exception:
         pass
 
+    # eval dicts (mirrored by ProcessTab)
+    meta = getattr(recipe, "meta", {}) or {}
+    planned_eval = meta.get("planned_eval") if isinstance(meta, dict) else None
+    executed_eval = meta.get("executed_eval") if isinstance(meta, dict) else None
+    planned_eval = planned_eval if isinstance(planned_eval, dict) else {}
+    executed_eval = executed_eval if isinstance(executed_eval, dict) else {}
+
     # --- Planned / Executed (text markers) ---
     if show_planned:
         txt = _traj_summary("planned")
@@ -136,6 +190,22 @@ def build_marker_array_from_recipe(
                     x_m=anchor_x,
                     y_m=anchor_y,
                     z_m=anchor_z,
+                    size_m=0.03,
+                )
+            )
+            mid += 1
+
+        if planned_eval:
+            arr.markers.append(
+                _text_marker(
+                    frame_id=frame_id,
+                    ns="planned_traj",  # IMPORTANT: keep same ns so your publisher includes it
+                    mid=mid,
+                    text=_fmt_eval_line("EVAL PLANNED", planned_eval),
+                    x_m=anchor_x,
+                    y_m=anchor_y,
+                    z_m=anchor_z - 0.03,
+                    size_m=0.022,
                 )
             )
             mid += 1
@@ -151,7 +221,23 @@ def build_marker_array_from_recipe(
                     text=txt,
                     x_m=anchor_x,
                     y_m=anchor_y,
-                    z_m=anchor_z + 0.05,
+                    z_m=anchor_z + 0.07,
+                    size_m=0.03,
+                )
+            )
+            mid += 1
+
+        if executed_eval:
+            arr.markers.append(
+                _text_marker(
+                    frame_id=frame_id,
+                    ns="executed_traj",  # IMPORTANT: keep same ns so your publisher includes it
+                    mid=mid,
+                    text=_fmt_eval_line("EVAL EXECUTED", executed_eval),
+                    x_m=anchor_x,
+                    y_m=anchor_y,
+                    z_m=anchor_z + 0.04,
+                    size_m=0.022,
                 )
             )
             mid += 1

@@ -9,11 +9,6 @@ from typing import Optional, Dict, Any, List, Tuple
 from PyQt6 import QtCore
 from PyQt6.QtStateMachine import QStateMachine, QState, QFinalState
 
-# IMPORTANT: adjust this import to your actual module path
-# If your package root is "model", use:
-#   from model.recipe.recipe_run_result import RunResult
-# If your package root is "app.model", use:
-#   from app.model.recipe.recipe_run_result import RunResult
 from model.recipe.recipe_run_result import RunResult  # <-- adjust if needed
 
 _LOG = logging.getLogger("tabs.process.base_statemachine")
@@ -48,27 +43,21 @@ class BaseProcessStatemachine(QtCore.QObject):
     """
     Gemeinsame Basis für Validate / Optimize / Execute.
 
-    Ziel dieser Base:
-      - Jedes MoveIt-Command (plan+execute) pro Segment als "events" sammeln (Arrays).
-      - Zusätzlich pro Segment ein Snapshot (typisch: merged/concat) erzeugen.
-
-    Contract:
-      - Transition passiert über moveitpy.signals.motionResultChanged:
-          - "EXECUTED:OK"  -> snapshot step + optional next / done
-          - "ERROR..."     -> retry / fail
-
     RESULT CONTRACT (RunResult payload, strict keys always present):
       - notifyFinished emits dict payload:
           {
             "planned_run":  {"traj": <JTBySegment yaml dict>, "tcp": <Draft yaml dict or {}>},
             "executed_run": {"traj": <JTBySegment yaml dict>, "tcp": <Draft yaml dict or {}>},
-            "fk_meta": {...}   # may be {} here; ProcessTab fills FK details
+            "fk_meta": {...}
           }
 
-    NOTE:
-      - Diese Base liefert NUR "traj" (JTBySegment) gefüllt.
-      - "tcp" wird hier bewusst NICHT berechnet (RobotModel/URDF/SRDF management ist ProcessTab/Bridge-Sache),
-        aber die Keys existieren bereits (Hard-Contract), damit TCP später strikt ergänzt werden kann.
+    WICHTIGER FIX (2026-01):
+      - Trajectory Capture ist in der Praxis oft NICHT zuverlässig über "ros.moveit_planned_trajectory()"
+        (je nach Bridge/Namespace/Implementation).
+      - Deshalb cachen wir zusätzlich (best-effort) die letzten Trajektorien über:
+          moveitpy.signals.plannedTrajectoryChanged
+          moveitpy.signals.executedTrajectoryChanged
+        und nutzen diese Caches bei EXECUTED:OK.
     """
 
     ROLE = "process"
@@ -109,17 +98,22 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._retry_count: int = 0
 
         # per-run snapshot stores (final per segment, typically merged/concat)
-        # NOTE: we store JT-DICTS here (best effort), not raw objects.
         self._planned_by_segment: Dict[str, Any] = {}
         self._executed_by_segment: Dict[str, Any] = {}
 
         # per-segment event buffers (captures every EXECUTED:OK inside same segment)
-        # NOTE: lists of JT-DICTS (each entry is ONE command completion)
         self._planned_steps_by_segment: Dict[str, List[Any]] = {}
         self._executed_steps_by_segment: Dict[str, List[Any]] = {}
 
+        # --- MoveItPy handles ---
         self._moveitpy = getattr(self._ros, "moveitpy", None)
         self._moveitpy_signals = getattr(self._moveitpy, "signals", None)
+
+        # --- NEW: cached last trajectories (best-effort) ---
+        self._last_planned_any: Any = None
+        self._last_executed_any: Any = None
+        self._traj_sig_connected: bool = False
+        self._motion_sig_connected: bool = False
 
         # forward our internal logger to UI
         self._log_handler = _QtSignalHandler(self)
@@ -127,11 +121,16 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._log_handler.setLevel(logging.INFO)
         _LOG.addHandler(self._log_handler)
 
+        # connect motion result
         if self._moveitpy_signals is not None and hasattr(self._moveitpy_signals, "motionResultChanged"):
             try:
                 self._moveitpy_signals.motionResultChanged.connect(self._on_motion_result)
+                self._motion_sig_connected = True
             except Exception:
-                pass
+                self._motion_sig_connected = False
+
+        # connect trajectory cache signals (best effort)
+        self._connect_traj_cache_signals()
 
     # ---------------- Public ----------------
 
@@ -147,6 +146,9 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._executed_by_segment.clear()
         self._planned_steps_by_segment.clear()
         self._executed_steps_by_segment.clear()
+
+        self._last_planned_any = None
+        self._last_executed_any = None
 
         if not self._prepare_run():
             self.notifyError.emit(self._error_msg or "Prepare failed")
@@ -174,23 +176,14 @@ class BaseProcessStatemachine(QtCore.QObject):
         raise NotImplementedError
 
     def _on_segment_ok(self, seg_name: str) -> None:
-        # finalize segment buffers into *_by_segment
         self._snapshot_trajs_for_segment(seg_name)
 
     def _should_transition_on_ok(self, seg_name: str, result: str) -> bool:
         return True
 
-    # ---------------- Result (JTBySegment YAML dicts) ----------------
+    # ---------------- Traj payload (JTBySegment YAML dicts) ----------------
 
     def _build_traj_payload(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """
-        Returns (planned, executed) as JTBySegment YAML dicts:
-
-          planned  = {"version":1, "segments": {...}}
-          executed = {"version":1, "segments": {...}}
-
-        NOTE: time_from_start is normalized to [sec, nanosec] list for persistence schema.
-        """
         planned = self._jt_by_segment_yaml(which="planned")
         executed = self._jt_by_segment_yaml(which="executed")
         return planned, executed
@@ -212,15 +205,6 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     @staticmethod
     def _jt_dict_to_segment_yaml(jt: Any) -> Optional[Dict[str, Any]]:
-        """
-        Convert internal JT-dict (joint_names + points with time_from_start dict)
-        into strict recipe schema JTSegment dict:
-
-          {"joint_names":[...],
-           "points":[{"positions":[...], "time_from_start":[sec,nanosec]}, ...]}
-
-        Drops velocities/accelerations/effort.
-        """
         if not (isinstance(jt, dict) and isinstance(jt.get("joint_names"), list) and isinstance(jt.get("points"), list)):
             return None
 
@@ -326,29 +310,53 @@ class BaseProcessStatemachine(QtCore.QObject):
         if result.startswith("ERROR"):
             if self._retry_count < self._max_retries:
                 self._retry_count += 1
-                # retry same state: keep buffers but append new steps as they come
                 self._on_enter_segment(self._current_state)
             else:
                 self._signal_error(result)
             return
 
         if result.startswith("EXECUTED:OK"):
-            # capture per-step trajectories first (so segment logic can send next move)
             self._snapshot_step_for_segment(self._current_state)
 
             if self._should_transition_on_ok(self._current_state, result):
                 self._on_segment_ok(self._current_state)
                 QtCore.QTimer.singleShot(0, self._sig_done.emit)
 
+    # ---------------- Trajectory cache signals (NEW) ----------------
+
+    def _connect_traj_cache_signals(self) -> None:
+        sig = self._moveitpy_signals
+        if sig is None:
+            self._traj_sig_connected = False
+            return
+
+        ok = False
+        try:
+            if hasattr(sig, "plannedTrajectoryChanged"):
+                sig.plannedTrajectoryChanged.connect(self._on_planned_traj_changed)
+                ok = True
+        except Exception:
+            pass
+        try:
+            if hasattr(sig, "executedTrajectoryChanged"):
+                sig.executedTrajectoryChanged.connect(self._on_executed_traj_changed)
+                ok = True
+        except Exception:
+            pass
+
+        self._traj_sig_connected = bool(ok)
+
+    @QtCore.pyqtSlot(object)
+    def _on_planned_traj_changed(self, obj: object) -> None:
+        self._last_planned_any = obj
+
+    @QtCore.pyqtSlot(object)
+    def _on_executed_traj_changed(self, obj: object) -> None:
+        self._last_executed_any = obj
+
     # ---------------- Snapshot helpers ----------------
 
     def _snapshot_step_for_segment(self, seg_name: str) -> None:
-        """
-        Capture one completed command (EXECUTED:OK) into per-segment arrays.
-
-        BEST EFFORT extraction into a JT-dict:
-          {"joint_names":[...], "points":[...]}
-        """
         planned_raw, executed_raw = self._get_step_sources()
 
         planned = self._jt_from_any(planned_raw)
@@ -384,15 +392,21 @@ class BaseProcessStatemachine(QtCore.QObject):
         Try multiple sources for planned/executed trajectory objects.
 
         Priority:
+          0) cached signals plannedTrajectoryChanged/executedTrajectoryChanged
           1) ros.moveit_planned_trajectory() / ros.moveit_executed_trajectory()
-          2) moveitpy wrapper common attributes (last_*, planned_*, executed_*)
+          2) moveitpy wrapper common attributes
         """
+        # 0) cached
+        if self._last_planned_any is not None or self._last_executed_any is not None:
+            return self._last_planned_any, self._last_executed_any
+
+        # 1) ros facade calls
         planned = self._safe_call("moveit_planned_trajectory")
         executed = self._safe_call("moveit_executed_trajectory")
-
         if planned is not None or executed is not None:
             return planned, executed
 
+        # 2) moveitpy object attributes
         mp = self._moveitpy
         for p_attr, e_attr in (
             ("last_planned", "last_executed"),
@@ -411,7 +425,7 @@ class BaseProcessStatemachine(QtCore.QObject):
 
         return None, None
 
-    # ---------------- JointTrajectory serialization helpers ----------------
+    # ---------------- JointTrajectory extraction ----------------
 
     @staticmethod
     def _duration_to_dict(dur: Any) -> Dict[str, int]:
@@ -515,7 +529,7 @@ class BaseProcessStatemachine(QtCore.QObject):
                 if out:
                     return out
 
-        # Common MoveIt-ish attributes
+        # Common attributes
         for attr in (
             "trajectory",
             "robot_trajectory",
@@ -640,10 +654,20 @@ class BaseProcessStatemachine(QtCore.QObject):
     def _on_finished(self) -> None:
         planned, executed = self._build_traj_payload()
 
+        # HARD GUARD: if we captured nothing, fail here with a useful error.
+        p_segs = planned.get("segments") if isinstance(planned, dict) else None
+        e_segs = executed.get("segments") if isinstance(executed, dict) else None
+        if not (isinstance(p_segs, dict) and p_segs) or not (isinstance(e_segs, dict) and e_segs):
+            self.notifyError.emit(
+                "Validate/Run finished, but trajectory capture is empty (segments={}). "
+                "Check MoveItPyBridge: plannedTrajectoryChanged/executedTrajectoryChanged or ros.moveit_* accessors."
+            )
+            self._cleanup()
+            return
+
         rr = RunResult()
         rr.set_planned(traj=planned)     # tcp keys exist already (empty dict)
         rr.set_executed(traj=executed)  # tcp keys exist already (empty dict)
-        # rr.fk_meta stays {} here; ProcessTab fills it after FK.
 
         self.notifyFinished.emit(rr.to_process_payload())
         self._cleanup()
@@ -662,8 +686,23 @@ class BaseProcessStatemachine(QtCore.QObject):
     def _cleanup(self) -> None:
         # disconnect moveit signals
         try:
-            if self._moveitpy_signals is not None and hasattr(self._moveitpy_signals, "motionResultChanged"):
-                self._moveitpy_signals.motionResultChanged.disconnect(self._on_motion_result)
+            if self._moveitpy_signals is not None:
+                if self._motion_sig_connected and hasattr(self._moveitpy_signals, "motionResultChanged"):
+                    try:
+                        self._moveitpy_signals.motionResultChanged.disconnect(self._on_motion_result)
+                    except Exception:
+                        pass
+                if self._traj_sig_connected:
+                    try:
+                        if hasattr(self._moveitpy_signals, "plannedTrajectoryChanged"):
+                            self._moveitpy_signals.plannedTrajectoryChanged.disconnect(self._on_planned_traj_changed)
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(self._moveitpy_signals, "executedTrajectoryChanged"):
+                            self._moveitpy_signals.executedTrajectoryChanged.disconnect(self._on_executed_traj_changed)
+                    except Exception:
+                        pass
         except Exception:
             pass
 

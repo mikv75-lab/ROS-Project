@@ -18,11 +18,17 @@ Subscribes:
   - set_speed_mm_s  (std_msgs/msg/Float64)
   - set_planner_cfg (std_msgs/msg/String)
 
+NEW (for replay / optimize execution without extra player-node):
+  - execute_trajectory (moveit_msgs/msg/RobotTrajectory)   # GUI -> Node: execute arbitrary traj (from YAML)
+  - set_segment        (std_msgs/msg/String)               # optional: for tagging motion_result
+
 Design:
   - publish trajectories BEFORE motion_result (race-free for statemachine)
   - TF robust transform for incoming goal PoseStamped
   - MoveItPy init async
-  - optional Omron execution (real backend) uses last JT point (MOVEJ)
+  - optional Omron TCP execution (real backend) uses last JT point (MOVEJ) for "execute" (planned core)
+  - for execute_trajectory: execute via FollowJointTrajectory ActionClient embedded in THIS node
+    (no extra node; still uses controller action server as intended)
 
 NOTE:
   - TCP sampling/markers are removed. GUI performs Offline-FK based on:
@@ -34,12 +40,14 @@ from __future__ import annotations
 import json
 import math
 from threading import Thread, Event, Lock
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time as RclpyTime
 from rclpy.duration import Duration
+
+from rclpy.action import ActionClient
 
 from std_msgs.msg import String as MsgString, Bool as MsgBool, Empty as MsgEmpty, Float64 as MsgFloat64
 from geometry_msgs.msg import PoseStamped
@@ -54,6 +62,7 @@ from tf2_ros import Buffer, TransformListener
 from tf2_geometry_msgs import do_transform_pose
 
 from controller_manager_msgs.srv import SwitchController
+from control_msgs.action import FollowJointTrajectory  # type: ignore
 
 from spraycoater_nodes_py.utils.config_hub import topics, frames
 
@@ -74,6 +83,8 @@ DEFAULT_PLANNER_CFG: Dict[str, Any] = {
     "max_acceleration_scaling_factor": 0.10,
 }
 
+DEFAULT_TRAJ_CONTROLLER = "omron_arm_controller"
+
 
 # ----------------------------
 # Controller Mode Manager
@@ -90,7 +101,7 @@ class _ModeManager:
         self,
         node: Node,
         *,
-        traj_controller: str = "omron_arm_controller",
+        traj_controller: str = DEFAULT_TRAJ_CONTROLLER,
         debounce_s: float = 0.25,
     ) -> None:
         self.node = node
@@ -220,6 +231,13 @@ class MoveItPyNode(Node):
             str(self.get_parameter("plan_request_preset").value or "default_ompl").strip() or "default_ompl"
         )
 
+        # Optional parameter to override controller name (used for FollowJT + mode switch)
+        if not self.has_parameter("traj_controller"):
+            self.declare_parameter("traj_controller", DEFAULT_TRAJ_CONTROLLER)
+        self.traj_controller = str(self.get_parameter("traj_controller").value or DEFAULT_TRAJ_CONTROLLER).strip()
+        if not self.traj_controller:
+            self.traj_controller = DEFAULT_TRAJ_CONTROLLER
+
         backend_lower = str(self.backend).lower()
         self.is_real_backend = ("omron" in backend_lower) and ("sim" not in backend_lower)
 
@@ -229,7 +247,7 @@ class MoveItPyNode(Node):
         )
 
         # controller mode manager
-        self._mode_mgr = _ModeManager(self, traj_controller="omron_arm_controller", debounce_s=0.25)
+        self._mode_mgr = _ModeManager(self, traj_controller=self.traj_controller, debounce_s=0.25)
 
         # TF listener
         self.tf_buffer = Buffer()
@@ -245,6 +263,11 @@ class MoveItPyNode(Node):
         self._busy = False
         self._cancel = False
         self._last_goal_pose: Optional[PoseStamped] = None
+
+        # NEW: segment tag + external trajectory exec state
+        self._current_segment: str = ""
+        self._external_active_goal = None  # FollowJointTrajectory goal handle
+        self._external_active_traj: Optional[RobotTrajectoryMsg] = None
 
         # publishers (ONLY the minimal set)
         self.pub_planned = self.create_publisher(
@@ -272,6 +295,13 @@ class MoveItPyNode(Node):
             self.log.info(f"[{self.backend}] Omron cmd topic enabled: {topic_omron_cmd}")
         else:
             self.log.info(f"[{self.backend}] Omron cmd topic disabled (sim/shadow backend)")
+
+        # NEW: FollowJointTrajectory ActionClients (namespaced + root fallback)
+        self._followjt_clients: List[Tuple[str, ActionClient]] = []
+        for action_name in self._followjt_action_candidates(self.traj_controller):
+            self._followjt_clients.append((action_name, ActionClient(self, FollowJointTrajectory, action_name)))
+        if self._followjt_clients:
+            self.log.info("[followjt] action candidates: " + ", ".join(n for n, _ in self._followjt_clients))
 
         # subscribers
         self.create_subscription(
@@ -311,6 +341,33 @@ class MoveItPyNode(Node):
             self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "set_planner_cfg"),
         )
 
+        # NEW: execute arbitrary trajectory (from YAML / optimize output)
+        # Requires topics.yaml:
+        #   - id: execute_trajectory (moveit_msgs/msg/RobotTrajectory)
+        #   - id: set_segment (std_msgs/msg/String) [optional]
+        try:
+            self.create_subscription(
+                RobotTrajectoryMsg,
+                self.cfg_topics.subscribe_topic(NODE_KEY, "execute_trajectory"),
+                self._on_execute_trajectory,
+                self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "execute_trajectory"),
+            )
+            self.log.info("[topics] subscribed: execute_trajectory")
+        except Exception as e:
+            self.log.warning(f"[topics] execute_trajectory not wired (topics.yaml missing?): {e!r}")
+
+        try:
+            self.create_subscription(
+                MsgString,
+                self.cfg_topics.subscribe_topic(NODE_KEY, "set_segment"),
+                self._on_set_segment,
+                self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "set_segment"),
+            )
+            self.log.info("[topics] subscribed: set_segment")
+        except Exception:
+            # optional
+            pass
+
         # planning scene cache service (optional but useful)
         self._gps_srv = None
         self._gps_sub = None
@@ -333,6 +390,49 @@ class MoveItPyNode(Node):
         Thread(target=self._init_moveitpy_background, daemon=True).start()
 
         self.log.info("MoveItPyNode init done (MoveItPy is initializing in background).")
+
+    # ------------------------------------------------------------
+    # FollowJT helpers
+    # ------------------------------------------------------------
+    def _ns_prefix(self) -> str:
+        return (self.get_namespace() or "/").strip().strip("/")
+
+    def _followjt_action_candidates(self, controller_name: str) -> List[str]:
+        """
+        Typical ros2_control joint trajectory controller action name:
+          /<controller_name>/follow_joint_trajectory
+
+        We try both:
+          - /<ns>/<controller_name>/follow_joint_trajectory
+          - /<controller_name>/follow_joint_trajectory
+        """
+        c = (controller_name or "").strip().strip("/")
+        if not c:
+            c = DEFAULT_TRAJ_CONTROLLER
+
+        ns = self._ns_prefix()
+        out = []
+        if ns:
+            out.append(f"/{ns}/{c}/follow_joint_trajectory")
+        out.append(f"/{c}/follow_joint_trajectory")
+        # de-dup preserve order
+        seen = set()
+        uniq = []
+        for x in out:
+            if x not in seen:
+                seen.add(x)
+                uniq.append(x)
+        return uniq
+
+    def _pick_ready_followjt(self) -> Optional[Tuple[str, ActionClient]]:
+        # Non-blocking selection: pick first ready client
+        for name, cli in self._followjt_clients:
+            try:
+                if cli.server_is_ready():
+                    return name, cli
+            except Exception:
+                continue
+        return None
 
     # ------------------------------------------------------------
     # Init / Params
@@ -448,6 +548,13 @@ class MoveItPyNode(Node):
         self.pub_result.publish(MsgString(data=text))
         self.log.info(text)
 
+    def _emit_with_segment(self, text: str) -> None:
+        seg = (self._current_segment or "").strip()
+        if seg:
+            self._emit(f"{text} seg={seg}")
+        else:
+            self._emit(text)
+
     def _apply_planner_cfg_to_params(self) -> None:
         if self._plan_params is None:
             return
@@ -515,15 +622,18 @@ class MoveItPyNode(Node):
             self.log.error(f"[config] set_planner_cfg: invalid JSON '{raw}': {e}")
 
     # ------------------------------------------------------------
+    # NEW: segment tag input
+    # ------------------------------------------------------------
+    def _on_set_segment(self, msg: MsgString) -> None:
+        self._current_segment = str(msg.data or "").strip()
+
+    # ------------------------------------------------------------
     # TF helpers for goal input
     # ------------------------------------------------------------
     def _lookup_tf(self, target: str, source: str):
         if not self.tf_buffer.can_transform(target, source, RclpyTime(), Duration(seconds=1.0)):
             raise RuntimeError(f"TF not available {target} <- {source}")
         return self.tf_buffer.lookup_transform(target, source, RclpyTime())
-
-    def _ns_prefix(self) -> str:
-        return (self.get_namespace() or "/").strip().strip("/")
 
     def _resolve_named_candidates(self, name: str) -> List[str]:
         name = (name or "").strip().strip("/")
@@ -575,7 +685,7 @@ class MoveItPyNode(Node):
     # ------------------------------------------------------------
     def _on_plan_pose(self, msg: PoseStamped) -> None:
         if self._busy:
-            self._emit("ERROR:BUSY")
+            self._emit_with_segment("ERROR:BUSY")
             return
         if not self._require_moveit_ready():
             return
@@ -598,7 +708,7 @@ class MoveItPyNode(Node):
             result = self.arm.plan(single_plan_parameters=self._plan_params) if self._plan_params else self.arm.plan()
             core = getattr(result, "trajectory", None)
             if core is None:
-                self._emit("ERROR:NO_TRAJ pose")
+                self._emit_with_segment("ERROR:NO_TRAJ pose")
                 return
 
             msg_traj = core.get_robot_trajectory_msg()
@@ -607,21 +717,21 @@ class MoveItPyNode(Node):
 
             # publish artifact BEFORE result
             self.pub_planned.publish(msg_traj)
-            self._emit("PLANNED:OK pose")
+            self._emit_with_segment("PLANNED:OK pose")
 
         except Exception as e:
-            self._emit(f"ERROR:EX {e}")
+            self._emit_with_segment(f"ERROR:EX {e}")
 
     def _on_plan_named(self, msg: MsgString) -> None:
         if self._busy:
-            self._emit("ERROR:BUSY")
+            self._emit_with_segment("ERROR:BUSY")
             return
         if not self._require_moveit_ready():
             return
 
         name = (msg.data or "").strip()
         if not name:
-            self._emit("ERROR:EMPTY_NAME")
+            self._emit_with_segment("ERROR:EMPTY_NAME")
             return
 
         self._planned = None
@@ -649,7 +759,7 @@ class MoveItPyNode(Node):
             result = self.arm.plan(single_plan_parameters=self._plan_params) if self._plan_params else self.arm.plan()
             core = getattr(result, "trajectory", None)
             if core is None:
-                self._emit("ERROR:NO_TRAJ named")
+                self._emit_with_segment("ERROR:NO_TRAJ named")
                 return
 
             msg_traj = core.get_robot_trajectory_msg()
@@ -658,12 +768,13 @@ class MoveItPyNode(Node):
 
             # publish artifact BEFORE result
             self.pub_planned.publish(msg_traj)
-            self._emit(f"PLANNED:OK named='{name}'")
+            self._emit_with_segment(f"PLANNED:OK named='{name}'")
 
         except Exception as e:
-            self._emit(f"ERROR:EX {e}")
+            self._emit_with_segment(f"ERROR:EX {e}")
 
     def _on_execute(self, msg: MsgBool) -> None:
+        # Existing "execute planned core" path.
         if not msg.data:
             self._on_stop(MsgEmpty())
             return
@@ -671,12 +782,12 @@ class MoveItPyNode(Node):
         self._mode_mgr.ensure_mode("TRAJ")
 
         if self._busy:
-            self._emit("ERROR:BUSY")
+            self._emit_with_segment("ERROR:BUSY")
             return
         if not self._require_moveit_ready():
             return
         if not self._planned:
-            self._emit("ERROR:NO_PLAN")
+            self._emit_with_segment("ERROR:NO_PLAN")
             return
 
         self._busy = True
@@ -691,22 +802,143 @@ class MoveItPyNode(Node):
                 ok = self.moveit.execute(self._planned, controllers=[])  # type: ignore[union-attr]
 
             if self._cancel:
-                self._emit("STOPPED:USER")
+                self._emit_with_segment("STOPPED:USER")
                 return
 
             if ok:
                 # publish executed artifact BEFORE result
                 self.pub_executed.publish(msg_traj)
-                self._emit("EXECUTED:OK")
+                self._emit_with_segment("EXECUTED:OK")
             else:
-                self._emit("ERROR:EXEC")
+                self._emit_with_segment("ERROR:EXEC")
 
         except Exception as e:
-            self._emit(f"ERROR:EX {e}")
+            self._emit_with_segment(f"ERROR:EX {e}")
 
         finally:
             self._busy = False
 
+    # ------------------------------------------------------------
+    # NEW: execute arbitrary RobotTrajectory (from YAML / optimizer output)
+    # ------------------------------------------------------------
+    def _on_execute_trajectory(self, msg: RobotTrajectoryMsg) -> None:
+        """
+        Executes an externally provided RobotTrajectory (joint_trajectory) via FollowJointTrajectory action.
+
+        Contract:
+          - publish planned_trajectory_rt BEFORE motion_result (we publish msg as "planned" for traceability)
+          - publish executed_trajectory_rt BEFORE EXECUTED:OK
+          - motion_result is ALWAYS last signal
+        """
+        if self._busy:
+            self._emit_with_segment("ERROR:BUSY")
+            return
+        if not self._require_moveit_ready():
+            return
+
+        jt = getattr(msg, "joint_trajectory", None)
+        if jt is None or not getattr(jt, "joint_names", None) or not getattr(jt, "points", None):
+            self._emit_with_segment("ERROR:EMPTY_TRAJ")
+            return
+
+        self._mode_mgr.ensure_mode("TRAJ")
+        self._busy = True
+        self._cancel = False
+        self._external_active_goal = None
+        self._external_active_traj = msg
+
+        # publish artifact BEFORE result (treat incoming as planned/optimized artifact)
+        try:
+            self.pub_planned.publish(msg)
+        except Exception:
+            pass
+
+        picked = self._pick_ready_followjt()
+        if picked is None:
+            # try a quick non-blocking wait (0.0) on candidates to populate readiness
+            for _name, cli in self._followjt_clients:
+                try:
+                    cli.wait_for_server(timeout_sec=0.0)
+                except Exception:
+                    pass
+            picked = self._pick_ready_followjt()
+
+        if picked is None:
+            self._busy = False
+            self._emit_with_segment("ERROR:NO_FOLLOWJT_SERVER")
+            return
+
+        action_name, client = picked
+        self.log.info(f"[followjt] using server: {action_name}")
+
+        goal = FollowJointTrajectory.Goal()
+        goal.trajectory = jt
+
+        send_fut = client.send_goal_async(goal)
+
+        def _on_goal_sent(fut):
+            try:
+                gh = fut.result()
+            except Exception as e:
+                self._busy = False
+                self._emit_with_segment(f"ERROR:FOLLOWJT_SEND {e}")
+                return
+
+            if gh is None or not getattr(gh, "accepted", False):
+                self._busy = False
+                self._emit_with_segment("ERROR:GOAL_REJECTED")
+                return
+
+            self._external_active_goal = gh
+
+            # if user already requested stop, cancel immediately
+            if self._cancel:
+                try:
+                    gh.cancel_goal_async()
+                except Exception:
+                    pass
+
+            res_fut = gh.get_result_async()
+
+            def _on_result_done(rf):
+                try:
+                    wrapped = rf.result()
+                    result = getattr(wrapped, "result", None)
+                    status = getattr(wrapped, "status", None)
+
+                    # FollowJointTrajectory result: error_code (0 == SUCCESSFUL)
+                    code = int(getattr(result, "error_code", -1)) if result is not None else -1
+
+                    if self._cancel:
+                        self._emit_with_segment("STOPPED:USER")
+                        return
+
+                    if code == 0:
+                        # publish executed artifact BEFORE result
+                        try:
+                            if self._external_active_traj is not None:
+                                self.pub_executed.publish(self._external_active_traj)
+                        except Exception:
+                            pass
+                        self._emit_with_segment("EXECUTED:OK")
+                    else:
+                        self._emit_with_segment(f"ERROR:EXEC code={code} status={status}")
+
+                except Exception as e:
+                    self._emit_with_segment(f"ERROR:FOLLOWJT_RESULT {e}")
+
+                finally:
+                    self._external_active_goal = None
+                    self._external_active_traj = None
+                    self._busy = False
+
+            res_fut.add_done_callback(_on_result_done)
+
+        send_fut.add_done_callback(_on_goal_sent)
+
+    # ------------------------------------------------------------
+    # Omron TCP execution (current: MOVEJ last point) - unchanged
+    # ------------------------------------------------------------
     def _execute_via_omron(self, traj_msg: RobotTrajectoryMsg) -> bool:
         if not self.is_real_backend or self.pub_omron_cmd is None:
             self.log.error("[omron] _execute_via_omron called but omron publisher is disabled (not real backend).")
@@ -737,9 +969,21 @@ class MoveItPyNode(Node):
         self.pub_omron_cmd.publish(MsgString(data=cmd))
         return True
 
+    # ------------------------------------------------------------
+    # Stop / Cancel
+    # ------------------------------------------------------------
     def _on_stop(self, _msg: MsgEmpty) -> None:
         self._cancel = True
-        self._emit("STOP:REQ")
+
+        # cancel external FollowJT goal if active
+        gh = self._external_active_goal
+        if gh is not None:
+            try:
+                gh.cancel_goal_async()
+            except Exception as e:
+                self.log.warning(f"[stop] cancel_goal_async failed: {e!r}")
+
+        self._emit_with_segment("STOP:REQ")
 
 
 def main(args=None) -> None:
