@@ -51,6 +51,7 @@ topics:
         name: spraycoater/tool/list
         type: std_msgs/msg/String
         qos: latched
+
   moveit_py:
     subscribe:
       - id: plan_pose
@@ -83,9 +84,7 @@ topics:
         type: std_msgs/msg/String
         qos: default
 
-      # ---------------------------
       # Execute arbitrary trajectory (replay from YAML)
-      # ---------------------------
       - id: execute_trajectory
         name: moveit_py/execute_trajectory
         type: moveit_msgs/msg/RobotTrajectory
@@ -97,9 +96,7 @@ topics:
         type: std_msgs/msg/String
         qos: default
 
-      # ---------------------------
-      # NEW: Optimize trajectory (post-processing) in node
-      # ---------------------------
+      # Optimize trajectory (post-processing) in node
       - id: optimize_trajectory
         name: moveit_py/optimize_trajectory
         type: moveit_msgs/msg/RobotTrajectory
@@ -117,13 +114,15 @@ topics:
         type: moveit_msgs/msg/RobotTrajectory
         qos: latched
 
-      # NEW: optimized artifact output (latched)
+      # optimized artifact output (latched)
       - id: optimized_trajectory_rt
         name: moveit_py/optimized_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
         qos: latched
 
-      # Robot model strings for Offline-FK in GUI
+      # -------------------------------------------------
+      # NEW: Robot model strings for Offline-FK in GUI
+      # -------------------------------------------------
       - id: robot_description
         name: robot_description
         type: std_msgs/msg/String
@@ -139,8 +138,6 @@ topics:
         name: moveit_py/motion_result
         type: std_msgs/msg/String
         qos: default
-
-
 
   scene:
     publish:

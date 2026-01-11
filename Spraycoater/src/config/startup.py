@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import io
 import os
+import subprocess
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -129,6 +130,61 @@ def load_yaml_path(base_dir: str, path_or_uri: str) -> Dict[str, Any]:
     return load_yaml_abs(abs_path)
 
 
+def load_text_abs(path: str) -> str:
+    """
+    Load a text file from an absolute filesystem path.
+
+    Strict: must exist; must be non-empty after stripping.
+    """
+    if not isinstance(path, str) or not path.strip():
+        _err("Text Pfad ist leer.")
+    path = os.path.abspath(os.path.normpath(path.strip()))
+    if not os.path.exists(path):
+        _err(f"Datei nicht gefunden: {path}")
+    with io.open(path, "r", encoding="utf-8") as f:
+        txt = f.read()
+    if not isinstance(txt, str) or not txt.strip():
+        _err(f"Datei ist leer: {path}")
+    return txt
+
+
+def write_text_abs(path: str, txt: str) -> None:
+    """
+    Write a text file to an absolute filesystem path.
+
+    Strict:
+      - parent dir must exist
+      - content must be non-empty
+    """
+    if not isinstance(path, str) or not path.strip():
+        _err("write_text_abs: path ist leer.")
+    path = os.path.abspath(os.path.normpath(path.strip()))
+    parent = os.path.dirname(path) or "."
+    if not os.path.isdir(parent):
+        _err(f"write_text_abs: Verzeichnis existiert nicht: {parent}")
+    if not isinstance(txt, str) or not txt.strip():
+        _err(f"write_text_abs: Text ist leer für {path}")
+    with io.open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(txt)
+
+
+def _looks_like_urdf(xml: str) -> bool:
+    x = (xml or "").strip()
+    if "<robot" not in x:
+        return False
+    # URDF must typically have links/joints; SRDF usually does not.
+    return ("<link" in x) or ("<joint" in x)
+
+
+def _looks_like_srdf(xml: str) -> bool:
+    x = (xml or "").strip()
+    if "<robot" not in x:
+        return False
+    # SRDF typically contains group/end_effector/virtual_joint etc.
+    srdf_markers = ("<group", "<end_effector", "<virtual_joint", "<disable_collisions")
+    return any(m in x for m in srdf_markers)
+
+
 # ============================================================
 # Data structures
 # ============================================================
@@ -182,19 +238,13 @@ class ROSLiveConfig(ROSRoleConfig):
 @dataclass(frozen=True)
 class ROSConfig:
     launch_ros: bool
-
-    # ✅ for ros2 launch: pkg + file
     bringup_package: str
     bringup_file: str
-
     namespace: str
     use_sim_time: bool
     robot_type: str
-
-    # mounts are ROS content
     substrate_mounts_dir: str
     substrate_mounts_file: str
-
     configs: ROSConfigPaths
     shadow: ROSRoleConfig
     live: ROSLiveConfig
@@ -217,40 +267,165 @@ class PlcConfig:
     spec: Dict[str, Any]
 
 
+# ============================================================
+# Robot Description (URDF / SRDF)
+# ============================================================
+
+@dataclass(frozen=True)
+class RobotDescriptionSource:
+    urdf: Dict[str, Any]
+    srdf: Dict[str, Any]
+
+
+@dataclass(frozen=True)
+class RobotDescription:
+    urdf_xml: str
+    srdf_xml: str
+    urdf_path: str
+    srdf_path: str
+    source: RobotDescriptionSource
+
+
 @dataclass
 class AppContext:
     """
     Single Source of Truth (naming):
-
-      - ctx.store  : RecipeStore   (catalog/defaults/defs)
-      - ctx.repo   : RecipeRepo    (persistence: draft/compiled/runs)
-      - ctx.content: AppContent    (frames/qos/topics + mounts yaml)
+      - ctx.store  : RecipeStore
+      - ctx.repo   : RecipeRepo
+      - ctx.content: AppContent
     """
     paths: AppPaths
     ros: ROSConfig
     plc: PlcConfig
 
-    # raw YAML roots (useful for debug)
     recipe_params_yaml: Dict[str, Any]
     planner_catalog_yaml: Dict[str, Any]
     recipe_catalog_yaml: Dict[str, Any]
     mounts_yaml: Dict[str, Any]
 
-    # Core objects
+    robot_description: Optional[RobotDescription]
+
     content: "AppContent"
     store: Any
     repo: Any
 
 
 # ============================================================
+# Robot description loader (URDF/SRDF via package + xacro)
+# ============================================================
+
+def load_robot_description(*, robot_yaml: Dict[str, Any], out_dir: str, robot_type: str) -> RobotDescription:
+    """
+    Load URDF (xacro) and SRDF from the ROS workspace using package share paths.
+
+    Also persists URDF/SRDF to stable files in out_dir to support consumers that
+    interpret provided strings as filenames (initFile pitfall).
+    """
+    require_ros_overlay("URDF/SRDF laden (package share + xacro).")
+
+    if not isinstance(out_dir, str) or not out_dir.strip():
+        _err("load_robot_description: out_dir ist leer.")
+    out_dir = os.path.abspath(os.path.normpath(out_dir))
+    if not os.path.isdir(out_dir):
+        _err(f"load_robot_description: out_dir existiert nicht: {out_dir!r}")
+
+    robot_type = str(robot_type or "").strip()
+    if not robot_type:
+        _err("load_robot_description: robot_type ist leer (SSoT ros.robot_type).")
+
+    desc = robot_yaml.get("description")
+    if not isinstance(desc, dict):
+        _err("startup.yaml: robot.description fehlt oder ist ungültig.")
+
+    urdf_cfg = desc.get("urdf")
+    srdf_cfg = desc.get("srdf")
+    if not isinstance(urdf_cfg, dict):
+        _err("startup.yaml: robot.description.urdf fehlt oder ist ungültig.")
+    if not isinstance(srdf_cfg, dict):
+        _err("startup.yaml: robot.description.srdf fehlt oder ist ungültig.")
+
+    try:
+        from ament_index_python.packages import get_package_share_directory  # type: ignore
+    except Exception as e:
+        _err(f"ament_index_python nicht verfügbar (URDF/SRDF): {e}")
+
+    # ---- URDF via xacro ----
+    urdf_pkg = str(urdf_cfg.get("package", "")).strip()
+    urdf_xacro_rel = str(urdf_cfg.get("xacro", "")).strip()
+    urdf_args = urdf_cfg.get("args") or {}
+    if not isinstance(urdf_args, dict):
+        _err("startup.yaml: robot.description.urdf.args muss Mapping sein (oder leer).")
+
+    if not urdf_pkg or not urdf_xacro_rel:
+        _err("startup.yaml: robot.description.urdf.package oder xacro fehlt/leer.")
+
+    # SSoT enforcement: override/insert robot_type from ros.robot_type
+    urdf_args = dict(urdf_args)
+    urdf_args["robot_type"] = robot_type
+
+    urdf_xacro_abs = os.path.join(get_package_share_directory(urdf_pkg), urdf_xacro_rel)
+    urdf_xacro_abs = os.path.abspath(os.path.normpath(urdf_xacro_abs))
+    if not os.path.exists(urdf_xacro_abs):
+        _err(f"URDF xacro nicht gefunden: {urdf_xacro_abs}")
+
+    cmd = ["xacro", urdf_xacro_abs]
+    for k, v in urdf_args.items():
+        cmd.append(f"{str(k)}:={str(v)}")
+
+    try:
+        urdf_xml = subprocess.check_output(cmd, text=True)
+    except Exception as e:
+        _err(f"xacro fehlgeschlagen ({urdf_xacro_abs}): {e}")
+
+    if not isinstance(urdf_xml, str) or "<robot" not in urdf_xml:
+        _err("xacro output sieht nicht nach URDF aus (kein '<robot').")
+    if not _looks_like_urdf(urdf_xml):
+        _err("URDF sanity-check fehlgeschlagen: URDF enthält keine <link>/<joint> Marker (vertauscht?).")
+
+    # ---- SRDF plain file ----
+    srdf_pkg = str(srdf_cfg.get("package", "")).strip()
+    srdf_file_rel = str(srdf_cfg.get("file", "")).strip()
+    if not srdf_pkg or not srdf_file_rel:
+        _err("startup.yaml: robot.description.srdf.package oder file fehlt/leer.")
+
+    srdf_abs = os.path.join(get_package_share_directory(srdf_pkg), srdf_file_rel)
+    srdf_abs = os.path.abspath(os.path.normpath(srdf_abs))
+    srdf_xml = load_text_abs(srdf_abs)
+
+    if not _looks_like_srdf(srdf_xml):
+        _err(
+            "SRDF sanity-check fehlgeschlagen: SRDF enthält keine <group>/<end_effector>/<virtual_joint> Marker "
+            "(falsche Datei oder leer?)."
+        )
+
+    # ---- Persist to stable files ----
+    urdf_out = os.path.join(out_dir, f"robot_description__{robot_type}.urdf")
+    srdf_out = os.path.join(out_dir, f"robot_description__{robot_type}.srdf")
+    write_text_abs(urdf_out, urdf_xml)
+    write_text_abs(srdf_out, srdf_xml)
+
+    return RobotDescription(
+        urdf_xml=urdf_xml,
+        srdf_xml=srdf_xml,
+        urdf_path=urdf_out,
+        srdf_path=srdf_out,
+        source=RobotDescriptionSource(urdf=dict(urdf_cfg), srdf=dict(srdf_cfg)),
+    )
+
+
+# ============================================================
 # AppContent (ROS content)
 # ============================================================
 
-# These imports may fail in non-ROS environments; we keep strict behavior via require_ros_overlay().
-require_ros_overlay("AppContent benötigt ROS (rosidl_runtime_py + rclpy QoS).")
-
-from rosidl_runtime_py.utilities import get_message  # type: ignore
-from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy  # type: ignore
+try:
+    from rosidl_runtime_py.utilities import get_message  # type: ignore
+    from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy  # type: ignore
+except Exception:
+    get_message = None  # type: ignore[assignment]
+    QoSProfile = None  # type: ignore[assignment]
+    ReliabilityPolicy = None  # type: ignore[assignment]
+    DurabilityPolicy = None  # type: ignore[assignment]
+    HistoryPolicy = None  # type: ignore[assignment]
 
 
 @dataclass(frozen=True)
@@ -263,6 +438,9 @@ class TopicSpec:
     def resolve_type(self):
         if "/msg/" not in self.type_str:
             _err(f"Ungültiger Msg-Typ: {self.type_str}")
+        require_ros_overlay("TopicSpec.resolve_type benötigt ROS (rosidl_runtime_py).")
+        if get_message is None:
+            _err("rosidl_runtime_py.utilities.get_message ist nicht verfügbar (ROS overlay fehlt?).")
         return get_message(self.type_str)
 
 
@@ -273,9 +451,7 @@ class AppContent:
       - qos.yaml
       - topics.yaml
       - substrate_mounts.yaml (required)
-
-    NOTE: No RecipeStore/RecipeRepo creation here.
-    Those live in ctx.store / ctx.repo.
+      - robot_description_xml() / robot_description_paths()
     """
 
     def __init__(
@@ -285,8 +461,14 @@ class AppContent:
         ros_cfg_paths: ROSConfigPaths,
         substrate_mounts_dir: str,
         substrate_mounts_file: str,
+        robot_description: Optional[RobotDescription] = None,
     ):
-        # All of these may be package://, so base_dir is used only for relative fallbacks.
+        require_ros_overlay("AppContent benötigt ROS (rosidl_runtime_py + rclpy QoS).")
+        if QoSProfile is None or ReliabilityPolicy is None or DurabilityPolicy is None or HistoryPolicy is None:
+            _err("rclpy QoS Klassen sind nicht verfügbar (ROS overlay fehlt?).")
+
+        self._robot_description = robot_description
+
         self._frames = load_yaml_path(base_dir, ros_cfg_paths.frames_file)
         self._qos = load_yaml_path(base_dir, ros_cfg_paths.qos_file)
         self._topics = load_yaml_path(base_dir, ros_cfg_paths.topics_file)
@@ -308,6 +490,19 @@ class AppContent:
         if not isinstance(mounts, dict) or not mounts:
             _err("substrate_mounts.yaml: 'mounts' fehlt oder ist leer.")
 
+    def has_robot_description(self) -> bool:
+        return self._robot_description is not None
+
+    def robot_description_xml(self) -> Tuple[str, str]:
+        if self._robot_description is None:
+            _err("RobotDescription fehlt (startup.yaml: robot.description ...).")
+        return (self._robot_description.urdf_xml, self._robot_description.srdf_xml)
+
+    def robot_description_paths(self) -> Tuple[str, str]:
+        if self._robot_description is None:
+            _err("RobotDescription fehlt (startup.yaml: robot.description ...).")
+        return (self._robot_description.urdf_path, self._robot_description.srdf_path)
+
     def frame(self, name: str) -> str:
         if name not in self._frames_map:
             raise KeyError(f"Frame '{name}' nicht gefunden.")
@@ -315,6 +510,8 @@ class AppContent:
 
     @staticmethod
     def _str_to_history(s: str):
+        if HistoryPolicy is None:
+            _err("HistoryPolicy ist nicht verfügbar (ROS overlay fehlt?).")
         s = (s or "").upper()
         if not hasattr(HistoryPolicy, s):
             _err(f"Ungültige HistoryPolicy: {s!r}")
@@ -322,6 +519,8 @@ class AppContent:
 
     @staticmethod
     def _str_to_reliability(s: str):
+        if ReliabilityPolicy is None:
+            _err("ReliabilityPolicy ist nicht verfügbar (ROS overlay fehlt?).")
         s = (s or "").upper()
         if not hasattr(ReliabilityPolicy, s):
             _err(f"Ungültige ReliabilityPolicy: {s!r}")
@@ -329,17 +528,22 @@ class AppContent:
 
     @staticmethod
     def _str_to_durability(s: str):
+        if DurabilityPolicy is None:
+            _err("DurabilityPolicy ist nicht verfügbar (ROS overlay fehlt?).")
         s = (s or "").upper()
         if not hasattr(DurabilityPolicy, s):
             _err(f"Ungültige DurabilityPolicy: {s!r}")
         return getattr(DurabilityPolicy, s)
 
-    def _build_qos_profiles(self, qos_yaml: Dict[str, Any]) -> Dict[str, QoSProfile]:
+    def _build_qos_profiles(self, qos_yaml: Dict[str, Any]) -> Dict[str, Any]:
+        if QoSProfile is None:
+            _err("QoSProfile ist nicht verfügbar (ROS overlay fehlt?).")
+
         profiles = qos_yaml.get("profiles")
         if not isinstance(profiles, dict) or not profiles:
             _err("qos.yaml: 'profiles' fehlt oder ist leer.")
 
-        out: Dict[str, QoSProfile] = {}
+        out: Dict[str, Any] = {}
         for key, spec in profiles.items():
             if not isinstance(spec, dict):
                 _err(f"Ungültiges QoS-Profil: {key!r} (kein Mapping)")
@@ -417,9 +621,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not os.path.exists(startup_yaml_path):
         _err(f"startup.yaml nicht gefunden: {startup_yaml_path}")
 
-    # Base dir is strictly controlled via SC_PROJECT_ROOT (required).
     base = require_env_dir("SC_PROJECT_ROOT")
-
     su = load_yaml_abs(startup_yaml_path)
 
     # ---------------- PATHS ----------------
@@ -484,7 +686,6 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not robot_type:
         _err("startup.yaml: ros.robot_type fehlt oder ist leer.")
 
-    # ✅ bringup as pkg + file
     bringup_pkg = str(r.get("bringup_package", "")).strip()
     bringup_file = str(r.get("bringup_file", "")).strip()
     if launch_ros:
@@ -492,10 +693,8 @@ def load_startup(startup_yaml_path: str) -> AppContext:
             _err("startup.yaml: ros.bringup_package fehlt oder ist leer.")
         if not bringup_file:
             _err("startup.yaml: ros.bringup_file fehlt oder ist leer.")
-        # require ROS overlay if we intend to launch
         require_ros_overlay("ros.launch_ros=true (Bringup/Bridges benötigen ROS overlay).")
 
-    # mounts are ROS config (required by UI preview)
     if "substrate_mounts_file" not in r:
         _err("startup.yaml: ros.substrate_mounts_file fehlt.")
     if "substrate_mounts_dir" not in r:
@@ -548,7 +747,6 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         if mode not in ("omron", "emulator"):
             _err(f"startup.yaml: ros.live.mode muss 'omron' oder 'emulator' sein (ist {mode!r}).")
     else:
-        # keep a safe default even if disabled
         if mode not in ("omron", "emulator"):
             mode = "omron"
 
@@ -593,6 +791,18 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         shadow=shadow_cfg,
         live=live_cfg,
     )
+
+    # ---------------- ROBOT (URDF/SRDF) ----------------
+    robot_description: Optional[RobotDescription] = None
+    robot_yaml = su.get("robot")
+    if robot_yaml is not None:
+        if not isinstance(robot_yaml, dict):
+            _err("startup.yaml: Abschnitt 'robot' ist ungültig (muss Mapping sein).")
+        robot_description = load_robot_description(
+            robot_yaml=robot_yaml,
+            out_dir=paths.log_dir,
+            robot_type=ros_cfg.robot_type,
+        )
 
     # ---------------- PLC ----------------
     plc_yaml = su.get("plc")
@@ -657,21 +867,19 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not isinstance(recipes_list, list) or not recipes_list:
         _err("recipe_catalog.yaml: recipes fehlt oder ist leer.")
 
-    # ---------------- Mounts YAML (required) ----------------
     mounts_yaml = load_yaml_path(base, substrate_mounts_file)
     mounts = mounts_yaml.get("mounts")
     if not isinstance(mounts, dict) or not mounts:
         _err("substrate_mounts.yaml: mounts fehlt oder ist leer.")
 
-    # ---------------- Build core objects: content + store + repo ----------------
     content = AppContent(
         base_dir=base,
         ros_cfg_paths=ros_paths,
         substrate_mounts_dir=substrate_mounts_dir,
         substrate_mounts_file=substrate_mounts_file,
+        robot_description=robot_description,
     )
 
-    # Create RecipeStore + RecipeRepo (SSoT)
     from model.recipe.recipe_store import RecipeStore, RecipeStorePaths
     from model.recipe.recipe_bundle import RecipeBundle
     from model.recipe.recipe_repo import RecipeRepo
@@ -698,6 +906,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         planner_catalog_yaml=pc_y,
         recipe_catalog_yaml=rc_y,
         mounts_yaml=mounts_yaml,
+        robot_description=robot_description,
         content=content,
         store=store,
         repo=repo,

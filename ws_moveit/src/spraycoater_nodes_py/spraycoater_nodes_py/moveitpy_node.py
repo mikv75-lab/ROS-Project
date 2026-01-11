@@ -6,10 +6,12 @@ spraycoater_nodes_py/moveit_py_node.py
 MoveItPy wrapper node (MINIMAL TOPICS for GUI Offline-FK)
 
 Publishes (per config_hub topics.yaml):
-  - planned_trajectory_rt   (moveit_msgs/msg/RobotTrajectory) [latched]
-  - executed_trajectory_rt  (moveit_msgs/msg/RobotTrajectory) [latched]
-  - optimized_trajectory_rt (moveit_msgs/msg/RobotTrajectory) [latched]   # NEW
-  - motion_result           (std_msgs/msg/String)             [default]
+  - planned_trajectory_rt        (moveit_msgs/msg/RobotTrajectory) [latched]
+  - executed_trajectory_rt       (moveit_msgs/msg/RobotTrajectory) [latched]
+  - optimized_trajectory_rt      (moveit_msgs/msg/RobotTrajectory) [latched]
+  - robot_description            (std_msgs/msg/String)             [latched]
+  - robot_description_semantic   (std_msgs/msg/String)             [latched]
+  - motion_result                (std_msgs/msg/String)             [default]
 
 Subscribes:
   - plan_pose       (geometry_msgs/msg/PoseStamped)
@@ -19,22 +21,16 @@ Subscribes:
   - set_speed_mm_s  (std_msgs/msg/Float64)
   - set_planner_cfg (std_msgs/msg/String)
 
-NEW (replay / optimize without extra player-node):
-  - execute_trajectory  (moveit_msgs/msg/RobotTrajectory)     # GUI -> Node: execute arbitrary traj (from YAML)
-  - optimize_trajectory (moveit_msgs/msg/RobotTrajectory)     # GUI -> Node: optimize/retime trajectory in node
-  - set_segment         (std_msgs/msg/String)                 # optional: for tagging motion_result
+Extended:
+  - execute_trajectory  (moveit_msgs/msg/RobotTrajectory)
+  - optimize_trajectory (moveit_msgs/msg/RobotTrajectory)
+  - set_segment         (std_msgs/msg/String)
 
 Design:
   - publish trajectories BEFORE motion_result (race-free for statemachine)
-  - TF robust transform for incoming goal PoseStamped
-  - MoveItPy init async
-  - optional Omron TCP execution (real backend) uses last JT point (MOVEJ) for "execute" (planned core)
-  - for execute_trajectory: execute via FollowJointTrajectory ActionClient embedded in THIS node
-    (no extra node; still uses controller action server as intended)
-
-NOTE:
-  - TCP sampling/markers are removed. GUI performs Offline-FK based on:
-      planned_trajectory_rt/executed_trajectory_rt + robot_description(+semantic).
+  - publish robot_description(_semantic) ONCE after MoveItPy init (latched)
+  - also best-effort re-publish robot_description on first plan request
+    (covers UI starting late / transient-local mismatch)
 """
 
 from __future__ import annotations
@@ -48,7 +44,6 @@ import rclpy
 from rclpy.node import Node
 from rclpy.time import Time as RclpyTime
 from rclpy.duration import Duration
-
 from rclpy.action import ActionClient
 
 from std_msgs.msg import String as MsgString, Bool as MsgBool, Empty as MsgEmpty, Float64 as MsgFloat64
@@ -65,11 +60,10 @@ from tf2_geometry_msgs import do_transform_pose
 
 from controller_manager_msgs.srv import SwitchController
 from control_msgs.action import FollowJointTrajectory  # type: ignore
-
-# NEW: needed for fallback retime building
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 from spraycoater_nodes_py.utils.config_hub import topics, frames
+
 
 # ----------------------------
 # Constants / Defaults
@@ -198,12 +192,6 @@ class _ModeManager:
 class MoveItPyNode(Node):
     """
     MoveItPy wrapper node (minimal topics).
-
-    Publishes:
-      - planned_trajectory_rt (RobotTrajectoryMsg, latched)
-      - executed_trajectory_rt (RobotTrajectoryMsg, latched)
-      - optimized_trajectory_rt (RobotTrajectoryMsg, latched)  # NEW
-      - motion_result (String) published LAST
     """
 
     def __init__(self) -> None:
@@ -236,6 +224,14 @@ class MoveItPyNode(Node):
         self.plan_request_preset = (
             str(self.get_parameter("plan_request_preset").value or "default_ompl").strip() or "default_ompl"
         )
+
+        # IMPORTANT:
+        # - If your MoveIt launch injects these params, they will already exist.
+        # - We only declare defaults if missing (keeps override intact).
+        if not self.has_parameter("robot_description"):
+            self.declare_parameter("robot_description", "")
+        if not self.has_parameter("robot_description_semantic"):
+            self.declare_parameter("robot_description_semantic", "")
 
         # Optional parameter to override controller name (used for FollowJT + mode switch)
         if not self.has_parameter("traj_controller"):
@@ -270,10 +266,14 @@ class MoveItPyNode(Node):
         self._cancel: bool = False
         self._last_goal_pose: Optional[PoseStamped] = None
 
-        # NEW: segment tag + external trajectory exec state
+        # segment tag + external trajectory exec state
         self._current_segment: str = ""
         self._external_active_goal = None  # FollowJointTrajectory goal handle
         self._external_active_traj: Optional[RobotTrajectoryMsg] = None
+
+        # Robot model publication guard (thread-safe)
+        self._robot_model_lock = Lock()
+        self._robot_model_published: bool = False
 
         # publishers (ONLY the minimal set)
         self.pub_planned = self.create_publisher(
@@ -286,12 +286,22 @@ class MoveItPyNode(Node):
             self.cfg_topics.publish_topic(NODE_KEY, "executed_trajectory_rt"),
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "executed_trajectory_rt"),
         )
-
-        # NEW: optimized artifact output (latched)
         self.pub_optimized = self.create_publisher(
             RobotTrajectoryMsg,
             self.cfg_topics.publish_topic(NODE_KEY, "optimized_trajectory_rt"),
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "optimized_trajectory_rt"),
+        )
+
+        # robot model strings for Offline-FK in GUI (latched via QoS)
+        self.pub_robot_description = self.create_publisher(
+            MsgString,
+            self.cfg_topics.publish_topic(NODE_KEY, "robot_description"),
+            self.cfg_topics.qos_by_id("publish", NODE_KEY, "robot_description"),
+        )
+        self.pub_robot_description_semantic = self.create_publisher(
+            MsgString,
+            self.cfg_topics.publish_topic(NODE_KEY, "robot_description_semantic"),
+            self.cfg_topics.qos_by_id("publish", NODE_KEY, "robot_description_semantic"),
         )
 
         self.pub_result = self.create_publisher(
@@ -310,7 +320,7 @@ class MoveItPyNode(Node):
         else:
             self.log.info(f"[{self.backend}] Omron cmd topic disabled (sim/shadow backend)")
 
-        # NEW: FollowJointTrajectory ActionClients (namespaced + root fallback)
+        # FollowJointTrajectory ActionClients (namespaced + root fallback)
         self._followjt_clients: List[Tuple[str, ActionClient]] = []
         for action_name in self._followjt_action_candidates(self.traj_controller):
             self._followjt_clients.append((action_name, ActionClient(self, FollowJointTrajectory, action_name)))
@@ -355,7 +365,7 @@ class MoveItPyNode(Node):
             self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "set_planner_cfg"),
         )
 
-        # NEW: execute arbitrary trajectory (from YAML / optimize output)
+        # execute arbitrary trajectory (from YAML / optimize output)
         try:
             self.create_subscription(
                 RobotTrajectoryMsg,
@@ -367,7 +377,7 @@ class MoveItPyNode(Node):
         except Exception as e:
             self.log.warning(f"[topics] execute_trajectory not wired (topics.yaml missing?): {e!r}")
 
-        # NEW: optimize trajectory (post-processing / retime) in node
+        # optimize trajectory (post-processing / retime) in node
         try:
             self.create_subscription(
                 RobotTrajectoryMsg,
@@ -421,14 +431,6 @@ class MoveItPyNode(Node):
         return (self.get_namespace() or "/").strip().strip("/")
 
     def _followjt_action_candidates(self, controller_name: str) -> List[str]:
-        """
-        Typical ros2_control joint trajectory controller action name:
-          /<controller_name>/follow_joint_trajectory
-
-        We try both:
-          - /<ns>/<controller_name>/follow_joint_trajectory
-          - /<controller_name>/follow_joint_trajectory
-        """
         c = (controller_name or "").strip().strip("/")
         if not c:
             c = DEFAULT_TRAJ_CONTROLLER
@@ -439,7 +441,6 @@ class MoveItPyNode(Node):
             out.append(f"/{ns}/{c}/follow_joint_trajectory")
         out.append(f"/{c}/follow_joint_trajectory")
 
-        # de-dup preserve order
         seen = set()
         uniq = []
         for x in out:
@@ -449,7 +450,6 @@ class MoveItPyNode(Node):
         return uniq
 
     def _pick_ready_followjt(self) -> Optional[Tuple[str, ActionClient]]:
-        # Non-blocking selection: pick first ready client
         for name, cli in self._followjt_clients:
             try:
                 if cli.server_is_ready():
@@ -457,6 +457,58 @@ class MoveItPyNode(Node):
             except Exception:
                 continue
         return None
+
+    # ------------------------------------------------------------
+    # Robot model publication (URDF/SRDF)
+    # ------------------------------------------------------------
+    def _publish_robot_model_strings_once(self) -> None:
+        """
+        Publish robot_description and robot_description_semantic (latched) exactly once.
+
+        Source of truth:
+          - node parameters robot_description / robot_description_semantic
+            (typically injected by your MoveIt config launch).
+
+        Thread-safe (may be called from init thread + ROS callbacks).
+        """
+        with self._robot_model_lock:
+            if self._robot_model_published:
+                return
+
+            try:
+                urdf = str(self.get_parameter("robot_description").value or "")
+            except Exception:
+                urdf = ""
+            try:
+                srdf = str(self.get_parameter("robot_description_semantic").value or "")
+            except Exception:
+                srdf = ""
+
+            urdf = urdf.strip()
+            srdf = srdf.strip()
+
+            if not urdf:
+                self.log.error(
+                    "[robot_model] robot_description parameter ist leer. "
+                    "Ohne URDF kann die GUI kein Offline-FK/TCP berechnen. "
+                    "Fix: Stelle sicher, dass der MoveIt launch robot_description an /moveit_py injiziert."
+                )
+                return
+
+            try:
+                self.pub_robot_description.publish(MsgString(data=urdf))
+                if srdf:
+                    self.pub_robot_description_semantic.publish(MsgString(data=srdf))
+                else:
+                    self.log.warning("[robot_model] robot_description_semantic ist leer (SRDF fehlt/optional).")
+
+                self._robot_model_published = True
+                self.log.info(
+                    f"[robot_model] published robot_description ({len(urdf)} chars) "
+                    f"+ semantic ({len(srdf)} chars) [latched]"
+                )
+            except Exception as e:
+                self.log.error(f"[robot_model] publish failed: {e!r}")
 
     # ------------------------------------------------------------
     # Init / Params
@@ -499,6 +551,10 @@ class MoveItPyNode(Node):
                     self.log.warning(
                         f"[config] PlanRequestParameters nicht verfügbar ({e}). Nutze arm.plan() ohne explizite Parameter."
                     )
+
+            # Publish robot model strings AFTER MoveItPy init (params should be present),
+            # and before GUI relies on FK.
+            self._publish_robot_model_strings_once()
 
             self._moveit_ready.set()
             self.log.info(f"MoveItPy ready (group={GROUP_NAME}, ns='{self.get_namespace() or '/'}')")
@@ -714,6 +770,9 @@ class MoveItPyNode(Node):
         if not self._require_moveit_ready():
             return
 
+        # Ensure GUI can FK even if it started after node init
+        self._publish_robot_model_strings_once()
+
         self._planned = None
         self._last_goal_pose = None
 
@@ -752,6 +811,9 @@ class MoveItPyNode(Node):
             return
         if not self._require_moveit_ready():
             return
+
+        # Ensure GUI can FK even if it started after node init
+        self._publish_robot_model_strings_once()
 
         name = (msg.data or "").strip()
         if not name:
@@ -798,7 +860,6 @@ class MoveItPyNode(Node):
             self._emit_with_segment(f"ERROR:EX {e}")
 
     def _on_execute(self, msg: MsgBool) -> None:
-        # Existing "execute planned core" path.
         if not msg.data:
             self._on_stop(MsgEmpty())
             return
@@ -846,14 +907,6 @@ class MoveItPyNode(Node):
     # Execute arbitrary RobotTrajectory (from YAML / optimize output)
     # ------------------------------------------------------------
     def _on_execute_trajectory(self, msg: RobotTrajectoryMsg) -> None:
-        """
-        Executes an externally provided RobotTrajectory (joint_trajectory) via FollowJointTrajectory action.
-
-        Contract:
-          - publish planned_trajectory_rt BEFORE motion_result (we publish msg as "planned" for traceability)
-          - publish executed_trajectory_rt BEFORE EXECUTED:OK
-          - motion_result is ALWAYS last signal
-        """
         if self._busy:
             self._emit_with_segment("ERROR:BUSY")
             return
@@ -881,7 +934,6 @@ class MoveItPyNode(Node):
 
         picked = self._pick_ready_followjt()
         if picked is None:
-            # try a quick non-blocking wait (0.0) on candidates to populate readiness
             for _name, cli in self._followjt_clients:
                 try:
                     cli.wait_for_server(timeout_sec=0.0)
@@ -923,7 +975,6 @@ class MoveItPyNode(Node):
 
             self._external_active_goal = gh
 
-            # if user already requested stop, cancel immediately
             if self._cancel:
                 try:
                     gh.cancel_goal_async()
@@ -937,8 +988,6 @@ class MoveItPyNode(Node):
                     wrapped = rf.result()
                     result = getattr(wrapped, "result", None)
                     status = getattr(wrapped, "status", None)
-
-                    # FollowJointTrajectory result: error_code (0 == SUCCESSFUL)
                     code = int(getattr(result, "error_code", -1)) if result is not None else -1
 
                     if self._cancel:
@@ -946,7 +995,6 @@ class MoveItPyNode(Node):
                         return
 
                     if code == 0:
-                        # publish executed artifact BEFORE result
                         try:
                             if self._external_active_traj is not None:
                                 self.pub_executed.publish(self._external_active_traj)
@@ -969,16 +1017,9 @@ class MoveItPyNode(Node):
         send_fut.add_done_callback(_on_goal_sent)
 
     # ------------------------------------------------------------
-    # NEW: optimize/retime RobotTrajectory (post-processing in node)
+    # Optimize / retime RobotTrajectory (post-processing in node)
     # ------------------------------------------------------------
     def _on_optimize_trajectory(self, msg: RobotTrajectoryMsg) -> None:
-        """
-        Optimizes / retimes an externally provided RobotTrajectory.
-
-        Contract:
-          - publish optimized_trajectory_rt BEFORE motion_result
-          - motion_result last signal: OPTIMIZED:OK or ERROR:...
-        """
         if self._busy:
             self._emit_with_segment("ERROR:BUSY")
             return
@@ -996,8 +1037,6 @@ class MoveItPyNode(Node):
         self._busy = True
         self._cancel = False
         try:
-            # Use existing set_planner_cfg channel to select post-processor.
-            # Expect: {"pipeline":"post","planner_id":"TimeOptimalTrajectoryGeneration"|"IterativeParabolicTimeParameterization"|"SplineInterpolator", ...}
             pipeline = str(self._planner_cfg.get("pipeline") or "post").strip() or "post"
             planner_id = str(self._planner_cfg.get("planner_id") or "IterativeParabolicTimeParameterization").strip()
 
@@ -1023,30 +1062,14 @@ class MoveItPyNode(Node):
         pipeline: str,
         planner_id: str,
     ) -> RobotTrajectoryMsg:
-        """
-        Best-effort optimizer:
-          - If real MoveIt time-parameterization bindings are available in Python, use them.
-          - Otherwise fallback to a deterministic retime scaling (still useful + unblocks pipeline).
-        """
+        # placeholder until real MoveIt time-parameterization binding is wired in python
         try:
-            # Placeholder for real post-processing if available in your environment.
-            # If you later confirm the Python APIs you have, we can replace this with true TOTG/IPTP/Spline.
             raise RuntimeError("MoveIt post-processing Python binding not wired")
         except Exception as e:
             self.log.warning(f"[opt] using fallback retime (no post binding): {e!r}")
             return self._optimize_fallback_scale(msg, planner_id=planner_id)
 
     def _optimize_fallback_scale(self, msg: RobotTrajectoryMsg, *, planner_id: str) -> RobotTrajectoryMsg:
-        """
-        Deterministic fallback:
-          - scale time_from_start based on velocity scaling (or planner_id heuristic)
-          - enforce strict monotonic times (+1ms if needed)
-        """
-        # default: keep times
-        scale = 1.0
-
-        # Heuristic: if user selected TOTG, often you want "faster" than raw -> compress times slightly.
-        # But we keep it conservative and tie it to max_velocity_scaling_factor if present.
         try:
             vs = float(self._planner_cfg.get("max_velocity_scaling_factor", 1.0))
         except Exception:
@@ -1055,7 +1078,6 @@ class MoveItPyNode(Node):
             vs = 1.0
 
         # Interpret scaling as "allowed speed fraction" => smaller means slower => larger times
-        # time_scale = 1/vs (e.g. vs=0.5 => 2x time)
         scale = 1.0 / vs
 
         out = RobotTrajectoryMsg()
@@ -1075,7 +1097,6 @@ class MoveItPyNode(Node):
             q = JointTrajectoryPoint()
             q.positions = list(p.positions)
 
-            # optional fields
             try:
                 if getattr(p, "velocities", None):
                     q.velocities = list(p.velocities)
@@ -1099,7 +1120,7 @@ class MoveItPyNode(Node):
         return out
 
     # ------------------------------------------------------------
-    # Omron TCP execution (current: MOVEJ last point) - unchanged
+    # Omron TCP execution (MOVEJ last point)
     # ------------------------------------------------------------
     def _execute_via_omron(self, traj_msg: RobotTrajectoryMsg) -> bool:
         if not self.is_real_backend or self.pub_omron_cmd is None:
@@ -1137,7 +1158,6 @@ class MoveItPyNode(Node):
     def _on_stop(self, _msg: MsgEmpty) -> None:
         self._cancel = True
 
-        # cancel external FollowJT goal if active
         gh = self._external_active_goal
         if gh is not None:
             try:
@@ -1145,7 +1165,6 @@ class MoveItPyNode(Node):
             except Exception as e:
                 self.log.warning(f"[stop] cancel_goal_async failed: {e!r}")
 
-        # keep existing semantics
         self._emit_with_segment("STOP:REQ")
 
 

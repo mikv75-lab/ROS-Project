@@ -6,8 +6,18 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import math
+import os
+import tempfile
 
 from .recipe import Draft, PoseQuat, PathSide, JTBySegment, JTSegment
+
+
+# ------------------------------------------------------------------
+# Tempfile retention:
+# Some MoveIt loaders parse lazily, so deleting temp files immediately
+# can cause "XML_ERROR_EMPTY_DOCUMENT" / "Could not open file [<?xml ...>]"
+# ------------------------------------------------------------------
+_RETAINED_MODEL_FILES: List[str] = []
 
 
 def _as_dict(x: Any, *, name: str) -> Dict[str, Any]:
@@ -39,7 +49,11 @@ def _quat_dot(a: Tuple[float, float, float, float], b: Tuple[float, float, float
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
 
 
-def _quat_slerp(qa: Tuple[float, float, float, float], qb: Tuple[float, float, float, float], t: float) -> Tuple[float, float, float, float]:
+def _quat_slerp(
+    qa: Tuple[float, float, float, float],
+    qb: Tuple[float, float, float, float],
+    t: float,
+) -> Tuple[float, float, float, float]:
     t = _clamp(float(t), 0.0, 1.0)
     qa = _quat_normalize(qa)
     qb = _quat_normalize(qb)
@@ -169,12 +183,6 @@ def _tf_to_posequat_mm(tf: Any, *, meters_to_mm: float = 1000.0) -> Optional[Pos
 
 @dataclass(frozen=True)
 class TrajFkConfig:
-    """
-    Draft-identisches Sampling (mm, NICHT time):
-
-    - step_mm: resample in TCP-space by arclength (mm)
-    - max_points: 0 = unlimited, sonst cap
-    """
     ee_link: str = "tcp"
     meters_to_mm: float = 1000.0
     step_mm: float = 1.0
@@ -182,13 +190,109 @@ class TrajFkConfig:
 
 
 class TrajFkBuilder:
-    """
-    JTBySegment -> TCP-Pfad (Draft-Schema) via FK.
+    # ============================================================
+    # XML/file-path robust loader
+    # ============================================================
 
-    Output:
-      - Draft(version=1, sides={...poses_quat...})
-      - oder als YAML dict via build_tcp_draft_yaml()
-    """
+    @staticmethod
+    def _looks_like_xml(s: str) -> bool:
+        ss = (s or "").lstrip()
+        return bool(ss) and ss[0] == "<"
+
+    @staticmethod
+    def _write_temp_file(text: str, *, suffix: str) -> str:
+        fd, path = tempfile.mkstemp(prefix="spraycoater_model_", suffix=suffix)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text or "")
+            # Make sure content is fully written to disk (helps with timing-sensitive loaders)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except Exception:
+                pass
+        # RETAIN (do not delete immediately; some loaders parse lazily)
+        _RETAINED_MODEL_FILES.append(path)
+        return path
+
+    @staticmethod
+    def build_robot_model_from_urdf_srdf(*, urdf_xml: str, srdf_xml: str) -> Any:
+        """
+        Accepts URDF/SRDF as XML strings OR as file paths.
+
+        IMPORTANT (Rolling pitfall):
+          Some MoveIt/urdfdom bindings interpret passed strings as filenames.
+          If you pass XML directly, you can get noisy logs like:
+            "Could not open file [<?xml ...]" / "XML_ERROR_EMPTY_DOCUMENT"
+
+        Strategy:
+          - If input looks like XML => write to tempfiles FIRST and only then call bindings.
+            (prevents the noisy "open file [<?xml ...]" direct-attempt spam)
+          - Else (non-XML) => treat as path/param and try directly.
+        """
+        urdf_in = str(urdf_xml or "")
+        srdf_in = str(srdf_xml or "")
+
+        if not urdf_in.strip():
+            raise ValueError("TrajFkBuilder: urdf ist leer.")
+        if not srdf_in.strip():
+            raise ValueError("TrajFkBuilder: srdf ist leer.")
+
+        def _try_build(urdf_arg: str, srdf_arg: str) -> Any:
+            last_exc: Optional[Exception] = None
+
+            try:
+                from moveit.core.robot_model import RobotModel  # type: ignore
+                return RobotModel(urdf_arg, srdf_arg)  # type: ignore[call-arg]
+            except Exception as e:
+                last_exc = e
+
+            try:
+                from moveit.core._moveit_core import RobotModel  # type: ignore
+                return RobotModel(urdf_arg, srdf_arg)  # type: ignore[call-arg]
+            except Exception as e:
+                last_exc = e
+
+            try:
+                from moveit.core.robot_model_loader import RobotModelLoader  # type: ignore
+                loader = RobotModelLoader(urdf_arg, srdf_arg)  # type: ignore[call-arg]
+                fn = getattr(loader, "get_model", None)
+                if callable(fn):
+                    return fn()
+                m = getattr(loader, "model", None)
+                if m is not None:
+                    return m
+            except Exception as e:
+                last_exc = e
+
+            if last_exc is not None:
+                raise last_exc
+            raise RuntimeError("TrajFkBuilder: robot_model build failed (no binding path).")
+
+        urdf_is_xml = TrajFkBuilder._looks_like_xml(urdf_in)
+        srdf_is_xml = TrajFkBuilder._looks_like_xml(srdf_in)
+
+        # If it looks like XML, DO NOT attempt a "direct" call first.
+        # Rolling frequently interprets strings as file paths and will spam urdfdom errors.
+        if urdf_is_xml or srdf_is_xml:
+            urdf_arg = TrajFkBuilder._write_temp_file(urdf_in, suffix=".urdf") if urdf_is_xml else urdf_in
+            srdf_arg = TrajFkBuilder._write_temp_file(srdf_in, suffix=".srdf") if srdf_is_xml else srdf_in
+            try:
+                return _try_build(urdf_arg, srdf_arg)
+            except Exception as e_file:
+                raise RuntimeError(
+                    "TrajFkBuilder: konnte robot_model nicht aus URDF/SRDF bauen (XML->Tempfile). "
+                    f"Letzter Fehler: {e_file}"
+                ) from e_file
+
+        # Non-XML inputs: treat as paths and try directly
+        try:
+            return _try_build(urdf_in, srdf_in)
+        except Exception as e_direct:
+            raise RuntimeError(f"TrajFkBuilder: robot_model build failed from paths: {e_direct}") from e_direct
+
+    # ============================================================
+    # Existing API (unverändert)
+    # ============================================================
 
     @staticmethod
     def build_tcp_draft(
@@ -253,9 +357,6 @@ class TrajFkBuilder:
         default_side: str = "top",
         drop_duplicate_boundary: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Convenience: gibt Draft als YAML-dict zurück (für Persistenz/Qt payload).
-        """
         d = TrajFkBuilder.build_tcp_draft(
             traj,
             robot_model=robot_model,
@@ -266,19 +367,13 @@ class TrajFkBuilder:
         )
         return TrajFkBuilder._draft_to_yaml_dict(d)
 
-    # ------------------------------------------------------------
-    # Internal
-    # ------------------------------------------------------------
-
     @staticmethod
     def _draft_to_yaml_dict(d: Draft) -> Dict[str, Any]:
-        # bevorzugt: echtes API, falls vorhanden
         for fn_name in ("to_yaml_dict", "to_dict", "as_dict"):
             fn = getattr(d, fn_name, None)
             if callable(fn):
                 out = fn()
                 return out if isinstance(out, dict) else {}
-        # fallback: best-effort
         sides_out: Dict[str, Any] = {}
         try:
             for side, side_obj in (getattr(d, "sides", {}) or {}).items():

@@ -7,6 +7,8 @@ from typing import Optional, Any, Dict, List, Tuple, Iterable
 
 from PyQt6 import QtCore
 
+from model.recipe.recipe_run_result import RunResult  # NEW: seeded RunResult comes from ProcessThread
+
 from .base_statemachine import (
     BaseProcessStatemachine,
     STATE_MOVE_PREDISPENSE,
@@ -23,15 +25,17 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
     Validate run: streams recipe points as consecutive MoveIt pose commands.
 
     IMPORTANT:
-      - Trajectory capture is handled by BaseProcessStatemachine on each "EXECUTED:OK" via:
-          _snapshot_step_for_segment() -> uses ros.moveit_planned_trajectory/moveit_executed_trajectory
-        Therefore we do NOT need to wire plannedTrajectoryChanged/executedTrajectoryChanged here.
-
+      - Trajectory capture is handled by BaseProcessStatemachine on each "EXECUTED:OK".
       - Base notifyFinished emits STRICT RunResult payload (NOT traj-only):
           {
             "planned_run":  {"traj": <JTBySegment v1 yaml dict>, "tcp": <Draft v1 yaml dict or {}>},
             "executed_run": {"traj": <JTBySegment v1 yaml dict>, "tcp": <Draft v1 yaml dict or {}>},
-            "fk_meta": {...}
+            "fk_meta": {...},
+            "eval": {...},
+            "valid": bool,
+            "invalid_reason": str,
+            "urdf_xml": str,
+            "srdf_xml": str,
           }
 
         For Validate, "tcp" is intentionally left {} here; it is computed later
@@ -48,12 +52,20 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         *,
         recipe: Any,
         ros: Any,
+        run_result: RunResult,  # NEW
         parent: Optional[QtCore.QObject] = None,
         max_retries: int = 2,
         skip_home: bool = False,
         side: str = "top",
     ) -> None:
-        super().__init__(recipe=recipe, ros=ros, parent=parent, max_retries=max_retries, skip_home=skip_home)
+        super().__init__(
+            recipe=recipe,
+            ros=ros,
+            run_result=run_result,  # NEW
+            parent=parent,
+            max_retries=max_retries,
+            skip_home=skip_home,
+        )
 
         self._side = str(side or "top")
 
@@ -261,7 +273,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
     # ------------------------------------------------------------------
 
     def _ros_move_pose_mm(self, x: float, y: float, z: float) -> None:
-        from geometry_msgs.msg import PoseStamped
+        from geometry_msgs.msg import PoseStamped  # type: ignore
 
         try:
             # optional: speed signal (if supported by MoveItPyBridge)
@@ -308,7 +320,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
           - list/tuple of rows (already list)
           - any iterable of rows
 
-        Expects rows shaped like [x,y,z] in mm (as produced by Recipe.draft_poses_quat()).
+        Expects rows shaped like [x,y,z] in mm.
         """
         out: List[Tuple[float, float, float]] = []
         try:
@@ -324,9 +336,9 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             try:
                 rows = pts.tolist()  # numpy-like
             except Exception:
-                rows = pts  # fallback
+                rows = pts
         else:
-            rows = pts  # already list-like
+            rows = pts
 
         try:
             for row in rows:

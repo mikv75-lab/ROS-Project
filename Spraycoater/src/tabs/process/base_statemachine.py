@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from PyQt6 import QtCore
 from PyQt6.QtStateMachine import QStateMachine, QState, QFinalState
 
-from model.recipe.recipe_run_result import RunResult  # <-- adjust if needed
+from model.recipe.recipe_run_result import RunResult
 
 _LOG = logging.getLogger("tabs.process.base_statemachine")
 
@@ -48,7 +48,12 @@ class BaseProcessStatemachine(QtCore.QObject):
           {
             "planned_run":  {"traj": <JTBySegment yaml dict>, "tcp": <Draft yaml dict or {}>},
             "executed_run": {"traj": <JTBySegment yaml dict>, "tcp": <Draft yaml dict or {}>},
-            "fk_meta": {...}
+            "fk_meta": {...},
+            "eval": {...},
+            "valid": true/false,
+            "invalid_reason": "...",
+            "urdf_xml": "<robot ...>" or "",
+            "srdf_xml": "<robot ...>" or "",
           }
 
     WICHTIGER FIX (2026-01):
@@ -58,6 +63,10 @@ class BaseProcessStatemachine(QtCore.QObject):
           moveitpy.signals.plannedTrajectoryChanged
           moveitpy.signals.executedTrajectoryChanged
         und nutzen diese Caches bei EXECUTED:OK.
+
+    NEW (2026-01):
+      - Die StateMachine bekommt ein vorinitialisiertes RunResult vom ProcessThread (inkl. URDF/SRDF),
+        und befüllt dieses Objekt deterministisch. Kein RunResult() mehr in _on_finished().
     """
 
     ROLE = "process"
@@ -76,14 +85,19 @@ class BaseProcessStatemachine(QtCore.QObject):
         *,
         recipe: Any,
         ros: Any,
+        run_result: RunResult,
         parent: Optional[QtCore.QObject] = None,
         max_retries: int = 2,
         skip_home: bool = False,
     ) -> None:
         super().__init__(parent)
 
+        if not isinstance(run_result, RunResult):
+            raise TypeError("BaseProcessStatemachine: run_result muss RunResult sein.")
+
         self._recipe = recipe
         self._ros = ros
+        self._rr: RunResult = run_result
         self._role = str(getattr(self, "ROLE", "process") or "process")
 
         self._max_retries = int(max_retries)
@@ -109,7 +123,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._moveitpy = getattr(self._ros, "moveitpy", None)
         self._moveitpy_signals = getattr(self._moveitpy, "signals", None)
 
-        # --- NEW: cached last trajectories (best-effort) ---
+        # --- cached last trajectories (best-effort) ---
         self._last_planned_any: Any = None
         self._last_executed_any: Any = None
         self._traj_sig_connected: bool = False
@@ -346,7 +360,7 @@ class BaseProcessStatemachine(QtCore.QObject):
                 self._on_segment_ok(self._current_state)
                 QtCore.QTimer.singleShot(0, self._sig_done.emit)
 
-    # ---------------- Trajectory cache signals (NEW) ----------------
+    # ---------------- Trajectory cache signals ----------------
 
     def _connect_traj_cache_signals(self) -> None:
         sig = self._moveitpy_signals
@@ -689,11 +703,11 @@ class BaseProcessStatemachine(QtCore.QObject):
             self._cleanup()
             return
 
-        rr = RunResult()
-        rr.set_planned(traj=planned)     # tcp keys exist already (empty dict)
-        rr.set_executed(traj=executed)  # tcp keys exist already (empty dict)
+        # IMPORTANT: use injected RunResult (seeded by ProcessThread)
+        self._rr.set_planned(traj=planned)      # tcp keys exist already (empty dict)
+        self._rr.set_executed(traj=executed)    # tcp keys exist already (empty dict)
 
-        self.notifyFinished.emit(rr.to_process_payload())
+        self.notifyFinished.emit(self._rr.to_process_payload())
         self._cleanup()
 
     def _on_error(self) -> None:

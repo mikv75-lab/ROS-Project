@@ -1,5 +1,8 @@
 version: 1
 
+# ============================================================
+# Application paths (offline & runtime)
+# ============================================================
 paths:
   recipe_dir: "data/recipes"
   log_dir: "data/logs"
@@ -9,23 +12,50 @@ paths:
   planner_catalog_file: "resource/config/planner_catalog.yaml"
   recipe_catalog_file: "resource/config/recipe_catalog.yaml"
 
+
+# ============================================================
+# Robot description (FK / Editor)
+# NOTE (Option A):
+#   - SSoT for robot selection is ros.robot_type (see below).
+#   - No separate robot.type field here to avoid drift.
+# ============================================================
+robot:
+  description:
+    # --- Geometry / Kinematics (offline + online identical) ---
+    urdf:
+      package: "omron_viper_description"
+      xacro: "urdf/omron_viper.urdf.xacro"
+      args:
+        # Must match ros.robot_type (SSoT)
+        robot_type: "omron_viper_s650"
+
+    # --- Semantic groups, EE links, chains ---
+    srdf:
+      package: "omron_moveit_config"
+      file: "config/omron_viper_s650.srdf"
+
+
+# ============================================================
+# ROS / MoveIt integration
+# ============================================================
 ros:
   launch_ros: true
 
-  # ✅ NICHT package:// für bringup (für ros2 launch braucht man pkg + file)
+  # SSoT for robot type (required by loader)
+  robot_type: "omron_viper_s650"
+
+  # Bringup (ros2 launch)
   bringup_package: "spraycoater_bringup"
   bringup_file: "bringup.launch.py"
 
-  # Namespace, den deine ROS-Bridges intern verwenden (shadow/live fügen ihrerseits ggf. Prefix hinzu)
+  # Namespace used by all bridges
   namespace: "spraycoater"
 
   use_sim_time: false
-  robot_type: "omron_viper_s650"
 
-  # Mounts gehören zu den ROS-Configs (package:// ist ok)
-  substrate_mounts_file: "package://spraycoater_bringup/config/substrate_mounts.yaml"
-  substrate_mounts_dir: "package://spraycoater_bringup/resource/substrate_mounts"
-
+  # ----------------------------------------------------------
+  # Config files (package:// is correct here)
+  # ----------------------------------------------------------
   configs:
     topics_file: "package://spraycoater_bringup/config/topics.yaml"
     qos_file: "package://spraycoater_bringup/config/qos.yaml"
@@ -36,20 +66,38 @@ ros:
     poses_file: "package://spraycoater_bringup/config/poses.yaml"
     tools_file: "package://spraycoater_bringup/config/tools.yaml"
 
+  # ----------------------------------------------------------
+  # Substrate / mounts
+  # ----------------------------------------------------------
+  substrate_mounts_file: "package://spraycoater_bringup/config/substrate_mounts.yaml"
+  substrate_mounts_dir: "package://spraycoater_bringup/resource/substrate_mounts"
+
+  # ----------------------------------------------------------
+  # Shadow / Live modes
+  # ----------------------------------------------------------
   shadow:
     enabled: true
 
   live:
     enabled: false
-    mode: "omron"   # ✅ wird nur geprüft, wenn enabled=true
+    mode: "omron"
     omron:
-      omron: { ip: "192.168.0.10", port: 5000 }
-      emulator: { ip: "127.0.0.1", port: 5001 }
+      omron:
+        ip: "192.168.0.10"
+        port: 5000
+      emulator:
+        ip: "127.0.0.1"
+        port: 5001
 
+
+# ============================================================
+# PLC
+# ============================================================
 plc:
   sim: true
   mode: "ads"
   spec_file: "resource/config/plc.yaml"
+
   ads:
     ams_net_id: "..."
     ip: "..."

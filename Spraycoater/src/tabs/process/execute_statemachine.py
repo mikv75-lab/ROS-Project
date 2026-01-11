@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import copy
-from typing import Any, Optional, Dict, List, Tuple
+from typing import Any, Optional, Dict, Tuple
 
 from PyQt6 import QtCore
 
@@ -44,8 +44,9 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             - execute via ros.moveit_execute_trajectory(..., segment=SEG)
         - executed truth is captured by BaseProcessStatemachine (MoveItPy executed callbacks)
 
-    NOTE (API-Compat):
-      - 'skip_home' accepted and forwarded to Base.
+    NOTE:
+      - RunResult is injected by ProcessThread (seeded with URDF/SRDF etc.).
+        Execute will fill planned/executed trajectories into that same object.
     """
 
     ROLE = "execute"
@@ -56,6 +57,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         recipe: Any,
         ros: Any,
         plc: PlcClientBase,
+        run_result: RunResult,
         parent: Optional[QtCore.QObject] = None,
         max_retries: int = 2,
         skip_home: bool = False,
@@ -64,6 +66,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         super().__init__(
             recipe=recipe,
             ros=ros,
+            run_result=run_result,
             parent=parent,
             max_retries=max_retries,
             skip_home=bool(skip_home),
@@ -174,8 +177,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
                         f"segment {seg_name!r}: point[{i}] positions length "
                         f"{0 if not isinstance(pos, list) else len(pos)} != {len(jn)}"
                     )
-                # float-castable
-                _ = [float(x) for x in pos]
+                _ = [float(x) for x in pos]  # float-castable
 
                 tfs = p.get("time_from_start", None)
                 if not (isinstance(tfs, (list, tuple)) and len(tfs) >= 2):
@@ -291,9 +293,9 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             self._cleanup()
             return
 
-        rr = RunResult()
-        rr.set_planned(traj=planned)
-        rr.set_executed(traj=executed)
+        # IMPORTANT: use injected RunResult (seeded by ProcessThread)
+        self._rr.set_planned(traj=planned)
+        self._rr.set_executed(traj=executed)
 
-        self.notifyFinished.emit(rr.to_process_payload())
+        self.notifyFinished.emit(self._rr.to_process_payload())
         self._cleanup()

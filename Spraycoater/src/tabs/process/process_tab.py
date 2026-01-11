@@ -28,11 +28,8 @@ from visualization_msgs.msg import MarkerArray
 from plc.plc_client import PlcClientBase
 from ros.bridge.ros_bridge import RosBridge
 
-from model.recipe.recipe import Recipe, Draft, JTBySegment
+from model.recipe.recipe import Recipe, Draft
 from model.recipe.recipe_markers import build_marker_array_from_recipe
-
-from model.recipe.traj_fk_builder import TrajFkBuilder, TrajFkConfig
-from model.recipe.recipe_eval import RecipeEvaluator
 
 # STRICT result schema (single source of truth)
 from model.recipe.recipe_run_result import RunResult
@@ -59,21 +56,23 @@ class ProcessTab(QWidget):
     """
     ProcessTab (strict, no fallbacks, single result schema)
 
-    STRICT CONTRACT (aligned to app/model/recipe/recipe_run_result.py RunResult.to_process_payload):
+    STRICT CONTRACT (aligned to RunResult.to_process_payload):
 
       result_obj = {
+        "robot_description": {"urdf_xml": "...", "srdf_xml": "..."},
         "planned_run":  {"traj": <JTBySegment YAML v1 dict>, "tcp": <Draft YAML dict oder {}>},
         "executed_run": {"traj": <JTBySegment YAML v1 dict>, "tcp": <Draft YAML dict oder {}>},
         "fk_meta": {...},
         "eval": {...},
         "valid": true/false,
-        "invalid_reason": "..."
+        "invalid_reason": "...",
       }
 
-    Persistence:
-      - planned_traj.yaml and executed_traj.yaml are written as JTBySegment YAML v1
-        with optional top-level key 'eval' (dict)
-      - Save happens only if result_obj["valid"] is True.
+    IMPORTANT UPDATE (2026-01):
+      - URDF/SRDF kommen deterministisch aus ctx.robot_description (Startup).
+      - Diese werden beim Start in ProcessThread injiziert.
+      - Statemachine erhält beim Start ein vorinitialisiertes RunResult (mit URDF/SRDF etc.).
+      - Postprocess (FK/TCP/Eval) läuft nur, wenn urdf_xml+srdf_xml vorhanden sind.
     """
 
     _SEG_ORDER = (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME)
@@ -215,7 +214,7 @@ class ProcessTab(QWidget):
         vpl = QVBoxLayout(grp_pl)
         self.txtPlannedEval = QTextEdit(grp_pl)
         self.txtPlannedEval.setReadOnly(True)
-        self.txtPlannedEval.setPlaceholderText("Loaded from planned_traj.yaml: eval")
+        self.txtPlannedEval.setPlaceholderText("Loaded from planned_traj.yaml: runresult")
         vpl.addWidget(self.txtPlannedEval, 1)
         self.lblPlannedSummary = QLabel("planned: –", grp_pl)
         vpl.addWidget(self.lblPlannedSummary)
@@ -225,7 +224,7 @@ class ProcessTab(QWidget):
         vex = QVBoxLayout(grp_ex)
         self.txtExecutedEval = QTextEdit(grp_ex)
         self.txtExecutedEval.setReadOnly(True)
-        self.txtExecutedEval.setPlaceholderText("Loaded from executed_traj.yaml: eval")
+        self.txtExecutedEval.setPlaceholderText("Loaded from executed_traj.yaml: runresult")
         vex.addWidget(self.txtExecutedEval, 1)
         self.lblExecutedSummary = QLabel("executed: –", grp_ex)
         vex.addWidget(self.lblExecutedSummary)
@@ -283,6 +282,25 @@ class ProcessTab(QWidget):
         except Exception:
             pass
         return False
+
+    # ---------------------------------------------------------------------
+    # URDF/SRDF from ctx (deterministic)
+    # ---------------------------------------------------------------------
+
+    def _ctx_robot_xml(self) -> Tuple[str, str]:
+        """
+        Deterministic URDF/SRDF: comes from ctx.robot_description (startup loader).
+        Returns ("","") if missing.
+        """
+        try:
+            rd = getattr(self.ctx, "robot_description", None)
+            if rd is None:
+                return "", ""
+            urdf = str(getattr(rd, "urdf_xml", "") or "")
+            srdf = str(getattr(rd, "srdf_xml", "") or "")
+            return urdf, srdf
+        except Exception:
+            return "", ""
 
     # ---------------------------------------------------------------------
     # SprayPathBox compat helpers (traj vs planned) - UI only
@@ -347,338 +365,6 @@ class ProcessTab(QWidget):
         keys = [str(k) for k in keys if isinstance(k, str) and str(k).strip()]
         keys.sort()
         return keys
-
-    # ------------------------------------------------------------
-    # Result extraction (STRICT: RunResult.to_process_payload schema)
-    # ------------------------------------------------------------
-
-    @staticmethod
-    def _is_jtbysegment_yaml_v1(d: Any) -> bool:
-        if not isinstance(d, dict):
-            return False
-        try:
-            ver = int(d.get("version", 0))
-        except Exception:
-            return False
-        if ver != 1:
-            return False
-        segs = d.get("segments", None)
-        return isinstance(segs, dict) and bool(segs)
-
-    def _extract_from_result_strict(
-        self, result_obj: object
-    ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], bool, str]:
-        """
-        Returns:
-          planned_traj_yaml, executed_traj_yaml, eval_dict, valid, invalid_reason
-        """
-        if not isinstance(result_obj, dict):
-            raise ValueError("RunResult muss dict sein (strict).")
-
-        planned_run = result_obj.get("planned_run")
-        executed_run = result_obj.get("executed_run")
-        if not isinstance(planned_run, dict) or not isinstance(executed_run, dict):
-            raise ValueError("planned_run/executed_run fehlen oder sind ungültig (strict).")
-
-        planned_traj = planned_run.get("traj", None)
-        executed_traj = executed_run.get("traj", None)
-        if not self._is_jtbysegment_yaml_v1(planned_traj):
-            raise ValueError("planned_run['traj'] fehlt/ungültig (JTBySegment v1 strict).")
-        if not self._is_jtbysegment_yaml_v1(executed_traj):
-            raise ValueError("executed_run['traj'] fehlt/ungültig (JTBySegment v1 strict).")
-
-        eval_dict = result_obj.get("eval", {})
-        if not isinstance(eval_dict, dict):
-            raise ValueError("eval ist kein dict (strict).")
-
-        valid = result_obj.get("valid", False)
-        if not isinstance(valid, bool):
-            raise ValueError("valid ist kein bool (strict).")
-
-        invalid_reason = result_obj.get("invalid_reason", "")
-        if not isinstance(invalid_reason, str):
-            raise ValueError("invalid_reason ist kein str (strict).")
-
-        return dict(planned_traj), dict(executed_traj), dict(eval_dict), bool(valid), str(invalid_reason or "")
-
-    # ------------------------------------------------------------
-    # FK (JTBySegment -> Draft TCP) - best effort
-    # ------------------------------------------------------------
-
-    def _get_robot_model_best_effort(self) -> Any:
-        ros = self.ros
-        candidates = [
-            ("moveitpy", "robot_model"),
-            ("moveitpy", "_robot_model"),
-            ("moveit_py", "robot_model"),
-            ("moveit_py", "_robot_model"),
-        ]
-        for a, b in candidates:
-            try:
-                obj = getattr(ros, a, None)
-                if obj is None:
-                    continue
-                rm = getattr(obj, b, None)
-                if rm is not None:
-                    return rm
-            except Exception:
-                continue
-
-        for attr in ("robot_model", "_robot_model"):
-            try:
-                rm = getattr(ros, attr, None)
-                if rm is not None:
-                    return rm
-            except Exception:
-                pass
-        return None
-
-    def _fk_tcp_best_effort(self, *, traj: JTBySegment, recipe: Recipe) -> Optional[Draft]:
-        robot_model = self._get_robot_model_best_effort()
-        if robot_model is None:
-            return None
-
-        ee_link = "tcp"
-        step_mm = 1.0
-        max_points = 0
-        try:
-            params = getattr(recipe, "parameters", {}) or {}
-            ee_link = str(params.get("fk_ee_link", ee_link) or ee_link)
-            step_mm = float(params.get("fk_step_mm", step_mm))
-            max_points = int(params.get("fk_max_points", max_points))
-        except Exception:
-            pass
-
-        cfg = TrajFkConfig(ee_link=ee_link, step_mm=step_mm, max_points=max_points)
-        try:
-            return TrajFkBuilder.build_tcp_draft(traj, robot_model=robot_model, cfg=cfg, default_side="top")
-        except Exception as e:
-            self._append_log(f"W FK skipped: {e}")
-            return None
-
-    # ------------------------------------------------------------
-    # Evaluation (planned vs executed) + helpers
-    # ------------------------------------------------------------
-
-    @staticmethod
-    def _jt_point_time_to_duration_dict(t: Any) -> Dict[str, int]:
-        """Convert (sec,nsec) tuple/list/dict -> builtin_interfaces/Duration-like dict."""
-        if isinstance(t, dict):
-            try:
-                return {"sec": int(t.get("sec", 0)), "nanosec": int(t.get("nanosec", 0))}
-            except Exception:
-                return {"sec": 0, "nanosec": 0}
-        if isinstance(t, (list, tuple)) and len(t) >= 2:
-            try:
-                return {"sec": int(t[0]), "nanosec": int(t[1])}
-            except Exception:
-                return {"sec": 0, "nanosec": 0}
-        return {"sec": 0, "nanosec": 0}
-
-    def _jt_segment_to_jointtraj_dict(self, seg: Any) -> Optional[Dict[str, Any]]:
-        """Create STRICT JointTrajectory dict for RecipeEvaluator from a JTSegment."""
-        if seg is None:
-            return None
-        joint_names = getattr(seg, "joint_names", None)
-        points = getattr(seg, "points", None)
-        if not isinstance(joint_names, (list, tuple)) or not isinstance(points, (list, tuple)):
-            return None
-        if not joint_names or not points:
-            return None
-
-        out_pts: List[Dict[str, Any]] = []
-        for p in points:
-            try:
-                pos = list(getattr(p, "positions", []) or [])
-                if not isinstance(pos, list) or not pos:
-                    continue
-                tfs = self._jt_point_time_to_duration_dict(getattr(p, "time_from_start", None))
-                out_pts.append({"positions": [float(x) for x in pos], "time_from_start": tfs})
-            except Exception:
-                continue
-
-        if not out_pts:
-            return None
-        return {"joint_names": [str(x) for x in joint_names], "points": out_pts}
-
-    def _jtbysegment_to_jointtraj_dict(
-        self, traj: JTBySegment, *, segment_order: Optional[Tuple[str, ...]] = None
-    ) -> Optional[Dict[str, Any]]:
-        """Concatenate segments into one STRICT JointTrajectory dict."""
-        if traj is None or not getattr(traj, "segments", None):
-            return None
-
-        segs = traj.segments or {}
-        order: List[str] = []
-        if segment_order:
-            order.extend([s for s in segment_order if s in segs])
-            for s in segs.keys():
-                if s not in order:
-                    order.append(s)
-        else:
-            order = list(segs.keys())
-
-        joint_names: Optional[List[str]] = None
-        pts_all: List[Dict[str, Any]] = []
-
-        # simple monotonic offset
-        off_sec = 0
-        off_nsec = 0
-
-        def _add_time(a_sec: int, a_nsec: int, b_sec: int, b_nsec: int) -> Tuple[int, int]:
-            n = int(a_nsec) + int(b_nsec)
-            s = int(a_sec) + int(b_sec) + (n // 1_000_000_000)
-            n = n % 1_000_000_000
-            return s, n
-
-        def _max_time(pts: List[Dict[str, Any]]) -> Tuple[int, int]:
-            ms, mn = 0, 0
-            for p in pts:
-                t = p.get("time_from_start") or {}
-                try:
-                    s = int(t.get("sec", 0))
-                    n = int(t.get("nanosec", 0))
-                except Exception:
-                    continue
-                if (s > ms) or (s == ms and n > mn):
-                    ms, mn = s, n
-            return ms, mn
-
-        for sid in order:
-            seg = segs.get(sid)
-            seg_dict = self._jt_segment_to_jointtraj_dict(seg)
-            if seg_dict is None:
-                continue
-
-            jn = list(seg_dict.get("joint_names") or [])
-            if joint_names is None:
-                joint_names = jn
-            elif joint_names != jn:
-                # mismatch -> cannot concatenate safely
-                return None
-
-            pts = list(seg_dict.get("points") or [])
-            if not pts:
-                continue
-
-            # apply offset to ensure monotonic time_from_start
-            pts_off: List[Dict[str, Any]] = []
-            for p in pts:
-                t = p.get("time_from_start") or {}
-                try:
-                    s0 = int(t.get("sec", 0))
-                    n0 = int(t.get("nanosec", 0))
-                except Exception:
-                    s0, n0 = 0, 0
-                s1, n1 = _add_time(off_sec, off_nsec, s0, n0)
-                pp = dict(p)
-                pp["time_from_start"] = {"sec": int(s1), "nanosec": int(n1)}
-                pts_off.append(pp)
-
-            pts_all.extend(pts_off)
-
-            ms, mn = _max_time(pts)
-            off_sec, off_nsec = _add_time(off_sec, off_nsec, ms, mn)
-
-        if not joint_names or not pts_all:
-            return None
-        return {"joint_names": joint_names, "points": pts_all}
-
-    def _evaluate_finished_run(
-        self,
-        *,
-        planned_jt: JTBySegment,
-        executed_jt: JTBySegment,
-        planned_tcp: Optional[Draft],
-        executed_tcp: Optional[Draft],
-        recipe: Optional[Recipe],
-    ) -> Dict[str, Any]:
-        """
-        Evaluate planned vs executed at Process finished.
-
-        Output schema (used by _set_eval_views + persistence):
-          {
-            "domain": "joint",
-            "threshold": <min_score>,
-            "valid": <bool>,
-            "total": {"score":..., "metrics":..., "details":...},
-            "by_segment": {SEG: {"score":..., "metrics":..., "details":...}, ...},
-            "tcp_total": {...}  # optional, mm-domain
-          }
-        """
-        min_score = 90.0
-        side = "top"
-        try:
-            if recipe is not None:
-                params = getattr(recipe, "parameters", {}) or {}
-                min_score = float(params.get("eval_min_score", min_score))
-                side = str(params.get("eval_side", side) or side)
-        except Exception:
-            pass
-
-        ev = RecipeEvaluator()
-
-        # ---- joint eval: planned (ref) vs executed (test) ----
-        by_segment: Dict[str, Any] = {}
-        for sid in self._SEG_ORDER:
-            try:
-                ref_seg = planned_jt.segments.get(sid)
-                test_seg = executed_jt.segments.get(sid)
-                ref_dict = self._jt_segment_to_jointtraj_dict(ref_seg)
-                test_dict = self._jt_segment_to_jointtraj_dict(test_seg)
-                if ref_dict is None or test_dict is None:
-                    continue
-                r = ev.evaluate_joint_trajectory_dict(ref_joint=ref_dict, test_joint=test_dict, label=f"joint/{sid}")
-                by_segment[sid] = r.to_dict()
-            except Exception as e:
-                self._append_log(f"W eval segment {sid} skipped: {e}")
-
-        ref_total = self._jtbysegment_to_jointtraj_dict(planned_jt, segment_order=self._SEG_ORDER)
-        test_total = self._jtbysegment_to_jointtraj_dict(executed_jt, segment_order=self._SEG_ORDER)
-        total_res = ev.evaluate_joint_trajectory_dict(
-            ref_joint=ref_total, test_joint=test_total, label="joint/total"
-        ).to_dict()
-
-        valid_eval = RecipeEvaluator.is_valid_score(total_res.get("score", 0.0), min_score=min_score)
-
-        out: Dict[str, Any] = {
-            "domain": "joint",
-            "threshold": float(min_score),
-            "valid": bool(valid_eval),
-            "total": total_res,
-            "by_segment": by_segment,
-        }
-
-        # ---- optional TCP eval (if FK succeeded) ----
-        try:
-            if planned_tcp is not None and executed_tcp is not None:
-                # Draft.to_yaml_dict() uses mm coordinates; RecipeEvaluator expects traj-dict with poses_quat,
-                # so we map Draft -> traj-dict minimal (sides/<side>/poses_quat with x,y,z fields).
-                def _draft_to_traj_dict(d: Draft) -> Dict[str, Any]:
-                    dd = d.to_yaml_dict() if hasattr(d, "to_yaml_dict") else {}
-                    sides = (dd or {}).get("sides") or {}
-                    if not isinstance(sides, dict):
-                        return {}
-                    side_obj = sides.get(side) or {}
-                    if not isinstance(side_obj, dict):
-                        # fall back: first side
-                        for _k, _v in sides.items():
-                            if isinstance(_v, dict):
-                                side_obj = _v
-                                break
-                    poses = side_obj.get("poses_quat") or []
-                    if not isinstance(poses, list):
-                        poses = []
-                    return {"sides": {side: {"poses_quat": poses}}}
-
-                ref_traj = _draft_to_traj_dict(planned_tcp)
-                test_traj = _draft_to_traj_dict(executed_tcp)
-                tcp_res = ev.evaluate_traj_dict_mm(ref_traj=ref_traj, test_traj=test_traj, side=side, label="tcp/total")
-                out["tcp_total"] = tcp_res.to_dict()
-        except Exception as e:
-            self._append_log(f"W tcp eval skipped: {e}")
-
-        return out
 
     # ---------------- Spray toggles (cache only; publish is done by SprayPathBox) ----------------
 
@@ -768,50 +454,41 @@ class ProcessTab(QWidget):
             return
         self.infoBox.set_values(getattr(self._recipe, "info", {}) or {})
 
-    # ---------------- Eval UI ----------------
+    # ---------------- Eval UI (compact) ----------------
 
     def _clear_eval_views(self) -> None:
-        self.txtPlannedEval.setPlainText(self._yaml_dump({}))
-        self.txtExecutedEval.setPlainText(self._yaml_dump({}))
+        self.txtPlannedEval.setPlainText("–")
+        self.txtExecutedEval.setPlainText("–")
         self.lblPlannedSummary.setText("planned: –")
         self.lblExecutedSummary.setText("executed: –")
 
-    def _set_eval_views(
-        self,
-        *,
-        eval_dict: Optional[Dict[str, Any]] = None,
-        planned_eval: Optional[Dict[str, Any]] = None,
-        executed_eval: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        if isinstance(eval_dict, dict):
-            pl = eval_dict
-            ex = eval_dict
-        else:
-            pl = planned_eval if isinstance(planned_eval, dict) else {}
-            ex = executed_eval if isinstance(executed_eval, dict) else {}
+    def _set_eval_from_runresult(self, rr: RunResult) -> None:
+        """
+        Display compact stats (no YAML wall).
+        """
+        txt = rr.format_eval_text(include_tcp=True)
+        summ = rr.eval_summary_line()
+        self.txtPlannedEval.setPlainText(txt)
+        self.txtExecutedEval.setPlainText(txt)
+        self.lblPlannedSummary.setText("planned: " + (summ or "–"))
+        self.lblExecutedSummary.setText("executed: " + (summ or "–"))
 
-        self.txtPlannedEval.setPlainText(self._yaml_dump(pl))
-        self.txtExecutedEval.setPlainText(self._yaml_dump(ex))
+    def _set_eval_missing_fk(self) -> None:
+        msg = (
+            "Kein URDF/SRDF verfügbar.\n"
+            "FK->TCP / Eval wurde übersprungen.\n\n"
+            "Trajectories wurden trotzdem erzeugt/persistiert (falls Speichern erlaubt)."
+        )
+        self.txtPlannedEval.setPlainText(msg)
+        self.txtExecutedEval.setPlainText(msg)
+        self.lblPlannedSummary.setText("planned: – (no TCP)")
+        self.lblExecutedSummary.setText("executed: – (no TCP)")
 
-        def _summary(ev: Dict[str, Any]) -> str:
-            if not isinstance(ev, dict) or not ev:
-                return "–"
-            if isinstance(ev.get("total"), dict):
-                score = ev["total"].get("score")
-                thr = ev.get("threshold")
-                valid = ev.get("valid")
-                return f"score={score} | thr={thr} | valid={valid}"
-            if isinstance(ev.get("result"), dict):
-                score = ev["result"].get("score")
-                ms = ev.get("min_score")
-                dom = ev.get("domain")
-                return f"domain={dom} | score={score} | min_score={ms}"
-            return "–"
-
-        self.lblPlannedSummary.setText("planned: " + _summary(pl))
-        self.lblExecutedSummary.setText("executed: " + _summary(ex))
-
-    def _load_eval_from_bundle(self) -> None:
+    def _load_runresult_from_bundle(self) -> None:
+        """
+        Load persisted run result from planned/executed traj yaml (+ optional tcp yaml),
+        reconstruct a FULL RunResult, and display it.
+        """
         self._clear_eval_views()
         if not self._recipe_key:
             return
@@ -820,16 +497,33 @@ class ProcessTab(QWidget):
             p = self.repo.bundle.paths(self._recipe_key)
             planned_path = str(getattr(p, "planned_traj_yaml", ""))
             executed_path = str(getattr(p, "executed_traj_yaml", ""))
+            planned_tcp_path = str(getattr(p, "planned_tcp_yaml", ""))
+            executed_tcp_path = str(getattr(p, "executed_tcp_yaml", ""))
         except Exception:
             return
 
         planned_doc = self._yaml_load_file(planned_path)
         executed_doc = self._yaml_load_file(executed_path)
+        planned_tcp_doc = self._yaml_load_file(planned_tcp_path) if planned_tcp_path else {}
+        executed_tcp_doc = self._yaml_load_file(executed_tcp_path) if executed_tcp_path else {}
 
-        pl_eval = planned_doc.get("eval") if isinstance(planned_doc, dict) else None
-        ex_eval = executed_doc.get("eval") if isinstance(executed_doc, dict) else None
-        ev = pl_eval if isinstance(pl_eval, dict) else (ex_eval if isinstance(ex_eval, dict) else {})
-        self._set_eval_views(eval_dict=ev)
+        if not isinstance(planned_doc, dict) or not isinstance(executed_doc, dict):
+            return
+        if not planned_doc or not executed_doc:
+            return
+
+        try:
+            rr = RunResult.from_persist_docs(
+                planned_traj_doc=planned_doc,
+                executed_traj_doc=executed_doc,
+                planned_tcp_doc=planned_tcp_doc if isinstance(planned_tcp_doc, dict) else {},
+                executed_tcp_doc=executed_tcp_doc if isinstance(executed_tcp_doc, dict) else {},
+            )
+        except Exception:
+            ev = planned_doc.get("eval") if isinstance(planned_doc.get("eval"), dict) else {}
+            rr = RunResult(eval=ev, valid=True, invalid_reason="")
+
+        self._set_eval_from_runresult(rr)
 
     # ---------------- Public API ----------------
 
@@ -859,7 +553,7 @@ class ProcessTab(QWidget):
             self._clear_layers()
             return
 
-        self._load_eval_from_bundle()
+        self._load_runresult_from_bundle()
 
     # ---------------- Load ----------------
 
@@ -976,7 +670,7 @@ class ProcessTab(QWidget):
                 QMessageBox.warning(self, "Process", "Robot nicht initialisiert. Bitte zuerst Init.")
                 return
 
-        # FIX: Execute allowed in PLC sim mode even if plc is None
+        # Execute allowed in PLC sim mode even if plc is None
         if mode == ProcessThread.MODE_EXECUTE and not self._plc_execute_available():
             QMessageBox.warning(
                 self,
@@ -992,8 +686,7 @@ class ProcessTab(QWidget):
             QMessageBox.critical(self, "Process", f"Rezept laden fehlgeschlagen: {e}")
             return
 
-        # IMPORTANT for Execute baseline:
-        # ExecuteSM (new) uses recipe.planned_traj as baseline planned_run.
+        # Execute baseline requirement (planned_traj)
         if mode == ProcessThread.MODE_EXECUTE:
             if getattr(recipe_run, "planned_traj", None) is None:
                 QMessageBox.warning(
@@ -1003,6 +696,11 @@ class ProcessTab(QWidget):
                     "Bitte zuerst Validate/Optimize ausführen oder planned_traj.yaml bereitstellen.",
                 )
                 return
+
+        # deterministic URDF/SRDF injection from ctx
+        urdf_xml, srdf_xml = self._ctx_robot_xml()
+        if not urdf_xml or not srdf_xml:
+            self._append_log("W: ctx.robot_description fehlt/leer → FK/TCP/Eval wird später übersprungen.")
 
         self._process_active = True
         self._active_mode = mode
@@ -1015,8 +713,11 @@ class ProcessTab(QWidget):
         self._process_thread = ProcessThread(
             recipe=recipe_run,
             ros=self.ros,
-            plc=self.plc,   # may be None in sim mode; ExecuteSM must tolerate that
+            plc=self.plc,
             mode=mode,
+            # deterministic XML injection
+            urdf_xml=urdf_xml,
+            srdf_xml=srdf_xml,
         )
         self._process_thread.stateChanged.connect(lambda s: self._append_log(f"STATE: {s}"))
         self._process_thread.logMessage.connect(self._append_log)
@@ -1051,65 +752,63 @@ class ProcessTab(QWidget):
     def _on_process_finished_success(self, result_obj: object) -> None:
         self._append_log("=== Process finished ===")
 
-        # STRICT: RunResult.to_process_payload schema
+        # 1) decode payload -> RunResult (strict)
         try:
-            planned_yaml, executed_yaml, _incoming_eval, valid, invalid_reason = self._extract_from_result_strict(result_obj)
+            rr = RunResult.from_process_payload(result_obj)  # type: ignore[arg-type]
         except Exception as e:
             self._append_log(f"ERROR: result invalid (strict): {e}")
             self._finish_process_ui()
             return
 
-        # Parse/validate JTBySegment (strict parser)
-        try:
-            planned_jt = JTBySegment.from_yaml_dict(planned_yaml)
-        except Exception as e:
-            self._append_log(f"ERROR: planned JTBySegment build failed: {e}")
-            self._finish_process_ui()
-            return
-
-        try:
-            executed_jt = JTBySegment.from_yaml_dict(executed_yaml)
-        except Exception as e:
-            self._append_log(f"ERROR: executed JTBySegment build failed: {e}")
-            self._finish_process_ui()
-            return
-
-        # FK TCP (best-effort, used for persistence + optional TCP eval)
-        recipe_run = None
+        # 2) pick recipe (parameters for FK/Eval)
+        recipe_for_eval: Optional[Recipe] = None
         try:
             recipe_run = self.repo.load_for_process(self._recipe_key) if self._recipe_key else None
-        except Exception:
-            recipe_run = None
-
-        recipe_for_eval = (
-            recipe_run
-            if isinstance(recipe_run, Recipe)
-            else (self._recipe if isinstance(self._recipe, Recipe) else None)
-        )
-
-        planned_tcp: Optional[Draft] = None
-        executed_tcp: Optional[Draft] = None
-        if recipe_for_eval is not None:
-            planned_tcp = self._fk_tcp_best_effort(traj=planned_jt, recipe=recipe_for_eval)
-            executed_tcp = self._fk_tcp_best_effort(traj=executed_jt, recipe=recipe_for_eval)
-
-        # Evaluate at process finished (planned vs executed)
-        try:
-            eval_dict = self._evaluate_finished_run(
-                planned_jt=planned_jt,
-                executed_jt=executed_jt,
-                planned_tcp=planned_tcp,
-                executed_tcp=executed_tcp,
-                recipe=recipe_for_eval,
+            recipe_for_eval = (
+                recipe_run
+                if isinstance(recipe_run, Recipe)
+                else (self._recipe if isinstance(self._recipe, Recipe) else None)
             )
-        except Exception as e:
-            eval_dict = {}
-            self._append_log(f"W eval failed: {e}")
+        except Exception:
+            recipe_for_eval = self._recipe if isinstance(self._recipe, Recipe) else None
 
-        # Show eval (freshly computed)
-        self._set_eval_views(eval_dict=eval_dict or {})
+        if recipe_for_eval is None:
+            self._append_log("ERROR: recipe_for_eval ist None (cannot postprocess).")
+            self._finish_process_ui()
+            return
 
-        # Resolve paths
+        # 3) postprocess (deterministic): URDF/SRDF must be carried in rr (seeded at thread start)
+        did_postprocess = False
+        try:
+            urdf = str(getattr(rr, "urdf_xml", "") or "")
+            srdf = str(getattr(rr, "srdf_xml", "") or "")
+        except Exception:
+            urdf, srdf = "", ""
+
+        if not urdf or not srdf:
+            self._append_log("W: Kein URDF/SRDF im RunResult → FK->TCP/Eval übersprungen.")
+            self._set_eval_missing_fk()
+        else:
+            try:
+                # IMPORTANT: correct API in RunResult is postprocess_from_urdf_srdf(...)
+                rr.postprocess_from_urdf_srdf(
+                    urdf_xml=urdf,
+                    srdf_xml=srdf,
+                    recipe=recipe_for_eval,
+                    segment_order=self._SEG_ORDER,
+                    gate_valid_on_eval=False,
+                    require_tcp=True,
+                )
+                did_postprocess = True
+            except Exception as e:
+                self._append_log(f"ERROR: postprocess failed (FK/Eval): {e}")
+                self._set_eval_missing_fk()
+
+        # 4) show eval if available
+        if did_postprocess:
+            self._set_eval_from_runresult(rr)
+
+        # 5) resolve paths
         try:
             p = self.repo.bundle.paths(self._recipe_key)
             planned_path = str(getattr(p, "planned_traj_yaml"))
@@ -1118,52 +817,40 @@ class ProcessTab(QWidget):
             executed_tcp_path = str(getattr(p, "executed_tcp_yaml", ""))
         except Exception as e:
             self._append_log(f"ERROR: bundle.paths() failed: {e}")
-            planned_path = ""
-            executed_path = ""
-            planned_tcp_path = ""
-            executed_tcp_path = ""
+            self._finish_process_ui()
+            return
 
-        # FIX (critical): Save happens only if valid == True
-        if not valid:
-            reason = invalid_reason or "invalid"
-            self._append_log(f"Save: übersprungen (RunResult invalid: {reason}).")
+        # 6) Save:
+        ok_pl = self._maybe_overwrite_prompt(title="Run speichern", filename=planned_path)
+        ok_ex = self._maybe_overwrite_prompt(title="Run speichern", filename=executed_path)
+
+        ok_tcp = True
+        if planned_tcp_path and did_postprocess:
+            ok_tcp = ok_tcp and self._maybe_overwrite_prompt(title="Run speichern", filename=planned_tcp_path)
+        if executed_tcp_path and did_postprocess:
+            ok_tcp = ok_tcp and self._maybe_overwrite_prompt(title="Run speichern", filename=executed_tcp_path)
+
+        if ok_pl and ok_ex and ok_tcp:
+            try:
+                docs = rr.build_persist_docs(embed_eval_into_traj=bool(did_postprocess))
+
+                self._yaml_write_file(planned_path, docs.get("planned_traj") or {})
+                self._yaml_write_file(executed_path, docs.get("executed_traj") or {})
+
+                if did_postprocess:
+                    if planned_tcp_path:
+                        self._yaml_write_file(planned_tcp_path, docs.get("planned_tcp") or {})
+                    if executed_tcp_path:
+                        self._yaml_write_file(executed_tcp_path, docs.get("executed_tcp") or {})
+                    self._append_log("Save: OK -> traj + tcp (+eval/fk_meta)")
+                else:
+                    self._append_log("Save: OK -> traj (ohne tcp/eval, FK fehlt)")
+            except Exception as e:
+                self._append_log(f"Save: ERROR: {e}")
         else:
-            ok_pl = self._maybe_overwrite_prompt(title="Run speichern", filename=planned_path)
-            ok_ex = self._maybe_overwrite_prompt(title="Run speichern", filename=executed_path)
+            self._append_log("Save: übersprungen (nicht überschrieben).")
 
-            ok_tcp = True
-            if planned_tcp_path:
-                ok_tcp = ok_tcp and self._maybe_overwrite_prompt(title="Run speichern", filename=planned_tcp_path)
-            if executed_tcp_path:
-                ok_tcp = ok_tcp and self._maybe_overwrite_prompt(title="Run speichern", filename=executed_tcp_path)
-
-            if ok_pl and ok_ex and ok_tcp:
-                try:
-                    planned_doc = planned_jt.to_yaml_dict()
-                    executed_doc = executed_jt.to_yaml_dict()
-
-                    # persist eval into traj yaml (optional)
-                    if isinstance(eval_dict, dict) and eval_dict:
-                        planned_doc = dict(planned_doc or {})
-                        executed_doc = dict(executed_doc or {})
-                        planned_doc["eval"] = dict(eval_dict)
-                        executed_doc["eval"] = dict(eval_dict)
-
-                    self._yaml_write_file(planned_path, planned_doc)
-                    self._yaml_write_file(executed_path, executed_doc)
-
-                    if planned_tcp_path and planned_tcp is not None:
-                        self._yaml_write_file(planned_tcp_path, planned_tcp.to_yaml_dict())
-                    if executed_tcp_path and executed_tcp is not None:
-                        self._yaml_write_file(executed_tcp_path, executed_tcp.to_yaml_dict())
-
-                    self._append_log("Save: OK -> planned/executed traj (+eval) (+tcp best-effort)")
-                except Exception as e:
-                    self._append_log(f"Save: ERROR: {e}")
-            else:
-                self._append_log("Save: übersprungen (nicht überschrieben).")
-
-        # Reload + republish
+        # 7) Reload + republish
         try:
             if self._recipe_key:
                 self._recipe = self.repo.load_for_process(self._recipe_key)
@@ -1175,7 +862,8 @@ class ProcessTab(QWidget):
 
         self._update_recipe_box()
         self._update_info_box()
-        self._load_eval_from_bundle()
+
+        self._load_runresult_from_bundle()
 
         self._finish_process_ui()
 
@@ -1286,12 +974,16 @@ class ProcessTab(QWidget):
         self.btnLoad.setEnabled((not self._process_active) and ros_ok)
         self.btnInit.setEnabled((not self._process_active) and ros_ok and (self._init_thread is not None))
 
+        # Start gating is ONLY robot_ready now (no FK gate).
         self.btnValidate.setEnabled((not self._process_active) and ros_ok and has_recipe and self._robot_ready)
         self.btnOptimize.setEnabled((not self._process_active) and ros_ok and has_recipe and self._robot_ready)
 
-        # FIX: Execute also allowed if PLC is simulated (ctx.plc.sim=true)
         self.btnExecute.setEnabled(
-            (not self._process_active) and ros_ok and has_recipe and self._robot_ready and self._plc_execute_available()
+            (not self._process_active)
+            and ros_ok
+            and has_recipe
+            and self._robot_ready
+            and self._plc_execute_available()
         )
 
         self.btnStop.setEnabled(True)

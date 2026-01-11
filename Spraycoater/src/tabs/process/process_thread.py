@@ -9,6 +9,7 @@ from PyQt6 import QtCore
 from PyQt6.QtCore import QCoreApplication
 
 from model.recipe.recipe import Recipe
+from model.recipe.recipe_run_result import RunResult  # seed RunResult here
 from plc.plc_client import PlcClientBase  # nur für Execute
 
 from .validate_statemachine import ProcessValidateStatemachine
@@ -26,20 +27,24 @@ class ProcessThread(QtCore.QObject):
     """
     Führt Validate / Optimize / Execute in einem Worker-Thread aus.
 
-    STRICT Ergebnis-Contract (ein Format, keine Legacy):
+    STRICT Ergebnis-Contract:
+      - Worker soll (idealerweise) rr.to_process_payload() emittieren.
+      - ProcessThread akzeptiert auch "Legacy/Transitional" Payloads, normalisiert aber auf SSoT:
+          payload = {
+            "robot_description": {"urdf_xml": "...", "srdf_xml": "..."},
+            "planned_run":  {"traj": <JTBySegment YAML v1 dict>, "tcp": <Draft YAML dict oder {}>},
+            "executed_run": {"traj": <JTBySegment YAML v1 dict>, "tcp": <Draft YAML dict oder {}>},
+            "fk_meta": {...},
+            "eval": {...},
+            "valid": true/false,
+            "invalid_reason": "..."
+          }
 
-      notifyFinished(payload) wird NUR emittiert, wenn payload ein dict ist mit:
-
-        payload = {
-          "planned_run":  {"traj": <JTBySegment YAML v1 dict>, "tcp": <Draft YAML dict oder {}>},
-          "executed_run": {"traj": <JTBySegment YAML v1 dict>, "tcp": <Draft YAML dict oder {}>},
-          "fk_meta": {...},              # dict
-          "eval": {...},                 # dict
-          "valid": true/false,           # bool
-          "invalid_reason": "..."        # str
-        }
-
-    Alles andere ist ein Fehler.
+    Architektur (NEU):
+      - ProcessThread erzeugt EIN RunResult (vorinitialisiert mit URDF/SRDF) pro Run
+      - Worker/StateMachine bekommt dieses RunResult und befüllt es
+      - Worker emittiert rr.to_process_payload()
+      - ProcessThread validiert + normalisiert (STRICT) und gibt an UI weiter
     """
 
     MODE_VALIDATE = "validate"
@@ -63,6 +68,9 @@ class ProcessThread(QtCore.QObject):
         side: str = "top",
         max_retries: int = 2,
         skip_home: bool = False,
+        # deterministic URDF/SRDF injection (from ctx.robot_description)
+        urdf_xml: str = "",
+        srdf_xml: str = "",
     ) -> None:
         super().__init__(parent)
 
@@ -74,6 +82,10 @@ class ProcessThread(QtCore.QObject):
         self._side = str(side or "top")
         self._max_retries = int(max_retries)
         self._skip_home = bool(skip_home)
+
+        # store xml payload (may be empty)
+        self._urdf_xml = str(urdf_xml or "")
+        self._srdf_xml = str(srdf_xml or "")
 
         self._thread = QtCore.QThread(self)
         self._worker: Optional[QtCore.QObject] = None
@@ -117,24 +129,39 @@ class ProcessThread(QtCore.QObject):
     @staticmethod
     def _normalize_payload(obj: Any) -> Dict[str, Any]:
         """
-        Normalize only types/shapes. Does NOT do schema conversion.
-        Missing keys stay missing and will fail validation.
+        Normalize incoming object into the ONE strict format expected by ProcessTab/RunResult.
+
+        Accepts either:
+          A) rr.to_process_payload() style:
+             {"robot_description": {"urdf_xml":..., "srdf_xml":...}, ...}
+
+          B) transitional legacy style:
+             {"urdf_xml":..., "srdf_xml":..., ...}
+
+        Output ALWAYS has robot_description nested and NEVER top-level urdf_xml/srdf_xml.
         """
         root = _ensure_dict(obj)
 
         planned = _ensure_dict(root.get("planned_run"))
         executed = _ensure_dict(root.get("executed_run"))
 
-        # keep exactly these keys; do not invent trajectories
         planned_traj = planned.get("traj", None)
         executed_traj = executed.get("traj", None)
 
-        planned_tcp = planned.get("tcp", {})
-        executed_tcp = executed.get("tcp", {})
+        planned_tcp = _ensure_dict(planned.get("tcp", {}))
+        executed_tcp = _ensure_dict(executed.get("tcp", {}))
+
+        # xml may come from nested robot_description OR top-level legacy keys
+        rd = root.get("robot_description")
+        rd = rd if isinstance(rd, dict) else {}
+
+        urdf_xml = str((rd.get("urdf_xml") or root.get("urdf_xml") or "") or "")
+        srdf_xml = str((rd.get("srdf_xml") or root.get("srdf_xml") or "") or "")
 
         out = {
-            "planned_run": {"traj": planned_traj, "tcp": _ensure_dict(planned_tcp)},
-            "executed_run": {"traj": executed_traj, "tcp": _ensure_dict(executed_tcp)},
+            "robot_description": {"urdf_xml": urdf_xml, "srdf_xml": srdf_xml},
+            "planned_run": {"traj": planned_traj, "tcp": planned_tcp},
+            "executed_run": {"traj": executed_traj, "tcp": executed_tcp},
             "fk_meta": _ensure_dict(root.get("fk_meta")),
             "eval": _ensure_dict(root.get("eval")),
             "valid": bool(root.get("valid", False)),
@@ -146,6 +173,14 @@ class ProcessThread(QtCore.QObject):
     def _validate_payload_strict(cls, payload: Dict[str, Any]) -> Optional[str]:
         if not isinstance(payload, dict):
             return "payload ist kein dict."
+
+        rd = payload.get("robot_description")
+        if not isinstance(rd, dict):
+            return "robot_description fehlt oder ist ungültig."
+        if not isinstance(rd.get("urdf_xml", ""), str):
+            return "robot_description.urdf_xml ist kein str."
+        if not isinstance(rd.get("srdf_xml", ""), str):
+            return "robot_description.srdf_xml ist kein str."
 
         pr = payload.get("planned_run")
         er = payload.get("executed_run")
@@ -182,6 +217,20 @@ class ProcessThread(QtCore.QObject):
             self._emit_error("Kein Recipe übergeben.")
             return
 
+        # NEW: seed RunResult ONCE per run (deterministic URDF/SRDF injection)
+        rr = RunResult(
+            urdf_xml=self._urdf_xml,
+            srdf_xml=self._srdf_xml,
+            valid=True,
+            invalid_reason="",
+        )
+
+        # Helpful debug: verify we actually have XML at the boundary
+        if rr.urdf_xml.strip() and rr.srdf_xml.strip():
+            self.logMessage.emit("ProcessThread: URDF/SRDF injected into RunResult (non-empty).")
+        else:
+            self.logMessage.emit("ProcessThread: URDF/SRDF injection is empty (FK/Eval will be skipped later).")
+
         try:
             if self._mode == self.MODE_VALIDATE:
                 self._worker = ProcessValidateStatemachine(
@@ -190,6 +239,7 @@ class ProcessThread(QtCore.QObject):
                     side=self._side,
                     max_retries=self._max_retries,
                     skip_home=self._skip_home,
+                    run_result=rr,
                 )
 
             elif self._mode == self.MODE_OPTIMIZE:
@@ -199,20 +249,22 @@ class ProcessThread(QtCore.QObject):
                     side=self._side,
                     max_retries=self._max_retries,
                     skip_home=self._skip_home,
+                    run_result=rr,
                 )
 
             elif self._mode == self.MODE_EXECUTE:
-                if self._plc is None:
-                    self._emit_error("PLC fehlt (Execute benötigt PLC).")
-                    return
+                # IMPORTANT: Execute is allowed in PLC sim mode even if plc is None.
+                # This thread should not hard-fail in that scenario; worker must tolerate plc=None.
                 self._worker = ProcessExecuteStatemachine(
                     recipe=self._recipe,
                     ros=self._ros,
-                    plc=self._plc,
+                    plc=self._plc,  # may be None in sim mode
                     side=self._side,
                     max_retries=self._max_retries,
                     skip_home=self._skip_home,
+                    run_result=rr,
                 )
+
             else:
                 self._emit_error(f"Unbekannter Mode: {self._mode}")
                 return
@@ -246,6 +298,19 @@ class ProcessThread(QtCore.QObject):
     @QtCore.pyqtSlot(object)
     def _on_worker_finished(self, obj: object) -> None:
         payload = self._normalize_payload(obj)
+
+        # Hard guarantee: if worker returned no xml but we had injected xml,
+        # re-impose it here so ProcessTab receives it deterministically.
+        try:
+            rd = payload.get("robot_description")
+            rd = rd if isinstance(rd, dict) else {}
+            if not str(rd.get("urdf_xml") or "").strip() and self._urdf_xml.strip():
+                rd["urdf_xml"] = self._urdf_xml
+            if not str(rd.get("srdf_xml") or "").strip() and self._srdf_xml.strip():
+                rd["srdf_xml"] = self._srdf_xml
+            payload["robot_description"] = rd
+        except Exception:
+            pass
 
         err = self._validate_payload_strict(payload)
         if err:

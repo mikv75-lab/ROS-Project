@@ -10,6 +10,8 @@ from PyQt6 import QtCore
 
 from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg  # type: ignore
 
+from model.recipe.recipe_run_result import RunResult
+
 from .base_statemachine import (
     BaseProcessStatemachine,
     STATE_MOVE_PREDISPENSE,
@@ -37,6 +39,10 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
       - RosBridge.moveit_optimize_trajectory(traj, segment=...) akzeptiert KEINE kwargs wie trajectory/pipeline/planner_id/params.
         Diese Config wird vorab als planner_cfg an den Node geschickt.
       - optimize_trajectory Topic erwartet RobotTrajectoryMsg (nicht JT-dict).
+
+    NEW (2026-01):
+      - run_result wird vom ProcessThread injiziert (vorinitialisiert mit URDF/SRDF etc.)
+        und von der Base in notifyFinished emittiert.
     """
 
     ROLE = "optimize"
@@ -52,12 +58,20 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
         *,
         recipe: Any,
         ros: Any,
+        run_result: RunResult,
         parent: Optional[QtCore.QObject] = None,
         max_retries: int = 2,
         skip_home: bool = False,
         side: str = "top",
     ) -> None:
-        super().__init__(recipe=recipe, ros=ros, parent=parent, max_retries=max_retries, skip_home=skip_home)
+        super().__init__(
+            recipe=recipe,
+            ros=ros,
+            run_result=run_result,
+            parent=parent,
+            max_retries=max_retries,
+            skip_home=skip_home,
+        )
 
         self._side = str(side or "top")
 
@@ -434,7 +448,7 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
             if sig is None or not hasattr(sig, "plannerCfgChanged"):
                 _LOG.warning("Optimize: MoveItPyBridge hat kein plannerCfgChanged – kann optimize cfg nicht setzen.")
                 return
-            # bridge accepts object (string or dict), it will json.dumps if not string
+            # bridge accepts object (dict or string); it will json.dumps if needed
             sig.plannerCfgChanged.emit(self._opt_cfg)
         except Exception as ex:
             _LOG.warning("Optimize: publish planner cfg failed: %s", ex)
@@ -475,8 +489,13 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
             self._signal_error(f"Optimize: optimize_trajectory publish failed: {ex}")
 
     def _safe_get_optimized_msg(self) -> Optional[RobotTrajectoryMsg]:
+        """
+        Best-effort pull of last optimized trajectory from ros facade if available.
+        Used only to ignore a latched old message after triggering optimize.
+        """
         try:
-            v = self._ros.moveit_optimized_trajectory()
+            fn = getattr(self._ros, "moveit_optimized_trajectory", None)
+            v = fn() if callable(fn) else None
             return v if isinstance(v, RobotTrajectoryMsg) else None
         except Exception:
             return None
