@@ -28,15 +28,18 @@ MOVEITPY FIX (minimal, no refactor):
 - Keep existing MoveItPy state wiring; do not change frame semantics.
 
 MOVEITPY EXT (replay/optimize):
-- Expose RosBridge.moveit_execute_trajectory(traj, segment=...) that forwards to MoveItPyBridge
-  (topics: execute_trajectory, set_segment).
+- Expose:
+    - RosBridge.moveit_execute_trajectory(traj, segment=...)
+    - RosBridge.moveit_optimize_trajectory(traj, segment=...)
+  that forward to MoveItPyBridge (topics: execute_trajectory, optimize_trajectory, set_segment).
+- Optimized trajectory can be optionally received via optimized_trajectory_rt (if present).
 
 UPDATE (2026-01 signals):
 - MoveItPyBridge uses:
-    - plannedTrajectoryChanged / executedTrajectoryChanged
+    - plannedTrajectoryChanged / executedTrajectoryChanged / optimizedTrajectoryChanged (optional)
     - robotDescriptionChanged / robotDescriptionSemanticChanged
-    - segmentChanged / executeTrajectoryRequested
-  These are wired here without legacy fallbacks (bridge enforces topic binding).
+    - segmentChanged / executeTrajectoryRequested / optimizeTrajectoryRequested
+  RosBridge wires these with best-effort for optional signals.
 """
 
 from __future__ import annotations
@@ -224,6 +227,7 @@ class RobotStateAdapter:
 class MoveItState:
     planned: Optional[object] = None
     executed: Optional[object] = None
+    optimized: Optional[object] = None
     urdf: str = ""
     srdf: str = ""
 
@@ -237,6 +241,9 @@ class MoveItStateAdapter:
 
     def _set_executed(self, msg) -> None:
         self.st.executed = msg
+
+    def _set_optimized(self, msg) -> None:
+        self.st.optimized = msg
 
     def _set_urdf(self, v: str) -> None:
         self.st.urdf = v or ""
@@ -400,7 +407,7 @@ class RosBridge:
             if hasattr(sig, "currentChanged"):
                 sig.currentChanged.connect(self.spraypath_state._set_current)
 
-            # inbound outputs (recommended: node publishes these to UI/rviz)
+            # inbound outputs
             for name, fn in (
                 ("compiledPosesChanged", self.spraypath_state._set_compiled_poses),
                 ("compiledMarkersChanged", self.spraypath_state._set_compiled_markers),
@@ -443,17 +450,25 @@ class RosBridge:
             sig.tcpPoseChanged.connect(self.robot_state._set_tcp_pose)
             sig.jointsChanged.connect(self.robot_state._set_joints)
 
-        # ✅ MoveItPyBridge state wiring (correct signals per MoveItPySignals)
+        # MoveItPyBridge state wiring (correct signals per MoveItPySignals)
         if self.moveitpy is not None:
             sig = self.moveitpy.signals
 
-            # trajectories
-            sig.plannedTrajectoryChanged.connect(self.moveit_state._set_planned)
-            sig.executedTrajectoryChanged.connect(self.moveit_state._set_executed)
+            # trajectories (required)
+            if hasattr(sig, "plannedTrajectoryChanged"):
+                sig.plannedTrajectoryChanged.connect(self.moveit_state._set_planned)
+            if hasattr(sig, "executedTrajectoryChanged"):
+                sig.executedTrajectoryChanged.connect(self.moveit_state._set_executed)
+
+            # optimized (optional; only if your bridge/node provides it)
+            if hasattr(sig, "optimizedTrajectoryChanged"):
+                sig.optimizedTrajectoryChanged.connect(self.moveit_state._set_optimized)
 
             # URDF/SRDF strings (for Offline-FK in GUI)
-            sig.robotDescriptionChanged.connect(self.moveit_state._set_urdf)
-            sig.robotDescriptionSemanticChanged.connect(self.moveit_state._set_srdf)
+            if hasattr(sig, "robotDescriptionChanged"):
+                sig.robotDescriptionChanged.connect(self.moveit_state._set_urdf)
+            if hasattr(sig, "robotDescriptionSemanticChanged"):
+                sig.robotDescriptionSemanticChanged.connect(self.moveit_state._set_srdf)
 
     def _reemit_cached(self) -> None:
         try:
@@ -561,6 +576,40 @@ class RosBridge:
 
         return None
 
+    def moveit_optimized_trajectory(self) -> Any:
+        """
+        Optional getter: last optimized trajectory if your bridge/node publishes it.
+
+        Same race-avoidance strategy as planned/executed.
+        """
+        mp = self.moveitpy
+
+        try:
+            if mp is not None:
+                fn = getattr(mp, "last_optimized_trajectory", None)
+                if callable(fn):
+                    v = fn()
+                    if v is not None:
+                        return v
+        except Exception:
+            pass
+
+        try:
+            if mp is not None:
+                v = getattr(mp, "_last_optimized_traj", None)
+                if v is not None:
+                    return v
+        except Exception:
+            pass
+
+        try:
+            if self._moveit_state.optimized is not None:
+                return self._moveit_state.optimized
+        except Exception:
+            pass
+
+        return None
+
     # --- NEW: direct replay/optimize execution through MoveItPyBridge -----
 
     def moveit_set_segment(self, seg: str) -> None:
@@ -592,6 +641,25 @@ class RosBridge:
 
         # ExecuteTrajectoryRequested enforces RobotTrajectoryMsg type in bridge
         self.moveitpy.signals.executeTrajectoryRequested.emit(traj)
+
+    def moveit_optimize_trajectory(self, traj: Any, *, segment: str = "") -> None:
+        """
+        Trigger optimizer/retiming on a given RobotTrajectory (post pipeline etc.).
+
+        Requires:
+          - MoveItPyBridge bound topics.yaml subscribe id=optimize_trajectory
+          - optional: set_segment for tagging
+        """
+        if self.moveitpy is None:
+            raise RuntimeError("MoveItPyBridge not started")
+
+        if segment:
+            try:
+                self.moveitpy.signals.segmentChanged.emit(str(segment))
+            except Exception:
+                pass
+
+        self.moveitpy.signals.optimizeTrajectoryRequested.emit(traj)
 
     # --- SprayPath --------------------------------------------------------
     # NOTE: Bridge setter signatures are keyword-only: set_compiled(*, poses=None, markers=None)

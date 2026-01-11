@@ -32,6 +32,7 @@ from model.recipe.recipe import Recipe, Draft, JTBySegment
 from model.recipe.recipe_markers import build_marker_array_from_recipe
 
 from model.recipe.traj_fk_builder import TrajFkBuilder, TrajFkConfig
+from model.recipe.recipe_eval import RecipeEvaluator
 
 # STRICT result schema (single source of truth)
 from model.recipe.recipe_run_result import RunResult
@@ -455,6 +456,230 @@ class ProcessTab(QWidget):
             self._append_log(f"W FK skipped: {e}")
             return None
 
+    # ------------------------------------------------------------
+    # Evaluation (planned vs executed) + helpers
+    # ------------------------------------------------------------
+
+    @staticmethod
+    def _jt_point_time_to_duration_dict(t: Any) -> Dict[str, int]:
+        """Convert (sec,nsec) tuple/list/dict -> builtin_interfaces/Duration-like dict."""
+        if isinstance(t, dict):
+            try:
+                return {"sec": int(t.get("sec", 0)), "nanosec": int(t.get("nanosec", 0))}
+            except Exception:
+                return {"sec": 0, "nanosec": 0}
+        if isinstance(t, (list, tuple)) and len(t) >= 2:
+            try:
+                return {"sec": int(t[0]), "nanosec": int(t[1])}
+            except Exception:
+                return {"sec": 0, "nanosec": 0}
+        return {"sec": 0, "nanosec": 0}
+
+    def _jt_segment_to_jointtraj_dict(self, seg: Any) -> Optional[Dict[str, Any]]:
+        """Create STRICT JointTrajectory dict for RecipeEvaluator from a JTSegment."""
+        if seg is None:
+            return None
+        joint_names = getattr(seg, "joint_names", None)
+        points = getattr(seg, "points", None)
+        if not isinstance(joint_names, (list, tuple)) or not isinstance(points, (list, tuple)):
+            return None
+        if not joint_names or not points:
+            return None
+
+        out_pts: List[Dict[str, Any]] = []
+        for p in points:
+            try:
+                pos = list(getattr(p, "positions", []) or [])
+                if not isinstance(pos, list) or not pos:
+                    continue
+                tfs = self._jt_point_time_to_duration_dict(getattr(p, "time_from_start", None))
+                out_pts.append({"positions": [float(x) for x in pos], "time_from_start": tfs})
+            except Exception:
+                continue
+
+        if not out_pts:
+            return None
+        return {"joint_names": [str(x) for x in joint_names], "points": out_pts}
+
+    def _jtbysegment_to_jointtraj_dict(
+        self, traj: JTBySegment, *, segment_order: Optional[Tuple[str, ...]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Concatenate segments into one STRICT JointTrajectory dict."""
+        if traj is None or not getattr(traj, "segments", None):
+            return None
+
+        segs = traj.segments or {}
+        order: List[str] = []
+        if segment_order:
+            order.extend([s for s in segment_order if s in segs])
+            for s in segs.keys():
+                if s not in order:
+                    order.append(s)
+        else:
+            order = list(segs.keys())
+
+        joint_names: Optional[List[str]] = None
+        pts_all: List[Dict[str, Any]] = []
+
+        # simple monotonic offset
+        off_sec = 0
+        off_nsec = 0
+
+        def _add_time(a_sec: int, a_nsec: int, b_sec: int, b_nsec: int) -> Tuple[int, int]:
+            n = int(a_nsec) + int(b_nsec)
+            s = int(a_sec) + int(b_sec) + (n // 1_000_000_000)
+            n = n % 1_000_000_000
+            return s, n
+
+        def _max_time(pts: List[Dict[str, Any]]) -> Tuple[int, int]:
+            ms, mn = 0, 0
+            for p in pts:
+                t = p.get("time_from_start") or {}
+                try:
+                    s = int(t.get("sec", 0))
+                    n = int(t.get("nanosec", 0))
+                except Exception:
+                    continue
+                if (s > ms) or (s == ms and n > mn):
+                    ms, mn = s, n
+            return ms, mn
+
+        for sid in order:
+            seg = segs.get(sid)
+            seg_dict = self._jt_segment_to_jointtraj_dict(seg)
+            if seg_dict is None:
+                continue
+
+            jn = list(seg_dict.get("joint_names") or [])
+            if joint_names is None:
+                joint_names = jn
+            elif joint_names != jn:
+                # mismatch -> cannot concatenate safely
+                return None
+
+            pts = list(seg_dict.get("points") or [])
+            if not pts:
+                continue
+
+            # apply offset to ensure monotonic time_from_start
+            pts_off: List[Dict[str, Any]] = []
+            for p in pts:
+                t = p.get("time_from_start") or {}
+                try:
+                    s0 = int(t.get("sec", 0))
+                    n0 = int(t.get("nanosec", 0))
+                except Exception:
+                    s0, n0 = 0, 0
+                s1, n1 = _add_time(off_sec, off_nsec, s0, n0)
+                pp = dict(p)
+                pp["time_from_start"] = {"sec": int(s1), "nanosec": int(n1)}
+                pts_off.append(pp)
+
+            pts_all.extend(pts_off)
+
+            ms, mn = _max_time(pts)
+            off_sec, off_nsec = _add_time(off_sec, off_nsec, ms, mn)
+
+        if not joint_names or not pts_all:
+            return None
+        return {"joint_names": joint_names, "points": pts_all}
+
+    def _evaluate_finished_run(
+        self,
+        *,
+        planned_jt: JTBySegment,
+        executed_jt: JTBySegment,
+        planned_tcp: Optional[Draft],
+        executed_tcp: Optional[Draft],
+        recipe: Optional[Recipe],
+    ) -> Dict[str, Any]:
+        """
+        Evaluate planned vs executed at Process finished.
+
+        Output schema (used by _set_eval_views + persistence):
+          {
+            "domain": "joint",
+            "threshold": <min_score>,
+            "valid": <bool>,
+            "total": {"score":..., "metrics":..., "details":...},
+            "by_segment": {SEG: {"score":..., "metrics":..., "details":...}, ...},
+            "tcp_total": {...}  # optional, mm-domain
+          }
+        """
+        min_score = 90.0
+        side = "top"
+        try:
+            if recipe is not None:
+                params = getattr(recipe, "parameters", {}) or {}
+                min_score = float(params.get("eval_min_score", min_score))
+                side = str(params.get("eval_side", side) or side)
+        except Exception:
+            pass
+
+        ev = RecipeEvaluator()
+
+        # ---- joint eval: planned (ref) vs executed (test) ----
+        by_segment: Dict[str, Any] = {}
+        for sid in self._SEG_ORDER:
+            try:
+                ref_seg = planned_jt.segments.get(sid)
+                test_seg = executed_jt.segments.get(sid)
+                ref_dict = self._jt_segment_to_jointtraj_dict(ref_seg)
+                test_dict = self._jt_segment_to_jointtraj_dict(test_seg)
+                if ref_dict is None or test_dict is None:
+                    continue
+                r = ev.evaluate_joint_trajectory_dict(ref_joint=ref_dict, test_joint=test_dict, label=f"joint/{sid}")
+                by_segment[sid] = r.to_dict()
+            except Exception as e:
+                self._append_log(f"W eval segment {sid} skipped: {e}")
+
+        ref_total = self._jtbysegment_to_jointtraj_dict(planned_jt, segment_order=self._SEG_ORDER)
+        test_total = self._jtbysegment_to_jointtraj_dict(executed_jt, segment_order=self._SEG_ORDER)
+        total_res = ev.evaluate_joint_trajectory_dict(
+            ref_joint=ref_total, test_joint=test_total, label="joint/total"
+        ).to_dict()
+
+        valid_eval = RecipeEvaluator.is_valid_score(total_res.get("score", 0.0), min_score=min_score)
+
+        out: Dict[str, Any] = {
+            "domain": "joint",
+            "threshold": float(min_score),
+            "valid": bool(valid_eval),
+            "total": total_res,
+            "by_segment": by_segment,
+        }
+
+        # ---- optional TCP eval (if FK succeeded) ----
+        try:
+            if planned_tcp is not None and executed_tcp is not None:
+                # Draft.to_yaml_dict() uses mm coordinates; RecipeEvaluator expects traj-dict with poses_quat,
+                # so we map Draft -> traj-dict minimal (sides/<side>/poses_quat with x,y,z fields).
+                def _draft_to_traj_dict(d: Draft) -> Dict[str, Any]:
+                    dd = d.to_yaml_dict() if hasattr(d, "to_yaml_dict") else {}
+                    sides = (dd or {}).get("sides") or {}
+                    if not isinstance(sides, dict):
+                        return {}
+                    side_obj = sides.get(side) or {}
+                    if not isinstance(side_obj, dict):
+                        # fall back: first side
+                        for _k, _v in sides.items():
+                            if isinstance(_v, dict):
+                                side_obj = _v
+                                break
+                    poses = side_obj.get("poses_quat") or []
+                    if not isinstance(poses, list):
+                        poses = []
+                    return {"sides": {side: {"poses_quat": poses}}}
+
+                ref_traj = _draft_to_traj_dict(planned_tcp)
+                test_traj = _draft_to_traj_dict(executed_tcp)
+                tcp_res = ev.evaluate_traj_dict_mm(ref_traj=ref_traj, test_traj=test_traj, side=side, label="tcp/total")
+                out["tcp_total"] = tcp_res.to_dict()
+        except Exception as e:
+            self._append_log(f"W tcp eval skipped: {e}")
+
+        return out
+
     # ---------------- Spray toggles (cache only; publish is done by SprayPathBox) ----------------
 
     def _on_show_compiled_toggled(self, v: bool) -> None:
@@ -828,7 +1053,7 @@ class ProcessTab(QWidget):
 
         # STRICT: RunResult.to_process_payload schema
         try:
-            planned_yaml, executed_yaml, eval_dict, valid, invalid_reason = self._extract_from_result_strict(result_obj)
+            planned_yaml, executed_yaml, _incoming_eval, valid, invalid_reason = self._extract_from_result_strict(result_obj)
         except Exception as e:
             self._append_log(f"ERROR: result invalid (strict): {e}")
             self._finish_process_ui()
@@ -849,17 +1074,14 @@ class ProcessTab(QWidget):
             self._finish_process_ui()
             return
 
-        # Show eval from RunResult (authoritative)
-        self._set_eval_views(eval_dict=eval_dict or {})
-
-        # FK TCP (best-effort, only for persistence artifacts)
+        # FK TCP (best-effort, used for persistence + optional TCP eval)
         recipe_run = None
         try:
             recipe_run = self.repo.load_for_process(self._recipe_key) if self._recipe_key else None
         except Exception:
             recipe_run = None
 
-        recipe_for_fk = (
+        recipe_for_eval = (
             recipe_run
             if isinstance(recipe_run, Recipe)
             else (self._recipe if isinstance(self._recipe, Recipe) else None)
@@ -867,9 +1089,25 @@ class ProcessTab(QWidget):
 
         planned_tcp: Optional[Draft] = None
         executed_tcp: Optional[Draft] = None
-        if recipe_for_fk is not None:
-            planned_tcp = self._fk_tcp_best_effort(traj=planned_jt, recipe=recipe_for_fk)
-            executed_tcp = self._fk_tcp_best_effort(traj=executed_jt, recipe=recipe_for_fk)
+        if recipe_for_eval is not None:
+            planned_tcp = self._fk_tcp_best_effort(traj=planned_jt, recipe=recipe_for_eval)
+            executed_tcp = self._fk_tcp_best_effort(traj=executed_jt, recipe=recipe_for_eval)
+
+        # Evaluate at process finished (planned vs executed)
+        try:
+            eval_dict = self._evaluate_finished_run(
+                planned_jt=planned_jt,
+                executed_jt=executed_jt,
+                planned_tcp=planned_tcp,
+                executed_tcp=executed_tcp,
+                recipe=recipe_for_eval,
+            )
+        except Exception as e:
+            eval_dict = {}
+            self._append_log(f"W eval failed: {e}")
+
+        # Show eval (freshly computed)
+        self._set_eval_views(eval_dict=eval_dict or {})
 
         # Resolve paths
         try:

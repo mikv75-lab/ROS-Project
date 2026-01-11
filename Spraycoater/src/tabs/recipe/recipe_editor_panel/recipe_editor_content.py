@@ -282,6 +282,7 @@ class RecipeEditorContent(QWidget):
 
         self._params_box: Optional[GlobalParamsBox] = None
         self._planner_box: Optional[PlannerGroupBox] = None
+        self._optimize_box: Optional[PlannerGroupBox] = None
         self._side_tabbar: Optional[_TabBarWithChecks] = None
 
         self._paths_host: Optional[QWidget] = None
@@ -342,13 +343,31 @@ class RecipeEditorContent(QWidget):
         row_params_planner.setContentsMargins(0, 0, 0, 0)
         row_params_planner.setSpacing(8)
 
+        # Left: global params
         self._params_box = GlobalParamsBox(store=self.store, parent=self)
 
+        # Right: planners stacked vertically (move + optimize)
+        planners_host = QWidget(self)
+        planners_l = QVBoxLayout(planners_host)
+        planners_l.setContentsMargins(0, 0, 0, 0)
+        planners_l.setSpacing(8)
+
         # PlannerGroupBox baut sich aus store.planner_catalog
-        self._planner_box = PlannerGroupBox(parent=self, title="Move planner", role="move", store=self.store)
+        self._planner_box = PlannerGroupBox(parent=planners_host, title="Move planner", role="move", store=self.store)
+
+        self._optimize_box = PlannerGroupBox(
+            parent=planners_host,
+            title="Optimize planner",
+            role="optimize",
+            store=self.store,
+        )
+
+        planners_l.addWidget(self._planner_box)
+        planners_l.addWidget(self._optimize_box)
+        planners_l.addStretch(1)
 
         row_params_planner.addWidget(self._params_box, 3)
-        row_params_planner.addWidget(self._planner_box, 2)
+        row_params_planner.addWidget(planners_host, 2)
 
         root.addLayout(row_params_planner)
 
@@ -430,6 +449,12 @@ class RecipeEditorContent(QWidget):
             cfg = move_cfg if isinstance(move_cfg, dict) else (planner if isinstance(planner, dict) else {})
             self._planner_box.apply_planner_model(cfg or {})
 
+        if self._optimize_box is not None:
+            planner = getattr(model, "planner", {}) or {}
+            opt_cfg = planner.get("optimize")
+            opt_model = opt_cfg if isinstance(opt_cfg, dict) else {}
+            self._optimize_box.apply_planner_model(opt_model or {})
+
         sides_cfg = self.store.sides_for_recipe(rec_def)
         if not isinstance(sides_cfg, dict) or not sides_cfg:
             raise KeyError(f"Recipe '{rid}': sides fehlt/leer.")
@@ -500,6 +525,8 @@ class RecipeEditorContent(QWidget):
 
         if self._planner_box is not None:
             model.planner["move"] = self._planner_box.collect_planner()
+        if self._optimize_box is not None:
+            model.planner["optimize"] = self._optimize_box.collect_planner()
 
         if getattr(model, "paths_by_side", None) is None:
             model.paths_by_side = {}

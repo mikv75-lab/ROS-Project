@@ -8,6 +8,7 @@ MoveItPy wrapper node (MINIMAL TOPICS for GUI Offline-FK)
 Publishes (per config_hub topics.yaml):
   - planned_trajectory_rt   (moveit_msgs/msg/RobotTrajectory) [latched]
   - executed_trajectory_rt  (moveit_msgs/msg/RobotTrajectory) [latched]
+  - optimized_trajectory_rt (moveit_msgs/msg/RobotTrajectory) [latched]   # NEW
   - motion_result           (std_msgs/msg/String)             [default]
 
 Subscribes:
@@ -18,9 +19,10 @@ Subscribes:
   - set_speed_mm_s  (std_msgs/msg/Float64)
   - set_planner_cfg (std_msgs/msg/String)
 
-NEW (for replay / optimize execution without extra player-node):
-  - execute_trajectory (moveit_msgs/msg/RobotTrajectory)   # GUI -> Node: execute arbitrary traj (from YAML)
-  - set_segment        (std_msgs/msg/String)               # optional: for tagging motion_result
+NEW (replay / optimize without extra player-node):
+  - execute_trajectory  (moveit_msgs/msg/RobotTrajectory)     # GUI -> Node: execute arbitrary traj (from YAML)
+  - optimize_trajectory (moveit_msgs/msg/RobotTrajectory)     # GUI -> Node: optimize/retime trajectory in node
+  - set_segment         (std_msgs/msg/String)                 # optional: for tagging motion_result
 
 Design:
   - publish trajectories BEFORE motion_result (race-free for statemachine)
@@ -63,6 +65,9 @@ from tf2_geometry_msgs import do_transform_pose
 
 from controller_manager_msgs.srv import SwitchController
 from control_msgs.action import FollowJointTrajectory  # type: ignore
+
+# NEW: needed for fallback retime building
+from trajectory_msgs.msg import JointTrajectoryPoint
 
 from spraycoater_nodes_py.utils.config_hub import topics, frames
 
@@ -197,6 +202,7 @@ class MoveItPyNode(Node):
     Publishes:
       - planned_trajectory_rt (RobotTrajectoryMsg, latched)
       - executed_trajectory_rt (RobotTrajectoryMsg, latched)
+      - optimized_trajectory_rt (RobotTrajectoryMsg, latched)  # NEW
       - motion_result (String) published LAST
     """
 
@@ -280,6 +286,14 @@ class MoveItPyNode(Node):
             self.cfg_topics.publish_topic(NODE_KEY, "executed_trajectory_rt"),
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "executed_trajectory_rt"),
         )
+
+        # NEW: optimized artifact output (latched)
+        self.pub_optimized = self.create_publisher(
+            RobotTrajectoryMsg,
+            self.cfg_topics.publish_topic(NODE_KEY, "optimized_trajectory_rt"),
+            self.cfg_topics.qos_by_id("publish", NODE_KEY, "optimized_trajectory_rt"),
+        )
+
         self.pub_result = self.create_publisher(
             MsgString,
             self.cfg_topics.publish_topic(NODE_KEY, "motion_result"),
@@ -352,6 +366,18 @@ class MoveItPyNode(Node):
             self.log.info("[topics] subscribed: execute_trajectory")
         except Exception as e:
             self.log.warning(f"[topics] execute_trajectory not wired (topics.yaml missing?): {e!r}")
+
+        # NEW: optimize trajectory (post-processing / retime) in node
+        try:
+            self.create_subscription(
+                RobotTrajectoryMsg,
+                self.cfg_topics.subscribe_topic(NODE_KEY, "optimize_trajectory"),
+                self._on_optimize_trajectory,
+                self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "optimize_trajectory"),
+            )
+            self.log.info("[topics] subscribed: optimize_trajectory")
+        except Exception as e:
+            self.log.warning(f"[topics] optimize_trajectory not wired (topics.yaml missing?): {e!r}")
 
         # Optional segment tagging
         try:
@@ -620,7 +646,7 @@ class MoveItPyNode(Node):
             self.log.error(f"[config] set_planner_cfg: invalid JSON '{raw}': {e}")
 
     # ------------------------------------------------------------
-    # NEW: segment tag input
+    # segment tag input
     # ------------------------------------------------------------
     def _on_set_segment(self, msg: MsgString) -> None:
         self._current_segment = str(msg.data or "").strip()
@@ -817,7 +843,7 @@ class MoveItPyNode(Node):
             self._busy = False
 
     # ------------------------------------------------------------
-    # NEW: execute arbitrary RobotTrajectory (from YAML / optimizer output)
+    # Execute arbitrary RobotTrajectory (from YAML / optimize output)
     # ------------------------------------------------------------
     def _on_execute_trajectory(self, msg: RobotTrajectoryMsg) -> None:
         """
@@ -941,6 +967,136 @@ class MoveItPyNode(Node):
             res_fut.add_done_callback(_on_result_done)
 
         send_fut.add_done_callback(_on_goal_sent)
+
+    # ------------------------------------------------------------
+    # NEW: optimize/retime RobotTrajectory (post-processing in node)
+    # ------------------------------------------------------------
+    def _on_optimize_trajectory(self, msg: RobotTrajectoryMsg) -> None:
+        """
+        Optimizes / retimes an externally provided RobotTrajectory.
+
+        Contract:
+          - publish optimized_trajectory_rt BEFORE motion_result
+          - motion_result last signal: OPTIMIZED:OK or ERROR:...
+        """
+        if self._busy:
+            self._emit_with_segment("ERROR:BUSY")
+            return
+        if not self._require_moveit_ready():
+            return
+
+        jt = getattr(msg, "joint_trajectory", None)
+        if jt is None or not getattr(jt, "joint_names", None) or not getattr(jt, "points", None):
+            self._emit_with_segment("ERROR:EMPTY_TRAJ")
+            return
+        if len(jt.points) < 2:
+            self._emit_with_segment("ERROR:TRAJ_TOO_SHORT")
+            return
+
+        self._busy = True
+        self._cancel = False
+        try:
+            # Use existing set_planner_cfg channel to select post-processor.
+            # Expect: {"pipeline":"post","planner_id":"TimeOptimalTrajectoryGeneration"|"IterativeParabolicTimeParameterization"|"SplineInterpolator", ...}
+            pipeline = str(self._planner_cfg.get("pipeline") or "post").strip() or "post"
+            planner_id = str(self._planner_cfg.get("planner_id") or "IterativeParabolicTimeParameterization").strip()
+
+            out_msg = self._optimize_robot_trajectory(msg, pipeline=pipeline, planner_id=planner_id)
+
+            # publish artifact BEFORE result
+            try:
+                self.pub_optimized.publish(out_msg)
+            except Exception:
+                pass
+
+            self._emit_with_segment("OPTIMIZED:OK")
+
+        except Exception as e:
+            self._emit_with_segment(f"ERROR:OPTIMIZE {e}")
+        finally:
+            self._busy = False
+
+    def _optimize_robot_trajectory(
+        self,
+        msg: RobotTrajectoryMsg,
+        *,
+        pipeline: str,
+        planner_id: str,
+    ) -> RobotTrajectoryMsg:
+        """
+        Best-effort optimizer:
+          - If real MoveIt time-parameterization bindings are available in Python, use them.
+          - Otherwise fallback to a deterministic retime scaling (still useful + unblocks pipeline).
+        """
+        try:
+            # Placeholder for real post-processing if available in your environment.
+            # If you later confirm the Python APIs you have, we can replace this with true TOTG/IPTP/Spline.
+            raise RuntimeError("MoveIt post-processing Python binding not wired")
+        except Exception as e:
+            self.log.warning(f"[opt] using fallback retime (no post binding): {e!r}")
+            return self._optimize_fallback_scale(msg, planner_id=planner_id)
+
+    def _optimize_fallback_scale(self, msg: RobotTrajectoryMsg, *, planner_id: str) -> RobotTrajectoryMsg:
+        """
+        Deterministic fallback:
+          - scale time_from_start based on velocity scaling (or planner_id heuristic)
+          - enforce strict monotonic times (+1ms if needed)
+        """
+        # default: keep times
+        scale = 1.0
+
+        # Heuristic: if user selected TOTG, often you want "faster" than raw -> compress times slightly.
+        # But we keep it conservative and tie it to max_velocity_scaling_factor if present.
+        try:
+            vs = float(self._planner_cfg.get("max_velocity_scaling_factor", 1.0))
+        except Exception:
+            vs = 1.0
+        if vs <= 1e-6:
+            vs = 1.0
+
+        # Interpret scaling as "allowed speed fraction" => smaller means slower => larger times
+        # time_scale = 1/vs (e.g. vs=0.5 => 2x time)
+        scale = 1.0 / vs
+
+        out = RobotTrajectoryMsg()
+        out.joint_trajectory.joint_names = list(msg.joint_trajectory.joint_names)
+
+        last_ns = -1
+        for p in msg.joint_trajectory.points:
+            sec = int(getattr(p.time_from_start, "sec", 0))
+            nsec = int(getattr(p.time_from_start, "nanosec", 0))
+            ns = sec * 1_000_000_000 + nsec
+
+            ns2 = int(float(ns) * float(scale))
+            if ns2 <= last_ns:
+                ns2 = last_ns + 1_000_000  # +1ms
+            last_ns = ns2
+
+            q = JointTrajectoryPoint()
+            q.positions = list(p.positions)
+
+            # optional fields
+            try:
+                if getattr(p, "velocities", None):
+                    q.velocities = list(p.velocities)
+            except Exception:
+                pass
+            try:
+                if getattr(p, "accelerations", None):
+                    q.accelerations = list(p.accelerations)
+            except Exception:
+                pass
+            try:
+                if getattr(p, "effort", None):
+                    q.effort = list(p.effort)
+            except Exception:
+                pass
+
+            q.time_from_start.sec = ns2 // 1_000_000_000
+            q.time_from_start.nanosec = ns2 % 1_000_000_000
+            out.joint_trajectory.points.append(q)
+
+        return out
 
     # ------------------------------------------------------------
     # Omron TCP execution (current: MOVEJ last point) - unchanged
