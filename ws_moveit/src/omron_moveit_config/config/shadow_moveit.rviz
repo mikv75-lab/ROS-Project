@@ -7,11 +7,8 @@ Panels:
         - /TF1/Frames1
         - /PlanningScene1/Scene Geometry1
         - /PlanningScene1/Scene Robot1
-        - /MarkerArray1
         - /PoseArray1
-        - /MarkerArray2
         - /PoseArray2
-        - /MarkerArray3
         - /PoseArray3
       Splitter Ratio: 0.36193448305130005
     Tree Height: 842
@@ -197,7 +194,9 @@ Visualization Manager:
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: MarkerArray
-      Namespaces: true
+      Namespaces:
+        Value: true
+        draft/top: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -206,9 +205,9 @@ Visualization Manager:
         Value: /shadow/spraycoater/spray_path/compiled/markers
       Value: true
     - Alpha: 1
-      Arrow Length: 0.30000001192092896
-      Axes Length: 0.30000001192092896
-      Axes Radius: 0.009999999776482582
+      Arrow Length: 0.0010000000474974513
+      Axes Length: 0.0020000000949949026
+      Axes Radius: 9.999999747378752e-05
       Class: rviz_default_plugins/PoseArray
       Color: 255; 25; 0
       Enabled: true
@@ -217,7 +216,7 @@ Visualization Manager:
       Name: PoseArray
       Shaft Length: 0.23000000417232513
       Shaft Radius: 0.009999999776482582
-      Shape: Arrow (Flat)
+      Shape: Axes
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -229,7 +228,10 @@ Visualization Manager:
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: MarkerArray
-      Namespaces: true
+      Namespaces:
+        Value: true
+        executed_tcp: true
+        executed_tcp/top: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -238,9 +240,9 @@ Visualization Manager:
         Value: /shadow/spraycoater/spray_path/executed/markers
       Value: true
     - Alpha: 1
-      Arrow Length: 0.30000001192092896
-      Axes Length: 0.30000001192092896
-      Axes Radius: 0.009999999776482582
+      Arrow Length: 0.0010000000474974513
+      Axes Length: 0.0020000000949949026
+      Axes Radius: 9.999999747378752e-05
       Class: rviz_default_plugins/PoseArray
       Color: 255; 25; 0
       Enabled: true
@@ -249,7 +251,7 @@ Visualization Manager:
       Name: PoseArray
       Shaft Length: 0.23000000417232513
       Shaft Radius: 0.009999999776482582
-      Shape: Arrow (Flat)
+      Shape: Axes
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -261,7 +263,10 @@ Visualization Manager:
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: MarkerArray
-      Namespaces: true
+      Namespaces:
+        Value: true
+        planned_tcp: true
+        planned_tcp/top: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -270,9 +275,9 @@ Visualization Manager:
         Value: /shadow/spraycoater/spray_path/planned/markers
       Value: true
     - Alpha: 1
-      Arrow Length: 0.30000001192092896
-      Axes Length: 0.30000001192092896
-      Axes Radius: 0.009999999776482582
+      Arrow Length: 0.0010000000474974513
+      Axes Length: 0.0020000000949949026
+      Axes Radius: 9.999999747378752e-05
       Class: rviz_default_plugins/PoseArray
       Color: 255; 25; 0
       Enabled: true
@@ -281,7 +286,7 @@ Visualization Manager:
       Name: PoseArray
       Shaft Length: 0.23000000417232513
       Shaft Radius: 0.009999999776482582
-      Shape: Arrow (Flat)
+      Shape: Axes
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -308,7 +313,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.647383451461792
+      Distance: 0.5720624327659607
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -323,10 +328,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5303980112075806
+      Pitch: 0.6597962379455566
       Target Frame: scene
       Value: Orbit (rviz_default_plugins)
-      Yaw: 6.253583908081055
+      Yaw: 6.218583106994629
     Saved: ~
 Window Geometry:
   Displays:
@@ -340,5 +345,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 2560
-  X: 1920
-  Y: 23
+  X: 1928
+  Y: 31

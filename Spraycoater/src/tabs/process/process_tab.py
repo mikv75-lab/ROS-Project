@@ -23,13 +23,18 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
 )
 
-from visualization_msgs.msg import MarkerArray
+from geometry_msgs.msg import PoseArray  # type: ignore
+from visualization_msgs.msg import MarkerArray  # type: ignore
 
 from plc.plc_client import PlcClientBase
 from ros.bridge.ros_bridge import RosBridge
 
 from model.recipe.recipe import Recipe, Draft
-from model.recipe.recipe_markers import build_marker_array_from_recipe
+from model.recipe.recipe_markers import (
+    build_marker_array_from_recipe,            # draft markers (legacy helper, but still fine)
+    build_tcp_pose_array_from_tcp_yaml,        # planned/executed tcp -> PoseArray
+    build_tcp_marker_array_from_tcp_yaml,      # planned/executed tcp -> MarkerArray
+)
 
 # STRICT result schema (single source of truth)
 from model.recipe.recipe_run_result import RunResult
@@ -59,12 +64,18 @@ class ProcessTab(QWidget):
     """
     ProcessTab (strict, no fallbacks, single result schema)
 
-    Fix (scene.yaml path resolution):
-      - FK/Eval needs scene.yaml + robot.yaml
-      - These are configured in startup.yaml as package://spraycoater_bringup/config/...
-      - ProcessTab now resolves those URIs via config.startup.resolve_path(base_dir, uri),
-        using SC_PROJECT_ROOT as base_dir (same as startup loader).
-      - This removes the wrong fallback to /root/Spraycoater/data/recipes/config/scene.yaml.
+    Key behavior (RViz publishing):
+      - Always publish ALL 6 topics after Load and after Process finish:
+          compiled: PoseArray + MarkerArray
+          planned:  PoseArray + MarkerArray
+          executed: PoseArray + MarkerArray
+      - compiled is built from recipe.draft (mm->m) and draft markers.
+      - planned/executed are built from persisted planned_tcp.yaml / executed_tcp.yaml.
+
+    IMPORTANT (fix for your current issue):
+      - DO NOT force frame_id="world" if your TCP docs say "scene".
+        Otherwise markers (scene) look correct, but PoseArray (world) is offset.
+      - This implementation uses the TCP doc's frame if present; otherwise falls back to "scene".
     """
 
     _SEG_ORDER = (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME)
@@ -311,7 +322,6 @@ class ProcessTab(QWidget):
         """
         base_dir = os.environ.get("SC_PROJECT_ROOT", "").strip()
         if not base_dir:
-            # resolve_path() needs a base_dir for relative paths; if missing, we cannot resolve safely
             return "", ""
 
         try:
@@ -327,7 +337,6 @@ class ProcessTab(QWidget):
             scene_abs = resolve_path(base_dir, scene_uri)
             robot_abs = resolve_path(base_dir, robot_uri)
 
-            # strict existence check (postprocess needs real files)
             if not os.path.isfile(scene_abs) or not os.path.isfile(robot_abs):
                 return "", ""
             return scene_abs, robot_abs
@@ -474,7 +483,7 @@ class ProcessTab(QWidget):
             "planner": r.planner or {},
             "paths_by_side": r.paths_by_side or {},
             "meta": r.meta or {},
-            "draft_present": bool(isinstance(getattr(r, "draft", None), (Draft, dict))),
+            "draft_present": bool(getattr(r, "draft", None) is not None),
             "planned_traj_present": bool(getattr(r, "planned_traj", None) is not None),
             "executed_traj_present": bool(getattr(r, "executed_traj", None) is not None),
         }
@@ -495,9 +504,6 @@ class ProcessTab(QWidget):
         self.lblExecutedSummary.setText("executed: –")
 
     def _set_eval_from_runresult(self, rr: RunResult) -> None:
-        """
-        Display compact stats (no YAML wall).
-        """
         txt = rr.format_eval_text(include_tcp=True)
         summ = rr.eval_summary_line()
         self.txtPlannedEval.setPlainText(txt)
@@ -519,10 +525,6 @@ class ProcessTab(QWidget):
         self.lblExecutedSummary.setText("executed: – (no TCP)")
 
     def _load_runresult_from_bundle(self) -> None:
-        """
-        Load persisted run result from planned/executed traj yaml (+ optional tcp yaml),
-        reconstruct a FULL RunResult, and display it.
-        """
         self._clear_eval_views()
         if not self._recipe_key:
             return
@@ -626,6 +628,7 @@ class ProcessTab(QWidget):
             r = self.repo.load_for_process(key)
             self.set_recipe(r, key=key)
 
+            # publish ALL 6 topics immediately after load
             self._clear_layers()
             QTimer.singleShot(0, self._publish_all_available_layers)
 
@@ -704,7 +707,6 @@ class ProcessTab(QWidget):
                 QMessageBox.warning(self, "Process", "Robot nicht initialisiert. Bitte zuerst Init.")
                 return
 
-        # Execute allowed in PLC sim mode even if plc is None
         if mode == ProcessThread.MODE_EXECUTE and not self._plc_execute_available():
             QMessageBox.warning(
                 self,
@@ -720,7 +722,6 @@ class ProcessTab(QWidget):
             QMessageBox.critical(self, "Process", f"Rezept laden fehlgeschlagen: {e}")
             return
 
-        # Execute baseline requirement (planned_traj)
         if mode == ProcessThread.MODE_EXECUTE:
             if getattr(recipe_run, "planned_traj", None) is None:
                 QMessageBox.warning(
@@ -731,7 +732,6 @@ class ProcessTab(QWidget):
                 )
                 return
 
-        # deterministic URDF/SRDF injection from ctx
         urdf_xml, srdf_xml = self._ctx_robot_xml()
         if not urdf_xml or not srdf_xml:
             self._append_log("W: ctx.robot_description fehlt/leer → FK/TCP/Eval wird später übersprungen.")
@@ -749,7 +749,6 @@ class ProcessTab(QWidget):
             ros=self.ros,
             plc=self.plc,
             mode=mode,
-            # deterministic XML injection
             urdf_xml=urdf_xml,
             srdf_xml=srdf_xml,
         )
@@ -871,7 +870,7 @@ class ProcessTab(QWidget):
             self._finish_process_ui()
             return
 
-        # 6) Save:
+        # 6) Save
         ok_pl = self._maybe_overwrite_prompt(title="Run speichern", filename=planned_path)
         ok_ex = self._maybe_overwrite_prompt(title="Run speichern", filename=executed_path)
 
@@ -909,11 +908,10 @@ class ProcessTab(QWidget):
             pass
 
         self._clear_layers()
-        self._publish_all_available_layers()
+        self._publish_all_available_layers()  # publishes ALL 6 topics
 
         self._update_recipe_box()
         self._update_info_box()
-
         self._load_runresult_from_bundle()
 
         self._finish_process_ui()
@@ -933,84 +931,176 @@ class ProcessTab(QWidget):
 
     def _clear_layers(self) -> None:
         try:
-            from visualization_msgs.msg import MarkerArray as _MA
-            from geometry_msgs.msg import PoseArray as _PA
-
-            empty_ma = _MA()
-            empty_pa = _PA()
+            empty_ma = MarkerArray()
+            empty_pa = PoseArray()
             self._ros_call_first(("spray_set_compiled",), poses=empty_pa, markers=empty_ma)
             self._ros_call_first(("spray_set_planned", "spray_set_traj"), poses=empty_pa, markers=empty_ma)
             self._ros_call_first(("spray_set_executed",), poses=empty_pa, markers=empty_ma)
         except Exception:
             pass
 
-    def _build_all_markers(self, *, recipe: Recipe, frame_id: str = "scene") -> Optional[MarkerArray]:
+    def _build_all_markers(self, *, recipe: Recipe, frame_id: str) -> Optional[MarkerArray]:
         try:
             return build_marker_array_from_recipe(
                 recipe,
                 frame_id=frame_id,
                 show_draft=True,
-                show_planned=True,
-                show_executed=True,
+                show_planned=False,   # we do TCP markers separately
+                show_executed=False,  # we do TCP markers separately
             )
         except Exception as e:
             self._append_log(f"W markers build skipped: {e}")
             return None
 
     @staticmethod
-    def _filter_markers(
-        arr: MarkerArray, *, ns_prefix: Optional[str] = None, ns_exact: Optional[str] = None
-    ) -> MarkerArray:
+    def _filter_markers(arr: MarkerArray, *, ns_prefix: str) -> MarkerArray:
         out = MarkerArray()
         if arr is None or not getattr(arr, "markers", None):
             return out
-
         for m in arr.markers:
             ns = getattr(m, "ns", "") or ""
-            if ns_exact is not None:
-                if ns == ns_exact:
-                    out.markers.append(m)
-            elif ns_prefix is not None:
-                if ns.startswith(ns_prefix):
-                    out.markers.append(m)
-
+            if ns.startswith(ns_prefix):
+                out.markers.append(m)
         return out
 
+    @staticmethod
+    def _pick_frame_from_tcp_docs(planned_doc: Dict[str, Any], executed_doc: Dict[str, Any]) -> str:
+        # Prefer explicit tcp frame (this fixes your “poses offset but markers fine” issue).
+        try:
+            f = str(planned_doc.get("frame") or "").strip() if isinstance(planned_doc, dict) else ""
+            if f:
+                return f
+        except Exception:
+            pass
+        try:
+            f = str(executed_doc.get("frame") or "").strip() if isinstance(executed_doc, dict) else ""
+            if f:
+                return f
+        except Exception:
+            pass
+        return "scene"
+
     def _publish_all_available_layers(self) -> None:
-        if self._recipe is None:
+        """
+        MUST publish ALL 6 topics (3 layers * poses+markers) after Load and after Process.
+        """
+        if self._recipe is None or not self._recipe_key:
             return
 
         r = self._recipe
-        all_ma = self._build_all_markers(recipe=r, frame_id="scene")
-        if all_ma is None:
-            try:
-                self.sprayPathBox.publish_current()
-            except Exception:
-                pass
-            return
 
-        ma_compiled = self._filter_markers(all_ma, ns_prefix="draft/")
-        ma_planned = self._filter_markers(all_ma, ns_exact="planned_traj")
-        ma_exec = self._filter_markers(all_ma, ns_exact="executed_traj")
-
+        # ---- load tcp yaml docs from bundle (canonical) ----
+        planned_tcp_doc: Dict[str, Any] = {}
+        executed_tcp_doc: Dict[str, Any] = {}
         try:
-            if ma_compiled.markers:
-                self._ros_call_first(("spray_set_compiled",), markers=ma_compiled)
+            p = self.repo.bundle.paths(self._recipe_key)
+            planned_tcp_path = str(getattr(p, "planned_tcp_yaml", "") or "")
+            executed_tcp_path = str(getattr(p, "executed_tcp_yaml", "") or "")
+            if planned_tcp_path:
+                planned_tcp_doc = self._yaml_load_file(planned_tcp_path)
+            if executed_tcp_path:
+                executed_tcp_doc = self._yaml_load_file(executed_tcp_path)
+        except Exception as e:
+            self._append_log(f"W: tcp yaml load failed: {e}")
+            planned_tcp_doc = {}
+            executed_tcp_doc = {}
+
+        frame_id = self._pick_frame_from_tcp_docs(planned_tcp_doc, executed_tcp_doc)
+
+        # ---- COMPILED (draft) PoseArray ----
+        compiled_pa = PoseArray()
+        compiled_pa.header.frame_id = frame_id
+        try:
+            draft_obj = getattr(r, "draft", None)
+            if draft_obj is None:
+                draft_obj = getattr(r, "draft_data", None)
+
+            if draft_obj is not None and hasattr(draft_obj, "sides"):
+                sides = getattr(draft_obj, "sides", None)
+                if isinstance(sides, dict):
+                    for _, side in sides.items():
+                        pq_list = getattr(side, "poses_quat", None)
+                        if isinstance(pq_list, list):
+                            for pq in pq_list:
+                                try:
+                                    # IMPORTANT: draft is already in scene/workspace coords (mm), so only mm->m here.
+                                    from model.recipe.recipe_markers import _make_pose_quat_mm  # local import, file-scope helper exists
+
+                                    compiled_pa.poses.append(
+                                        _make_pose_quat_mm(pq.x, pq.y, pq.z, pq.qx, pq.qy, pq.qz, pq.qw)
+                                    )
+                                except Exception:
+                                    continue
+        except Exception as e:
+            self._append_log(f"W: compiled PoseArray build failed: {e}")
+
+        # ---- COMPILED (draft) MarkerArray ----
+        compiled_ma = MarkerArray()
+        try:
+            all_ma = self._build_all_markers(recipe=r, frame_id=frame_id)
+            compiled_ma = self._filter_markers(all_ma, ns_prefix="draft/") if all_ma else MarkerArray()
+            # also force marker frames to match (safety, if legacy builder used other frame)
+            for m in compiled_ma.markers:
+                m.header.frame_id = frame_id
+        except Exception as e:
+            self._append_log(f"W: compiled MarkerArray build failed: {e}")
+
+        # ---- PLANNED (TCP) PoseArray + MarkerArray ----
+        planned_pa = PoseArray()
+        planned_pa.header.frame_id = frame_id
+        planned_ma = MarkerArray()
+        try:
+            if isinstance(planned_tcp_doc, dict) and planned_tcp_doc:
+                planned_pa = build_tcp_pose_array_from_tcp_yaml(planned_tcp_doc, default_frame=frame_id)
+                planned_ma = build_tcp_marker_array_from_tcp_yaml(
+                    planned_tcp_doc,
+                    ns_prefix="planned_tcp",
+                    default_frame=frame_id,
+                    include_text=True,
+                )
+                # force headers consistent
+                planned_pa.header.frame_id = frame_id
+                for m in planned_ma.markers:
+                    m.header.frame_id = frame_id
+        except Exception as e:
+            self._append_log(f"W: planned tcp build failed: {e}")
+
+        # ---- EXECUTED (TCP) PoseArray + MarkerArray ----
+        executed_pa = PoseArray()
+        executed_pa.header.frame_id = frame_id
+        executed_ma = MarkerArray()
+        try:
+            if isinstance(executed_tcp_doc, dict) and executed_tcp_doc:
+                executed_pa = build_tcp_pose_array_from_tcp_yaml(executed_tcp_doc, default_frame=frame_id)
+                executed_ma = build_tcp_marker_array_from_tcp_yaml(
+                    executed_tcp_doc,
+                    ns_prefix="executed_tcp",
+                    default_frame=frame_id,
+                    include_text=True,
+                )
+                executed_pa.header.frame_id = frame_id
+                for m in executed_ma.markers:
+                    m.header.frame_id = frame_id
+        except Exception as e:
+            self._append_log(f"W: executed tcp build failed: {e}")
+
+        # ---- publish ALL 6 topics (even if empty) ----
+        try:
+            self._ros_call_first(("spray_set_compiled",), poses=compiled_pa, markers=compiled_ma)
         except Exception as e:
             self._append_log(f"W spray_set_compiled failed: {e}")
 
         try:
-            if ma_planned.markers:
-                self._ros_call_first(("spray_set_planned", "spray_set_traj"), markers=ma_planned)
+            self._ros_call_first(("spray_set_planned", "spray_set_traj"), poses=planned_pa, markers=planned_ma)
         except Exception as e:
-            self._append_log(f"W spray_set_planned/traj failed: {e}")
+            self._append_log(f"W spray_set_planned failed: {e}")
 
         try:
-            if ma_exec.markers:
-                self._ros_call_first(("spray_set_executed",), markers=ma_exec)
+            self._ros_call_first(("spray_set_executed",), poses=executed_pa, markers=executed_ma)
         except Exception as e:
             self._append_log(f"W spray_set_executed failed: {e}")
 
+        # apply current show/hide toggles (latched Bool topics)
         try:
             self.sprayPathBox.publish_current()
         except Exception:
