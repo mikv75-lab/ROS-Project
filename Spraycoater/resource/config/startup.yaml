@@ -55,13 +55,19 @@ ros:
 
   # ----------------------------------------------------------
   # Config files (package:// is correct here)
+  # NOTE:
+  #   scene_file und robot_file sind jetzt aktiv genutzt:
+  #   AppContent lädt + resolved diese beim Startup (wie topics/qos/frames).
   # ----------------------------------------------------------
   configs:
     topics_file: "package://spraycoater_bringup/config/topics.yaml"
     qos_file: "package://spraycoater_bringup/config/qos.yaml"
     frames_file: "package://spraycoater_bringup/config/frames.yaml"
+
+    # NEW/USED (resolved + loaded in AppContent)
     scene_file: "package://spraycoater_bringup/config/scene.yaml"
     robot_file: "package://spraycoater_bringup/config/robot.yaml"
+
     servo_file: "package://spraycoater_bringup/config/servo.yaml"
     poses_file: "package://spraycoater_bringup/config/poses.yaml"
     tools_file: "package://spraycoater_bringup/config/tools.yaml"

@@ -2,301 +2,454 @@
 # File: src/model/recipe/traj_fk_builder.py
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Tuple
-
 import math
 import os
-import tempfile
+from dataclasses import dataclass
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
-from .recipe import Draft, PoseQuat, PathSide, JTBySegment, JTSegment
+import yaml
 
-
-# ------------------------------------------------------------------
-# Tempfile retention:
-# Some MoveIt loaders parse lazily, so deleting temp files immediately
-# can cause "XML_ERROR_EMPTY_DOCUMENT" / "Could not open file [<?xml ...>]"
-# ------------------------------------------------------------------
-_RETAINED_MODEL_FILES: List[str] = []
+# STRICT: must match your project layout
+from model.recipe.recipe import Draft, JTBySegment  # type: ignore
 
 
-def _as_dict(x: Any, *, name: str) -> Dict[str, Any]:
-    if not isinstance(x, dict):
-        raise ValueError(f"{name} muss dict sein, ist {type(x).__name__}")
-    return x
+# ============================================================
+# Helpers (STRICT)
+# ============================================================
+
+def _clamp(x: float, lo: float, hi: float) -> float:
+    return lo if x < lo else hi if x > hi else x
 
 
-def _clamp(v: float, lo: float, hi: float) -> float:
-    return lo if v < lo else hi if v > hi else v
+def _dict(v: Any) -> Dict[str, Any]:
+    return v if isinstance(v, dict) else {}
 
 
-def _vec_norm3(x: float, y: float, z: float) -> float:
-    return math.sqrt(x * x + y * y + z * z)
+def _require_dict(d: Any, name: str) -> Dict[str, Any]:
+    if not isinstance(d, dict):
+        raise ValueError(f"{name} must be dict, got {type(d).__name__}")
+    return d
 
 
-def _quat_norm(q: Tuple[float, float, float, float]) -> float:
-    return math.sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3])
-
-
-def _quat_normalize(q: Tuple[float, float, float, float]) -> Tuple[float, float, float, float]:
-    n = _quat_norm(q)
-    if n <= 1e-12:
-        return (0.0, 0.0, 0.0, 1.0)
-    return (q[0] / n, q[1] / n, q[2] / n, q[3] / n)
+def _require_list3(v: Any, name: str) -> Tuple[float, float, float]:
+    if not isinstance(v, (list, tuple)) or len(v) != 3:
+        raise ValueError(f"{name} must be list[3], got {v!r}")
+    return (float(v[0]), float(v[1]), float(v[2]))
 
 
 def _quat_dot(a: Tuple[float, float, float, float], b: Tuple[float, float, float, float]) -> float:
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
 
 
-def _quat_slerp(
-    qa: Tuple[float, float, float, float],
-    qb: Tuple[float, float, float, float],
-    t: float,
-) -> Tuple[float, float, float, float]:
-    t = _clamp(float(t), 0.0, 1.0)
-    qa = _quat_normalize(qa)
-    qb = _quat_normalize(qb)
-
-    dot = _quat_dot(qa, qb)
-
-    if dot < 0.0:
-        qb = (-qb[0], -qb[1], -qb[2], -qb[3])
-        dot = -dot
-
-    if dot > 0.9995:
-        out = (
-            qa[0] + t * (qb[0] - qa[0]),
-            qa[1] + t * (qb[1] - qa[1]),
-            qa[2] + t * (qb[2] - qa[2]),
-            qa[3] + t * (qb[3] - qa[3]),
-        )
-        return _quat_normalize(out)
-
-    theta_0 = math.acos(_clamp(dot, -1.0, 1.0))
-    sin_theta_0 = math.sin(theta_0)
-    if sin_theta_0 <= 1e-12:
-        return qa
-
-    theta = theta_0 * t
-    sin_theta = math.sin(theta)
-
-    s0 = math.cos(theta) - dot * (sin_theta / sin_theta_0)
-    s1 = sin_theta / sin_theta_0
-
-    out = (
-        s0 * qa[0] + s1 * qb[0],
-        s0 * qa[1] + s1 * qb[1],
-        s0 * qa[2] + s1 * qb[2],
-        s0 * qa[3] + s1 * qb[3],
-    )
-    return _quat_normalize(out)
+def _quat_norm(q: Tuple[float, float, float, float]) -> float:
+    return math.sqrt(_quat_dot(q, q))
 
 
-def _safe_vec3(v: Any) -> Optional[Tuple[float, float, float]]:
-    if v is None:
-        return None
-    try:
-        return (float(v[0]), float(v[1]), float(v[2]))
-    except Exception:
-        pass
-    try:
-        return (float(v.x), float(v.y), float(v.z))
-    except Exception:
-        pass
-    try:
-        return (float(v.x()), float(v.y()), float(v.z()))
-    except Exception:
-        return None
+def _quat_normalize(q: Tuple[float, float, float, float]) -> Tuple[float, float, float, float]:
+    n = _quat_norm(q)
+    if n <= 0.0:
+        return (0.0, 0.0, 0.0, 1.0)
+    return (q[0] / n, q[1] / n, q[2] / n, q[3] / n)
 
 
-def _safe_quat_xyzw(q: Any) -> Optional[Tuple[float, float, float, float]]:
-    if q is None:
-        return None
-    try:
-        return (float(q.x), float(q.y), float(q.z), float(q.w))
-    except Exception:
-        pass
-    try:
-        return (float(q.x()), float(q.y()), float(q.z()), float(q.w()))
-    except Exception:
-        return None
+def _rpy_deg_to_quat_xyzw(r: float, p: float, y: float) -> Tuple[float, float, float, float]:
+    rr = math.radians(float(r))
+    pp = math.radians(float(p))
+    yy = math.radians(float(y))
+
+    cr = math.cos(rr * 0.5)
+    sr = math.sin(rr * 0.5)
+    cp = math.cos(pp * 0.5)
+    sp = math.sin(pp * 0.5)
+    cy = math.cos(yy * 0.5)
+    sy = math.sin(yy * 0.5)
+
+    qw = cr * cp * cy + sr * sp * sy
+    qx = sr * cp * cy - cr * sp * sy
+    qy = cr * sp * cy + sr * cp * sy
+    qz = cr * cp * sy - sr * sp * cy
+    return _quat_normalize((qx, qy, qz, qw))
 
 
-def _tf_to_posequat_mm(tf: Any, *, meters_to_mm: float = 1000.0) -> Optional[PoseQuat]:
-    if tf is None:
-        return None
+def _quat_to_rot3(q: Tuple[float, float, float, float]) -> List[List[float]]:
+    qx, qy, qz, qw = _quat_normalize(q)
 
-    t = None
-    q = None
+    xx = qx * qx
+    yy = qy * qy
+    zz = qz * qz
+    xy = qx * qy
+    xz = qx * qz
+    yz = qy * qz
+    wx = qw * qx
+    wy = qw * qy
+    wz = qw * qz
 
-    for getter in ("translation", "get_translation"):
-        try:
-            t = getattr(tf, getter)
-            break
-        except Exception:
-            continue
-    if callable(t):
-        try:
-            t = t()
-        except Exception:
-            t = None
+    return [
+        [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy)],
+        [2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)],
+        [2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy)],
+    ]
 
-    for getter in ("rotation", "get_rotation"):
-        try:
-            q = getattr(tf, getter)
-            break
-        except Exception:
-            continue
-    if callable(q):
-        try:
-            q = q()
-        except Exception:
-            q = None
 
-    xyz = _safe_vec3(t)
-    xyzw = _safe_quat_xyzw(q)
+def _rot3_to_quat(R: List[List[float]]) -> Tuple[float, float, float, float]:
+    # Convert rotation matrix to quaternion (x,y,z,w), normalized
+    tr = R[0][0] + R[1][1] + R[2][2]
+    if tr > 0.0:
+        S = math.sqrt(tr + 1.0) * 2.0
+        qw = 0.25 * S
+        qx = (R[2][1] - R[1][2]) / S
+        qy = (R[0][2] - R[2][0]) / S
+        qz = (R[1][0] - R[0][1]) / S
+    elif (R[0][0] > R[1][1]) and (R[0][0] > R[2][2]):
+        S = math.sqrt(1.0 + R[0][0] - R[1][1] - R[2][2]) * 2.0
+        qw = (R[2][1] - R[1][2]) / S
+        qx = 0.25 * S
+        qy = (R[0][1] + R[1][0]) / S
+        qz = (R[0][2] + R[2][0]) / S
+    elif R[1][1] > R[2][2]:
+        S = math.sqrt(1.0 + R[1][1] - R[0][0] - R[2][2]) * 2.0
+        qw = (R[0][2] - R[2][0]) / S
+        qx = (R[0][1] + R[1][0]) / S
+        qy = 0.25 * S
+        qz = (R[1][2] + R[2][1]) / S
+    else:
+        S = math.sqrt(1.0 + R[2][2] - R[0][0] - R[1][1]) * 2.0
+        qw = (R[1][0] - R[0][1]) / S
+        qx = (R[0][2] + R[2][0]) / S
+        qy = (R[1][2] + R[2][1]) / S
+        qz = 0.25 * S
 
-    if xyz is None:
-        try:
-            m = tf.matrix()  # type: ignore[attr-defined]
-            xyz = (float(m[0][3]), float(m[1][3]), float(m[2][3]))
-        except Exception:
-            return None
+    return _quat_normalize((qx, qy, qz, qw))
 
-    if xyzw is None:
-        xyzw = (0.0, 0.0, 0.0, 1.0)
 
-    x_m, y_m, z_m = xyz
-    qx, qy, qz, qw = _quat_normalize(xyzw)
+def _mat4_from_xyz_quat_mm(xyz_mm: Tuple[float, float, float], q: Tuple[float, float, float, float]) -> List[List[float]]:
+    R = _quat_to_rot3(q)
+    tx, ty, tz = xyz_mm
+    return [
+        [R[0][0], R[0][1], R[0][2], float(tx)],
+        [R[1][0], R[1][1], R[1][2], float(ty)],
+        [R[2][0], R[2][1], R[2][2], float(tz)],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
 
-    return PoseQuat(
-        x=float(x_m) * float(meters_to_mm),
-        y=float(y_m) * float(meters_to_mm),
-        z=float(z_m) * float(meters_to_mm),
-        qx=float(qx),
-        qy=float(qy),
-        qz=float(qz),
-        qw=float(qw),
-    )
+
+def _mat4_mul(A: List[List[float]], B: List[List[float]]) -> List[List[float]]:
+    out = [[0.0] * 4 for _ in range(4)]
+    for i in range(4):
+        for j in range(4):
+            out[i][j] = (
+                A[i][0] * B[0][j] +
+                A[i][1] * B[1][j] +
+                A[i][2] * B[2][j] +
+                A[i][3] * B[3][j]
+            )
+    return out
+
+
+def _mat4_inv_rigid(T: List[List[float]]) -> List[List[float]]:
+    # inverse for rigid transform (R,t)
+    R = [[T[r][c] for c in range(3)] for r in range(3)]
+    t = [T[r][3] for r in range(3)]
+
+    Rt = [
+        [R[0][0], R[1][0], R[2][0]],
+        [R[0][1], R[1][1], R[2][1]],
+        [R[0][2], R[1][2], R[2][2]],
+    ]
+    tinv = [
+        -(Rt[0][0] * t[0] + Rt[0][1] * t[1] + Rt[0][2] * t[2]),
+        -(Rt[1][0] * t[0] + Rt[1][1] * t[1] + Rt[1][2] * t[2]),
+        -(Rt[2][0] * t[0] + Rt[2][1] * t[1] + Rt[2][2] * t[2]),
+    ]
+    return [
+        [Rt[0][0], Rt[0][1], Rt[0][2], tinv[0]],
+        [Rt[1][0], Rt[1][1], Rt[1][2], tinv[1]],
+        [Rt[2][0], Rt[2][1], Rt[2][2], tinv[2]],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+def _apply_T_to_point_mm(T: List[List[float]], p: Tuple[float, float, float]) -> Tuple[float, float, float]:
+    x, y, z = float(p[0]), float(p[1]), float(p[2])
+    xo = T[0][0] * x + T[0][1] * y + T[0][2] * z + T[0][3]
+    yo = T[1][0] * x + T[1][1] * y + T[1][2] * z + T[1][3]
+    zo = T[2][0] * x + T[2][1] * y + T[2][2] * z + T[2][3]
+    return (xo, yo, zo)
+
+
+def _apply_T_to_quat(T: List[List[float]], q: Tuple[float, float, float, float]) -> Tuple[float, float, float, float]:
+    # q_to = R_to_from * q_from
+    R_T = [[T[r][c] for c in range(3)] for r in range(3)]
+    R_q = _quat_to_rot3(q)
+    R = [[0.0] * 3 for _ in range(3)]
+    for i in range(3):
+        for j in range(3):
+            R[i][j] = R_T[i][0] * R_q[0][j] + R_T[i][1] * R_q[1][j] + R_T[i][2] * R_q[2][j]
+    return _rot3_to_quat(R)
+
+
+def _load_yaml_file(path: str) -> Dict[str, Any]:
+    if not path:
+        raise ValueError("YAML path is empty")
+    p = os.path.abspath(os.path.expanduser(path))
+    if not os.path.exists(p):
+        raise FileNotFoundError(p)
+    with open(p, "r", encoding="utf-8") as f:
+        return _dict(yaml.safe_load(f) or {})
+
+
+# ============================================================
+# Offline TF: scene.yaml (scene_objects) + robot.yaml
+# ============================================================
+
+def _scene_object_by_id(scene_doc: Mapping[str, Any], oid: str) -> Dict[str, Any]:
+    objs = scene_doc.get("scene_objects")
+    if not isinstance(objs, list):
+        raise ValueError("scene.yaml: 'scene_objects' missing or not list")
+    for o in objs:
+        if isinstance(o, dict) and str(o.get("id", "")) == oid:
+            return o
+    raise KeyError(f"scene.yaml: object id={oid!r} not found")
+
+
+def _tf_from_scene_obj_meters(scene_obj: Mapping[str, Any]) -> List[List[float]]:
+    pos_m = _require_list3(scene_obj.get("position"), "scene_obj.position(m)")
+    rpy = _require_list3(scene_obj.get("rpy_deg"), "scene_obj.rpy_deg(deg)")
+    pos_mm = (pos_m[0] * 1000.0, pos_m[1] * 1000.0, pos_m[2] * 1000.0)
+    q = _rpy_deg_to_quat_xyzw(rpy[0], rpy[1], rpy[2])
+    return _mat4_from_xyz_quat_mm(pos_mm, q)
+
+
+def _tf_world_robot_mount_from_robot_yaml(robot_doc: Mapping[str, Any]) -> List[List[float]]:
+    blk = _require_dict(robot_doc.get("world_to_robot_mount"), "robot.yaml.world_to_robot_mount")
+    xyz_m = _require_list3(blk.get("xyz"), "robot.yaml.world_to_robot_mount.xyz(m)")
+    rpy = _require_list3(blk.get("rpy_deg"), "robot.yaml.world_to_robot_mount.rpy_deg(deg)")
+    xyz_mm = (xyz_m[0] * 1000.0, xyz_m[1] * 1000.0, xyz_m[2] * 1000.0)
+    q = _rpy_deg_to_quat_xyzw(rpy[0], rpy[1], rpy[2])
+    return _mat4_from_xyz_quat_mm(xyz_mm, q)
+
+
+def compute_T_scene_robot_mount_mm_from_docs(
+    *,
+    scene_doc: Mapping[str, Any],
+    robot_doc: Mapping[str, Any],
+    substrate_mount_id: str = "substrate_mount",
+    scene_id: str = "scene",
+) -> List[List[float]]:
+    """
+    p_scene = T_scene_robot_mount * p_robot_mount
+
+    Uses:
+      scene.yaml:
+        world -> substrate_mount
+        substrate_mount -> scene
+      robot.yaml:
+        world -> robot_mount
+    """
+    o_mount = _scene_object_by_id(scene_doc, substrate_mount_id)
+    o_scene = _scene_object_by_id(scene_doc, scene_id)
+
+    # world -> substrate_mount
+    if str(o_mount.get("frame", "world")) != "world":
+        raise ValueError("scene.yaml: substrate_mount.frame must be 'world'")
+    T_world_sub_mount = _tf_from_scene_obj_meters(o_mount)
+
+    # substrate_mount -> scene
+    if str(o_scene.get("frame", "")) != substrate_mount_id:
+        raise ValueError(f"scene.yaml: scene.frame must be {substrate_mount_id!r}")
+    T_sub_mount_scene = _tf_from_scene_obj_meters(o_scene)
+
+    T_world_scene = _mat4_mul(T_world_sub_mount, T_sub_mount_scene)
+
+    # world -> robot_mount
+    T_world_robot_mount = _tf_world_robot_mount_from_robot_yaml(robot_doc)
+
+    # scene <- robot_mount : inv(world->scene) * (world->robot_mount)
+    T_scene_world = _mat4_inv_rigid(T_world_scene)
+    return _mat4_mul(T_scene_world, T_world_robot_mount)
+
+
+def compute_T_scene_robot_mount_mm_from_paths(*, scene_yaml_path: str, robot_yaml_path: str) -> List[List[float]]:
+    scene_doc = _load_yaml_file(scene_yaml_path)
+    robot_doc = _load_yaml_file(robot_yaml_path)
+    return compute_T_scene_robot_mount_mm_from_docs(scene_doc=scene_doc, robot_doc=robot_doc)
+
+
+# ============================================================
+# Minimal pose containers used by Draft YAML output
+# ============================================================
+
+@dataclass(frozen=True)
+class PoseQuat:
+    x: float
+    y: float
+    z: float
+    qx: float
+    qy: float
+    qz: float
+    qw: float
+
+
+@dataclass(frozen=True)
+class PathSide:
+    poses_quat: List[PoseQuat]
 
 
 @dataclass(frozen=True)
 class TrajFkConfig:
+    """
+    STRICT FK config (KDL).
+
+    - FK is computed in base_link frame (default 'robot_mount').
+    - If T_out_from_base_mm is set, FK output is mapped into out_frame:
+        p_out = T_out_from_base_mm * p_base
+        q_out = R_out_from_base * q_base
+    """
+    group_name: str = "omron_arm_group"
+
+    # IMPORTANT: default to your global robot base frame in TF
+    base_link: str = "robot_mount"
     ee_link: str = "tcp"
+
+    step_mm: float = 5.0
+    max_points: int = 0
     meters_to_mm: float = 1000.0
-    step_mm: float = 1.0
-    max_points: int = 0  # 0 = unlimited
+
+    # Optional output transform (mm)
+    T_out_from_base_mm: Optional[List[List[float]]] = None
+    out_frame: Optional[str] = None
 
 
 class TrajFkBuilder:
-    # ============================================================
-    # XML/file-path robust loader
-    # ============================================================
+    """
+    STRICT Traj->FK builder (OFFLINE, no ROS nodes).
+
+    Backend: KDL (URDF -> KDL Tree/Chain; FK via ChainFkSolverPos_recursive).
+    """
+
+    # ------------------------------------------------------------
+    # Robot model (KDL)
+    # ------------------------------------------------------------
 
     @staticmethod
-    def _looks_like_xml(s: str) -> bool:
-        ss = (s or "").lstrip()
-        return bool(ss) and ss[0] == "<"
+    def build_robot_model_from_urdf_srdf(*, urdf_path: str = "", srdf_path: str = "", urdf_xml: str = "", srdf_xml: str = "") -> Dict[str, Any]:
+        if urdf_xml and srdf_xml:
+            return TrajFkBuilder.build_robot_model_from_urdf_srdf_xml(urdf_xml=urdf_xml, srdf_xml=srdf_xml)
+        if not urdf_path or not srdf_path:
+            raise ValueError("build_robot_model_from_urdf_srdf: urdf/srdf fehlen (path oder xml).")
+        with open(os.path.abspath(os.path.expanduser(urdf_path)), "r", encoding="utf-8") as f:
+            uxml = f.read()
+        with open(os.path.abspath(os.path.expanduser(srdf_path)), "r", encoding="utf-8") as f:
+            sxml = f.read()
+        return TrajFkBuilder.build_robot_model_from_urdf_srdf_xml(urdf_xml=uxml, srdf_xml=sxml)
 
     @staticmethod
-    def _write_temp_file(text: str, *, suffix: str) -> str:
-        fd, path = tempfile.mkstemp(prefix="spraycoater_model_", suffix=suffix)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text or "")
-            # Make sure content is fully written to disk (helps with timing-sensitive loaders)
-            f.flush()
-            try:
-                os.fsync(f.fileno())
-            except Exception:
-                pass
-        # RETAIN (do not delete immediately; some loaders parse lazily)
-        _RETAINED_MODEL_FILES.append(path)
-        return path
+    def build_robot_model_from_urdf_srdf_xml(*, urdf_xml: str, srdf_xml: str) -> Dict[str, Any]:
+        if not isinstance(urdf_xml, str) or not urdf_xml.strip():
+            raise ValueError("TrajFkBuilder(KDL): urdf_xml ist leer")
+        if not isinstance(srdf_xml, str) or not srdf_xml.strip():
+            raise ValueError("TrajFkBuilder(KDL): srdf_xml ist leer")
 
-    @staticmethod
-    def build_robot_model_from_urdf_srdf(*, urdf_xml: str, srdf_xml: str) -> Any:
-        """
-        Accepts URDF/SRDF as XML strings OR as file paths.
-
-        IMPORTANT (Rolling pitfall):
-          Some MoveIt/urdfdom bindings interpret passed strings as filenames.
-          If you pass XML directly, you can get noisy logs like:
-            "Could not open file [<?xml ...]" / "XML_ERROR_EMPTY_DOCUMENT"
-
-        Strategy:
-          - If input looks like XML => write to tempfiles FIRST and only then call bindings.
-            (prevents the noisy "open file [<?xml ...]" direct-attempt spam)
-          - Else (non-XML) => treat as path/param and try directly.
-        """
-        urdf_in = str(urdf_xml or "")
-        srdf_in = str(srdf_xml or "")
-
-        if not urdf_in.strip():
-            raise ValueError("TrajFkBuilder: urdf ist leer.")
-        if not srdf_in.strip():
-            raise ValueError("TrajFkBuilder: srdf ist leer.")
-
-        def _try_build(urdf_arg: str, srdf_arg: str) -> Any:
-            last_exc: Optional[Exception] = None
-
-            try:
-                from moveit.core.robot_model import RobotModel  # type: ignore
-                return RobotModel(urdf_arg, srdf_arg)  # type: ignore[call-arg]
-            except Exception as e:
-                last_exc = e
-
-            try:
-                from moveit.core._moveit_core import RobotModel  # type: ignore
-                return RobotModel(urdf_arg, srdf_arg)  # type: ignore[call-arg]
-            except Exception as e:
-                last_exc = e
-
-            try:
-                from moveit.core.robot_model_loader import RobotModelLoader  # type: ignore
-                loader = RobotModelLoader(urdf_arg, srdf_arg)  # type: ignore[call-arg]
-                fn = getattr(loader, "get_model", None)
-                if callable(fn):
-                    return fn()
-                m = getattr(loader, "model", None)
-                if m is not None:
-                    return m
-            except Exception as e:
-                last_exc = e
-
-            if last_exc is not None:
-                raise last_exc
-            raise RuntimeError("TrajFkBuilder: robot_model build failed (no binding path).")
-
-        urdf_is_xml = TrajFkBuilder._looks_like_xml(urdf_in)
-        srdf_is_xml = TrajFkBuilder._looks_like_xml(srdf_in)
-
-        # If it looks like XML, DO NOT attempt a "direct" call first.
-        # Rolling frequently interprets strings as file paths and will spam urdfdom errors.
-        if urdf_is_xml or srdf_is_xml:
-            urdf_arg = TrajFkBuilder._write_temp_file(urdf_in, suffix=".urdf") if urdf_is_xml else urdf_in
-            srdf_arg = TrajFkBuilder._write_temp_file(srdf_in, suffix=".srdf") if srdf_is_xml else srdf_in
-            try:
-                return _try_build(urdf_arg, srdf_arg)
-            except Exception as e_file:
-                raise RuntimeError(
-                    "TrajFkBuilder: konnte robot_model nicht aus URDF/SRDF bauen (XML->Tempfile). "
-                    f"Letzter Fehler: {e_file}"
-                ) from e_file
-
-        # Non-XML inputs: treat as paths and try directly
         try:
-            return _try_build(urdf_in, srdf_in)
-        except Exception as e_direct:
-            raise RuntimeError(f"TrajFkBuilder: robot_model build failed from paths: {e_direct}") from e_direct
+            from urdf_parser_py.urdf import URDF  # type: ignore
+            from kdl_parser_py.urdf import treeFromUrdfModel  # type: ignore
+        except Exception as e:
+            raise RuntimeError(
+                "TrajFkBuilder(KDL): Import fehlgeschlagen. Benötigt: urdf_parser_py, kdl_parser_py. "
+                f"Details: {e!r}"
+            )
 
-    # ============================================================
-    # Existing API (unverändert)
-    # ============================================================
+        try:
+            urdf_model = URDF.from_xml_string(urdf_xml)
+        except Exception as e:
+            raise RuntimeError(f"TrajFkBuilder(KDL): URDF parsing fehlgeschlagen: {e!r}") from e
+
+        ok, tree = treeFromUrdfModel(urdf_model)
+        if not ok or tree is None:
+            raise RuntimeError("TrajFkBuilder(KDL): kdl_parser_py treeFromUrdfModel() lieferte kein Tree.")
+
+        return {"_kdl_tree": tree, "_urdf": urdf_model}
+
+    # ------------------------------------------------------------
+    # Draft YAML transform (mm, rigid)
+    # ------------------------------------------------------------
+
+    @staticmethod
+    def transform_draft_yaml(
+        draft: Dict[str, Any],
+        *,
+        T_to_from_mm: List[List[float]],
+        out_frame: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Transform Draft YAML dict (poses_quat in mm) with rigid transform.
+
+        Convention:
+          p_to = T_to_from * p_from
+          q_to = R_to_from * q_from
+
+        If out_frame is given, writes draft['frame']=out_frame.
+        """
+        if not isinstance(draft, dict):
+            raise TypeError("transform_draft_yaml: draft must be dict")
+        sides = draft.get("sides")
+        if not isinstance(sides, dict):
+            return dict(draft)
+
+        out = dict(draft)
+        out_sides: Dict[str, Any] = {}
+        for side, sobj in sides.items():
+            if not isinstance(sobj, dict):
+                continue
+            poses = sobj.get("poses_quat")
+            if not isinstance(poses, list):
+                out_sides[str(side)] = dict(sobj)
+                continue
+
+            new_poses: List[Dict[str, Any]] = []
+            for p in poses:
+                if not isinstance(p, dict):
+                    continue
+                try:
+                    x = float(p.get("x", 0.0))
+                    y = float(p.get("y", 0.0))
+                    z = float(p.get("z", 0.0))
+                    qx = float(p.get("qx", 0.0))
+                    qy = float(p.get("qy", 0.0))
+                    qz = float(p.get("qz", 0.0))
+                    qw = float(p.get("qw", 1.0))
+                except Exception:
+                    continue
+
+                x2, y2, z2 = _apply_T_to_point_mm(T_to_from_mm, (x, y, z))
+                q2 = _apply_T_to_quat(T_to_from_mm, (qx, qy, qz, qw))
+
+                new_poses.append(
+                    {
+                        "x": x2,
+                        "y": y2,
+                        "z": z2,
+                        "qx": q2[0],
+                        "qy": q2[1],
+                        "qz": q2[2],
+                        "qw": q2[3],
+                    }
+                )
+
+            out_sides[str(side)] = {"poses_quat": new_poses}
+
+        out["sides"] = out_sides
+        if out_frame is not None:
+            out["frame"] = str(out_frame)
+        return out
+
+    # ------------------------------------------------------------
+    # FK -> Draft (TCP poses)
+    # ------------------------------------------------------------
 
     @staticmethod
     def build_tcp_draft(
-        traj: JTBySegment | Mapping[str, Any],
+        traj: Union[JTBySegment, Mapping[str, Any]],
         *,
         robot_model: Any,
         cfg: TrajFkConfig,
@@ -306,56 +459,86 @@ class TrajFkBuilder:
     ) -> Draft:
         jt = TrajFkBuilder._coerce_jt_by_segment(traj)
 
+        if robot_model is None:
+            raise ValueError("TrajFkBuilder(KDL): robot_model ist None.")
+        if not isinstance(cfg.base_link, str) or not cfg.base_link.strip():
+            raise ValueError("TrajFkBuilder(KDL): cfg.base_link ist leer.")
+        if not isinstance(cfg.ee_link, str) or not cfg.ee_link.strip():
+            raise ValueError("TrajFkBuilder(KDL): cfg.ee_link ist leer.")
         if not (isinstance(cfg.step_mm, (int, float)) and float(cfg.step_mm) > 0.0):
-            raise ValueError("TrajFkBuilder: cfg.step_mm muss > 0 sein.")
+            raise ValueError("TrajFkBuilder(KDL): cfg.step_mm muss > 0 sein.")
         if cfg.max_points and int(cfg.max_points) < 2:
-            raise ValueError("TrajFkBuilder: cfg.max_points muss 0 oder >= 2 sein.")
+            raise ValueError("TrajFkBuilder(KDL): cfg.max_points muss 0 oder >= 2 sein.")
+
+        km = TrajFkBuilder._require_kdl_robot_model(
+            robot_model,
+            base_link=str(cfg.base_link),
+            ee_link=str(cfg.ee_link),
+        )
 
         by_side: Dict[str, List[PoseQuat]] = {}
 
         for seg_id, seg in jt.segments.items():
             side = default_side
-            if segment_to_side and seg_id in segment_to_side:
-                side = str(segment_to_side[seg_id] or default_side)
-            side = side.strip() or default_side
+            if segment_to_side is not None:
+                if seg_id not in segment_to_side:
+                    raise KeyError(f"TrajFkBuilder(KDL): segment_to_side hat keinen Eintrag für seg_id={seg_id!r}")
+                side = str(segment_to_side[seg_id] or default_side).strip() or default_side
 
-            raw_poses = TrajFkBuilder._fk_segment_raw(seg, robot_model=robot_model, cfg=cfg)
+            raw_poses = TrajFkBuilder._fk_segment_raw_kdl(
+                seg_id=seg_id,
+                seg=seg,
+                km=km,
+                cfg=cfg,
+            )
             if len(raw_poses) < 2:
-                continue
+                raise RuntimeError(f"TrajFkBuilder(KDL): FK ergab <2 Posen für Segment {seg_id!r}.")
 
             sampled = TrajFkBuilder._resample_posequats_by_step_mm(
                 raw_poses,
                 step_mm=float(cfg.step_mm),
                 max_points=int(cfg.max_points or 0),
             )
-            if not sampled:
-                continue
+            if len(sampled) < 2:
+                raise RuntimeError(f"TrajFkBuilder(KDL): Resampling ergab <2 Posen für Segment {seg_id!r}.")
+
+            # Optional: map base_link -> out_frame (e.g. robot_mount -> scene)
+            if cfg.T_out_from_base_mm is not None:
+                T = cfg.T_out_from_base_mm
+                mapped: List[PoseQuat] = []
+                for p in sampled:
+                    x2, y2, z2 = _apply_T_to_point_mm(T, (p.x, p.y, p.z))
+                    q2 = _apply_T_to_quat(T, (p.qx, p.qy, p.qz, p.qw))
+                    mapped.append(PoseQuat(x=x2, y=y2, z=z2, qx=q2[0], qy=q2[1], qz=q2[2], qw=q2[3]))
+                sampled = mapped
 
             if drop_duplicate_boundary and side in by_side and by_side[side]:
-                a = by_side[side][-1]
-                b = sampled[0]
-                if _vec_norm3(b.x - a.x, b.y - a.y, b.z - a.z) <= 1e-9:
+                last = by_side[side][-1]
+                first = sampled[0]
+                if abs(last.x - first.x) < 1e-9 and abs(last.y - first.y) < 1e-9 and abs(last.z - first.z) < 1e-9:
                     sampled = sampled[1:]
-                    if not sampled:
-                        continue
 
             by_side.setdefault(side, []).extend(sampled)
 
         if not by_side:
-            raise ValueError("TrajFkBuilder: keine TCP Posen erzeugt (leere Traj oder FK fehlgeschlagen).")
+            raise RuntimeError("TrajFkBuilder(KDL): keine TCP Posen erzeugt (by_side leer).")
 
-        sides: Dict[str, PathSide] = {s: PathSide(poses_quat=list(poses)) for s, poses in by_side.items()}
-        return Draft(version=1, sides=sides)
+        sides_out: Dict[str, Any] = {}
+        for s, poses in by_side.items():
+            sides_out[s] = PathSide(poses_quat=list(poses))
+
+        return Draft(version=1, sides=sides_out)  # type: ignore[arg-type]
 
     @staticmethod
     def build_tcp_draft_yaml(
-        traj: JTBySegment | Mapping[str, Any],
+        traj: Union[JTBySegment, Mapping[str, Any]],
         *,
         robot_model: Any,
         cfg: TrajFkConfig,
         segment_to_side: Optional[Dict[str, str]] = None,
         default_side: str = "top",
         drop_duplicate_boundary: bool = True,
+        frame_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         d = TrajFkBuilder.build_tcp_draft(
             traj,
@@ -365,142 +548,215 @@ class TrajFkBuilder:
             default_side=default_side,
             drop_duplicate_boundary=drop_duplicate_boundary,
         )
-        return TrajFkBuilder._draft_to_yaml_dict(d)
+        out = TrajFkBuilder._draft_to_yaml_dict(d)
+
+        # frame: explicit > cfg.out_frame > base_link
+        fr = frame_id if frame_id is not None else (cfg.out_frame if cfg.out_frame else cfg.base_link)
+        out["frame"] = str(fr)
+        return out
+
+    # ------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------
+
+    @staticmethod
+    def _coerce_jt_by_segment(traj: Union[JTBySegment, Mapping[str, Any]]) -> JTBySegment:
+        if isinstance(traj, JTBySegment):
+            return traj
+        dd = _dict(dict(traj))
+        fn = getattr(JTBySegment, "from_yaml_dict", None)
+        if not callable(fn):
+            raise RuntimeError("JTBySegment.from_yaml_dict() fehlt (Projekt-API passt nicht).")
+        return fn(dd)
+
+    @staticmethod
+    def _require_kdl_robot_model(robot_model: Any, *, base_link: str, ee_link: str) -> Dict[str, Any]:
+        tree = None
+        if isinstance(robot_model, dict):
+            tree = robot_model.get("_kdl_tree")
+        else:
+            tree = getattr(robot_model, "_kdl_tree", None)
+
+        if tree is None:
+            raise ValueError("TrajFkBuilder(KDL): robot_model enthält keinen _kdl_tree")
+
+        try:
+            import PyKDL  # type: ignore
+        except Exception as e:
+            raise RuntimeError(f"TrajFkBuilder(KDL): Import PyKDL fehlgeschlagen: {e!r}") from e
+
+        # IMPORTANT:
+        # PyKDL.Tree.getChain(base, tip) returns a PyKDL.Chain (not (ok, chain)).
+        chain = tree.getChain(str(base_link), str(ee_link))  # type: ignore[attr-defined]
+
+        # Defensive checks: some bindings may return None on failure.
+        if chain is None:
+            raise RuntimeError(
+                f"TrajFkBuilder(KDL): getChain({base_link!r}->{ee_link!r}) lieferte None "
+                "(Frames/Joints nicht im selben Baum?)"
+            )
+
+        # Ensure chain looks valid
+        try:
+            nj = int(chain.getNrOfJoints())
+        except Exception:
+            nj = -1
+        if nj <= 0:
+            raise RuntimeError(
+                f"TrajFkBuilder(KDL): KDL chain getChain({base_link!r}->{ee_link!r}) hat keine Joints (nj={nj}). "
+                "Base/EE Link stimmen vermutlich nicht."
+            )
+
+        fk = PyKDL.ChainFkSolverPos_recursive(chain)
+        return {"tree": tree, "chain": chain, "fk": fk}
+
+    @staticmethod
+    def _fk_segment_raw_kdl(*, seg_id: str, seg: Any, km: Dict[str, Any], cfg: TrajFkConfig) -> List[PoseQuat]:
+        joint_names = getattr(seg, "joint_names", None)
+        if not isinstance(joint_names, list) or not joint_names:
+            raise ValueError(f"JT segment {seg_id!r}: joint_names fehlt/leer")
+
+        points = getattr(seg, "points", None)
+        if not isinstance(points, list) or not points:
+            raise ValueError(f"JT segment {seg_id!r}: points fehlt/leer")
+
+        try:
+            import PyKDL  # type: ignore
+        except Exception as e:
+            raise RuntimeError(f"TrajFkBuilder(KDL): Import PyKDL fehlgeschlagen: {e!r}") from e
+
+        fk = km["fk"]
+        chain = km["chain"]
+
+        out: List[PoseQuat] = []
+        for pt in points:
+            positions = getattr(pt, "positions", None)
+            if not isinstance(positions, list) or len(positions) != len(joint_names):
+                raise ValueError(f"JT segment {seg_id!r}: point.positions hat falsche Länge")
+
+            qj = PyKDL.JntArray(chain.getNrOfJoints())
+            for i, val in enumerate(positions):
+                qj[i] = float(val)
+
+            frame = PyKDL.Frame()
+            fk.JntToCart(qj, frame)
+
+            x_mm = float(frame.p[0]) * float(cfg.meters_to_mm)
+            y_mm = float(frame.p[1]) * float(cfg.meters_to_mm)
+            z_mm = float(frame.p[2]) * float(cfg.meters_to_mm)
+
+            rot = frame.M
+            R = [
+                [float(rot[0, 0]), float(rot[0, 1]), float(rot[0, 2])],
+                [float(rot[1, 0]), float(rot[1, 1]), float(rot[1, 2])],
+                [float(rot[2, 0]), float(rot[2, 1]), float(rot[2, 2])],
+            ]
+            qx, qy, qz, qw = _rot3_to_quat(R)
+
+            out.append(PoseQuat(x=x_mm, y=y_mm, z=z_mm, qx=qx, qy=qy, qz=qz, qw=qw))
+
+        return out
+
+    @staticmethod
+    def _resample_posequats_by_step_mm(poses: List[PoseQuat], *, step_mm: float, max_points: int = 0) -> List[PoseQuat]:
+        if not poses or len(poses) < 2:
+            return list(poses)
+
+        out: List[PoseQuat] = [poses[0]]
+
+        def dist(a: PoseQuat, b: PoseQuat) -> float:
+            dx = b.x - a.x
+            dy = b.y - a.y
+            dz = b.z - a.z
+            return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+        def slerp(qa: Tuple[float, float, float, float], qb: Tuple[float, float, float, float], t: float) -> Tuple[float, float, float, float]:
+            qa = _quat_normalize(qa)
+            qb = _quat_normalize(qb)
+            dot = _quat_dot(qa, qb)
+            if dot < 0.0:
+                qb = (-qb[0], -qb[1], -qb[2], -qb[3])
+                dot = -dot
+            dot = _clamp(dot, -1.0, 1.0)
+
+            if dot > 0.9995:
+                q = (
+                    qa[0] + (qb[0] - qa[0]) * t,
+                    qa[1] + (qb[1] - qa[1]) * t,
+                    qa[2] + (qb[2] - qa[2]) * t,
+                    qa[3] + (qb[3] - qa[3]) * t,
+                )
+                return _quat_normalize(q)
+
+            theta0 = math.acos(dot)
+            sin0 = math.sin(theta0)
+            theta = theta0 * t
+            sin_t = math.sin(theta)
+            s0 = math.cos(theta) - dot * sin_t / sin0
+            s1 = sin_t / sin0
+            return (
+                qa[0] * s0 + qb[0] * s1,
+                qa[1] * s0 + qb[1] * s1,
+                qa[2] * s0 + qb[2] * s1,
+                qa[3] * s0 + qb[3] * s1,
+            )
+
+        accum = 0.0
+        next_d = float(step_mm)
+
+        for i in range(len(poses) - 1):
+            a = poses[i]
+            b = poses[i + 1]
+            seg_len = dist(a, b)
+            if seg_len <= 1e-12:
+                continue
+
+            while accum + seg_len >= next_d:
+                alpha = (next_d - accum) / seg_len
+
+                x = a.x + (b.x - a.x) * alpha
+                y = a.y + (b.y - a.y) * alpha
+                z = a.z + (b.z - a.z) * alpha
+
+                q = slerp((a.qx, a.qy, a.qz, a.qw), (b.qx, b.qy, b.qz, b.qw), alpha)
+                out.append(PoseQuat(x=x, y=y, z=z, qx=q[0], qy=q[1], qz=q[2], qw=q[3]))
+
+                if max_points and max_points > 0 and len(out) >= int(max_points):
+                    return out
+
+                next_d += float(step_mm)
+
+            accum += seg_len
+
+        if out[-1] != poses[-1]:
+            out.append(poses[-1])
+        return out
 
     @staticmethod
     def _draft_to_yaml_dict(d: Draft) -> Dict[str, Any]:
-        for fn_name in ("to_yaml_dict", "to_dict", "as_dict"):
-            fn = getattr(d, fn_name, None)
-            if callable(fn):
-                out = fn()
-                return out if isinstance(out, dict) else {}
+        sides_obj = getattr(d, "sides", None)
+        if not isinstance(sides_obj, dict):
+            raise TypeError("Draft.sides ist nicht dict (unerwartet).")
+
         sides_out: Dict[str, Any] = {}
-        try:
-            for side, side_obj in (getattr(d, "sides", {}) or {}).items():
-                poses = []
-                for p in (getattr(side_obj, "poses_quat", []) or []):
-                    poses.append(
-                        {
-                            "x": float(getattr(p, "x", 0.0)),
-                            "y": float(getattr(p, "y", 0.0)),
-                            "z": float(getattr(p, "z", 0.0)),
-                            "qx": float(getattr(p, "qx", 0.0)),
-                            "qy": float(getattr(p, "qy", 0.0)),
-                            "qz": float(getattr(p, "qz", 0.0)),
-                            "qw": float(getattr(p, "qw", 1.0)),
-                        }
-                    )
-                sides_out[str(side)] = {"poses_quat": poses}
-        except Exception:
-            sides_out = {}
-        return {"version": int(getattr(d, "version", 1) or 1), "sides": sides_out}
+        for side, side_obj in sides_obj.items():
+            poses_obj = getattr(side_obj, "poses_quat", None)
+            if not isinstance(poses_obj, list):
+                raise TypeError(f"Draft.sides[{side!r}].poses_quat ist nicht list.")
+            poses = []
+            for p in poses_obj:
+                poses.append(
+                    {
+                        "x": float(getattr(p, "x")),
+                        "y": float(getattr(p, "y")),
+                        "z": float(getattr(p, "z")),
+                        "qx": float(getattr(p, "qx")),
+                        "qy": float(getattr(p, "qy")),
+                        "qz": float(getattr(p, "qz")),
+                        "qw": float(getattr(p, "qw")),
+                    }
+                )
+            sides_out[str(side)] = {"poses_quat": poses}
 
-    @staticmethod
-    def _coerce_jt_by_segment(traj: JTBySegment | Mapping[str, Any]) -> JTBySegment:
-        if isinstance(traj, JTBySegment):
-            return traj
-        dd = _as_dict(dict(traj), name="traj")
-        return JTBySegment.from_yaml_dict(dd)
-
-    @staticmethod
-    def _fk_segment_raw(seg: JTSegment, *, robot_model: Any, cfg: TrajFkConfig) -> List[PoseQuat]:
-        if robot_model is None:
-            raise ValueError("TrajFkBuilder: robot_model ist None (MoveIt RobotModel benötigt).")
-
-        try:
-            from moveit.core.robot_state import RobotState  # type: ignore
-        except Exception as e:
-            raise RuntimeError(f"TrajFkBuilder: moveit RobotState import fehlgeschlagen: {e!r}")
-
-        pts = list(seg.points or [])
-        if not pts:
-            return []
-
-        state = RobotState(robot_model)
-        state.set_to_default_values()
-
-        out: List[PoseQuat] = []
-
-        for p in pts:
-            q = list(p.positions or [])
-            if not q:
-                continue
-            if len(q) != len(seg.joint_names):
-                continue
-
-            try:
-                state.set_variable_positions(seg.joint_names, q)
-                state.update()
-                tf = state.get_global_link_transform(cfg.ee_link)
-                pq = _tf_to_posequat_mm(tf, meters_to_mm=float(cfg.meters_to_mm))
-                if pq is not None:
-                    out.append(pq)
-            except Exception:
-                continue
-
-        if len(out) >= 2:
-            filtered = [out[0]]
-            for i in range(1, len(out)):
-                a = filtered[-1]
-                b = out[i]
-                d = _vec_norm3(b.x - a.x, b.y - a.y, b.z - a.z)
-                if d > 1e-9:
-                    filtered.append(b)
-            out = filtered
-
-        return out
-
-    @staticmethod
-    def _resample_posequats_by_step_mm(poses: List[PoseQuat], *, step_mm: float, max_points: int) -> List[PoseQuat]:
-        if len(poses) < 2:
-            return list(poses)
-
-        step_mm = float(step_mm)
-        if step_mm <= 0.0:
-            return list(poses)
-
-        s: List[float] = [0.0]
-        for i in range(1, len(poses)):
-            a = poses[i - 1]
-            b = poses[i]
-            ds = _vec_norm3(b.x - a.x, b.y - a.y, b.z - a.z)
-            s.append(s[-1] + ds)
-
-        total = s[-1]
-        if total <= 1e-9:
-            return [poses[0]]
-
-        n = int(math.floor(total / step_mm)) + 1
-        targets = [i * step_mm for i in range(n)]
-        if targets[-1] < total:
-            targets.append(total)
-
-        out: List[PoseQuat] = []
-        j = 0
-
-        for st in targets:
-            while j < len(s) - 2 and s[j + 1] < st:
-                j += 1
-
-            s0 = s[j]
-            s1 = s[j + 1]
-            a = poses[j]
-            b = poses[j + 1]
-
-            alpha = 0.0 if s1 <= s0 else (st - s0) / (s1 - s0)
-            alpha = _clamp(alpha, 0.0, 1.0)
-
-            x = a.x + (b.x - a.x) * alpha
-            y = a.y + (b.y - a.y) * alpha
-            z = a.z + (b.z - a.z) * alpha
-
-            qa = (a.qx, a.qy, a.qz, a.qw)
-            qb = (b.qx, b.qy, b.qz, b.qw)
-            qx, qy, qz, qw = _quat_slerp(qa, qb, alpha)
-
-            out.append(PoseQuat(x=x, y=y, z=z, qx=qx, qy=qy, qz=qz, qw=qw))
-
-            if max_points and max_points > 0 and len(out) >= max_points:
-                break
-
-        return out
+        ver = int(getattr(d, "version", 1) or 1)
+        return {"version": ver, "sides": sides_out}

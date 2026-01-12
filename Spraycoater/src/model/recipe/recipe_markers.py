@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional, Any, Dict
 
-from geometry_msgs.msg import Point  # type: ignore
+from geometry_msgs.msg import Point, Pose, PoseArray, Quaternion  # type: ignore
 from visualization_msgs.msg import Marker, MarkerArray  # type: ignore
 
 from .recipe import Recipe
@@ -16,6 +16,16 @@ def _make_point(x_mm: float, y_mm: float, z_mm: float) -> Point:
     p.x = float(x_mm) / 1000.0
     p.y = float(y_mm) / 1000.0
     p.z = float(z_mm) / 1000.0
+    return p
+
+
+def _make_pose_quat_mm(x_mm: float, y_mm: float, z_mm: float, qx: float, qy: float, qz: float, qw: float) -> Pose:
+    # RViz expects meters
+    p = Pose()
+    p.position.x = float(x_mm) / 1000.0
+    p.position.y = float(y_mm) / 1000.0
+    p.position.z = float(z_mm) / 1000.0
+    p.orientation = Quaternion(x=float(qx), y=float(qy), z=float(qz), w=float(qw))
     return p
 
 
@@ -110,6 +120,155 @@ def _fmt_eval_line(prefix: str, ev: Dict[str, Any]) -> str:
         parts.append(f"valid={v}")
     return " | ".join(parts)
 
+
+# ============================================================
+# NEW: TCP YAML -> PoseArray + MarkerArray
+# ============================================================
+
+def _as_float(v: Any) -> Optional[float]:
+    try:
+        if v is None:
+            return None
+        return float(v)
+    except Exception:
+        return None
+
+
+def build_tcp_pose_array_from_tcp_yaml(
+    tcp_doc: Dict[str, Any],
+    *,
+    default_frame: str = "scene",
+) -> PoseArray:
+    """
+    Convert persisted tcp yaml (planned_tcp.yaml / executed_tcp.yaml) into PoseArray.
+
+    Expected (your TrajFkBuilder Draft schema):
+      {
+        "frame": "scene",
+        "sides": {
+          "<side>": {
+            "poses_quat": [
+              {"x":mm,"y":mm,"z":mm,"qx":...,"qy":...,"qz":...,"qw":...},
+              ...
+            ]
+          }
+        }
+      }
+
+    Units: positions are mm -> meters.
+    """
+    pa = PoseArray()
+    if not isinstance(tcp_doc, dict):
+        pa.header.frame_id = default_frame
+        return pa
+
+    frame_id = str(tcp_doc.get("frame") or default_frame)
+    pa.header.frame_id = frame_id
+
+    sides = tcp_doc.get("sides")
+    if not isinstance(sides, dict):
+        return pa
+
+    for _, side_doc in sides.items():
+        if not isinstance(side_doc, dict):
+            continue
+        pq = side_doc.get("poses_quat")
+        if not isinstance(pq, list):
+            continue
+        for d in pq:
+            if not isinstance(d, dict):
+                continue
+            x = _as_float(d.get("x"))
+            y = _as_float(d.get("y"))
+            z = _as_float(d.get("z"))
+            qx = _as_float(d.get("qx"))
+            qy = _as_float(d.get("qy"))
+            qz = _as_float(d.get("qz"))
+            qw = _as_float(d.get("qw"))
+            if None in (x, y, z, qx, qy, qz, qw):
+                continue
+            pa.poses.append(_make_pose_quat_mm(x, y, z, qx, qy, qz, qw))
+
+    return pa
+
+
+def build_tcp_marker_array_from_tcp_yaml(
+    tcp_doc: Dict[str, Any],
+    *,
+    ns_prefix: str,
+    mid_start: int = 20000,
+    default_frame: str = "scene",
+    include_text: bool = True,
+) -> MarkerArray:
+    """
+    Build LINE_STRIP markers for TCP (per side), so RViz shows the TCP path.
+
+    Namespaces:
+      - f"{ns_prefix}/<side>"
+      - optional text marker at first point: ns_prefix
+    """
+    arr = MarkerArray()
+    if not isinstance(tcp_doc, dict):
+        return arr
+
+    frame_id = str(tcp_doc.get("frame") or default_frame)
+    sides = tcp_doc.get("sides")
+    if not isinstance(sides, dict) or not sides:
+        return arr
+
+    mid = int(mid_start)
+
+    # anchor for optional text marker
+    anchor_x = anchor_y = anchor_z = None
+
+    total_pts = 0
+    for side, side_doc in sides.items():
+        if not isinstance(side_doc, dict):
+            continue
+        pq = side_doc.get("poses_quat")
+        if not isinstance(pq, list) or not pq:
+            continue
+
+        m = _line_strip_marker(frame_id=frame_id, ns=f"{ns_prefix}/{side}", mid=mid)
+        mid += 1
+
+        for d in pq:
+            if not isinstance(d, dict):
+                continue
+            x = _as_float(d.get("x"))
+            y = _as_float(d.get("y"))
+            z = _as_float(d.get("z"))
+            if None in (x, y, z):
+                continue
+            m.points.append(_make_point(x, y, z))
+            total_pts += 1
+
+        if m.points:
+            if anchor_x is None:
+                p0 = m.points[0]
+                anchor_x, anchor_y, anchor_z = float(p0.x), float(p0.y), float(p0.z)
+            arr.markers.append(m)
+
+    if include_text and anchor_x is not None:
+        arr.markers.append(
+            _text_marker(
+                frame_id=frame_id,
+                ns=ns_prefix,
+                mid=mid,
+                text=f"{ns_prefix}: points={total_pts}",
+                x_m=float(anchor_x),
+                y_m=float(anchor_y),
+                z_m=float(anchor_z) + 0.04,
+                size_m=0.022,
+            )
+        )
+
+    return arr
+
+
+# ============================================================
+# Existing: Recipe -> MarkerArray (Draft + Traj summary/eval)
+# ============================================================
 
 def build_marker_array_from_recipe(
     recipe: Recipe,

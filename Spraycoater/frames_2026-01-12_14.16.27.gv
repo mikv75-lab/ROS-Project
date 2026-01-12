@@ -1,0 +1,23 @@
+digraph G {
+"world" -> "cage"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"world" -> "substrate_mount"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"substrate_mount" -> "scene"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"scene" -> "substrate"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"world" -> "robot_mount"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"Adept_Viper_s650_Link1" -> "Adept_Viper_s650_Link2"[label=" Broadcaster: default_authority\nAverage rate: 62.236\nBuffer length: 4.997\nMost recent transform: 1768227387.48918\nOldest transform: 1768227382.492047\n"];
+"robot_mount" -> "Adept_Viper_s650_Link1"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"Adept_Viper_s650_Link2" -> "Adept_Viper_s650_Link3"[label=" Broadcaster: default_authority\nAverage rate: 62.236\nBuffer length: 4.997\nMost recent transform: 1768227387.48918\nOldest transform: 1768227382.492047\n"];
+"Adept_Viper_s650_Link3" -> "Adept_Viper_s650_Link4"[label=" Broadcaster: default_authority\nAverage rate: 62.236\nBuffer length: 4.997\nMost recent transform: 1768227387.48918\nOldest transform: 1768227382.492047\n"];
+"Adept_Viper_s650_Link4" -> "Adept_Viper_s650_Link5"[label=" Broadcaster: default_authority\nAverage rate: 62.236\nBuffer length: 4.997\nMost recent transform: 1768227387.48918\nOldest transform: 1768227382.492047\n"];
+"Adept_Viper_s650_Link5" -> "Adept_Viper_s650_Link6"[label=" Broadcaster: default_authority\nAverage rate: 62.236\nBuffer length: 4.997\nMost recent transform: 1768227387.48918\nOldest transform: 1768227382.492047\n"];
+"Adept_Viper_s650_Link6" -> "Adept_Viper_650_Interface_Plate"[label=" Broadcaster: default_authority\nAverage rate: 62.236\nBuffer length: 4.997\nMost recent transform: 1768227387.48918\nOldest transform: 1768227382.492047\n"];
+"tool_mount" -> "sonotek_vortex"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"Adept_Viper_650_Interface_Plate" -> "tool_mount"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"sonotek_vortex" -> "tcp"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"world" -> "shadow/home"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"world" -> "shadow/service"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+edge [style=invis];
+ subgraph cluster_legend { style=bold; color=black; label ="view_frames Result";
+"Recorded at time: 1768227387.516563"[ shape=plaintext ] ;
+}->"world";
+}

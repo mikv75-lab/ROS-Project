@@ -49,6 +49,9 @@ from .base_statemachine import (
     STATE_MOVE_HOME,
 )
 
+# IMPORTANT: use the SAME resolver logic as startup.py (package://, relative, abs)
+from config.startup import resolve_path
+
 _LOG = logging.getLogger("tabs.process")
 
 
@@ -56,23 +59,12 @@ class ProcessTab(QWidget):
     """
     ProcessTab (strict, no fallbacks, single result schema)
 
-    STRICT CONTRACT (aligned to RunResult.to_process_payload):
-
-      result_obj = {
-        "robot_description": {"urdf_xml": "...", "srdf_xml": "..."},
-        "planned_run":  {"traj": <JTBySegment YAML v1 dict>, "tcp": <Draft YAML dict oder {}>},
-        "executed_run": {"traj": <JTBySegment YAML v1 dict>, "tcp": <Draft YAML dict oder {}>},
-        "fk_meta": {...},
-        "eval": {...},
-        "valid": true/false,
-        "invalid_reason": "...",
-      }
-
-    IMPORTANT UPDATE (2026-01):
-      - URDF/SRDF kommen deterministisch aus ctx.robot_description (Startup).
-      - Diese werden beim Start in ProcessThread injiziert.
-      - Statemachine erhält beim Start ein vorinitialisiertes RunResult (mit URDF/SRDF etc.).
-      - Postprocess (FK/TCP/Eval) läuft nur, wenn urdf_xml+srdf_xml vorhanden sind.
+    Fix (scene.yaml path resolution):
+      - FK/Eval needs scene.yaml + robot.yaml
+      - These are configured in startup.yaml as package://spraycoater_bringup/config/...
+      - ProcessTab now resolves those URIs via config.startup.resolve_path(base_dir, uri),
+        using SC_PROJECT_ROOT as base_dir (same as startup loader).
+      - This removes the wrong fallback to /root/Spraycoater/data/recipes/config/scene.yaml.
     """
 
     _SEG_ORDER = (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME)
@@ -303,6 +295,46 @@ class ProcessTab(QWidget):
             return "", ""
 
     # ---------------------------------------------------------------------
+    # Deterministic config path resolution (scene.yaml + robot.yaml)
+    # ---------------------------------------------------------------------
+
+    def _ctx_config_yaml_paths(self) -> Tuple[str, str]:
+        """
+        Resolve absolute filesystem paths for:
+          - scene.yaml
+          - robot.yaml
+
+        Source of truth is ctx.ros.configs.scene_file / robot_file (startup.yaml).
+        These can be "package://..." or relative to SC_PROJECT_ROOT.
+
+        Returns ("","") if not resolvable.
+        """
+        base_dir = os.environ.get("SC_PROJECT_ROOT", "").strip()
+        if not base_dir:
+            # resolve_path() needs a base_dir for relative paths; if missing, we cannot resolve safely
+            return "", ""
+
+        try:
+            ros_cfg = getattr(self.ctx, "ros", None)
+            cfgs = getattr(ros_cfg, "configs", None) if ros_cfg is not None else None
+
+            scene_uri = str(getattr(cfgs, "scene_file", "") or "").strip()
+            robot_uri = str(getattr(cfgs, "robot_file", "") or "").strip()
+
+            if not scene_uri or not robot_uri:
+                return "", ""
+
+            scene_abs = resolve_path(base_dir, scene_uri)
+            robot_abs = resolve_path(base_dir, robot_uri)
+
+            # strict existence check (postprocess needs real files)
+            if not os.path.isfile(scene_abs) or not os.path.isfile(robot_abs):
+                return "", ""
+            return scene_abs, robot_abs
+        except Exception:
+            return "", ""
+
+    # ---------------------------------------------------------------------
     # SprayPathBox compat helpers (traj vs planned) - UI only
     # ---------------------------------------------------------------------
 
@@ -473,12 +505,14 @@ class ProcessTab(QWidget):
         self.lblPlannedSummary.setText("planned: " + (summ or "–"))
         self.lblExecutedSummary.setText("executed: " + (summ or "–"))
 
-    def _set_eval_missing_fk(self) -> None:
+    def _set_eval_missing_fk(self, extra: str = "") -> None:
         msg = (
-            "Kein URDF/SRDF verfügbar.\n"
-            "FK->TCP / Eval wurde übersprungen.\n\n"
-            "Trajectories wurden trotzdem erzeugt/persistiert (falls Speichern erlaubt)."
+            "FK->TCP / Eval wurde übersprungen.\n"
+            "Ursache: fehlendes/ungültiges URDF/SRDF oder fehlende Config-Dateien.\n\n"
+            "Trajectories wurden trotzdem erzeugt/persistiert (falls Speichern erlaubt).\n"
         )
+        if extra:
+            msg += f"\nDetails:\n{extra}\n"
         self.txtPlannedEval.setPlainText(msg)
         self.txtExecutedEval.setPlainText(msg)
         self.lblPlannedSummary.setText("planned: – (no TCP)")
@@ -777,7 +811,7 @@ class ProcessTab(QWidget):
             self._finish_process_ui()
             return
 
-        # 3) postprocess (deterministic): URDF/SRDF must be carried in rr (seeded at thread start)
+        # 3) postprocess (deterministic)
         did_postprocess = False
         try:
             urdf = str(getattr(rr, "urdf_xml", "") or "")
@@ -787,22 +821,39 @@ class ProcessTab(QWidget):
 
         if not urdf or not srdf:
             self._append_log("W: Kein URDF/SRDF im RunResult → FK->TCP/Eval übersprungen.")
-            self._set_eval_missing_fk()
+            self._set_eval_missing_fk("RunResult.urdf_xml/srdf_xml leer.")
         else:
-            try:
-                # IMPORTANT: correct API in RunResult is postprocess_from_urdf_srdf(...)
-                rr.postprocess_from_urdf_srdf(
-                    urdf_xml=urdf,
-                    srdf_xml=srdf,
-                    recipe=recipe_for_eval,
-                    segment_order=self._SEG_ORDER,
-                    gate_valid_on_eval=False,
-                    require_tcp=True,
+            scene_yaml_path, robot_yaml_path = self._ctx_config_yaml_paths()
+            if not scene_yaml_path or not robot_yaml_path:
+                self._append_log("W: scene.yaml/robot.yaml nicht resolvable → FK->TCP transform/eval übersprungen.")
+                self._set_eval_missing_fk(
+                    "Konnte scene.yaml/robot.yaml nicht aus ctx.ros.configs (package://) auflösen.\n"
+                    "Prüfe SC_PROJECT_ROOT und ob ROS overlay (ament_index) verfügbar ist."
                 )
-                did_postprocess = True
-            except Exception as e:
-                self._append_log(f"ERROR: postprocess failed (FK/Eval): {e}")
-                self._set_eval_missing_fk()
+            else:
+                try:
+                    rr.postprocess_from_urdf_srdf(
+                        urdf_xml=urdf,
+                        srdf_xml=srdf,
+                        recipe=recipe_for_eval,
+                        segment_order=self._SEG_ORDER,
+                        gate_valid_on_eval=False,
+                        require_tcp=True,
+                        tcp_target_frame="scene",
+                        scene_yaml_path=scene_yaml_path,
+                        robot_yaml_path=robot_yaml_path,
+                    )
+                    did_postprocess = True
+                    try:
+                        pf = (rr.planned_run.get("tcp") or {}).get("frame") if isinstance(rr.planned_run, dict) else None
+                        ef = (rr.executed_run.get("tcp") or {}).get("frame") if isinstance(rr.executed_run, dict) else None
+                        if pf or ef:
+                            self._append_log(f"FK/TCP frames: planned={pf} executed={ef}")
+                    except Exception:
+                        pass
+                except Exception as e:
+                    self._append_log(f"ERROR: postprocess failed (FK/Eval): {e}")
+                    self._set_eval_missing_fk(str(e))
 
         # 4) show eval if available
         if did_postprocess:

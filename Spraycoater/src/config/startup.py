@@ -6,7 +6,7 @@ import io
 import os
 import subprocess
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import yaml
 
@@ -172,7 +172,6 @@ def _looks_like_urdf(xml: str) -> bool:
     x = (xml or "").strip()
     if "<robot" not in x:
         return False
-    # URDF must typically have links/joints; SRDF usually does not.
     return ("<link" in x) or ("<joint" in x)
 
 
@@ -180,7 +179,6 @@ def _looks_like_srdf(xml: str) -> bool:
     x = (xml or "").strip()
     if "<robot" not in x:
         return False
-    # SRDF typically contains group/end_effector/virtual_joint etc.
     srdf_markers = ("<group", "<end_effector", "<virtual_joint", "<disable_collisions")
     return any(m in x for m in srdf_markers)
 
@@ -450,6 +448,8 @@ class AppContent:
       - frames.yaml
       - qos.yaml
       - topics.yaml
+      - scene.yaml   (NEW: loaded + resolved)
+      - robot.yaml   (NEW: loaded + resolved)
       - substrate_mounts.yaml (required)
       - robot_description_xml() / robot_description_paths()
     """
@@ -469,9 +469,16 @@ class AppContent:
 
         self._robot_description = robot_description
 
+        # Existing (already resolved by load_yaml_path)
         self._frames = load_yaml_path(base_dir, ros_cfg_paths.frames_file)
         self._qos = load_yaml_path(base_dir, ros_cfg_paths.qos_file)
         self._topics = load_yaml_path(base_dir, ros_cfg_paths.topics_file)
+
+        # NEW: scene.yaml + robot.yaml (resolved + loaded)
+        self._scene_yaml_path = resolve_path(base_dir, ros_cfg_paths.scene_file)
+        self._robot_yaml_path = resolve_path(base_dir, ros_cfg_paths.robot_file)
+        self._scene = load_yaml_abs(self._scene_yaml_path)
+        self._robot = load_yaml_abs(self._robot_yaml_path)
 
         self._frames_map = self._frames.get("frames")
         if not isinstance(self._frames_map, dict) or not self._frames_map:
@@ -489,6 +496,22 @@ class AppContent:
         mounts = self.mounts_yaml.get("mounts")
         if not isinstance(mounts, dict) or not mounts:
             _err("substrate_mounts.yaml: 'mounts' fehlt oder ist leer.")
+
+    # ---------------- NEW: expose resolved paths + loaded docs ----------------
+
+    def scene_yaml_path(self) -> str:
+        return str(self._scene_yaml_path or "")
+
+    def robot_yaml_path(self) -> str:
+        return str(self._robot_yaml_path or "")
+
+    def scene_yaml(self) -> Dict[str, Any]:
+        return dict(self._scene or {})
+
+    def robot_yaml(self) -> Dict[str, Any]:
+        return dict(self._robot or {})
+
+    # ---------------- existing API ----------------
 
     def has_robot_description(self) -> bool:
         return self._robot_description is not None
@@ -711,8 +734,8 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         "topics_file",
         "qos_file",
         "frames_file",
-        "scene_file",
-        "robot_file",
+        "scene_file",   # REQUIRED (now used by AppContent)
+        "robot_file",   # REQUIRED (now used by AppContent)
         "servo_file",
         "poses_file",
         "tools_file",
@@ -872,6 +895,7 @@ def load_startup(startup_yaml_path: str) -> AppContext:
     if not isinstance(mounts, dict) or not mounts:
         _err("substrate_mounts.yaml: mounts fehlt oder ist leer.")
 
+    # NOTE: AppContent now loads scene.yaml + robot.yaml too (resolved from package://)
     content = AppContent(
         base_dir=base,
         ros_cfg_paths=ros_paths,

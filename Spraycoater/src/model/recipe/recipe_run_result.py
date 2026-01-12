@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Sequence, Tuple
 
+import os
+import yaml
+
 
 def _dict(v: Any) -> Dict[str, Any]:
     return v if isinstance(v, dict) else {}
@@ -25,40 +28,208 @@ def _get_nested(d: Dict[str, Any], path: Sequence[str], default: Any = None) -> 
     return cur if cur is not None else default
 
 
+def _require_dict(d: Any, name: str) -> Dict[str, Any]:
+    if not isinstance(d, dict):
+        raise ValueError(f"{name} must be dict, got {type(d).__name__}")
+    return d
+
+
+def _require_list3(v: Any, name: str) -> Tuple[float, float, float]:
+    if not isinstance(v, (list, tuple)) or len(v) != 3:
+        raise ValueError(f"{name} must be list[3], got {v!r}")
+    return (float(v[0]), float(v[1]), float(v[2]))
+
+
+def _rpy_deg_to_quat_xyzw(r: float, p: float, y: float) -> Tuple[float, float, float, float]:
+    import math
+    rr = math.radians(float(r))
+    pp = math.radians(float(p))
+    yy = math.radians(float(y))
+
+    cr = math.cos(rr * 0.5)
+    sr = math.sin(rr * 0.5)
+    cp = math.cos(pp * 0.5)
+    sp = math.sin(pp * 0.5)
+    cy = math.cos(yy * 0.5)
+    sy = math.sin(yy * 0.5)
+
+    qw = cr * cp * cy + sr * sp * sy
+    qx = sr * cp * cy - cr * sp * sy
+    qy = cr * sp * cy + sr * cp * sy
+    qz = cr * cp * sy - sr * sp * cy
+
+    n = (qx*qx + qy*qy + qz*qz + qw*qw) ** 0.5
+    if n <= 0.0:
+        raise ValueError("quat norm is zero")
+    return (qx/n, qy/n, qz/n, qw/n)
+
+
+def _quat_to_rot3(q: Tuple[float, float, float, float]) -> list[list[float]]:
+    import math
+    qx, qy, qz, qw = q
+    n = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
+    if n <= 0.0:
+        raise ValueError("quat norm is zero")
+    qx, qy, qz, qw = qx/n, qy/n, qz/n, qw/n
+
+    xx = qx * qx
+    yy = qy * qy
+    zz = qz * qz
+    xy = qx * qy
+    xz = qx * qz
+    yz = qy * qz
+    wx = qw * qx
+    wy = qw * qy
+    wz = qw * qz
+
+    return [
+        [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy)],
+        [2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)],
+        [2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy)],
+    ]
+
+
+def _mat4_from_xyz_quat_mm(xyz_mm: Tuple[float, float, float], q: Tuple[float, float, float, float]) -> list[list[float]]:
+    R = _quat_to_rot3(q)
+    tx, ty, tz = xyz_mm
+    return [
+        [R[0][0], R[0][1], R[0][2], float(tx)],
+        [R[1][0], R[1][1], R[1][2], float(ty)],
+        [R[2][0], R[2][1], R[2][2], float(tz)],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+def _mat4_mul(A: list[list[float]], B: list[list[float]]) -> list[list[float]]:
+    out = [[0.0] * 4 for _ in range(4)]
+    for i in range(4):
+        for j in range(4):
+            out[i][j] = (
+                A[i][0] * B[0][j]
+                + A[i][1] * B[1][j]
+                + A[i][2] * B[2][j]
+                + A[i][3] * B[3][j]
+            )
+    return out
+
+
+def _mat4_inv_rigid(T: list[list[float]]) -> list[list[float]]:
+    R = [[T[r][c] for c in range(3)] for r in range(3)]
+    t = [T[r][3] for r in range(3)]
+    Rt = [
+        [R[0][0], R[1][0], R[2][0]],
+        [R[0][1], R[1][1], R[2][1]],
+        [R[0][2], R[1][2], R[2][2]],
+    ]
+    tinv = [
+        -(Rt[0][0] * t[0] + Rt[0][1] * t[1] + Rt[0][2] * t[2]),
+        -(Rt[1][0] * t[0] + Rt[1][1] * t[1] + Rt[1][2] * t[2]),
+        -(Rt[2][0] * t[0] + Rt[2][1] * t[1] + Rt[2][2] * t[2]),
+    ]
+    return [
+        [Rt[0][0], Rt[0][1], Rt[0][2], tinv[0]],
+        [Rt[1][0], Rt[1][1], Rt[1][2], tinv[1]],
+        [Rt[2][0], Rt[2][1], Rt[2][2], tinv[2]],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+def _load_yaml_file(path: str) -> Dict[str, Any]:
+    if not path:
+        raise ValueError("YAML path is empty")
+    p = os.path.abspath(os.path.expanduser(path))
+    if not os.path.exists(p):
+        raise FileNotFoundError(p)
+    with open(p, "r", encoding="utf-8") as f:
+        return _dict(yaml.safe_load(f) or {})
+
+
+def _scene_object_by_id(scene_doc: Dict[str, Any], oid: str) -> Dict[str, Any]:
+    objs = scene_doc.get("scene_objects")
+    if not isinstance(objs, list):
+        raise ValueError("scene.yaml: 'scene_objects' missing or not list")
+    for o in objs:
+        if isinstance(o, dict) and str(o.get("id", "")) == oid:
+            return o
+    raise KeyError(f"scene.yaml: object id={oid!r} not found")
+
+
+def _tf_from_scene_obj_meters(scene_obj: Dict[str, Any]) -> list[list[float]]:
+    parent = str(scene_obj.get("frame", "world"))
+    _ = parent  # parent used by caller for chaining; here we just compute local transform values
+
+    pos_m = _require_list3(scene_obj.get("position"), "scene_obj.position(m)")
+    rpy = _require_list3(scene_obj.get("rpy_deg"), "scene_obj.rpy_deg(deg)")
+
+    # meters -> mm
+    pos_mm = (pos_m[0] * 1000.0, pos_m[1] * 1000.0, pos_m[2] * 1000.0)
+    q = _rpy_deg_to_quat_xyzw(rpy[0], rpy[1], rpy[2])
+    return _mat4_from_xyz_quat_mm(pos_mm, q)
+
+
+def _tf_world_robot_mount_from_robot_yaml(robot_doc: Dict[str, Any]) -> list[list[float]]:
+    blk = _require_dict(robot_doc.get("world_to_robot_mount"), "robot.yaml.world_to_robot_mount")
+    xyz_m = _require_list3(blk.get("xyz"), "robot.yaml.world_to_robot_mount.xyz(m)")
+    rpy = _require_list3(blk.get("rpy_deg"), "robot.yaml.world_to_robot_mount.rpy_deg(deg)")
+    xyz_mm = (xyz_m[0] * 1000.0, xyz_m[1] * 1000.0, xyz_m[2] * 1000.0)
+    q = _rpy_deg_to_quat_xyzw(rpy[0], rpy[1], rpy[2])
+    return _mat4_from_xyz_quat_mm(xyz_mm, q)
+
+
+def _compute_T_scene_robot_mount_mm(*, scene_yaml_path: str, robot_yaml_path: str) -> list[list[float]]:
+    """
+    Compute rigid transform: p_scene = T_scene_robot_mount * p_robot_mount
+    using:
+      - scene.yaml: world->substrate_mount, substrate_mount->scene
+      - robot.yaml: world->robot_mount
+    """
+    scene_doc = _load_yaml_file(scene_yaml_path)
+    robot_doc = _load_yaml_file(robot_yaml_path)
+
+    o_mount = _scene_object_by_id(scene_doc, "substrate_mount")
+    o_scene = _scene_object_by_id(scene_doc, "scene")
+
+    # world -> substrate_mount
+    if str(o_mount.get("frame", "world")) != "world":
+        raise ValueError("scene.yaml: substrate_mount.frame must be 'world' for this helper")
+    T_world_sub_mount = _tf_from_scene_obj_meters(o_mount)
+
+    # substrate_mount -> scene
+    if str(o_scene.get("frame", "")) != "substrate_mount":
+        raise ValueError("scene.yaml: scene.frame must be 'substrate_mount' for this helper")
+    T_sub_mount_scene = _tf_from_scene_obj_meters(o_scene)
+
+    T_world_scene = _mat4_mul(T_world_sub_mount, T_sub_mount_scene)
+
+    # world -> robot_mount
+    T_world_robot_mount = _tf_world_robot_mount_from_robot_yaml(robot_doc)
+
+    # scene <- robot_mount : inv(world->scene) * (world->robot_mount)
+    T_scene_world = _mat4_inv_rigid(T_world_scene)
+    T_scene_robot_mount = _mat4_mul(T_scene_world, T_world_robot_mount)
+    return T_scene_robot_mount
+
+
 @dataclass
 class RunResult:
     """
     STRICT run result container (SSoT).
 
-    Responsibilities:
-      - store run state
-      - store fk/eval results
-      - store validity + reasons
-      - store robot description (URDF/SRDF XML) for deterministic FK/TCP/Eval
-
-    Schema:
-      planned_run  = {"traj": <JTBySegment YAML dict>, "tcp": <Draft YAML dict or {}>}
-      executed_run = {"traj": <JTBySegment YAML dict>, "tcp": <Draft YAML dict or {}>}
+    planned_run  = {"traj": <JTBySegment YAML dict>, "tcp": <Draft YAML dict or {}>}
+    executed_run = {"traj": <JTBySegment YAML dict>, "tcp": <Draft YAML dict or {}>}
     """
 
-    # ---------------- robot description (NEW) ----------------
-    # NOTE: Stored as XML strings; may be large but keeps the pipeline deterministic.
     urdf_xml: str = ""
     srdf_xml: str = ""
 
-    # ---------------- core data ----------------
     planned_run: Dict[str, Any] = field(default_factory=dict)
     executed_run: Dict[str, Any] = field(default_factory=dict)
 
-    # ---------------- derived data ----------------
     fk_meta: Dict[str, Any] = field(default_factory=dict)
     eval: Dict[str, Any] = field(default_factory=dict)
 
-    # ---------------- validity ----------------
     valid: bool = True
     invalid_reason: str = ""
-
-    # ------------------------------------------------------------
 
     def __post_init__(self) -> None:
         self.urdf_xml = str(self.urdf_xml or "")
@@ -79,7 +250,7 @@ class RunResult:
         self.invalid_reason = str(self.invalid_reason or "")
 
     # ------------------------------------------------------------
-    # basic setters (explicit, no magic)
+    # basic setters
     # ------------------------------------------------------------
 
     def set_robot_description(self, *, urdf_xml: str, srdf_xml: str) -> None:
@@ -121,10 +292,6 @@ class RunResult:
         return str(self.eval.get("invalid_reason") or "eval_invalid")
 
     def eval_summary_line(self) -> str:
-        """
-        One-line summary for labels.
-        Tries to be robust against changes in evaluator schema.
-        """
         if not self.eval:
             return "unevaluated"
 
@@ -156,10 +323,6 @@ class RunResult:
         return " | ".join(parts) if parts else "–"
 
     def format_eval_text(self, *, include_tcp: bool = True) -> str:
-        """
-        Human-readable compact multi-line representation for the Eval text boxes.
-        Avoids dumping full YAML joints etc.
-        """
         lines: list[str] = []
         lines.append(self.eval_summary_line())
 
@@ -206,13 +369,19 @@ class RunResult:
                             n += len(pq)
                 return n
 
+            f_pl = (pl_tcp.get("frame") if isinstance(pl_tcp, dict) else "") or ""
+            f_ex = (ex_tcp.get("frame") if isinstance(ex_tcp, dict) else "") or ""
+            frame_txt = f" frame(planned={f_pl or 'n/a'}, executed={f_ex or 'n/a'})"
             lines.append("")
-            lines.append(f"tcp: planned={_count_tcp(pl_tcp)} poses | executed={_count_tcp(ex_tcp)} poses")
+            lines.append(f"tcp: planned={_count_tcp(pl_tcp)} poses | executed={_count_tcp(ex_tcp)} poses |{frame_txt}")
 
         if self.fk_meta:
             ee = self.fk_meta.get("ee_link") or ""
             step = self.fk_meta.get("step_mm")
+            base = self.fk_meta.get("base_link") or ""
             lines.append("")
+            if base:
+                lines.append(f"fk: base_link={base}")
             if ee:
                 lines.append(f"fk: ee_link={ee}")
             if step is not None:
@@ -265,17 +434,6 @@ class RunResult:
     # ------------------------------------------------------------
 
     def build_persist_docs(self, *, embed_eval_into_traj: bool = True) -> Dict[str, Any]:
-        """
-        Returns dict with:
-          - planned_traj
-          - executed_traj
-          - planned_tcp
-          - executed_tcp
-
-        NOTE:
-          Robot description (URDF/SRDF) is NOT persisted here on purpose.
-          Persist stays run-artifact focused (traj/tcp/eval/fk_meta).
-        """
         run_meta = {
             "run_valid": self.valid,
             "run_invalid_reason": self.invalid_reason,
@@ -319,7 +477,6 @@ class RunResult:
         rm = rm if isinstance(rm, dict) else {}
 
         return cls(
-            # URDF/SRDF intentionally not reconstructed from persist docs.
             planned_run={"traj": dict(planned_traj_doc), "tcp": _dict(planned_tcp_doc or {})},
             executed_run={"traj": dict(executed_traj_doc), "tcp": _dict(executed_tcp_doc or {})},
             fk_meta=_dict(planned_traj_doc.get("fk_meta")),
@@ -344,10 +501,11 @@ class RunResult:
         require_tcp: bool = True,
         segment_to_side: Optional[Dict[str, str]] = None,
         default_side: str = "top",
+        # NEW:
+        tcp_target_frame: str = "scene",
+        scene_yaml_path: Optional[str] = None,
+        robot_yaml_path: Optional[str] = None,
     ) -> None:
-        """
-        Postprocess using stored URDF/SRDF (set via constructor or set_robot_description()).
-        """
         if not self.urdf_xml.strip() or not self.srdf_xml.strip():
             raise ValueError("RunResult.postprocess: urdf_xml/srdf_xml fehlt (leer).")
         self.postprocess_from_urdf_srdf(
@@ -362,6 +520,9 @@ class RunResult:
             require_tcp=require_tcp,
             segment_to_side=segment_to_side,
             default_side=default_side,
+            tcp_target_frame=tcp_target_frame,
+            scene_yaml_path=scene_yaml_path,
+            robot_yaml_path=robot_yaml_path,
         )
 
     def postprocess_from_urdf_srdf(
@@ -378,16 +539,11 @@ class RunResult:
         require_tcp: bool = True,
         segment_to_side: Optional[Dict[str, str]] = None,
         default_side: str = "top",
+        # NEW:
+        tcp_target_frame: str = "scene",
+        scene_yaml_path: Optional[str] = None,
+        robot_yaml_path: Optional[str] = None,
     ) -> None:
-        """
-        Build TCP drafts (planned+executed) via FK and compute eval, using URDF/SRDF XML.
-
-        IMPORTANT:
-          This expects TrajFkBuilder to offer:
-            - build_robot_model_from_urdf_srdf(urdf_xml: str, srdf_xml: str) -> robot_model
-
-          If you prefer a different builder API, say so and I’ll align it to your moveit bindings.
-        """
         from .traj_fk_builder import TrajFkBuilder, TrajFkConfig
 
         urdf_xml = str(urdf_xml or "")
@@ -395,14 +551,11 @@ class RunResult:
         if not urdf_xml.strip() or not srdf_xml.strip():
             raise ValueError("RunResult.postprocess_from_urdf_srdf: urdf_xml/srdf_xml ist leer.")
 
-        # store for later
         self.urdf_xml = urdf_xml
         self.srdf_xml = srdf_xml
 
-        # 1) robot model
         robot_model = TrajFkBuilder.build_robot_model_from_urdf_srdf(urdf_xml=urdf_xml, srdf_xml=srdf_xml)
 
-        # 2) trajectories exist?
         planned_traj = _dict(self.planned_run.get("traj"))
         executed_traj = _dict(self.executed_run.get("traj"))
         if not planned_traj:
@@ -410,42 +563,75 @@ class RunResult:
         if not executed_traj:
             raise ValueError("RunResult.postprocess_from_urdf_srdf: executed_run.traj ist leer.")
 
-        # 3) FK -> TCP drafts
+        # FK -> TCP drafts (in base_link frame, default base_link='robot_mount')
         cfg = TrajFkConfig(ee_link=str(ee_link or "tcp"), step_mm=float(step_mm), max_points=int(max_points or 0))
+        base_frame = str(cfg.base_link)
 
-        planned_tcp = TrajFkBuilder.build_tcp_draft_yaml(
-            planned_traj,
-            robot_model=robot_model,
-            cfg=cfg,
-            segment_to_side=segment_to_side,
-            default_side=str(default_side or "top"),
-            drop_duplicate_boundary=True,
-        )
-        executed_tcp = TrajFkBuilder.build_tcp_draft_yaml(
-            executed_traj,
-            robot_model=robot_model,
-            cfg=cfg,
-            segment_to_side=segment_to_side,
-            default_side=str(default_side or "top"),
-            drop_duplicate_boundary=True,
-        )
+        try:
+            planned_tcp = TrajFkBuilder.build_tcp_draft_yaml(
+                planned_traj,
+                robot_model=robot_model,
+                cfg=cfg,
+                segment_to_side=segment_to_side,
+                default_side=str(default_side or "top"),
+                drop_duplicate_boundary=True,
+                frame_id=base_frame,
+            )
+        except Exception as e:
+            raise RuntimeError(f"RunResult.postprocess_from_urdf_srdf: FK planned failed: {e}") from e
+
+        try:
+            executed_tcp = TrajFkBuilder.build_tcp_draft_yaml(
+                executed_traj,
+                robot_model=robot_model,
+                cfg=cfg,
+                segment_to_side=segment_to_side,
+                default_side=str(default_side or "top"),
+                drop_duplicate_boundary=True,
+                frame_id=base_frame,
+            )
+        except Exception as e:
+            raise RuntimeError(f"RunResult.postprocess_from_urdf_srdf: FK executed failed: {e}") from e
+
+        # Optional: transform TCP into scene (or other target) using scene.yaml + robot.yaml (offline)
+        target = str(tcp_target_frame or "").strip()
+        if target and target != base_frame:
+            if not scene_yaml_path or not robot_yaml_path:
+                raise ValueError(
+                    "postprocess_from_urdf_srdf: tcp_target_frame != base_link, "
+                    "aber scene_yaml_path/robot_yaml_path fehlen."
+                )
+
+            # currently only supports target='scene' and base='robot_mount' via your config chain
+            if target != "scene":
+                raise ValueError(f"postprocess_from_urdf_srdf: unsupported tcp_target_frame={target!r} (supported: 'scene')")
+
+            if base_frame != "robot_mount":
+                raise ValueError(
+                    f"postprocess_from_urdf_srdf: expected cfg.base_link='robot_mount' for offline transform, got {base_frame!r}"
+                )
+
+            T_scene_robot_mount = _compute_T_scene_robot_mount_mm(scene_yaml_path=scene_yaml_path, robot_yaml_path=robot_yaml_path)
+            planned_tcp = TrajFkBuilder.transform_draft_yaml(planned_tcp, T_to_from_mm=T_scene_robot_mount, out_frame="scene")
+            executed_tcp = TrajFkBuilder.transform_draft_yaml(executed_tcp, T_to_from_mm=T_scene_robot_mount, out_frame="scene")
 
         self.planned_run["tcp"] = _dict(planned_tcp)
         self.executed_run["tcp"] = _dict(executed_tcp)
 
-        # 4) fk_meta (compact + useful)
         self.fk_meta = {
             "ee_link": str(cfg.ee_link),
+            "base_link": str(cfg.base_link),
             "step_mm": float(cfg.step_mm),
             "max_points": int(cfg.max_points),
             "segment_order": list(segment_order),
+            "backend": "kdl",
+            "tcp_frame": str((self.planned_run.get("tcp") or {}).get("frame") or base_frame),
         }
 
-        # 5) Eval (tolerant)
+        # Eval (tcp domain) – jetzt im gleichen Frame wie Draft (scene), wenn du tcp_target_frame='scene' benutzt
         eval_dict: Dict[str, Any] = {}
         try:
             from .recipe_eval import RecipeEvaluator  # type: ignore
-
             evaluator = RecipeEvaluator()
 
             fn = getattr(evaluator, "evaluate_runs", None)
@@ -454,7 +640,8 @@ class RunResult:
                     recipe=recipe,
                     planned_tcp=planned_tcp,
                     executed_tcp=executed_tcp,
-                    segment_order=tuple(segment_order),
+                    segment_order=list(segment_order),
+                    domain="tcp",
                 )
             else:
                 fn2 = getattr(evaluator, "evaluate", None)
