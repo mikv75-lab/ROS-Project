@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, Any
+from typing import Optional, Any, Tuple
 
 from PyQt6 import QtCore
 from PyQt6.QtCore import QCoreApplication
@@ -17,10 +17,13 @@ class RobotInitThread(QtCore.QObject):
     """
     Persistent Worker + QThread (Ros-only)
 
-    - Thread läuft dauerhaft
-    - Worker einmal erzeugt
-    - startSignal triggert Run (wenn nicht running)
-    - stopSignal/request_stop bricht Run ab (ohne ros.stop())
+    Problem: stale MoveItPy motion_result / segment leaks from previous Process runs
+             into RobotInit HOME execution (ERROR:NO_TRAJ named seg=...).
+
+    Fix:
+      - HARD boundary reset on EVERY RobotInit start (pre-run).
+      - Optional boundary reset on finish/error (post-run) as extra safety.
+      - CRITICAL: Segment-Kontext wird hart zurückgesetzt (auch wenn ros nur moveit_set_segment hat).
     """
 
     startSignal = QtCore.pyqtSignal()
@@ -53,7 +56,6 @@ class RobotInitThread(QtCore.QObject):
         self._home_timeout_s = float(home_timeout_s)
         self._pos_tol_mm = float(pos_tol_mm)
 
-        # Ownership sauber
         self._thread = QtCore.QThread(self)
 
         self._worker: Optional[RobotInitStatemachine] = None
@@ -79,6 +81,85 @@ class RobotInitThread(QtCore.QObject):
             self._home_timeout_s,
             self._pos_tol_mm,
         )
+
+    # ------------------------------------------------------------------
+    # Boundary reset (best-effort, ordered)
+    # ------------------------------------------------------------------
+
+    def _call_first(self, names: Tuple[str, ...]) -> bool:
+        for n in names:
+            fn = getattr(self._ros, n, None)
+            if callable(fn):
+                try:
+                    fn()
+                except Exception as e:
+                    try:
+                        self.logMessage.emit(f"W: ros.{n}() failed: {e!r}")
+                    except Exception:
+                        pass
+                return True
+        return False
+
+    def _call_first_with(self, names: Tuple[str, ...], *args: Any, **kwargs: Any) -> bool:
+        for n in names:
+            fn = getattr(self._ros, n, None)
+            if callable(fn):
+                try:
+                    fn(*args, **kwargs)
+                except Exception as e:
+                    try:
+                        self.logMessage.emit(f"W: ros.{n}(*args) failed: {e!r}")
+                    except Exception:
+                        pass
+                return True
+        return False
+
+    def _reset_segment_context(self) -> None:
+        """
+        HARD reset of segment context to avoid leaking seg=... into RobotInit HOME execution.
+
+        Supports:
+          - moveit_clear_segment()/moveit_reset_segment()/moveit_set_segment_none()
+          - moveit_set_segment(seg: str) fallback (set "" / best-effort None)
+        """
+        if self._call_first(("moveit_clear_segment", "moveit_reset_segment", "moveit_set_segment_none")):
+            return
+
+        # Fallback: minimal API
+        self._call_first_with(("moveit_set_segment",), "")
+
+        try:
+            self._call_first_with(("moveit_set_segment",), None)  # type: ignore[arg-type]
+        except Exception:
+            pass
+
+    def _reset_run_boundary(self) -> None:
+        """
+        Clear stale MoveItPy bridge state before/after RobotInit runs.
+        This prevents RobotInit HOME using the previous segment/result (e.g. MOVE_RECIPE).
+        """
+        # 1) stop any motion
+        self._call_first(("moveit_stop", "stop_moveit", "moveit_cancel", "moveit_abort"))
+
+        # 2) clear last motion result
+        self._call_first(("moveit_clear_motion_result", "moveit_reset_motion_result", "moveit_clear_result"))
+
+        # 3) clear trajectory caches
+        self._call_first(
+            (
+                "moveit_clear_trajectory_cache",
+                "moveit_clear_traj_cache",
+                "moveit_traj_cache_clear",
+                "moveit_clear_cache",
+            )
+        )
+
+        # 4) CRITICAL: clear segment context (also handles moveit_set_segment-only facades)
+        self._reset_segment_context()
+
+        QCoreApplication.processEvents()
+
+    # ------------------------------------------------------------------
 
     def _start_thread_if_needed(self) -> None:
         if not self._thread.isRunning():
@@ -110,6 +191,20 @@ class RobotInitThread(QtCore.QObject):
         return self._running
 
     def request_stop(self) -> None:
+        """
+        Stop RobotInit worker (best-effort) and also stop/reset MoveIt boundary
+        so that subsequent Init/Process doesn't inherit stale state.
+        """
+        # Stop motion + clear boundary immediately
+        try:
+            self.logMessage.emit("RobotInitThread: boundary reset (request_stop)...")
+        except Exception:
+            pass
+        try:
+            self._reset_run_boundary()
+        except Exception:
+            pass
+
         w = self._worker
         if w is None:
             return
@@ -140,6 +235,13 @@ class RobotInitThread(QtCore.QObject):
             self.notifyError.emit("RobotInitThread: Worker fehlt.")
             return
 
+        # HARD boundary reset BEFORE RobotInit starts
+        try:
+            self.logMessage.emit("RobotInitThread: boundary reset (pre-run, stop/clear caches)...")
+            self._reset_run_boundary()
+        except Exception:
+            pass
+
         self._running = True
         QtCore.QMetaObject.invokeMethod(
             self._worker,
@@ -156,11 +258,27 @@ class RobotInitThread(QtCore.QObject):
     @QtCore.pyqtSlot()
     def _on_worker_finished(self) -> None:
         self._running = False
+
+        # Post-run reset (optional safety)
+        try:
+            self.logMessage.emit("RobotInitThread: boundary reset (post-run)...")
+            self._reset_run_boundary()
+        except Exception:
+            pass
+
         self.notifyFinished.emit()
 
     @QtCore.pyqtSlot(str)
     def _on_worker_error(self, msg: str) -> None:
         self._running = False
+
+        # Post-error reset (critical safety)
+        try:
+            self.logMessage.emit("RobotInitThread: boundary reset (post-error)...")
+            self._reset_run_boundary()
+        except Exception:
+            pass
+
         self.notifyError.emit(msg)
 
     # ---------------- Shutdown ----------------

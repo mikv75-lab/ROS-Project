@@ -2,7 +2,7 @@
 # File: src/model/recipe/recipe_markers.py
 from __future__ import annotations
 
-from typing import Optional, Any, Dict, Tuple
+from typing import Optional, Any, Dict, Tuple, List, Iterable
 
 from geometry_msgs.msg import Point, Pose, PoseArray, Quaternion  # type: ignore
 from visualization_msgs.msg import Marker, MarkerArray  # type: ignore
@@ -33,7 +33,26 @@ def _make_pose_quat_mm(x_mm: float, y_mm: float, z_mm: float, qx: float, qy: flo
     return p
 
 
-def _line_strip_marker(*, frame_id: str, ns: str, mid: int) -> Marker:
+def _apply_rgba(m: Marker, rgba: Tuple[float, float, float, float]) -> None:
+    m.color.r = float(rgba[0])
+    m.color.g = float(rgba[1])
+    m.color.b = float(rgba[2])
+    m.color.a = float(rgba[3])
+
+
+def _line_strip_marker(
+    *,
+    frame_id: str,
+    ns: str,
+    mid: int,
+    width_m: float = 0.0010,
+    rgba: Tuple[float, float, float, float] = (0.2, 0.9, 0.2, 1.0),
+) -> Marker:
+    """
+    LINE_STRIP is cheap and good for path overview.
+    'width_m' controls thickness (meters).
+    Note: RViz line strips are not truly round; they are billboarded quads.
+    """
     m = Marker()
     m.header.frame_id = str(frame_id)
     m.ns = str(ns)
@@ -41,11 +60,59 @@ def _line_strip_marker(*, frame_id: str, ns: str, mid: int) -> Marker:
     m.type = Marker.LINE_STRIP
     m.action = Marker.ADD
     m.pose.orientation.w = 1.0
-    m.scale.x = 0.0015  # line width in meters
-    m.color.a = 1.0
-    m.color.r = 0.2
-    m.color.g = 0.9
-    m.color.b = 0.2
+    m.scale.x = float(width_m)  # line width in meters
+    _apply_rgba(m, rgba)
+    return m
+
+
+def _points_marker(
+    *,
+    frame_id: str,
+    ns: str,
+    mid: int,
+    diameter_m: float = 0.0015,
+    rgba: Tuple[float, float, float, float] = (0.2, 0.9, 0.2, 1.0),
+) -> Marker:
+    """
+    POINTS marker draws camera-facing squares; with a small size it looks like a dotted 'round' line.
+    If you want actual spheres, use SPHERE_LIST (heavier).
+    """
+    m = Marker()
+    m.header.frame_id = str(frame_id)
+    m.ns = str(ns)
+    m.id = int(mid)
+    m.type = Marker.POINTS
+    m.action = Marker.ADD
+    m.pose.orientation.w = 1.0
+    m.scale.x = float(diameter_m)
+    m.scale.y = float(diameter_m)
+    _apply_rgba(m, rgba)
+    return m
+
+
+def _sphere_list_marker(
+    *,
+    frame_id: str,
+    ns: str,
+    mid: int,
+    diameter_m: float = 0.0018,
+    rgba: Tuple[float, float, float, float] = (0.2, 0.9, 0.2, 1.0),
+) -> Marker:
+    """
+    SPHERE_LIST gives truly round beads, best visibility of curvature,
+    but heavier than LINE_STRIP/POINTS.
+    """
+    m = Marker()
+    m.header.frame_id = str(frame_id)
+    m.ns = str(ns)
+    m.id = int(mid)
+    m.type = Marker.SPHERE_LIST
+    m.action = Marker.ADD
+    m.pose.orientation.w = 1.0
+    m.scale.x = float(diameter_m)
+    m.scale.y = float(diameter_m)
+    m.scale.z = float(diameter_m)
+    _apply_rgba(m, rgba)
     return m
 
 
@@ -129,10 +196,6 @@ def _to_tcp_doc(obj: Any) -> Dict[str, Any]:
 #   - draft (compiled)
 #   - planned_tcp
 #   - executed_tcp
-#
-# IMPORTANT:
-#   - MarkerArray may start with DELETEALL (optional) to wipe any legacy markers on that topic.
-#   - PoseArray + MarkerArray use the SAME frame_id per layer to avoid offsets.
 # ============================================================
 
 def build_draft_pose_and_markers(
@@ -141,10 +204,20 @@ def build_draft_pose_and_markers(
     frame_id: str = "scene",
     ns_prefix: str = "draft",
     clear_legacy: bool = True,
+    line_width_m: float = 0.0008,
+    rgba_line: Tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0),  # BLUE
+    round_style: str = "none",  # "none" | "points" | "spheres"
+    round_diameter_m: float = 0.0012,
+    rgba_round: Optional[Tuple[float, float, float, float]] = None,
 ) -> Tuple[PoseArray, MarkerArray]:
     """
     Draft (workspace path) -> PoseArray + MarkerArray (LINE_STRIP per side).
     Units: mm -> meters.
+
+    round_style:
+      - "none": only LINE_STRIP
+      - "points": add POINTS marker along the same points (cheap)
+      - "spheres": add SPHERE_LIST (round, heavier)
     """
     fid = str(frame_id)
 
@@ -163,26 +236,60 @@ def build_draft_pose_and_markers(
     if not isinstance(sides, dict) or not sides:
         return pa, ma
 
+    if rgba_round is None:
+        rgba_round = rgba_line
+
     mid = 0
     for side_name, side in sides.items():
         poses = getattr(side, "poses_quat", None)
         if not isinstance(poses, list) or not poses:
             continue
 
-        m = _line_strip_marker(frame_id=fid, ns=f"{ns_prefix}/{side_name}", mid=mid)
+        # LINE
+        m_line = _line_strip_marker(
+            frame_id=fid,
+            ns=f"{ns_prefix}/{side_name}",
+            mid=mid,
+            width_m=line_width_m,
+            rgba=rgba_line,
+        )
         mid += 1
+
+        # optional round overlay
+        m_round: Optional[Marker] = None
+        if round_style == "points":
+            m_round = _points_marker(
+                frame_id=fid,
+                ns=f"{ns_prefix}/{side_name}/round",
+                mid=mid,
+                diameter_m=round_diameter_m,
+                rgba=rgba_round,
+            )
+            mid += 1
+        elif round_style == "spheres":
+            m_round = _sphere_list_marker(
+                frame_id=fid,
+                ns=f"{ns_prefix}/{side_name}/round",
+                mid=mid,
+                diameter_m=round_diameter_m,
+                rgba=rgba_round,
+            )
+            mid += 1
 
         for pq in poses:
             try:
-                # PoseArray (orientation preserved)
                 pa.poses.append(_make_pose_quat_mm(pq.x, pq.y, pq.z, pq.qx, pq.qy, pq.qz, pq.qw))
-                # Marker line (position only)
-                m.points.append(_make_point(pq.x, pq.y, pq.z))
+                pt = _make_point(pq.x, pq.y, pq.z)
+                m_line.points.append(pt)
+                if m_round is not None:
+                    m_round.points.append(pt)
             except Exception:
                 continue
 
-        if m.points:
-            ma.markers.append(m)
+        if m_line.points:
+            ma.markers.append(m_line)
+            if m_round is not None and m_round.points:
+                ma.markers.append(m_round)
 
     return pa, ma
 
@@ -196,6 +303,11 @@ def build_tcp_pose_and_markers_from_tcp_yaml(
     force_frame: Optional[str] = None,
     clear_legacy: bool = True,
     include_text: bool = False,
+    line_width_m: float = 0.0008,
+    rgba_line: Tuple[float, float, float, float] = (0.0, 1.0, 0.0, 1.0),  # GREEN
+    round_style: str = "none",  # "none" | "points" | "spheres"
+    round_diameter_m: float = 0.0012,
+    rgba_round: Optional[Tuple[float, float, float, float]] = None,
 ) -> Tuple[PoseArray, MarkerArray]:
     """
     TCP yaml (planned_tcp.yaml / executed_tcp.yaml) -> PoseArray + MarkerArray.
@@ -207,11 +319,6 @@ def build_tcp_pose_and_markers_from_tcp_yaml(
           "<side>": {"poses_quat": [{"x":mm,"y":mm,"z":mm,"qx":...,"qy":...,"qz":...,"qw":...}, ...]}
         }
       }
-
-    Frame choice:
-      - if force_frame is set -> that frame
-      - else tcp_doc["frame"]
-      - else default_frame
     """
     fid = str(force_frame or (tcp_doc.get("frame") if isinstance(tcp_doc, dict) else None) or default_frame)
 
@@ -229,6 +336,9 @@ def build_tcp_pose_and_markers_from_tcp_yaml(
     if not isinstance(sides, dict) or not sides:
         return pa, ma
 
+    if rgba_round is None:
+        rgba_round = rgba_line
+
     mid = int(mid_start)
 
     anchor_x = anchor_y = anchor_z = None
@@ -241,8 +351,34 @@ def build_tcp_pose_and_markers_from_tcp_yaml(
         if not isinstance(pq, list) or not pq:
             continue
 
-        m = _line_strip_marker(frame_id=fid, ns=f"{ns_prefix}/{side}", mid=mid)
+        m_line = _line_strip_marker(
+            frame_id=fid,
+            ns=f"{ns_prefix}/{side}",
+            mid=mid,
+            width_m=line_width_m,
+            rgba=rgba_line,
+        )
         mid += 1
+
+        m_round: Optional[Marker] = None
+        if round_style == "points":
+            m_round = _points_marker(
+                frame_id=fid,
+                ns=f"{ns_prefix}/{side}/round",
+                mid=mid,
+                diameter_m=round_diameter_m,
+                rgba=rgba_round,
+            )
+            mid += 1
+        elif round_style == "spheres":
+            m_round = _sphere_list_marker(
+                frame_id=fid,
+                ns=f"{ns_prefix}/{side}/round",
+                mid=mid,
+                diameter_m=round_diameter_m,
+                rgba=rgba_round,
+            )
+            mid += 1
 
         for d in pq:
             if not isinstance(d, dict):
@@ -258,14 +394,19 @@ def build_tcp_pose_and_markers_from_tcp_yaml(
                 continue
 
             pa.poses.append(_make_pose_quat_mm(x, y, z, qx, qy, qz, qw))
-            m.points.append(_make_point(x, y, z))
+            pt = _make_point(x, y, z)
+            m_line.points.append(pt)
+            if m_round is not None:
+                m_round.points.append(pt)
             total_pts += 1
 
-        if m.points:
+        if m_line.points:
             if anchor_x is None:
-                p0 = m.points[0]
+                p0 = m_line.points[0]
                 anchor_x, anchor_y, anchor_z = float(p0.x), float(p0.y), float(p0.z)
-            ma.markers.append(m)
+            ma.markers.append(m_line)
+            if m_round is not None and m_round.points:
+                ma.markers.append(m_round)
 
     if include_text and anchor_x is not None:
         ma.markers.append(
@@ -293,6 +434,11 @@ def build_tcp_pose_and_markers(
     force_frame: Optional[str] = None,
     clear_legacy: bool = True,
     include_text: bool = False,
+    line_width_m: float = 0.0008,
+    rgba_line: Tuple[float, float, float, float] = (0.0, 1.0, 0.0, 1.0),
+    round_style: str = "none",
+    round_diameter_m: float = 0.0012,
+    rgba_round: Optional[Tuple[float, float, float, float]] = None,
 ) -> Tuple[PoseArray, MarkerArray]:
     tcp_doc = _to_tcp_doc(tcp_obj)
     return build_tcp_pose_and_markers_from_tcp_yaml(
@@ -303,6 +449,11 @@ def build_tcp_pose_and_markers(
         force_frame=force_frame,
         clear_legacy=clear_legacy,
         include_text=include_text,
+        line_width_m=line_width_m,
+        rgba_line=rgba_line,
+        round_style=round_style,
+        round_diameter_m=round_diameter_m,
+        rgba_round=rgba_round,
     )
 
 
@@ -313,6 +464,13 @@ def build_rviz_layers(
     tcp_default_frame: str = "scene",
     tcp_force_frame: Optional[str] = None,
     clear_legacy: bool = True,
+    # visual styling
+    draft_width_m: float = 0.0007,
+    tcp_width_m: float = 0.0007,
+    draft_rgba: Tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0),  # blue
+    tcp_rgba: Tuple[float, float, float, float] = (0.0, 1.0, 0.0, 1.0),    # green
+    round_style: str = "none",  # "none" | "points" | "spheres"
+    round_diameter_m: float = 0.0012,
 ) -> Dict[str, Dict[str, Any]]:
     """
     SSoT for RViz publication: returns exactly 3 layers.
@@ -329,6 +487,11 @@ def build_rviz_layers(
         frame_id=frame_id,
         ns_prefix="draft",
         clear_legacy=clear_legacy,
+        line_width_m=draft_width_m,
+        rgba_line=draft_rgba,
+        round_style=round_style,
+        round_diameter_m=round_diameter_m,
+        rgba_round=draft_rgba,
     )
 
     planned_pa, planned_ma = build_tcp_pose_and_markers(
@@ -339,6 +502,11 @@ def build_rviz_layers(
         force_frame=tcp_force_frame,
         clear_legacy=clear_legacy,
         include_text=False,
+        line_width_m=tcp_width_m,
+        rgba_line=tcp_rgba,
+        round_style=round_style,
+        round_diameter_m=round_diameter_m,
+        rgba_round=tcp_rgba,
     )
 
     executed_pa, executed_ma = build_tcp_pose_and_markers(
@@ -349,6 +517,11 @@ def build_rviz_layers(
         force_frame=tcp_force_frame,
         clear_legacy=clear_legacy,
         include_text=False,
+        line_width_m=tcp_width_m,
+        rgba_line=tcp_rgba,
+        round_style=round_style,
+        round_diameter_m=round_diameter_m,
+        rgba_round=tcp_rgba,
     )
 
     return {
@@ -367,17 +540,13 @@ def build_tcp_pose_array_from_tcp_yaml(
     *,
     default_frame: str = "scene",
 ) -> PoseArray:
-    """
-    Legacy name kept for ProcessTab imports.
-    Returns PoseArray using tcp_doc['frame'] if present, else default_frame.
-    """
     pa, _ = build_tcp_pose_and_markers_from_tcp_yaml(
         tcp_doc,
         ns_prefix="tcp",
         mid_start=20000,
         default_frame=default_frame,
         force_frame=None,
-        clear_legacy=False,   # PoseArray only: irrelevant
+        clear_legacy=False,
         include_text=False,
     )
     return pa
@@ -391,10 +560,6 @@ def build_tcp_marker_array_from_tcp_yaml(
     default_frame: str = "scene",
     include_text: bool = True,
 ) -> MarkerArray:
-    """
-    Legacy name kept for ProcessTab imports.
-    Returns MarkerArray for TCP path.
-    """
     _, ma = build_tcp_pose_and_markers_from_tcp_yaml(
         tcp_doc,
         ns_prefix=ns_prefix,
@@ -409,7 +574,6 @@ def build_tcp_marker_array_from_tcp_yaml(
 
 # ============================================================
 # Legacy/UI-only: Recipe -> MarkerArray (Draft + Traj summary/eval)
-# (Keep if you still show summaries in UI; RViz topics should use build_rviz_layers)
 # ============================================================
 
 def build_marker_array_from_recipe(
@@ -424,11 +588,6 @@ def build_marker_array_from_recipe(
     Legacy/UI visualization (NOT RViz path topics):
       - draft.yaml -> LINE_STRIP per side
       - planned_traj / executed_traj -> TEXT markers (summary + eval)
-
-    Marker namespaces used:
-      - "draft/<side>"
-      - "planned_traj"
-      - "executed_traj"
     """
     arr = MarkerArray()
     mid = 0
@@ -437,7 +596,13 @@ def build_marker_array_from_recipe(
     if show_draft and getattr(recipe, "draft", None) is not None:
         try:
             for side, s in recipe.draft.sides.items():  # type: ignore[union-attr]
-                m = _line_strip_marker(frame_id=frame_id, ns=f"draft/{side}", mid=mid)
+                m = _line_strip_marker(
+                    frame_id=frame_id,
+                    ns=f"draft/{side}",
+                    mid=mid,
+                    width_m=0.0010,
+                    rgba=(0.0, 0.0, 1.0, 1.0),  # blue for draft here too
+                )
                 mid += 1
                 for pose in s.poses_quat:
                     m.points.append(_make_point(pose.x, pose.y, pose.z))

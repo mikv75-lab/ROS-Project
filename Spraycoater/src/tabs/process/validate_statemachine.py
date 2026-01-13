@@ -2,12 +2,13 @@
 # File: tabs/process/validate_statemachine.py
 from __future__ import annotations
 
+import json
 import logging
 from typing import Optional, Any, Dict, List, Tuple, Iterable
 
 from PyQt6 import QtCore
 
-from model.recipe.recipe_run_result import RunResult  # seeded RunResult comes from ProcessThread
+from model.recipe.recipe_run_result import RunResult
 
 from .base_statemachine import (
     BaseProcessStatemachine,
@@ -22,24 +23,12 @@ _LOG = logging.getLogger("tabs.process.validate_statemachine")
 
 class ProcessValidateStatemachine(BaseProcessStatemachine):
     """
-    Validate run: streams recipe points as consecutive MoveIt pose commands.
-
-    IMPORTANT:
-      - Trajectory capture is handled by BaseProcessStatemachine on each "EXECUTED:OK".
-      - Base notifyFinished emits STRICT RunResult payload (NOT traj-only):
-          {
-            "planned_run":  {"traj": <JTBySegment v1 yaml dict>, "tcp": <Draft v1 yaml dict or {}>},
-            "executed_run": {"traj": <JTBySegment v1 yaml dict>, "tcp": <Draft v1 yaml dict or {}>},
-            "fk_meta": {...},
-            "eval": {...},
-            "valid": bool,
-            "invalid_reason": str,
-            "urdf_xml": str,
-            "srdf_xml": str,
-          }
-
-        For Validate, "tcp" is intentionally left {} here; it is computed later
-        (e.g. in ProcessTab via TrajFkBuilder) to ensure reproducibility/compare.
+    Validate run: streams recipe points (Position + Orientation) as consecutive MoveIt pose commands.
+    
+    FIXES:
+      - Sets planner config from recipe.planner['validate'].
+      - Uses FULL ORIENTATION from Draft (PoseQuat) instead of enforcing Identity quaternion.
+        This prevents 'NO_TRAJ' errors when Identity orientation is unreachable.
     """
 
     ROLE = "validate"
@@ -69,12 +58,16 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
 
         self._side = str(side or "top")
 
-        self._compiled_pts_mm: List[Tuple[float, float, float]] = []
-        self._cmd_pts_by_seg: Dict[str, List[Tuple[float, float, float]]] = {}
-        self._pending_recipe_mm: List[Tuple[float, float, float]] = []
+        # Now storing tuples of 7 floats: (x, y, z, qx, qy, qz, qw)
+        self._compiled_poses: List[Tuple[float, float, float, float, float, float, float]] = []
+        self._cmd_poses_by_seg: Dict[str, List[Tuple[float, ...]]] = {}
+        self._pending_recipe_poses: List[Tuple[float, ...]] = []
 
         self._frame: str = "world"
         self._speed_mm_s: float = 200.0
+        
+        # Planner config
+        self._planner_cfg: Dict[str, Any] = {}
 
         self._await_joint_update_for_next_pose: bool = False
         self._joint_sig_connected: bool = False
@@ -92,11 +85,27 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             self._joint_sig_connected = False
 
     # ------------------------------------------------------------------
+    # STOP OVERRIDE
+    # ------------------------------------------------------------------
+
+    @QtCore.pyqtSlot()
+    def request_stop(self) -> None:
+        self._await_joint_update_for_next_pose = False
+        self._pending_recipe_poses.clear()
+        
+        try:
+            self._joint_fallback_timer.stop()
+        except Exception:
+            pass
+
+        super().request_stop()
+
+    # ------------------------------------------------------------------
     # Hooks
     # ------------------------------------------------------------------
 
     def _prepare_run(self) -> bool:
-        # frame
+        # 1. Frame
         self._frame = "scene"
         try:
             pc = getattr(self._recipe, "paths_compiled", None)
@@ -105,7 +114,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         except Exception:
             pass
 
-        # speed
+        # 2. Speed
         self._speed_mm_s = 200.0
         try:
             params = getattr(self._recipe, "parameters", {}) or {}
@@ -113,45 +122,92 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         except Exception:
             pass
 
-        # compiled points (mm)
-        self._compiled_pts_mm = self._get_compiled_points_mm(self._side)
+        # 3. PLANNER CONFIG
+        if not self._apply_planner_config():
+            return False
+
+        # 4. Compiled poses (Position + Orientation)
+        self._compiled_poses = self._get_compiled_poses(self._side)
 
         # reset segment plans
-        self._cmd_pts_by_seg.clear()
-        self._pending_recipe_mm.clear()
+        self._cmd_poses_by_seg.clear()
+        self._pending_recipe_poses.clear()
         self._await_joint_update_for_next_pose = False
         self._joint_fallback_timer.stop()
 
-        # ensure Base buffers are clean (Base.start() already clears, but keep strictness here)
+        # ensure Base buffers are clean
         self._planned_by_segment.clear()
         self._executed_by_segment.clear()
         self._planned_steps_by_segment.clear()
         self._executed_steps_by_segment.clear()
 
-        if not self._compiled_pts_mm:
+        if not self._compiled_poses:
             self._signal_error(f"Validate: compiled path ist leer (side='{self._side}').")
             return False
 
-        pts = self._compiled_pts_mm
+        pts = self._compiled_poses
         n = len(pts)
 
         pre = [pts[0]] if n >= 1 else []
         ret = [pts[-1]] if n >= 2 else []
         mid = pts[1:-1] if n >= 3 else []
 
-        self._cmd_pts_by_seg[STATE_MOVE_PREDISPENSE] = pre
-        self._cmd_pts_by_seg[STATE_MOVE_RECIPE] = list(mid)
-        self._cmd_pts_by_seg[STATE_MOVE_RETREAT] = ret
-        self._cmd_pts_by_seg[STATE_MOVE_HOME] = []
+        self._cmd_poses_by_seg[STATE_MOVE_PREDISPENSE] = pre
+        self._cmd_poses_by_seg[STATE_MOVE_RECIPE] = list(mid)
+        self._cmd_poses_by_seg[STATE_MOVE_RETREAT] = ret
+        self._cmd_poses_by_seg[STATE_MOVE_HOME] = []
 
-        self._pending_recipe_mm = list(self._cmd_pts_by_seg[STATE_MOVE_RECIPE])
+        self._pending_recipe_poses = list(self._cmd_poses_by_seg[STATE_MOVE_RECIPE])
+        return True
+
+    def _apply_planner_config(self) -> bool:
+        try:
+            planner_sect = getattr(self._recipe, "planner", {}) or {}
+        except Exception:
+            planner_sect = {}
+
+        cfg = planner_sect.get("validate")
+        if not isinstance(cfg, dict):
+            cfg = planner_sect.get("move")
+        
+        if not isinstance(cfg, dict):
+            _LOG.warning("Validate: Keine Planner-Config gefunden. Nutze Default.")
+            return True
+
+        pipeline = str(cfg.get("pipeline") or "").strip()
+        planner_id = str(cfg.get("planner_id") or "").strip()
+        params = cfg.get("params") or {}
+
+        if not planner_id:
+            _LOG.warning("Validate: Planner config gefunden, aber planner_id leer.")
+            return True
+
+        self._planner_cfg = {
+            "role": "validate",
+            "pipeline": pipeline,
+            "planner_id": planner_id,
+            "params": params,
+        }
+
+        try:
+            mp = getattr(self._ros, "moveitpy", None)
+            sig = getattr(mp, "signals", None) if mp is not None else None
+            if sig is not None and hasattr(sig, "plannerCfgChanged"):
+                _LOG.info(f"Validate: Setze Planner '{pipeline}/{planner_id}'")
+                sig.plannerCfgChanged.emit(self._planner_cfg)
+            else:
+                _LOG.warning("Validate: MoveItPyBridge hat kein plannerCfgChanged Signal.")
+        except Exception as e:
+            _LOG.error(f"Validate: Fehler beim Senden der Planner-Config: {e}")
+            return False
+
         return True
 
     def _segment_exists(self, seg_name: str) -> bool:
         if seg_name == STATE_MOVE_HOME and self._skip_home:
             return False
         if seg_name in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT):
-            return bool(self._cmd_pts_by_seg.get(seg_name))
+            return bool(self._cmd_poses_by_seg.get(seg_name))
         return True
 
     def _on_enter_segment(self, seg_name: str) -> None:
@@ -174,9 +230,8 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._signal_error(f"Validate: Unknown segment '{seg_name}'")
 
     def _should_transition_on_ok(self, seg_name: str, result: str) -> bool:
-        # RECIPE: stay in the same segment until we've issued all poses
         if seg_name == STATE_MOVE_RECIPE:
-            if self._pending_recipe_mm:
+            if self._pending_recipe_poses:
                 self._await_joint_update_for_next_pose = True
                 self._arm_joint_fallback_timer()
                 return False
@@ -188,15 +243,14 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
     # ------------------------------------------------------------------
 
     def _run_single_pose_segment(self, seg_name: str) -> None:
-        pts = self._cmd_pts_by_seg.get(seg_name) or []
-        if not pts:
+        poses = self._cmd_poses_by_seg.get(seg_name) or []
+        if not poses:
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
-        x, y, z = pts[0]
-        self._ros_move_pose_mm(x, y, z)
+        self._ros_move_pose_tuple(poses[0])
 
     def _run_recipe_stream_segment(self) -> None:
-        if not self._pending_recipe_mm:
+        if not self._pending_recipe_poses:
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
         self._send_next_recipe_pose()
@@ -205,10 +259,11 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._joint_fallback_timer.stop()
         self._await_joint_update_for_next_pose = False
 
-        if not self._pending_recipe_mm:
+        if not self._pending_recipe_poses:
             return
-        x, y, z = self._pending_recipe_mm.pop(0)
-        self._ros_move_pose_mm(x, y, z)
+        
+        pose_tuple = self._pending_recipe_poses.pop(0)
+        self._ros_move_pose_tuple(pose_tuple)
 
     def _run_home_segment(self) -> None:
         if self._skip_home:
@@ -240,7 +295,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             return
         if not self._await_joint_update_for_next_pose:
             return
-        if not self._pending_recipe_mm:
+        if not self._pending_recipe_poses:
             return
 
         _LOG.warning(
@@ -261,7 +316,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             return
         if not self._await_joint_update_for_next_pose:
             return
-        if not self._pending_recipe_mm:
+        if not self._pending_recipe_poses:
             return
 
         self._joint_fallback_timer.stop()
@@ -272,11 +327,21 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
     # ROS facade helpers
     # ------------------------------------------------------------------
 
-    def _ros_move_pose_mm(self, x: float, y: float, z: float) -> None:
+    def _ros_move_pose_tuple(self, p: Tuple[float, ...]) -> None:
+        """
+        Sends move command.
+        Expects tuple (x, y, z, qx, qy, qz, qw)
+        """
+        if len(p) < 7:
+            self._signal_error(f"Validate: Invalid pose tuple len={len(p)}")
+            return
+        
+        x, y, z = p[0], p[1], p[2]
+        qx, qy, qz, qw = p[3], p[4], p[5], p[6]
+
         from geometry_msgs.msg import PoseStamped  # type: ignore
 
         try:
-            # optional: speed signal (if supported by MoveItPyBridge)
             try:
                 self._ros.moveitpy.signals.motionSpeedChanged.emit(float(self._speed_mm_s))
             except Exception:
@@ -300,60 +365,51 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             ps.pose.position.x = float(x) / 1000.0
             ps.pose.position.y = float(y) / 1000.0
             ps.pose.position.z = float(z) / 1000.0
-            ps.pose.orientation.x = 0.0
-            ps.pose.orientation.y = 0.0
-            ps.pose.orientation.z = 0.0
-            ps.pose.orientation.w = 1.0
+            ps.pose.orientation.x = float(qx)
+            ps.pose.orientation.y = float(qy)
+            ps.pose.orientation.z = float(qz)
+            ps.pose.orientation.w = float(qw)
+            
+            _LOG.info(f"Validate: Moving to {self._frame}: Pos={x:.1f}/{y:.1f}/{z:.1f} Orient={qx:.2f}/{qy:.2f}/{qz:.2f}/{qw:.2f}")
 
             self._ros.moveitpy.signals.moveToPoseRequested.emit(ps)
         except Exception as ex:
             self._signal_error(f"Validate: move_pose failed ({x:.1f},{y:.1f},{z:.1f}): {ex}")
 
     # ------------------------------------------------------------------
-    # Compiled points extraction (robust for ndarray OR list)
+    # Compiled poses extraction (FULL POSE: Pos + Rot)
     # ------------------------------------------------------------------
 
-    def _get_compiled_points_mm(self, side: str) -> List[Tuple[float, float, float]]:
+    def _get_compiled_poses(self, side: str) -> List[Tuple[float, float, float, float, float, float, float]]:
         """
-        Accepts:
-          - numpy ndarray (has .tolist())
-          - list/tuple of rows (already list)
-          - any iterable of rows
-
-        Expects rows shaped like [x,y,z] in mm.
+        Returns list of (x, y, z, qx, qy, qz, qw).
+        Coordinates x,y,z in mm.
         """
-        out: List[Tuple[float, float, float]] = []
+        out = []
         try:
-            pts = self._recipe.compiled_points_mm_for_side(str(side))
+            # recipe.draft_poses_quat returns objects with .x, .y, .z, .qx ...
+            poses = self._recipe.draft_poses_quat(str(side))
         except Exception:
-            pts = None
+            return []
 
-        if pts is None:
-            return out
+        if not poses:
+            return []
 
-        rows: Iterable[Any]
-        if hasattr(pts, "tolist"):
+        for p in poses:
             try:
-                rows = pts.tolist()  # numpy-like
+                # Assuming p is object-like with attributes
+                # If p is dict, adjust accordingly (recipe usually returns objects or dicts depending on impl)
+                if hasattr(p, "x"):
+                    val = (float(p.x), float(p.y), float(p.z), float(p.qx), float(p.qy), float(p.qz), float(p.qw))
+                elif isinstance(p, dict):
+                    val = (float(p['x']), float(p['y']), float(p['z']), 
+                           float(p['qx']), float(p['qy']), float(p['qz']), float(p['qw']))
+                else:
+                    continue
+                out.append(val)
             except Exception:
-                rows = pts
-        else:
-            rows = pts
-
-        try:
-            for row in rows:
-                if row is None:
-                    continue
-                try:
-                    x = float(row[0])
-                    y = float(row[1])
-                    z = float(row[2])
-                except Exception:
-                    continue
-                out.append((x, y, z))
-        except Exception:
-            return out
-
+                continue
+        
         return out
 
     # ------------------------------------------------------------------

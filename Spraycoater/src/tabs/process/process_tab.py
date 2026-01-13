@@ -75,6 +75,7 @@ class ProcessTab(QWidget):
     IMPORTANT (fix for your current issue):
       - DO NOT force frame_id="world" if your TCP docs say "scene".
         Otherwise markers (scene) look correct, but PoseArray (world) is offset.
+        
       - This implementation uses the TCP doc's frame if present; otherwise falls back to "scene".
     """
 
@@ -888,7 +889,33 @@ class ProcessTab(QWidget):
     def _finish_process_ui(self) -> None:
         self._process_active = False
         self._active_mode = ""
+
+        pt = self._process_thread
         self._process_thread = None
+
+        # IMPORTANT: explicit cleanup of the last ProcessThread instance
+        if pt is not None:
+            try:
+                pt.notifyFinished.disconnect()
+            except Exception:
+                pass
+            try:
+                pt.notifyError.disconnect()
+            except Exception:
+                pass
+            try:
+                pt.stateChanged.disconnect()
+            except Exception:
+                pass
+            try:
+                pt.logMessage.disconnect()
+            except Exception:
+                pass
+            try:
+                pt.deleteLater()
+            except Exception:
+                pass
+
         self._update_buttons()
 
     def _on_process_finished_success(self, result_obj: object) -> None:

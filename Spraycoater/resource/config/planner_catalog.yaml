@@ -11,271 +11,131 @@ planner_catalog:
     motion_common:
       planning_time_s:       { type: number,  min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
       attempts:              { type: integer, min: 1,   max: 100,  step: 1,    default: 1 }
-      velocity_scaling:      { type: number,  min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
-      acceleration_scaling:  { type: number,  min: 0.0, max: 1.0,  step: 0.05, default: 0.5 }
+      velocity_scaling:      { type: number,  min: 0.0, max: 1.0,  step: 0.05, default: 1.0 }
+      acceleration_scaling:  { type: number,  min: 0.0, max: 1.0,  step: 0.05, default: 1.0 }
 
-    # Zusätzliche gemeinsame Parameter (wenn UI / Pipeline das unterstützt)
+    # Optional: (wenn UI/Pipeline das unterstützt – bei dir im Recipe vorhanden)
     cartesian_common:
       cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
       cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
 
-    # Post-Processing Parameter (TOTG / IPTP / Spline)
+    # Post-Processing (aus ZIP: AddTimeOptimalParameterization ist referenziert)
+    # Defaults = 1.0 => "Speed beibehalten"
     post_common:
       velocity_scaling:      { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
       acceleration_scaling:  { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
 
   # -------------------------------------------------------------------
-  # Rollen → welche Planner sind je Kategorie erlaubt?
+  # Rollen → welche Planner sind je Kategorie erlaubt? (nur aus ZIP)
   # -------------------------------------------------------------------
   roles:
 
     validate_move:
-      - "RRTConnect"
       - "RRTConnectkConfigDefault"
-      - "RRT"
-      - "PRM"
-      - "PRMkConfigDefault"
-      - "KPIECE"
-      - "BKPIECE"
-      - "LBKPIECE"
-      - "EST"
-      - "BiEST"
-      - "SBL"
+      - "RRTkConfigDefault"
       - "PTP"
 
     validate_path:
-      - "RRTstar"
       - "RRTstarkConfigDefault"
-      - "RRTsharp"
-      - "PRMstar"
-      - "STRIDE"
-      - "FMT"
-      - "BFMT"
-      - "PDST"
-      - "TRRT"
-      - "Lightning"
-      - "Thunder"
       - "LIN"
       - "CIRC"
 
     refine:
       - "CHOMP"
-      - "CHOMPOptimizer"
-      - "CHOMPTrajectoryOptimizer"
       - "STOMP"
-      - "STOMP_Replan"
-      - "STOMP_Smoothing"
-      - "STOMP_Optimize"
 
     optimize:
       - "TimeOptimalTrajectoryGeneration"
-      - "IterativeParabolicTimeParameterization"
-      - "SplineInterpolator"
 
     service:
       - "PTP"
       - "LIN"
       - "CIRC"
       - "RRTConnectkConfigDefault"
-      - "RRTConnect"
-      - "PRMkConfigDefault"
-      - "PRM"
+      - "RRTkConfigDefault"
 
   # -------------------------------------------------------------------
-  # Planner-Sets pro Path-Typ
+  # Planner-Sets pro Path-Typ (Subset der obigen Rollen, nur aus ZIP)
   # -------------------------------------------------------------------
   path_types:
 
     path.meander.plane:
-      validate_move: ["RRTConnectkConfigDefault","RRTConnect","PRMkConfigDefault","PTP"]
-      validate_path: ["RRTstarkConfigDefault","PRMstar","STRIDE","FMT","BFMT","TRRT","Lightning","Thunder","LIN","CIRC"]
+      validate_move: ["RRTConnectkConfigDefault","RRTkConfigDefault","PTP"]
+      validate_path: ["RRTstarkConfigDefault","LIN","CIRC"]
 
     path.spiral.plane:
-      validate_move: ["RRTConnectkConfigDefault","RRTConnect","PRMkConfigDefault","PTP"]
-      validate_path: ["RRTstarkConfigDefault","RRTstar","PRMstar","STRIDE","FMT","BFMT","TRRT","Lightning","Thunder"]
+      validate_move: ["RRTConnectkConfigDefault","RRTkConfigDefault","PTP"]
+      validate_path: ["RRTstarkConfigDefault"]
 
     path.perimeter_follow.plane:
-      validate_move: ["RRTConnectkConfigDefault","PTP"]
+      validate_move: ["PTP","RRTConnectkConfigDefault","RRTkConfigDefault"]
       validate_path: ["LIN","CIRC","RRTstarkConfigDefault"]
 
     path.spiral.cylinder:
-      validate_move: ["RRTConnectkConfigDefault","RRTConnect","PRMkConfigDefault","PTP"]
-      validate_path: ["RRTstarkConfigDefault","RRTstar","RRTsharp","PDST","TRRT","Lightning","Thunder"]
+      validate_move: ["RRTConnectkConfigDefault","RRTkConfigDefault","PTP"]
+      validate_path: ["RRTstarkConfigDefault"]
 
     path.polyhelix.pyramid:
-      validate_move: ["RRTConnectkConfigDefault","RRTConnect","RRT","PRM","PRMkConfigDefault","KPIECE","BKPIECE","LBKPIECE","EST","BiEST","SBL","PTP"]
-      validate_path: ["RRTstarkConfigDefault","RRTstar","RRTsharp","PRMstar","STRIDE","FMT","BFMT","PDST","TRRT","Lightning","Thunder"]
+      validate_move: ["RRTConnectkConfigDefault","RRTkConfigDefault","PTP"]
+      validate_path: ["RRTstarkConfigDefault"]
 
     path.polyhelix.cube:
-      validate_move: ["RRTConnectkConfigDefault","RRTConnect","RRT","PRM","PRMkConfigDefault","KPIECE","BKPIECE","LBKPIECE","EST","BiEST","SBL","PTP"]
-      validate_path: ["RRTstarkConfigDefault","RRTstar","RRTsharp","PRMstar","STRIDE","FMT","BFMT","PDST","TRRT","Lightning","Thunder"]
+      validate_move: ["RRTConnectkConfigDefault","RRTkConfigDefault","PTP"]
+      validate_path: ["RRTstarkConfigDefault"]
 
   # -------------------------------------------------------------------
-  # Detail-Tabelle: alle Planner pro Pipeline (Meta + params_ref)
+  # Detail-Tabelle: alle Planner pro Pipeline (nur aus ZIP)
   # -------------------------------------------------------------------
   pipelines:
 
     ompl:
-      RRTConnect:
-        description: "Schneller bidirektionaler RRT-Planner (grobe, schnelle Pfade)."
-        params_ref: ["motion_common","cartesian_common"]
-
       RRTConnectkConfigDefault:
-        description: "MoveIt-Standardkonfiguration von RRTConnect (sehr zuverlässig)."
+        description: "OMPL RRTConnect (MoveIt Default) – aus ompl_planning.yaml"
         params_ref: ["motion_common","cartesian_common"]
 
-      RRT:
-        description: "Einfacher RRT-Planner (klassisch, weniger effizient)."
-        params_ref: ["motion_common","cartesian_common"]
-
-      RRTstar:
-        description: "RRT* – asymptotisch optimal, liefert qualitativ bessere Pfade."
+      RRTkConfigDefault:
+        description: "OMPL RRT (MoveIt Default) – aus ompl_planning.yaml"
         params_ref: ["motion_common","cartesian_common"]
 
       RRTstarkConfigDefault:
-        description: "Standardkonfiguration von RRT* mit optimierten Parametern."
+        description: "OMPL RRT* (MoveIt Default) – aus ompl_planning.yaml"
         params_ref: ["motion_common","cartesian_common"]
 
-      RRTsharp:
-        description: "Verbesserter RRT-Variant mit Fokus auf Pfadqualität."
-        params_ref: ["motion_common","cartesian_common"]
-
-      PRM:
-        description: "Probabilistic Roadmap (PRM) – gut für globale Pfade."
-        params_ref: ["motion_common","cartesian_common"]
-
-      PRMkConfigDefault:
-        description: "MoveIt-Standardkonfiguration für PRM (robust, universell)."
-        params_ref: ["motion_common","cartesian_common"]
-
-      PRMstar:
-        description: "Optimierte PRM-Variante mit besserer Pfadqualität."
-        params_ref: ["motion_common","cartesian_common"]
-
-      KPIECE:
-        description: "KPIECE – gut für Probleme mit wenigen Freiheitsgraden."
-        params_ref: ["motion_common","cartesian_common"]
-
-      BKPIECE:
-        description: "Balanced KPIECE – ausgewogene Exploration und Exploitation."
-        params_ref: ["motion_common","cartesian_common"]
-
-      LBKPIECE:
-        description: "Lazy BKPIECE – schnellere Planung mit verzögerter Kollisionsprüfung."
-        params_ref: ["motion_common","cartesian_common"]
-
-      EST:
-        description: "Expansive Space Trees – für komplexe Konfigurationsräume."
-        params_ref: ["motion_common","cartesian_common"]
-
-      BiEST:
-        description: "Bidirektionale EST-Variante für schnellere Konvergenz."
-        params_ref: ["motion_common","cartesian_common"]
-
-      SBL:
-        description: "Single-query Bi-directional Lazy – schnell für Einzelanfragen."
-        params_ref: ["motion_common","cartesian_common"]
-
-      STRIDE:
-        description: "STRIDE – strukturierter Sampling-Planner."
-        params_ref: ["motion_common","cartesian_common"]
-
-      FMT:
-        description: "Fast Marching Tree – sehr effizient bei vielen Samples."
-        params_ref: ["motion_common","cartesian_common"]
-
-      BFMT:
-        description: "Bidirektionaler FMT – zwei Bäume für bessere Abdeckung."
-        params_ref: ["motion_common","cartesian_common"]
-
-      PDST:
-        description: "Projection-based Distance System Trees – arbeitet mit Projektionen."
-        params_ref: ["motion_common","cartesian_common"]
-
-      TRRT:
-        description: "Transition-based RRT – berücksichtigt Kostenlandschaften (z.B. Glattheit)."
-        params_ref: ["motion_common","cartesian_common"]
-
-      Lightning:
-        description: "Lightning – Experience-Planner, speichert und nutzt frühere Lösungen."
-        params_ref: ["motion_common","cartesian_common"]
-
-      Thunder:
-        description: "Thunder – robuste Lightning-Variante mit verbesserter Wiederverwendung."
-        params_ref: ["motion_common","cartesian_common"]
-
-    pilz:
+    # WICHTIG: Hier muss der exakte Name der Pipeline stehen, wie er in MoveIt geladen wird.
+    pilz_industrial_motion_planner:
       PTP:
-        description: "Pilz-PTP: deterministische Joint-Moves (sichere Übergänge, Service/Move)."
+        description: "Pilz PTP – aus pilz_industrial_motion_planner_planning.yaml"
         params_ref: ["motion_common"]
         params_override:
           planning_time_s: { default: 1.0 }
 
       LIN:
-        description: "Pilz-LIN: lineare TCP-Bewegung (z.B. gerade Spray-Pfade / Zustellungen)."
+        description: "Pilz LIN – aus pilz_industrial_motion_planner_planning.yaml"
         params_ref: ["motion_common"]
         params_override:
           planning_time_s: { default: 1.0 }
 
       CIRC:
-        description: "Pilz-CIRC: Kreisbogensegmente (Perimeter, Rundungen, Edge-Spray)."
+        description: "Pilz CIRC – aus pilz_industrial_motion_planner_planning.yaml"
         params_ref: ["motion_common"]
         params_override:
           planning_time_s: { default: 1.0 }
 
     chomp:
       CHOMP:
-        description: "CHOMP – kontinuierliche Trajektorienoptimierung auf bestehender Lösung."
-        params_ref: ["motion_common"]
-        params_override:
-          planning_time_s: { default: 5.0 }
-
-      CHOMPOptimizer:
-        description: "CHOMPOptimizer – expliziter Optimierer für Trajektorienfeinschliff."
-        params_ref: ["motion_common"]
-        params_override:
-          planning_time_s: { default: 5.0 }
-
-      CHOMPTrajectoryOptimizer:
-        description: "CHOMPTrajectoryOptimizer – Fokus auf Optimierung kompletter Trajektorien."
+        description: "CHOMP pipeline (Plugin vorhanden in chomp_planning.yaml)."
         params_ref: ["motion_common"]
         params_override:
           planning_time_s: { default: 5.0 }
 
     stomp:
       STOMP:
-        description: "STOMP – stochastische Optimierung, ideal für Spray-Trajektorien mit Kostenfunktion."
-        params_ref: ["motion_common"]
-        params_override:
-          planning_time_s: { default: 5.0 }
-
-      STOMP_Replan:
-        description: "STOMP_Replan – STOMP-Variante mit Neuberechnung bei schlechter Lösung."
-        params_ref: ["motion_common"]
-        params_override:
-          planning_time_s: { default: 5.0 }
-
-      STOMP_Smoothing:
-        description: "STOMP_Smoothing – Fokus auf Glättung bestehender Trajektorien."
-        params_ref: ["motion_common"]
-        params_override:
-          planning_time_s: { default: 5.0 }
-
-      STOMP_Optimize:
-        description: "STOMP_Optimize – stärkere Kostenorientierung für maximale Optimierung."
+        description: "STOMP pipeline (Plugin vorhanden in stomp_planning.yaml)."
         params_ref: ["motion_common"]
         params_override:
           planning_time_s: { default: 5.0 }
 
     post:
       TimeOptimalTrajectoryGeneration:
-        description: "TOTG – zeitoptimale Trajektorienparameterisierung."
-        params_ref: ["post_common"]
-
-      IterativeParabolicTimeParameterization:
-        description: "IPTP – klassische zeitliche Parameterisierung über Parabelsegmente."
-        params_ref: ["post_common"]
-
-      SplineInterpolator:
-        description: "SplineInterpolator – glättet Trajektorien über Splines für weiche Bewegungen."
+        description: "TOTG Retiming (ZIP referenziert AddTimeOptimalParameterization). Defaults=1.0 => Speed beibehalten."
         params_ref: ["post_common"]

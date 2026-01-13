@@ -2,9 +2,9 @@
 # File: app/widgets/planner_groupbox.py
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtWidgets
 
 try:
     from model.recipe.recipe_store import RecipeStore  # type: ignore
@@ -26,18 +26,21 @@ def _safe_dict(x: Any) -> Dict[str, Any]:
 
 class PlannerGroupBox(QtWidgets.QGroupBox):
     """
-    Planner-Box (neu) basierend auf planner_catalog.yaml.
+    Planner-Box (SSoT) basierend auf planner_catalog.yaml.
 
     Model-Schema (was in recipe.planner[...] gespeichert wird):
       {
-        "role": "validate_move" | "validate_path" | "optimize" | "service" | ...,
+        "role": "validate_move" | "validate_path" | "refine" | "optimize" | "service" | ...,
         "pipeline": "ompl" | "pilz" | "chomp" | "stomp" | "post",
-        "planner_id": "RRTConnectkConfigDefault" | "PTP" | ...,
+        "planner_id": "...",
         "params": { "<param_key>": <value>, ... }
       }
 
-    - role wird im Konstruktor festgelegt (move/path/optimize/service)
-    - planner + params sind strikt aus catalog ableitbar
+    STRICT:
+      - Keine Hardcode-Maps (z.B. _ROLE_PIPELINES) – alles wird aus dem YAML abgeleitet.
+      - Verfügbare Pipelines = pipelines, die mindestens einen für die Rolle erlaubten planner_id enthalten.
+      - Verfügbare Planner je Pipeline = Schnittmenge aus (pipelines[pipeline].keys) und roles[role].
+      - Params-Schema = params_ref Profile + params_override (nur aus YAML).
     """
 
     _ROLE_MAP = {
@@ -45,11 +48,10 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
         "path": "validate_path",
         "validate_move": "validate_move",
         "validate_path": "validate_path",
+        "refine": "refine",
         "optimize": "optimize",
         "service": "service",
     }
-
-    _PIPELINE_ORDER = ["ompl", "pilz", "chomp", "stomp", "post"]
 
     def __init__(
         self,
@@ -78,16 +80,20 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
 
     # ------------------------------------------------------------------ Catalog helpers
 
+    def _root(self) -> Dict[str, Any]:
+        # akzeptiert entweder root==planner_catalog oder root=={planner_catalog:{...}}
+        return _safe_dict(self.catalog.get("planner_catalog", self.catalog))
+
     def _roles(self) -> Dict[str, Any]:
-        return _safe_dict(_safe_dict(self.catalog.get("planner_catalog", self.catalog)).get("roles"))
+        return _safe_dict(self._root().get("roles"))
 
     def _param_profiles(self) -> Dict[str, Any]:
-        return _safe_dict(_safe_dict(self.catalog.get("planner_catalog", self.catalog)).get("param_profiles"))
+        return _safe_dict(self._root().get("param_profiles"))
 
     def _pipelines(self) -> Dict[str, Any]:
-        return _safe_dict(_safe_dict(self.catalog.get("planner_catalog", self.catalog)).get("pipelines"))
+        return _safe_dict(self._root().get("pipelines"))
 
-    def _allowed_planners_for_role(self) -> list[str]:
+    def _allowed_planners_for_role(self) -> List[str]:
         roles = self._roles()
         allowed = roles.get(self.role)
         if isinstance(allowed, list):
@@ -101,6 +107,32 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
 
     def _planner_spec(self, pipeline: str, planner_id: str) -> Dict[str, Any]:
         return _safe_dict(self._planners_for_pipeline(pipeline).get(str(planner_id)))
+
+    def _available_pipelines_for_role(self) -> List[str]:
+        """
+        Datengetrieben: welche Pipelines bieten mindestens einen Planner,
+        der für die Rolle erlaubt ist?
+        """
+        pipes = self._pipelines()
+        if not pipes:
+            return []
+
+        allowed = set(self._allowed_planners_for_role())
+        out: List[str] = []
+
+        for pname, pmap in pipes.items():
+            if not isinstance(pmap, dict) or not pmap:
+                continue
+            if not allowed:
+                # role unbekannt -> alles anzeigen
+                out.append(str(pname))
+                continue
+            if any(str(pid) in allowed for pid in pmap.keys()):
+                out.append(str(pname))
+
+        # stabile Sortierung (alphabetisch)
+        out = sorted(out)
+        return out
 
     # ------------------------------------------------------------------ UI
 
@@ -142,16 +174,21 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
         self.btnDefaults.clicked.connect(self._apply_defaults_for_current)
 
     def _apply_default_selection(self) -> None:
-        pipes = self._pipelines()
-        available_pipes = [p for p in self._PIPELINE_ORDER if p in pipes]
+        available_pipes = self._available_pipelines_for_role()
+
+        # Falls Rolle unbekannt oder leer -> alle Pipelines anzeigen
         if not available_pipes:
-            available_pipes = sorted(list(pipes.keys()))
+            pipes = self._pipelines()
+            available_pipes = sorted(list(pipes.keys())) if pipes else []
 
         self.pipelineCombo.blockSignals(True)
         self.pipelineCombo.clear()
         for p in available_pipes:
             self.pipelineCombo.addItem(p)
         self.pipelineCombo.blockSignals(False)
+
+        # Datengetrieben "lock", wenn nur eine Pipeline sinnvoll ist (z.B. optimize->post)
+        self.pipelineCombo.setEnabled(self.pipelineCombo.count() > 1)
 
         # initial fill planner list + params
         self._on_pipeline_changed(self.pipelineCombo.currentText())
@@ -207,7 +244,6 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
             for k, v in overrides.items():
                 if isinstance(v, dict):
                     if k in merged and isinstance(merged.get(k), dict):
-                        # override default only (oder neue Felder)
                         merged[k] = {**merged[k], **dict(v)}
                     else:
                         merged[k] = dict(v)
@@ -307,10 +343,8 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
 
         for key, (w, kind, pspec) in self._param_widgets.items():
             default = schema.get(key, pspec).get("default", None)
-
             if default is None:
                 continue
-
             try:
                 if kind == "int" and isinstance(w, QtWidgets.QSpinBox):
                     w.setValue(int(default))
@@ -337,13 +371,12 @@ class PlannerGroupBox(QtWidgets.QGroupBox):
         planner_id = str(cfg.get("planner_id") or "").strip()
         params = cfg.get("params") or {}
 
-        # pipeline set (if available)
+        # pipeline list might be role-filtered; ensure selection happens only if present
         if pipeline:
             ix = self.pipelineCombo.findText(pipeline)
             if ix >= 0:
                 self.pipelineCombo.setCurrentIndex(ix)
 
-        # planner set
         if planner_id:
             ix = self.plannerCombo.findText(planner_id)
             if ix >= 0:
