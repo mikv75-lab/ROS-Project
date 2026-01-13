@@ -7,6 +7,7 @@ Panels:
         - /TF1/Frames1
         - /PlanningScene1/Scene Geometry1
         - /PlanningScene1/Scene Robot1
+        - /MarkerArray1
         - /PoseArray1
         - /PoseArray2
         - /PoseArray3
@@ -205,9 +206,9 @@ Visualization Manager:
         Value: /shadow/spraycoater/spray_path/compiled/markers
       Value: true
     - Alpha: 1
-      Arrow Length: 0.0010000000474974513
-      Axes Length: 0.0020000000949949026
-      Axes Radius: 9.999999747378752e-05
+      Arrow Length: 0.004999999888241291
+      Axes Length: 0.004999999888241291
+      Axes Radius: 0.0001500000071246177
       Class: rviz_default_plugins/PoseArray
       Color: 255; 25; 0
       Enabled: true
@@ -313,7 +314,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 0.5720624327659607
+      Distance: 0.09324229508638382
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -328,10 +329,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.6597962379455566
+      Pitch: 0.3547961711883545
       Target Frame: scene
       Value: Orbit (rviz_default_plugins)
-      Yaw: 6.218583106994629
+      Yaw: 5.968583106994629
     Saved: ~
 Window Geometry:
   Displays:

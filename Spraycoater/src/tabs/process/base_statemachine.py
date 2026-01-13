@@ -56,13 +56,12 @@ class BaseProcessStatemachine(QtCore.QObject):
             "srdf_xml": "<robot ...>" or "",
           }
 
-    WICHTIGER FIX (2026-01):
-      - Trajectory Capture ist in der Praxis oft NICHT zuverlässig über "ros.moveit_planned_trajectory()"
-        (je nach Bridge/Namespace/Implementation).
-      - Deshalb cachen wir zusätzlich (best-effort) die letzten Trajektorien über:
-          moveitpy.signals.plannedTrajectoryChanged
-          moveitpy.signals.executedTrajectoryChanged
-        und nutzen diese Caches bei EXECUTED:OK.
+    FIX (race-free strict pairing via RosBridge):
+      - Bei EXECUTED:OK wird IMMER ein Paar gebildet:
+          planned = ros.moveit_planned_trajectory()
+          executed = ros.moveit_executed_trajectory()
+        (RosBridge nutzt synchron caches auf MoveItPyBridge und vermeidet Qt-Queue races)
+      - Es wird NUR gepersistet, wenn beide vorhanden sind (pro Segment). Keine Fallbacks.
 
     NEW (2026-01):
       - Die StateMachine bekommt ein vorinitialisiertes RunResult vom ProcessThread (inkl. URDF/SRDF),
@@ -112,6 +111,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._retry_count: int = 0
 
         # per-run snapshot stores (final per segment, typically merged/concat)
+        # IMPORTANT: ValidateStatemachine expects these attributes to exist.
         self._planned_by_segment: Dict[str, Any] = {}
         self._executed_by_segment: Dict[str, Any] = {}
 
@@ -119,11 +119,14 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._planned_steps_by_segment: Dict[str, List[Any]] = {}
         self._executed_steps_by_segment: Dict[str, List[Any]] = {}
 
+        # optional: enforce ordering PLANNED -> EXECUTED within a segment
+        self._seen_planned_ok: Dict[str, bool] = {}
+
         # --- MoveItPy handles ---
         self._moveitpy = getattr(self._ros, "moveitpy", None)
         self._moveitpy_signals = getattr(self._moveitpy, "signals", None)
 
-        # --- cached last trajectories (best-effort) ---
+        # --- cached last trajectories (legacy / optional fallback) ---
         self._last_planned_any: Any = None
         self._last_executed_any: Any = None
         self._traj_sig_connected: bool = False
@@ -143,148 +146,8 @@ class BaseProcessStatemachine(QtCore.QObject):
             except Exception:
                 self._motion_sig_connected = False
 
-        # connect trajectory cache signals (best effort)
+        # connect trajectory cache signals (only fallback; RosBridge getters are preferred)
         self._connect_traj_cache_signals()
-
-    # ---------------- Public ----------------
-
-    @QtCore.pyqtSlot()
-    def start(self) -> None:
-        self._stop_requested = False
-        self._stopped = False
-        self._retry_count = 0
-        self._current_state = ""
-        self._error_msg = None
-
-        self._planned_by_segment.clear()
-        self._executed_by_segment.clear()
-        self._planned_steps_by_segment.clear()
-        self._executed_steps_by_segment.clear()
-
-        self._last_planned_any = None
-        self._last_executed_any = None
-
-        if not self._prepare_run():
-            self.notifyError.emit(self._error_msg or "Prepare failed")
-            self._cleanup()
-            return
-
-        self._machine = self._build_machine()
-        self._machine.start()
-
-    @QtCore.pyqtSlot()
-    def request_stop(self) -> None:
-        """
-        FIX: Stop muss den StateMachine-Run deterministisch beenden,
-        sonst bleibt der QThread in ProcessThread hängen.
-
-        Strategie:
-          - set stop flags
-          - best-effort moveit_stop()
-          - force terminal transition über _signal_error("Gestoppt")
-            (queued, um Reentrancy zu vermeiden)
-        """
-        if self._stop_requested:
-            return
-
-        self._stop_requested = True
-        self._stopped = True
-
-        try:
-            self._ros.moveit_stop()
-        except Exception:
-            pass
-
-        # Force SM to go to s_err -> notifyError -> ProcessThread ends
-        try:
-            QtCore.QTimer.singleShot(0, lambda: self._signal_error("Gestoppt"))
-        except Exception:
-            # last resort
-            try:
-                self._signal_error("Gestoppt")
-            except Exception:
-                pass
-
-    # ---------------- Hooks ----------------
-
-    def _prepare_run(self) -> bool:
-        return True
-
-    def _on_enter_segment(self, seg_name: str) -> None:
-        raise NotImplementedError
-
-    def _on_segment_ok(self, seg_name: str) -> None:
-        self._snapshot_trajs_for_segment(seg_name)
-
-    def _should_transition_on_ok(self, seg_name: str, result: str) -> bool:
-        return True
-
-    # ---------------- Traj payload (JTBySegment YAML dicts) ----------------
-
-    def _build_traj_payload(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        planned = self._jt_by_segment_yaml(which="planned")
-        executed = self._jt_by_segment_yaml(which="executed")
-        return planned, executed
-
-    def _jt_by_segment_yaml(self, *, which: str) -> Dict[str, Any]:
-        if which not in ("planned", "executed"):
-            raise ValueError(f"_jt_by_segment_yaml: invalid which={which}")
-
-        src = self._planned_by_segment if which == "planned" else self._executed_by_segment
-
-        segments: Dict[str, Any] = {}
-        for seg in SEG_ORDER:
-            jt = src.get(seg)
-            seg_yaml = self._jt_dict_to_segment_yaml(jt)
-            if seg_yaml is not None:
-                segments[seg] = seg_yaml
-
-        return {"version": 1, "segments": segments}
-
-    @staticmethod
-    def _jt_dict_to_segment_yaml(jt: Any) -> Optional[Dict[str, Any]]:
-        if not (isinstance(jt, dict) and isinstance(jt.get("joint_names"), list) and isinstance(jt.get("points"), list)):
-            return None
-
-        jn = [str(x) for x in (jt.get("joint_names") or [])]
-        if not jn:
-            return None
-
-        out_pts: List[Dict[str, Any]] = []
-        for p in (jt.get("points") or []):
-            if not isinstance(p, dict):
-                continue
-            pos = p.get("positions") or []
-            if not isinstance(pos, list) or len(pos) != len(jn):
-                continue
-
-            tfs = p.get("time_from_start")
-            sec = 0
-            nsec = 0
-            if isinstance(tfs, dict):
-                try:
-                    sec = int(tfs.get("sec", 0))
-                    nsec = int(tfs.get("nanosec", 0))
-                except Exception:
-                    sec, nsec = 0, 0
-            elif isinstance(tfs, (list, tuple)) and len(tfs) == 2:
-                try:
-                    sec = int(tfs[0])
-                    nsec = int(tfs[1])
-                except Exception:
-                    sec, nsec = 0, 0
-
-            out_pts.append(
-                {
-                    "positions": [float(x) for x in pos],
-                    "time_from_start": [int(sec), int(nsec)],
-                }
-            )
-
-        if not out_pts:
-            return None
-
-        return {"joint_names": jn, "points": out_pts}
 
     # ---------------- Machine ----------------
 
@@ -332,9 +195,24 @@ class BaseProcessStatemachine(QtCore.QObject):
 
         self._retry_count = 0
 
+        # STRICT: segment-local capture
+        # Reset legacy cached "last planned/executed" so EXECUTED:OK cannot
+        # accidentally pair trajectories from a previous segment.
+        self._last_planned_any = None
+        self._last_executed_any = None
+
         # reset per-segment step buffers on entry (important for retries)
         self._planned_steps_by_segment[seg_name] = []
         self._executed_steps_by_segment[seg_name] = []
+        self._seen_planned_ok[seg_name] = False
+
+        # optional: tag segment into node (best-effort)
+        try:
+            fn = getattr(self._ros, "moveit_set_segment", None)
+            if callable(fn):
+                fn(seg_name)
+        except Exception:
+            pass
 
         self._on_enter_segment(seg_name)
 
@@ -345,22 +223,41 @@ class BaseProcessStatemachine(QtCore.QObject):
         if self._stop_requested or not self._current_state:
             return
 
-        if result.startswith("ERROR"):
-            if self._retry_count < self._max_retries:
-                self._retry_count += 1
-                self._on_enter_segment(self._current_state)
-            else:
-                self._signal_error(result)
+        res = (result or "").strip()
+        if not res:
             return
 
-        if result.startswith("EXECUTED:OK"):
+        if res.startswith("ERROR"):
+            if self._retry_count < self._max_retries:
+                self._retry_count += 1
+                # restart current segment
+                self._on_enter_segment(self._current_state)
+            else:
+                self._signal_error(res)
+            return
+
+        # optional gating: remember that this segment has been planned at least once
+        if res.startswith("PLANNED:OK"):
+            self._seen_planned_ok[self._current_state] = True
+            return
+
+        if res.startswith("EXECUTED:OK"):
+            # If you want strict ordering, keep this guard ON.
+            if not self._seen_planned_ok.get(self._current_state, False):
+                self._signal_error(
+                    f"Segment '{self._current_state}': EXECUTED:OK ohne vorheriges PLANNED:OK. "
+                    "Contract violated / UI-Start mid-stream."
+                )
+                return
+
+            # strict paired snapshot (planned+executed must both exist)
             self._snapshot_step_for_segment(self._current_state)
 
-            if self._should_transition_on_ok(self._current_state, result):
+            if self._should_transition_on_ok(self._current_state, res):
                 self._on_segment_ok(self._current_state)
                 QtCore.QTimer.singleShot(0, self._sig_done.emit)
 
-    # ---------------- Trajectory cache signals ----------------
+    # ---------------- Trajectory cache signals (fallback only) ----------------
 
     def _connect_traj_cache_signals(self) -> None:
         sig = self._moveitpy_signals
@@ -395,73 +292,92 @@ class BaseProcessStatemachine(QtCore.QObject):
     # ---------------- Snapshot helpers ----------------
 
     def _snapshot_step_for_segment(self, seg_name: str) -> None:
+        """
+        STRICT pairing:
+          - Only append a step if BOTH planned and executed are present.
+          - Preferred source: RosBridge synchronous getters (race-free).
+          - Fallback source: cached last_* from Qt signals (only if getters missing).
+        """
         planned_raw, executed_raw = self._get_step_sources()
 
         planned = self._jt_from_any(planned_raw)
         executed = self._jt_from_any(executed_raw)
 
-        if planned is not None:
-            self._planned_steps_by_segment.setdefault(seg_name, []).append(copy.deepcopy(planned))
-        if executed is not None:
-            self._executed_steps_by_segment.setdefault(seg_name, []).append(copy.deepcopy(executed))
+        if planned is None or executed is None:
+            self._signal_error(
+                f"Trajectory capture missing for segment '{seg_name}': "
+                f"planned={'ok' if planned is not None else 'None'}, "
+                f"executed={'ok' if executed is not None else 'None'}. "
+                "Requirement: EXECUTED:OK must have a matching last PLANNED + last EXECUTED."
+            )
+            return
+
+        self._planned_steps_by_segment.setdefault(seg_name, []).append(copy.deepcopy(planned))
+        self._executed_steps_by_segment.setdefault(seg_name, []).append(copy.deepcopy(executed))
 
     def _snapshot_trajs_for_segment(self, seg_name: str) -> None:
+        """
+        Build the final per-segment planned/executed trajectories.
+
+        STRICT:
+          - planned and executed are treated symmetrically.
+          - We only store a segment if BOTH exist and were captured as pairs.
+          - No partial persist.
+        """
         planned_steps = self._planned_steps_by_segment.get(seg_name) or []
         executed_steps = self._executed_steps_by_segment.get(seg_name) or []
 
-        planned = self._concat_joint_traj_dicts(planned_steps) if planned_steps else None
-        executed = self._concat_joint_traj_dicts(executed_steps) if executed_steps else None
+        if not planned_steps or not executed_steps:
+            self._signal_error(
+                f"Segment '{seg_name}': no paired trajectory steps captured. "
+                "Expected at least one EXECUTED:OK with both planned+executed cached."
+            )
+            return
 
-        # fallback: if no steps were captured, try to pull last-known directly
+        if len(planned_steps) != len(executed_steps):
+            self._signal_error(
+                f"Segment '{seg_name}': planned/executed step count mismatch "
+                f"(planned={len(planned_steps)}, executed={len(executed_steps)}). "
+                "This indicates asymmetrical capture; refusing to persist."
+            )
+            return
+
+        planned = self._concat_joint_traj_dicts(planned_steps)
+        executed = self._concat_joint_traj_dicts(executed_steps)
+
         if planned is None or executed is None:
-            pr, er = self._get_step_sources()
-            if planned is None:
-                planned = self._jt_from_any(pr)
-            if executed is None:
-                executed = self._jt_from_any(er)
+            self._signal_error(
+                f"Segment '{seg_name}': concat failed "
+                f"(planned={'ok' if planned is not None else 'None'}, "
+                f"executed={'ok' if executed is not None else 'None'}). "
+                "Refusing to persist partial data."
+            )
+            return
 
-        if planned is not None:
-            self._planned_by_segment[seg_name] = planned
-        if executed is not None:
-            self._executed_by_segment[seg_name] = executed
+        self._planned_by_segment[seg_name] = planned
+        self._executed_by_segment[seg_name] = executed
 
     def _get_step_sources(self) -> Tuple[Any, Any]:
         """
-        Try multiple sources for planned/executed trajectory objects.
+        Preferred source of truth (race-free):
+          - RosBridge.moveit_planned_trajectory()
+          - RosBridge.moveit_executed_trajectory()
 
-        Priority:
-          0) cached signals plannedTrajectoryChanged/executedTrajectoryChanged
-          1) ros.moveit_planned_trajectory() / ros.moveit_executed_trajectory()
-          2) moveitpy wrapper common attributes
+        Only if those methods do not exist, fall back to cached last_* from Qt signals.
         """
-        # 0) cached
-        if self._last_planned_any is not None or self._last_executed_any is not None:
-            return self._last_planned_any, self._last_executed_any
+        rp = getattr(self._ros, "moveit_planned_trajectory", None)
+        re = getattr(self._ros, "moveit_executed_trajectory", None)
 
-        # 1) ros facade calls
-        planned = self._safe_call("moveit_planned_trajectory")
-        executed = self._safe_call("moveit_executed_trajectory")
-        if planned is not None or executed is not None:
-            return planned, executed
-
-        # 2) moveitpy object attributes
-        mp = self._moveitpy
-        for p_attr, e_attr in (
-            ("last_planned", "last_executed"),
-            ("planned_trajectory", "executed_trajectory"),
-            ("planned", "executed"),
-            ("last_plan_result", "last_exec_result"),
-            ("last_plan", "last_exec"),
-        ):
+        if callable(rp) and callable(re):
             try:
-                p = getattr(mp, p_attr, None) if mp is not None else None
-                e = getattr(mp, e_attr, None) if mp is not None else None
-                if p is not None or e is not None:
-                    return p, e
-            except Exception:
-                pass
+                return rp(), re()
+            except Exception as e:
+                # If getters exist but throw -> hard fail (strict, no silent fallback)
+                self._signal_error(f"RosBridge moveit_*_trajectory() failed: {e!r}")
+                return None, None
 
-        return None, None
+        # fallback for older ros bridge (not preferred)
+        return self._last_planned_any, self._last_executed_any
 
     # ---------------- JointTrajectory extraction ----------------
 
@@ -619,47 +535,49 @@ class BaseProcessStatemachine(QtCore.QObject):
         if not base_names:
             return None
 
-        def dur_to_ns(d: Any) -> int:
-            if d is None:
-                return 0
-            if isinstance(d, dict):
+        def dur_to_ns(tfs: Any) -> int:
+            if isinstance(tfs, dict):
                 try:
-                    return int(d.get("sec", 0)) * 1_000_000_000 + int(d.get("nanosec", 0))
+                    sec = int(tfs.get("sec", 0))
+                    nsec = int(tfs.get("nanosec", 0))
+                    return sec * 1_000_000_000 + nsec
                 except Exception:
                     return 0
-            if isinstance(d, (int, float)):
-                return int(float(d) * 1_000_000_000)
-            if isinstance(d, str):
+            if isinstance(tfs, (list, tuple)) and len(tfs) == 2:
                 try:
-                    return int(float(d) * 1_000_000_000)
+                    return int(tfs[0]) * 1_000_000_000 + int(tfs[1])
                 except Exception:
                     return 0
             return 0
 
         def ns_to_dur(ns: int) -> Dict[str, int]:
-            ns = int(max(ns, 0))
-            return {"sec": ns // 1_000_000_000, "nanosec": ns % 1_000_000_000}
+            if ns < 0:
+                ns = 0
+            return {"sec": int(ns // 1_000_000_000), "nanosec": int(ns % 1_000_000_000)}
 
         merged_pts: List[Dict[str, Any]] = []
-        last_global_ns = 0
         t_offset_ns = 0
+        last_global_ns = -1
 
-        for jt in dicts:
-            names = list(jt.get("joint_names") or [])
-            pts = list(jt.get("points") or [])
+        for d in dicts:
+            names = list(d.get("joint_names") or [])
+            if names != base_names:
+                return None
+
+            pts = list(d.get("points") or [])
             if not pts:
                 continue
-            if names != base_names:
-                continue
 
-            local_times = [dur_to_ns(p.get("time_from_start")) if isinstance(p, dict) else 0 for p in pts]
             for i, p in enumerate(pts):
                 if not isinstance(p, dict):
                     continue
-                t_local_ns = local_times[i] if i < len(local_times) else 0
+                if not isinstance(p.get("positions"), list):
+                    continue
+
+                t_local_ns = dur_to_ns(p.get("time_from_start"))
                 t_global_ns = t_offset_ns + t_local_ns
 
-                if merged_pts and t_global_ns <= last_global_ns:
+                if last_global_ns >= 0 and t_global_ns <= last_global_ns:
                     t_global_ns = last_global_ns + 1_000_000  # +1ms
 
                 q = copy.deepcopy(p)
@@ -698,14 +616,15 @@ class BaseProcessStatemachine(QtCore.QObject):
         if not (isinstance(p_segs, dict) and p_segs) or not (isinstance(e_segs, dict) and e_segs):
             self.notifyError.emit(
                 "Validate/Run finished, but trajectory capture is empty (segments={}). "
-                "Check MoveItPyBridge: plannedTrajectoryChanged/executedTrajectoryChanged or ros.moveit_* accessors."
+                "Check: MoveItPyNode publishes planned/executed before motion_result AND "
+                "RosBridge.moveit_planned_trajectory()/moveit_executed_trajectory() return non-None."
             )
             self._cleanup()
             return
 
         # IMPORTANT: use injected RunResult (seeded by ProcessThread)
-        self._rr.set_planned(traj=planned)      # tcp keys exist already (empty dict)
-        self._rr.set_executed(traj=executed)    # tcp keys exist already (empty dict)
+        self._rr.set_planned(traj=planned)   # tcp keys exist already (empty dict)
+        self._rr.set_executed(traj=executed) # tcp keys exist already (empty dict)
 
         self.notifyFinished.emit(self._rr.to_process_payload())
         self._cleanup()
@@ -713,13 +632,6 @@ class BaseProcessStatemachine(QtCore.QObject):
     def _on_error(self) -> None:
         self.notifyError.emit(self._error_msg or "Fehler")
         self._cleanup()
-
-    def _safe_call(self, name: str):
-        fn = getattr(self._ros, name, None)
-        try:
-            return fn() if fn else None
-        except Exception:
-            return None
 
     def _cleanup(self) -> None:
         # disconnect moveit signals
@@ -763,3 +675,141 @@ class BaseProcessStatemachine(QtCore.QObject):
             except Exception:
                 pass
             self._log_handler = None
+
+    # ---------------- Public ----------------
+
+    @QtCore.pyqtSlot()
+    def start(self) -> None:
+        self._stop_requested = False
+        self._stopped = False
+        self._retry_count = 0
+        self._current_state = ""
+        self._error_msg = None
+
+        # IMPORTANT: these attributes must exist for ValidateStatemachine._prepare_run()
+        self._planned_by_segment.clear()
+        self._executed_by_segment.clear()
+        self._planned_steps_by_segment.clear()
+        self._executed_steps_by_segment.clear()
+        self._seen_planned_ok.clear()
+
+        self._last_planned_any = None
+        self._last_executed_any = None
+
+        if not self._prepare_run():
+            self.notifyError.emit(self._error_msg or "Prepare failed")
+            self._cleanup()
+            return
+
+        self._machine = self._build_machine()
+        self._machine.start()
+
+    @QtCore.pyqtSlot()
+    def request_stop(self) -> None:
+        """
+        Stop muss den StateMachine-Run deterministisch beenden,
+        sonst bleibt der QThread in ProcessThread hängen.
+        """
+        if self._stop_requested:
+            return
+
+        self._stop_requested = True
+        self._stopped = True
+
+        try:
+            self._ros.moveit_stop()
+        except Exception:
+            pass
+
+        try:
+            QtCore.QTimer.singleShot(0, lambda: self._signal_error("Gestoppt"))
+        except Exception:
+            try:
+                self._signal_error("Gestoppt")
+            except Exception:
+                pass
+
+    # ---------------- Hooks ----------------
+
+    def _prepare_run(self) -> bool:
+        return True
+
+    def _on_enter_segment(self, seg_name: str) -> None:
+        raise NotImplementedError
+
+    def _on_segment_ok(self, seg_name: str) -> None:
+        # STRICT: only mark segment complete if we could build BOTH planned+executed
+        before_err = self._error_msg
+        self._snapshot_trajs_for_segment(seg_name)
+        if self._error_msg and self._error_msg != before_err:
+            self._signal_error(self._error_msg)
+
+    def _should_transition_on_ok(self, seg_name: str, result: str) -> bool:
+        return True
+
+    # ---------------- Traj payload (JTBySegment YAML dicts) ----------------
+
+    def _build_traj_payload(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        planned = self._jt_by_segment_yaml(which="planned")
+        executed = self._jt_by_segment_yaml(which="executed")
+        return planned, executed
+
+    def _jt_by_segment_yaml(self, *, which: str) -> Dict[str, Any]:
+        if which not in ("planned", "executed"):
+            raise ValueError(f"_jt_by_segment_yaml: invalid which={which}")
+
+        src = self._planned_by_segment if which == "planned" else self._executed_by_segment
+
+        segments: Dict[str, Any] = {}
+        for seg in SEG_ORDER:
+            jt = src.get(seg)
+            seg_yaml = self._jt_dict_to_segment_yaml(jt)
+            if seg_yaml is not None:
+                segments[seg] = seg_yaml
+
+        return {"version": 1, "segments": segments}
+
+    @staticmethod
+    def _jt_dict_to_segment_yaml(jt: Any) -> Optional[Dict[str, Any]]:
+        if not (isinstance(jt, dict) and isinstance(jt.get("joint_names"), list) and isinstance(jt.get("points"), list)):
+            return None
+
+        jn = [str(x) for x in (jt.get("joint_names") or [])]
+        if not jn:
+            return None
+
+        out_pts: List[Dict[str, Any]] = []
+        for p in (jt.get("points") or []):
+            if not isinstance(p, dict):
+                continue
+            pos = p.get("positions") or []
+            if not isinstance(pos, list) or len(pos) != len(jn):
+                continue
+
+            tfs = p.get("time_from_start")
+            sec = 0
+            nsec = 0
+            if isinstance(tfs, dict):
+                try:
+                    sec = int(tfs.get("sec", 0))
+                    nsec = int(tfs.get("nanosec", 0))
+                except Exception:
+                    sec, nsec = 0, 0
+            elif isinstance(tfs, (list, tuple)) and len(tfs) == 2:
+                try:
+                    sec = int(tfs[0])
+                    nsec = int(tfs[1])
+                except Exception:
+                    sec, nsec = 0, 0
+
+            out_pts.append(
+                {
+                    "positions": [float(x) for x in pos],
+                    "time_from_start": [int(sec), int(nsec)],
+                }
+            )
+
+        if not out_pts:
+            return None
+
+        return {"joint_names": jn, "points": out_pts}

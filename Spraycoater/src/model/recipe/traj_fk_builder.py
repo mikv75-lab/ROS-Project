@@ -325,7 +325,16 @@ class TrajFkBuilder:
     STRICT Traj->FK builder (OFFLINE, no ROS nodes).
 
     Backend: KDL (URDF -> KDL Tree/Chain; FK via ChainFkSolverPos_recursive).
+
+    IMPORTANT:
+      - Default TCP build includes ONLY (MOVE_RECIPE + MOVE_RETREAT).
+      - This matches your requirement: show recipe path + retreat in RViz,
+        but exclude approach/home.
+      - Planned and executed must be treated IDENTICALLY: same include list.
     """
+
+    # Default: recipe + retreat (your requirement)
+    DEFAULT_TCP_SEGMENTS: Tuple[str, str] = ("MOVE_RECIPE", "MOVE_RETREAT")
 
     # ------------------------------------------------------------
     # Robot model (KDL)
@@ -381,15 +390,6 @@ class TrajFkBuilder:
         T_to_from_mm: List[List[float]],
         out_frame: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Transform Draft YAML dict (poses_quat in mm) with rigid transform.
-
-        Convention:
-          p_to = T_to_from * p_from
-          q_to = R_to_from * q_from
-
-        If out_frame is given, writes draft['frame']=out_frame.
-        """
         if not isinstance(draft, dict):
             raise TypeError("transform_draft_yaml: draft must be dict")
         sides = draft.get("sides")
@@ -456,7 +456,16 @@ class TrajFkBuilder:
         segment_to_side: Optional[Dict[str, str]] = None,
         default_side: str = "top",
         drop_duplicate_boundary: bool = True,
+        include_segments: Optional[Sequence[str]] = None,
+        require_all_segments: bool = True,
     ) -> Draft:
+        """
+        Build Draft (poses_quat per side) from JTBySegment.
+
+        Segment handling is STRICT by default:
+          - include_segments defaults to DEFAULT_TCP_SEGMENTS (RECIPE+RETREAT)
+          - if require_all_segments=True, every included segment must exist in jt.segments
+        """
         jt = TrajFkBuilder._coerce_jt_by_segment(traj)
 
         if robot_model is None:
@@ -476,9 +485,30 @@ class TrajFkBuilder:
             ee_link=str(cfg.ee_link),
         )
 
+        # ---- segment selection (DEFAULT: recipe + retreat) ----
+        if include_segments is None:
+            seg_ids = list(TrajFkBuilder.DEFAULT_TCP_SEGMENTS)
+        else:
+            seg_ids = [str(s).strip() for s in include_segments if str(s).strip()]
+
+        if not seg_ids:
+            raise ValueError("TrajFkBuilder.build_tcp_draft: include_segments ist leer.")
+
+        # STRICT existence check
+        missing = [sid for sid in seg_ids if sid not in jt.segments]
+        if missing and require_all_segments:
+            raise KeyError(f"TrajFkBuilder(KDL): JTBySegment fehlt Segmente: {missing!r}")
+
         by_side: Dict[str, List[PoseQuat]] = {}
 
-        for seg_id, seg in jt.segments.items():
+        # IMPORTANT: iterate only seg_ids (planned/executed identical behavior)
+        for seg_id in seg_ids:
+            if seg_id not in jt.segments:
+                # allowed only if require_all_segments=False
+                continue
+
+            seg = jt.segments[seg_id]
+
             side = default_side
             if segment_to_side is not None:
                 if seg_id not in segment_to_side:
@@ -512,6 +542,7 @@ class TrajFkBuilder:
                     mapped.append(PoseQuat(x=x2, y=y2, z=z2, qx=q2[0], qy=q2[1], qz=q2[2], qw=q2[3]))
                 sampled = mapped
 
+            # boundary dedupe within same side
             if drop_duplicate_boundary and side in by_side and by_side[side]:
                 last = by_side[side][-1]
                 first = sampled[0]
@@ -539,6 +570,8 @@ class TrajFkBuilder:
         default_side: str = "top",
         drop_duplicate_boundary: bool = True,
         frame_id: Optional[str] = None,
+        include_segments: Optional[Sequence[str]] = None,
+        require_all_segments: bool = True,
     ) -> Dict[str, Any]:
         d = TrajFkBuilder.build_tcp_draft(
             traj,
@@ -547,12 +580,22 @@ class TrajFkBuilder:
             segment_to_side=segment_to_side,
             default_side=default_side,
             drop_duplicate_boundary=drop_duplicate_boundary,
+            include_segments=include_segments,
+            require_all_segments=require_all_segments,
         )
         out = TrajFkBuilder._draft_to_yaml_dict(d)
 
         # frame: explicit > cfg.out_frame > base_link
         fr = frame_id if frame_id is not None else (cfg.out_frame if cfg.out_frame else cfg.base_link)
         out["frame"] = str(fr)
+
+        segs = (
+            list(TrajFkBuilder.DEFAULT_TCP_SEGMENTS)
+            if include_segments is None
+            else [str(s).strip() for s in include_segments if str(s).strip()]
+        )
+        out["segments_included"] = segs
+
         return out
 
     # ------------------------------------------------------------
@@ -585,18 +628,13 @@ class TrajFkBuilder:
         except Exception as e:
             raise RuntimeError(f"TrajFkBuilder(KDL): Import PyKDL fehlgeschlagen: {e!r}") from e
 
-        # IMPORTANT:
-        # PyKDL.Tree.getChain(base, tip) returns a PyKDL.Chain (not (ok, chain)).
         chain = tree.getChain(str(base_link), str(ee_link))  # type: ignore[attr-defined]
-
-        # Defensive checks: some bindings may return None on failure.
         if chain is None:
             raise RuntimeError(
                 f"TrajFkBuilder(KDL): getChain({base_link!r}->{ee_link!r}) lieferte None "
                 "(Frames/Joints nicht im selben Baum?)"
             )
 
-        # Ensure chain looks valid
         try:
             nj = int(chain.getNrOfJoints())
         except Exception:
