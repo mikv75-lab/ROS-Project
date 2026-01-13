@@ -84,26 +84,32 @@ topics:
         type: std_msgs/msg/String
         qos: default
 
-      # Execute arbitrary trajectory (replay from YAML)
+      # Replay from YAML (treat as "external move" -> node clears latched planned/executed/optimized before use)
       - id: execute_trajectory
         name: moveit_py/execute_trajectory
         type: moveit_msgs/msg/RobotTrajectory
         qos: default
 
-      # Optional: segment tagging (for logging/motion_result)
+      # Segment tagging (optional; node may clear here too if you add that behavior)
       - id: set_segment
         name: moveit_py/set_segment
         type: std_msgs/msg/String
         qos: default
 
-      # Optimize trajectory (post-processing) in node
+      # Optimize input (external post-process; node clears latched planned/executed/optimized before output)
       - id: optimize_trajectory
         name: moveit_py/optimize_trajectory
         type: moveit_msgs/msg/RobotTrajectory
         qos: default
 
     publish:
-      # SSoT for runs (joint space)
+      - id: traj_cache_clear
+        name: moveit_py/traj_cache_clear
+        type: std_msgs/msg/Empty
+        qos: default
+      # -------------------------------------------------
+      # SSoT for runs (joint space) - ALL LATCHED
+      # -------------------------------------------------
       - id: planned_trajectory_rt
         name: moveit_py/planned_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
@@ -114,14 +120,13 @@ topics:
         type: moveit_msgs/msg/RobotTrajectory
         qos: latched
 
-      # optimized artifact output (latched)
       - id: optimized_trajectory_rt
         name: moveit_py/optimized_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
         qos: latched
 
       # -------------------------------------------------
-      # NEW: Robot model strings for Offline-FK in GUI
+      # Robot model strings for Offline-FK in GUI (latched)
       # -------------------------------------------------
       - id: robot_description
         name: robot_description
@@ -138,6 +143,7 @@ topics:
         name: moveit_py/motion_result
         type: std_msgs/msg/String
         qos: default
+
 
   scene:
     publish:

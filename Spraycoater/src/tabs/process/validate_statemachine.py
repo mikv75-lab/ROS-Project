@@ -7,7 +7,7 @@ from typing import Optional, Any, Dict, List, Tuple, Iterable
 
 from PyQt6 import QtCore
 
-from model.recipe.recipe_run_result import RunResult  # NEW: seeded RunResult comes from ProcessThread
+from model.recipe.recipe_run_result import RunResult  # seeded RunResult comes from ProcessThread
 
 from .base_statemachine import (
     BaseProcessStatemachine,
@@ -52,7 +52,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         *,
         recipe: Any,
         ros: Any,
-        run_result: RunResult,  # NEW
+        run_result: RunResult,
         parent: Optional[QtCore.QObject] = None,
         max_retries: int = 2,
         skip_home: bool = False,
@@ -61,7 +61,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         super().__init__(
             recipe=recipe,
             ros=ros,
-            run_result=run_result,  # NEW
+            run_result=run_result,
             parent=parent,
             max_retries=max_retries,
             skip_home=skip_home,

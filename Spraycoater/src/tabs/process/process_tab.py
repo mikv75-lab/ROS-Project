@@ -217,7 +217,7 @@ class ProcessTab(QWidget):
         vpl = QVBoxLayout(grp_pl)
         self.txtPlannedEval = QTextEdit(grp_pl)
         self.txtPlannedEval.setReadOnly(True)
-        self.txtPlannedEval.setPlaceholderText("Loaded from planned_traj.yaml: runresult")
+        self.txtPlannedEval.setPlaceholderText("Loaded from planned_tcp.yaml: eval")
         vpl.addWidget(self.txtPlannedEval, 1)
         self.lblPlannedSummary = QLabel("planned: –", grp_pl)
         vpl.addWidget(self.lblPlannedSummary)
@@ -227,7 +227,7 @@ class ProcessTab(QWidget):
         vex = QVBoxLayout(grp_ex)
         self.txtExecutedEval = QTextEdit(grp_ex)
         self.txtExecutedEval.setReadOnly(True)
-        self.txtExecutedEval.setPlaceholderText("Loaded from executed_traj.yaml: runresult")
+        self.txtExecutedEval.setPlaceholderText("Loaded from executed_tcp.yaml: eval")
         vex.addWidget(self.txtExecutedEval, 1)
         self.lblExecutedSummary = QLabel("executed: –", grp_ex)
         vex.addWidget(self.lblExecutedSummary)
@@ -495,7 +495,7 @@ class ProcessTab(QWidget):
             return
         self.infoBox.set_values(getattr(self._recipe, "info", {}) or {})
 
-    # ---------------- Eval UI (compact) ----------------
+    # ---------------- Eval UI (planned/executed; from TCP YAML) ----------------
 
     def _clear_eval_views(self) -> None:
         self.txtPlannedEval.setPlainText("–")
@@ -503,13 +503,116 @@ class ProcessTab(QWidget):
         self.lblPlannedSummary.setText("planned: –")
         self.lblExecutedSummary.setText("executed: –")
 
+    @staticmethod
+    def _dict(v: Any) -> Dict[str, Any]:
+        return v if isinstance(v, dict) else {}
+
+    @staticmethod
+    def _extract_eval_from_tcp_doc(tcp_doc: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        tcp.yaml expected:
+          frame: ...
+          poses: [...]
+          eval: { ... }   # per-run eval result (planned or executed)
+        """
+        if not isinstance(tcp_doc, dict):
+            return {}
+        ev = tcp_doc.get("eval")
+        return ev if isinstance(ev, dict) else {}
+
+    @staticmethod
+    def _extract_eval_pair(rr: RunResult) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Prefer RunResult.eval = {"planned":..., "executed":...}
+        fallback to rr.planned_run["tcp"]["eval"] / rr.executed_run["tcp"]["eval"]
+        """
+        planned: Dict[str, Any] = {}
+        executed: Dict[str, Any] = {}
+
+        # 1) primary: rr.eval dict
+        try:
+            ev = getattr(rr, "eval", None)
+            if isinstance(ev, dict):
+                p = ev.get("planned")
+                e = ev.get("executed")
+                planned = p if isinstance(p, dict) else {}
+                executed = e if isinstance(e, dict) else {}
+        except Exception:
+            pass
+
+        # 2) fallback: inside planned_run/executed_run tcp blocks
+        if not planned:
+            try:
+                pr = getattr(rr, "planned_run", None)
+                pr = pr if isinstance(pr, dict) else {}
+                tcp = pr.get("tcp")
+                tcp = tcp if isinstance(tcp, dict) else {}
+                planned = tcp.get("eval") if isinstance(tcp.get("eval"), dict) else {}
+            except Exception:
+                planned = {}
+
+        if not executed:
+            try:
+                er = getattr(rr, "executed_run", None)
+                er = er if isinstance(er, dict) else {}
+                tcp = er.get("tcp")
+                tcp = tcp if isinstance(tcp, dict) else {}
+                executed = tcp.get("eval") if isinstance(tcp.get("eval"), dict) else {}
+            except Exception:
+                executed = {}
+
+        return planned, executed
+
+    @staticmethod
+    def _summary_line_from_eval(ev: Dict[str, Any]) -> str:
+        """
+        Compact one-line summary from eval dict.
+        """
+        if not isinstance(ev, dict) or not ev:
+            return ""
+        try:
+            valid = ev.get("valid")
+            thr = ev.get("threshold")
+            total = ev.get("total") if isinstance(ev.get("total"), dict) else {}
+            score = total.get("score") if isinstance(total, dict) else None
+            domain = ev.get("domain")
+            if not domain:
+                m = total.get("metrics")
+                if isinstance(m, dict):
+                    domain = m.get("label")
+            parts = []
+            if domain:
+                parts.append(str(domain))
+            if score is not None:
+                parts.append(f"score={float(score):.3f}")
+            if thr is not None:
+                parts.append(f"thr={float(thr):.3f}")
+            if valid is not None:
+                parts.append(f"valid={bool(valid)}")
+            return " | ".join(parts)
+        except Exception:
+            return ""
+
     def _set_eval_from_runresult(self, rr: RunResult) -> None:
-        txt = rr.format_eval_text(include_tcp=True)
-        summ = rr.eval_summary_line()
-        self.txtPlannedEval.setPlainText(txt)
-        self.txtExecutedEval.setPlainText(txt)
-        self.lblPlannedSummary.setText("planned: " + (summ or "–"))
-        self.lblExecutedSummary.setText("executed: " + (summ or "–"))
+        planned_ev, executed_ev = self._extract_eval_pair(rr)
+
+        # planned
+        if planned_ev:
+            self.txtPlannedEval.setPlainText(self._yaml_dump(planned_ev))
+            ps = self._summary_line_from_eval(planned_ev) or "–"
+            self.lblPlannedSummary.setText("planned: " + ps)
+        else:
+            self.txtPlannedEval.setPlainText("–")
+            self.lblPlannedSummary.setText("planned: –")
+
+        # executed
+        if executed_ev:
+            self.txtExecutedEval.setPlainText(self._yaml_dump(executed_ev))
+            es = self._summary_line_from_eval(executed_ev) or "–"
+            self.lblExecutedSummary.setText("executed: " + es)
+        else:
+            self.txtExecutedEval.setPlainText("–")
+            self.lblExecutedSummary.setText("executed: –")
 
     def _set_eval_missing_fk(self, extra: str = "") -> None:
         msg = (
@@ -556,8 +659,14 @@ class ProcessTab(QWidget):
                 executed_tcp_doc=executed_tcp_doc if isinstance(executed_tcp_doc, dict) else {},
             )
         except Exception:
-            ev = planned_doc.get("eval") if isinstance(planned_doc.get("eval"), dict) else {}
-            rr = RunResult(eval=ev, valid=True, invalid_reason="")
+            # Fallback: build minimal RunResult using eval from TCP docs (new source of truth)
+            planned_ev = self._extract_eval_from_tcp_doc(planned_tcp_doc) if isinstance(planned_tcp_doc, dict) else {}
+            executed_ev = self._extract_eval_from_tcp_doc(executed_tcp_doc) if isinstance(executed_tcp_doc, dict) else {}
+            rr = RunResult(
+                eval={"planned": planned_ev, "executed": executed_ev},
+                valid=True,
+                invalid_reason="",
+            )
 
         self._set_eval_from_runresult(rr)
 
@@ -882,7 +991,8 @@ class ProcessTab(QWidget):
 
         if ok_pl and ok_ex and ok_tcp:
             try:
-                docs = rr.build_persist_docs(embed_eval_into_traj=bool(did_postprocess))
+                # IMPORTANT: eval must be stored in TCP YAML, NOT in traj YAML
+                docs = rr.build_persist_docs(embed_eval_into_traj=False)
 
                 self._yaml_write_file(planned_path, docs.get("planned_traj") or {})
                 self._yaml_write_file(executed_path, docs.get("executed_traj") or {})
@@ -1024,7 +1134,7 @@ class ProcessTab(QWidget):
                             for pq in pq_list:
                                 try:
                                     # IMPORTANT: draft is already in scene/workspace coords (mm), so only mm->m here.
-                                    from model.recipe.recipe_markers import _make_pose_quat_mm  # local import, file-scope helper exists
+                                    from model.recipe.recipe_markers import _make_pose_quat_mm  # local import, helper exists
 
                                     compiled_pa.poses.append(
                                         _make_pose_quat_mm(pq.x, pq.y, pq.z, pq.qx, pq.qy, pq.qz, pq.qw)

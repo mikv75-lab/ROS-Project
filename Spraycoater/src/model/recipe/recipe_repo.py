@@ -187,8 +187,8 @@ class RecipeRepo:
         *,
         planned_traj: Optional[JTBySegment] = None,
         executed_traj: Optional[JTBySegment] = None,
-        planned_tcp: Optional[Draft] = None,
-        executed_tcp: Optional[Draft] = None,
+        planned_tcp: Optional[Draft | dict] = None,
+        executed_tcp: Optional[Draft | dict] = None,
     ) -> None:
         rid = self._norm_rid(recipe_id)
         if not rid:
@@ -248,8 +248,9 @@ class RecipeRepo:
 
         planned_traj = JTBySegment.from_yaml_dict(planned_traj_dict) if planned_traj_dict else None
         executed_traj = JTBySegment.from_yaml_dict(executed_traj_dict) if executed_traj_dict else None
-        planned_tcp = Draft.from_yaml_dict(planned_tcp_dict) if planned_tcp_dict else None
-        executed_tcp = Draft.from_yaml_dict(executed_tcp_dict) if executed_tcp_dict else None
+        # IMPORTANT: keep TCP YAML as dict to preserve embedded metadata (eval, fk_meta, frame,...)
+        planned_tcp = dict(planned_tcp_dict) if planned_tcp_dict else None
+        executed_tcp = dict(executed_tcp_dict) if executed_tcp_dict else None
 
         self.save_run_artifacts(
             rid,

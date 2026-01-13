@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple, List
+from typing import Any, Dict, Optional, Tuple, List, Sequence
 
 import numpy as np
 
@@ -55,6 +55,12 @@ class RecipeEvaluator:
       B) tcp_doc["meta"]["segment_slices"][<segment_id>][side] = [start,end)
 
       If neither exists -> fallback to tcp_doc["sides"] (whole tcp).
+
+    Compatibility:
+      - Provides evaluate_runs(...) to match your RunResult.postprocess() caller.
+      - Provides evaluate(...) as a fallback API.
+      - Produces eval dict with keys: domain/threshold/valid/invalid_reason/total/segments
+        so RunResult.format_eval_text() can show per-segment statistics.
     """
 
     DEFAULT_RECIPE_SEGMENT = "MOVE_RECIPE"
@@ -65,10 +71,16 @@ class RecipeEvaluator:
         weights: Optional[EvalWeights] = None,
         clamp_mm: Tuple[float, float, float] = (1.0, 3.0, 8.0),   # mean, p95, max targets in mm
         tcp_resample_n: int = 600,
+        conservative_total: str = "min",  # "min" | "mean"
     ) -> None:
         self.weights = weights or EvalWeights()
         self.clamp_mean, self.clamp_p95, self.clamp_max = [float(x) for x in clamp_mm]
         self.tcp_resample_n = int(max(50, tcp_resample_n))
+
+        mode = str(conservative_total or "min").strip().lower()
+        if mode not in ("min", "mean"):
+            mode = "min"
+        self.conservative_total = mode
 
     # ============================================================
     # basic helpers
@@ -101,6 +113,10 @@ class RecipeEvaluator:
             return float(v)
         except Exception:
             return None
+
+    @staticmethod
+    def _dict(v: Any) -> Dict[str, Any]:
+        return v if isinstance(v, dict) else {}
 
     # ============================================================
     # extraction: draft + tcp docs -> Nx3 (mm)
@@ -200,11 +216,9 @@ class RecipeEvaluator:
         if isinstance(segs, dict):
             seg_doc = segs.get(seg)
             if isinstance(seg_doc, dict):
-                # prefer seg_doc["sides"]
                 s = seg_doc.get("sides")
                 if isinstance(s, dict):
                     return {"frame": tcp_doc.get("frame"), "sides": s, "meta": {"segment": seg}}
-                # tolerate seg_doc being already sides-like
                 return {"frame": tcp_doc.get("frame"), "sides": seg_doc, "meta": {"segment": seg}}
 
         # --- (2) meta.segment_slices schema ---
@@ -348,7 +362,12 @@ class RecipeEvaluator:
         n = int(n_samples if n_samples is not None else self.tcp_resample_n)
         ref_r = self._resample_polyline_mm(ref_pts, n)
         test_r = self._resample_polyline_mm(test_pts, n)
-        return self.evaluate_points_mm(ref_points_mm=ref_r, test_points_mm=test_r, label=label)
+        r = self.evaluate_points_mm(ref_points_mm=ref_r, test_points_mm=test_r, label=label)
+
+        # ensure we keep high-level counts too (useful for UI)
+        r.metrics = dict(r.metrics or {})
+        r.metrics.update(metrics)
+        return r
 
     # ============================================================
     # threshold
@@ -420,7 +439,7 @@ class RecipeEvaluator:
         recipe_segment_id: str = DEFAULT_RECIPE_SEGMENT,
     ) -> Dict[str, Any]:
         """
-        Returns:
+        Returns (internal structure; used as details inside evaluate_runs):
 
         {
           "version": 1,
@@ -436,7 +455,6 @@ class RecipeEvaluator:
         thr = self._get_threshold_tcp_from_recipe(recipe=recipe, default=90.0)
         seg = str(recipe_segment_id or self.DEFAULT_RECIPE_SEGMENT)
 
-        # Segment filter planned/executed to MOVE_RECIPE (best-effort)
         planned_seg = self._tcp_doc_only_segment(planned_tcp, segment_id=seg)
         executed_seg = self._tcp_doc_only_segment(executed_tcp, segment_id=seg)
 
@@ -546,3 +564,124 @@ class RecipeEvaluator:
             "planned": planned_eval,
             "executed": executed_eval,
         }
+
+    # ============================================================
+    # COMPAT API for RunResult.postprocess(): evaluate_runs / evaluate
+    # ============================================================
+
+    def evaluate_runs(
+        self,
+        *,
+        recipe: Any,
+        planned_tcp: Optional[Dict[str, Any]],
+        executed_tcp: Optional[Dict[str, Any]],
+        segment_order: Sequence[str] | None = None,
+        domain: str = "tcp",
+        n_samples: Optional[int] = None,
+        recipe_segment_id: str = DEFAULT_RECIPE_SEGMENT,
+    ) -> Dict[str, Any]:
+        """
+        Compatibility API expected by RunResult.postprocess_from_urdf_srdf().
+
+        Produces a flat eval dict:
+          - domain: "tcp"
+          - threshold, valid, invalid_reason
+          - total: {score, metrics, details}
+          - segments: { <segment_id>: {score, metrics, details} }   (for UI)
+          - by_segment: alias to segments
+        """
+        dom = str(domain or "").strip().lower()
+        if dom not in ("tcp", "tcp_vs_draft", "tcp_v_draft"):
+            return {
+                "domain": str(domain),
+                "threshold": 0.0,
+                "valid": False,
+                "score": 0.0,
+                "invalid_reason": f"unsupported_domain: {domain!r} (supported: 'tcp')",
+                "total": {"score": 0.0, "metrics": {"label": "tcp/total"}, "details": {}},
+                "segments": {},
+                "by_segment": {},
+            }
+
+        # compute planned/executed vs draft, MOVE_RECIPE only
+        core = self.evaluate_tcp_against_draft(
+            recipe=recipe,
+            planned_tcp=planned_tcp,
+            executed_tcp=executed_tcp,
+            n_samples=n_samples,
+            recipe_segment_id=recipe_segment_id,
+        )
+
+        thr = float(core.get("threshold", 90.0))
+        seg = str(core.get("segment") or self.DEFAULT_RECIPE_SEGMENT)
+
+        planned = self._dict(core.get("planned"))
+        executed = self._dict(core.get("executed"))
+
+        # Extract per-run totals (score)
+        p_total = self._dict(planned.get("total"))
+        e_total = self._dict(executed.get("total"))
+
+        p_score = float(self._as_float(p_total.get("score")) or 0.0)
+        e_score = float(self._as_float(e_total.get("score")) or 0.0)
+
+        if self.conservative_total == "mean":
+            combined_score = 0.5 * (p_score + e_score)
+        else:
+            combined_score = min(p_score, e_score)
+
+        # overall validity: both must pass threshold
+        valid = bool(core.get("valid", False))
+        invalid_reason = str(core.get("invalid_reason") or "")
+        if not invalid_reason and not valid:
+            invalid_reason = f"tcp: below_threshold (planned={p_score:.3f}, executed={e_score:.3f}, thr={thr:.3f})"
+
+        # Segment entry (only MOVE_RECIPE in this evaluator)
+        seg_metrics = {
+            "label": f"tcp/{seg}/total",
+            "segment": seg,
+            "planned_score": p_score,
+            "executed_score": e_score,
+            "combine": self.conservative_total,
+        }
+        seg_details = {
+            "planned": planned,
+            "executed": executed,
+        }
+
+        seg_eval = EvalResult(score=float(combined_score), metrics=seg_metrics, details=seg_details)
+        segments: Dict[str, Any] = {seg: seg_eval.to_dict()}
+
+        total = EvalResult(
+            score=float(combined_score),
+            metrics={"label": "tcp/total", "segment": seg, "combine": self.conservative_total},
+            details={"segment": seg, "planned_score": p_score, "executed_score": e_score, "core": core},
+        )
+
+        # Use finalize_eval so you keep a consistent schema (valid/threshold/total/segments)
+        out = self.finalize_eval(domain="tcp", total=total, by_segment={seg: seg_eval}, threshold=thr)
+
+        # Override validity to enforce planned AND executed logic (stricter than score-only)
+        out["valid"] = bool(valid)
+        out["invalid_reason"] = str(invalid_reason)
+
+        # Add extra top-level info (useful for debugging, but UI can ignore)
+        out["version"] = 1
+        out["segment"] = seg
+        out["planned"] = planned
+        out["executed"] = executed
+
+        return out
+
+    def evaluate(self, *, recipe: Any, planned: Optional[Dict[str, Any]], executed: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Legacy-style fallback API (if someone calls evaluator.evaluate()).
+        Treats planned/executed as TCP docs.
+        """
+        return self.evaluate_runs(
+            recipe=recipe,
+            planned_tcp=planned,
+            executed_tcp=executed,
+            segment_order=None,
+            domain="tcp",
+        )

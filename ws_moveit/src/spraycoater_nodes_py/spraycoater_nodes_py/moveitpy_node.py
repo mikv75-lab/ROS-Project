@@ -9,6 +9,7 @@ Publishes (per config_hub topics.yaml):
   - planned_trajectory_rt        (moveit_msgs/msg/RobotTrajectory) [latched]
   - executed_trajectory_rt       (moveit_msgs/msg/RobotTrajectory) [latched]
   - optimized_trajectory_rt      (moveit_msgs/msg/RobotTrajectory) [latched]
+  - traj_cache_clear             (std_msgs/msg/Empty)              [default, NOT latched]
   - robot_description            (std_msgs/msg/String)             [latched]
   - robot_description_semantic   (std_msgs/msg/String)             [latched]
   - motion_result                (std_msgs/msg/String)             [default]
@@ -28,6 +29,9 @@ Extended:
 
 Design:
   - publish trajectories BEFORE motion_result (race-free for statemachine)
+  - CLEAR caches via traj_cache_clear BEFORE each external "move" call
+    (plan_pose, plan_named, execute_trajectory, optimize_trajectory)
+  - do NOT clear before "execute" (execute consumes the current planned)
   - publish robot_description(_semantic) ONCE after MoveItPy init (latched)
   - also best-effort re-publish robot_description on first plan request
     (covers UI starting late / transient-local mismatch)
@@ -292,6 +296,13 @@ class MoveItPyNode(Node):
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "optimized_trajectory_rt"),
         )
 
+        # NEW: cache-clear signal (NOT latched)
+        self.pub_traj_cache_clear = self.create_publisher(
+            MsgEmpty,
+            self.cfg_topics.publish_topic(NODE_KEY, "traj_cache_clear"),
+            self.cfg_topics.qos_by_id("publish", NODE_KEY, "traj_cache_clear"),
+        )
+
         # robot model strings for Offline-FK in GUI (latched via QoS)
         self.pub_robot_description = self.create_publisher(
             MsgString,
@@ -425,6 +436,24 @@ class MoveItPyNode(Node):
         self.log.info("MoveItPyNode init done (MoveItPy is initializing in background).")
 
     # ------------------------------------------------------------
+    # NEW: CLEAR helpers (explicit clear topic)
+    # ------------------------------------------------------------
+    def _clear_traj_cache(self, *, reason: str) -> None:
+        """
+        Emit an explicit cache-clear signal for GUI/Bridge/Statemachine.
+
+        IMPORTANT:
+          - This is NOT latched.
+          - Do NOT publish empty RobotTrajectory messages to clear latched topics.
+            (that breaks pairing logic if subscribers treat empty msgs as received.)
+        """
+        try:
+            self.pub_traj_cache_clear.publish(MsgEmpty())
+            self.log.info(f"[traj] cache clear signaled (reason='{reason}')")
+        except Exception as e:
+            self.log.warning(f"[traj] cache clear publish failed: {e!r}")
+
+    # ------------------------------------------------------------
     # FollowJT helpers
     # ------------------------------------------------------------
     def _ns_prefix(self) -> str:
@@ -464,12 +493,6 @@ class MoveItPyNode(Node):
     def _publish_robot_model_strings_once(self) -> None:
         """
         Publish robot_description and robot_description_semantic (latched) exactly once.
-
-        Source of truth:
-          - node parameters robot_description / robot_description_semantic
-            (typically injected by your MoveIt config launch).
-
-        Thread-safe (may be called from init thread + ROS callbacks).
         """
         with self._robot_model_lock:
             if self._robot_model_published:
@@ -552,8 +575,7 @@ class MoveItPyNode(Node):
                         f"[config] PlanRequestParameters nicht verfügbar ({e}). Nutze arm.plan() ohne explizite Parameter."
                     )
 
-            # Publish robot model strings AFTER MoveItPy init (params should be present),
-            # and before GUI relies on FK.
+            # Publish robot model strings AFTER MoveItPy init
             self._publish_robot_model_strings_once()
 
             self._moveit_ready.set()
@@ -770,6 +792,9 @@ class MoveItPyNode(Node):
         if not self._require_moveit_ready():
             return
 
+        # NEW: clear caches at boundary of new external move request
+        self._clear_traj_cache(reason="plan_pose")
+
         # Ensure GUI can FK even if it started after node init
         self._publish_robot_model_strings_once()
 
@@ -811,6 +836,9 @@ class MoveItPyNode(Node):
             return
         if not self._require_moveit_ready():
             return
+
+        # NEW: clear caches at boundary of new external move request
+        self._clear_traj_cache(reason="plan_named")
 
         # Ensure GUI can FK even if it started after node init
         self._publish_robot_model_strings_once()
@@ -864,6 +892,7 @@ class MoveItPyNode(Node):
             self._on_stop(MsgEmpty())
             return
 
+        # IMPORTANT: do NOT clear here. execute consumes the current planned.
         self._mode_mgr.ensure_mode("TRAJ")
 
         if self._busy:
@@ -913,6 +942,9 @@ class MoveItPyNode(Node):
         if not self._require_moveit_ready():
             return
 
+        # NEW: clear caches at boundary of new external move request
+        self._clear_traj_cache(reason="execute_trajectory")
+
         jt = getattr(msg, "joint_trajectory", None)
         if jt is None or not getattr(jt, "joint_names", None) or not getattr(jt, "points", None):
             self._emit_with_segment("ERROR:EMPTY_TRAJ")
@@ -926,7 +958,7 @@ class MoveItPyNode(Node):
         self._external_active_goal = None
         self._external_active_traj = msg
 
-        # publish artifact BEFORE result (treat incoming as planned/optimized artifact)
+        # publish artifact BEFORE result (treat incoming as planned artifact)
         try:
             self.pub_planned.publish(msg)
         except Exception:
@@ -1025,6 +1057,9 @@ class MoveItPyNode(Node):
             return
         if not self._require_moveit_ready():
             return
+
+        # NEW: clear caches at boundary of new external move request
+        self._clear_traj_cache(reason="optimize_trajectory")
 
         jt = getattr(msg, "joint_trajectory", None)
         if jt is None or not getattr(jt, "joint_names", None) or not getattr(jt, "points", None):

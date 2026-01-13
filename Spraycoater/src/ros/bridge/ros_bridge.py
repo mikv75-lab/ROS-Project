@@ -39,6 +39,10 @@ UPDATE (2026-01 signals):
     - plannedTrajectoryChanged / executedTrajectoryChanged / optimizedTrajectoryChanged (optional)
     - robotDescriptionChanged / robotDescriptionSemanticChanged
     - segmentChanged / executeTrajectoryRequested / optimizeTrajectoryRequested
+    - trajCacheClearChanged  (NEW) boundary event from node:
+        published when a new external "move call" starts (plan_pose, plan_named,
+        execute_trajectory, optimize_trajectory). This ensures we do NOT reuse old
+        planned/executed/optimized artifacts across segments.
   RosBridge wires these with best-effort for optional signals.
 """
 
@@ -470,6 +474,10 @@ class RosBridge:
             if hasattr(sig, "robotDescriptionSemanticChanged"):
                 sig.robotDescriptionSemanticChanged.connect(self.moveit_state._set_srdf)
 
+            # NEW: boundary event -> hard clear all MoveIt trajectory caches
+            if hasattr(sig, "trajCacheClearChanged"):
+                sig.trajCacheClearChanged.connect(self._on_moveit_traj_cache_clear)
+
     def _reemit_cached(self) -> None:
         try:
             if self.scene is not None:
@@ -486,6 +494,56 @@ class RosBridge:
                 self.moveitpy.signals.reemit_cached()
         except Exception:
             _LOG.exception("reemit_cached failed")
+
+    # ---------------------------------------------------------------------
+    # NEW: MoveItPy boundary cache clear
+    # ---------------------------------------------------------------------
+
+    def _on_moveit_traj_cache_clear(self) -> None:
+        """
+        Called when MoveItPyNode publishes 'traj_cache_clear' (std_msgs/Empty).
+
+        Purpose:
+          - Prevent stale latched planned/executed/optimized trajectory artifacts from
+            being interpreted as belonging to a new segment/run.
+          - Ensure BaseProcessStatemachine getters see None until new artifacts arrive.
+
+        We clear:
+          - RosBridge MoveItState (planned/executed/optimized)
+          - MoveItPyBridge internal synchronous caches (best-effort)
+          - MoveItPySignals re-emit caches (best-effort)
+        """
+        with self._lock:
+            # 1) clear RosBridge state
+            self._moveit_state.planned = None
+            self._moveit_state.executed = None
+            self._moveit_state.optimized = None
+
+            # 2) clear MoveItPyBridge caches (sync getters use these first)
+            mp = self.moveitpy
+            try:
+                if mp is not None:
+                    if hasattr(mp, "_last_planned_traj"):
+                        mp._last_planned_traj = None  # type: ignore[attr-defined]
+                    if hasattr(mp, "_last_executed_traj"):
+                        mp._last_executed_traj = None  # type: ignore[attr-defined]
+                    if hasattr(mp, "_last_optimized_traj"):
+                        mp._last_optimized_traj = None  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+            # 3) clear MoveItPySignals caches (UI reemit)
+            try:
+                if mp is not None and hasattr(mp, "signals"):
+                    s = mp.signals
+                    if hasattr(s, "_last_planned"):
+                        s._last_planned = None  # type: ignore[attr-defined]
+                    if hasattr(s, "_last_executed"):
+                        s._last_executed = None  # type: ignore[attr-defined]
+                    if hasattr(s, "_last_optimized"):
+                        s._last_optimized = None  # type: ignore[attr-defined]
+            except Exception:
+                pass
 
     # ---------------------------------------------------------------------
     # Public helpers / facade API (used by ProcessTab + state machines)

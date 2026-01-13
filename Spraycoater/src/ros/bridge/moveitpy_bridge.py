@@ -21,25 +21,22 @@ class MoveItPySignals(QtCore.QObject):
 
     SSoT: Node <-> UI über topics.yaml
 
-    Minimal Contract (no fallbacks):
+    Contract (aligned with moveit_py_node.py + topics.yaml):
+
       Node -> UI:
         - motion_result
         - planned_trajectory_rt
         - executed_trajectory_rt
-        - robot_description (latched)
-        - robot_description_semantic (latched)
+        - optimized_trajectory_rt
+        - traj_cache_clear              (Empty, non-latched "clear caches" signal)
+        - robot_description             (latched)
+        - robot_description_semantic    (latched)
 
       UI -> Node:
         - plan_pose, plan_named, execute, stop, set_speed_mm_s, set_planner_cfg
-
-    EXTENDED (Replay/Optimize without extra node):
-      UI -> Node:
-        - execute_trajectory   (RobotTrajectoryMsg)   # execute given joint trajectory
-        - optimize_trajectory  (RobotTrajectoryMsg)   # optimize/retime given joint trajectory (post)
-        - set_segment          (String)               # optional tagging for motion_result
-
-      Node -> UI:
-        - optimized_trajectory_rt (RobotTrajectoryMsg) # latched optimized artifact
+        - execute_trajectory            (RobotTrajectoryMsg)
+        - optimize_trajectory           (RobotTrajectoryMsg)
+        - set_segment                   (String) optional tagging
     """
 
     # ---------------- UI -> Node ----------------
@@ -62,11 +59,12 @@ class MoveItPySignals(QtCore.QObject):
 
     # ---------------- Node -> UI ----------------
     motionResultChanged = QtCore.pyqtSignal(str)
-    plannedTrajectoryChanged = QtCore.pyqtSignal(object)    # RobotTrajectoryMsg
-    executedTrajectoryChanged = QtCore.pyqtSignal(object)   # RobotTrajectoryMsg
-    optimizedTrajectoryChanged = QtCore.pyqtSignal(object)  # RobotTrajectoryMsg
-    robotDescriptionChanged = QtCore.pyqtSignal(str)        # URDF string (latched)
-    robotDescriptionSemanticChanged = QtCore.pyqtSignal(str)  # SRDF string (latched)
+    plannedTrajectoryChanged = QtCore.pyqtSignal(object)     # RobotTrajectoryMsg
+    executedTrajectoryChanged = QtCore.pyqtSignal(object)    # RobotTrajectoryMsg
+    optimizedTrajectoryChanged = QtCore.pyqtSignal(object)   # RobotTrajectoryMsg
+    trajCacheClearChanged = QtCore.pyqtSignal()              # Empty "clear caches" boundary signal
+    robotDescriptionChanged = QtCore.pyqtSignal(str)         # URDF string (latched)
+    robotDescriptionSemanticChanged = QtCore.pyqtSignal(str) # SRDF string (latched)
 
     def __init__(self, parent: Optional[QtCore.QObject] = None) -> None:
         super().__init__(parent)
@@ -119,7 +117,7 @@ class MoveItPyBridge(BaseBridge):
       - QoS kommt direkt aus qos.yaml
       - KEIN manuelles Namespace-Prefixing hier!
 
-    No fallback topics. If YAML says a topic exists, we bind it.
+    No fallback topics for REQUIRED ids. Optional ids are bound if present.
     """
 
     GROUP = "moveit_py"
@@ -166,7 +164,7 @@ class MoveItPyBridge(BaseBridge):
         self._ensure_pub("set_speed_mm_s", MsgFloat64)
         self._ensure_pub("set_planner_cfg", MsgString)
 
-        # NEW: replay/optimize (only if present in topics.yaml)
+        # replay/optimize/segment (optional in YAML, but should exist in your setup)
         self._maybe_ensure_pub("execute_trajectory", RobotTrajectoryMsg)
         self._maybe_ensure_pub("optimize_trajectory", RobotTrajectoryMsg)
         self._maybe_ensure_pub("set_segment", MsgString)
@@ -176,8 +174,10 @@ class MoveItPyBridge(BaseBridge):
         self._ensure_sub("planned_trajectory_rt", RobotTrajectoryMsg, self._on_planned_traj)
         self._ensure_sub("executed_trajectory_rt", RobotTrajectoryMsg, self._on_executed_traj)
 
-        # NEW: optimized output (optional but should exist in your updated topics.yaml)
         self._maybe_ensure_sub("optimized_trajectory_rt", RobotTrajectoryMsg, self._on_optimized_traj)
+
+        # NEW: cache-clear signal (should exist if you added the topic id to YAML)
+        self._maybe_ensure_sub("traj_cache_clear", MsgEmpty, self._on_traj_cache_clear)
 
         self._ensure_sub("robot_description", MsgString, self._on_robot_description)
         self._ensure_sub("robot_description_semantic", MsgString, self._on_robot_description_semantic)
@@ -213,10 +213,6 @@ class MoveItPyBridge(BaseBridge):
         self.get_logger().info(f"[moveitpy] PUB ui->node id={topic_id} topic={self._resolve_full(topic)}")
 
     def _maybe_ensure_pub(self, topic_id: str, msg_type: Type) -> None:
-        """
-        Optional topic binding: bind ONLY if topic exists in topics.yaml.
-        This keeps the bridge usable with older minimal topics.yaml.
-        """
         if topic_id in self._ui_to_node_pubs:
             return
         try:
@@ -235,9 +231,6 @@ class MoveItPyBridge(BaseBridge):
         self.get_logger().info(f"[moveitpy] SUB node->ui id={topic_id} topic={self._resolve_full(topic)}")
 
     def _maybe_ensure_sub(self, topic_id: str, msg_type: Type, cb: Callable) -> None:
-        """
-        Optional subscription binding: bind ONLY if topic exists in topics.yaml.
-        """
         if topic_id in self._node_to_ui_subs:
             return
         try:
@@ -261,6 +254,22 @@ class MoveItPyBridge(BaseBridge):
     # ─────────────────────────────────────────────────────────────
     # Inbound vom MoveItPy Node (Node -> UI)
     # ─────────────────────────────────────────────────────────────
+
+    def _on_traj_cache_clear(self, _msg: MsgEmpty) -> None:
+        """
+        Boundary signal: Node announced that caches must be cleared for the new move call.
+        We clear ONLY local caches and (optionally) inform UI widgets.
+        """
+        self._last_planned_traj = None
+        self._last_executed_traj = None
+        self._last_optimized_traj = None
+
+        # also clear cached signals so reemit_cached can't re-push old segment data
+        self.signals._set_last_planned(None)    # type: ignore[arg-type]
+        self.signals._set_last_executed(None)   # type: ignore[arg-type]
+        self.signals._set_last_optimized(None)  # type: ignore[arg-type]
+
+        self.signals.trajCacheClearChanged.emit()
 
     def _on_motion_result(self, msg: MsgString) -> None:
         text = (msg.data or "").strip()
@@ -363,10 +372,6 @@ class MoveItPyBridge(BaseBridge):
     # ---------------- NEW: execute/optimize trajectory / segment tagging ----------------
 
     def _on_execute_trajectory_requested(self, traj: object) -> None:
-        """
-        Expects RobotTrajectoryMsg. Publishes to moveit_py/execute_trajectory.
-        If topics.yaml does not provide execute_trajectory, we raise a clear error.
-        """
         if traj is None:
             return
         if not isinstance(traj, RobotTrajectoryMsg):
@@ -379,10 +384,6 @@ class MoveItPyBridge(BaseBridge):
         self._pub_ui_to_node("execute_trajectory").publish(traj)
 
     def _on_optimize_trajectory_requested(self, traj: object) -> None:
-        """
-        Expects RobotTrajectoryMsg. Publishes to moveit_py/optimize_trajectory.
-        If topics.yaml does not provide optimize_trajectory, we raise a clear error.
-        """
         if traj is None:
             return
         if not isinstance(traj, RobotTrajectoryMsg):
@@ -395,11 +396,6 @@ class MoveItPyBridge(BaseBridge):
         self._pub_ui_to_node("optimize_trajectory").publish(traj)
 
     def _on_segment_changed(self, seg: str) -> None:
-        """
-        Optional. Allows statemachine to tag current segment so node emits:
-          EXECUTED:OK seg=...
-        If topic is missing in topics.yaml, we silently ignore (best-effort).
-        """
         if not self._has_pub("set_segment"):
             return
         seg = (seg or "").strip()
@@ -411,21 +407,11 @@ class MoveItPyBridge(BaseBridge):
         self._pub_ui_to_node("stop").publish(MsgEmpty())
 
     def publish_execute_trajectory(self, traj: RobotTrajectoryMsg, *, segment: str = "") -> None:
-        """
-        Convenience helper for statemachines:
-          - optionally set segment tag
-          - publish execute_trajectory
-        """
         if segment:
             self._on_segment_changed(segment)
         self._on_execute_trajectory_requested(traj)
 
     def publish_optimize_trajectory(self, traj: RobotTrajectoryMsg, *, segment: str = "") -> None:
-        """
-        Convenience helper for statemachines:
-          - optionally set segment tag (useful for logging)
-          - publish optimize_trajectory
-        """
         if segment:
             self._on_segment_changed(segment)
         self._on_optimize_trajectory_requested(traj)

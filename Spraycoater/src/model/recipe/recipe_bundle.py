@@ -250,10 +250,13 @@ class RecipeBundle:
         data = _load_yaml(p.planned_tcp_yaml)
         return Draft.from_yaml_dict(data)
 
-    def save_planned_tcp(self, recipe_id: str, tcp: Draft) -> None:
+    def save_planned_tcp(self, recipe_id: str, tcp: Draft | dict) -> None:
         p = self.paths(recipe_id)
         _ensure_dir(p.recipe_dir)
-        _save_yaml(p.planned_tcp_yaml, tcp.to_yaml_dict())
+        if isinstance(tcp, dict):
+            _save_yaml(p.planned_tcp_yaml, dict(tcp))
+        else:
+            _save_yaml(p.planned_tcp_yaml, tcp.to_yaml_dict())
 
     def load_executed_tcp(self, recipe_id: str) -> Optional[Draft]:
         p = self.paths(recipe_id)
@@ -262,10 +265,13 @@ class RecipeBundle:
         data = _load_yaml(p.executed_tcp_yaml)
         return Draft.from_yaml_dict(data)
 
-    def save_executed_tcp(self, recipe_id: str, tcp: Draft) -> None:
+    def save_executed_tcp(self, recipe_id: str, tcp: Draft | dict) -> None:
         p = self.paths(recipe_id)
         _ensure_dir(p.recipe_dir)
-        _save_yaml(p.executed_tcp_yaml, tcp.to_yaml_dict())
+        if isinstance(tcp, dict):
+            _save_yaml(p.executed_tcp_yaml, dict(tcp))
+        else:
+            _save_yaml(p.executed_tcp_yaml, tcp.to_yaml_dict())
 
     # ------------------------------------------------------------
     # one-shot run persistence (traj + tcp)
@@ -277,8 +283,8 @@ class RecipeBundle:
         *,
         planned_traj: Optional[JTBySegment] = None,
         executed_traj: Optional[JTBySegment] = None,
-        planned_tcp: Optional[Draft] = None,
-        executed_tcp: Optional[Draft] = None,
+        planned_tcp: Optional[Draft | dict] = None,
+        executed_tcp: Optional[Draft | dict] = None,
     ) -> None:
         rid = str(recipe_id or "").strip()
         if not rid:
@@ -292,9 +298,15 @@ class RecipeBundle:
         if executed_traj is not None:
             _save_yaml(p.executed_traj_yaml, executed_traj.to_yaml_dict())
         if planned_tcp is not None:
-            _save_yaml(p.planned_tcp_yaml, planned_tcp.to_yaml_dict())
+            if isinstance(planned_tcp, dict):
+                _save_yaml(p.planned_tcp_yaml, dict(planned_tcp))
+            else:
+                _save_yaml(p.planned_tcp_yaml, planned_tcp.to_yaml_dict())
         if executed_tcp is not None:
-            _save_yaml(p.executed_tcp_yaml, executed_tcp.to_yaml_dict())
+            if isinstance(executed_tcp, dict):
+                _save_yaml(p.executed_tcp_yaml, dict(executed_tcp))
+            else:
+                _save_yaml(p.executed_tcp_yaml, executed_tcp.to_yaml_dict())
 
     # ------------------------------------------------------------
     # artifact deletion helpers

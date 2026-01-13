@@ -66,6 +66,8 @@ class BaseProcessStatemachine(QtCore.QObject):
     NEW (2026-01):
       - Die StateMachine bekommt ein vorinitialisiertes RunResult vom ProcessThread (inkl. URDF/SRDF),
         und befüllt dieses Objekt deterministisch. Kein RunResult() mehr in _on_finished().
+      - Optional: reagiert auf trajCacheClearChanged (Boundary-Event aus MoveItPyBridge),
+        um *nur* Fallback-Caches strikt zu resetten (Steps NICHT löschen!).
     """
 
     ROLE = "process"
@@ -131,6 +133,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._last_executed_any: Any = None
         self._traj_sig_connected: bool = False
         self._motion_sig_connected: bool = False
+        self._clear_sig_connected: bool = False
 
         # forward our internal logger to UI
         self._log_handler = _QtSignalHandler(self)
@@ -146,8 +149,11 @@ class BaseProcessStatemachine(QtCore.QObject):
             except Exception:
                 self._motion_sig_connected = False
 
-        # connect trajectory cache signals (only fallback; RosBridge getters are preferred)
+        # connect trajectory cache signals (fallback; RosBridge getters are preferred)
         self._connect_traj_cache_signals()
+
+        # connect boundary clear signal (best-effort)
+        self._connect_traj_cache_clear_signal()
 
     # ---------------- Machine ----------------
 
@@ -196,8 +202,6 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._retry_count = 0
 
         # STRICT: segment-local capture
-        # Reset legacy cached "last planned/executed" so EXECUTED:OK cannot
-        # accidentally pair trajectories from a previous segment.
         self._last_planned_any = None
         self._last_executed_any = None
 
@@ -230,19 +234,18 @@ class BaseProcessStatemachine(QtCore.QObject):
         if res.startswith("ERROR"):
             if self._retry_count < self._max_retries:
                 self._retry_count += 1
-                # restart current segment
                 self._on_enter_segment(self._current_state)
             else:
                 self._signal_error(res)
             return
 
-        # optional gating: remember that this segment has been planned at least once
+        # remember that this segment has been planned at least once
         if res.startswith("PLANNED:OK"):
             self._seen_planned_ok[self._current_state] = True
             return
 
         if res.startswith("EXECUTED:OK"):
-            # If you want strict ordering, keep this guard ON.
+            # Keep strict ordering guard ON by default.
             if not self._seen_planned_ok.get(self._current_state, False):
                 self._signal_error(
                     f"Segment '{self._current_state}': EXECUTED:OK ohne vorheriges PLANNED:OK. "
@@ -252,6 +255,10 @@ class BaseProcessStatemachine(QtCore.QObject):
 
             # strict paired snapshot (planned+executed must both exist)
             self._snapshot_step_for_segment(self._current_state)
+
+            # IMPORTANT: if snapshot decided this is an error, do NOT transition.
+            if self._error_msg:
+                return
 
             if self._should_transition_on_ok(self._current_state, res):
                 self._on_segment_ok(self._current_state)
@@ -281,6 +288,45 @@ class BaseProcessStatemachine(QtCore.QObject):
 
         self._traj_sig_connected = bool(ok)
 
+    def _connect_traj_cache_clear_signal(self) -> None:
+        """
+        Best-effort boundary clear hook.
+
+        If MoveItPyBridge exposes trajCacheClearChanged (Empty -> Qt signal),
+        we clear our *fallback* caches and reset ordering for the current segment.
+
+        IMPORTANT:
+          - Do NOT clear the per-segment step buffers here.
+            MOVE_RECIPE relies on collecting multiple EXECUTED:OK steps and
+            concatenating them at segment end.
+        """
+        sig = self._moveitpy_signals
+        if sig is None:
+            self._clear_sig_connected = False
+            return
+        try:
+            if hasattr(sig, "trajCacheClearChanged"):
+                sig.trajCacheClearChanged.connect(self._on_traj_cache_clear)
+                self._clear_sig_connected = True
+                return
+        except Exception:
+            pass
+        self._clear_sig_connected = False
+
+    @QtCore.pyqtSlot()
+    def _on_traj_cache_clear(self) -> None:
+        # hard clear local fallbacks (only!)
+        self._last_planned_any = None
+        self._last_executed_any = None
+
+        # ordering resets to require a fresh PLANNED:OK inside the segment
+        if self._current_state:
+            self._seen_planned_ok[self._current_state] = False
+
+        # IMPORTANT: DO NOT clear step buffers here.
+        # They represent the segment accumulation (MOVE_RECIPE multi-step).
+        # Clearing here would shrink planned/executed to the last piece only.
+
     @QtCore.pyqtSlot(object)
     def _on_planned_traj_changed(self, obj: object) -> None:
         self._last_planned_any = obj
@@ -293,15 +339,30 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     def _snapshot_step_for_segment(self, seg_name: str) -> None:
         """
-        STRICT pairing:
-          - Only append a step if BOTH planned and executed are present.
-          - Preferred source: RosBridge synchronous getters (race-free).
-          - Fallback source: cached last_* from Qt signals (only if getters missing).
+        STRICT pairing with bounded wait:
+        - wait briefly for executed/planned to arrive (DDS cross-topic order not guaranteed)
+        - still fails deterministically if missing after timeout
         """
-        planned_raw, executed_raw = self._get_step_sources()
+        import time
 
-        planned = self._jt_from_any(planned_raw)
-        executed = self._jt_from_any(executed_raw)
+        def _get_pair():
+            planned_raw, executed_raw = self._get_step_sources()
+            return self._jt_from_any(planned_raw), self._jt_from_any(executed_raw)
+
+        planned, executed = _get_pair()
+
+        # bounded wait for late delivery (especially executed_trajectory_rt)
+        if executed is None or planned is None:
+            deadline = time.monotonic() + 0.25  # 250ms total
+            while time.monotonic() < deadline:
+                time.sleep(0.01)  # 10ms
+                planned2, executed2 = _get_pair()
+                if planned is None and planned2 is not None:
+                    planned = planned2
+                if executed is None and executed2 is not None:
+                    executed = executed2
+                if planned is not None and executed is not None:
+                    break
 
         if planned is None or executed is None:
             self._signal_error(
@@ -372,11 +433,10 @@ class BaseProcessStatemachine(QtCore.QObject):
             try:
                 return rp(), re()
             except Exception as e:
-                # If getters exist but throw -> hard fail (strict, no silent fallback)
+                # strict: if getters exist but throw -> error (no silent fallback)
                 self._signal_error(f"RosBridge moveit_*_trajectory() failed: {e!r}")
                 return None, None
 
-        # fallback for older ros bridge (not preferred)
         return self._last_planned_any, self._last_executed_any
 
     # ---------------- JointTrajectory extraction ----------------
@@ -527,6 +587,15 @@ class BaseProcessStatemachine(QtCore.QObject):
     # ---------------- concatenation (merged JT per segment) ----------------
 
     def _concat_joint_traj_dicts(self, items: List[Any]) -> Optional[Dict[str, Any]]:
+        """
+        Concatenate multiple JT dicts into one, enforcing:
+          - same joint_names for all items
+          - monotonically increasing time_from_start in the merged result
+          - robust handling of cumulative trajectories (prefix overlap removal)
+
+        This is critical when upstream publishers accidentally emit cumulative
+        sequences (e.g., second snapshot contains the first snapshot as prefix).
+        """
         dicts = [d for d in (items or []) if isinstance(d, dict) and d.get("joint_names") and d.get("points")]
         if not dicts:
             return None
@@ -555,6 +624,41 @@ class BaseProcessStatemachine(QtCore.QObject):
                 ns = 0
             return {"sec": int(ns // 1_000_000_000), "nanosec": int(ns % 1_000_000_000)}
 
+        def pos_list(p: Any) -> Optional[List[float]]:
+            if not isinstance(p, dict):
+                return None
+            v = p.get("positions")
+            return v if isinstance(v, list) else None
+
+        def drop_prefix_overlap(merged: List[Dict[str, Any]], new_pts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            """
+            If new_pts is cumulative (contains a prefix already present in merged),
+            drop the longest prefix of new_pts that matches a suffix of merged.
+
+            Matching is strict: exact equality of 'positions' lists.
+            """
+            if not merged or not new_pts:
+                return new_pts
+
+            merged_pos = [pos_list(p) for p in merged]
+            new_pos = [pos_list(p) for p in new_pts]
+
+            if not merged_pos or not new_pos:
+                return new_pts
+            if merged_pos[-1] is None or new_pos[0] is None:
+                return new_pts
+
+            max_suffix = min(len(merged_pos), 300)
+            max_prefix = min(len(new_pos), 300)
+
+            best_k = 0
+            for k in range(min(max_suffix, max_prefix), 0, -1):
+                if merged_pos[-k:] == new_pos[:k]:
+                    best_k = k
+                    break
+
+            return new_pts[best_k:] if best_k > 0 else new_pts
+
         merged_pts: List[Dict[str, Any]] = []
         t_offset_ns = 0
         last_global_ns = -1
@@ -564,13 +668,16 @@ class BaseProcessStatemachine(QtCore.QObject):
             if names != base_names:
                 return None
 
-            pts = list(d.get("points") or [])
+            pts = [p for p in (d.get("points") or []) if isinstance(p, dict)]
+            if not pts:
+                continue
+
+            # remove cumulative prefix overlap
+            pts = drop_prefix_overlap(merged_pts, pts)
             if not pts:
                 continue
 
             for i, p in enumerate(pts):
-                if not isinstance(p, dict):
-                    continue
                 if not isinstance(p.get("positions"), list):
                     continue
 
@@ -578,11 +685,12 @@ class BaseProcessStatemachine(QtCore.QObject):
                 t_global_ns = t_offset_ns + t_local_ns
 
                 if last_global_ns >= 0 and t_global_ns <= last_global_ns:
-                    t_global_ns = last_global_ns + 1_000_000  # +1ms
+                    t_global_ns = last_global_ns + 1_000_000  # +1ms monotonic fix
 
                 q = copy.deepcopy(p)
                 q["time_from_start"] = ns_to_dur(t_global_ns)
 
+                # keep a small duplicate guard too
                 if merged_pts and i == 0:
                     try:
                         if q.get("positions") == merged_pts[-1].get("positions"):
@@ -623,8 +731,8 @@ class BaseProcessStatemachine(QtCore.QObject):
             return
 
         # IMPORTANT: use injected RunResult (seeded by ProcessThread)
-        self._rr.set_planned(traj=planned)   # tcp keys exist already (empty dict)
-        self._rr.set_executed(traj=executed) # tcp keys exist already (empty dict)
+        self._rr.set_planned(traj=planned)    # tcp keys exist already (empty dict)
+        self._rr.set_executed(traj=executed)  # tcp keys exist already (empty dict)
 
         self.notifyFinished.emit(self._rr.to_process_payload())
         self._cleanup()
@@ -651,6 +759,12 @@ class BaseProcessStatemachine(QtCore.QObject):
                     try:
                         if hasattr(self._moveitpy_signals, "executedTrajectoryChanged"):
                             self._moveitpy_signals.executedTrajectoryChanged.disconnect(self._on_executed_traj_changed)
+                    except Exception:
+                        pass
+                if self._clear_sig_connected:
+                    try:
+                        if hasattr(self._moveitpy_signals, "trajCacheClearChanged"):
+                            self._moveitpy_signals.trajCacheClearChanged.disconnect(self._on_traj_cache_clear)
                     except Exception:
                         pass
         except Exception:

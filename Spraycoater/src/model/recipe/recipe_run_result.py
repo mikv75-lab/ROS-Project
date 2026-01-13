@@ -273,7 +273,38 @@ class RunResult:
         self.fk_meta = _dict(meta)
 
     def set_eval(self, eval_dict: Dict[str, Any] | None) -> None:
-        self.eval = _dict(eval_dict)
+        # NOTE: set_eval() also embeds eval into planned/executed tcp docs.
+        self.set_eval(eval_dict)
+
+        # Persist eval into the TCP YAML docs (NOT into traj YAML).
+        # We keep planned/executed split results so each tcp_yaml is self-contained.
+        try:
+            pl_tcp_doc = _dict(self.planned_run.get("tcp"))
+            ex_tcp_doc = _dict(self.executed_run.get("tcp"))
+
+            if self.fk_meta:
+                pl_tcp_doc["fk_meta"] = dict(self.fk_meta)
+                ex_tcp_doc["fk_meta"] = dict(self.fk_meta)
+
+            if self.eval:
+                # new evaluator returns {planned:{...}, executed:{...}}
+                pl_eval = _dict(self.eval.get("planned"))
+                ex_eval = _dict(self.eval.get("executed"))
+
+                # fallback: if someone still provides a flat eval dict
+                if not pl_eval and self.eval.get("version") != 2:
+                    pl_eval = dict(self.eval)
+                if not ex_eval and self.eval.get("version") != 2:
+                    ex_eval = dict(self.eval)
+
+                pl_tcp_doc["eval"] = pl_eval
+                ex_tcp_doc["eval"] = ex_eval
+
+            self.planned_run["tcp"] = pl_tcp_doc
+            self.executed_run["tcp"] = ex_tcp_doc
+        except Exception:
+            # Never break postprocess due to metadata embedding
+            pass
 
     def invalidate(self, reason: str) -> None:
         self.valid = False
@@ -433,7 +464,7 @@ class RunResult:
     # persistence helpers
     # ------------------------------------------------------------
 
-    def build_persist_docs(self, *, embed_eval_into_traj: bool = True) -> Dict[str, Any]:
+    def build_persist_docs(self, *, embed_eval_into_traj: bool = False) -> Dict[str, Any]:
         run_meta = {
             "run_valid": self.valid,
             "run_invalid_reason": self.invalid_reason,
@@ -446,6 +477,7 @@ class RunResult:
         planned_traj["run_meta"] = dict(run_meta)
         executed_traj["run_meta"] = dict(run_meta)
 
+        # Legacy option: keep older behavior if someone still wants it
         if embed_eval_into_traj:
             if self.eval:
                 planned_traj["eval"] = dict(self.eval)
@@ -454,11 +486,29 @@ class RunResult:
                 planned_traj["fk_meta"] = dict(self.fk_meta)
                 executed_traj["fk_meta"] = dict(self.fk_meta)
 
+        # Default/new behavior: store eval + fk_meta in tcp yaml (self-contained)
+        planned_tcp = dict(self.planned_run.get("tcp") or {})
+        executed_tcp = dict(self.executed_run.get("tcp") or {})
+
+        if self.fk_meta:
+            planned_tcp.setdefault("fk_meta", dict(self.fk_meta))
+            executed_tcp.setdefault("fk_meta", dict(self.fk_meta))
+
+        if self.eval:
+            pl_eval = _dict(self.eval.get("planned"))
+            ex_eval = _dict(self.eval.get("executed"))
+            if not pl_eval and self.eval.get("version") != 2:
+                pl_eval = dict(self.eval)
+            if not ex_eval and self.eval.get("version") != 2:
+                ex_eval = dict(self.eval)
+            planned_tcp.setdefault("eval", pl_eval)
+            executed_tcp.setdefault("eval", ex_eval)
+
         return {
             "planned_traj": planned_traj,
             "executed_traj": executed_traj,
-            "planned_tcp": dict(self.planned_run.get("tcp") or {}),
-            "executed_tcp": dict(self.executed_run.get("tcp") or {}),
+            "planned_tcp": planned_tcp,
+            "executed_tcp": executed_tcp,
         }
 
     @classmethod
@@ -476,11 +526,16 @@ class RunResult:
         rm = planned_traj_doc.get("run_meta")
         rm = rm if isinstance(rm, dict) else {}
 
+        # Prefer metadata from tcp docs (new behavior), fall back to traj docs (legacy)
+        pl_tcp_d = _dict(planned_tcp_doc or {})
+        fk_meta = _dict(pl_tcp_d.get("fk_meta")) or _dict(planned_traj_doc.get("fk_meta"))
+        eval_d = _dict(pl_tcp_d.get("eval")) or _dict(planned_traj_doc.get("eval"))
+
         return cls(
             planned_run={"traj": dict(planned_traj_doc), "tcp": _dict(planned_tcp_doc or {})},
             executed_run={"traj": dict(executed_traj_doc), "tcp": _dict(executed_tcp_doc or {})},
-            fk_meta=_dict(planned_traj_doc.get("fk_meta")),
-            eval=_dict(planned_traj_doc.get("eval")),
+            fk_meta=fk_meta,
+            eval=eval_d,
             valid=_as_bool(rm.get("run_valid"), True),
             invalid_reason=str(rm.get("run_invalid_reason") or ""),
         )
