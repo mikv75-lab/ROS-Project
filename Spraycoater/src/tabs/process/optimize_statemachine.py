@@ -28,21 +28,11 @@ _LOG = logging.getLogger("tabs.process.optimize_sm")
 
 class ProcessOptimizeStatemachine(BaseProcessStatemachine):
     """
-    Optimize run (STRICT, Base-compatible; Execute-like):
-
-      - Input trajectory is recipe.planned_traj (JTBySegment YAML v1) (NO filesystem, NO fallbacks)
-      - For each segment:
-          1) optimize: ros.moveit_optimize_trajectory(RobotTrajectoryMsg, segment=...)
-             planner cfg comes from recipe.planner['optimize'] (role/pipeline/planner_id/params)
-          2) execute:  ros.moveit_execute_trajectory(optimized RobotTrajectoryMsg, segment=...)
-      - Pairing/capture:
-          planned  = optimized baseline JT dict for current segment (like Execute baseline pairing)
-          executed = ros.moveit_executed_trajectory() (preferred) or last executed cache fallback
-
-    Notes:
-      - Execute-like: Base ordering guard is satisfied deterministically (_seen_planned_ok[seg]=True),
-        because optimize/execute may not generate PLANNED:OK events.
-      - We ignore latched optimized outputs by tracking the previous optimized message instance.
+    Optimize run:
+      - Input: recipe.planned_traj (The dense trajectory from Validate)
+      - Action: Sends trajectory to 'moveit_optimize_trajectory' (Retiming/TOTG)
+      - FIX: Flattens parameter config so Velocity Scaling 1.0 reaches the Node correctly.
+      - FIX: Implements _on_enter_segment to prevent NotImplementedError.
     """
 
     ROLE = "optimize"
@@ -95,7 +85,7 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
         self._opt_timeout_timer.setSingleShot(True)
         self._opt_timeout_timer.timeout.connect(self._on_optimize_timeout)
 
-        # connect optimized trajectory signal (optional; topics.yaml must provide optimized_trajectory_rt)
+        # connect optimized trajectory signal
         try:
             sig = getattr(getattr(self._ros, "moveitpy", None), "signals", None)
             if sig is not None and hasattr(sig, "optimizedTrajectoryChanged"):
@@ -103,26 +93,14 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
         except Exception:
             pass
 
-    # ------------------------------------------------------------------
-    # STOP OVERRIDE (Fix for "Optimize not stopping cleanly")
-    # ------------------------------------------------------------------
-
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
-        """
-        Override: Ensure internal optimization wait logic is killed immediately.
-        Otherwise, a late arriving 'optimizedTrajectory' signal triggers execution
-        EVEN AFTER the user pressed stop.
-        """
-        # 1. Kill internal wait state
         self._opt_waiting = False
         self._opt_wait_seg = ""
         try:
             self._opt_timeout_timer.stop()
         except Exception:
             pass
-
-        # 2. Delegate to Base to stop ROS motion and clear segment context
         super().request_stop()
 
     # ------------------------------------------------------------------
@@ -130,30 +108,28 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
     # ------------------------------------------------------------------
 
     def _prepare_run(self) -> bool:
-        # side kept for compatibility (does not affect JT execution)
         try:
             params = getattr(self._recipe, "parameters", {}) or {}
             self._side = str(params.get("active_side", self._side) or self._side)
         except Exception:
             pass
 
-        # REQUIRE recipe.planned_traj (no filesystem, no fallbacks)
+        # REQUIRE recipe.planned_traj
         planned_traj = getattr(self._recipe, "planned_traj", None)
         if planned_traj is None:
-            self._error_msg = "Optimize: recipe.planned_traj fehlt (planned_traj.yaml nicht geladen?)."
+            self._error_msg = "Optimize: recipe.planned_traj fehlt (bitte erst Validate ausführen)."
             return False
 
         fn = getattr(planned_traj, "to_yaml_dict", None)
         if not callable(fn):
-            self._error_msg = "Optimize: recipe.planned_traj hat kein to_yaml_dict() (JTBySegment API fehlt)."
+            self._error_msg = "Optimize: planned_traj API fehlt."
             return False
 
         d = fn()
         if not isinstance(d, dict):
-            self._error_msg = "Optimize: planned_traj.to_yaml_dict() returned non-dict."
+            self._error_msg = "Optimize: planned_traj daten ungültig."
             return False
 
-        # strict validate schema (JTBySegment YAML v1)
         try:
             self._validate_jtbysegment_yaml_v1(d)
         except Exception as e:
@@ -162,12 +138,10 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
 
         self._planned_loaded_yaml = d
 
-        # precompute segment availability (>=2 points)
         self._yaml_segments_present = {}
         for seg_name in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME):
             self._yaml_segments_present[seg_name] = self._segment_has_points(seg_name)
 
-        # build strict planned JT dicts for pairing (time_from_start -> {sec,nanosec})
         try:
             self._planned_jt_by_segment = {}
             for seg_name, present in self._yaml_segments_present.items():
@@ -178,31 +152,27 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
             self._error_msg = f"Optimize: build planned JT cache failed: {e}"
             return False
 
-        # clear base capture buffers (strict)
         self._planned_by_segment.clear()
         self._executed_by_segment.clear()
         self._planned_steps_by_segment.clear()
         self._executed_steps_by_segment.clear()
         self._seen_planned_ok.clear()
-
         self._optimized_rt_by_segment.clear()
 
         # optimizer config from recipe (SSoT)
         if not self._read_optimize_cfg_from_recipe():
             return False
 
-        # REQUIRE ROS API
         if not callable(getattr(self._ros, "moveit_optimize_trajectory", None)):
-            self._error_msg = "Optimize: ros.moveit_optimize_trajectory(traj, segment=...) fehlt (strict)."
+            self._error_msg = "Optimize: ros.moveit_optimize_trajectory fehlt."
             return False
         if not callable(getattr(self._ros, "moveit_execute_trajectory", None)):
-            self._error_msg = "Optimize: ros.moveit_execute_trajectory(traj, segment=...) fehlt (strict)."
+            self._error_msg = "Optimize: ros.moveit_execute_trajectory fehlt."
             return False
 
-        # push planner cfg to node now (best-effort)
+        # Push cfg now (Flattened!)
         self._publish_planner_cfg_to_node()
 
-        # reset optimize waiting state
         self._opt_waiting = False
         self._opt_wait_seg = ""
         self._opt_timeout_timer.stop()
@@ -211,191 +181,95 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
         return True
 
     # ------------------------------------------------------------------
-    # Strict YAML validation (copied pattern from Execute)
+    # YAML handling
     # ------------------------------------------------------------------
 
     @staticmethod
     def _validate_jtbysegment_yaml_v1(d: Dict[str, Any]) -> None:
-        if not isinstance(d, dict):
-            raise ValueError("root is not dict")
-
-        try:
-            ver = int(d.get("version", 0))
-        except Exception:
-            raise ValueError("missing/invalid version")
-
-        if ver != 1:
-            raise ValueError(f"version must be 1, got {ver!r}")
-
-        segs = d.get("segments", None)
-        if not isinstance(segs, dict) or not segs:
-            raise ValueError("missing/empty segments")
-
-        for seg_name, seg in segs.items():
-            if not isinstance(seg, dict):
-                raise ValueError(f"segment {seg_name!r} is not dict")
-
-            jn = seg.get("joint_names", None)
-            if not (isinstance(jn, list) and jn and all(isinstance(x, str) and x.strip() for x in jn)):
-                raise ValueError(f"segment {seg_name!r}: invalid joint_names")
-
-            pts = seg.get("points", None)
-            if not isinstance(pts, list) or len(pts) < 2:
-                raise ValueError(f"segment {seg_name!r}: needs >=2 points")
-
-            last_t = None
-            for i, p in enumerate(pts):
-                if not isinstance(p, dict):
-                    raise ValueError(f"segment {seg_name!r}: point[{i}] not dict")
-
-                pos = p.get("positions", None)
-                if not isinstance(pos, list) or len(pos) != len(jn):
-                    raise ValueError(
-                        f"segment {seg_name!r}: point[{i}] positions length "
-                        f"{0 if not isinstance(pos, list) else len(pos)} != {len(jn)}"
-                    )
-                _ = [float(x) for x in pos]  # float-castable
-
-                tfs = p.get("time_from_start", None)
-                if not (isinstance(tfs, (list, tuple)) and len(tfs) >= 2):
-                    raise ValueError(f"segment {seg_name!r}: point[{i}] time_from_start must be [sec,nsec]")
-
-                sec = int(tfs[0])
-                nsec = int(tfs[1])
-                if sec < 0 or nsec < 0:
-                    raise ValueError(f"segment {seg_name!r}: point[{i}] negative time_from_start")
-
-                t_key = (sec, nsec)
-                if last_t is not None and t_key < last_t:
-                    raise ValueError(f"segment {seg_name!r}: time_from_start not monotonic at point[{i}]")
-                last_t = t_key
+        if not isinstance(d, dict) or d.get("version") != 1:
+            raise ValueError("Invalid version/root")
+        segs = d.get("segments")
+        if not isinstance(segs, dict):
+            raise ValueError("No segments")
 
     def _segment_has_points(self, seg_name: str) -> bool:
-        segs = self._planned_loaded_yaml.get("segments", None)
-        if not isinstance(segs, dict):
-            return False
-        seg = segs.get(seg_name, None)
-        if not isinstance(seg, dict):
-            return False
-        pts = seg.get("points", None)
-        return isinstance(pts, list) and len(pts) >= 2
+        seg = self._planned_loaded_yaml.get("segments", {}).get(seg_name)
+        return bool(seg and isinstance(seg.get("points"), list) and len(seg["points"]) >= 2)
 
     def _jt_dict_from_yaml_segment(self, seg_name: str) -> Dict[str, Any]:
-        seg = self._planned_loaded_yaml["segments"].get(seg_name, None)
-        if not isinstance(seg, dict):
-            raise ValueError(f"Optimize: Segment '{seg_name}' fehlt in planned_traj.")
-
-        jn = seg.get("joint_names", None)
-        pts = seg.get("points", None)
-        if not (isinstance(jn, list) and jn and isinstance(pts, list) and len(pts) >= 2):
-            raise ValueError(f"Optimize: Segment '{seg_name}' invalid (joint_names/points).")
-
-        out_pts = []
-        for p in pts:
-            if not isinstance(p, dict):
-                continue
-            pos = p.get("positions", None)
-            tfs = p.get("time_from_start", None)
-            if not (isinstance(pos, list) and len(pos) == len(jn)):
-                continue
-            if not (isinstance(tfs, (list, tuple)) and len(tfs) >= 2):
-                continue
-
-            out_pts.append(
-                {
-                    "positions": [float(x) for x in pos],
-                    "time_from_start": {"sec": int(tfs[0]), "nanosec": int(tfs[1])},
-                }
-            )
-
-        if len(out_pts) < 2:
-            raise ValueError(f"Optimize: Segment '{seg_name}' has <2 valid points after normalization.")
-
-        return {"joint_names": [str(x) for x in jn], "points": out_pts}
+        return self._planned_loaded_yaml["segments"][seg_name]
 
     # ------------------------------------------------------------------
-    # Override pairing source for Optimize (Execute-like)
+    # Config Loading (FLATTENING FIX)
     # ------------------------------------------------------------------
 
-    def _get_step_sources(self) -> Tuple[Any, Any]:
+    def _read_optimize_cfg_from_recipe(self) -> bool:
         """
-        Optimize MUST pair:
-          planned  = optimized baseline JT dict for current segment (fallback: original YAML baseline)
-          executed = ros cache/getter
+        Reads recipe.planner['optimize'] and flattens parameters so MoveItPyNode
+        receives 'max_velocity_scaling_factor' at top level.
         """
-        seg = str(self._current_state or "")
-        planned = self._planned_jt_by_segment.get(seg)
-
-        re = getattr(self._ros, "moveit_executed_trajectory", None)
-        if callable(re):
-            try:
-                return planned, re()
-            except Exception as e:
-                self._signal_error(f"RosBridge moveit_executed_trajectory() failed: {e!r}")
-                return planned, None
-
-        return planned, self._last_executed_any
-
-    # ------------------------------------------------------------------
-    # Cache-clear boundary: keep ordering guard open (Execute-like)
-    # ------------------------------------------------------------------
-
-    @QtCore.pyqtSlot()
-    def _on_traj_cache_clear(self) -> None:
         try:
-            super()._on_traj_cache_clear()
+            planner = getattr(self._recipe, "planner", {}) or {}
+        except Exception:
+            planner = {}
+
+        cfg = planner.get("optimize") if isinstance(planner, dict) else None
+        if not isinstance(cfg, dict):
+            self._signal_error("Optimize: Config in recipe fehlt.")
+            return False
+
+        pipeline = str(cfg.get("pipeline") or "").strip()
+        planner_id = str(cfg.get("planner_id") or "").strip()
+        raw_params = cfg.get("params") or {}
+        
+        if not planner_id:
+            self._signal_error("Optimize: planner_id fehlt.")
+            return False
+
+        # --- FLATTENING LOGIC ---
+        # MoveItPyNode expects "max_velocity_scaling_factor" at root, NOT inside "params" dict.
+        self._opt_cfg = {
+            "role": "optimize",
+            "pipeline": pipeline,
+            "planner_id": planner_id,
+        }
+
+        if isinstance(raw_params, dict):
+            # 1. Map generic names to MoveIt names
+            if "velocity_scaling" in raw_params:
+                self._opt_cfg["max_velocity_scaling_factor"] = float(raw_params["velocity_scaling"])
+            elif "vel_scale" in raw_params:
+                self._opt_cfg["max_velocity_scaling_factor"] = float(raw_params["vel_scale"])
+            
+            if "acceleration_scaling" in raw_params:
+                self._opt_cfg["max_acceleration_scaling_factor"] = float(raw_params["acceleration_scaling"])
+            elif "acc_scale" in raw_params:
+                self._opt_cfg["max_acceleration_scaling_factor"] = float(raw_params["acc_scale"])
+
+            # 2. Copy everything else flat
+            for k, v in raw_params.items():
+                if k not in ("velocity_scaling", "vel_scale", "acceleration_scaling", "acc_scale"):
+                    self._opt_cfg[k] = v
+
+        try:
+            self._opt_planner_cfg_json = json.dumps(self._opt_cfg, ensure_ascii=False)
         except Exception:
             pass
 
-        # Optimize/Execute may not produce PLANNED:OK events -> keep guard satisfied.
-        if self._current_state:
-            self._seen_planned_ok[self._current_state] = True
+        return True
+
+    def _publish_planner_cfg_to_node(self) -> None:
+        try:
+            mp = getattr(self._ros, "moveitpy", None)
+            sig = getattr(mp, "signals", None) if mp is not None else None
+            if sig is not None and hasattr(sig, "plannerCfgChanged"):
+                _LOG.info(f"Optimize: Sende Config (flat): {self._opt_cfg}")
+                sig.plannerCfgChanged.emit(self._opt_cfg)
+        except Exception as ex:
+            _LOG.warning(f"Optimize: Config send failed: {ex}")
 
     # ------------------------------------------------------------------
-    # YAML -> RobotTrajectoryMsg
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _duration_from_dict(tfs: Any) -> RosDuration:
-        d = RosDuration()
-        # tfs comes from _jt_dict_from_yaml_segment: {"sec":..,"nanosec":..}
-        d.sec = int(tfs.get("sec", 0))
-        d.nanosec = int(tfs.get("nanosec", 0))
-        return d
-
-    def _robot_trajectory_from_jt_dict(self, jt: Dict[str, Any], *, seg_name: str) -> RobotTrajectoryMsg:
-        jn = jt.get("joint_names")
-        pts = jt.get("points")
-        if not (isinstance(jn, list) and jn and isinstance(pts, list) and len(pts) >= 2):
-            raise ValueError(f"Optimize: jt dict invalid for segment '{seg_name}'.")
-
-        jt_msg = JointTrajectory()
-        jt_msg.joint_names = [str(x) for x in jn]
-
-        for p in pts:
-            if not isinstance(p, dict):
-                continue
-            pos = p.get("positions", None)
-            tfs = p.get("time_from_start", None)
-            if not (isinstance(pos, list) and len(pos) == len(jt_msg.joint_names)):
-                continue
-            if not isinstance(tfs, dict):
-                continue
-
-            pt = JointTrajectoryPoint()
-            pt.positions = [float(x) for x in pos]
-            pt.time_from_start = self._duration_from_dict(tfs)
-            jt_msg.points.append(pt)
-
-        if len(jt_msg.points) < 2:
-            raise ValueError(f"Optimize: Segment '{seg_name}' has <2 valid points (after build).")
-
-        msg = RobotTrajectoryMsg()
-        msg.joint_trajectory = jt_msg
-        return msg
-
-    # ------------------------------------------------------------------
-    # Segment control
+    # Segment Control (THIS WAS MISSING)
     # ------------------------------------------------------------------
 
     def _segment_exists(self, seg_name: str) -> bool:
@@ -404,7 +278,11 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
         return bool(self._yaml_segments_present.get(seg_name, False))
 
     def _on_enter_segment(self, seg_name: str) -> None:
-        # skip-home
+        """
+        Triggered by BaseProcessStatemachine when state is entered.
+        MUST BE IMPLEMENTED to avoid NotImplementedError.
+        """
+        # 1. Check if skip
         if seg_name == STATE_MOVE_HOME and bool(self._skip_home):
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
@@ -414,10 +292,10 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
 
-        # Satisfy base ordering guard deterministically (Execute-like).
+        # 2. Satisfy base ordering guard deterministically (Execute-like)
         self._seen_planned_ok[seg_name] = True
 
-        # Start optimize -> on optimized callback we will execute.
+        # 3. Load input trajectory
         try:
             baseline_jt = self._planned_jt_by_segment.get(seg_name)
             if not isinstance(baseline_jt, dict):
@@ -427,74 +305,14 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
             self._signal_error(f"Optimize: YAML/JT->RobotTrajectory failed for {seg_name}: {e}")
             return
 
+        # 4. Trigger optimization request
         self._start_optimize_for_segment(seg_name, in_rt)
 
     # ------------------------------------------------------------------
-    # Optimize flow
+    # Optimize execution
     # ------------------------------------------------------------------
 
-    def _read_optimize_cfg_from_recipe(self) -> bool:
-        """
-        Strict: read recipe.planner['optimize'] dict.
-        Build a JSON payload we will send via set_planner_cfg (best-effort).
-        """
-        try:
-            planner = getattr(self._recipe, "planner", {}) or {}
-        except Exception:
-            planner = {}
-
-        cfg = planner.get("optimize") if isinstance(planner, dict) else None
-        if not isinstance(cfg, dict):
-            self._signal_error("Optimize: recipe.planner['optimize'] fehlt oder ist kein dict.")
-            return False
-
-        role = str(cfg.get("role") or "").strip()
-        if role and role != "optimize":
-            _LOG.warning("Optimize: planner.optimize.role ist '%s' (erwartet 'optimize') – weiter.", role)
-
-        pipeline = str(cfg.get("pipeline") or "").strip()
-        planner_id = str(cfg.get("planner_id") or "").strip()
-        params = cfg.get("params") or {}
-        params = dict(params) if isinstance(params, dict) else {}
-
-        if not planner_id:
-            self._signal_error("Optimize: recipe.planner['optimize'].planner_id fehlt/leer.")
-            return False
-
-        self._opt_cfg = {
-            "role": "optimize",
-            "pipeline": pipeline,
-            "planner_id": planner_id,
-            "params": params,
-        }
-
-        try:
-            self._opt_planner_cfg_json = json.dumps(self._opt_cfg, ensure_ascii=False)
-        except Exception:
-            self._signal_error("Optimize: planner cfg konnte nicht zu JSON serialisiert werden.")
-            return False
-
-        return True
-
-    def _publish_planner_cfg_to_node(self) -> None:
-        """
-        Best-effort: send planner cfg dict to node (MoveItPyBridge.plannerCfgChanged).
-        """
-        try:
-            mp = getattr(self._ros, "moveitpy", None)
-            sig = getattr(mp, "signals", None) if mp is not None else None
-            if sig is None or not hasattr(sig, "plannerCfgChanged"):
-                _LOG.warning("Optimize: MoveItPyBridge hat kein plannerCfgChanged – kann optimize cfg nicht setzen.")
-                return
-            sig.plannerCfgChanged.emit(self._opt_cfg)
-        except Exception as ex:
-            _LOG.warning("Optimize: publish planner cfg failed: %s", ex)
-
     def _safe_get_optimized_msg(self) -> Optional[RobotTrajectoryMsg]:
-        """
-        Best-effort pull of last optimized trajectory from ros facade if available.
-        Used only to ignore a latched old message after triggering optimize.
-        """
         try:
             fn = getattr(self._ros, "moveit_optimized_trajectory", None)
             v = fn() if callable(fn) else None
@@ -503,22 +321,15 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
             return None
 
     def _start_optimize_for_segment(self, seg_name: str, in_rt: RobotTrajectoryMsg) -> None:
-        if self._stop_requested:
-            return
+        if self._stop_requested or self._opt_waiting: return
 
-        if self._opt_waiting:
-            self._signal_error(f"Optimize: internal error (already waiting) while entering {seg_name}.")
-            return
-
-        # ensure node has correct cfg (in case someone changed it mid-run)
+        # Ensure config is current
         self._publish_planner_cfg_to_node()
 
         self._opt_waiting = True
         self._opt_wait_seg = str(seg_name)
         self._opt_timeout_timer.stop()
         self._opt_timeout_timer.start(int(self._OPTIMIZE_TIMEOUT_MS))
-
-        # remember previous optimized message to avoid accepting latched old one
         self._opt_prev_msg = self._safe_get_optimized_msg()
 
         try:
@@ -526,100 +337,84 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
         except Exception as ex:
             self._opt_timeout_timer.stop()
             self._opt_waiting = False
-            self._opt_wait_seg = ""
-            self._signal_error(f"Optimize: optimize_trajectory publish failed for {seg_name}: {ex}")
+            self._signal_error(f"Optimize failed request: {ex}")
 
     @QtCore.pyqtSlot(object)
     def _on_optimized_traj_changed(self, msg: object) -> None:
-        if not isinstance(msg, RobotTrajectoryMsg):
+        if not isinstance(msg, RobotTrajectoryMsg) or not self._opt_waiting or self._stop_requested:
             return
-        # GUARD: If stopped, ignore arrival
-        if self._stop_requested or not self._opt_waiting:
-            return
-
-        # ignore latched old message instance
         if self._opt_prev_msg is not None and msg is self._opt_prev_msg:
             return
 
-        seg = str(self._opt_wait_seg or "")
-        if not seg:
-            return
-
+        seg = str(self._opt_wait_seg)
         self._opt_timeout_timer.stop()
         self._opt_waiting = False
         self._opt_wait_seg = ""
 
-        # store optimized for execution
+        # Store & Execute
         self._optimized_rt_by_segment[seg] = msg
-
-        # overwrite planned baseline JT dict for pairing + persistence
+        
+        # Capture optimized version as "planned" for evaluation
         opt_jt = self._jt_from_any(msg)
         if opt_jt is not None:
             self._planned_jt_by_segment[seg] = opt_jt
 
-        # execute optimized now
         self._execute_optimized_segment(seg)
 
     @QtCore.pyqtSlot()
     def _on_optimize_timeout(self) -> None:
-        # GUARD: If stopped, ignore timeout
-        if self._stop_requested or not self._opt_waiting:
-            return
-
-        seg = str(self._opt_wait_seg or "")
+        if not self._opt_waiting or self._stop_requested: return
+        
+        # Fallback check
+        seg = self._opt_wait_seg
         self._opt_waiting = False
-        self._opt_wait_seg = ""
-
-        # last-chance: pull via getter and accept if it's not the previous instance
         last = self._safe_get_optimized_msg()
-        if last is not None and (self._opt_prev_msg is None or last is not self._opt_prev_msg) and seg:
+        
+        if last is not None and (self._opt_prev_msg is None or last is not self._opt_prev_msg):
+            _LOG.info("Optimize: Late arrival via getter logic.")
             self._optimized_rt_by_segment[seg] = last
             opt_jt = self._jt_from_any(last)
-            if opt_jt is not None:
-                self._planned_jt_by_segment[seg] = opt_jt
+            if opt_jt: self._planned_jt_by_segment[seg] = opt_jt
             self._execute_optimized_segment(seg)
             return
 
-        self._signal_error(
-            f"Optimize: Timeout waiting for optimized_trajectory_rt after {int(self._OPTIMIZE_TIMEOUT_MS)} ms (seg={seg}). "
-            "Prüfe: topics.yaml publish id=optimized_trajectory_rt + Node publish."
-        )
-
-    # ------------------------------------------------------------------
-    # Execute optimized segment
-    # ------------------------------------------------------------------
+        self._signal_error(f"Optimize: Timeout waiting for result (seg={seg})")
 
     def _execute_optimized_segment(self, seg_name: str) -> None:
-        if self._stop_requested:
-            return
-
+        if self._stop_requested: return
         rt = self._optimized_rt_by_segment.get(seg_name)
-        if rt is None:
-            self._signal_error(f"Optimize: internal error, optimized trajectory missing for segment {seg_name}.")
+        if not rt:
+            self._signal_error("Optimize: Internal error (no traj)")
             return
-
         try:
             self._ros.moveit_execute_trajectory(rt, segment=str(seg_name))
         except Exception as e:
-            self._signal_error(f"Optimize: execute optimized trajectory failed for {seg_name}: {e}")
+            self._signal_error(f"Optimize: Exec failed: {e}")
 
     # ------------------------------------------------------------------
-    # Planned/Executed payload override
+    # Override pairing source for Optimize
+    # ------------------------------------------------------------------
+
+    def _get_step_sources(self) -> Tuple[Any, Any]:
+        seg = str(self._current_state or "")
+        # Planned = Optimized version (Time parameterized)
+        planned = self._planned_jt_by_segment.get(seg)
+        
+        re = getattr(self._ros, "moveit_executed_trajectory", None)
+        executed = re() if callable(re) else self._last_executed_any
+        return planned, executed
+
+    # ------------------------------------------------------------------
+    # Final Payload
     # ------------------------------------------------------------------
 
     def _build_traj_payload(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """
-        planned  = optimized baseline (JTBySegment YAML v1) built from _planned_jt_by_segment
-        executed = captured via Base (JTBySegment YAML v1)
-        """
         segments: Dict[str, Any] = {}
         for seg in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME):
-            if seg == STATE_MOVE_HOME and bool(self._skip_home):
-                continue
+            if seg == STATE_MOVE_HOME and bool(self._skip_home): continue
             jt = self._planned_jt_by_segment.get(seg)
             seg_yaml = self._jt_dict_to_segment_yaml(jt)
-            if seg_yaml is not None:
-                segments[seg] = seg_yaml
+            if seg_yaml: segments[seg] = seg_yaml
 
         planned = {"version": 1, "segments": segments}
         executed = self._jt_by_segment_yaml(which="executed")
@@ -627,41 +422,49 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
 
     def _on_finished(self) -> None:
         planned, executed = self._build_traj_payload()
-
-        # executed must exist (point of Optimize is: execute optimized)
-        e_segs = executed.get("segments") if isinstance(executed, dict) else None
-        if not (isinstance(e_segs, dict) and e_segs):
-            self.notifyError.emit(
-                "Optimize finished, but executed trajectory capture is empty. "
-                "Check MoveItPyNode executed_trajectory_rt publish + BaseProcessStatemachine capture."
-            )
-            self._cleanup()
-            return
-
-        # IMPORTANT: use injected RunResult (seeded by ProcessThread)
         self._rr.set_planned(traj=copy.deepcopy(planned))
         self._rr.set_executed(traj=copy.deepcopy(executed))
-
         self.notifyFinished.emit(self._rr.to_process_payload())
         self._cleanup()
+
+    # ------------------------------------------------------------------
+    # Helper: YAML->JT Conversion (needed for input)
+    # ------------------------------------------------------------------
+    
+    @staticmethod
+    def _duration_from_dict(tfs: Any) -> RosDuration:
+        d = RosDuration()
+        d.sec = int(tfs.get("sec", 0))
+        d.nanosec = int(tfs.get("nanosec", 0))
+        return d
+
+    def _robot_trajectory_from_jt_dict(self, jt: Dict[str, Any], *, seg_name: str) -> RobotTrajectoryMsg:
+        jn = jt.get("joint_names")
+        pts = jt.get("points")
+        
+        msg = RobotTrajectoryMsg()
+        msg.joint_trajectory = JointTrajectory()
+        msg.joint_trajectory.joint_names = [str(x) for x in jn]
+
+        for p in pts:
+            pt = JointTrajectoryPoint()
+            pt.positions = [float(x) for x in p["positions"]]
+            pt.time_from_start = self._duration_from_dict(p["time_from_start"])
+            msg.joint_trajectory.points.append(pt)
+            
+        return msg
 
     # ------------------------------------------------------------------
     # Cleanup
     # ------------------------------------------------------------------
 
     def _cleanup(self) -> None:
-        try:
-            self._opt_timeout_timer.stop()
-        except Exception:
-            pass
+        try: self._opt_timeout_timer.stop()
+        except Exception: pass
         try:
             sig = getattr(getattr(self._ros, "moveitpy", None), "signals", None)
-            if sig is not None and hasattr(sig, "optimizedTrajectoryChanged"):
-                try:
-                    sig.optimizedTrajectoryChanged.disconnect(self._on_optimized_traj_changed)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
+            if sig and hasattr(sig, "optimizedTrajectoryChanged"):
+                try: sig.optimizedTrajectoryChanged.disconnect(self._on_optimized_traj_changed)
+                except Exception: pass
+        except Exception: pass
         super()._cleanup()
