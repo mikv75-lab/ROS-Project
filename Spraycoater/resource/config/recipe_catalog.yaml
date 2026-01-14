@@ -41,7 +41,8 @@ recipes:
       helix:
         allowed_path_types:
           - "path.spiral.cylinder"
-        default_path: { type: "path.spiral.cylinder" }
+        # Optional: Hier Default-Werte überschreiben, z.B. height=100
+        default_path: { type: "path.spiral.cylinder", radius_mm: 20.0, height_mm: 100.0 }
 
   - id: "cylinder"
     substrate_type: "cylinder"
@@ -61,7 +62,7 @@ recipes:
       helix:
         allowed_path_types:
           - "path.spiral.cylinder"
-        default_path: { type: "path.spiral.cylinder" }
+        default_path: { type: "path.spiral.cylinder", radius_mm: 50.0, height_mm: 100.0 }
 
   - id: "cube"
     substrate_type: "cube"

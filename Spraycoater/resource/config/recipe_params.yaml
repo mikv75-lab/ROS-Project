@@ -21,7 +21,7 @@ recipe_params:
       max: 200
       step: 0.1
       unit: "mm"
-      default: 10
+      default: 50.0  # Erhöht für Sicherheit
       plc: false
 
     sample_step_mm:
@@ -36,18 +36,20 @@ recipe_params:
     max_points:
       type: number
       min: 100
-      max: 1000
+      max: 2000
       step: 100
-      default: 500
+      default: 1000
       plc: false
 
+    # WICHTIG: Default auf 90 Grad, damit Zylinder/Helix möglich sind!
     max_angle_deg:
       type: number
       min: 0
-      max: 90
+      max: 180
       step: 0.5
-      default: 90
+      default: 90.0
       plc: false
+      description: "Max. Winkelabweichung der Normale von Welt-Z (Up). Für Zylinder 90° nötig."
 
     pre_dispense_s:
       type: number
@@ -152,7 +154,6 @@ recipe_params:
 
 
   # --- Meander (Ebene) ---
-  # Generiert nun immer einen durchgängigen Pfad mit runden 180°-Verbindungen.
   path.meander.plane:
     area.shape:        { type: enum, values: ["circle","rect"], default: "circle" }
     area.center_xy_mm: { type: vec2, min: [-1000,-1000], max: [1000,1000], step: [0.1,0.1], unit: "mm", default: [0,0] }
@@ -165,13 +166,9 @@ recipe_params:
     edge_extend_mm:    { type: number, min: 0.0, max: 200,  step: 0.1, unit: "mm", default: 0.0 }
     margin_mm:         { type: number, min: 0.0, max: 200,  step: 0.1, unit: "mm", default: 0.0 }
     
-    # boustrophedon ist hier implizit immer true, aber Parameter bleibt für Kompatibilität
     boustrophedon:     { type: boolean, default: true }
-    
-    # Start-Ecke definiert Scan-Richtung
     start:             { type: enum, values: ["auto","minx_miny","minx_maxy","maxx_miny","maxx_maxy"], default: "auto" }
 
-    # An/Abfahrts-Logik (optional)
     predispense.angle_mode: { type: enum, values: ["auto","custom"], default: "auto" }
     predispense.angle_deg:  { type: number,  min: 0, max: 90, step: 1, unit: "deg", default: 0,
                               visible_if: {"predispense.angle_mode":"custom"} }
@@ -197,6 +194,10 @@ recipe_params:
 
   # --- Spiral (Zylinder / Helix) ---
   path.spiral.cylinder:
+    # WICHTIG: Radius und Höhe für Path-Generierung
+    radius_mm:        { type: number, min: 1.0, max: 2000, step: 0.1, unit: "mm", default: 50.0, description: "Radius für den Helix-Pfad (0 = Auto aus Mesh)" }
+    height_mm:        { type: number, min: 1.0, max: 2000, step: 1.0, unit: "mm", default: 100.0, description: "Höhe des Helix-Bereichs" }
+    
     pitch_mm:         { type: number, min: 0.1, max: 200,  step: 0.1, unit: "mm", default: 10.0 }
     outside_mm:       { type: number, min: 0.0, max: 100,  step: 0.1, unit: "mm", default: 1.0 }
     margin_top_mm:    { type: number, min: 0.0, max: 200,  step: 0.1, unit: "mm", default: 0.0 }

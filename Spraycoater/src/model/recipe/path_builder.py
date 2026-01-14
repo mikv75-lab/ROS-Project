@@ -48,6 +48,7 @@ class PathBuilder:
 
     FIX: Berücksichtigt 'recipe.parameters' (z.B. max_points, sample_step_mm) vorrangig.
     FIX: Mäander erzeugt nun immer eine durchgängige, rund verbundene Bahn.
+    FIX: Helix (Cylinder) Berechnung robust (float turns) und zentriert.
     """
 
     def __new__(cls, *args: Any, **kwargs: Any):
@@ -381,80 +382,27 @@ class PathBuilder:
             if dist < 1e-6: return [p1]
             
             radius = dist / 2.0
-            # Winkel der Basislinie
-            base_angle = math.atan2(dy, dx)
-            
-            # Wir wollen einen Bogen "nach außen". 
-            # Da wir abwechselnd hin und her fahren, ist "außen" immer in Laufrichtung X gesehen.
-            # Hier: Wir gehen immer +90 bis -90 grad relativ zur Basislinie?
-            # Einfacher: Parametrischer Halbkreis im 2D Raum.
-            
-            # Wir interpolieren Winkel von pi bis 0 (oder umgekehrt)
-            # p1 ist start, p2 ist ende.
-            # Startwinkel relativ zu Center: atan2(p1.y-my, p1.x-mx)
-            # Endwinkel relativ zu Center: atan2(p2.y-my, p2.x-mx)
-            
-            ang1 = math.atan2(p1[1]-my, p1[0]-mx)
-            ang2 = math.atan2(p2[1]-my, p2[0]-mx)
-            
-            # Wir wollen den kurzen Weg? Nein, wir wollen den Bogen "nach aussen".
-            # Meander läuft in Y. Verbindungen sind auch in Y.
-            # X ist die Scanrichtung.
-            # Verbindung ist i.d.R. vertikal (nur dy).
-            # Wir müssen einen Bogen machen, der sich in X ausdehnt.
-            
             # arc length approx pi*r
             n = max(4, int((math.pi * radius) / max(step_size, 1e-6)) + 1)
+            
+            # Basis-Vektoren für Halbkreis
+            u_vec = np.array([dx, dy]) / dist
+            v_vec = np.array([u_vec[1], -u_vec[0]]) # Rotate 90 deg
+            
+            # Bulge Richtung bestimmen (immer nach Außen relativ zur Mitte)
+            # mx > 0 -> rechts -> bulge nach rechts (+X)
+            # mx < 0 -> links -> bulge nach links (-X)
+            bulge_dir = 1.0 if mx > 0 else -1.0
+            
+            # Wenn v_vec in die falsche Richtung zeigt, umdrehen
+            if (v_vec[0] * bulge_dir) < 0:
+                v_vec = -v_vec
             
             pts = []
             for i in range(1, n): # Start/Ende weglassen (werden von Linien gedeckt)
                 t = i / float(n)
-                # Linear angle interpolation? 
-                # Problem: ang1 und ang2 sind meist +/- 90 grad (vertikal)
-                # Wir müssen sicherstellen, dass wir den "richtigen" Halbkreis nehmen.
-                # Bei Meander: immer "nach außen" bezogen auf die Breite.
-                # Linker Rand (kleines X) -> Bogen nach -X.
-                # Rechter Rand (großes X) -> Bogen nach +X.
-                
-                # Check ob wir links oder rechts sind:
-                # mx ist die X-Position der Verbindung.
-                # Wenn mx < 0 (links der Mitte), dann bulge nach links.
-                # Wenn mx > 0 (rechts der Mitte), dann bulge nach rechts.
-                
-                # Aber wir rotieren am Ende. Also nutzen wir relative Koords vor Rotation.
-                # Center ist (0,0).
-                
-                bulge_dir = 1.0 if mx > 0 else -1.0
-                
-                # Parametrischer Halbkreis:
-                # P(t) = M + R * cos(phi)*u + R*sin(phi)*v
-                # u = (0, 1) (Vektor P1->P2 normalisiert)
-                # v = (1, 0) * bulge_dir (Vektor senkrecht dazu)
-                
-                u_vec = np.array([dx, dy]) / dist
-                v_vec = np.array([u_vec[1], -u_vec[0]]) # Rotate 90 deg
-                
-                # Wir wollen v_vec in Richtung bulge_dir (X-Achse) haben.
-                # Wenn wir am rechten Rand sind (X>0), soll der Bogen nach +X gehen.
-                if (v_vec[0] * bulge_dir) < 0:
-                    v_vec = -v_vec
-                
-                # Halbkreis Parameter s von -1 bis 1?
-                # Oder Winkel?
-                # Wir gehen von P1 nach P2.
-                # P1 ist bei winkel pi. P2 bei 0.
-                angle = math.pi * (1.0 - t) # pi -> 0
-                # Nein, cos/sin logic simpler:
-                # Halbkreisbogen über Vektor u, mit Höhe v.
-                # P(t) = M + (P1-M)*cos(theta) + v*R*sin(theta) ??
-                
-                # Einfachste Lösung:
-                # Interpoliere linear zwischen P1 und P2: L(t)
-                # Addiere Offset in v_vec Richtung: h = R * sin(t * pi)
-                
                 lin_pt = np.array(p1) * (1-t) + np.array(p2) * t
                 offset = v_vec * radius * math.sin(t * math.pi) # Sine bump
-                
                 pt = lin_pt + offset
                 pts.append((pt[0], pt[1]))
                 
@@ -532,37 +480,58 @@ class PathBuilder:
 
     @staticmethod
     def _spiral_cylinder_centerline(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
+        """
+        Erzeugt Helix-Punkte zentriert um (0,0,0) in XY, Z verläuft vertikal.
+        Verwendet explizite 'radius_mm' und 'height_mm' Parameter, wenn vorhanden.
+        """
         pitch = max(1e-6, float(p.get("pitch_mm", 10.0)))
         m_top = float(p.get("margin_top_mm", 0.0))
         m_bot = float(p.get("margin_bottom_mm", 0.0))
         start_from = str(p.get("start_from", "top")).lower()
         direction = str(p.get("direction", "ccw")).lower()
 
-        radius = float(p.get("radius_mm", 10.0)) + float(p.get("outside_mm", 1.0))
+        # Radius und Höhe robust lesen (Fallback auf 100/20 falls nicht da)
+        radius = float(p.get("radius_mm", 20.0)) + float(p.get("outside_mm", 1.0))
         height = float(p.get("height_mm", 100.0))
 
+        # Nutzbare Höhe berechnen
         usable_h = max(height - m_top - m_bot, 0.0)
-        turns = max(int(usable_h / pitch), 1)
-        theta_max = 2.0 * math.pi * turns
-
-        sgn = -1.0 if direction == "cw" else 1.0
-
-        denom = math.sqrt(radius * radius + (pitch / (2.0 * math.pi)) ** 2)
-        dtheta = max(1e-4, step / max(denom, 1e-9))
-        N = int(theta_max / dtheta) + 2
         
-        raw_theta = np.linspace(0.0, theta_max, N)
+        # Falls keine Höhe da ist, return leeren Pfad
+        if usable_h <= 1e-9:
+            return np.zeros((0, 3), dtype=float)
+
+        # Turns als Float berechnen, um "Abschneiden" bei int() zu verhindern
+        turns = usable_h / pitch
+        
+        # Bogenlänge pro Windung: sqrt((2*pi*r)^2 + pitch^2)
+        len_per_turn = math.sqrt((2 * math.pi * radius)**2 + pitch**2)
+        total_len = turns * len_per_turn
+        
+        # Anzahl Punkte bestimmen
+        num_points = max(2, int(total_len / max(step, 1e-6)) + 1)
+        
+        # Parameter t von 0 bis 1
+        t = np.linspace(0.0, 1.0, num_points)
+        
+        # Z-Koordinate (Zentriert um 0: von +H/2 bis -H/2)
+        z_top_limit = height / 2.0 - m_top
+        z_bot_limit = -height / 2.0 + m_bot
         
         if start_from == "top":
-            z0 = height / 2.0 - m_top
-            z = z0 - (usable_h * (raw_theta / theta_max))
+            z = z_top_limit - t * usable_h
         else:
-            z0 = -height / 2.0 + m_bot
-            z = z0 + (usable_h * (raw_theta / theta_max))
-
-        theta = sgn * raw_theta
-        x = radius * np.cos(theta)
-        y = radius * np.sin(theta)
+            z = z_bot_limit + t * usable_h
+            
+        # Winkel (Theta)
+        total_angle = turns * 2.0 * math.pi
+        if direction == "cw":
+            angles = -t * total_angle
+        else:
+            angles = t * total_angle
+            
+        x = radius * np.cos(angles)
+        y = radius * np.sin(angles)
 
         P = np.c_[x, y, z]
         return PathBuilder._decimate(P, max_points)
