@@ -33,8 +33,8 @@ class ProcessThread(QtCore.QObject):
       - Boundary reset vor JEDEM Run (vor Worker.start()).
       - Boundary reset nach JEDEM Run (success + error).
       - Shutdown ist BLOCKING: request_stop() MUSS laufen, bevor QThread beendet wird.
-      - Worker wird erst nach blocking stop + thread.wait() gelöscht.
-      - CRITICAL: Segment-Kontext wird hart zurückgesetzt (auch wenn ros nur moveit_set_segment hat).
+      - Reset von self._started am Ende, damit ein "Re-Init" (erneuter Start) möglich ist.
+      - CRITICAL: Segment-Kontext wird hart zurückgesetzt.
     """
 
     MODE_VALIDATE = "validate"
@@ -75,28 +75,28 @@ class ProcessThread(QtCore.QObject):
         self._urdf_xml = str(urdf_xml or "")
         self._srdf_xml = str(srdf_xml or "")
 
-        # IMPORTANT: thread without parent -> deterministic lifecycle
-        self._thread = QtCore.QThread()
+        self._thread: Optional[QtCore.QThread] = None
         self._worker: Optional[QtCore.QObject] = None
 
         self._started = False
         self._shutting_down = False
 
-        self._thread.started.connect(self._on_thread_started)
-
     # ------------------------------------------------------------------
 
     def start(self) -> None:
         if self._started:
+            _LOG.warning("ProcessThread: Start ignoriert, Thread läuft bereits.")
             return
+        
         self._started = True
+        self._shutting_down = False
+        
+        self._thread = QtCore.QThread()
+        self._thread.started.connect(self._on_thread_started)
         self._thread.start()
 
     def request_stop(self) -> None:
-        """
-        Best-effort stop: stop motion + ask worker to stop.
-        Non-blocking external call; _shutdown() will do the blocking stop.
-        """
+        """Externer Stopp-Aufruf (nicht blockierend)."""
         try:
             fn = getattr(self._ros, "moveit_stop", None)
             if callable(fn):
@@ -104,94 +104,55 @@ class ProcessThread(QtCore.QObject):
         except Exception:
             pass
 
-        if self._worker is None:
-            return
-
-        try:
-            QtCore.QMetaObject.invokeMethod(
-                self._worker,
-                "request_stop",
-                QtCore.Qt.ConnectionType.QueuedConnection,
-            )
-        except Exception:
-            _LOG.exception("request_stop invoke failed")
+        if self._worker is not None:
+            try:
+                QtCore.QMetaObject.invokeMethod(
+                    self._worker,
+                    "request_stop",
+                    QtCore.Qt.ConnectionType.QueuedConnection,
+                )
+            except Exception:
+                _LOG.exception("request_stop invoke failed")
 
     # ------------------------------------------------------------------
-    # Run-boundary reset (best-effort but ordered)
+    # Run-boundary reset
     # ------------------------------------------------------------------
 
     def _call_first(self, names: Tuple[str, ...]) -> bool:
-        """
-        Call the first existing method on ros from the given names.
-        Returns True if a method existed (even if it errored).
-        """
         for n in names:
             fn = getattr(self._ros, n, None)
             if callable(fn):
                 try:
                     fn()
                 except Exception as e:
-                    try:
-                        self.logMessage.emit(f"W: ros.{n}() failed: {e!r}")
-                    except Exception:
-                        pass
+                    self.logMessage.emit(f"W: ros.{n}() failed: {e!r}")
                 return True
         return False
 
     def _call_first_with(self, names: Tuple[str, ...], *args: Any, **kwargs: Any) -> bool:
-        """
-        Call the first existing method on ros from the given names, with args/kwargs.
-        Returns True if a method existed (even if it errored).
-        """
         for n in names:
             fn = getattr(self._ros, n, None)
             if callable(fn):
                 try:
                     fn(*args, **kwargs)
                 except Exception as e:
-                    try:
-                        self.logMessage.emit(f"W: ros.{n}(*args) failed: {e!r}")
-                    except Exception:
-                        pass
+                    self.logMessage.emit(f"W: ros.{n}(*args) failed: {e!r}")
                 return True
         return False
 
     def _reset_segment_context(self) -> None:
-        """
-        HARD reset of segment context to avoid leaking seg=... into subsequent runs
-        (notably RobotInit/Home-Execute).
-
-        Supports both styles:
-          - moveit_clear_segment()/moveit_reset_segment()/moveit_set_segment_none()
-          - moveit_set_segment(seg: str)  -> we call with "" and best-effort None
-        """
         if self._call_first(("moveit_clear_segment", "moveit_reset_segment", "moveit_set_segment_none")):
             return
-
-        # Fallback: minimal API found in many facades
         self._call_first_with(("moveit_set_segment",), "")
-
-        # Some implementations accept None -> best-effort
         try:
-            self._call_first_with(("moveit_set_segment",), None)  # type: ignore[arg-type]
+            self._call_first_with(("moveit_set_segment",), None)  # type: ignore
         except Exception:
             pass
 
     def _reset_run_boundary(self) -> None:
-        """
-        Clear stale MoveItPy bridge state that can leak across runs:
-          - stop motion
-          - clear last motion_result
-          - clear planned/executed caches
-          - clear segment context (named seg=... leaks)
-        """
-        # 1) stop any motion
+        """Löscht alle Zustände, die zwischen Läufen hängen bleiben könnten."""
         self._call_first(("moveit_stop", "stop_moveit", "moveit_cancel", "moveit_abort"))
-
-        # 2) clear last motion result (so no stale OK/ERROR leaks into next run)
         self._call_first(("moveit_clear_motion_result", "moveit_reset_motion_result", "moveit_clear_result"))
-
-        # 3) clear traj caches (planned/executed)
         self._call_first(
             (
                 "moveit_clear_trajectory_cache",
@@ -200,52 +161,34 @@ class ProcessThread(QtCore.QObject):
                 "moveit_clear_cache",
             )
         )
-
-        # 4) CRITICAL: clear segment context (also handles moveit_set_segment-only facades)
         self._reset_segment_context()
-
         QCoreApplication.processEvents()
 
     # ------------------------------------------------------------------
-    # Payload validation (STRICT)
+    # Payload validation
     # ------------------------------------------------------------------
 
     @staticmethod
     def _is_jtbysegment_yaml_v1(obj: Any) -> bool:
-        if not isinstance(obj, dict):
-            return False
+        if not isinstance(obj, dict): return False
         try:
-            ver = int(obj.get("version", 0))
-        except Exception:
-            return False
-        if ver != 1:
-            return False
-        segs = obj.get("segments", None)
-        return isinstance(segs, dict) and bool(segs)
+            return int(obj.get("version", 0)) == 1 and isinstance(obj.get("segments"), dict)
+        except Exception: return False
 
     @staticmethod
     def _normalize_payload(obj: Any) -> Dict[str, Any]:
         root = _ensure_dict(obj)
-
         planned = _ensure_dict(root.get("planned_run"))
         executed = _ensure_dict(root.get("executed_run"))
-
-        planned_traj = planned.get("traj", None)
-        executed_traj = executed.get("traj", None)
-
-        planned_tcp = _ensure_dict(planned.get("tcp", {}))
-        executed_tcp = _ensure_dict(executed.get("tcp", {}))
-
-        rd = root.get("robot_description")
-        rd = rd if isinstance(rd, dict) else {}
-
-        urdf_xml = str((rd.get("urdf_xml") or root.get("urdf_xml") or "") or "")
-        srdf_xml = str((rd.get("srdf_xml") or root.get("srdf_xml") or "") or "")
+        rd = _ensure_dict(root.get("robot_description"))
 
         out = {
-            "robot_description": {"urdf_xml": urdf_xml, "srdf_xml": srdf_xml},
-            "planned_run": {"traj": planned_traj, "tcp": planned_tcp},
-            "executed_run": {"traj": executed_traj, "tcp": executed_tcp},
+            "robot_description": {
+                "urdf_xml": str(rd.get("urdf_xml") or root.get("urdf_xml") or ""),
+                "srdf_xml": str(rd.get("srdf_xml") or root.get("srdf_xml") or ""),
+            },
+            "planned_run": {"traj": planned.get("traj"), "tcp": _ensure_dict(planned.get("tcp"))},
+            "executed_run": {"traj": executed.get("traj"), "tcp": _ensure_dict(executed.get("tcp"))},
             "fk_meta": _ensure_dict(root.get("fk_meta")),
             "eval": _ensure_dict(root.get("eval")),
             "valid": bool(root.get("valid", False)),
@@ -255,102 +198,46 @@ class ProcessThread(QtCore.QObject):
 
     @classmethod
     def _validate_payload_strict(cls, payload: Dict[str, Any]) -> Optional[str]:
-        if not isinstance(payload, dict):
-            return "payload ist kein dict."
-
-        rd = payload.get("robot_description")
-        if not isinstance(rd, dict):
-            return "robot_description fehlt oder ist ungültig."
-        if not isinstance(rd.get("urdf_xml", ""), str):
-            return "robot_description.urdf_xml ist kein str."
-        if not isinstance(rd.get("srdf_xml", ""), str):
-            return "robot_description.srdf_xml ist kein str."
-
+        if not isinstance(payload, dict): return "payload ist kein dict."
         pr = payload.get("planned_run")
         er = payload.get("executed_run")
-        if not isinstance(pr, dict) or not isinstance(er, dict):
-            return "planned_run/executed_run fehlen oder sind ungültig."
-
-        if "traj" not in pr or "traj" not in er:
-            return "planned_run['traj'] oder executed_run['traj'] fehlt."
-
-        if not cls._is_jtbysegment_yaml_v1(pr.get("traj")):
-            return "planned_run['traj'] ist nicht JTBySegment YAML v1 (segments/version)."
-        if not cls._is_jtbysegment_yaml_v1(er.get("traj")):
-            return "executed_run['traj'] ist nicht JTBySegment YAML v1 (segments/version)."
-
-        if not isinstance(payload.get("fk_meta"), dict):
-            return "fk_meta ist kein dict."
-        if not isinstance(payload.get("eval"), dict):
-            return "eval ist kein dict."
-        if not isinstance(payload.get("valid"), bool):
-            return "valid ist kein bool."
-        if not isinstance(payload.get("invalid_reason"), str):
-            return "invalid_reason ist kein str."
-
+        if not isinstance(pr, dict) or not isinstance(er, dict): return "planned/executed fehlen."
+        if not cls._is_jtbysegment_yaml_v1(pr.get("traj")): return "planned_run invalid."
+        if not cls._is_jtbysegment_yaml_v1(er.get("traj")): return "executed_run invalid."
         return None
 
     # ------------------------------------------------------------------
-    # Thread start
+    # Thread logic
     # ------------------------------------------------------------------
 
     def _on_thread_started(self) -> None:
-        QCoreApplication.processEvents()
-
         if self._recipe is None:
             self._emit_error("Kein Recipe übergeben.")
             return
 
-        # HARD boundary reset BEFORE worker starts
+        # Reset vor dem Start
         try:
-            self.logMessage.emit("ProcessThread: boundary reset (pre-run, stop/clear caches)...")
+            self.logMessage.emit("ProcessThread: boundary reset (pre-run)...")
             self._reset_run_boundary()
-        except Exception as e:
-            try:
-                self.logMessage.emit(f"W: boundary reset failed: {e!r}")
-            except Exception:
-                pass
+        except Exception: pass
 
-        rr = RunResult(
-            urdf_xml=self._urdf_xml,
-            srdf_xml=self._srdf_xml,
-            valid=True,
-            invalid_reason="",
-        )
-
-        if rr.urdf_xml.strip() and rr.srdf_xml.strip():
-            self.logMessage.emit("ProcessThread: URDF/SRDF injected into RunResult (non-empty).")
-        else:
-            self.logMessage.emit("ProcessThread: URDF/SRDF injection is empty (FK/Eval will be skipped later).")
+        rr = RunResult(urdf_xml=self._urdf_xml, srdf_xml=self._srdf_xml, valid=True)
 
         try:
             if self._mode == self.MODE_VALIDATE:
                 self._worker = ProcessValidateStatemachine(
-                    recipe=self._recipe,
-                    ros=self._ros,
-                    side=self._side,
-                    max_retries=self._max_retries,
-                    skip_home=self._skip_home,
-                    run_result=rr,
+                    recipe=self._recipe, ros=self._ros, run_result=rr, 
+                    side=self._side, max_retries=self._max_retries, skip_home=self._skip_home
                 )
             elif self._mode == self.MODE_OPTIMIZE:
                 self._worker = ProcessOptimizeStatemachine(
-                    recipe=self._recipe,
-                    ros=self._ros,
-                    side=self._side,
-                    max_retries=self._max_retries,
-                    skip_home=self._skip_home,
-                    run_result=rr,
+                    recipe=self._recipe, ros=self._ros, run_result=rr,
+                    side=self._side, max_retries=self._max_retries, skip_home=self._skip_home
                 )
             elif self._mode == self.MODE_EXECUTE:
                 self._worker = ProcessExecuteStatemachine(
-                    recipe=self._recipe,
-                    ros=self._ros,
-                    plc=self._plc,
-                    side=self._side,
-                    max_retries=self._max_retries,
-                    skip_home=self._skip_home,
-                    run_result=rr,
+                    recipe=self._recipe, ros=self._ros, plc=self._plc, run_result=rr,
+                    side=self._side, max_retries=self._max_retries, skip_home=self._skip_home
                 )
             else:
                 self._emit_error(f"Unbekannter Mode: {self._mode}")
@@ -359,78 +246,48 @@ class ProcessThread(QtCore.QObject):
             self._emit_error(f"Worker init failed: {e}")
             return
 
-        # wire signals (best-effort)
-        for sig in ("stateChanged", "logMessage"):
-            try:
-                getattr(self._worker, sig).connect(getattr(self, sig))
-            except Exception:
-                pass
-
+        # Signale verbinden
+        self._worker.stateChanged.connect(self.stateChanged)
+        self._worker.logMessage.connect(self.logMessage)
         self._worker.notifyFinished.connect(self._on_worker_finished)
         self._worker.notifyError.connect(self._emit_error)
 
-        # move worker to thread and start
         self._worker.moveToThread(self._thread)
-        QtCore.QMetaObject.invokeMethod(
-            self._worker,
-            "start",
-            QtCore.Qt.ConnectionType.QueuedConnection,
-        )
-
-    # ------------------------------------------------------------------
-    # Worker callbacks
-    # ------------------------------------------------------------------
+        QtCore.QMetaObject.invokeMethod(self._worker, "start", QtCore.Qt.ConnectionType.QueuedConnection)
 
     @QtCore.pyqtSlot(object)
     def _on_worker_finished(self, obj: object) -> None:
         payload = self._normalize_payload(obj)
-
-        # re-impose injected XML if missing
-        try:
-            rd = payload.get("robot_description")
-            rd = rd if isinstance(rd, dict) else {}
-            if not str(rd.get("urdf_xml") or "").strip() and self._urdf_xml.strip():
-                rd["urdf_xml"] = self._urdf_xml
-            if not str(rd.get("srdf_xml") or "").strip() and self._srdf_xml.strip():
-                rd["srdf_xml"] = self._srdf_xml
-            payload["robot_description"] = rd
-        except Exception:
-            pass
-
         err = self._validate_payload_strict(payload)
         if err:
-            self._emit_error(f"Worker finished with invalid payload (strict): {err}")
+            self._emit_error(f"Worker finished with invalid payload: {err}")
             return
 
         self.notifyFinished.emit(payload)
-
-        # Boundary reset AFTER run (important if MoveItPy keeps last msgs/caches)
-        try:
-            self.logMessage.emit("ProcessThread: boundary reset (post-run)...")
-            self._reset_run_boundary()
-        except Exception:
-            pass
-
+        self.logMessage.emit("ProcessThread: boundary reset (post-run)...")
+        self._reset_run_boundary()
         self._shutdown()
 
     @QtCore.pyqtSlot(str)
     def _emit_error(self, msg: str) -> None:
+        """
+        Fehlerbehandlung: Meldet den Fehler und sorgt für einen sauberen Stopp.
+        """
+        self.logMessage.emit(f"=== Process ERROR: {msg} ===")
         self.notifyError.emit(str(msg))
 
-        # Boundary reset AFTER error (prevents stale seg/result leaking into RobotInit)
         try:
             self.logMessage.emit("ProcessThread: boundary reset (post-error)...")
             self._reset_run_boundary()
-        except Exception:
-            pass
+        except Exception: pass
 
         self._shutdown()
 
-    # ------------------------------------------------------------------
-    # Deterministic shutdown (BLOCKING)
-    # ------------------------------------------------------------------
-
     def _shutdown(self) -> None:
+        """
+        Stoppt den Thread und den Worker blockierend. 
+        Setzt Flags zurück, damit ein Re-Init möglich ist.
+        """
         if self._shutting_down:
             return
         self._shutting_down = True
@@ -438,42 +295,20 @@ class ProcessThread(QtCore.QObject):
         w = self._worker
         self._worker = None
 
-        # 1) BLOCKING stop on worker thread (ensures stop logic runs before thread quits)
         if w is not None:
-            try:
-                QtCore.QMetaObject.invokeMethod(
-                    w,
-                    "request_stop",
-                    QtCore.Qt.ConnectionType.BlockingQueuedConnection,
-                )
-            except Exception:
-                # if request_stop isn't a slot or thread is already stopping, ignore
-                pass
+            # Blockierender Stopp des Workers
+            QtCore.QMetaObject.invokeMethod(
+                w, "request_stop", QtCore.Qt.ConnectionType.BlockingQueuedConnection
+            )
+            w.deleteLater()
 
-            try:
-                w.notifyFinished.disconnect()
-            except Exception:
-                pass
-            try:
-                w.notifyError.disconnect()
-            except Exception:
-                pass
-
-            try:
-                w.deleteLater()
-            except Exception:
-                pass
-
-        # 2) stop thread
-        try:
+        if self._thread is not None:
             if self._thread.isRunning():
                 self._thread.quit()
-                self._thread.wait(5000)
-        except Exception:
-            pass
-
-        # 3) delete thread object (now safe)
-        try:
+                self._thread.wait(2000)
             self._thread.deleteLater()
-        except Exception:
-            pass
+            self._thread = None
+
+        # WICHTIG: Flag zurücksetzen für den nächsten Start-Versuch
+        self._started = False
+        _LOG.info("ProcessThread: Shutdown abgeschlossen, bereit für Re-Init.")

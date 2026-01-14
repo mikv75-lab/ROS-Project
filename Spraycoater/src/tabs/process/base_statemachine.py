@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any, List, Tuple
 
 from PyQt6 import QtCore
 from PyQt6.QtStateMachine import QStateMachine, QState, QFinalState
+from PyQt6.sip import isdeleted
 
 from model.recipe.recipe_run_result import RunResult
 
@@ -34,7 +35,8 @@ class _QtSignalHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            self._owner.logMessage.emit(self.format(record))
+            if not isdeleted(self._owner):
+                self._owner.logMessage.emit(self.format(record))
         except Exception:
             pass
 
@@ -179,7 +181,7 @@ class BaseProcessStatemachine(QtCore.QObject):
     def _on_state_enter(self, seg_name: str) -> None:
         self._current_state = seg_name
         self.stateChanged.emit(seg_name)
-        self.logMessage.emit(seg_name)
+        self.logMessage.emit(f"STATE: {seg_name}")
 
         if self._stop_requested:
             self._signal_error("Gestoppt")
@@ -222,7 +224,8 @@ class BaseProcessStatemachine(QtCore.QObject):
                 self._retry_count += 1
                 self._on_enter_segment(self._current_state)
             else:
-                self._signal_error(res)
+                # KRITISCH: Fehlermeldung setzen und Statemachine in s_err zwingen
+                self._signal_error(f"{res} seg={self._current_state}")
             return
 
         # remember that this segment has been planned at least once
@@ -302,9 +305,6 @@ class BaseProcessStatemachine(QtCore.QObject):
         if self._current_state:
             self._seen_planned_ok[self._current_state] = False
 
-        # IMPORTANT: DO NOT clear step buffers here.
-        # They represent the segment accumulation (MOVE_RECIPE multi-step).
-
     @QtCore.pyqtSlot(object)
     def _on_planned_traj_changed(self, obj: object) -> None:
         self._last_planned_any = obj
@@ -331,7 +331,7 @@ class BaseProcessStatemachine(QtCore.QObject):
 
         # bounded wait for late delivery
         if executed is None or planned is None:
-            deadline = time.monotonic() + 0.25  # 250ms total
+            deadline = time.monotonic() + 0.35  # Increased timeout for pairing
             while time.monotonic() < deadline:
                 time.sleep(0.01)  # 10ms
                 planned2, executed2 = _get_pair()
@@ -462,57 +462,43 @@ class BaseProcessStatemachine(QtCore.QObject):
         try:
             if hasattr(obj, "joint_names") and hasattr(obj, "points"):
                 out = cls._jt_msg_to_dict(obj)
-                if out:
-                    return out
-        except Exception:
-            pass
+                if out: return out
+        except Exception: pass
 
         try:
             jt = getattr(obj, "joint_trajectory", None)
             if jt is not None:
                 out = cls._jt_msg_to_dict(jt)
-                if out:
-                    return out
-        except Exception:
-            pass
+                if out: return out
+        except Exception: pass
 
         if isinstance(obj, dict) and obj:
             try:
                 if isinstance(obj.get("joint_names"), list) and isinstance(obj.get("points"), list):
                     return obj
-            except Exception:
-                pass
+            except Exception: pass
 
             for k in ("joint_trajectory", "planned", "executed", "trajectory", "result", "plan"):
-                try:
-                    v = obj.get(k)
-                except Exception:
-                    v = None
+                try: v = obj.get(k)
+                except Exception: v = None
                 out = cls._jt_from_any(v, _depth=_depth + 1, _max_depth=_max_depth)
-                if out:
-                    return out
+                if out: return out
 
             for v in obj.values():
                 out = cls._jt_from_any(v, _depth=_depth + 1, _max_depth=_max_depth)
-                if out:
-                    return out
+                if out: return out
 
-        # Common attributes
         for attr in ("trajectory", "robot_trajectory", "planned_trajectory", "executed_trajectory", "result", "plan"):
-            try:
-                v = getattr(obj, attr, None)
-            except Exception:
-                v = None
+            try: v = getattr(obj, attr, None)
+            except Exception: v = None
             out = cls._jt_from_any(v, _depth=_depth + 1, _max_depth=_max_depth)
-            if out:
-                return out
+            if out: return out
 
         return None
 
     # ---------------- concatenation (merged JT per segment) ----------------
 
-    def _concat_joint_traj_dicts(self, items: List[Any]) -> Optional[Dict[str, Any]]:
-        dicts = [d for d in (items or []) if isinstance(d, dict) and d.get("joint_names") and d.get("points")]
+    def _concat_joint_traj_dicts(self, dicts: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         if not dicts:
             return None
 
@@ -560,72 +546,44 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     def _signal_error(self, msg: str) -> None:
         self._error_msg = msg
+        _LOG.error(f"Statemachine Error: {msg}")
         QtCore.QTimer.singleShot(0, self._sig_error.emit)
 
     def _on_finished(self) -> None:
         planned, executed = self._build_traj_payload()
-        p_segs = planned.get("segments") if isinstance(planned, dict) else None
-        e_segs = executed.get("segments") if isinstance(executed, dict) else None
-
-        if not (isinstance(p_segs, dict) and p_segs) or not (isinstance(e_segs, dict) and e_segs):
-            self.notifyError.emit(
-                "Validate/Run finished, but trajectory capture is empty (segments={}). "
-                "Check: MoveItPyNode publishes planned/executed before motion_result AND "
-                "RosBridge.moveit_planned_trajectory()/moveit_executed_trajectory() return non-None."
-            )
-            self._cleanup()
-            return
-
         self._rr.set_planned(traj=planned)
         self._rr.set_executed(traj=executed)
         self.notifyFinished.emit(self._rr.to_process_payload())
         self._cleanup()
 
     def _on_error(self) -> None:
-        self.notifyError.emit(self._error_msg or "Fehler")
-        self._cleanup()
-
-    def _cleanup(self) -> None:
+        """
+        STOP FIX: Bei Fehlern Bewegung sofort stoppen und aufräumen.
+        """
         try:
-            if self._moveitpy_signals is not None:
-                if self._motion_sig_connected:
-                    try:
-                        self._moveitpy_signals.motionResultChanged.disconnect(self._on_motion_result)
-                    except Exception:
-                        pass
-                if self._traj_sig_connected:
-                    try:
-                        self._moveitpy_signals.plannedTrajectoryChanged.disconnect(self._on_planned_traj_changed)
-                    except Exception:
-                        pass
-                    try:
-                        self._moveitpy_signals.executedTrajectoryChanged.disconnect(self._on_executed_traj_changed)
-                    except Exception:
-                        pass
-                if self._clear_sig_connected:
-                    try:
-                        self._moveitpy_signals.trajCacheClearChanged.disconnect(self._on_traj_cache_clear)
-                    except Exception:
-                        pass
+            self._ros.moveit_stop()
+        except Exception:
+            pass
+        try:
+            fn = getattr(self._ros, "moveit_set_segment", None)
+            if callable(fn): fn("")
         except Exception:
             pass
 
+        self.notifyError.emit(self._error_msg or "Unbekannter Fehler")
+        self._cleanup()
+
+    def _cleanup(self) -> None:
         if self._machine:
             try:
                 self._machine.stop()
-            except Exception:
-                pass
-            try:
                 self._machine.deleteLater()
-            except Exception:
-                pass
+            except Exception: pass
             self._machine = None
 
         if self._log_handler:
-            try:
-                _LOG.removeHandler(self._log_handler)
-            except Exception:
-                pass
+            try: _LOG.removeHandler(self._log_handler)
+            except Exception: pass
             self._log_handler = None
 
     # ---------------- Public ----------------
@@ -656,34 +614,19 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
-        """
-        STOP FIX: Stoppt Bewegung UND setzt Segment-Kontext auf leer.
-        """
-        if self._stop_requested:
-            return
+        if self._stop_requested: return
         self._stop_requested = True
         self._stopped = True
 
-        try:
-            self._ros.moveit_stop()
-        except Exception:
-            pass
+        try: self._ros.moveit_stop()
+        except Exception: pass
 
-        # CRITICAL FIX: Segment-Kontext in ROS löschen!
         try:
             fn = getattr(self._ros, "moveit_set_segment", None)
-            if callable(fn):
-                fn("")
-        except Exception:
-            pass
+            if callable(fn): fn("")
+        except Exception: pass
 
-        try:
-            QtCore.QTimer.singleShot(0, lambda: self._signal_error("Gestoppt"))
-        except Exception:
-            try:
-                self._signal_error("Gestoppt")
-            except Exception:
-                pass
+        QtCore.QTimer.singleShot(0, lambda: self._signal_error("Gestoppt"))
 
     # ---------------- Hooks ----------------
 
@@ -694,11 +637,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         raise NotImplementedError
 
     def _on_segment_ok(self, seg_name: str) -> None:
-        # STRICT: only mark segment complete if we could build BOTH planned+executed
-        before_err = self._error_msg
         self._snapshot_trajs_for_segment(seg_name)
-        if self._error_msg and self._error_msg != before_err:
-            self._signal_error(self._error_msg)
 
     def _should_transition_on_ok(self, seg_name: str, result: str) -> bool:
         return True
@@ -725,16 +664,13 @@ class BaseProcessStatemachine(QtCore.QObject):
         if not (isinstance(jt, dict) and isinstance(jt.get("joint_names"), list) and isinstance(jt.get("points"), list)):
             return None
         jn = [str(x) for x in (jt.get("joint_names") or [])]
-        if not jn:
-            return None
+        if not jn: return None
 
         out_pts: List[Dict[str, Any]] = []
         for p in (jt.get("points") or []):
-            if not isinstance(p, dict):
-                continue
+            if not isinstance(p, dict): continue
             pos = p.get("positions") or []
-            if not isinstance(pos, list) or len(pos) != len(jn):
-                continue
+            if not isinstance(pos, list) or len(pos) != len(jn): continue
 
             tfs = p.get("time_from_start")
             sec, nsec = 0, 0
@@ -743,12 +679,9 @@ class BaseProcessStatemachine(QtCore.QObject):
             elif isinstance(tfs, (list, tuple)) and len(tfs) == 2:
                 sec, nsec = int(tfs[0]), int(tfs[1])
 
-            out_pts.append(
-                {
-                    "positions": [float(x) for x in pos],
-                    "time_from_start": [int(sec), int(nsec)],
-                }
-            )
-        if not out_pts:
-            return None
+            out_pts.append({
+                "positions": [float(x) for x in pos],
+                "time_from_start": [int(sec), int(nsec)],
+            })
+        if not out_pts: return None
         return {"joint_names": jn, "points": out_pts}

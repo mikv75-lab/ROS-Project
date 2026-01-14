@@ -105,7 +105,7 @@ recipes:
   - id: "hemisphere"
     substrate_type: "hemisphere"
     tools: ["spray_nozzle_01", "spray_nozzle_02"]
-    substrates: ["hemisphere_d100","hemisphere_d150", "hemisphere_d200"]
+    substrates: ["hemisphere_d100_h2mm","hemisphere_d100_h5mm","hemisphere_d100","hemisphere_d100_h10mm","hemisphere_d150", "hemisphere_d200"]
     substrate_mounts: ["circle_d240_h50", "flat_240x240x50"]
     parameters: {}
     sides:

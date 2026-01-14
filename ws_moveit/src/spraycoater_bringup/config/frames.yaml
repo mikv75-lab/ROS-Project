@@ -9,7 +9,6 @@ frames:
   cage:            "cage"
   substrate_mount: "substrate_mount"
   scene:           "scene"
-  substrate:       "substrate"
 
   home:            "home"
   service:         "service"
