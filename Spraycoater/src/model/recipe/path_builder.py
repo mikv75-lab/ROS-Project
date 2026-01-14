@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# File: src/model/recipe/path_builder.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -45,15 +46,10 @@ class PathBuilder:
       - path.polyhelix.pyramid
       - path.polyhelix.cube
 
-    Alternativ:
-      - points_mm oder polyline_mm im dict -> direkt übernommen
+    FIX: Berücksichtigt 'recipe.parameters' (z.B. max_points, sample_step_mm) vorrangig.
+    FIX: Mäander erzeugt nun immer eine durchgängige, rund verbundene Bahn.
     """
 
-    # ------------------------------------------------------------------
-    # 🔒 SUPER-ROBUST:
-    # Falls irgendwo im Code doch noch PathBuilder(...) instanziiert wird,
-    # darf es niemals "takes no arguments" werfen.
-    # ------------------------------------------------------------------
     def __new__(cls, *args: Any, **kwargs: Any):
         return super().__new__(cls)
 
@@ -73,6 +69,11 @@ class PathBuilder:
         sample_step_mm: float,
         max_points: int,
     ) -> PathData:
+        # 1. Parameter aus dem Rezept (parameters:) priorisieren
+        globals_params, sample_step_mm, max_points = PathBuilder._resolve_params(
+            recipe, globals_params, sample_step_mm, max_points
+        )
+
         PathBuilder._validate_inputs(globals_params, sample_step_mm, max_points)
         p = PathBuilder._extract_path_for_side(recipe, side)
 
@@ -87,7 +88,7 @@ class PathBuilder:
 
         P = np.asarray(pd.points_mm, dtype=float).reshape(-1, 3)
         if P.shape[0] < 2:
-            raise ValueError(f"PathBuilder: side '{side}' hat zu wenige Punkte ({P.shape[0]}).")
+            pass # Leere Pfade erlaubt
 
         return pd
 
@@ -100,21 +101,26 @@ class PathBuilder:
         sample_step_mm: float,
         max_points: int,
     ) -> List[Tuple[str, PathData]]:
+        # Auch hier vorab auflösen, damit Validierung korrekt ist
+        globals_params, sample_step_mm, max_points = PathBuilder._resolve_params(
+            recipe, globals_params, sample_step_mm, max_points
+        )
+
         PathBuilder._validate_inputs(globals_params, sample_step_mm, max_points)
+        
         out: List[Tuple[str, PathData]] = []
         for s in sides:
-            out.append(
-                (
-                    s,
-                    PathBuilder.from_side(
-                        recipe,
-                        side=s,
-                        globals_params=globals_params,
-                        sample_step_mm=sample_step_mm,
-                        max_points=max_points,
-                    ),
+            try:
+                pd = PathBuilder.from_side(
+                    recipe,
+                    side=s,
+                    globals_params=globals_params,
+                    sample_step_mm=sample_step_mm,
+                    max_points=max_points,
                 )
-            )
+                out.append((s, pd))
+            except (KeyError, ValueError):
+                continue
         return out
 
     # ---------------------------
@@ -122,12 +128,48 @@ class PathBuilder:
     # ---------------------------
 
     @staticmethod
+    def _resolve_params(
+        recipe: Any,
+        g_params: Dict[str, Any],
+        step: float,
+        max_pts: int
+    ) -> Tuple[Dict[str, Any], float, int]:
+        eff_globals = dict(g_params)
+        
+        rec_params = {}
+        if isinstance(recipe, dict):
+            rec_params = recipe.get("parameters", {}) or {}
+        else:
+            rec_params = getattr(recipe, "parameters", {}) or {}
+            
+        if not isinstance(rec_params, dict):
+            rec_params = {}
+
+        if "sample_step_mm" in rec_params:
+            try:
+                val = float(rec_params["sample_step_mm"])
+                if val > 0:
+                    step = val
+            except Exception: pass
+
+        if "max_points" in rec_params:
+            try:
+                val = int(rec_params["max_points"])
+                if val >= 2:
+                    max_pts = val
+            except Exception: pass
+
+        for k in ("stand_off_mm", "max_angle_deg"):
+            if k in rec_params:
+                eff_globals[k] = rec_params[k]
+
+        return eff_globals, step, max_pts
+
+    @staticmethod
     def _validate_inputs(g: Dict[str, Any], sample_step_mm: float, max_points: int) -> None:
         if not isinstance(g, dict):
             raise ValueError("PathBuilder: globals_params muss ein Dict sein.")
-        missing = [k for k in ("stand_off_mm", "max_angle_deg") if k not in g]
-        if missing:
-            raise ValueError(f"PathBuilder: globals_params fehlen Keys: {missing}")
+        
         if not (isinstance(sample_step_mm, (int, float)) and float(sample_step_mm) > 0.0):
             raise ValueError("PathBuilder: sample_step_mm muss > 0 sein.")
         if not (isinstance(max_points, int) and max_points >= 2):
@@ -154,8 +196,10 @@ class PathBuilder:
     @staticmethod
     def _with_globals_meta(pd: PathData, g: Dict[str, Any]) -> PathData:
         meta = dict(pd.meta or {})
-        meta["stand_off_mm"] = float(g["stand_off_mm"])
-        meta["max_angle_deg"] = float(g["max_angle_deg"])
+        if "stand_off_mm" in g:
+            meta["stand_off_mm"] = float(g["stand_off_mm"])
+        if "max_angle_deg" in g:
+            meta["max_angle_deg"] = float(g["max_angle_deg"])
         meta = PathBuilder._json_safe_meta(meta)
         return PathData(points_mm=np.asarray(pd.points_mm, dtype=float).reshape(-1, 3), meta=meta)
 
@@ -193,7 +237,8 @@ class PathBuilder:
             pbs = dict(getattr(recipe, "paths_by_side", {}) or {})
 
         if not pbs:
-            raise KeyError("PathBuilder: recipe.paths_by_side ist leer.")
+            pass 
+            
         if side not in pbs:
             raise KeyError(f"PathBuilder: side '{side}' nicht in paths_by_side.")
 
@@ -239,7 +284,7 @@ class PathBuilder:
         else:
             raise ValueError(f"PathBuilder: unbekannter path.type: {raw_type!r}")
 
-        return PathData(points_mm=P, meta={"source": ptype})
+        return PathData(points_mm=P, meta={"source": ptype, "params": p})
 
     # ============================================================
     # Generators
@@ -247,49 +292,212 @@ class PathBuilder:
 
     @staticmethod
     def _meander_plane(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
+        """
+        Erzeugt einen durchgängigen Mäander-Pfad (Schlangenlinie).
+        Verbindet die Zeilen automatisch mit einem 180° Bogen (rund).
+        """
         area = p.get("area", {}) or {}
         shape = str(area.get("shape", "rect")).lower()
 
         cx, cy = (area.get("center_xy_mm") or [0.0, 0.0])
         pitch = max(1e-6, float(p.get("pitch_mm", 5.0)))
         angle = float(p.get("angle_deg", 0.0))
-        boust = bool(p.get("boustrophedon", True))
         edge_extend = float(p.get("edge_extend_mm", 0.0))
+        
+        margin = max(0.0, float(p.get("margin_mm", 0.0)))
+        start_corner = str(p.get("start", "auto")).lower()
+        
+        # Logik-Flags für Startpunkt
+        reverse_y = False
+        reverse_x_base = False
+        
+        if start_corner == "minx_maxy": # Top-Left
+            reverse_y = True
+        elif start_corner == "maxx_miny": # Bottom-Right
+            reverse_x_base = True
+        elif start_corner == "maxx_maxy": # Top-Right
+            reverse_y = True
+            reverse_x_base = True
 
-        rows = []
+        # 1. Zeilen-Segmente berechnen
+        line_segments = [] # [(x0, y), (x1, y)]
+        
         if shape in ("circle", "disk"):
-            R = float(area.get("radius_mm", 50.0))
-            ys = np.arange(-R, R + 1e-9, pitch)
-            for i, y in enumerate(ys):
+            R = max(0.0, float(area.get("radius_mm", 50.0)) - margin)
+            if R <= 0: return np.zeros((0,3), float)
+
+            # Anzahl Linien, zentriert um 0
+            n_lines = int(2.0 * R / pitch)
+            if n_lines < 1: n_lines = 1
+            ys = np.linspace(-(n_lines-1)*pitch/2.0, (n_lines-1)*pitch/2.0, n_lines)
+
+            if reverse_y: ys = ys[::-1]
+
+            for y in ys:
+                # Sehnenlänge im Kreis bei y
+                if abs(y) >= R: continue
                 span = math.sqrt(max(R * R - y * y, 0.0))
                 x0, x1 = -span - edge_extend, span + edge_extend
-                nseg = max(2, int((x1 - x0) / max(step, 1e-6)) + 1)
-                xs = np.linspace(x0, x1, nseg)
-                if boust and (i % 2 == 1):
-                    xs = xs[::-1]
-                rows.append(np.c_[xs, np.full_like(xs, y)])
+                line_segments.append(((x0, y), (x1, y)))
         else:
             sx, sy = area.get("size_mm", [100.0, 100.0])
-            hx, hy = 0.5 * float(sx), 0.5 * float(sy)
-            ys = np.arange(-hy, hy + 1e-9, pitch)
-            for i, y in enumerate(ys):
+            hx = max(0.0, 0.5 * float(sx) - margin)
+            hy = max(0.0, 0.5 * float(sy) - margin)
+            if hx <= 0 or hy <= 0: return np.zeros((0,3), float)
+
+            # Bereich ist 2*hy. Wir wollen Linien im Abstand pitch.
+            n_lines = int(2.0 * hy / pitch) + 1
+            # Startpunkt so wählen, dass es zentriert ist
+            # y_span = (n_lines-1)*pitch
+            # start = -y_span/2
+            start_y = -((n_lines - 1) * pitch) / 2.0
+            ys = np.array([start_y + i*pitch for i in range(n_lines)])
+            
+            if reverse_y: ys = ys[::-1]
+
+            for y in ys:
                 x0, x1 = -hx - edge_extend, hx + edge_extend
-                nseg = max(2, int((x1 - x0) / max(step, 1e-6)) + 1)
-                xs = np.linspace(x0, x1, nseg)
-                if boust and (i % 2 == 1):
-                    xs = xs[::-1]
-                rows.append(np.c_[xs, np.full_like(xs, y)])
+                line_segments.append(((x0, y), (x1, y)))
 
-        poly2d = np.vstack(rows) if rows else np.zeros((0, 2), dtype=float)
+        if not line_segments:
+            return np.zeros((0, 3), dtype=float)
 
+        # 2. Verbinden der Segmente zu einer durchgängigen Polyline
+        full_pts = []
+        
+        def discretize_line(p_start, p_end, step_size):
+            dist = math.hypot(p_end[0]-p_start[0], p_end[1]-p_start[1])
+            n = max(2, int(dist / max(step_size, 1e-6)) + 1)
+            ts = np.linspace(0, 1, n)
+            return [(p_start[0]*(1-t) + p_end[0]*t, p_start[1]*(1-t) + p_end[1]*t) for t in ts]
+
+        def discretize_arc_connect(p1, p2, step_size):
+            """Erzeugt einen Halbkreis von p1 nach p2."""
+            # Mittelpunkt
+            mx, my = (p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0
+            # Vektor P1->P2 (Basis des Halbkreises)
+            dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+            dist = math.hypot(dx, dy)
+            if dist < 1e-6: return [p1]
+            
+            radius = dist / 2.0
+            # Winkel der Basislinie
+            base_angle = math.atan2(dy, dx)
+            
+            # Wir wollen einen Bogen "nach außen". 
+            # Da wir abwechselnd hin und her fahren, ist "außen" immer in Laufrichtung X gesehen.
+            # Hier: Wir gehen immer +90 bis -90 grad relativ zur Basislinie?
+            # Einfacher: Parametrischer Halbkreis im 2D Raum.
+            
+            # Wir interpolieren Winkel von pi bis 0 (oder umgekehrt)
+            # p1 ist start, p2 ist ende.
+            # Startwinkel relativ zu Center: atan2(p1.y-my, p1.x-mx)
+            # Endwinkel relativ zu Center: atan2(p2.y-my, p2.x-mx)
+            
+            ang1 = math.atan2(p1[1]-my, p1[0]-mx)
+            ang2 = math.atan2(p2[1]-my, p2[0]-mx)
+            
+            # Wir wollen den kurzen Weg? Nein, wir wollen den Bogen "nach aussen".
+            # Meander läuft in Y. Verbindungen sind auch in Y.
+            # X ist die Scanrichtung.
+            # Verbindung ist i.d.R. vertikal (nur dy).
+            # Wir müssen einen Bogen machen, der sich in X ausdehnt.
+            
+            # arc length approx pi*r
+            n = max(4, int((math.pi * radius) / max(step_size, 1e-6)) + 1)
+            
+            pts = []
+            for i in range(1, n): # Start/Ende weglassen (werden von Linien gedeckt)
+                t = i / float(n)
+                # Linear angle interpolation? 
+                # Problem: ang1 und ang2 sind meist +/- 90 grad (vertikal)
+                # Wir müssen sicherstellen, dass wir den "richtigen" Halbkreis nehmen.
+                # Bei Meander: immer "nach außen" bezogen auf die Breite.
+                # Linker Rand (kleines X) -> Bogen nach -X.
+                # Rechter Rand (großes X) -> Bogen nach +X.
+                
+                # Check ob wir links oder rechts sind:
+                # mx ist die X-Position der Verbindung.
+                # Wenn mx < 0 (links der Mitte), dann bulge nach links.
+                # Wenn mx > 0 (rechts der Mitte), dann bulge nach rechts.
+                
+                # Aber wir rotieren am Ende. Also nutzen wir relative Koords vor Rotation.
+                # Center ist (0,0).
+                
+                bulge_dir = 1.0 if mx > 0 else -1.0
+                
+                # Parametrischer Halbkreis:
+                # P(t) = M + R * cos(phi)*u + R*sin(phi)*v
+                # u = (0, 1) (Vektor P1->P2 normalisiert)
+                # v = (1, 0) * bulge_dir (Vektor senkrecht dazu)
+                
+                u_vec = np.array([dx, dy]) / dist
+                v_vec = np.array([u_vec[1], -u_vec[0]]) # Rotate 90 deg
+                
+                # Wir wollen v_vec in Richtung bulge_dir (X-Achse) haben.
+                # Wenn wir am rechten Rand sind (X>0), soll der Bogen nach +X gehen.
+                if (v_vec[0] * bulge_dir) < 0:
+                    v_vec = -v_vec
+                
+                # Halbkreis Parameter s von -1 bis 1?
+                # Oder Winkel?
+                # Wir gehen von P1 nach P2.
+                # P1 ist bei winkel pi. P2 bei 0.
+                angle = math.pi * (1.0 - t) # pi -> 0
+                # Nein, cos/sin logic simpler:
+                # Halbkreisbogen über Vektor u, mit Höhe v.
+                # P(t) = M + (P1-M)*cos(theta) + v*R*sin(theta) ??
+                
+                # Einfachste Lösung:
+                # Interpoliere linear zwischen P1 und P2: L(t)
+                # Addiere Offset in v_vec Richtung: h = R * sin(t * pi)
+                
+                lin_pt = np.array(p1) * (1-t) + np.array(p2) * t
+                offset = v_vec * radius * math.sin(t * math.pi) # Sine bump
+                
+                pt = lin_pt + offset
+                pts.append((pt[0], pt[1]))
+                
+            return pts
+
+        current_rev = reverse_x_base 
+        
+        for i, (p0, p1) in enumerate(line_segments):
+            # Start/Ende der aktuellen Zeile festlegen
+            start = p1 if current_rev else p0
+            end   = p0 if current_rev else p1
+            
+            # 1. Verbindung vom vorherigen Zeilenende zum aktuellen Start
+            if i > 0:
+                prev_end = full_pts[-1]
+                # Runde Verbindung einfügen
+                connector = discretize_arc_connect(prev_end, start, step)
+                full_pts.extend(connector)
+            else:
+                full_pts.append(start)
+            
+            # 2. Die Zeile selbst
+            line_pts = discretize_line(start, end, step)
+            full_pts.extend(line_pts[1:]) # Startpunkt ist schon da
+            
+            # Richtung für nächste Zeile umkehren
+            current_rev = not current_rev
+
+        poly2d = np.array(full_pts, dtype=float)
+
+        # Rotation
         if abs(angle) > 1e-9 and poly2d.shape[0] > 0:
             th = math.radians(angle)
             R2 = np.array([[math.cos(th), -math.sin(th)],
                            [math.sin(th),  math.cos(th)]], dtype=float)
             poly2d = poly2d @ R2.T
 
+        # Offset Center
         poly2d += np.array([cx, cy], dtype=float)
+        
+        # Z-Koordinate hinzufügen
         P = np.c_[poly2d, np.zeros((poly2d.shape[0],), dtype=float)]
+        
         return PathBuilder._decimate(P, max_points)
 
     @staticmethod
@@ -298,19 +506,28 @@ class PathBuilder:
         r_outer = float(p.get("r_outer_mm", p.get("r_end_mm", 70.0)))
         r_inner = float(p.get("r_inner_mm", p.get("r_start_mm", 10.0)))
         pitch = max(1e-6, float(p.get("pitch_mm", 5.0)))
+        
+        z_level = float(p.get("z_mm", 10.0))
+        direction = str(p.get("direction", "ccw")).lower()
 
-        turns = max(int((r_outer - r_inner) / pitch), 1)
+        turns = max(int(abs(r_outer - r_inner) / pitch), 1)
         theta_max = 2.0 * math.pi * turns
 
-        dtheta = step / max(r_outer, 1e-6)
+        dtheta = step / max(max(r_outer, r_inner), 1e-6)
         N = int(theta_max / max(dtheta, 1e-6)) + 2
         theta = np.linspace(0.0, theta_max, N)
 
+        # Interpolation r_outer -> r_inner
         r = r_outer - (r_outer - r_inner) * (theta / theta_max)
+        
+        if direction == "cw":
+            theta = -theta
+
         x = cx + r * np.cos(theta)
         y = cy + r * np.sin(theta)
+        z = np.full_like(x, z_level)
 
-        P = np.c_[x, y, np.zeros_like(x)]
+        P = np.c_[x, y, z]
         return PathBuilder._decimate(P, max_points)
 
     @staticmethod
@@ -333,15 +550,17 @@ class PathBuilder:
         denom = math.sqrt(radius * radius + (pitch / (2.0 * math.pi)) ** 2)
         dtheta = max(1e-4, step / max(denom, 1e-9))
         N = int(theta_max / dtheta) + 2
-        theta = np.linspace(0.0, sgn * theta_max, N)
-
+        
+        raw_theta = np.linspace(0.0, theta_max, N)
+        
         if start_from == "top":
             z0 = height / 2.0 - m_top
-            z = z0 - (usable_h * (np.abs(theta) / theta_max))
+            z = z0 - (usable_h * (raw_theta / theta_max))
         else:
             z0 = -height / 2.0 + m_bot
-            z = z0 + (usable_h * (np.abs(theta) / theta_max))
+            z = z0 + (usable_h * (raw_theta / theta_max))
 
+        theta = sgn * raw_theta
         x = radius * np.cos(theta)
         y = radius * np.sin(theta)
 
@@ -505,45 +724,53 @@ class PathBuilder:
 
     @staticmethod
     def _polyhelix_pyramid(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
-        n = int(p.get("base_polygon_sides", 4))
-        n = min(128, max(3, n))
+        return PathBuilder._polyhelix_generic(p, step, max_points, is_cube=False)
 
-        edge_len = float(p.get("base_edge_len_mm", 100.0))
-        height = float(p.get("height_mm", 60.0))
+    @staticmethod
+    def _polyhelix_cube(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
+        return PathBuilder._polyhelix_generic(p, step, max_points, is_cube=True)
+
+    @staticmethod
+    def _polyhelix_generic(p: Dict[str, Any], step: float, max_points: int, is_cube: bool) -> np.ndarray:
+        if is_cube:
+            edge = float(p.get("edge_len_mm", 100.0))
+            n_sides = 4
+            R_base = 0 
+        else:
+            n_sides = int(p.get("base_polygon_sides", 4))
+            edge = float(p.get("base_edge_len_mm", 100.0))
+            R_base = edge / (2.0 * math.sin(math.pi / n_sides))
+
+        height = float(p.get("height_mm", 100.0))
         pitch = max(1e-6, float(p.get("pitch_mm", 6.0)))
         dz = max(1e-6, float(p.get("dz_mm", 1.0)))
-
-        phase = math.radians(float(p.get("start_phase_deg", 0.0)))
         stand_off = float(p.get("stand_off_mm", 25.0))
-        cap_top = max(0.0, float(p.get("cap_top_mm", 8.0)))
-
-        R_base = edge_len / (2.0 * math.sin(math.pi / n)) + stand_off
-
-        z_min = -0.5 * height
-        z_max = 0.5 * height - cap_top
-        if z_max <= z_min:
-            return np.zeros((0, 3), dtype=float)
-
-        def ngon_polyline(radius: float, samples_per_edge: int = 8) -> np.ndarray:
+        
+        if is_cube:
+            corner_r = float(p.get("corner_roll_radius_mm", 8.0))
+            hx = 0.5 * edge + stand_off
+            hy = 0.5 * edge + stand_off
+            base_poly = PathBuilder._polyline_rounded_rect(
+                0.0, 0.0, hx, hy, corner_r, step=max(1.0, step)
+            )
+            base2d = base_poly[:, :2]
+        else:
+            phase = math.radians(float(p.get("start_phase_deg", 0.0)))
+            R_actual = R_base + stand_off
             verts = []
-            for i in range(n):
-                a = phase + 2.0 * math.pi * (i / n)
-                verts.append([radius * math.cos(a), radius * math.sin(a)])
+            for i in range(n_sides):
+                a = phase + 2.0 * math.pi * (i / n_sides)
+                verts.append([R_actual * math.cos(a), R_actual * math.sin(a)])
             verts = np.asarray(verts, float)
-
             segs = []
-            for i in range(n):
+            for i in range(n_sides):
                 p0 = verts[i]
-                p1 = verts[(i + 1) % n]
-                m = max(2, samples_per_edge)
+                p1 = verts[(i + 1) % n_sides]
+                m = max(2, int(10)) 
                 t = np.linspace(0.0, 1.0, m, endpoint=False)
                 segs.append((1.0 - t)[:, None] * p0 + t[:, None] * p1)
-
             poly = np.vstack(segs)
-            return np.c_[poly, np.zeros((poly.shape[0],), dtype=float)]
-
-        base_poly = ngon_polyline(R_base, samples_per_edge=max(3, int(max(4.0, step) // 1.0)))
-        base2d = base_poly[:, :2]
+            base2d = poly
 
         seg = base2d[1:] - base2d[:-1]
         L_base = float(np.linalg.norm(seg, axis=1).sum())
@@ -551,67 +778,26 @@ class PathBuilder:
             return np.zeros((0, 3), dtype=float)
 
         ds_per_dz = L_base / pitch
+        cap_top = max(0.0, float(p.get("cap_top_mm", 8.0))) if not is_cube else 0.0
+        z_min = -0.5 * height
+        z_max = 0.5 * height - cap_top
 
         pts = []
         s_acc = 0.0
         z = z_min
+        
         while z <= z_max + 1e-9:
-            alpha = (z - z_min) / max((z_max - z_min), 1e-9)
-            scale = max(1e-3, 1.0 - alpha)
+            scale = 1.0
+            if not is_cube:
+                dist_from_top = (0.5*height) - z
+                scale = max(0.0, dist_from_top / height)
 
             poly_z = base2d * scale
-            pt_xy = PathBuilder._point_on_polyline_by_arclength(
-                np.c_[poly_z, np.zeros((poly_z.shape[0],), dtype=float)],
+            pt_xy_base = PathBuilder._point_on_polyline_by_arclength(
+                np.c_[base2d, np.zeros((base2d.shape[0],), dtype=float)],
                 s_acc,
             )
-            pts.append([float(pt_xy[0]), float(pt_xy[1]), float(z)])
-
-            s_acc += ds_per_dz * dz
-            z += dz
-
-        return PathBuilder._decimate(np.asarray(pts, dtype=float), max_points)
-
-    @staticmethod
-    def _polyhelix_cube(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
-        edge = float(p.get("edge_len_mm", 100.0))
-        height = float(p.get("height_mm", 100.0))
-        pitch = max(1e-6, float(p.get("pitch_mm", 6.0)))
-        dz = max(1e-6, float(p.get("dz_mm", 1.0)))
-
-        phase = math.radians(float(p.get("start_phase_deg", 0.0)))
-        stand_off = float(p.get("stand_off_mm", 25.0))
-        corner_r = float(p.get("corner_roll_radius_mm", 8.0))
-
-        hx = 0.5 * edge + stand_off
-        hy = 0.5 * edge + stand_off
-
-        base_poly = PathBuilder._polyline_rounded_rect(
-            0.0, 0.0, hx, hy, corner_r, step=max(1.0, step)
-        )
-        base_xy = base_poly[:, :2]
-
-        if abs(phase) > 1e-12:
-            R2 = np.array([[math.cos(phase), -math.sin(phase)],
-                           [math.sin(phase),  math.cos(phase)]], dtype=float)
-            base_xy = base_xy @ R2.T
-
-        seg = base_xy[1:] - base_xy[:-1]
-        L = float(np.linalg.norm(seg, axis=1).sum())
-        if L <= 1e-9:
-            return np.zeros((0, 3), dtype=float)
-
-        z_min = -0.5 * height
-        z_max = 0.5 * height
-        ds_per_dz = L / pitch
-
-        pts = []
-        s_acc = 0.0
-        z = z_min
-        while z <= z_max + 1e-9:
-            pt_xy = PathBuilder._point_on_polyline_by_arclength(
-                np.c_[base_xy, np.zeros((base_xy.shape[0],), dtype=float)],
-                s_acc,
-            )
+            pt_xy = pt_xy_base * scale
             pts.append([float(pt_xy[0]), float(pt_xy[1]), float(z)])
 
             s_acc += ds_per_dz * dz

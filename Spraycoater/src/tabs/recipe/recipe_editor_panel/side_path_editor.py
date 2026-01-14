@@ -58,6 +58,12 @@ class Vec2Edit(QWidget):
         sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
         self.setSizePolicy(sp)
 
+    def set_limits(self, minv: float, maxv: float):
+        self.x.setMinimum(minv)
+        self.x.setMaximum(maxv)
+        self.y.setMinimum(minv)
+        self.y.setMaximum(maxv)
+
     def set(self, v: Sequence[float]) -> None:
         self.x.setValue(float(v[0] if v else 0.0))
         self.y.setValue(float(v[1] if v and len(v) > 1 else 0.0))
@@ -76,24 +82,18 @@ def _compact_form(f: QFormLayout) -> None:
 
 def _intish(*vals: Any) -> bool:
     """True, wenn alle Werte integer-kompatibel sind (z. B. step/min/max)."""
-    return all(float(v).is_integer() for v in vals)
+    try:
+        return all(float(v).is_integer() for v in vals)
+    except:
+        return False
 
 
 class SidePathEditor(QWidget):
     """
-    Editor für genau eine Side.
-
-    Oben:
-      - Path-Type (Combo)
-
-    Unten:
-      - links:  Stack der Path-Parameter (abhängig vom Type)
-      - rechts: Path-Planner (role="path")
-
-    SSoT (strict):
-      - allowed types / default_path kommen aus RecipeStore.allowed_and_default_for(rec_def, side)
-      - schemas kommen strikt aus RecipeStore.schema_for_type_strict(ptype)
-      - YAML-Key: allowed_path_types (nicht allowed_types)
+    Editor für eine Seite. Baut sich VOLLSTÄNDIG dynamisch aus dem RecipeStore auf.
+    
+    1. Holt erlaubte Typen aus recipe_catalog.yaml (für das aktuelle Rezept-Template).
+    2. Holt Parameter-Schema aus recipe_params.yaml (min/max/defaults).
     """
 
     def __init__(
@@ -109,15 +109,8 @@ class SidePathEditor(QWidget):
         self.store = store
         self.ctx = ctx
 
-        # contract:
-        # {
-        #   "allowed_types": [...],          # intern normalisiert
-        #   "default_path": {...},
-        #   "schemas": { ptype: {param: spec, ...}, ... }
-        # }
         self._side_cfg: Dict[str, Any] = {}
-
-        # ptype -> (page, fields_map, params_schema)
+        # ptype -> (page_widget, fields_map={key: (widget, kind, spec)}, params_schema)
         self._type_pages: Dict[str, Tuple[QWidget, Dict[str, Tuple[QWidget, str, Dict[str, Any]]], Dict[str, Any]]] = {}
 
         root = QVBoxLayout(self)
@@ -138,6 +131,7 @@ class SidePathEditor(QWidget):
         bottom.setSpacing(8)
         root.addLayout(bottom)
 
+        # Links: Parameter-Stack
         self.stack = QStackedWidget(self)
         sp_stack = self.stack.sizePolicy()
         sp_stack.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
@@ -145,6 +139,7 @@ class SidePathEditor(QWidget):
         self.stack.setSizePolicy(sp_stack)
         bottom.addWidget(self.stack, 3)
 
+        # Rechts: Planner Settings
         self.pathPlanner = PlannerGroupBox(
             parent=self,
             title="Path planner",
@@ -168,31 +163,21 @@ class SidePathEditor(QWidget):
 
     def enable_auto_reset(self, rec_def: Dict[str, Any], side: str) -> None:
         """
-        Strict SSoT:
-          - liest side_cfg aus store.allowed_and_default_for(rec_def, side)
-          - erwartet YAML-Key: allowed_path_types (list[str])
-          - baut schemas strikt via store.schema_for_type_strict(ptype)
-          - setzt allowed types + default_path in UI
-
-        Wirft KeyError, wenn irgendetwas fehlt/inkonsistent ist.
+        Initialisiert den Editor basierend auf dem Template (rec_def) und dem Store.
         """
         side_cfg = self.store.allowed_and_default_for(rec_def, side)
-        if not isinstance(side_cfg, dict):
-            raise TypeError(f"Side '{side}': sides[{side}] ist kein dict (got {type(side_cfg)}).")
-
+        
+        # Erlaubte Typen laden
         allowed = side_cfg.get("allowed_path_types")
-        if not isinstance(allowed, list) or not [x for x in allowed if str(x).strip()]:
-            raise KeyError(f"Side '{side}': allowed_path_types fehlt/leer in recipe_catalog.sides")
+        if not isinstance(allowed, list) or not allowed:
+            # Fallback oder Fehler. Hier Fehler, da Config kaputt wäre.
+            raise KeyError(f"Side '{side}': allowed_path_types fehlt/leer.")
 
         allowed_types = [str(x).strip() for x in allowed if str(x).strip()]
 
-        default_path = side_cfg.get("default_path")
-        if not isinstance(default_path, dict):
-            raise KeyError(f"Side '{side}': default_path fehlt oder ist kein dict.")
-        if "type" not in default_path or not str(default_path.get("type") or "").strip():
-            raise KeyError(f"Side '{side}': default_path.type fehlt/leer.")
-
-        # build schemas strictly for each allowed type
+        default_path = side_cfg.get("default_path") or {}
+        
+        # Schemas für alle erlaubten Typen aus dem Store laden (recipe_params.yaml)
         schemas: Dict[str, Any] = {}
         for ptype in allowed_types:
             schemas[ptype] = dict(self.store.schema_for_type_strict(ptype) or {})
@@ -203,15 +188,15 @@ class SidePathEditor(QWidget):
             "schemas": schemas,
         }
 
-        # build pages strictly from schemas
+        # Dropdown & Pages aufbauen
         self.set_allowed_types(allowed_types)
 
-        # apply default path (inject cfg so apply_default_path can rebuild if needed)
+        # Default anwenden (nur initial, wird später durch Model überschrieben)
         dp = dict(default_path)
         dp["_side_cfg"] = dict(self._side_cfg)
         self.apply_default_path(dp)
 
-    # ------------------------------------------------------------------ pages
+    # ------------------------------------------------------------------ Pages Builder
 
     def _clear_pages(self) -> None:
         self._type_pages.clear()
@@ -221,25 +206,8 @@ class SidePathEditor(QWidget):
             w.deleteLater()
 
     def set_allowed_types(self, types: List[str]) -> None:
-        """
-        Strict:
-          - schemas für alle types müssen in self._side_cfg["schemas"] existieren
-          - keine stillen Fallbacks
-        """
-        allowed = [str(t).strip() for t in (types or []) if str(t).strip()]
-        if not allowed:
-            raise KeyError(f"Side '{self.side_name}': allowed types leer.")
-
-        schemas = self._side_cfg.get("schemas")
-        if not isinstance(schemas, dict):
-            raise KeyError(f"Side '{self.side_name}': _side_cfg['schemas'] fehlt oder ist kein dict.")
-
-        for ptype in allowed:
-            if ptype not in schemas or not isinstance(schemas.get(ptype), dict) or not schemas.get(ptype):
-                raise KeyError(
-                    f"Side '{self.side_name}': Schema fehlt/leer für type '{ptype}' "
-                    f"(erwartet via RecipeStore.schema_for_type_strict)."
-                )
+        allowed = [str(t).strip() for t in types if str(t).strip()]
+        schemas = self._side_cfg.get("schemas", {})
 
         with QSignalBlocker(self.type_combo):
             self.type_combo.clear()
@@ -248,70 +216,123 @@ class SidePathEditor(QWidget):
         self._clear_pages()
 
         for ptype in allowed:
-            params = dict(schemas[ptype] or {})
-            page, fields_map = self._build_page_for_type(ptype, params)
-            self._type_pages[ptype] = (page, fields_map, params)
+            # Schema für diesen Typ holen
+            params_schema = dict(schemas.get(ptype) or {})
+            
+            # Seite dynamisch generieren
+            page, fields_map = self._build_page_for_type(ptype, params_schema)
+            
+            self._type_pages[ptype] = (page, fields_map, params_schema)
             self.stack.addWidget(page)
 
+        # Reset selection
         with QSignalBlocker(self.type_combo):
-            self.type_combo.setCurrentIndex(0)
+            if self.type_combo.count() > 0:
+                self.type_combo.setCurrentIndex(0)
+        
         self._on_type_changed(0)
 
     def _build_page_for_type(
         self,
         ptype: str,
-        params: Dict[str, Any],
+        params_schema: Dict[str, Any],
     ) -> Tuple[QWidget, Dict[str, Tuple[QWidget, str, Dict[str, Any]]]]:
-        """Erzeugt eine Parameter-Page für genau einen Path-Type."""
+        """
+        Baut die Eingabemaske basierend auf der YAML-Definition.
+        Nutzt min/max/step/default/description aus dem Schema.
+        """
         page = QWidget(self)
         form = QFormLayout(page)
         _compact_form(form)
 
-        sp_page = page.sizePolicy()
-        sp_page.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        sp_page.setVerticalPolicy(QSizePolicy.Policy.Preferred)
-        page.setSizePolicy(sp_page)
+        # Sortierung: Geometrie oben, Details unten
+        def sort_key(k: str) -> tuple:
+            k = str(k)
+            prio = 50
+            if k.startswith("area."): prio = 10
+            elif "radius" in k: prio = 11
+            elif "size" in k: prio = 12
+            elif "pitch" in k: prio = 20
+            elif "loops" in k: prio = 21
+            elif "direction" in k: prio = 30
+            elif "angle" in k and "predispense" not in k and "retreat" not in k: prio = 31
+            elif "start" in k: prio = 32
+            elif "boustrophedon" in k: prio = 33
+            elif "margin" in k or "offset" in k: prio = 40
+            elif "z_mm" in k or "height" in k: prio = 41
+            elif "predispense" in k: prio = 90
+            elif "retreat" in k: prio = 91
+            return (prio, k)
 
+        keys = sorted(list(params_schema.keys()), key=sort_key)
         fields: Dict[str, Tuple[QWidget, str, Dict[str, Any]]] = {}
 
-        keys = sorted(list(params.keys()), key=lambda k: (0 if str(k).endswith("shape") else 1, str(k)))
-
         for key in keys:
-            spec = dict(params.get(key) or {})
+            spec = dict(params_schema.get(key) or {})
             t = str(spec.get("type", "")).strip().lower()
-
+            
+            # Defaults und Limits aus YAML
+            default_val = spec.get("default")
+            desc_text = str(spec.get("description") or "")
+            
             w: Optional[QWidget] = None
             kind: str = ""
             row_label = str(key)
 
             if t == "boolean":
                 w = QCheckBox(str(key), page)
+                # Default setzten, falls im Schema definiert
+                if default_val is not None:
+                    w.setChecked(bool(default_val))
                 kind = "check"
                 row_label = ""
+                
             elif t == "string":
                 w = QLineEdit(page)
+                if default_val is not None:
+                    w.setText(str(default_val))
                 kind = "string"
+                
             elif t == "enum":
                 w = QComboBox(page)
                 kind = "combo"
-                w.addItems([str(v) for v in (spec.get("values") or [])])
+                vals = spec.get("values") or []
+                w.addItems([str(v) for v in vals])
+                if default_val is not None:
+                    idx = w.findText(str(default_val))
+                    if idx >= 0: w.setCurrentIndex(idx)
+                    
             elif t == "vec2":
                 step_spec = spec.get("step", 0.1)
                 step = float(step_spec[0] if isinstance(step_spec, (list, tuple)) and step_spec else step_spec)
                 unit = str(spec.get("unit", "") or "")
                 w = Vec2Edit(step=step, unit=unit, parent=page)
+                
+                # Min/Max für Vec2 aus YAML lesen (falls vorhanden)
+                min_spec = spec.get("min")
+                max_spec = spec.get("max")
+                if isinstance(min_spec, (list, tuple)) and isinstance(max_spec, (list, tuple)):
+                     w.set_limits(float(min_spec[0]), float(max_spec[0]))
+                
+                if default_val is not None and isinstance(default_val, (list, tuple)):
+                    w.set(default_val)
+                    
                 kind = "vec2"
+                
             elif t == "number":
                 step = float(spec.get("step", 1.0))
                 minv = float(spec.get("min", 0.0))
-                maxv = float(spec.get("max", 0.0))
+                maxv = float(spec.get("max", 9999.0))
                 unit = str(spec.get("unit", "") or "")
 
-                if _intish(step, minv, maxv):
+                # Entscheidung Int vs Double SpinBox
+                if _intish(step, minv, maxv, default_val if default_val is not None else 0):
                     sb = QSpinBox(page)
                     sb.setMinimum(int(minv))
                     sb.setMaximum(int(maxv))
                     sb.setSingleStep(int(step))
+                    if default_val is not None:
+                        sb.setValue(int(default_val))
                     w = sb
                     kind = "int"
                 else:
@@ -319,11 +340,14 @@ class SidePathEditor(QWidget):
                     sb.setMinimum(minv)
                     sb.setMaximum(maxv)
                     sb.setSingleStep(step)
-
-                    s = str(spec.get("step", "1"))
-                    decimals = 0 if "." not in s else min(6, max(1, len(s.split(".")[1])))
+                    
+                    # Decimals aus step ableiten (0.1 -> 1, 0.05 -> 2)
+                    s_step = str(spec.get("step", "1"))
+                    decimals = 0 if "." not in s_step else min(6, max(1, len(s_step.split(".")[1])))
                     sb.setDecimals(decimals)
-
+                    
+                    if default_val is not None:
+                        sb.setValue(float(default_val))
                     w = sb
                     kind = "double"
 
@@ -331,38 +355,26 @@ class SidePathEditor(QWidget):
                     suf = (" " + unit) if not unit.startswith(" ") else unit
                     w.setSuffix(suf)
             else:
-                # strict: ignore unknown types
-                continue
+                continue # Unbekannter Typ
 
             assert w is not None
 
-            sp = w.sizePolicy()
-            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-            sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
-            w.setSizePolicy(sp)
+            # Layout Policy
+            w.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
-            if spec.get("help") and hasattr(w, "setToolTip"):
-                w.setToolTip(str(spec["help"]))
-
+            # Tooltip aus YAML description
+            if desc_text:
+                w.setToolTip(desc_text)
+                
             fields[str(key)] = (w, kind, spec)
             form.addRow(row_label, w)
 
         self._wire_visibility(fields, form=form)
         return page, fields
 
-    # ------------------------------------------------------------------ visibility
+    # ------------------------------------------------------------------ visibility logic
 
-    def _wire_visibility(
-        self,
-        fields: Dict[str, Tuple[QWidget, str, Dict[str, Any]]],
-        *,
-        form: QFormLayout,
-    ) -> None:
-        """
-        visible_if:
-          key:
-            visible_if: { other_key: other_value }
-        """
+    def _wire_visibility(self, fields: Dict[str, Tuple[QWidget, str, Dict[str, Any]]], *, form: QFormLayout) -> None:
         deps: Dict[str, Tuple[str, Any]] = {}
         for key, (_w, _kind, spec) in fields.items():
             vcond = spec.get("visible_if")
@@ -370,200 +382,153 @@ class SidePathEditor(QWidget):
                 dep_key, dep_val = next(iter(vcond.items()))
                 deps[key] = (str(dep_key), dep_val)
 
-        def _value_of(widget: QWidget, kind: str) -> Any:
-            if kind == "double":
-                return float(getattr(widget, "value")())
-            if kind == "int":
-                return int(getattr(widget, "value")())
-            if kind == "check":
-                return bool(getattr(widget, "isChecked")())
-            if kind == "combo":
-                return str(getattr(widget, "currentText")())
-            if kind == "string":
-                return str(getattr(widget, "text")())
-            if kind == "vec2" and isinstance(widget, Vec2Edit):
-                return widget.get()
+        def _get_val(k):
+            w, kind, _ = fields[k]
+            if kind == "check": return w.isChecked()
+            if kind == "combo": return w.currentText()
+            if kind == "int": return w.value()
+            if kind == "double": return w.value()
+            if kind == "string": return w.text()
+            if kind == "vec2": return w.get()
             return None
 
-        def _form_row_for_widget(w: QWidget) -> int:
-            idx = form.indexOf(w)
-            if idx >= 0:
-                row, _role = form.getItemPosition(idx)
-                return row
+        def _update():
+            # Aktuelle Werte holen
+            vals = {k: _get_val(k) for k in fields}
+            for target_key, (src_key, expected_val) in deps.items():
+                if src_key not in vals: continue
+                
+                # Sichtbarkeit prüfen (String-Vergleich für Robustheit bei Enums/Bools)
+                is_visible = (str(vals[src_key]) == str(expected_val))
+                
+                # Row im FormLayout finden und verstecken/zeigen
+                w_target = fields[target_key][0]
+                idx = form.indexOf(w_target)
+                if idx >= 0:
+                    row, _ = form.getItemPosition(idx)
+                    form.setRowVisible(row, is_visible)
 
-            rc = form.rowCount()
-            for row in range(rc):
-                for role in (QFormLayout.ItemRole.LabelRole, QFormLayout.ItemRole.FieldRole):
-                    it = form.itemAt(row, role)
-                    ww = it.widget() if it is not None else None
-                    if ww and (ww is w or ww.isAncestorOf(w) or w.isAncestorOf(ww)):
-                        return row
-            return -1
-
-        def _set_row_visible(w: QWidget, visible: bool) -> None:
-            row = _form_row_for_widget(w)
-            if row < 0:
-                w.setVisible(visible)
-                return
-
-            li = form.itemAt(row, QFormLayout.ItemRole.LabelRole)
-            lw = li.widget() if li is not None else None
-            if lw is not None:
-                lw.setVisible(visible)
-
-            fi = form.itemAt(row, QFormLayout.ItemRole.FieldRole)
-            fw = fi.widget() if fi is not None else None
-            if fw is not None:
-                fw.setVisible(visible)
-
-        def _apply_visibility() -> None:
-            values: Dict[str, Any] = {k: _value_of(w, kind) for k, (w, kind, _) in fields.items()}
-            for tgt, (dep_k, dep_v) in deps.items():
-                w_tgt = fields[tgt][0]
-                visible = (str(values.get(dep_k)) == str(dep_v))
-                _set_row_visible(w_tgt, visible)
             self._lock_stack_height()
 
-        for _tgt, (dep_key, _dep_v) in deps.items():
-            if dep_key not in fields:
-                continue
-            w_dep, kind_dep, _spec_dep = fields[dep_key]
-            if kind_dep == "combo":
-                w_dep.currentTextChanged.connect(lambda _t: _apply_visibility())
-            elif kind_dep in ("int", "double"):
-                w_dep.valueChanged.connect(lambda _v: _apply_visibility())
-            elif kind_dep == "check":
-                w_dep.stateChanged.connect(lambda _v: _apply_visibility())
-            elif kind_dep == "string":
-                w_dep.textChanged.connect(lambda _v: _apply_visibility())
-            elif kind_dep == "vec2" and isinstance(w_dep, Vec2Edit):
-                w_dep.x.valueChanged.connect(lambda _v: _apply_visibility())
-                w_dep.y.valueChanged.connect(lambda _v: _apply_visibility())
+        # Listener anhängen
+        for target_key, (src_key, _) in deps.items():
+            if src_key not in fields: continue
+            w_src, kind_src, _ = fields[src_key]
+            
+            if kind_src == "combo": w_src.currentTextChanged.connect(lambda _: _update())
+            elif kind_src == "check": w_src.stateChanged.connect(lambda _: _update())
+            elif kind_src in ("int", "double"): w_src.valueChanged.connect(lambda _: _update())
+            elif kind_src == "string": w_src.textChanged.connect(lambda _: _update())
 
-        _apply_visibility()
+        # Initial update
+        _update()
 
-    # ------------------------------------------------------------------ defaults / collect
+    # ------------------------------------------------------------------ Values Apply / Collect
 
     def apply_default_path(self, path: Dict[str, Any]) -> None:
         """
-        Schreibt Default-Parameter in UI.
-        Wenn `_side_cfg` im dict enthalten ist, wird er übernommen.
-
-        Wichtig:
-          - Wenn sich _side_cfg ändert, müssen die Pages ggf. neu gebaut werden.
+        Lädt Werte in die UI.
+        
+        WICHTIG:
+        Wenn das `path` Dictionary einen Wert NICHT enthält (weil es z.B. eine alte Datei ist),
+        dann nimmt er AUTOMATISCH den Default aus dem Schema (`spec.get("default")`),
+        da wir die Widgets ja initial mit den Defaults gebaut haben.
         """
         if isinstance(path, dict) and "_side_cfg" in path:
             new_cfg = dict(path["_side_cfg"] or {})
-            cfg_changed = (new_cfg != self._side_cfg)
-            self._side_cfg = new_cfg
-
-            if cfg_changed:
+            if new_cfg != self._side_cfg:
+                self._side_cfg = new_cfg
                 allowed_types = [str(t).strip() for t in (self._side_cfg.get("allowed_types") or []) if str(t).strip()]
-                if not allowed_types:
-                    raise KeyError(f"Side '{self.side_name}': _side_cfg.allowed_types fehlt/leer.")
                 self.set_allowed_types(allowed_types)
 
         ptype = str(path.get("type") or "").strip()
         if not ptype:
-            raise KeyError(f"Side '{self.side_name}': path.type fehlt/leer.")
-        if self.type_combo.findText(ptype) < 0:
-            raise KeyError(f"Side '{self.side_name}': type '{ptype}' ist nicht erlaubt.")
+            # Fallback auf ersten erlaubten Typen
+            allowed = self._side_cfg.get("allowed_types", [])
+            if allowed:
+                ptype = allowed[0]
+            else:
+                return # Should not happen
 
-        with QSignalBlocker(self.type_combo):
-            self.type_combo.setCurrentText(ptype)
-
-        self._on_type_changed(self.type_combo.currentIndex())
-
+        # Combo setzen
+        idx = self.type_combo.findText(ptype)
+        if idx >= 0:
+            with QSignalBlocker(self.type_combo):
+                self.type_combo.setCurrentIndex(idx)
+            self._on_type_changed(idx)
+        
+        # Werte setzen
         _page, fields_map, _params = self._type_pages.get(ptype, (None, {}, {}))
-        if not fields_map:
-            raise KeyError(f"Side '{self.side_name}': keine Felder für type '{ptype}' (schema leer?).")
-
+        
         for key, (w, kind, spec) in fields_map.items():
-            val = path[key] if key in path else spec.get("default", None)
+            # HIER ist die Magie: Wenn key in path, nimm ihn. Sonst nimm Default aus Schema.
+            val = path.get(key, spec.get("default"))
 
             if kind == "check" and isinstance(w, QCheckBox):
                 w.setChecked(bool(val))
-
+            
             elif kind == "combo" and isinstance(w, QComboBox):
-                if val is None:
-                    continue
-                idx = w.findText(str(val))
-                if idx < 0:
-                    raise KeyError(f"Side '{self.side_name}': ungültiger enum '{val}' für '{key}'.")
-                w.setCurrentIndex(idx)
-
-            elif kind == "string" and isinstance(w, QLineEdit):
-                w.setText("" if val is None else str(val))
-
+                if val is not None:
+                    cidx = w.findText(str(val))
+                    if cidx >= 0: w.setCurrentIndex(cidx)
+            
             elif kind == "int" and isinstance(w, QSpinBox):
-                if val is None:
-                    continue
-                w.setValue(int(val))
-
+                if val is not None: w.setValue(int(val))
+            
             elif kind == "double" and isinstance(w, QDoubleSpinBox):
-                if val is None:
-                    continue
-                w.setValue(float(val))
+                if val is not None: w.setValue(float(val))
+            
+            elif kind == "string" and isinstance(w, QLineEdit):
+                if val is not None: w.setText(str(val))
 
             elif kind == "vec2" and isinstance(w, Vec2Edit):
                 if isinstance(val, (list, tuple)) and len(val) >= 2:
                     w.set([float(val[0]), float(val[1])])
-
+        
         self._lock_stack_height()
 
     def collect_path(self) -> Dict[str, Any]:
-        """UI → Dict für paths_by_side[side]."""
+        """Liest Werte aus der UI aus."""
         ptype = self.type_combo.currentText().strip()
-        if not ptype:
-            raise KeyError(f"Side '{self.side_name}': current type leer.")
         out: Dict[str, Any] = {"type": ptype}
 
         _page, fields_map, _params = self._type_pages.get(ptype, (None, {}, {}))
-        for key, (w, kind, _spec) in fields_map.items():
-            if kind == "double" and isinstance(w, QDoubleSpinBox):
+        
+        for key, (w, kind, _) in fields_map.items():
+            if kind == "double":
                 out[key] = float(w.value())
-            elif kind == "int" and isinstance(w, QSpinBox):
+            elif kind == "int":
                 out[key] = int(w.value())
-            elif kind == "check" and isinstance(w, QCheckBox):
+            elif kind == "check":
                 out[key] = bool(w.isChecked())
-            elif kind == "combo" and isinstance(w, QComboBox):
+            elif kind == "combo":
                 out[key] = str(w.currentText())
-            elif kind == "string" and isinstance(w, QLineEdit):
+            elif kind == "string":
                 out[key] = str(w.text())
-            elif kind == "vec2" and isinstance(w, Vec2Edit):
+            elif kind == "vec2":
                 out[key] = w.get()
 
         return out
 
-    # ------------------------------------------------------------------ planner (per side)
+    # ------------------------------------------------------------------ Internals
 
     def apply_path_planner_model(self, cfg: Dict[str, Any] | None) -> None:
-        """Recipe.planner['path'][side_name] → UI."""
         if hasattr(self.pathPlanner, "apply_planner_model"):
             self.pathPlanner.apply_planner_model(cfg or {})
-        else:
-            self.pathPlanner.apply_model_to_ui(cfg or {})  # type: ignore[attr-defined]
 
     def collect_path_planner(self) -> Dict[str, Any]:
-        """UI → Planner-Config für diese Side."""
         if hasattr(self.pathPlanner, "collect_planner"):
             return self.pathPlanner.collect_planner()
-        tmp: Dict[str, Any] = {}
-        self.pathPlanner.apply_ui_to_model(tmp)  # type: ignore[attr-defined]
-        return tmp
-
-    # ------------------------------------------------------------------ intern
+        return {}
 
     def _on_type_changed(self, _idx: int) -> None:
         idx = self.type_combo.currentIndex()
-        if idx < 0:
-            return
+        if idx < 0: return
         if 0 <= idx < self.stack.count():
             self.stack.setCurrentIndex(idx)
             self._lock_stack_height()
 
     def _lock_stack_height(self) -> None:
-        """Fixiert die Stack-Höhe auf die aktuelle Page."""
         w = self.stack.currentWidget()
         if w is not None:
             self.stack.setMaximumHeight(w.sizeHint().height())

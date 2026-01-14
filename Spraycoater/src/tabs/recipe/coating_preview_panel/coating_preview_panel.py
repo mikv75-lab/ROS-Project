@@ -8,11 +8,12 @@ from typing import Optional, Any, Dict, Tuple, List
 
 import numpy as np
 import pyvista as pv
+import math
 from PyQt6.QtCore import pyqtSignal, QTimer
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QSpacerItem
 from PyQt6.sip import isdeleted
 
-from model.recipe.recipe import Recipe, Draft  # ✅ Draft statt paths_compiled
+from model.recipe.recipe import Recipe, Draft 
 from model.recipe.recipe_store import RecipeStore
 from model.recipe.path_builder import PathBuilder
 
@@ -30,7 +31,6 @@ _LOG = logging.getLogger("tabs.recipe.preview.panel")
 
 Bounds = Tuple[float, float, float, float, float, float]
 
-# ✅ bei dir kommen "helix" UND teils "polyhelix"
 _ALLOWED_SIDES = ("top", "front", "back", "left", "right", "polyhelix", "helix")
 
 
@@ -51,6 +51,91 @@ def _normalize(v: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     n = np.linalg.norm(v, axis=-1, keepdims=True)
     n = np.where(n < eps, 1.0, n)
     return v / n
+
+def _limit_angle_vector(v_in: np.ndarray, max_deg: float, up_vec: np.ndarray) -> np.ndarray:
+    """
+    Limitiert die Neigung von v_in relativ zu up_vec auf max_deg.
+    Dreht v_in in Richtung up_vec, falls der Winkel zu groß ist.
+    """
+    # Winkel berechnen
+    dot = np.clip(np.dot(v_in, up_vec), -1.0, 1.0)
+    angle = np.arccos(dot)
+    max_rad = np.radians(float(max_deg))
+
+    # Wenn innerhalb des Limits -> return original
+    if angle <= max_rad:
+        return v_in
+    
+    # Rotationsachse berechnen (Senkrecht zu Ebene aus v_in und up_vec)
+    axis = np.cross(up_vec, v_in)
+    n_axis = np.linalg.norm(axis)
+    
+    # Singularität: wenn v_in genau entgegengesetzt zu up_vec ist (180 grad)
+    if n_axis < 1e-6:
+        # Beliebige Achse senkrecht zu up_vec nehmen
+        if abs(up_vec[0]) < 0.9: axis = np.array([1.0, 0.0, 0.0])
+        else: axis = np.array([0.0, 1.0, 0.0])
+    else:
+        axis = axis / n_axis
+
+    # Neuer Vektor: Rotiere Up-Vector um 'axis' mit 'max_rad'
+    # Rodrigues Rotation: v_rot = v*cos + (k x v)*sin
+    c = np.cos(max_rad)
+    s = np.sin(max_rad)
+    
+    # up_vec um axis rotieren
+    v_out = up_vec * c + np.cross(axis, up_vec) * s
+    return _normalize(v_out)
+
+def _quats_from_basis(X: np.ndarray, Y: np.ndarray, Z: np.ndarray) -> np.ndarray:
+    """
+    Konvertiert Nx3 Basis-Vektoren (Spalten einer Rotationsmatrix) in Nx4 Quaternionen (qx, qy, qz, qw).
+    X (Tangente/Side), Y (Binormale), Z (Normale) müssen normiert sein.
+    """
+    N = len(X)
+    R = np.stack((X, Y, Z), axis=2) # Shape (N, 3, 3)
+
+    trace = R[:, 0, 0] + R[:, 1, 1] + R[:, 2, 2]
+    Q = np.zeros((N, 4), dtype=float)
+
+    mask_pos = trace > 0
+    if np.any(mask_pos):
+        idx = mask_pos
+        s = np.sqrt(trace[idx] + 1.0) * 2.0
+        inv_s = 1.0 / s
+        Q[idx, 3] = 0.25 * s
+        Q[idx, 0] = (R[idx, 2, 1] - R[idx, 1, 2]) * inv_s
+        Q[idx, 1] = (R[idx, 0, 2] - R[idx, 2, 0]) * inv_s
+        Q[idx, 2] = (R[idx, 1, 0] - R[idx, 0, 1]) * inv_s
+
+    mask_neg = ~mask_pos
+    if np.any(mask_neg):
+        idx = np.where(mask_neg)[0]
+        for i in idx:
+            r = R[i]
+            d0, d1, d2 = r[0,0], r[1,1], r[2,2]
+            if d0 > d1 and d0 > d2:
+                s = np.sqrt(1.0 + d0 - d1 - d2) * 2.0
+                inv_s = 1.0 / s
+                Q[i, 3] = (r[2, 1] - r[1, 2]) * inv_s
+                Q[i, 0] = 0.25 * s
+                Q[i, 1] = (r[0, 1] + r[1, 0]) * inv_s
+                Q[i, 2] = (r[0, 2] + r[2, 0]) * inv_s
+            elif d1 > d2:
+                s = np.sqrt(1.0 + d1 - d0 - d2) * 2.0
+                inv_s = 1.0 / s
+                Q[i, 3] = (r[0, 2] - r[2, 0]) * inv_s
+                Q[i, 0] = (r[0, 1] + r[1, 0]) * inv_s
+                Q[i, 1] = 0.25 * s
+                Q[i, 2] = (r[1, 2] + r[2, 1]) * inv_s
+            else:
+                s = np.sqrt(1.0 + d2 - d0 - d1) * 2.0
+                inv_s = 1.0 / s
+                Q[i, 3] = (r[1, 0] - r[0, 1]) * inv_s
+                Q[i, 0] = (r[0, 2] + r[2, 0]) * inv_s
+                Q[i, 1] = (r[1, 2] + r[2, 1]) * inv_s
+                Q[i, 2] = 0.25 * s
+    return Q
 
 
 def _polydata_from_segments(A: np.ndarray, B: np.ndarray) -> pv.PolyData:
@@ -75,11 +160,6 @@ def _bounds_center(bounds: Bounds) -> np.ndarray:
     return np.array([0.5 * (xmin + xmax), 0.5 * (ymin + ymax), 0.5 * (zmin + zmax)], dtype=float)
 
 
-# ---------------------------------------------------------------------
-# Side embedding:
-#  - plane-sides: lokales 2D Muster in Side-Ebene einbetten
-#  - helix/polyhelix: PathBuilder liefert bereits 3D -> nur ins Objektzentrum verschieben
-# ---------------------------------------------------------------------
 def _side_cfg(side: str):
     s = str(side or "").lower()
     cfgs = {
@@ -114,7 +194,6 @@ def _embed_path_on_face(P_local: np.ndarray, side: str, bounds: Bounds) -> np.nd
     out = np.empty((P0.shape[0], 3), dtype=float)
 
     def place(axis_name: str, arr: np.ndarray):
-        # lokales Muster um Bounds-Center herum zentrieren
         if axis_name == "x":
             return cx + arr
         if axis_name == "y":
@@ -123,7 +202,6 @@ def _embed_path_on_face(P_local: np.ndarray, side: str, bounds: Bounds) -> np.nd
             return cz + arr
         return arr
 
-    # Muster-2D: local.x, local.y
     a0 = P0[:, 0]
     a1 = P0[:, 1]
 
@@ -144,53 +222,12 @@ def _embed_3d_world_centered(P_local: np.ndarray, bounds: Bounds) -> np.ndarray:
     return P0 + c[None, :]
 
 
-def _tangents_from_path(P: np.ndarray) -> np.ndarray:
-    P = np.asarray(P, dtype=float).reshape(-1, 3)
-    n = P.shape[0]
-    if n == 0:
-        return np.zeros((0, 3), float)
-    if n == 1:
-        return np.array([[1.0, 0.0, 0.0]], float)
-
-    T = np.empty((n, 3), float)
-    T[0] = P[1] - P[0]
-    T[-1] = P[-1] - P[-2]
-    if n > 2:
-        T[1:-1] = P[2:] - P[:-2]
-
-    # normalize + stabilisieren
-    for i in range(n):
-        ln = float(np.linalg.norm(T[i]))
-        if ln > 1e-12:
-            T[i] = T[i] / ln
-        else:
-            T[i] = T[i - 1] if i else np.array([1.0, 0.0, 0.0], float)
-
-    for i in range(1, n):
-        if float(np.dot(T[i - 1], T[i])) < 0.0:
-            T[i] = -T[i]
-
-    return T
-
-
 def _call_cast_rays_for_side_robust(*args, **kwargs):
-    """
-    Robust gegen unterschiedliche Rückgaben:
-
-    Unterstützt:
-      - (rc, hit_poly, tcp_poly)
-      - (rc, hit_poly, miss_poly, tcp_poly)
-
-    Wir liefern:
-      rc, hit_poly, miss_poly, tcp_poly
-    """
     ret = cast_rays_for_side(*args, **kwargs)
     if not isinstance(ret, tuple) or len(ret) < 2:
         raise RuntimeError("cast_rays_for_side returned invalid result")
 
     rc = ret[0]
-
-    # Standard defaults
     hit_poly = pv.PolyData()
     miss_poly = pv.PolyData()
     tcp_poly = pv.PolyData()
@@ -199,18 +236,14 @@ def _call_cast_rays_for_side_robust(*args, **kwargs):
 
     if len(polys) == 0:
         return rc, hit_poly, miss_poly, tcp_poly
-
     if len(polys) == 1:
         hit_poly = polys[0]
         return rc, hit_poly, miss_poly, tcp_poly
-
     if len(polys) == 2:
-        # älterer Fall: (hit, tcp)
         hit_poly = polys[0]
         tcp_poly = polys[1]
         return rc, hit_poly, miss_poly, tcp_poly
 
-    # neuer/aktueller Fall: (hit, miss, tcp) oder mehr -> nimm die ersten 3
     hit_poly = polys[0]
     miss_poly = polys[1]
     tcp_poly = polys[2]
@@ -229,16 +262,6 @@ def _is_empty_poly(mesh) -> bool:
 
 
 def _substrate_origin_world(scene: PreviewScene, substrate_mesh: pv.DataSet) -> np.ndarray:
-    """
-    Definiert den Ursprung eines Substrate-Frames in WORLD:
-      - XY = Center des MOUNT (wenn vorhanden), sonst Center des Substrats
-      - Z  = Top-Fläche des MOUNT (zmax), sonst zmin vom Substrat
-
-    Damit ist:
-      - Auflagefläche => z = 0
-      - Mitte => x=y=0
-    """
-    # Versuche Mount-Mesh zu finden (verschiedene mögliche Namen)
     mount = None
     for attr in ("mount_mesh", "substrate_mount_mesh", "mount", "substrate_mount"):
         m = getattr(scene, attr, None)
@@ -250,14 +273,13 @@ def _substrate_origin_world(scene: PreviewScene, substrate_mesh: pv.DataSet) -> 
         b = mount.bounds
         cx = 0.5 * (float(b[0]) + float(b[1]))
         cy = 0.5 * (float(b[2]) + float(b[3]))
-        z_top = float(b[5])  # zmax
+        z_top = float(b[5])
         return np.array([cx, cy, z_top], dtype=float)
 
-    # Fallback: Substrat
     sb = substrate_mesh.bounds
     cx = 0.5 * (float(sb[0]) + float(sb[1]))
     cy = 0.5 * (float(sb[2]) + float(sb[3]))
-    z0 = float(sb[4])  # zmin ~ Auflage
+    z0 = float(sb[4])
     return np.array([cx, cy, z0], dtype=float)
 
 
@@ -288,7 +310,6 @@ class CoatingPreviewPanel(QWidget):
             "frames": True,
         }
 
-        # ✅ Debug: log PathBuilder origin once
         self._logged_pathbuilder_origin: bool = False
 
         root = QVBoxLayout(self)
@@ -304,7 +325,6 @@ class CoatingPreviewPanel(QWidget):
         split.setSpacing(8)
         root.addLayout(split, 1)
 
-        # ---------------- Left (2D) ----------------
         vleft = QVBoxLayout()
         vleft.setContentsMargins(0, 0, 0, 0)
         vleft.setSpacing(6)
@@ -335,7 +355,6 @@ class CoatingPreviewPanel(QWidget):
         _set_policy(self.views2d, h=QSizePolicy.Policy.Expanding, v=QSizePolicy.Policy.Preferred)
         vleft.insertWidget(0, self.views2d, 0)
 
-        # ---------------- Right (3D) ----------------
         vright = QVBoxLayout()
         vright.setContentsMargins(0, 0, 0, 0)
         vright.setSpacing(6)
@@ -381,6 +400,8 @@ class CoatingPreviewPanel(QWidget):
                 "frames_x": "frames_x",
                 "frames_y": "frames_y",
                 "frames_z": "frames_z",
+                "planned": "planned",
+                "executed": "executed",
             },
             get_bounds=self.get_bounds,
         )
@@ -427,7 +448,6 @@ class CoatingPreviewPanel(QWidget):
             return
         self._retry_left = 10
 
-        # ✅ Debug einmalig: welcher PathBuilder wurde wirklich importiert?
         if not self._logged_pathbuilder_origin:
             self._logged_pathbuilder_origin = True
             try:
@@ -441,7 +461,6 @@ class CoatingPreviewPanel(QWidget):
 
         cam_snap = self.snapshot_camera()
 
-        # 1) Szene
         try:
             scene: PreviewScene = self.scene.build_scene(self.ctx, model, grid_step_mm=10.0)
         except Exception:
@@ -461,15 +480,20 @@ class CoatingPreviewPanel(QWidget):
             self.scene.update_current_views_once(refresh_2d=self._mat2d.refresh)
             return
 
+        # Params merge
         defaults = self.store.collect_global_defaults()
         globals_params = dict(defaults)
         globals_params.update(getattr(model, "globals_params", {}) or {})
+        recipe_params = getattr(model, "parameters", {}) or {}
+        globals_params.update(recipe_params)
 
         sample_step_mm = float(globals_params.get("sample_step_mm", 1.0))
         max_points = int(globals_params.get("max_points", 500))
         stand_off_mm = float(globals_params.get("stand_off_mm", 10.0))
+        
+        # ✅ MAX ANGLE für Z-Achse (default 45 Grad)
+        max_angle_deg = float(globals_params.get("max_angle_deg", 45.0))
 
-        # ✅ Mask konstant 50mm über TCP (entlang Normalen)
         MASK_OFFSET_MM = 50.0
 
         pbs = getattr(model, "paths_by_side", {}) or {}
@@ -483,25 +507,36 @@ class CoatingPreviewPanel(QWidget):
             max_points=max_points,
         )
 
-        # Clear overlays
         for lyr in (
             "path", "path_markers",
             "mask", "mask_markers",
             "rays_hit", "rays_miss",
             "normals",
             "frames_x", "frames_y", "frames_z",
+            "planned", "executed"
         ):
             self.scene.clear_layer(lyr)
 
-        tcp_all_world: List[np.ndarray] = []
+        planned_tcp = getattr(model, "planned_tcp", None)
+        executed_tcp = getattr(model, "executed_tcp", None)
 
-        # ✅ Welt->Substrate-Origin (Mount-Top-Center)
+        self.grpOverlays.overlays.render_compiled(
+            substrate_mesh=substrate_mesh,
+            compiled=getattr(model, "paths_compiled", None),
+            planned_tcp=planned_tcp,
+            executed_tcp=executed_tcp,
+            visibility=vis,
+            mask_lift_mm=50.0,
+            default_stand_off_mm=stand_off_mm,
+            sides=pbs
+        )
+
+        tcp_all_world: List[np.ndarray] = []
         origin_world = _substrate_origin_world(scene, substrate_mesh)
 
         for side_id, pdata in built:
             side = str(side_id).lower()
             if side not in _ALLOWED_SIDES:
-                _LOG.warning("Unknown side_id %r -> skipped", side_id)
                 continue
 
             pts = getattr(pdata, "points_mm", None)
@@ -520,14 +555,10 @@ class CoatingPreviewPanel(QWidget):
             except Exception:
                 source = ""
 
-            # ✅ Startpunkte + Raycast-Side bestimmen:
             if side in ("helix", "polyhelix"):
                 P_start = _embed_3d_world_centered(P_local, substrate_mesh.bounds)
-
-                # Raycaster radial XY via source trigger
                 if side == "helix" and (not source):
                     source = "helix"
-
                 side_for_rays = "top"
             else:
                 P_start = _embed_path_on_face(P_local, side, substrate_mesh.bounds)
@@ -554,17 +585,54 @@ class CoatingPreviewPanel(QWidget):
                 continue
 
             hit = np.asarray(rc.hit_mm, float).reshape(-1, 3)[valid]
-            nrm = _normalize(np.asarray(rc.normal, float).reshape(-1, 3)[valid])
-            tcp_world = np.asarray(rc.tcp_mm, float).reshape(-1, 3)[valid]
+            
+            # --- 1. Z-Achse (Normale) mit Max-Angle-Limit ---
+            raw_nrm = _normalize(np.asarray(rc.normal, float).reshape(-1, 3)[valid])
+            Z = np.zeros_like(raw_nrm)
+            
+            # LimitLogic: Winkel gegen Welt-Z begrenzen
+            up_vec = np.array([0.0, 0.0, 1.0]) 
+            for i in range(len(raw_nrm)):
+                Z[i] = _limit_angle_vector(raw_nrm[i], max_angle_deg, up_vec)
 
+            tcp_world = np.asarray(rc.tcp_mm, float).reshape(-1, 3)[valid]
             tcp_all_world.append(tcp_world)
 
-            # ✅ Mask = TCP + Normal * 50mm (WORLD, fürs Overlay)
-            mask_world = tcp_world + nrm * float(MASK_OFFSET_MM)
+            mask_world = tcp_world + Z * float(MASK_OFFSET_MM)
 
-            # -------- Draw (WORLD) --------
+            # --- 2. X-Achse (Fixed Orientation / World-Locked) ---
+            # Wir wählen eine Referenz-Richtung je nach Seite
+            if side in ("left", "right"):
+                base_ref = np.array([0.0, 1.0, 0.0], float) # Y für Left/Right
+            elif "helix" in side or "cylinder" in side:
+                base_ref = np.array([0.0, 0.0, 1.0], float) # Z für Cylinder
+            else:
+                base_ref = np.array([1.0, 0.0, 0.0], float) # X für Top/Front/Back
+
+            N_pts = len(tcp_world)
+            ref_X = np.tile(base_ref, (N_pts, 1))
+            
+            # Projektion auf Ebene senkrecht zu Z: X = ref_X - (ref_X . Z) * Z
+            dot = np.sum(ref_X * Z, axis=1, keepdims=True)
+            X = ref_X - Z * dot
+            X = _normalize(X)
+
+            # Fallback bei Singularität
+            bad = np.linalg.norm(X, axis=1) < 1e-6
+            if np.any(bad):
+                if base_ref[0] > 0.9: 
+                    alt_ref = np.array([0.0, 1.0, 0.0], float)
+                else: 
+                    alt_ref = np.array([1.0, 0.0, 0.0], float)
+                fallback = np.tile(alt_ref, (len(X), 1))
+                X[bad] = _normalize(fallback - Z[bad] * np.sum(fallback * Z[bad], axis=1, keepdims=True))
+
+            # --- 3. Y-Achse ---
+            Y = _normalize(np.cross(Z, X))
+
+            # Vis (Path/Mask/Lines)
             if vis.get("path", True):
-                self.scene.add_path_polyline(tcp_world, layer="path", color="#2ecc71", line_width=2.2, lighting=False)
+                self.scene.add_path_polyline(tcp_world, layer="path", color="#32CD32", line_width=2.2, lighting=False)
 
             if vis.get("mask", True):
                 self.scene.add_path_polyline(mask_world, layer="mask", color="royalblue", line_width=3.0, lighting=False)
@@ -576,62 +644,53 @@ class CoatingPreviewPanel(QWidget):
                 self.scene.add_mesh(rays_miss_poly, layer="rays_miss", color="#e74c3c", line_width=1.2, lighting=False)
 
             if vis.get("normals", False):
-                st = _polydata_from_segments(hit, tcp_world)
-                if not _is_empty_poly(st):
-                    self.scene.add_mesh(st, layer="normals", color="#f39c12", line_width=1.2, lighting=False)
+                # Zeichne korrigierte Normalen (Z)
+                st_corr = _polydata_from_segments(hit, hit + Z * 20.0) 
+                if not _is_empty_poly(st_corr):
+                    self.scene.add_mesh(st_corr, layer="normals", color="#f1c40f", line_width=1.5, lighting=False)
 
-                nm = _polydata_from_segments(tcp_world, tcp_world + nrm * 10.0)
-                if not _is_empty_poly(nm):
-                    self.scene.add_mesh(nm, layer="normals", color="#f1c40f", line_width=1.2, lighting=False)
-
+            # Frames anzeigen (gedünnt)
             if vis.get("frames", False):
-                T = _tangents_from_path(tcp_world)
-                X = T - nrm * np.sum(T * nrm, axis=1, keepdims=True)
-                X = _normalize(X)
-
-                bad = np.linalg.norm(X, axis=1) < 1e-6
-                if np.any(bad):
-                    fallback = np.tile(np.array([1.0, 0.0, 0.0], float), (len(X), 1))
-                    X[bad] = _normalize(fallback - nrm[bad] * np.sum(fallback * nrm[bad], axis=1, keepdims=True))
-
-                Y = _normalize(np.cross(nrm, X))
-
                 n_pts = len(tcp_world)
                 sstep = max(1, int(round(max(1, n_pts // 60))))
                 O2 = tcp_world[::sstep]
                 X2 = X[::sstep]
                 Y2 = Y[::sstep]
-                Z2 = nrm[::sstep]
-
-                sx = 12.0  # mm
+                Z2 = Z[::sstep]
+                sx = 12.0
                 mx = _polydata_from_segments(O2, O2 + X2 * sx)
                 my = _polydata_from_segments(O2, O2 + Y2 * sx)
                 mz = _polydata_from_segments(O2, O2 + Z2 * sx)
-
-                if not _is_empty_poly(mx):
-                    self.scene.add_mesh(mx, layer="frames_x", color="#e67e22", line_width=1.0, lighting=False)
-                if not _is_empty_poly(my):
-                    self.scene.add_mesh(my, layer="frames_y", color="#16a085", line_width=1.0, lighting=False)
-                if not _is_empty_poly(mz):
-                    self.scene.add_mesh(mz, layer="frames_z", color="#2980b9", line_width=1.0, lighting=False)
+                if not _is_empty_poly(mx): self.scene.add_mesh(mx, layer="frames_x", color="#e67e22", line_width=1.0, lighting=False)
+                if not _is_empty_poly(my): self.scene.add_mesh(my, layer="frames_y", color="#16a085", line_width=1.0, lighting=False)
+                if not _is_empty_poly(mz): self.scene.add_mesh(mz, layer="frames_z", color="#2980b9", line_width=1.0, lighting=False)
 
             # ------------------------------------------------------------------
-            # 💾 Persist final TCP points into model.draft (Draft) -> draft.yaml
-            #     STRICT Draft schema: {"version":1,"sides":{side:{poses_quat:[...], normals_xyz:[...]?}}}
+            # 💾 Persist final TCP points & orientations into model.draft (Draft)
             try:
                 tcp_local = tcp_world - origin_world[None, :]
 
-                poses_quat = [
-                    {"x": float(x), "y": float(y), "z": float(z), "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}
-                    for (x, y, z) in tcp_local.reshape(-1, 3)
-                ]
-                normals_xyz = [{"x": float(nx), "y": float(ny), "z": float(nz)} for (nx, ny, nz) in nrm.reshape(-1, 3)]
+                # Konvertiere Basisvektoren (Rotationsmatrix) in Quaternionen
+                quats = _quats_from_basis(X, Y, Z)
 
-                # existing draft -> dict (merge), else start new
+                poses_quat = []
+                for i in range(len(tcp_local)):
+                    poses_quat.append({
+                        "x": float(tcp_local[i, 0]),
+                        "y": float(tcp_local[i, 1]),
+                        "z": float(tcp_local[i, 2]),
+                        "qx": float(quats[i, 0]),
+                        "qy": float(quats[i, 1]),
+                        "qz": float(quats[i, 2]),
+                        "qw": float(quats[i, 3]),
+                    })
+
+                normals_xyz = [{"x": float(nx), "y": float(ny), "z": float(nz)} for (nx, ny, nz) in Z.reshape(-1, 3)]
+
                 base: Dict[str, Any]
                 if isinstance(getattr(model, "draft", None), Draft):
                     try:
-                        base = dict(model.draft.to_yaml_dict() or {})  # type: ignore[attr-defined]
+                        base = dict(model.draft.to_yaml_dict() or {}) 
                     except Exception:
                         base = {}
                 else:
@@ -652,9 +711,7 @@ class CoatingPreviewPanel(QWidget):
 
             except Exception:
                 _LOG.exception("Persisting model.draft failed")
-            # ------------------------------------------------------------------
 
-        # 2D update (WORLD fürs Preview)
         path_xyz = None
         if tcp_all_world:
             try:
@@ -673,6 +730,8 @@ class CoatingPreviewPanel(QWidget):
                 "tris": scene.mesh_tris,
                 "bounds": scene.bounds,
             }
+            if planned_tcp: info["Planned"] = "Available"
+            if executed_tcp: info["Executed"] = "Available"
             self.grpInfo.set_values(info)
         except Exception:
             _LOG.exception("InfoGroupBox update failed")

@@ -19,11 +19,11 @@ scene_objects:
   - 0.0
   - 0.0
 - id: substrate_mount
-  mesh: ../resource/substrate_mounts/flat_240x240x50.stl
+  mesh: ../resource/substrate_mounts/circle_d240_h50.stl
   frame: world
   position:
   - 0.0
-  - 0.6
+  - 0.60
   - 0.0
   rpy_deg:
   - 0.0
@@ -57,7 +57,7 @@ scene_objects:
   - 0.0
   - 0.0
 - id: substrate
-  mesh: ../resource/substrates/wafer_d100_h2.stl
+  mesh: ../resource/substrates/hemisphere_d100.stl
   optional: true
   frame: scene
   position:
