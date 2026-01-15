@@ -176,12 +176,34 @@ class BaseProcessStatemachine(QtCore.QObject):
     def _segment_exists(self, seg_name: str) -> bool:
         return not (self._skip_home and seg_name == STATE_MOVE_HOME)
 
+    # ---------------- Segment capture reset (NEW) ----------------
+
+    def _reset_segment_capture(self, seg_name: str, *, clear_steps: bool = True) -> None:
+        """
+        Reset all segment-local capture state.
+
+        Needed for:
+          - entering a segment
+          - retrying a segment (otherwise mixes attempt#1 + attempt#2)
+          - boundary clear (trajCacheClearChanged)
+        """
+        # local fallbacks
+        self._last_planned_any = None
+        self._last_executed_any = None
+
+        # ordering guard
+        self._seen_planned_ok[seg_name] = False
+
+        # step buffers
+        if clear_steps:
+            self._planned_steps_by_segment[seg_name] = []
+            self._executed_steps_by_segment[seg_name] = []
+
     # ---------------- Motion ----------------
 
     def _on_state_enter(self, seg_name: str) -> None:
         self._current_state = seg_name
         self.stateChanged.emit(seg_name)
-        self.logMessage.emit(f"STATE: {seg_name}")
 
         if self._stop_requested:
             self._signal_error("Gestoppt")
@@ -189,14 +211,8 @@ class BaseProcessStatemachine(QtCore.QObject):
 
         self._retry_count = 0
 
-        # STRICT: segment-local capture
-        self._last_planned_any = None
-        self._last_executed_any = None
-
-        # reset per-segment step buffers
-        self._planned_steps_by_segment[seg_name] = []
-        self._executed_steps_by_segment[seg_name] = []
-        self._seen_planned_ok[seg_name] = False
+        # STRICT: segment-local capture reset
+        self._reset_segment_capture(seg_name, clear_steps=True)
 
         # optional: tag segment into node
         try:
@@ -221,20 +237,19 @@ class BaseProcessStatemachine(QtCore.QObject):
 
         if res.startswith("ERROR"):
             if self._retry_count < self._max_retries:
+                # FIX: retry must not reuse stale step buffers / ordering
                 self._retry_count += 1
+                self._reset_segment_capture(self._current_state, clear_steps=True)
                 self._on_enter_segment(self._current_state)
             else:
-                # KRITISCH: Fehlermeldung setzen und Statemachine in s_err zwingen
                 self._signal_error(f"{res} seg={self._current_state}")
             return
 
-        # remember that this segment has been planned at least once
         if res.startswith("PLANNED:OK"):
             self._seen_planned_ok[self._current_state] = True
             return
 
         if res.startswith("EXECUTED:OK"):
-            # Keep strict ordering guard ON by default.
             if not self._seen_planned_ok.get(self._current_state, False):
                 self._signal_error(
                     f"Segment '{self._current_state}': EXECUTED:OK ohne vorheriges PLANNED:OK. "
@@ -242,7 +257,6 @@ class BaseProcessStatemachine(QtCore.QObject):
                 )
                 return
 
-            # strict paired snapshot
             self._snapshot_step_for_segment(self._current_state)
 
             if self._error_msg:
@@ -280,7 +294,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         """
         Best-effort boundary clear hook.
         If MoveItPyBridge exposes trajCacheClearChanged (Empty -> Qt signal),
-        we clear our *fallback* caches and reset ordering for the current segment.
+        we clear our caches AND per-segment step buffers for the current segment.
         """
         sig = self._moveitpy_signals
         if sig is None:
@@ -301,9 +315,9 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._last_planned_any = None
         self._last_executed_any = None
 
-        # ordering resets to require a fresh PLANNED:OK inside the segment
+        # also clear step buffers + ordering for current segment (FIX)
         if self._current_state:
-            self._seen_planned_ok[self._current_state] = False
+            self._reset_segment_capture(self._current_state, clear_steps=True)
 
     @QtCore.pyqtSlot(object)
     def _on_planned_traj_changed(self, obj: object) -> None:
@@ -329,11 +343,10 @@ class BaseProcessStatemachine(QtCore.QObject):
 
         planned, executed = _get_pair()
 
-        # bounded wait for late delivery
         if executed is None or planned is None:
-            deadline = time.monotonic() + 0.35  # Increased timeout for pairing
+            deadline = time.monotonic() + 0.35
             while time.monotonic() < deadline:
-                time.sleep(0.01)  # 10ms
+                time.sleep(0.01)
                 planned2, executed2 = _get_pair()
                 if planned is None and planned2 is not None:
                     planned = planned2
@@ -462,37 +475,49 @@ class BaseProcessStatemachine(QtCore.QObject):
         try:
             if hasattr(obj, "joint_names") and hasattr(obj, "points"):
                 out = cls._jt_msg_to_dict(obj)
-                if out: return out
-        except Exception: pass
+                if out:
+                    return out
+        except Exception:
+            pass
 
         try:
             jt = getattr(obj, "joint_trajectory", None)
             if jt is not None:
                 out = cls._jt_msg_to_dict(jt)
-                if out: return out
-        except Exception: pass
+                if out:
+                    return out
+        except Exception:
+            pass
 
         if isinstance(obj, dict) and obj:
             try:
                 if isinstance(obj.get("joint_names"), list) and isinstance(obj.get("points"), list):
                     return obj
-            except Exception: pass
+            except Exception:
+                pass
 
             for k in ("joint_trajectory", "planned", "executed", "trajectory", "result", "plan"):
-                try: v = obj.get(k)
-                except Exception: v = None
+                try:
+                    v = obj.get(k)
+                except Exception:
+                    v = None
                 out = cls._jt_from_any(v, _depth=_depth + 1, _max_depth=_max_depth)
-                if out: return out
+                if out:
+                    return out
 
             for v in obj.values():
                 out = cls._jt_from_any(v, _depth=_depth + 1, _max_depth=_max_depth)
-                if out: return out
+                if out:
+                    return out
 
         for attr in ("trajectory", "robot_trajectory", "planned_trajectory", "executed_trajectory", "result", "plan"):
-            try: v = getattr(obj, attr, None)
-            except Exception: v = None
+            try:
+                v = getattr(obj, attr, None)
+            except Exception:
+                v = None
             out = cls._jt_from_any(v, _depth=_depth + 1, _max_depth=_max_depth)
-            if out: return out
+            if out:
+                return out
 
         return None
 
@@ -527,11 +552,11 @@ class BaseProcessStatemachine(QtCore.QObject):
             if not pts:
                 continue
 
-            for i, p in enumerate(pts):
+            for p in pts:
                 t_local_ns = dur_to_ns(p.get("time_from_start"))
                 t_global_ns = t_offset_ns + t_local_ns
                 if last_global_ns >= 0 and t_global_ns <= last_global_ns:
-                    t_global_ns = last_global_ns + 1000000
+                    t_global_ns = last_global_ns + 1000000  # +1ms monotonic guard
                 q = copy.deepcopy(p)
                 q["time_from_start"] = ns_to_dur(t_global_ns)
                 merged_pts.append(q)
@@ -566,7 +591,8 @@ class BaseProcessStatemachine(QtCore.QObject):
             pass
         try:
             fn = getattr(self._ros, "moveit_set_segment", None)
-            if callable(fn): fn("")
+            if callable(fn):
+                fn("")
         except Exception:
             pass
 
@@ -578,12 +604,15 @@ class BaseProcessStatemachine(QtCore.QObject):
             try:
                 self._machine.stop()
                 self._machine.deleteLater()
-            except Exception: pass
+            except Exception:
+                pass
             self._machine = None
 
         if self._log_handler:
-            try: _LOG.removeHandler(self._log_handler)
-            except Exception: pass
+            try:
+                _LOG.removeHandler(self._log_handler)
+            except Exception:
+                pass
             self._log_handler = None
 
     # ---------------- Public ----------------
@@ -614,17 +643,22 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
-        if self._stop_requested: return
+        if self._stop_requested:
+            return
         self._stop_requested = True
         self._stopped = True
 
-        try: self._ros.moveit_stop()
-        except Exception: pass
+        try:
+            self._ros.moveit_stop()
+        except Exception:
+            pass
 
         try:
             fn = getattr(self._ros, "moveit_set_segment", None)
-            if callable(fn): fn("")
-        except Exception: pass
+            if callable(fn):
+                fn("")
+        except Exception:
+            pass
 
         QtCore.QTimer.singleShot(0, lambda: self._signal_error("Gestoppt"))
 
@@ -661,16 +695,23 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     @staticmethod
     def _jt_dict_to_segment_yaml(jt: Any) -> Optional[Dict[str, Any]]:
-        if not (isinstance(jt, dict) and isinstance(jt.get("joint_names"), list) and isinstance(jt.get("points"), list)):
+        if not (
+            isinstance(jt, dict)
+            and isinstance(jt.get("joint_names"), list)
+            and isinstance(jt.get("points"), list)
+        ):
             return None
         jn = [str(x) for x in (jt.get("joint_names") or [])]
-        if not jn: return None
+        if not jn:
+            return None
 
         out_pts: List[Dict[str, Any]] = []
         for p in (jt.get("points") or []):
-            if not isinstance(p, dict): continue
+            if not isinstance(p, dict):
+                continue
             pos = p.get("positions") or []
-            if not isinstance(pos, list) or len(pos) != len(jn): continue
+            if not isinstance(pos, list) or len(pos) != len(jn):
+                continue
 
             tfs = p.get("time_from_start")
             sec, nsec = 0, 0
@@ -679,9 +720,12 @@ class BaseProcessStatemachine(QtCore.QObject):
             elif isinstance(tfs, (list, tuple)) and len(tfs) == 2:
                 sec, nsec = int(tfs[0]), int(tfs[1])
 
-            out_pts.append({
-                "positions": [float(x) for x in pos],
-                "time_from_start": [int(sec), int(nsec)],
-            })
-        if not out_pts: return None
+            out_pts.append(
+                {
+                    "positions": [float(x) for x in pos],
+                    "time_from_start": [int(sec), int(nsec)],
+                }
+            )
+        if not out_pts:
+            return None
         return {"joint_names": jn, "points": out_pts}

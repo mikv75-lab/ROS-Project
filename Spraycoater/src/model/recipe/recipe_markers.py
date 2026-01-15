@@ -201,7 +201,7 @@ def _to_tcp_doc(obj: Any) -> Dict[str, Any]:
 def build_draft_pose_and_markers(
     recipe: Recipe,
     *,
-    frame_id: str = "scene",
+    frame_id: str = "substrate",
     ns_prefix: str = "draft",
     clear_legacy: bool = True,
     line_width_m: float = 0.0008,
@@ -299,7 +299,7 @@ def build_tcp_pose_and_markers_from_tcp_yaml(
     *,
     ns_prefix: str,
     mid_start: int,
-    default_frame: str = "scene",
+    default_frame: str = "substrate",
     force_frame: Optional[str] = None,
     clear_legacy: bool = True,
     include_text: bool = False,
@@ -430,7 +430,7 @@ def build_tcp_pose_and_markers(
     *,
     ns_prefix: str,
     mid_start: int,
-    default_frame: str = "scene",
+    default_frame: str = "substrate",
     force_frame: Optional[str] = None,
     clear_legacy: bool = True,
     include_text: bool = False,
@@ -460,8 +460,8 @@ def build_tcp_pose_and_markers(
 def build_rviz_layers(
     recipe: Recipe,
     *,
-    frame_id: str = "scene",
-    tcp_default_frame: str = "scene",
+    frame_id: str = "substrate",
+    tcp_default_frame: str = "substrate",
     tcp_force_frame: Optional[str] = None,
     clear_legacy: bool = True,
     # visual styling
@@ -538,7 +538,7 @@ def build_rviz_layers(
 def build_tcp_pose_array_from_tcp_yaml(
     tcp_doc: Dict[str, Any],
     *,
-    default_frame: str = "scene",
+    default_frame: str = "substrate",
 ) -> PoseArray:
     pa, _ = build_tcp_pose_and_markers_from_tcp_yaml(
         tcp_doc,
@@ -557,7 +557,7 @@ def build_tcp_marker_array_from_tcp_yaml(
     *,
     ns_prefix: str,
     mid_start: int = 20000,
-    default_frame: str = "scene",
+    default_frame: str = "substrate",
     include_text: bool = True,
 ) -> MarkerArray:
     _, ma = build_tcp_pose_and_markers_from_tcp_yaml(

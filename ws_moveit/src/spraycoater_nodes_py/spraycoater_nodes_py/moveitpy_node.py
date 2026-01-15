@@ -35,6 +35,9 @@ Design:
   - publish robot_description(_semantic) ONCE after MoveItPy init (latched)
   - also best-effort re-publish robot_description on first plan request
     (covers UI starting late / transient-local mismatch)
+
+NOTE (your change request):
+  - The former 'scene' frame is removed; use 'substrate' instead.
 """
 
 from __future__ import annotations
@@ -209,7 +212,9 @@ class MoveItPyNode(Node):
         self.cfg_frames = frames()
 
         self.frame_world = self.cfg_frames.resolve(self.cfg_frames.get("world", WORLD_FRAME))
-        self.frame_scene = self.cfg_frames.resolve(self.cfg_frames.get("scene", "scene"))
+
+        # CHANGED: 'scene' frame removed -> use 'substrate'
+        self.frame_substrate = self.cfg_frames.resolve(self.cfg_frames.get("substrate", "substrate"))
 
         # parameters
         if not self.has_parameter("backend"):
@@ -229,15 +234,11 @@ class MoveItPyNode(Node):
             str(self.get_parameter("plan_request_preset").value or "default_ompl").strip() or "default_ompl"
         )
 
-        # IMPORTANT:
-        # - If your MoveIt launch injects these params, they will already exist.
-        # - We only declare defaults if missing (keeps override intact).
         if not self.has_parameter("robot_description"):
             self.declare_parameter("robot_description", "")
         if not self.has_parameter("robot_description_semantic"):
             self.declare_parameter("robot_description_semantic", "")
 
-        # Optional parameter to override controller name (used for FollowJT + mode switch)
         if not self.has_parameter("traj_controller"):
             self.declare_parameter("traj_controller", DEFAULT_TRAJ_CONTROLLER)
         self.traj_controller = str(self.get_parameter("traj_controller").value or DEFAULT_TRAJ_CONTROLLER).strip()
@@ -296,7 +297,7 @@ class MoveItPyNode(Node):
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "optimized_trajectory_rt"),
         )
 
-        # NEW: cache-clear signal (NOT latched)
+        # cache-clear signal (NOT latched)
         self.pub_traj_cache_clear = self.create_publisher(
             MsgEmpty,
             self.cfg_topics.publish_topic(NODE_KEY, "traj_cache_clear"),
@@ -436,16 +437,11 @@ class MoveItPyNode(Node):
         self.log.info("MoveItPyNode init done (MoveItPy is initializing in background).")
 
     # ------------------------------------------------------------
-    # NEW: CLEAR helpers (explicit clear topic)
+    # CLEAR helpers (explicit clear topic)
     # ------------------------------------------------------------
     def _clear_traj_cache(self, *, reason: str) -> None:
         """
         Emit an explicit cache-clear signal for GUI/Bridge/Statemachine.
-
-        IMPORTANT:
-          - This is NOT latched.
-          - Do NOT publish empty RobotTrajectory messages to clear latched topics.
-            (that breaks pairing logic if subscribers treat empty msgs as received.)
         """
         try:
             self.pub_traj_cache_clear.publish(MsgEmpty())
@@ -646,7 +642,6 @@ class MoveItPyNode(Node):
     # Utility
     # ------------------------------------------------------------
     def _emit(self, text: str) -> None:
-        # motion_result is the state-machine signal; keep it LAST per event.
         self.pub_result.publish(MsgString(data=text))
         self.log.info(text)
 
@@ -792,10 +787,7 @@ class MoveItPyNode(Node):
         if not self._require_moveit_ready():
             return
 
-        # NEW: clear caches at boundary of new external move request
         self._clear_traj_cache(reason="plan_pose")
-
-        # Ensure GUI can FK even if it started after node init
         self._publish_robot_model_strings_once()
 
         self._planned = None
@@ -823,7 +815,6 @@ class MoveItPyNode(Node):
             self._planned = core
             self._last_goal_pose = goal
 
-            # publish artifact BEFORE result
             self.pub_planned.publish(msg_traj)
             self._emit_with_segment("PLANNED:OK pose")
 
@@ -837,10 +828,7 @@ class MoveItPyNode(Node):
         if not self._require_moveit_ready():
             return
 
-        # NEW: clear caches at boundary of new external move request
         self._clear_traj_cache(reason="plan_named")
-
-        # Ensure GUI can FK even if it started after node init
         self._publish_robot_model_strings_once()
 
         name = (msg.data or "").strip()
@@ -880,7 +868,6 @@ class MoveItPyNode(Node):
             self._planned = core
             self._last_goal_pose = goal
 
-            # publish artifact BEFORE result
             self.pub_planned.publish(msg_traj)
             self._emit_with_segment(f"PLANNED:OK named='{name}'")
 
@@ -892,7 +879,6 @@ class MoveItPyNode(Node):
             self._on_stop(MsgEmpty())
             return
 
-        # IMPORTANT: do NOT clear here. execute consumes the current planned.
         self._mode_mgr.ensure_mode("TRAJ")
 
         if self._busy:
@@ -920,7 +906,6 @@ class MoveItPyNode(Node):
                 return
 
             if ok:
-                # publish executed artifact BEFORE result
                 self.pub_executed.publish(msg_traj)
                 self._emit_with_segment("EXECUTED:OK")
             else:
@@ -932,9 +917,6 @@ class MoveItPyNode(Node):
         finally:
             self._busy = False
 
-    # ------------------------------------------------------------
-    # Execute arbitrary RobotTrajectory (from YAML / optimize output)
-    # ------------------------------------------------------------
     def _on_execute_trajectory(self, msg: RobotTrajectoryMsg) -> None:
         if self._busy:
             self._emit_with_segment("ERROR:BUSY")
@@ -942,7 +924,6 @@ class MoveItPyNode(Node):
         if not self._require_moveit_ready():
             return
 
-        # NEW: clear caches at boundary of new external move request
         self._clear_traj_cache(reason="execute_trajectory")
 
         jt = getattr(msg, "joint_trajectory", None)
@@ -950,7 +931,6 @@ class MoveItPyNode(Node):
             self._emit_with_segment("ERROR:EMPTY_TRAJ")
             return
 
-        # ensure controller enabled
         self._mode_mgr.ensure_mode("TRAJ")
 
         self._busy = True
@@ -958,7 +938,6 @@ class MoveItPyNode(Node):
         self._external_active_goal = None
         self._external_active_traj = msg
 
-        # publish artifact BEFORE result (treat incoming as planned artifact)
         try:
             self.pub_planned.publish(msg)
         except Exception:
@@ -1048,9 +1027,6 @@ class MoveItPyNode(Node):
 
         send_fut.add_done_callback(_on_goal_sent)
 
-    # ------------------------------------------------------------
-    # Optimize / retime RobotTrajectory (post-processing in node)
-    # ------------------------------------------------------------
     def _on_optimize_trajectory(self, msg: RobotTrajectoryMsg) -> None:
         if self._busy:
             self._emit_with_segment("ERROR:BUSY")
@@ -1058,7 +1034,6 @@ class MoveItPyNode(Node):
         if not self._require_moveit_ready():
             return
 
-        # NEW: clear caches at boundary of new external move request
         self._clear_traj_cache(reason="optimize_trajectory")
 
         jt = getattr(msg, "joint_trajectory", None)
@@ -1077,7 +1052,6 @@ class MoveItPyNode(Node):
 
             out_msg = self._optimize_robot_trajectory(msg, pipeline=pipeline, planner_id=planner_id)
 
-            # publish artifact BEFORE result
             try:
                 self.pub_optimized.publish(out_msg)
             except Exception:
@@ -1097,7 +1071,6 @@ class MoveItPyNode(Node):
         pipeline: str,
         planner_id: str,
     ) -> RobotTrajectoryMsg:
-        # placeholder until real MoveIt time-parameterization binding is wired in python
         try:
             raise RuntimeError("MoveIt post-processing Python binding not wired")
         except Exception as e:
@@ -1112,7 +1085,6 @@ class MoveItPyNode(Node):
         if vs <= 1e-6:
             vs = 1.0
 
-        # Interpret scaling as "allowed speed fraction" => smaller means slower => larger times
         scale = 1.0 / vs
 
         out = RobotTrajectoryMsg()
@@ -1154,9 +1126,6 @@ class MoveItPyNode(Node):
 
         return out
 
-    # ------------------------------------------------------------
-    # Omron TCP execution (MOVEJ last point)
-    # ------------------------------------------------------------
     def _execute_via_omron(self, traj_msg: RobotTrajectoryMsg) -> bool:
         if not self.is_real_backend or self.pub_omron_cmd is None:
             self.log.error("[omron] _execute_via_omron called but omron publisher is disabled (not real backend).")
@@ -1187,10 +1156,16 @@ class MoveItPyNode(Node):
         self.pub_omron_cmd.publish(MsgString(data=cmd))
         return True
 
-    # ------------------------------------------------------------
-    # Stop / Cancel
-    # ------------------------------------------------------------
     def _on_stop(self, _msg: MsgEmpty) -> None:
+        """
+        Stop/cancel current activity.
+
+        Practical robustness:
+          - Always set cancel flag.
+          - Cancel FollowJT goal if active.
+          - Force local busy flag to False (avoid UI feeling "stuck" if a stop arrives mid-flow).
+          - Best-effort switch back to JOG mode so jogging/servo can resume.
+        """
         self._cancel = True
 
         gh = self._external_active_goal
@@ -1199,6 +1174,17 @@ class MoveItPyNode(Node):
                 gh.cancel_goal_async()
             except Exception as e:
                 self.log.warning(f"[stop] cancel_goal_async failed: {e!r}")
+
+        # reset local execution bookkeeping
+        self._external_active_goal = None
+        self._external_active_traj = None
+        self._busy = False
+
+        # important for "jogging works again" after stopping a traj mode action
+        try:
+            self._mode_mgr.ensure_mode("JOG")
+        except Exception:
+            pass
 
         self._emit_with_segment("STOP:REQ")
 

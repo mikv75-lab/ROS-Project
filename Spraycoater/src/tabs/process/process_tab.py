@@ -974,7 +974,7 @@ class ProcessTab(QWidget):
                         segment_order=self._SEG_ORDER,
                         gate_valid_on_eval=False,
                         require_tcp=True,
-                        tcp_target_frame="scene",
+                        tcp_target_frame="substrate",
                         scene_yaml_path=scene_yaml_path,
                         robot_yaml_path=robot_yaml_path,
                     )
@@ -1115,7 +1115,7 @@ class ProcessTab(QWidget):
                 return f
         except Exception:
             pass
-        return "scene"
+        return "substrate"
 
     def _publish_all_available_layers(self) -> None:
         """
