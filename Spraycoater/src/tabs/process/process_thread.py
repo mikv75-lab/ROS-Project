@@ -56,7 +56,7 @@ class ProcessThread(QtCore.QObject):
         parent: Optional[QtCore.QObject] = None,
         mode: str = MODE_VALIDATE,
         side: str = "top",
-        max_retries: int = 2,
+        max_retries: int = 100,
         skip_home: bool = False,
         urdf_xml: str = "",
         srdf_xml: str = "",

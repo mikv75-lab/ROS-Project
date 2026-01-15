@@ -39,16 +39,12 @@ class PathBuilder:
     Erzeugt Pfade (mm) aus einer Path-Definition je Side.
 
     Unterstützte `type`-Werte:
-      - path.meander.plane
-      - path.spiral.plane
-      - path.spiral.cylinder
-      - path.perimeter_follow.plane
-      - path.polyhelix.pyramid
-      - path.polyhelix.cube
-
-    FIX: Berücksichtigt 'recipe.parameters' (z.B. max_points, sample_step_mm) vorrangig.
-    FIX: Mäander erzeugt nun immer eine durchgängige, rund verbundene Bahn.
-    FIX: Helix (Cylinder) Berechnung robust (float turns) und zentriert.
+      - path.meander.plane (Z=0)
+      - path.spiral.plane (Z=0)
+      - path.spiral.cylinder (3D)
+      - path.perimeter_follow.plane (Z=0)
+      - path.polyhelix.pyramid (3D)
+      - path.polyhelix.cube (3D)
     """
 
     def __new__(cls, *args: Any, **kwargs: Any):
@@ -87,10 +83,6 @@ class PathBuilder:
         pd = PathBuilder._postprocess(pd)
         pd = PathBuilder._with_globals_meta(pd, globals_params)
 
-        P = np.asarray(pd.points_mm, dtype=float).reshape(-1, 3)
-        if P.shape[0] < 2:
-            pass # Leere Pfade erlaubt
-
         return pd
 
     @staticmethod
@@ -102,7 +94,6 @@ class PathBuilder:
         sample_step_mm: float,
         max_points: int,
     ) -> List[Tuple[str, PathData]]:
-        # Auch hier vorab auflösen, damit Validierung korrekt ist
         globals_params, sample_step_mm, max_points = PathBuilder._resolve_params(
             recipe, globals_params, sample_step_mm, max_points
         )
@@ -237,9 +228,6 @@ class PathBuilder:
         else:
             pbs = dict(getattr(recipe, "paths_by_side", {}) or {})
 
-        if not pbs:
-            pass 
-            
         if side not in pbs:
             raise KeyError(f"PathBuilder: side '{side}' nicht in paths_by_side.")
 
@@ -293,403 +281,137 @@ class PathBuilder:
 
     @staticmethod
     def _meander_plane(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
-        """
-        Erzeugt einen durchgängigen Mäander-Pfad (Schlangenlinie).
-        Verbindet die Zeilen automatisch mit einem 180° Bogen (rund).
-        """
+        """Ebenen-Mäander (Z=0)."""
         area = p.get("area", {}) or {}
         shape = str(area.get("shape", "rect")).lower()
-
         cx, cy = (area.get("center_xy_mm") or [0.0, 0.0])
         pitch = max(1e-6, float(p.get("pitch_mm", 5.0)))
         angle = float(p.get("angle_deg", 0.0))
         edge_extend = float(p.get("edge_extend_mm", 0.0))
-        
         margin = max(0.0, float(p.get("margin_mm", 0.0)))
         start_corner = str(p.get("start", "auto")).lower()
         
-        # Logik-Flags für Startpunkt
-        reverse_y = False
-        reverse_x_base = False
-        
-        if start_corner == "minx_maxy": # Top-Left
-            reverse_y = True
-        elif start_corner == "maxx_miny": # Bottom-Right
-            reverse_x_base = True
-        elif start_corner == "maxx_maxy": # Top-Right
-            reverse_y = True
-            reverse_x_base = True
+        reverse_y = start_corner in ("minx_maxy", "maxx_maxy")
+        reverse_x_base = start_corner in ("maxx_miny", "maxx_maxy")
 
-        # 1. Zeilen-Segmente berechnen
-        line_segments = [] # [(x0, y), (x1, y)]
-        
+        line_segments = []
         if shape in ("circle", "disk"):
             R = max(0.0, float(area.get("radius_mm", 50.0)) - margin)
             if R <= 0: return np.zeros((0,3), float)
-
-            # Anzahl Linien, zentriert um 0
-            n_lines = int(2.0 * R / pitch)
-            if n_lines < 1: n_lines = 1
+            n_lines = max(1, int(2.0 * R / pitch))
             ys = np.linspace(-(n_lines-1)*pitch/2.0, (n_lines-1)*pitch/2.0, n_lines)
-
             if reverse_y: ys = ys[::-1]
-
             for y in ys:
-                # Sehnenlänge im Kreis bei y
                 if abs(y) >= R: continue
                 span = math.sqrt(max(R * R - y * y, 0.0))
-                x0, x1 = -span - edge_extend, span + edge_extend
-                line_segments.append(((x0, y), (x1, y)))
+                line_segments.append(((-span - edge_extend, y), (span + edge_extend, y)))
         else:
             sx, sy = area.get("size_mm", [100.0, 100.0])
             hx = max(0.0, 0.5 * float(sx) - margin)
             hy = max(0.0, 0.5 * float(sy) - margin)
             if hx <= 0 or hy <= 0: return np.zeros((0,3), float)
-
-            # Bereich ist 2*hy. Wir wollen Linien im Abstand pitch.
             n_lines = int(2.0 * hy / pitch) + 1
-            # Startpunkt so wählen, dass es zentriert ist
-            # y_span = (n_lines-1)*pitch
-            # start = -y_span/2
-            start_y = -((n_lines - 1) * pitch) / 2.0
-            ys = np.array([start_y + i*pitch for i in range(n_lines)])
-            
+            ys = np.array([-((n_lines - 1) * pitch) / 2.0 + i*pitch for i in range(n_lines)])
             if reverse_y: ys = ys[::-1]
-
             for y in ys:
-                x0, x1 = -hx - edge_extend, hx + edge_extend
-                line_segments.append(((x0, y), (x1, y)))
+                line_segments.append(((-hx - edge_extend, y), (hx + edge_extend, y)))
 
-        if not line_segments:
-            return np.zeros((0, 3), dtype=float)
-
-        # 2. Verbinden der Segmente zu einer durchgängigen Polyline
         full_pts = []
-        
-        def discretize_line(p_start, p_end, step_size):
-            dist = math.hypot(p_end[0]-p_start[0], p_end[1]-p_start[1])
-            n = max(2, int(dist / max(step_size, 1e-6)) + 1)
-            ts = np.linspace(0, 1, n)
-            return [(p_start[0]*(1-t) + p_end[0]*t, p_start[1]*(1-t) + p_end[1]*t) for t in ts]
-
-        def discretize_arc_connect(p1, p2, step_size):
-            """Erzeugt einen Halbkreis von p1 nach p2."""
-            # Mittelpunkt
-            mx, my = (p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0
-            # Vektor P1->P2 (Basis des Halbkreises)
-            dx, dy = p2[0] - p1[0], p2[1] - p1[1]
-            dist = math.hypot(dx, dy)
-            if dist < 1e-6: return [p1]
-            
-            radius = dist / 2.0
-            # arc length approx pi*r
-            n = max(4, int((math.pi * radius) / max(step_size, 1e-6)) + 1)
-            
-            # Basis-Vektoren für Halbkreis
-            u_vec = np.array([dx, dy]) / dist
-            v_vec = np.array([u_vec[1], -u_vec[0]]) # Rotate 90 deg
-            
-            # Bulge Richtung bestimmen (immer nach Außen relativ zur Mitte)
-            # mx > 0 -> rechts -> bulge nach rechts (+X)
-            # mx < 0 -> links -> bulge nach links (-X)
-            bulge_dir = 1.0 if mx > 0 else -1.0
-            
-            # Wenn v_vec in die falsche Richtung zeigt, umdrehen
-            if (v_vec[0] * bulge_dir) < 0:
-                v_vec = -v_vec
-            
-            pts = []
-            for i in range(1, n): # Start/Ende weglassen (werden von Linien gedeckt)
-                t = i / float(n)
-                lin_pt = np.array(p1) * (1-t) + np.array(p2) * t
-                offset = v_vec * radius * math.sin(t * math.pi) # Sine bump
-                pt = lin_pt + offset
-                pts.append((pt[0], pt[1]))
-                
-            return pts
-
         current_rev = reverse_x_base 
-        
         for i, (p0, p1) in enumerate(line_segments):
-            # Start/Ende der aktuellen Zeile festlegen
-            start = p1 if current_rev else p0
-            end   = p0 if current_rev else p1
-            
-            # 1. Verbindung vom vorherigen Zeilenende zum aktuellen Start
-            if i > 0:
-                prev_end = full_pts[-1]
-                # Runde Verbindung einfügen
-                connector = discretize_arc_connect(prev_end, start, step)
-                full_pts.extend(connector)
-            else:
-                full_pts.append(start)
-            
-            # 2. Die Zeile selbst
-            line_pts = discretize_line(start, end, step)
-            full_pts.extend(line_pts[1:]) # Startpunkt ist schon da
-            
-            # Richtung für nächste Zeile umkehren
+            start, end = (p1, p0) if current_rev else (p0, p1)
+            dist = math.hypot(end[0]-start[0], end[1]-start[1])
+            n = max(2, int(dist / max(step, 1e-6)) + 1)
+            full_pts.extend([(start[0]*(1-t) + end[0]*t, start[1]*(1-t) + end[1]*t) for t in np.linspace(0, 1, n)][int(i>0):])
             current_rev = not current_rev
 
         poly2d = np.array(full_pts, dtype=float)
-
-        # Rotation
-        if abs(angle) > 1e-9 and poly2d.shape[0] > 0:
+        if abs(angle) > 1e-9 and poly2d.size > 0:
             th = math.radians(angle)
-            R2 = np.array([[math.cos(th), -math.sin(th)],
-                           [math.sin(th),  math.cos(th)]], dtype=float)
+            R2 = np.array([[math.cos(th), -math.sin(th)], [math.sin(th), math.cos(th)]])
             poly2d = poly2d @ R2.T
-
-        # Offset Center
-        poly2d += np.array([cx, cy], dtype=float)
+        poly2d += np.array([cx, cy])
         
-        # Z-Koordinate hinzufügen
-        P = np.c_[poly2d, np.zeros((poly2d.shape[0],), dtype=float)]
-        
-        return PathBuilder._decimate(P, max_points)
+        # Z-Koordinate STRENG auf 0 setzen
+        return PathBuilder._decimate(np.c_[poly2d, np.zeros(poly2d.shape[0])], max_points)
 
     @staticmethod
     def _spiral_plane(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
+        """Ebene Spirale (Z=0)."""
         cx, cy = (p.get("center_xy_mm") or [0.0, 0.0])
         r_outer = float(p.get("r_outer_mm", p.get("r_end_mm", 70.0)))
         r_inner = float(p.get("r_inner_mm", p.get("r_start_mm", 10.0)))
         pitch = max(1e-6, float(p.get("pitch_mm", 5.0)))
-        
-        z_level = float(p.get("z_mm", 10.0))
         direction = str(p.get("direction", "ccw")).lower()
 
         turns = max(int(abs(r_outer - r_inner) / pitch), 1)
         theta_max = 2.0 * math.pi * turns
-
-        dtheta = step / max(max(r_outer, r_inner), 1e-6)
-        N = int(theta_max / max(dtheta, 1e-6)) + 2
+        N = int(theta_max / max(step / max(r_outer, r_inner, 1e-6), 1e-6)) + 2
         theta = np.linspace(0.0, theta_max, N)
-
-        # Interpolation r_outer -> r_inner
         r = r_outer - (r_outer - r_inner) * (theta / theta_max)
+        if direction == "cw": theta = -theta
+
+        x, y = cx + r * np.cos(theta), cy + r * np.sin(theta)
         
-        if direction == "cw":
-            theta = -theta
-
-        x = cx + r * np.cos(theta)
-        y = cy + r * np.sin(theta)
-        z = np.full_like(x, z_level)
-
-        P = np.c_[x, y, z]
-        return PathBuilder._decimate(P, max_points)
+        # Z-Koordinate STRENG auf 0 setzen (ignoriert z_mm für die Generierung)
+        return PathBuilder._decimate(np.c_[x, y, np.zeros_like(x)], max_points)
 
     @staticmethod
     def _spiral_cylinder_centerline(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
-        """
-        Erzeugt Helix-Punkte zentriert um (0,0,0) in XY, Z verläuft vertikal.
-        Verwendet explizite 'radius_mm' und 'height_mm' Parameter, wenn vorhanden.
-        """
-        pitch = max(1e-6, float(p.get("pitch_mm", 10.0)))
-        m_top = float(p.get("margin_top_mm", 0.0))
-        m_bot = float(p.get("margin_bottom_mm", 0.0))
-        start_from = str(p.get("start_from", "top")).lower()
-        direction = str(p.get("direction", "ccw")).lower()
-
-        # Radius und Höhe robust lesen (Fallback auf 100/20 falls nicht da)
+        """Zylindrische Helix (3D bleibt erhalten)."""
+        pitch, height = max(1e-6, float(p.get("pitch_mm", 10.0))), float(p.get("height_mm", 100.0))
         radius = float(p.get("radius_mm", 20.0)) + float(p.get("outside_mm", 1.0))
-        height = float(p.get("height_mm", 100.0))
+        usable_h = max(height - float(p.get("margin_top_mm", 0.0)) - float(p.get("margin_bottom_mm", 0.0)), 0.0)
+        if usable_h <= 1e-9: return np.zeros((0, 3))
 
-        # Nutzbare Höhe berechnen
-        usable_h = max(height - m_top - m_bot, 0.0)
-        
-        # Falls keine Höhe da ist, return leeren Pfad
-        if usable_h <= 1e-9:
-            return np.zeros((0, 3), dtype=float)
-
-        # Turns als Float berechnen, um "Abschneiden" bei int() zu verhindern
         turns = usable_h / pitch
-        
-        # Bogenlänge pro Windung: sqrt((2*pi*r)^2 + pitch^2)
-        len_per_turn = math.sqrt((2 * math.pi * radius)**2 + pitch**2)
-        total_len = turns * len_per_turn
-        
-        # Anzahl Punkte bestimmen
-        num_points = max(2, int(total_len / max(step, 1e-6)) + 1)
-        
-        # Parameter t von 0 bis 1
+        num_points = max(2, int((turns * math.sqrt((2*math.pi*radius)**2 + pitch**2)) / max(step, 1e-6)) + 1)
         t = np.linspace(0.0, 1.0, num_points)
-        
-        # Z-Koordinate (Zentriert um 0: von +H/2 bis -H/2)
-        z_top_limit = height / 2.0 - m_top
-        z_bot_limit = -height / 2.0 + m_bot
-        
-        if start_from == "top":
-            z = z_top_limit - t * usable_h
-        else:
-            z = z_bot_limit + t * usable_h
-            
-        # Winkel (Theta)
-        total_angle = turns * 2.0 * math.pi
-        if direction == "cw":
-            angles = -t * total_angle
-        else:
-            angles = t * total_angle
-            
-        x = radius * np.cos(angles)
-        y = radius * np.sin(angles)
-
-        P = np.c_[x, y, z]
-        return PathBuilder._decimate(P, max_points)
+        z = (height/2.0 - float(p.get("margin_top_mm", 0.0))) - t * usable_h if str(p.get("start_from", "top")).lower() == "top" else (-height/2.0 + float(p.get("margin_bottom_mm", 0.0))) + t * usable_h
+        angles = (-1 if str(p.get("direction", "ccw")).lower() == "cw" else 1) * t * turns * 2.0 * math.pi
+        return PathBuilder._decimate(np.c_[radius * np.cos(angles), radius * np.sin(angles), z], max_points)
 
     @staticmethod
     def _perimeter_follow_plane(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
-        area = dict(p.get("area") or {})
-        shape = str(area.get("shape", "circle")).lower()
-        cx, cy = (area.get("center_xy_mm") or [0.0, 0.0])
-
-        loops = max(int(p.get("loops", 1)), 1)
-        off0 = float(p.get("offset_start_mm", 1.0))
-        offstep = float(p.get("offset_step_mm", 1.0))
-        blend = max(0.0, float(p.get("corner_blend_mm", 0.0)))
-        lead_in = float(p.get("lead_in_mm", 0.0))
-
-        polylines: List[np.ndarray] = []
-
+        """Perimeter-Bahn (Z=0)."""
+        area, loops = dict(p.get("area") or {}), max(int(p.get("loops", 1)), 1)
+        shape, cx, cy = str(area.get("shape", "circle")).lower(), *(area.get("center_xy_mm") or [0.0, 0.0])
+        off0, offstep, blend = float(p.get("offset_start_mm", 1.0)), float(p.get("offset_step_mm", 1.0)), max(0.0, float(p.get("corner_blend_mm", 0.0)))
+        
+        polylines = []
         for k in range(loops):
             off = off0 + k * offstep
-
             if shape in ("circle", "disk"):
-                R = float(area.get("radius_mm", 50.0))
-                r = R - off
-                if r <= 0.0:
-                    continue
-                poly = PathBuilder._polyline_circle(cx, cy, r, step)
+                r = float(area.get("radius_mm", 50.0)) - off
+                if r > 0: polylines.append(PathBuilder._polyline_circle(cx, cy, r, step))
             else:
                 sx, sy = area.get("size_mm", [100.0, 100.0])
-                hx = 0.5 * float(sx) - off
-                hy = 0.5 * float(sy) - off
-                if hx <= 0.0 or hy <= 0.0:
-                    continue
-                poly = PathBuilder._polyline_rounded_rect(
-                    cx=cx, cy=cy,
-                    hx=hx, hy=hy,
-                    r=max(0.0, min(blend, hx, hy)),
-                    step=step,
-                )
+                hx, hy = 0.5 * float(sx) - off, 0.5 * float(sy) - off
+                if hx > 0 and hy > 0: polylines.append(PathBuilder._polyline_rounded_rect(cx, cy, hx, hy, min(blend, hx, hy), step))
+            if polylines and (k % 2) == 1: polylines[-1] = polylines[-1][::-1].copy()
 
-            if poly.shape[0] == 0:
-                continue
-
-            if (k % 2) == 1:
-                poly = poly[::-1].copy()
-
-            if lead_in > 1e-9 and poly.shape[0] >= 2:
-                dir_vec = (poly[1] - poly[0])
-                n = np.linalg.norm(dir_vec)
-                if n > 1e-9:
-                    lead_pt = poly[0] - (dir_vec / n) * lead_in
-                    poly = np.vstack([lead_pt, poly])
-
-            polylines.append(poly)
-
-        if not polylines:
-            return np.zeros((0, 3), dtype=float)
-
-        P = np.vstack(polylines)
-        return PathBuilder._decimate(P, max_points)
+        return PathBuilder._decimate(np.vstack(polylines) if polylines else np.zeros((0,3)), max_points)
 
     @staticmethod
     def _polyline_circle(cx: float, cy: float, r: float, step: float) -> np.ndarray:
-        r = float(r)
-        if r <= 0.0:
-            return np.zeros((0, 3), dtype=float)
-
         n = max(12, int((2.0 * math.pi * r) / max(step, 1e-6)) + 1)
         theta = np.linspace(0.0, 2.0 * math.pi, n, endpoint=False)
-        x = cx + r * np.cos(theta)
-        y = cy + r * np.sin(theta)
-        return np.c_[x, y, np.zeros_like(x)]
+        return np.c_[cx + r * np.cos(theta), cy + r * np.sin(theta), np.zeros(n)]
 
     @staticmethod
     def _polyline_rounded_rect(cx: float, cy: float, hx: float, hy: float, r: float, step: float) -> np.ndarray:
-        hx = float(hx)
-        hy = float(hy)
-        r = max(0.0, min(float(r), hx, hy))
-
-        def n_for_len(L: float) -> int:
-            return max(2, int(L / max(step, 1e-6)) + 1)
-
-        pts: List[np.ndarray] = []
-
-        def append_line(p0: np.ndarray, p1: np.ndarray, nseg: int) -> None:
-            t = np.linspace(0.0, 1.0, nseg, endpoint=False)
-            pts.append((1.0 - t)[:, None] * p0 + t[:, None] * p1)
-
-        def append_arc(center: np.ndarray, rr: float, a0: float, a1: float, nseg: int) -> None:
-            if rr <= 0.0:
-                return
-            ang = np.linspace(a0, a1, nseg, endpoint=False)
-            x = center[0] + rr * np.cos(ang)
-            y = center[1] + rr * np.sin(ang)
-            pts.append(np.c_[x, y, np.zeros_like(x)])
-
-        z0 = 0.0
-        c_tr = np.array([cx + hx - r, cy + hy - r, z0])
-        c_tl = np.array([cx - hx + r, cy + hy - r, z0])
-        c_bl = np.array([cx - hx + r, cy - hy + r, z0])
-        c_br = np.array([cx + hx - r, cy - hy + r, z0])
-
-        p_bl = np.array([cx - hx + r, cy - hy, z0])
-        p_br = np.array([cx + hx - r, cy - hy, z0])
-        append_line(p_bl, p_br, n_for_len(2.0 * (hx - r)))
-        append_arc(c_br, r, -0.5 * math.pi, 0.0, n_for_len(0.5 * math.pi * r))
-
-        p_r_bot = np.array([cx + hx, cy - hy + r, z0])
-        p_r_top = np.array([cx + hx, cy + hy - r, z0])
-        append_line(p_r_bot, p_r_top, n_for_len(2.0 * (hy - r)))
-        append_arc(c_tr, r, 0.0, 0.5 * math.pi, n_for_len(0.5 * math.pi * r))
-
-        p_tr = np.array([cx + hx - r, cy + hy, z0])
-        p_tl = np.array([cx - hx + r, cy + hy, z0])
-        append_line(p_tr, p_tl, n_for_len(2.0 * (hx - r)))
-        append_arc(c_tl, r, 0.5 * math.pi, math.pi, n_for_len(0.5 * math.pi * r))
-
-        p_l_top = np.array([cx - hx, cy + hy - r, z0])
-        p_l_bot = np.array([cx - hx, cy - hy + r, z0])
-        append_line(p_l_top, p_l_bot, n_for_len(2.0 * (hy - r)))
-        append_arc(c_bl, r, math.pi, 1.5 * math.pi, n_for_len(0.5 * math.pi * r))
-
-        if not pts:
-            return np.zeros((0, 3), dtype=float)
-
-        poly = np.vstack(pts)
-
-        if poly.shape[0] >= 2:
-            mask = np.ones((poly.shape[0],), dtype=bool)
-            mask[1:] = np.linalg.norm(poly[1:] - poly[:-1], axis=1) > 1e-9
-            poly = poly[mask]
-
-        return poly
-
-    @staticmethod
-    def _point_on_polyline_by_arclength(poly2d: np.ndarray, s: float) -> np.ndarray:
-        poly2d = np.asarray(poly2d, dtype=float)
-        if poly2d.shape[0] < 2:
-            return np.array([0.0, 0.0], dtype=float)
-
-        P = poly2d[:, :2]
-        seg = P[1:] - P[:-1]
-        seglen = np.linalg.norm(seg, axis=1)
-        L = float(seglen.sum())
-        if L <= 1e-12:
-            return P[0].copy()
-
-        s = float(s) % L
-        cum = np.concatenate([[0.0], np.cumsum(seglen)])
-        i = np.searchsorted(cum, s, side="right") - 1
-        i = max(0, min(i, len(seglen) - 1))
-
-        ds = s - cum[i]
-        if seglen[i] <= 1e-12:
-            return P[i + 1].copy()
-
-        t = ds / seglen[i]
-        return (1.0 - t) * P[i] + t * P[i + 1]
+        pts, r = [], max(0.0, min(r, hx, hy))
+        def add_l(p0, p1): pts.append((1.0 - np.linspace(0,1,max(2,int(np.linalg.norm(p1-p0)/max(step,1e-6))+1),False))[:,None]*p0 + np.linspace(0,1,max(2,int(np.linalg.norm(p1-p0)/max(step,1e-6))+1),False)[:,None]*p1)
+        def add_a(c, rr, a0, a1): 
+            ang = np.linspace(a0, a1, max(2, int(0.5*math.pi*rr/max(step,1e-6))+1), False)
+            pts.append(np.c_[c[0]+rr*np.cos(ang), c[1]+rr*np.sin(ang), np.zeros_like(ang)])
+        
+        c = [np.array([cx+hx-r, cy+hy-r]), np.array([cx-hx+r, cy+hy-r]), np.array([cx-hx+r, cy-hy+r]), np.array([cx+hx-r, cy-hy+r])]
+        add_l(np.array([cx-hx+r, cy-hy]), np.array([cx+hx-r, cy-hy])); add_a(c[3], r, -0.5*math.pi, 0)
+        add_l(np.array([cx+hx, cy-hy+r]), np.array([cx+hx, cy+hy-r])); add_a(c[0], r, 0, 0.5*math.pi)
+        add_l(np.array([cx+hx-r, cy+hy]), np.array([cx-hx+r, cy+hy])); add_a(c[1], r, 0.5*math.pi, math.pi)
+        add_l(np.array([cx-hx, cy+hy-r]), np.array([cx-hx, cy-hy+r])); add_a(c[2], r, math.pi, 1.5*math.pi)
+        return np.vstack(pts)
 
     @staticmethod
     def _polyhelix_pyramid(p: Dict[str, Any], step: float, max_points: int) -> np.ndarray:
@@ -701,75 +423,33 @@ class PathBuilder:
 
     @staticmethod
     def _polyhelix_generic(p: Dict[str, Any], step: float, max_points: int, is_cube: bool) -> np.ndarray:
-        if is_cube:
-            edge = float(p.get("edge_len_mm", 100.0))
-            n_sides = 4
-            R_base = 0 
-        else:
-            n_sides = int(p.get("base_polygon_sides", 4))
-            edge = float(p.get("base_edge_len_mm", 100.0))
-            R_base = edge / (2.0 * math.sin(math.pi / n_sides))
-
-        height = float(p.get("height_mm", 100.0))
-        pitch = max(1e-6, float(p.get("pitch_mm", 6.0)))
-        dz = max(1e-6, float(p.get("dz_mm", 1.0)))
-        stand_off = float(p.get("stand_off_mm", 25.0))
+        """Helix-Strukturen (3D bleibt erhalten)."""
+        edge = float(p.get("edge_len_mm" if is_cube else "base_edge_len_mm", 100.0))
+        n_sides = 4 if is_cube else int(p.get("base_polygon_sides", 4))
+        R_actual = (0 if is_cube else edge / (2.0 * math.sin(math.pi / n_sides))) + float(p.get("stand_off_mm", 25.0))
         
         if is_cube:
-            corner_r = float(p.get("corner_roll_radius_mm", 8.0))
-            hx = 0.5 * edge + stand_off
-            hy = 0.5 * edge + stand_off
-            base_poly = PathBuilder._polyline_rounded_rect(
-                0.0, 0.0, hx, hy, corner_r, step=max(1.0, step)
-            )
-            base2d = base_poly[:, :2]
+            base2d = PathBuilder._polyline_rounded_rect(0, 0, 0.5*edge+float(p.get("stand_off_mm",25)), 0.5*edge+float(p.get("stand_off_mm",25)), float(p.get("corner_roll_radius_mm", 8.0)), max(1.0, step))[:,:2]
         else:
-            phase = math.radians(float(p.get("start_phase_deg", 0.0)))
-            R_actual = R_base + stand_off
-            verts = []
-            for i in range(n_sides):
-                a = phase + 2.0 * math.pi * (i / n_sides)
-                verts.append([R_actual * math.cos(a), R_actual * math.sin(a)])
-            verts = np.asarray(verts, float)
-            segs = []
-            for i in range(n_sides):
-                p0 = verts[i]
-                p1 = verts[(i + 1) % n_sides]
-                m = max(2, int(10)) 
-                t = np.linspace(0.0, 1.0, m, endpoint=False)
-                segs.append((1.0 - t)[:, None] * p0 + t[:, None] * p1)
-            poly = np.vstack(segs)
-            base2d = poly
+            verts = [[R_actual * math.cos(math.radians(float(p.get("start_phase_deg", 0.0))) + 2*math.pi*i/n_sides), R_actual * math.sin(math.radians(float(p.get("start_phase_deg", 0.0))) + 2*math.pi*i/n_sides)] for i in range(n_sides)]
+            base2d = np.vstack([ (1-t)[:,None]*np.array(verts[i]) + t[:,None]*np.array(verts[(i+1)%n_sides]) for i in range(n_sides) for t in [np.linspace(0,1,10,False)] ])
 
-        seg = base2d[1:] - base2d[:-1]
-        L_base = float(np.linalg.norm(seg, axis=1).sum())
-        if L_base <= 1e-9:
-            return np.zeros((0, 3), dtype=float)
+        L_base = np.linalg.norm(base2d[1:] - base2d[:-1], axis=1).sum()
+        if L_base <= 1e-9: return np.zeros((0, 3))
 
-        ds_per_dz = L_base / pitch
-        cap_top = max(0.0, float(p.get("cap_top_mm", 8.0))) if not is_cube else 0.0
-        z_min = -0.5 * height
-        z_max = 0.5 * height - cap_top
+        height, pitch, dz = float(p.get("height_mm", 100.0)), max(1e-6, float(p.get("pitch_mm", 6.0))), max(1e-6, float(p.get("dz_mm", 1.0)))
+        pts, s_acc, z = [], 0.0, -0.5 * height
+        while z <= (0.5 * height - (max(0.0, float(p.get("cap_top_mm", 8.0))) if not is_cube else 0.0)) + 1e-9:
+            scale = max(0.0, (0.5*height - z) / height) if not is_cube else 1.0
+            pt_xy = PathBuilder._point_on_polyline_by_arclength(np.c_[base2d, np.zeros(base2d.shape[0])], s_acc) * scale
+            pts.append([pt_xy[0], pt_xy[1], z])
+            s_acc += (L_base / pitch) * dz; z += dz
+        return PathBuilder._decimate(np.array(pts), max_points)
 
-        pts = []
-        s_acc = 0.0
-        z = z_min
-        
-        while z <= z_max + 1e-9:
-            scale = 1.0
-            if not is_cube:
-                dist_from_top = (0.5*height) - z
-                scale = max(0.0, dist_from_top / height)
-
-            poly_z = base2d * scale
-            pt_xy_base = PathBuilder._point_on_polyline_by_arclength(
-                np.c_[base2d, np.zeros((base2d.shape[0],), dtype=float)],
-                s_acc,
-            )
-            pt_xy = pt_xy_base * scale
-            pts.append([float(pt_xy[0]), float(pt_xy[1]), float(z)])
-
-            s_acc += ds_per_dz * dz
-            z += dz
-
-        return PathBuilder._decimate(np.asarray(pts, dtype=float), max_points)
+    @staticmethod
+    def _point_on_polyline_by_arclength(poly: np.ndarray, s: float) -> np.ndarray:
+        P = poly[:, :2]; seglen = np.linalg.norm(P[1:] - P[:-1], axis=1); L = seglen.sum()
+        if L <= 1e-12: return P[0].copy()
+        s %= L; cum = np.concatenate([[0.0], np.cumsum(seglen)])
+        i = max(0, min(np.searchsorted(cum, s, side="right") - 1, len(seglen) - 1))
+        return P[i] if seglen[i] <= 1e-12 else (1.0 - (s-cum[i])/seglen[i]) * P[i] + ((s-cum[i])/seglen[i]) * P[i+1]

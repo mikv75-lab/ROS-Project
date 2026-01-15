@@ -1,5 +1,5 @@
 version: 1
-active_mount: post_d30mm_h100mm
+active_mount: circle_d240_h50
 mounts:
   flat_240x240x50:
     description: Standard Flachhalter 240x240mm

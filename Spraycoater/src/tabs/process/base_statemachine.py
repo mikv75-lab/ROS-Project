@@ -57,6 +57,11 @@ class BaseProcessStatemachine(QtCore.QObject):
             "urdf_xml": str,
             "srdf_xml": str,
           }
+
+    Retry (STRICT, NEW):
+      - Soft execution errors (default: ERROR:EXEC ...) trigger retry of ONLY the last motion command.
+      - No segment replay in Base. Subclasses must implement _on_retry_last_motion().
+      - After max retries: notifyError with prefix 'RETRY_EXHAUSTED:' so UI can show Retry/Abort dialog.
     """
 
     ROLE = "process"
@@ -70,6 +75,11 @@ class BaseProcessStatemachine(QtCore.QObject):
     _sig_done = QtCore.pyqtSignal()
     _sig_error = QtCore.pyqtSignal()
 
+    # Retry policy
+    # - Soft execution errors are retried by re-sending ONLY the last motion command (no segment replay).
+    # - After max_retries attempts => error with prefix 'RETRY_EXHAUSTED:' for UI dialog.
+    _RETRY_DELAY_MS = 250
+
     def __init__(
         self,
         *,
@@ -77,7 +87,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         ros: Any,
         run_result: RunResult,
         parent: Optional[QtCore.QObject] = None,
-        max_retries: int = 2,
+        max_retries: int = 3,
         skip_home: bool = False,
     ) -> None:
         super().__init__(parent)
@@ -176,7 +186,7 @@ class BaseProcessStatemachine(QtCore.QObject):
     def _segment_exists(self, seg_name: str) -> bool:
         return not (self._skip_home and seg_name == STATE_MOVE_HOME)
 
-    # ---------------- Segment capture reset (NEW) ----------------
+    # ---------------- Segment capture reset ----------------
 
     def _reset_segment_capture(self, seg_name: str, *, clear_steps: bool = True) -> None:
         """
@@ -184,17 +194,13 @@ class BaseProcessStatemachine(QtCore.QObject):
 
         Needed for:
           - entering a segment
-          - retrying a segment (otherwise mixes attempt#1 + attempt#2)
           - boundary clear (trajCacheClearChanged)
+        NOTE: for 'retry last motion' we intentionally DO NOT clear prior steps.
         """
-        # local fallbacks
         self._last_planned_any = None
         self._last_executed_any = None
-
-        # ordering guard
         self._seen_planned_ok[seg_name] = False
 
-        # step buffers
         if clear_steps:
             self._planned_steps_by_segment[seg_name] = []
             self._executed_steps_by_segment[seg_name] = []
@@ -204,6 +210,7 @@ class BaseProcessStatemachine(QtCore.QObject):
     def _on_state_enter(self, seg_name: str) -> None:
         self._current_state = seg_name
         self.stateChanged.emit(seg_name)
+        self.logMessage.emit(f"STATE: {seg_name}")
 
         if self._stop_requested:
             self._signal_error("Gestoppt")
@@ -224,6 +231,22 @@ class BaseProcessStatemachine(QtCore.QObject):
 
         self._on_enter_segment(seg_name)
 
+    def _is_soft_error(self, res: str) -> bool:
+        """
+        Soft errors = retryable without aborting the whole run.
+        Default policy (strict):
+          - execution error => soft (usually start-state mismatch / controller race)
+          - everything else => hard
+        """
+        r = (res or "").strip()
+        return r.startswith("ERROR:EXEC")
+
+    def _make_retry_exhausted_msg(self, seg: str, res: str) -> str:
+        return (
+            f"RETRY_EXHAUSTED: {res} seg={seg} "
+            f"(attempts={int(self._retry_count)}/{int(self._max_retries)})"
+        )
+
     @QtCore.pyqtSlot(str)
     def _on_motion_result(self, result: str) -> None:
         if not self._machine or not self._machine.isRunning():
@@ -236,13 +259,45 @@ class BaseProcessStatemachine(QtCore.QObject):
             return
 
         if res.startswith("ERROR"):
-            if self._retry_count < self._max_retries:
-                # FIX: retry must not reuse stale step buffers / ordering
+            # Best-effort: stop any in-flight execution request
+            try:
+                self._ros.moveit_stop()
+            except Exception:
+                pass
+
+            seg = self._current_state
+            soft = self._is_soft_error(res)
+
+            if soft and (self._retry_count < self._max_retries) and (not self._stop_requested):
                 self._retry_count += 1
-                self._reset_segment_capture(self._current_state, clear_steps=True)
-                self._on_enter_segment(self._current_state)
+                _LOG.warning(
+                    "Retry(last-motion) %d/%d for segment '%s' due to: %s",
+                    int(self._retry_count), int(self._max_retries), str(seg), str(res)
+                )
+
+                ok = False
+                try:
+                    # IMPORTANT: this must resend ONLY the last command (pose/joint/whatever),
+                    # not restart the segment logic.
+                    ok = bool(self._on_retry_last_motion(seg, int(self._retry_count), str(res)))
+                except Exception:
+                    ok = False
+
+                if ok:
+                    # small backoff so current RobotState can catch up
+                    QtCore.QTimer.singleShot(self._RETRY_DELAY_MS, lambda: None)
+                    return
+
+                # If subclass can't retry last motion => abort deterministically
+                self._signal_error(self._make_retry_exhausted_msg(seg, res))
+                return
+
+            if soft:
+                # retries exhausted
+                self._signal_error(self._make_retry_exhausted_msg(seg, res))
             else:
-                self._signal_error(f"{res} seg={self._current_state}")
+                # hard error => abort immediately
+                self._signal_error(f"{res} seg={seg}")
             return
 
         if res.startswith("PLANNED:OK"):
@@ -311,11 +366,10 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def _on_traj_cache_clear(self) -> None:
-        # hard clear local fallbacks (only!)
         self._last_planned_any = None
         self._last_executed_any = None
 
-        # also clear step buffers + ordering for current segment (FIX)
+        # also clear step buffers + ordering for current segment
         if self._current_state:
             self._reset_segment_capture(self._current_state, clear_steps=True)
 
@@ -415,11 +469,11 @@ class BaseProcessStatemachine(QtCore.QObject):
         Only if those methods do not exist, fall back to cached last_* from Qt signals.
         """
         rp = getattr(self._ros, "moveit_planned_trajectory", None)
-        re = getattr(self._ros, "moveit_executed_trajectory", None)
+        re_ = getattr(self._ros, "moveit_executed_trajectory", None)
 
-        if callable(rp) and callable(re):
+        if callable(rp) and callable(re_):
             try:
-                return rp(), re()
+                return rp(), re_()
             except Exception as e:
                 self._signal_error(f"RosBridge moveit_*_trajectory() failed: {e!r}")
                 return None, None
@@ -661,6 +715,22 @@ class BaseProcessStatemachine(QtCore.QObject):
             pass
 
         QtCore.QTimer.singleShot(0, lambda: self._signal_error("Gestoppt"))
+
+    # ---------------- Retry hook (NEW) ----------------
+
+    def _on_retry_last_motion(self, seg_name: str, attempt: int, last_error: str) -> bool:
+        """
+        Subclass hook: resend ONLY the last motion command (the one that just failed).
+
+        MUST NOT:
+          - rebuild the whole segment
+          - clear already captured per-segment steps
+
+        Return:
+          True  -> retry was triggered (command resent)
+          False -> cannot retry (Base will abort with RETRY_EXHAUSTED)
+        """
+        return False
 
     # ---------------- Hooks ----------------
 
