@@ -40,30 +40,34 @@ class EvalResult:
 
 class RecipeEvaluator:
     """
-    NEW evaluator (old logic intentionally removed).
+    STRICT evaluator:
 
-    Scope (strict):
-      - Compare TCP paths against compiled reference (draft) only.
-      - planned vs draft (MOVE_RECIPE only)
-      - executed vs draft (MOVE_RECIPE only)
+    - Compares TCP paths against compiled reference (draft) ONLY.
+    - planned vs draft (MOVE_RECIPE only)
+    - executed vs draft (MOVE_RECIPE only)
 
-    Segment filtering (best-effort):
-      The evaluator uses ONLY the MOVE_RECIPE part of planned/executed tcp docs
-      if the tcp doc provides segment information via either:
+    IMPORTANT (STRICT FRAME):
+      - recipe.draft is in 'substrate' frame (confirmed by user).
+      - planned_tcp/executed_tcp MUST be in 'substrate' frame as well.
+      - If mismatch -> eval_failed (no silent fallback).
+
+    Segment filtering (STRICT):
+      The evaluator MUST be able to isolate MOVE_RECIPE from planned/executed tcp docs via either:
 
       A) tcp_doc["segments"][<segment_id>]["sides"][side]["poses_quat"]
       B) tcp_doc["meta"]["segment_slices"][<segment_id>][side] = [start,end)
 
-      If neither exists -> fallback to tcp_doc["sides"] (whole tcp).
+      If neither exists -> eval_failed (NO fallback to whole tcp).
 
     Compatibility:
-      - Provides evaluate_runs(...) to match your RunResult.postprocess() caller.
+      - Provides evaluate_runs(...) to match RunResult.postprocess() caller.
       - Provides evaluate(...) as a fallback API.
       - Produces eval dict with keys: domain/threshold/valid/invalid_reason/total/segments
         so RunResult.format_eval_text() can show per-segment statistics.
     """
 
     DEFAULT_RECIPE_SEGMENT = "MOVE_RECIPE"
+    REQUIRED_FRAME = "substrate"
 
     def __init__(
         self,
@@ -118,6 +122,17 @@ class RecipeEvaluator:
     def _dict(v: Any) -> Dict[str, Any]:
         return v if isinstance(v, dict) else {}
 
+    @classmethod
+    def _require_tcp_frame(cls, tcp_doc: Optional[Dict[str, Any]], *, name: str) -> None:
+        if not isinstance(tcp_doc, dict) or not tcp_doc:
+            raise ValueError(f"{name}: tcp_doc missing/empty")
+
+        fr = str(tcp_doc.get("frame") or "").strip()
+        if not fr:
+            raise ValueError(f"{name}: tcp_doc.frame missing/empty (required: {cls.REQUIRED_FRAME!r})")
+        if fr != cls.REQUIRED_FRAME:
+            raise ValueError(f"{name}: frame mismatch tcp_doc.frame={fr!r} expected={cls.REQUIRED_FRAME!r}")
+
     # ============================================================
     # extraction: draft + tcp docs -> Nx3 (mm)
     # ============================================================
@@ -154,13 +169,23 @@ class RecipeEvaluator:
             return np.zeros((0, 3), dtype=float)
         return np.asarray(pts, dtype=float).reshape(-1, 3)
 
-    @staticmethod
-    def _extract_points_from_recipe_draft_mm(recipe: Any, *, side: str) -> np.ndarray:
+    @classmethod
+    def _extract_points_from_recipe_draft_mm(cls, recipe: Any, *, side: str) -> np.ndarray:
         d = getattr(recipe, "draft", None)
         if d is None:
             d = getattr(recipe, "draft_data", None)
         if d is None or not hasattr(d, "sides"):
             return np.zeros((0, 3), dtype=float)
+
+        # STRICT: ensure draft frame is substrate if available
+        try:
+            fr = str(getattr(d, "frame", "") or "").strip()
+            if fr and fr != cls.REQUIRED_FRAME:
+                # If you store draft.frame, enforce it
+                raise ValueError(f"recipe.draft.frame={fr!r} expected={cls.REQUIRED_FRAME!r}")
+        except Exception:
+            # if draft has no frame, ignore
+            pass
 
         sides = getattr(d, "sides", None)
         if not isinstance(sides, dict):
@@ -186,15 +211,15 @@ class RecipeEvaluator:
         return np.asarray(pts, dtype=float).reshape(-1, 3)
 
     # ============================================================
-    # MOVE_RECIPE segment filter for TCP docs
+    # MOVE_RECIPE segment filter for TCP docs (STRICT)
     # ============================================================
 
     @classmethod
-    def _tcp_doc_only_segment(cls, tcp_doc: Optional[Dict[str, Any]], *, segment_id: str) -> Optional[Dict[str, Any]]:
+    def _tcp_doc_only_segment_strict(cls, tcp_doc: Optional[Dict[str, Any]], *, segment_id: str) -> Dict[str, Any]:
         """
         Return a tcp_doc with ONLY the selected segment.
 
-        Supported optional schemas:
+        STRICT: must be possible to isolate the segment using one of:
 
         1) Per-segment payload:
            tcp_doc["segments"][segment_id] -> dict with either:
@@ -204,10 +229,10 @@ class RecipeEvaluator:
         2) Index slices:
            tcp_doc["meta"]["segment_slices"][segment_id][side] = [start,end)
 
-        If nothing usable exists, returns original tcp_doc (fallback).
+        If nothing usable exists, raises ValueError.
         """
         if not isinstance(tcp_doc, dict) or not tcp_doc:
-            return tcp_doc
+            raise ValueError("tcp_doc missing/empty")
 
         seg = str(segment_id or cls.DEFAULT_RECIPE_SEGMENT)
 
@@ -217,9 +242,11 @@ class RecipeEvaluator:
             seg_doc = segs.get(seg)
             if isinstance(seg_doc, dict):
                 s = seg_doc.get("sides")
-                if isinstance(s, dict):
+                if isinstance(s, dict) and s:
                     return {"frame": tcp_doc.get("frame"), "sides": s, "meta": {"segment": seg}}
-                return {"frame": tcp_doc.get("frame"), "sides": seg_doc, "meta": {"segment": seg}}
+                # tolerate direct sides map
+                if seg_doc:
+                    return {"frame": tcp_doc.get("frame"), "sides": seg_doc, "meta": {"segment": seg}}
 
         # --- (2) meta.segment_slices schema ---
         meta = tcp_doc.get("meta")
@@ -254,8 +281,10 @@ class RecipeEvaluator:
                         if out_sides:
                             return {"frame": tcp_doc.get("frame"), "sides": out_sides, "meta": {"segment": seg}}
 
-        # fallback: cannot segment-filter
-        return tcp_doc
+        raise ValueError(
+            f"tcp_doc missing segment isolation for {seg!r}. "
+            "Provide tcp_doc['segments'][seg]['sides'] or tcp_doc['meta']['segment_slices'][seg][side]=[a,b)."
+        )
 
     # ============================================================
     # polyline resampling
@@ -455,10 +484,15 @@ class RecipeEvaluator:
         thr = self._get_threshold_tcp_from_recipe(recipe=recipe, default=90.0)
         seg = str(recipe_segment_id or self.DEFAULT_RECIPE_SEGMENT)
 
-        planned_seg = self._tcp_doc_only_segment(planned_tcp, segment_id=seg)
-        executed_seg = self._tcp_doc_only_segment(executed_tcp, segment_id=seg)
+        # STRICT frame enforcement (draft is substrate)
+        self._require_tcp_frame(planned_tcp, name="planned_tcp")
+        self._require_tcp_frame(executed_tcp, name="executed_tcp")
 
-        # Determine sides from draft primarily, fallback to tcp docs
+        # STRICT segment isolation
+        planned_seg = self._tcp_doc_only_segment_strict(planned_tcp, segment_id=seg)
+        executed_seg = self._tcp_doc_only_segment_strict(executed_tcp, segment_id=seg)
+
+        # Determine sides from draft primarily, fallback to tcp docs (still strict segment doc)
         sides: List[str] = []
         try:
             d = getattr(recipe, "draft", None) or getattr(recipe, "draft_data", None)
@@ -603,14 +637,28 @@ class RecipeEvaluator:
                 "by_segment": {},
             }
 
-        # compute planned/executed vs draft, MOVE_RECIPE only
-        core = self.evaluate_tcp_against_draft(
-            recipe=recipe,
-            planned_tcp=planned_tcp,
-            executed_tcp=executed_tcp,
-            n_samples=n_samples,
-            recipe_segment_id=recipe_segment_id,
-        )
+        try:
+            core = self.evaluate_tcp_against_draft(
+                recipe=recipe,
+                planned_tcp=planned_tcp,
+                executed_tcp=executed_tcp,
+                n_samples=n_samples,
+                recipe_segment_id=recipe_segment_id,
+            )
+        except Exception as e:
+            # STRICT: surface as eval_failed
+            msg = str(e)
+            return {
+                "domain": "tcp",
+                "threshold": float(self._get_threshold_tcp_from_recipe(recipe=recipe, default=90.0)),
+                "valid": False,
+                "score": 0.0,
+                "invalid_reason": f"eval_failed: {msg}",
+                "total": {"score": 0.0, "metrics": {"label": "tcp/total"}, "details": {"error": msg}},
+                "segments": {},
+                "by_segment": {},
+                "version": 1,
+            }
 
         thr = float(core.get("threshold", 90.0))
         seg = str(core.get("segment") or self.DEFAULT_RECIPE_SEGMENT)
@@ -643,6 +691,7 @@ class RecipeEvaluator:
             "planned_score": p_score,
             "executed_score": e_score,
             "combine": self.conservative_total,
+            "frame_required": self.REQUIRED_FRAME,
         }
         seg_details = {
             "planned": planned,
@@ -654,18 +703,17 @@ class RecipeEvaluator:
 
         total = EvalResult(
             score=float(combined_score),
-            metrics={"label": "tcp/total", "segment": seg, "combine": self.conservative_total},
+            metrics={"label": "tcp/total", "segment": seg, "combine": self.conservative_total, "frame_required": self.REQUIRED_FRAME},
             details={"segment": seg, "planned_score": p_score, "executed_score": e_score, "core": core},
         )
 
-        # Use finalize_eval so you keep a consistent schema (valid/threshold/total/segments)
         out = self.finalize_eval(domain="tcp", total=total, by_segment={seg: seg_eval}, threshold=thr)
 
-        # Override validity to enforce planned AND executed logic (stricter than score-only)
+        # Override validity to enforce planned AND executed logic
         out["valid"] = bool(valid)
         out["invalid_reason"] = str(invalid_reason)
 
-        # Add extra top-level info (useful for debugging, but UI can ignore)
+        # Extra info (debug)
         out["version"] = 1
         out["segment"] = seg
         out["planned"] = planned

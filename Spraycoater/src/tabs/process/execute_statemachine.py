@@ -2,9 +2,9 @@
 # File: tabs/process/execute_statemachine.py
 from __future__ import annotations
 
-import logging
 import copy
-from typing import Any, Optional, Dict, Tuple, List
+import logging
+from typing import Any, Dict, List, Optional, Tuple
 
 from PyQt6 import QtCore
 
@@ -20,21 +20,26 @@ from .base_statemachine import (
 )
 
 # JTBySegment -> RobotTrajectoryMsg
-from builtin_interfaces.msg import Duration as RosDuration
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg
+from builtin_interfaces.msg import Duration as RosDuration  # type: ignore
+from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg  # type: ignore
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint  # type: ignore
 
 _LOG = logging.getLogger("tabs.process.execute_sm")
 
 
 class ProcessExecuteStatemachine(BaseProcessStatemachine):
     """
-    Execute run (STRICT, NO FALLBACKS):
+    Execute run (STRICT):
 
     Key differences vs Validate/Optimize:
       - There may be NO PLANNED:OK events from MoveItPy during Execute.
       - Planned baseline is recipe.planned_traj (YAML v1) and is used as "planned" for pairing.
       - Executed truth is captured via BaseProcessStatemachine caches/getters.
+
+    Retry (STRICT):
+      - Base retries ONLY the last motion command on soft errors (ERROR:EXEC...).
+      - Execute implements _on_retry_last_motion() by re-sending the last segment trajectory.
+      - No segment replay logic; only re-issue the last execute command.
     """
 
     ROLE = "execute"
@@ -69,6 +74,20 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         # cached planned JT dict per segment (for strict pairing)
         self._planned_jt_by_segment: Dict[str, Dict[str, Any]] = {}
 
+        # last "motion command" for retry (execute only)
+        self._inflight_seg: str = ""
+        self._inflight_traj: Optional[RobotTrajectoryMsg] = None
+
+    # ------------------------------------------------------------------
+    # STOP OVERRIDE
+    # ------------------------------------------------------------------
+
+    @QtCore.pyqtSlot()
+    def request_stop(self) -> None:
+        self._inflight_seg = ""
+        self._inflight_traj = None
+        super().request_stop()
+
     # ------------------------------------------------------------------
     # Prepare
     # ------------------------------------------------------------------
@@ -80,6 +99,9 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             self._side = str(params.get("active_side", self._side) or self._side)
         except Exception:
             pass
+
+        self._inflight_seg = ""
+        self._inflight_traj = None
 
         # REQUIRE recipe.planned_traj (no filesystem, no fallbacks)
         planned_traj = getattr(self._recipe, "planned_traj", None)
@@ -197,7 +219,8 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
                 last_t = t_key
 
     def _segment_has_points(self, seg_name: str) -> bool:
-        seg = self._planned_loaded_yaml["segments"].get(seg_name, None)
+        segs = self._planned_loaded_yaml.get("segments", {})
+        seg = segs.get(seg_name, None) if isinstance(segs, dict) else None
         if not isinstance(seg, dict):
             return False
         pts = seg.get("points", None)
@@ -236,7 +259,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             out_pts.append(
                 {
                     "positions": [float(x) for x in pos],
-                    # IMPORTANT: base concat expects either dict{sec,nanosec} or [sec,nsec]; we normalize to dict
+                    # normalize to dict (Base concat accepts dict or [sec,nsec])
                     "time_from_start": {"sec": int(tfs[0]), "nanosec": int(tfs[1])},
                 }
             )
@@ -259,7 +282,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         seg = str(self._current_state or "")
         planned = self._planned_jt_by_segment.get(seg)
 
-        # executed from preferred getter (strict if getters exist)
         re = getattr(self._ros, "moveit_executed_trajectory", None)
         if callable(re):
             try:
@@ -268,25 +290,50 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
                 self._signal_error(f"RosBridge moveit_executed_trajectory() failed: {e!r}")
                 return planned, None
 
-        # fallback: base cached last executed (still acceptable for Execute)
         return planned, self._last_executed_any
 
     # ------------------------------------------------------------------
-    # Cache-clear boundary: keep Execute guard open
+    # Cache-clear boundary: keep Execute ordering guard open
     # ------------------------------------------------------------------
 
     @QtCore.pyqtSlot()
     def _on_traj_cache_clear(self) -> None:
-        # call base behavior (clears buffers/caches)
         try:
             super()._on_traj_cache_clear()
         except Exception:
             pass
 
-        # IMPORTANT: Execute does NOT require PLANNED:OK events.
-        # After a boundary clear, keep the ordering guard satisfied for the active segment.
+        # Execute does NOT require PLANNED:OK events.
         if self._current_state:
             self._seen_planned_ok[self._current_state] = True
+
+    # ------------------------------------------------------------------
+    # Retry hook (Execute): re-send last execute command
+    # ------------------------------------------------------------------
+
+    def _on_retry_last_motion(self, seg_name: str, attempt: int, last_error: str) -> bool:
+        if self._stop_requested:
+            return False
+        if not self._machine or not self._machine.isRunning():
+            return False
+        if seg_name != self._current_state:
+            return False
+        if not self._inflight_traj or self._inflight_seg != seg_name:
+            return False
+
+        _LOG.warning(
+            "Execute: retry last motion attempt %d for seg=%s reason=%s",
+            int(attempt),
+            str(seg_name),
+            str(last_error),
+        )
+
+        try:
+            self._ros.moveit_execute_trajectory(self._inflight_traj, segment=str(seg_name))
+            return True
+        except Exception as e:
+            _LOG.error("Execute: retry failed for seg=%s: %r", str(seg_name), e)
+            return False
 
     # ------------------------------------------------------------------
     # YAML -> RobotTrajectoryMsg
@@ -341,8 +388,12 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
 
-        # IMPORTANT: Execute must NOT require PLANNED:OK events.
-        # Satisfy the base ordering guard for this segment deterministically.
+        # If segment absent, skip deterministically
+        if not bool(self._yaml_segments_present.get(seg_name, False)):
+            QtCore.QTimer.singleShot(0, self._sig_done.emit)
+            return
+
+        # Execute must NOT require PLANNED:OK events.
         self._seen_planned_ok[seg_name] = True
 
         try:
@@ -351,7 +402,14 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             self._signal_error(f"Execute: YAML->RobotTrajectory failed for {seg_name}: {e}")
             return
 
-        self._ros.moveit_execute_trajectory(traj_msg, segment=str(seg_name))
+        # store inflight for retry (last motion command)
+        self._inflight_seg = str(seg_name)
+        self._inflight_traj = traj_msg
+
+        try:
+            self._ros.moveit_execute_trajectory(traj_msg, segment=str(seg_name))
+        except Exception as e:
+            self._signal_error(f"Execute: moveit_execute_trajectory failed for {seg_name}: {e}")
 
     # ------------------------------------------------------------------
     # Planned/Executed payload override

@@ -122,6 +122,15 @@ def _rot3_to_quat(R: List[List[float]]) -> Tuple[float, float, float, float]:
     return _quat_normalize((qx, qy, qz, qw))
 
 
+def _mat4_identity() -> List[List[float]]:
+    return [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
 def _mat4_from_xyz_quat_mm(xyz_mm: Tuple[float, float, float], q: Tuple[float, float, float, float]) -> List[List[float]]:
     R = _quat_to_rot3(q)
     tx, ty, tz = xyz_mm
@@ -199,7 +208,7 @@ def _load_yaml_file(path: str) -> Dict[str, Any]:
 
 
 # ============================================================
-# Offline TF: scene.yaml (scene_objects) + robot.yaml
+# Offline TF: scene.yaml chain + robot.yaml (+ substrate_mounts.yaml)
 # ============================================================
 
 def _scene_object_by_id(scene_doc: Mapping[str, Any], oid: str) -> Dict[str, Any]:
@@ -229,50 +238,160 @@ def _tf_world_robot_mount_from_robot_yaml(robot_doc: Mapping[str, Any]) -> List[
     return _mat4_from_xyz_quat_mm(xyz_mm, q)
 
 
-def compute_T_scene_robot_mount_mm_from_docs(
+def _tf_sub_mount_offset_from_mounts_yaml_mm(mounts_doc: Mapping[str, Any]) -> List[List[float]]:
+    """
+    Returns the active mount "scene_offset" as a rigid transform (mm).
+
+    substrate_mounts.yaml:
+      active_mount: <key>
+      mounts:
+        <key>:
+          scene_offset:
+            xyz: [..,..,..]   # mm
+            rpy_deg: [..,..,..]
+    """
+    if not isinstance(mounts_doc, Mapping):
+        raise ValueError("substrate_mounts.yaml: mounts_doc is not a mapping")
+
+    active = mounts_doc.get("active_mount")
+    if not isinstance(active, str) or not active.strip():
+        raise ValueError("substrate_mounts.yaml: 'active_mount' missing/empty")
+    active = active.strip()
+
+    mounts = mounts_doc.get("mounts")
+    if not isinstance(mounts, Mapping) or not mounts:
+        raise ValueError("substrate_mounts.yaml: 'mounts' missing/empty")
+
+    m = mounts.get(active)
+    if not isinstance(m, Mapping):
+        raise KeyError(f"substrate_mounts.yaml: active_mount {active!r} not found in mounts")
+
+    so = m.get("scene_offset")
+    if not isinstance(so, Mapping):
+        raise ValueError(f"substrate_mounts.yaml: mounts[{active}].scene_offset missing/invalid")
+
+    xyz_mm = _require_list3(so.get("xyz"), f"substrate_mounts.yaml: mounts[{active}].scene_offset.xyz(mm)")
+    rpy = _require_list3(so.get("rpy_deg"), f"substrate_mounts.yaml: mounts[{active}].scene_offset.rpy_deg(deg)")
+    q = _rpy_deg_to_quat_xyzw(rpy[0], rpy[1], rpy[2])
+    return _mat4_from_xyz_quat_mm((xyz_mm[0], xyz_mm[1], xyz_mm[2]), q)
+
+
+def compute_T_substrate_robot_mount_mm_from_docs(
     *,
     scene_doc: Mapping[str, Any],
     robot_doc: Mapping[str, Any],
+    mounts_doc: Optional[Mapping[str, Any]] = None,
     substrate_mount_id: str = "substrate_mount",
-    scene_id: str = "scene",
+    substrate_id: str = "substrate",
 ) -> List[List[float]]:
     """
-    p_scene = T_scene_robot_mount * p_robot_mount
+    p_substrate = T_substrate_robot_mount * p_robot_mount
 
     Uses:
       scene.yaml:
         world -> substrate_mount
-        substrate_mount -> scene
+        substrate_mount -> substrate   (usually identity)
       robot.yaml:
         world -> robot_mount
+      substrate_mounts.yaml (OPTIONAL but recommended):
+        substrate_mount -> substrate_mount_offset  (active mount scene_offset, mm)
+
+    IMPORTANT (your requirement):
+      TCP points must be expressed in the effective 'substrate' frame that includes
+      the active mount offset (e.g. +50mm for h50 mounts).
+
+    Effective transform:
+      T_world_substrate =
+          (world->substrate_mount) *
+          (substrate_mount->mount_offset) *
+          (substrate_mount->substrate)
+
+    If mounts_doc is None:
+      - We still compute using scene.yaml only (mount_offset = identity),
+        but this will be wrong whenever active mounts introduce offsets.
     """
     o_mount = _scene_object_by_id(scene_doc, substrate_mount_id)
-    o_scene = _scene_object_by_id(scene_doc, scene_id)
+    o_substrate = _scene_object_by_id(scene_doc, substrate_id)
 
     # world -> substrate_mount
     if str(o_mount.get("frame", "world")) != "world":
         raise ValueError("scene.yaml: substrate_mount.frame must be 'world'")
     T_world_sub_mount = _tf_from_scene_obj_meters(o_mount)
 
-    # substrate_mount -> scene
-    if str(o_scene.get("frame", "")) != substrate_mount_id:
-        raise ValueError(f"scene.yaml: scene.frame must be {substrate_mount_id!r}")
-    T_sub_mount_scene = _tf_from_scene_obj_meters(o_scene)
+    # substrate_mount -> substrate
+    if str(o_substrate.get("frame", "")) != substrate_mount_id:
+        raise ValueError(f"scene.yaml: substrate.frame must be {substrate_mount_id!r}")
+    T_sub_mount_substrate = _tf_from_scene_obj_meters(o_substrate)
 
-    T_world_scene = _mat4_mul(T_world_sub_mount, T_sub_mount_scene)
+    # substrate_mount -> mount_offset (mm, from substrate_mounts.yaml)
+    T_sub_mount_mount_offset = _mat4_identity()
+    if mounts_doc is not None:
+        T_sub_mount_mount_offset = _tf_sub_mount_offset_from_mounts_yaml_mm(mounts_doc)
+
+    # world -> substrate (effective)
+    T_world_substrate = _mat4_mul(_mat4_mul(T_world_sub_mount, T_sub_mount_mount_offset), T_sub_mount_substrate)
 
     # world -> robot_mount
     T_world_robot_mount = _tf_world_robot_mount_from_robot_yaml(robot_doc)
 
-    # scene <- robot_mount : inv(world->scene) * (world->robot_mount)
-    T_scene_world = _mat4_inv_rigid(T_world_scene)
-    return _mat4_mul(T_scene_world, T_world_robot_mount)
+    # substrate <- robot_mount : inv(world->substrate) * (world->robot_mount)
+    T_substrate_world = _mat4_inv_rigid(T_world_substrate)
+    return _mat4_mul(T_substrate_world, T_world_robot_mount)
 
 
-def compute_T_scene_robot_mount_mm_from_paths(*, scene_yaml_path: str, robot_yaml_path: str) -> List[List[float]]:
+def compute_T_substrate_robot_mount_mm_from_paths(
+    *,
+    scene_yaml_path: str,
+    robot_yaml_path: str,
+    mounts_yaml_path: str = "",
+    strict_mounts: bool = False,
+) -> List[List[float]]:
+    """
+    Backwards compatible entrypoint.
+
+    - If mounts_yaml_path is provided: it is loaded and applied (recommended).
+    - Else:
+        * If scene.yaml contains embedded keys ('active_mount' + 'mounts'), those are used.
+        * Else: we try a sibling file next to scene.yaml named 'substrate_mounts.yaml' if it exists.
+        * Else: mounts_doc=None.
+
+    If strict_mounts=True and no mounts_doc is resolved -> raises.
+    """
     scene_doc = _load_yaml_file(scene_yaml_path)
     robot_doc = _load_yaml_file(robot_yaml_path)
-    return compute_T_scene_robot_mount_mm_from_docs(scene_doc=scene_doc, robot_doc=robot_doc)
+
+    mounts_doc: Optional[Mapping[str, Any]] = None
+
+    # (A) explicit mounts file
+    mpath = str(mounts_yaml_path or "").strip()
+    if mpath:
+        mounts_doc = _load_yaml_file(mpath)
+
+    # (B) mounts embedded in scene.yaml (some users merge mounts + scene_objects)
+    if mounts_doc is None:
+        if isinstance(scene_doc.get("mounts"), dict) and isinstance(scene_doc.get("active_mount"), str):
+            mounts_doc = {
+                "active_mount": scene_doc.get("active_mount"),
+                "mounts": scene_doc.get("mounts"),
+            }
+
+    # (C) sibling lookup next to scene.yaml (deterministic)
+    if mounts_doc is None:
+        try:
+            scene_dir = os.path.dirname(os.path.abspath(scene_yaml_path))
+            sibling = os.path.join(scene_dir, "substrate_mounts.yaml")
+            if os.path.isfile(sibling):
+                mounts_doc = _load_yaml_file(sibling)
+        except Exception:
+            mounts_doc = None
+
+    if strict_mounts and mounts_doc is None:
+        raise ValueError(
+            "substrate_mounts.yaml konnte nicht bestimmt werden (mounts_yaml_path leer, "
+            "nicht in scene.yaml eingebettet, und kein sibling 'substrate_mounts.yaml')."
+        )
+
+    return compute_T_substrate_robot_mount_mm_from_docs(scene_doc=scene_doc, robot_doc=robot_doc, mounts_doc=mounts_doc)
 
 
 # ============================================================
@@ -328,8 +447,6 @@ class TrajFkBuilder:
 
     IMPORTANT:
       - Default TCP build includes ONLY (MOVE_RECIPE + MOVE_RETREAT).
-      - This matches your requirement: show recipe path + retreat in RViz,
-        but exclude approach/home.
       - Planned and executed must be treated IDENTICALLY: same include list.
     """
 
@@ -341,7 +458,13 @@ class TrajFkBuilder:
     # ------------------------------------------------------------
 
     @staticmethod
-    def build_robot_model_from_urdf_srdf(*, urdf_path: str = "", srdf_path: str = "", urdf_xml: str = "", srdf_xml: str = "") -> Dict[str, Any]:
+    def build_robot_model_from_urdf_srdf(
+        *,
+        urdf_path: str = "",
+        srdf_path: str = "",
+        urdf_xml: str = "",
+        srdf_xml: str = "",
+    ) -> Dict[str, Any]:
         if urdf_xml and srdf_xml:
             return TrajFkBuilder.build_robot_model_from_urdf_srdf_xml(urdf_xml=urdf_xml, srdf_xml=srdf_xml)
         if not urdf_path or not srdf_path:
@@ -532,7 +655,7 @@ class TrajFkBuilder:
             if len(sampled) < 2:
                 raise RuntimeError(f"TrajFkBuilder(KDL): Resampling ergab <2 Posen für Segment {seg_id!r}.")
 
-            # Optional: map base_link -> out_frame (e.g. robot_mount -> scene)
+            # Optional: map base_link -> out_frame
             if cfg.T_out_from_base_mm is not None:
                 T = cfg.T_out_from_base_mm
                 mapped: List[PoseQuat] = []
@@ -708,7 +831,11 @@ class TrajFkBuilder:
             dz = b.z - a.z
             return math.sqrt(dx * dx + dy * dy + dz * dz)
 
-        def slerp(qa: Tuple[float, float, float, float], qb: Tuple[float, float, float, float], t: float) -> Tuple[float, float, float, float]:
+        def slerp(
+            qa: Tuple[float, float, float, float],
+            qb: Tuple[float, float, float, float],
+            t: float,
+        ) -> Tuple[float, float, float, float]:
             qa = _quat_normalize(qa)
             qb = _quat_normalize(qb)
             dot = _quat_dot(qa, qb)

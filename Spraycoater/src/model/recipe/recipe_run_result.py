@@ -40,6 +40,10 @@ def _require_list3(v: Any, name: str) -> Tuple[float, float, float]:
     return (float(v[0]), float(v[1]), float(v[2]))
 
 
+# ============================================================
+# Minimal rigid transform helpers (mm)
+# ============================================================
+
 def _rpy_deg_to_quat_xyzw(r: float, p: float, y: float) -> Tuple[float, float, float, float]:
     import math
     rr = math.radians(float(r))
@@ -58,19 +62,19 @@ def _rpy_deg_to_quat_xyzw(r: float, p: float, y: float) -> Tuple[float, float, f
     qy = cr * sp * cy + sr * cp * sy
     qz = cr * cp * sy - sr * sp * cy
 
-    n = (qx*qx + qy*qy + qz*qz + qw*qw) ** 0.5
+    n = (qx * qx + qy * qy + qz * qz + qw * qw) ** 0.5
     if n <= 0.0:
         raise ValueError("quat norm is zero")
-    return (qx/n, qy/n, qz/n, qw/n)
+    return (qx / n, qy / n, qz / n, qw / n)
 
 
 def _quat_to_rot3(q: Tuple[float, float, float, float]) -> list[list[float]]:
     import math
     qx, qy, qz, qw = q
-    n = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
+    n = math.sqrt(qx * qx + qy * qy + qz * qz + qw * qw)
     if n <= 0.0:
         raise ValueError("quat norm is zero")
-    qx, qy, qz, qw = qx/n, qy/n, qz/n, qw/n
+    qx, qy, qz, qw = qx / n, qy / n, qz / n, qw / n
 
     xx = qx * qx
     yy = qy * qy
@@ -134,6 +138,10 @@ def _mat4_inv_rigid(T: list[list[float]]) -> list[list[float]]:
     ]
 
 
+# ============================================================
+# YAML loading + scene/mount helpers
+# ============================================================
+
 def _load_yaml_file(path: str) -> Dict[str, Any]:
     if not path:
         raise ValueError("YAML path is empty")
@@ -155,13 +163,8 @@ def _scene_object_by_id(scene_doc: Dict[str, Any], oid: str) -> Dict[str, Any]:
 
 
 def _tf_from_scene_obj_meters(scene_obj: Dict[str, Any]) -> list[list[float]]:
-    parent = str(scene_obj.get("frame", "world"))
-    _ = parent  # parent used by caller for chaining; here we just compute local transform values
-
     pos_m = _require_list3(scene_obj.get("position"), "scene_obj.position(m)")
     rpy = _require_list3(scene_obj.get("rpy_deg"), "scene_obj.rpy_deg(deg)")
-
-    # meters -> mm
     pos_mm = (pos_m[0] * 1000.0, pos_m[1] * 1000.0, pos_m[2] * 1000.0)
     q = _rpy_deg_to_quat_xyzw(rpy[0], rpy[1], rpy[2])
     return _mat4_from_xyz_quat_mm(pos_mm, q)
@@ -176,39 +179,80 @@ def _tf_world_robot_mount_from_robot_yaml(robot_doc: Dict[str, Any]) -> list[lis
     return _mat4_from_xyz_quat_mm(xyz_mm, q)
 
 
-def _compute_T_scene_robot_mount_mm(*, scene_yaml_path: str, robot_yaml_path: str) -> list[list[float]]:
+def _tf_substrate_mount_to_substrate_from_mounts_yaml(*, mounts_doc: Dict[str, Any]) -> list[list[float]]:
     """
-    Compute rigid transform: p_scene = T_scene_robot_mount * p_robot_mount
-    using:
-      - scene.yaml: world->substrate_mount, substrate_mount->scene
-      - robot.yaml: world->robot_mount
+    Compute substrate_mount -> substrate from substrate_mounts.yaml SSoT.
+
+    Expected schema:
+      version: 1
+      active_mount: <name>
+      mounts:
+        <name>:
+          scene_offset:
+            xyz: [x,y,z]   # mm
+            rpy_deg: [r,p,y]
+    """
+    active = str(mounts_doc.get("active_mount") or "").strip()
+    if not active:
+        raise ValueError("substrate_mounts.yaml: active_mount missing/empty")
+    mounts = _require_dict(mounts_doc.get("mounts"), "substrate_mounts.yaml.mounts")
+    m = _require_dict(mounts.get(active), f"substrate_mounts.yaml.mounts[{active!r}]")
+    so = _require_dict(m.get("scene_offset"), f"substrate_mounts.yaml.mounts[{active!r}].scene_offset")
+    xyz = _require_list3(so.get("xyz"), f"scene_offset.xyz(mm) for mount {active!r}")
+    rpy = _require_list3(so.get("rpy_deg"), f"scene_offset.rpy_deg(deg) for mount {active!r}")
+    q = _rpy_deg_to_quat_xyzw(rpy[0], rpy[1], rpy[2])
+    return _mat4_from_xyz_quat_mm((xyz[0], xyz[1], xyz[2]), q)
+
+
+def _compute_T_substrate_robot_mount_mm(
+    *,
+    scene_yaml_path: str,
+    robot_yaml_path: str,
+    mounts_yaml_path: str,
+    substrate_mount_id: str = "substrate_mount",
+    substrate_id: str = "substrate",
+) -> list[list[float]]:
+    """
+    Compute rigid transform: p_substrate = T_substrate_robot_mount * p_robot_mount
+
+    Uses:
+      scene.yaml:
+        world -> substrate_mount (id='substrate_mount', frame='world')
+      substrate_mounts.yaml:
+        substrate_mount -> substrate (active_mount.scene_offset)  [SSoT]
+      robot.yaml:
+        world -> robot_mount
     """
     scene_doc = _load_yaml_file(scene_yaml_path)
     robot_doc = _load_yaml_file(robot_yaml_path)
+    mounts_doc = _load_yaml_file(mounts_yaml_path)
 
-    o_mount = _scene_object_by_id(scene_doc, "substrate_mount")
-    o_scene = _scene_object_by_id(scene_doc, "scene")
-
-    # world -> substrate_mount
+    # world -> substrate_mount (from scene objects)
+    o_mount = _scene_object_by_id(scene_doc, substrate_mount_id)
     if str(o_mount.get("frame", "world")) != "world":
         raise ValueError("scene.yaml: substrate_mount.frame must be 'world' for this helper")
     T_world_sub_mount = _tf_from_scene_obj_meters(o_mount)
 
-    # substrate_mount -> scene
-    if str(o_scene.get("frame", "")) != "substrate_mount":
-        raise ValueError("scene.yaml: scene.frame must be 'substrate_mount' for this helper")
-    T_sub_mount_scene = _tf_from_scene_obj_meters(o_scene)
+    # substrate_mount -> substrate (SSoT: mounts yaml)
+    T_sub_mount_substrate = _tf_substrate_mount_to_substrate_from_mounts_yaml(mounts_doc=mounts_doc)
 
-    T_world_scene = _mat4_mul(T_world_sub_mount, T_sub_mount_scene)
+    # NOTE: We deliberately do NOT use scene_objects['substrate'] here as transform source,
+    # because substrate_mounts.yaml is SSoT for mount offset.
+
+    # world -> substrate
+    T_world_substrate = _mat4_mul(T_world_sub_mount, T_sub_mount_substrate)
 
     # world -> robot_mount
     T_world_robot_mount = _tf_world_robot_mount_from_robot_yaml(robot_doc)
 
-    # scene <- robot_mount : inv(world->scene) * (world->robot_mount)
-    T_scene_world = _mat4_inv_rigid(T_world_scene)
-    T_scene_robot_mount = _mat4_mul(T_scene_world, T_world_robot_mount)
-    return T_scene_robot_mount
+    # substrate <- robot_mount : inv(world->substrate) * (world->robot_mount)
+    T_substrate_world = _mat4_inv_rigid(T_world_substrate)
+    return _mat4_mul(T_substrate_world, T_world_robot_mount)
 
+
+# ============================================================
+# RunResult
+# ============================================================
 
 @dataclass
 class RunResult:
@@ -273,11 +317,13 @@ class RunResult:
         self.fk_meta = _dict(meta)
 
     def set_eval(self, eval_dict: Dict[str, Any] | None) -> None:
-        # NOTE: set_eval() also embeds eval into planned/executed tcp docs.
-        self.set_eval(eval_dict)
+        """
+        Stores eval dict AND embeds it into planned/executed TCP YAML docs.
+        IMPORTANT: This function must not recurse.
+        """
+        self.eval = _dict(eval_dict)
 
         # Persist eval into the TCP YAML docs (NOT into traj YAML).
-        # We keep planned/executed split results so each tcp_yaml is self-contained.
         try:
             pl_tcp_doc = _dict(self.planned_run.get("tcp"))
             ex_tcp_doc = _dict(self.executed_run.get("tcp"))
@@ -287,11 +333,9 @@ class RunResult:
                 ex_tcp_doc["fk_meta"] = dict(self.fk_meta)
 
             if self.eval:
-                # new evaluator returns {planned:{...}, executed:{...}}
                 pl_eval = _dict(self.eval.get("planned"))
                 ex_eval = _dict(self.eval.get("executed"))
 
-                # fallback: if someone still provides a flat eval dict
                 if not pl_eval and self.eval.get("version") != 2:
                     pl_eval = dict(self.eval)
                 if not ex_eval and self.eval.get("version") != 2:
@@ -303,7 +347,6 @@ class RunResult:
             self.planned_run["tcp"] = pl_tcp_doc
             self.executed_run["tcp"] = ex_tcp_doc
         except Exception:
-            # Never break postprocess due to metadata embedding
             pass
 
     def invalidate(self, reason: str) -> None:
@@ -461,86 +504,6 @@ class RunResult:
         )
 
     # ------------------------------------------------------------
-    # persistence helpers
-    # ------------------------------------------------------------
-
-    def build_persist_docs(self, *, embed_eval_into_traj: bool = False) -> Dict[str, Any]:
-        run_meta = {
-            "run_valid": self.valid,
-            "run_invalid_reason": self.invalid_reason,
-            "eval_invalid_reason": self.eval_invalid_reason(),
-        }
-
-        planned_traj = dict(self.planned_run.get("traj") or {})
-        executed_traj = dict(self.executed_run.get("traj") or {})
-
-        planned_traj["run_meta"] = dict(run_meta)
-        executed_traj["run_meta"] = dict(run_meta)
-
-        # Legacy option: keep older behavior if someone still wants it
-        if embed_eval_into_traj:
-            if self.eval:
-                planned_traj["eval"] = dict(self.eval)
-                executed_traj["eval"] = dict(self.eval)
-            if self.fk_meta:
-                planned_traj["fk_meta"] = dict(self.fk_meta)
-                executed_traj["fk_meta"] = dict(self.fk_meta)
-
-        # Default/new behavior: store eval + fk_meta in tcp yaml (self-contained)
-        planned_tcp = dict(self.planned_run.get("tcp") or {})
-        executed_tcp = dict(self.executed_run.get("tcp") or {})
-
-        if self.fk_meta:
-            planned_tcp.setdefault("fk_meta", dict(self.fk_meta))
-            executed_tcp.setdefault("fk_meta", dict(self.fk_meta))
-
-        if self.eval:
-            pl_eval = _dict(self.eval.get("planned"))
-            ex_eval = _dict(self.eval.get("executed"))
-            if not pl_eval and self.eval.get("version") != 2:
-                pl_eval = dict(self.eval)
-            if not ex_eval and self.eval.get("version") != 2:
-                ex_eval = dict(self.eval)
-            planned_tcp.setdefault("eval", pl_eval)
-            executed_tcp.setdefault("eval", ex_eval)
-
-        return {
-            "planned_traj": planned_traj,
-            "executed_traj": executed_traj,
-            "planned_tcp": planned_tcp,
-            "executed_tcp": executed_tcp,
-        }
-
-    @classmethod
-    def from_persist_docs(
-        cls,
-        *,
-        planned_traj_doc: Dict[str, Any],
-        executed_traj_doc: Dict[str, Any],
-        planned_tcp_doc: Optional[Dict[str, Any]] = None,
-        executed_tcp_doc: Optional[Dict[str, Any]] = None,
-    ) -> "RunResult":
-        if not isinstance(planned_traj_doc, dict) or not isinstance(executed_traj_doc, dict):
-            raise ValueError("RunResult.from_persist_docs: planned/executed traj docs müssen dict sein.")
-
-        rm = planned_traj_doc.get("run_meta")
-        rm = rm if isinstance(rm, dict) else {}
-
-        # Prefer metadata from tcp docs (new behavior), fall back to traj docs (legacy)
-        pl_tcp_d = _dict(planned_tcp_doc or {})
-        fk_meta = _dict(pl_tcp_d.get("fk_meta")) or _dict(planned_traj_doc.get("fk_meta"))
-        eval_d = _dict(pl_tcp_d.get("eval")) or _dict(planned_traj_doc.get("eval"))
-
-        return cls(
-            planned_run={"traj": dict(planned_traj_doc), "tcp": _dict(planned_tcp_doc or {})},
-            executed_run={"traj": dict(executed_traj_doc), "tcp": _dict(executed_tcp_doc or {})},
-            fk_meta=fk_meta,
-            eval=eval_d,
-            valid=_as_bool(rm.get("run_valid"), True),
-            invalid_reason=str(rm.get("run_invalid_reason") or ""),
-        )
-
-    # ------------------------------------------------------------
     # FK/TCP + Eval
     # ------------------------------------------------------------
 
@@ -556,10 +519,10 @@ class RunResult:
         require_tcp: bool = True,
         segment_to_side: Optional[Dict[str, str]] = None,
         default_side: str = "top",
-        # NEW:
-        tcp_target_frame: str = "scene",
+        tcp_target_frame: str = "substrate",
         scene_yaml_path: Optional[str] = None,
         robot_yaml_path: Optional[str] = None,
+        mounts_yaml_path: Optional[str] = None,
     ) -> None:
         if not self.urdf_xml.strip() or not self.srdf_xml.strip():
             raise ValueError("RunResult.postprocess: urdf_xml/srdf_xml fehlt (leer).")
@@ -578,6 +541,7 @@ class RunResult:
             tcp_target_frame=tcp_target_frame,
             scene_yaml_path=scene_yaml_path,
             robot_yaml_path=robot_yaml_path,
+            mounts_yaml_path=mounts_yaml_path,
         )
 
     def postprocess_from_urdf_srdf(
@@ -594,10 +558,10 @@ class RunResult:
         require_tcp: bool = True,
         segment_to_side: Optional[Dict[str, str]] = None,
         default_side: str = "top",
-        # NEW:
-        tcp_target_frame: str = "scene",
+        tcp_target_frame: str = "substrate",
         scene_yaml_path: Optional[str] = None,
         robot_yaml_path: Optional[str] = None,
+        mounts_yaml_path: Optional[str] = None,
     ) -> None:
         from .traj_fk_builder import TrajFkBuilder, TrajFkConfig
 
@@ -618,57 +582,67 @@ class RunResult:
         if not executed_traj:
             raise ValueError("RunResult.postprocess_from_urdf_srdf: executed_run.traj ist leer.")
 
-        # FK -> TCP drafts (in base_link frame, default base_link='robot_mount')
         cfg = TrajFkConfig(ee_link=str(ee_link or "tcp"), step_mm=float(step_mm), max_points=int(max_points or 0))
         base_frame = str(cfg.base_link)
 
-        try:
-            planned_tcp = TrajFkBuilder.build_tcp_draft_yaml(
-                planned_traj,
-                robot_model=robot_model,
-                cfg=cfg,
-                segment_to_side=segment_to_side,
-                default_side=str(default_side or "top"),
-                drop_duplicate_boundary=True,
-                frame_id=base_frame,
-            )
-        except Exception as e:
-            raise RuntimeError(f"RunResult.postprocess_from_urdf_srdf: FK planned failed: {e}") from e
+        seg_ids = [str(s).strip() for s in list(segment_order) if str(s).strip()]
+        if not seg_ids:
+            raise ValueError("RunResult.postprocess_from_urdf_srdf: segment_order ist leer (seg_ids).")
 
-        try:
-            executed_tcp = TrajFkBuilder.build_tcp_draft_yaml(
-                executed_traj,
-                robot_model=robot_model,
-                cfg=cfg,
-                segment_to_side=segment_to_side,
-                default_side=str(default_side or "top"),
-                drop_duplicate_boundary=True,
-                frame_id=base_frame,
-            )
-        except Exception as e:
-            raise RuntimeError(f"RunResult.postprocess_from_urdf_srdf: FK executed failed: {e}") from e
+        planned_tcp = TrajFkBuilder.build_tcp_draft_yaml(
+            planned_traj,
+            robot_model=robot_model,
+            cfg=cfg,
+            segment_to_side=segment_to_side,
+            default_side=str(default_side or "top"),
+            drop_duplicate_boundary=True,
+            frame_id=base_frame,
+            include_segments=seg_ids,
+            require_all_segments=True,
+        )
 
-        # Optional: transform TCP into scene (or other target) using scene.yaml + robot.yaml (offline)
+        executed_tcp = TrajFkBuilder.build_tcp_draft_yaml(
+            executed_traj,
+            robot_model=robot_model,
+            cfg=cfg,
+            segment_to_side=segment_to_side,
+            default_side=str(default_side or "top"),
+            drop_duplicate_boundary=True,
+            frame_id=base_frame,
+            include_segments=seg_ids,
+            require_all_segments=True,
+        )
+
+        # Optional: transform TCP into substrate (offline; includes mount scene_offset)
         target = str(tcp_target_frame or "").strip()
         if target and target != base_frame:
-            if not scene_yaml_path or not robot_yaml_path:
+            if target != "substrate":
                 raise ValueError(
-                    "postprocess_from_urdf_srdf: tcp_target_frame != base_link, "
-                    "aber scene_yaml_path/robot_yaml_path fehlen."
+                    f"postprocess_from_urdf_srdf: unsupported tcp_target_frame={target!r} "
+                    f"(supported: {base_frame!r} or 'substrate')"
                 )
-
-            # currently only supports target='scene' and base='robot_mount' via your config chain
-            if target != "scene":
-                raise ValueError(f"postprocess_from_urdf_srdf: unsupported tcp_target_frame={target!r} (supported: 'scene')")
-
             if base_frame != "robot_mount":
                 raise ValueError(
                     f"postprocess_from_urdf_srdf: expected cfg.base_link='robot_mount' for offline transform, got {base_frame!r}"
                 )
+            if not scene_yaml_path or not robot_yaml_path:
+                raise ValueError(
+                    "postprocess_from_urdf_srdf: tcp_target_frame='substrate', "
+                    "aber scene_yaml_path/robot_yaml_path fehlen."
+                )
+            if not mounts_yaml_path:
+                raise ValueError(
+                    "postprocess_from_urdf_srdf: tcp_target_frame='substrate', "
+                    "aber mounts_yaml_path fehlt (substrate_mounts.yaml ist SSoT für mount scene_offset)."
+                )
 
-            T_scene_robot_mount = _compute_T_scene_robot_mount_mm(scene_yaml_path=scene_yaml_path, robot_yaml_path=robot_yaml_path)
-            planned_tcp = TrajFkBuilder.transform_draft_yaml(planned_tcp, T_to_from_mm=T_scene_robot_mount, out_frame="scene")
-            executed_tcp = TrajFkBuilder.transform_draft_yaml(executed_tcp, T_to_from_mm=T_scene_robot_mount, out_frame="scene")
+            T_substrate_robot_mount = _compute_T_substrate_robot_mount_mm(
+                scene_yaml_path=str(scene_yaml_path),
+                robot_yaml_path=str(robot_yaml_path),
+                mounts_yaml_path=str(mounts_yaml_path),
+            )
+            planned_tcp = TrajFkBuilder.transform_draft_yaml(planned_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate")
+            executed_tcp = TrajFkBuilder.transform_draft_yaml(executed_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate")
 
         self.planned_run["tcp"] = _dict(planned_tcp)
         self.executed_run["tcp"] = _dict(executed_tcp)
@@ -681,9 +655,10 @@ class RunResult:
             "segment_order": list(segment_order),
             "backend": "kdl",
             "tcp_frame": str((self.planned_run.get("tcp") or {}).get("frame") or base_frame),
+            "segments_included": list(seg_ids),
         }
 
-        # Eval (tcp domain) – jetzt im gleichen Frame wie Draft (scene), wenn du tcp_target_frame='scene' benutzt
+        # Eval – in substrate frame (strict evaluator expects it)
         eval_dict: Dict[str, Any] = {}
         try:
             from .recipe_eval import RecipeEvaluator  # type: ignore
@@ -707,7 +682,7 @@ class RunResult:
         except Exception as e:
             eval_dict = {"valid": False, "invalid_reason": f"eval_failed: {e}"}
 
-        self.eval = _dict(eval_dict)
+        self.set_eval(_dict(eval_dict))
 
         if require_tcp:
             if not _dict(self.planned_run.get("tcp")) or not _dict(self.executed_run.get("tcp")):

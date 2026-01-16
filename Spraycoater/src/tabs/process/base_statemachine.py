@@ -58,10 +58,15 @@ class BaseProcessStatemachine(QtCore.QObject):
             "srdf_xml": str,
           }
 
-    Retry (STRICT, NEW):
+    Retry (STRICT):
       - Soft execution errors (default: ERROR:EXEC ...) trigger retry of ONLY the last motion command.
       - No segment replay in Base. Subclasses must implement _on_retry_last_motion().
       - After max retries: notifyError with prefix 'RETRY_EXHAUSTED:' so UI can show Retry/Abort dialog.
+
+    Capture (STRICT):
+      - Each EXECUTED:OK snapshots ONE paired (planned, executed) JT step for the current segment.
+      - Steps are concatenated into one per-segment JT.
+      - planned/executed treated symmetrically; mismatch aborts deterministically.
     """
 
     ROLE = "process"
@@ -75,9 +80,6 @@ class BaseProcessStatemachine(QtCore.QObject):
     _sig_done = QtCore.pyqtSignal()
     _sig_error = QtCore.pyqtSignal()
 
-    # Retry policy
-    # - Soft execution errors are retried by re-sending ONLY the last motion command (no segment replay).
-    # - After max_retries attempts => error with prefix 'RETRY_EXHAUSTED:' for UI dialog.
     _RETRY_DELAY_MS = 250
 
     def __init__(
@@ -111,30 +113,30 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._current_state: str = ""
         self._retry_count: int = 0
 
-        # per-run snapshot stores
+        # per-run snapshot stores (final per-segment JT dicts)
         self._planned_by_segment: Dict[str, Any] = {}
         self._executed_by_segment: Dict[str, Any] = {}
 
-        # per-segment event buffers
+        # per-segment step buffers (paired JT dicts, one per EXECUTED:OK)
         self._planned_steps_by_segment: Dict[str, List[Any]] = {}
         self._executed_steps_by_segment: Dict[str, List[Any]] = {}
 
-        # optional: enforce ordering PLANNED -> EXECUTED within a segment
+        # optional: enforce ordering PLANNED:OK -> EXECUTED:OK
         self._seen_planned_ok: Dict[str, bool] = {}
 
         # --- MoveItPy handles ---
         self._moveitpy = getattr(self._ros, "moveitpy", None)
         self._moveitpy_signals = getattr(self._moveitpy, "signals", None)
 
-        # --- cached last trajectories ---
+        # --- cached last trajectories (Qt signal fallback) ---
         self._last_planned_any: Any = None
         self._last_executed_any: Any = None
         self._traj_sig_connected: bool = False
         self._motion_sig_connected: bool = False
         self._clear_sig_connected: bool = False
 
-        # forward our internal logger to UI
-        self._log_handler = _QtSignalHandler(self)
+        # forward our internal logger to UI (avoid duplicates on re-instantiation)
+        self._log_handler: Optional[_QtSignalHandler] = _QtSignalHandler(self)
         self._log_handler.setFormatter(logging.Formatter("%(message)s"))
         self._log_handler.setLevel(logging.INFO)
         _LOG.addHandler(self._log_handler)
@@ -195,6 +197,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         Needed for:
           - entering a segment
           - boundary clear (trajCacheClearChanged)
+
         NOTE: for 'retry last motion' we intentionally DO NOT clear prior steps.
         """
         self._last_planned_any = None
@@ -221,7 +224,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         # STRICT: segment-local capture reset
         self._reset_segment_capture(seg_name, clear_steps=True)
 
-        # optional: tag segment into node
+        # best-effort: tag segment into node (if supported)
         try:
             fn = getattr(self._ros, "moveit_set_segment", None)
             if callable(fn):
@@ -277,26 +280,20 @@ class BaseProcessStatemachine(QtCore.QObject):
 
                 ok = False
                 try:
-                    # IMPORTANT: this must resend ONLY the last command (pose/joint/whatever),
-                    # not restart the segment logic.
                     ok = bool(self._on_retry_last_motion(seg, int(self._retry_count), str(res)))
                 except Exception:
                     ok = False
 
                 if ok:
-                    # small backoff so current RobotState can catch up
                     QtCore.QTimer.singleShot(self._RETRY_DELAY_MS, lambda: None)
                     return
 
-                # If subclass can't retry last motion => abort deterministically
                 self._signal_error(self._make_retry_exhausted_msg(seg, res))
                 return
 
             if soft:
-                # retries exhausted
                 self._signal_error(self._make_retry_exhausted_msg(seg, res))
             else:
-                # hard error => abort immediately
                 self._signal_error(f"{res} seg={seg}")
             return
 
@@ -305,6 +302,7 @@ class BaseProcessStatemachine(QtCore.QObject):
             return
 
         if res.startswith("EXECUTED:OK"):
+            # STRICT ordering guard: allow subclasses to override by setting _seen_planned_ok[seg]=True
             if not self._seen_planned_ok.get(self._current_state, False):
                 self._signal_error(
                     f"Segment '{self._current_state}': EXECUTED:OK ohne vorheriges PLANNED:OK. "
@@ -313,7 +311,6 @@ class BaseProcessStatemachine(QtCore.QObject):
                 return
 
             self._snapshot_step_for_segment(self._current_state)
-
             if self._error_msg:
                 return
 
@@ -595,7 +592,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         def ns_to_dur(ns):
             return {"sec": int(ns // 1000000000), "nanosec": int(ns % 1000000000)}
 
-        merged_pts = []
+        merged_pts: List[Dict[str, Any]] = []
         t_offset_ns = 0
         last_global_ns = -1
 
@@ -625,7 +622,7 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     def _signal_error(self, msg: str) -> None:
         self._error_msg = msg
-        _LOG.error(f"Statemachine Error: {msg}")
+        _LOG.error("Statemachine Error: %s", msg)
         QtCore.QTimer.singleShot(0, self._sig_error.emit)
 
     def _on_finished(self) -> None:
@@ -654,6 +651,7 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._cleanup()
 
     def _cleanup(self) -> None:
+        # stop & delete machine
         if self._machine:
             try:
                 self._machine.stop()
@@ -662,7 +660,40 @@ class BaseProcessStatemachine(QtCore.QObject):
                 pass
             self._machine = None
 
-        if self._log_handler:
+        # disconnect signals (avoid duplicated callbacks on re-run)
+        try:
+            sig = self._moveitpy_signals
+            if sig is not None:
+                if self._motion_sig_connected and hasattr(sig, "motionResultChanged"):
+                    try:
+                        sig.motionResultChanged.disconnect(self._on_motion_result)
+                    except Exception:
+                        pass
+                if self._traj_sig_connected:
+                    if hasattr(sig, "plannedTrajectoryChanged"):
+                        try:
+                            sig.plannedTrajectoryChanged.disconnect(self._on_planned_traj_changed)
+                        except Exception:
+                            pass
+                    if hasattr(sig, "executedTrajectoryChanged"):
+                        try:
+                            sig.executedTrajectoryChanged.disconnect(self._on_executed_traj_changed)
+                        except Exception:
+                            pass
+                if self._clear_sig_connected and hasattr(sig, "trajCacheClearChanged"):
+                    try:
+                        sig.trajCacheClearChanged.disconnect(self._on_traj_cache_clear)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        self._motion_sig_connected = False
+        self._traj_sig_connected = False
+        self._clear_sig_connected = False
+
+        # remove our UI log handler
+        if self._log_handler is not None:
             try:
                 _LOG.removeHandler(self._log_handler)
             except Exception:
@@ -716,7 +747,7 @@ class BaseProcessStatemachine(QtCore.QObject):
 
         QtCore.QTimer.singleShot(0, lambda: self._signal_error("Gestoppt"))
 
-    # ---------------- Retry hook (NEW) ----------------
+    # ---------------- Retry hook ----------------
 
     def _on_retry_last_motion(self, seg_name: str, attempt: int, last_error: str) -> bool:
         """

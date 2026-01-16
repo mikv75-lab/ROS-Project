@@ -28,7 +28,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
       - HARD-CODE frame to 'substrate' for now.
       - No 'scene' frame usage.
 
-    Retry (STRICT, NEW):
+    Retry (STRICT):
       - Base retries ONLY the last motion command on soft errors (ERROR:EXEC...).
       - This class implements _on_retry_last_motion() to re-send the in-flight pose.
       - No segment replay. No rebuilding pending queues on retry.
@@ -66,7 +66,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._cmd_poses_by_seg: Dict[str, List[Tuple[float, ...]]] = {}
         self._pending_recipe_poses: List[Tuple[float, ...]] = []
 
-        # In-flight pose (the one that was last sent and is waiting for EXECUTED:OK)
+        # In-flight pose (last sent; waiting for EXECUTED:OK)
         self._inflight_pose: Optional[Tuple[float, ...]] = None
         self._inflight_seg: str = ""
 
@@ -145,7 +145,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             str(last_error),
         )
 
-        # Re-send the same pose (do not pop queue)
         self._ros_move_pose_tuple(pose)
         return True
 
@@ -274,8 +273,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             self._run_single_pose_segment(STATE_MOVE_PREDISPENSE)
             return
         if seg_name == STATE_MOVE_RECIPE:
-            # IMPORTANT: on first enter, start from current queue head.
-            # We do NOT rebuild the queue on retry (retry never re-enters segment).
             self._run_recipe_stream_segment()
             return
         if seg_name == STATE_MOVE_RETREAT:
@@ -295,14 +292,12 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         """
         # Clear in-flight on OK (for any segment)
         if self._inflight_seg == seg_name:
-            # For MOVE_RECIPE we only pop after OK
             if seg_name == STATE_MOVE_RECIPE:
                 if self._inflight_pose is not None and self._pending_recipe_poses:
                     # Queue head must match in-flight pose (strict)
                     if self._pending_recipe_poses[0] == self._inflight_pose:
                         self._pending_recipe_poses.pop(0)
                     else:
-                        # If it doesn't match, contract is broken (avoid silent desync)
                         self._signal_error(
                             "Validate: queue/inflight mismatch in MOVE_RECIPE (refusing to continue)."
                         )
@@ -363,7 +358,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             return
         try:
             self._ros.moveitpy.signals.moveToHomeRequestedWithSpeed.emit(float(self._speed_mm_s))
-            # home is in-flight implicitly (MoveIt will emit EXECUTED:OK)
             self._inflight_pose = None
             self._inflight_seg = STATE_MOVE_HOME
         except Exception as ex:
