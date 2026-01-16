@@ -237,12 +237,16 @@ class BaseProcessStatemachine(QtCore.QObject):
     def _is_soft_error(self, res: str) -> bool:
         """
         Soft errors = retryable without aborting the whole run.
-        Default policy (strict):
-          - execution error => soft (usually start-state mismatch / controller race)
-          - everything else => hard
         """
         r = (res or "").strip()
-        return r.startswith("ERROR:EXEC")
+        if not r:
+            return False
+
+        # normalize to the first token (so 'ERROR:NO_TRAJ pose ...' matches)
+        code = r.split()[0]
+
+        # Retryable error codes:
+        return code in {"ERROR:EXEC", "ERROR:NO_TRAJ"}
 
     def _make_retry_exhausted_msg(self, seg: str, res: str) -> str:
         return (
