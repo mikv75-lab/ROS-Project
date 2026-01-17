@@ -42,31 +42,29 @@ class _QtSignalHandler(logging.Handler):
 
 
 class BaseProcessStatemachine(QtCore.QObject):
-    """
-    Gemeinsame Basis für Validate / Optimize / Execute.
+    """Common base for Validate / Optimize / Execute.
 
-    RESULT CONTRACT (RunResult payload, strict keys always present):
-      - notifyFinished emits dict payload:
-          {
-            "planned_run":  {"traj": <JTBySegment yaml dict>, "tcp": <Draft yaml dict or {}>},
-            "executed_run": {"traj": <JTBySegment yaml dict>, "tcp": <Draft yaml dict or {}>},
-            "fk_meta": {...},
-            "eval": {...},
-            "valid": bool,
-            "invalid_reason": str,
-            "urdf_xml": str,
-            "srdf_xml": str,
-          }
+    Capture (STRICT + race-tolerant):
+      - MoveItPy can publish PLANNED:OK / EXECUTED:OK before the trajectory objects
+        are queryable via RosBridge / cached Qt signals.
+      - Therefore we NEVER hard-fail on PLANNED:OK/EXECUTED:OK when the trajectory
+        is missing *immediately*.
 
-    Retry (STRICT):
-      - Soft execution errors (default: ERROR:EXEC ...) trigger retry of ONLY the last motion command.
-      - No segment replay in Base. Subclasses must implement _on_retry_last_motion().
-      - After max retries: notifyError with prefix 'RETRY_EXHAUSTED:' so UI can show Retry/Abort dialog.
+    Deterministic pairing model:
+      - For each motion pair we wait (non-blocking) until BOTH planned + executed
+        are available, then we commit exactly one pair into step lists.
 
-    Capture (STRICT):
-      - Each EXECUTED:OK snapshots ONE paired (planned, executed) JT step for the current segment.
-      - Steps are concatenated into one per-segment JT.
-      - planned/executed treated symmetrically; mismatch aborts deterministically.
+    Design:
+      - On PLANNED:OK: mark planned pending (best-effort capture now).
+      - On EXECUTED:OK: mark executed pending (best-effort capture now) and enter
+        WAIT_RESULTS loop with timeout (default 1000ms).
+      - WAIT_RESULTS tick keeps polling sources until both are present; then:
+          commit pair -> call _after_motion_pair_ready(seg, res)
+
+    IMPORTANT:
+      - trajCacheClearChanged must NOT clear committed steps or pending slots.
+        It only clears last_* cache mirrors.
+      - No dedupe logic. No blocking sleeps.
     """
 
     ROLE = "process"
@@ -81,6 +79,10 @@ class BaseProcessStatemachine(QtCore.QObject):
     _sig_error = QtCore.pyqtSignal()
 
     _RETRY_DELAY_MS = 250
+
+    # WAIT_RESULTS behavior
+    _WAIT_RESULTS_TIMEOUT_MS = 1000
+    _WAIT_RESULTS_TICK_MS = 15
 
     def __init__(
         self,
@@ -117,12 +119,19 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._planned_by_segment: Dict[str, Any] = {}
         self._executed_by_segment: Dict[str, Any] = {}
 
-        # per-segment step buffers (paired JT dicts, one per EXECUTED:OK)
+        # per-segment step buffers (paired JT dicts, one per committed pair)
         self._planned_steps_by_segment: Dict[str, List[Any]] = {}
         self._executed_steps_by_segment: Dict[str, List[Any]] = {}
 
-        # optional: enforce ordering PLANNED:OK -> EXECUTED:OK
-        self._seen_planned_ok: Dict[str, bool] = {}
+        # pending slots (allow out-of-order)
+        self._pending_planned_step: Dict[str, Optional[Dict[str, Any]]] = {}
+        self._pending_executed_step: Dict[str, Optional[Dict[str, Any]]] = {}
+
+        # WAIT_RESULTS state
+        self._wait_active: bool = False
+        self._wait_seg: str = ""
+        self._wait_deadline_ms: int = 0
+        self._wait_last_result: str = ""
 
         # --- MoveItPy handles ---
         self._moveitpy = getattr(self._ros, "moveitpy", None)
@@ -191,18 +200,25 @@ class BaseProcessStatemachine(QtCore.QObject):
     # ---------------- Segment capture reset ----------------
 
     def _reset_segment_capture(self, seg_name: str, *, clear_steps: bool = True) -> None:
-        """
-        Reset all segment-local capture state.
+        """Reset segment-local capture state.
 
-        Needed for:
-          - entering a segment
-          - boundary clear (trajCacheClearChanged)
+        - On normal segment entry: clear_steps=True
+        - On retry: do NOT clear steps
 
-        NOTE: for 'retry last motion' we intentionally DO NOT clear prior steps.
+        NOTE: does NOT touch already committed steps unless clear_steps=True.
         """
         self._last_planned_any = None
         self._last_executed_any = None
-        self._seen_planned_ok[seg_name] = False
+
+        self._pending_planned_step[seg_name] = None
+        self._pending_executed_step[seg_name] = None
+
+        # cancel any wait loop that might still be running
+        if self._wait_active and self._wait_seg == seg_name:
+            self._wait_active = False
+            self._wait_seg = ""
+            self._wait_deadline_ms = 0
+            self._wait_last_result = ""
 
         if clear_steps:
             self._planned_steps_by_segment[seg_name] = []
@@ -235,17 +251,10 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._on_enter_segment(seg_name)
 
     def _is_soft_error(self, res: str) -> bool:
-        """
-        Soft errors = retryable without aborting the whole run.
-        """
         r = (res or "").strip()
         if not r:
             return False
-
-        # normalize to the first token (so 'ERROR:NO_TRAJ pose ...' matches)
         code = r.split()[0]
-
-        # Retryable error codes:
         return code in {"ERROR:EXEC", "ERROR:NO_TRAJ"}
 
     def _make_retry_exhausted_msg(self, seg: str, res: str) -> str:
@@ -253,6 +262,110 @@ class BaseProcessStatemachine(QtCore.QObject):
             f"RETRY_EXHAUSTED: {res} seg={seg} "
             f"(attempts={int(self._retry_count)}/{int(self._max_retries)})"
         )
+
+    def _try_commit_pair(self, seg: str) -> bool:
+        """Commit exactly one planned/executed pair if both pending are present."""
+        pp = self._pending_planned_step.get(seg)
+        pe = self._pending_executed_step.get(seg)
+        if pp is None or pe is None:
+            return False
+
+        self._planned_steps_by_segment.setdefault(seg, []).append(copy.deepcopy(pp))
+        self._executed_steps_by_segment.setdefault(seg, []).append(copy.deepcopy(pe))
+
+        self._pending_planned_step[seg] = None
+        self._pending_executed_step[seg] = None
+        return True
+
+    def _now_ms(self) -> int:
+        # monotonic enough for timeouts within a run
+        return int(QtCore.QTime.currentTime().msecsSinceStartOfDay())
+
+    def _start_wait_results(self, seg: str, *, result: str, timeout_ms: Optional[int] = None) -> None:
+        if self._wait_active:
+            # already waiting; keep the earlier deadline but update last result
+            self._wait_last_result = str(result or "")
+            return
+
+        t_ms = int(timeout_ms) if timeout_ms is not None else int(self._WAIT_RESULTS_TIMEOUT_MS)
+        if t_ms <= 0:
+            t_ms = 1
+
+        self._wait_active = True
+        self._wait_seg = str(seg)
+        self._wait_last_result = str(result or "")
+        self._wait_deadline_ms = self._now_ms() + t_ms
+
+        QtCore.QTimer.singleShot(0, self._wait_results_tick)
+
+    def _wait_results_tick(self) -> None:
+        if not self._wait_active:
+            return
+        if self._stop_requested or not self._machine or not self._machine.isRunning():
+            self._wait_active = False
+            return
+
+        seg = self._wait_seg
+        if not seg or seg != self._current_state:
+            # segment changed -> abort wait
+            self._wait_active = False
+            self._wait_seg = ""
+            return
+
+        # best-effort capture missing pending pieces
+        if self._pending_planned_step.get(seg) is None:
+            p = self._capture_planned_step(seg)
+            if p is not None:
+                self._pending_planned_step[seg] = copy.deepcopy(p)
+
+        if self._pending_executed_step.get(seg) is None:
+            e = self._capture_executed_step(seg)
+            if e is not None:
+                self._pending_executed_step[seg] = copy.deepcopy(e)
+
+        if self._try_commit_pair(seg):
+            # we have exactly one pair -> continue OK-processing deterministically
+            self._wait_active = False
+            self._wait_seg = ""
+            self._wait_deadline_ms = 0
+
+            res = self._wait_last_result
+            self._wait_last_result = ""
+            self._after_motion_pair_ready(seg, res)
+            return
+
+        if self._now_ms() >= int(self._wait_deadline_ms):
+            # timeout -> hard error
+            self._wait_active = False
+            self._wait_seg = ""
+
+            pp = self._pending_planned_step.get(seg)
+            pe = self._pending_executed_step.get(seg)
+            self._signal_error(
+                "Trajectory capture timeout for segment '{seg}': planned={p} executed={e} (waited {ms}ms).".format(
+                    seg=str(seg),
+                    p="ok" if pp is not None else "None",
+                    e="ok" if pe is not None else "None",
+                    ms=int(self._WAIT_RESULTS_TIMEOUT_MS),
+                )
+            )
+            return
+
+        QtCore.QTimer.singleShot(int(self._WAIT_RESULTS_TICK_MS), self._wait_results_tick)
+
+    def _after_motion_pair_ready(self, seg: str, res: str) -> None:
+        """Called exactly once per committed pair, after planned+executed are available.
+
+        Default behavior:
+          - if _should_transition_on_ok(...) -> snapshot for seg and advance
+          - otherwise: stay in segment (subclass drives next motions)
+        """
+        if self._error_msg:
+            return
+
+        if self._should_transition_on_ok(seg, res):
+            self._on_segment_ok(seg)
+            QtCore.QTimer.singleShot(0, self._sig_done.emit)
 
     @QtCore.pyqtSlot(str)
     def _on_motion_result(self, result: str) -> None:
@@ -265,8 +378,12 @@ class BaseProcessStatemachine(QtCore.QObject):
         if not res:
             return
 
+        # If we are currently waiting for trajectories, ignore additional motion results
+        # until the pair is committed. This prevents overlaps.
+        if self._wait_active:
+            return
+
         if res.startswith("ERROR"):
-            # Best-effort: stop any in-flight execution request
             try:
                 self._ros.moveit_stop()
             except Exception:
@@ -301,26 +418,28 @@ class BaseProcessStatemachine(QtCore.QObject):
                 self._signal_error(f"{res} seg={seg}")
             return
 
+        seg = self._current_state
+
         if res.startswith("PLANNED:OK"):
-            self._seen_planned_ok[self._current_state] = True
+            # Best-effort capture now; but do NOT fail if missing. We will wait on EXECUTED:OK.
+            planned = self._capture_planned_step(seg)
+            if planned is not None:
+                self._pending_planned_step[seg] = copy.deepcopy(planned)
+            else:
+                # Keep pending None; wait loop will attempt again.
+                self._pending_planned_step.setdefault(seg, None)
             return
 
         if res.startswith("EXECUTED:OK"):
-            # STRICT ordering guard: allow subclasses to override by setting _seen_planned_ok[seg]=True
-            if not self._seen_planned_ok.get(self._current_state, False):
-                self._signal_error(
-                    f"Segment '{self._current_state}': EXECUTED:OK ohne vorheriges PLANNED:OK. "
-                    "Contract violated / UI-Start mid-stream."
-                )
-                return
+            executed = self._capture_executed_step(seg)
+            if executed is not None:
+                self._pending_executed_step[seg] = copy.deepcopy(executed)
+            else:
+                self._pending_executed_step.setdefault(seg, None)
 
-            self._snapshot_step_for_segment(self._current_state)
-            if self._error_msg:
-                return
-
-            if self._should_transition_on_ok(self._current_state, res):
-                self._on_segment_ok(self._current_state)
-                QtCore.QTimer.singleShot(0, self._sig_done.emit)
+            # Start deterministic wait loop to obtain BOTH planned + executed.
+            self._start_wait_results(seg, result=res, timeout_ms=int(self._WAIT_RESULTS_TIMEOUT_MS))
+            return
 
     # ---------------- Trajectory cache signals ----------------
 
@@ -347,11 +466,6 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._traj_sig_connected = bool(ok)
 
     def _connect_traj_cache_clear_signal(self) -> None:
-        """
-        Best-effort boundary clear hook.
-        If MoveItPyBridge exposes trajCacheClearChanged (Empty -> Qt signal),
-        we clear our caches AND per-segment step buffers for the current segment.
-        """
         sig = self._moveitpy_signals
         if sig is None:
             self._clear_sig_connected = False
@@ -367,12 +481,15 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def _on_traj_cache_clear(self) -> None:
+        """CRITICAL FIX:
+
+        Do NOT clear captured steps.
+        Do NOT clear pending slots.
+
+        Only clear "last_*" cache mirrors, because those are just sources.
+        """
         self._last_planned_any = None
         self._last_executed_any = None
-
-        # also clear step buffers + ordering for current segment
-        if self._current_state:
-            self._reset_segment_capture(self._current_state, clear_steps=True)
 
     @QtCore.pyqtSlot(object)
     def _on_planned_traj_changed(self, obj: object) -> None:
@@ -384,58 +501,22 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     # ---------------- Snapshot helpers ----------------
 
-    def _snapshot_step_for_segment(self, seg_name: str) -> None:
-        """
-        STRICT pairing with bounded wait:
-        - wait briefly for executed/planned to arrive (DDS cross-topic order not guaranteed)
-        - still fails deterministically if missing after timeout
-        """
-        import time
+    def _capture_planned_step(self, seg_name: str) -> Optional[Dict[str, Any]]:
+        planned_raw, _ = self._get_step_sources()
+        return self._jt_from_any(planned_raw)
 
-        def _get_pair():
-            planned_raw, executed_raw = self._get_step_sources()
-            return self._jt_from_any(planned_raw), self._jt_from_any(executed_raw)
-
-        planned, executed = _get_pair()
-
-        if executed is None or planned is None:
-            deadline = time.monotonic() + 0.35
-            while time.monotonic() < deadline:
-                time.sleep(0.01)
-                planned2, executed2 = _get_pair()
-                if planned is None and planned2 is not None:
-                    planned = planned2
-                if executed is None and executed2 is not None:
-                    executed = executed2
-                if planned is not None and executed is not None:
-                    break
-
-        if planned is None or executed is None:
-            self._signal_error(
-                f"Trajectory capture missing for segment '{seg_name}': "
-                f"planned={'ok' if planned is not None else 'None'}, "
-                f"executed={'ok' if executed is not None else 'None'}. "
-                "Requirement: EXECUTED:OK must have a matching last PLANNED + last EXECUTED."
-            )
-            return
-
-        self._planned_steps_by_segment.setdefault(seg_name, []).append(copy.deepcopy(planned))
-        self._executed_steps_by_segment.setdefault(seg_name, []).append(copy.deepcopy(executed))
+    def _capture_executed_step(self, seg_name: str) -> Optional[Dict[str, Any]]:
+        _, executed_raw = self._get_step_sources()
+        return self._jt_from_any(executed_raw)
 
     def _snapshot_trajs_for_segment(self, seg_name: str) -> None:
-        """
-        Build the final per-segment planned/executed trajectories.
-        STRICT:
-          - planned and executed are treated symmetrically.
-          - We only store a segment if BOTH exist and were captured as pairs.
-        """
         planned_steps = self._planned_steps_by_segment.get(seg_name) or []
         executed_steps = self._executed_steps_by_segment.get(seg_name) or []
 
         if not planned_steps or not executed_steps:
             self._signal_error(
                 f"Segment '{seg_name}': no paired trajectory steps captured. "
-                "Expected at least one EXECUTED:OK with both planned+executed cached."
+                "Expected at least one PLANNED:OK+EXECUTED:OK pair."
             )
             return
 
@@ -443,7 +524,7 @@ class BaseProcessStatemachine(QtCore.QObject):
             self._signal_error(
                 f"Segment '{seg_name}': planned/executed step count mismatch "
                 f"(planned={len(planned_steps)}, executed={len(executed_steps)}). "
-                "This indicates asymmetrical capture; refusing to persist."
+                "Refusing to persist."
             )
             return
 
@@ -454,8 +535,7 @@ class BaseProcessStatemachine(QtCore.QObject):
             self._signal_error(
                 f"Segment '{seg_name}': concat failed "
                 f"(planned={'ok' if planned is not None else 'None'}, "
-                f"executed={'ok' if executed is not None else 'None'}). "
-                "Refusing to persist partial data."
+                f"executed={'ok' if executed is not None else 'None'})."
             )
             return
 
@@ -463,12 +543,6 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._executed_by_segment[seg_name] = executed
 
     def _get_step_sources(self) -> Tuple[Any, Any]:
-        """
-        Preferred source of truth (race-free):
-          - RosBridge.moveit_planned_trajectory()
-          - RosBridge.moveit_executed_trajectory()
-        Only if those methods do not exist, fall back to cached last_* from Qt signals.
-        """
         rp = getattr(self._ros, "moveit_planned_trajectory", None)
         re_ = getattr(self._ros, "moveit_executed_trajectory", None)
 
@@ -637,9 +711,6 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._cleanup()
 
     def _on_error(self) -> None:
-        """
-        STOP FIX: Bei Fehlern Bewegung sofort stoppen und aufräumen.
-        """
         try:
             self._ros.moveit_stop()
         except Exception:
@@ -655,7 +726,12 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._cleanup()
 
     def _cleanup(self) -> None:
-        # stop & delete machine
+        # cancel wait
+        self._wait_active = False
+        self._wait_seg = ""
+        self._wait_deadline_ms = 0
+        self._wait_last_result = ""
+
         if self._machine:
             try:
                 self._machine.stop()
@@ -664,7 +740,6 @@ class BaseProcessStatemachine(QtCore.QObject):
                 pass
             self._machine = None
 
-        # disconnect signals (avoid duplicated callbacks on re-run)
         try:
             sig = self._moveitpy_signals
             if sig is not None:
@@ -696,7 +771,6 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._traj_sig_connected = False
         self._clear_sig_connected = False
 
-        # remove our UI log handler
         if self._log_handler is not None:
             try:
                 _LOG.removeHandler(self._log_handler)
@@ -718,9 +792,15 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._executed_by_segment.clear()
         self._planned_steps_by_segment.clear()
         self._executed_steps_by_segment.clear()
-        self._seen_planned_ok.clear()
+        self._pending_planned_step.clear()
+        self._pending_executed_step.clear()
         self._last_planned_any = None
         self._last_executed_any = None
+
+        self._wait_active = False
+        self._wait_seg = ""
+        self._wait_deadline_ms = 0
+        self._wait_last_result = ""
 
         if not self._prepare_run():
             self.notifyError.emit(self._error_msg or "Prepare failed")
@@ -736,6 +816,10 @@ class BaseProcessStatemachine(QtCore.QObject):
             return
         self._stop_requested = True
         self._stopped = True
+
+        # cancel wait
+        self._wait_active = False
+        self._wait_seg = ""
 
         try:
             self._ros.moveit_stop()
@@ -754,17 +838,6 @@ class BaseProcessStatemachine(QtCore.QObject):
     # ---------------- Retry hook ----------------
 
     def _on_retry_last_motion(self, seg_name: str, attempt: int, last_error: str) -> bool:
-        """
-        Subclass hook: resend ONLY the last motion command (the one that just failed).
-
-        MUST NOT:
-          - rebuild the whole segment
-          - clear already captured per-segment steps
-
-        Return:
-          True  -> retry was triggered (command resent)
-          False -> cannot retry (Base will abort with RETRY_EXHAUSTED)
-        """
         return False
 
     # ---------------- Hooks ----------------

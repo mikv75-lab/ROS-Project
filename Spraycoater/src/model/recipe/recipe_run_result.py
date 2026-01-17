@@ -210,7 +210,6 @@ def _compute_T_substrate_robot_mount_mm(
     robot_yaml_path: str,
     mounts_yaml_path: str,
     substrate_mount_id: str = "substrate_mount",
-    substrate_id: str = "substrate",
 ) -> list[list[float]]:
     """
     Compute rigid transform: p_substrate = T_substrate_robot_mount * p_robot_mount
@@ -236,9 +235,6 @@ def _compute_T_substrate_robot_mount_mm(
     # substrate_mount -> substrate (SSoT: mounts yaml)
     T_sub_mount_substrate = _tf_substrate_mount_to_substrate_from_mounts_yaml(mounts_doc=mounts_doc)
 
-    # NOTE: We deliberately do NOT use scene_objects['substrate'] here as transform source,
-    # because substrate_mounts.yaml is SSoT for mount offset.
-
     # world -> substrate
     T_world_substrate = _mat4_mul(T_world_sub_mount, T_sub_mount_substrate)
 
@@ -259,8 +255,8 @@ class RunResult:
     """
     STRICT run result container (SSoT).
 
-    planned_run  = {"traj": <JTBySegment YAML dict>, "tcp": <Draft YAML dict or {}>}
-    executed_run = {"traj": <JTBySegment YAML dict>, "tcp": <Draft YAML dict or {}>}
+    planned_run  = {"traj": <JTBySegment YAML dict>, "tcp": <TCP YAML dict>}
+    executed_run = {"traj": <JTBySegment YAML dict>, "tcp": <TCP YAML dict>}
     """
 
     urdf_xml: str = ""
@@ -333,6 +329,7 @@ class RunResult:
                 ex_tcp_doc["fk_meta"] = dict(self.fk_meta)
 
             if self.eval:
+                # If caller provides v2 split, honor it; else store same dict
                 pl_eval = _dict(self.eval.get("planned"))
                 ex_eval = _dict(self.eval.get("executed"))
 
@@ -397,6 +394,13 @@ class RunResult:
         return " | ".join(parts) if parts else "–"
 
     def format_eval_text(self, *, include_tcp: bool = True) -> str:
+        """
+        UI text:
+          - overall eval line
+          - per-segment summary if present
+          - tcp pose counts (global sides)
+          - fk_meta essentials
+        """
         lines: list[str] = []
         lines.append(self.eval_summary_line())
 
@@ -405,31 +409,32 @@ class RunResult:
             if inv:
                 lines.append(f"reason: {inv}")
 
-            segs = self.eval.get("segments")
+            segs = self.eval.get("segments") or self.eval.get("by_segment")
             if isinstance(segs, dict) and segs:
                 lines.append("")
                 lines.append("segments:")
                 for seg_id, seg_v in segs.items():
                     if not isinstance(seg_v, dict):
                         continue
-                    v = seg_v.get("valid")
                     score = _get_nested(seg_v, ["score"], None)
                     if score is None:
                         score = _get_nested(seg_v, ["total", "score"], None)
+                    v = seg_v.get("valid", None)
+                    ok = "OK" if v is True else ("FAIL" if v is False else "UNK")
                     if score is not None:
                         try:
                             s_txt = f"{float(score):.3f}"
                         except Exception:
                             s_txt = str(score)
-                        lines.append(f"  - {seg_id}: {'OK' if v is True else 'FAIL'} | score={s_txt}")
+                        lines.append(f"  - {seg_id}: {ok} | score={s_txt}")
                     else:
-                        lines.append(f"  - {seg_id}: {'OK' if v is True else 'FAIL'}")
+                        lines.append(f"  - {seg_id}: {ok}")
 
         if include_tcp:
             pl_tcp = self.planned_run.get("tcp") if isinstance(self.planned_run, dict) else {}
             ex_tcp = self.executed_run.get("tcp") if isinstance(self.executed_run, dict) else {}
 
-            def _count_tcp(doc: Any) -> int:
+            def _count_tcp_global(doc: Any) -> int:
                 if not isinstance(doc, dict):
                     return 0
                 sides = doc.get("sides")
@@ -447,12 +452,13 @@ class RunResult:
             f_ex = (ex_tcp.get("frame") if isinstance(ex_tcp, dict) else "") or ""
             frame_txt = f" frame(planned={f_pl or 'n/a'}, executed={f_ex or 'n/a'})"
             lines.append("")
-            lines.append(f"tcp: planned={_count_tcp(pl_tcp)} poses | executed={_count_tcp(ex_tcp)} poses |{frame_txt}")
+            lines.append(f"tcp: planned={_count_tcp_global(pl_tcp)} poses | executed={_count_tcp_global(ex_tcp)} poses |{frame_txt}")
 
         if self.fk_meta:
             ee = self.fk_meta.get("ee_link") or ""
             step = self.fk_meta.get("step_mm")
             base = self.fk_meta.get("base_link") or ""
+            segs = self.fk_meta.get("segments_included") or self.fk_meta.get("segment_order") or []
             lines.append("")
             if base:
                 lines.append(f"fk: base_link={base}")
@@ -463,6 +469,8 @@ class RunResult:
                     lines.append(f"fk: step_mm={float(step):.3f}")
                 except Exception:
                     lines.append(f"fk: step_mm={step}")
+            if isinstance(segs, list) and segs:
+                lines.append(f"fk: segments={len(segs)}")
 
         return "\n".join(lines).strip() if lines else "–"
 
@@ -563,6 +571,7 @@ class RunResult:
         robot_yaml_path: Optional[str] = None,
         mounts_yaml_path: Optional[str] = None,
     ) -> None:
+        # IMPORTANT: src/model/recipe/traj_fk_builder.py (new builder that emits tcp.segments + meta.segment_slices)
         from .traj_fk_builder import TrajFkBuilder, TrajFkConfig
 
         urdf_xml = str(urdf_xml or "")
@@ -589,6 +598,7 @@ class RunResult:
         if not seg_ids:
             raise ValueError("RunResult.postprocess_from_urdf_srdf: segment_order ist leer (seg_ids).")
 
+        # Build TCP YAML with segments + slices for ALL segments in segment_order.
         planned_tcp = TrajFkBuilder.build_tcp_draft_yaml(
             planned_traj,
             robot_model=robot_model,
@@ -613,7 +623,7 @@ class RunResult:
             require_all_segments=True,
         )
 
-        # Optional: transform TCP into substrate (offline; includes mount scene_offset)
+        # Optional: transform TCP into substrate (offline; includes mount scene_offset).
         target = str(tcp_target_frame or "").strip()
         if target and target != base_frame:
             if target != "substrate":
@@ -652,25 +662,25 @@ class RunResult:
             "base_link": str(cfg.base_link),
             "step_mm": float(cfg.step_mm),
             "max_points": int(cfg.max_points),
-            "segment_order": list(segment_order),
+            "segment_order": list(seg_ids),
             "backend": "kdl",
-            "tcp_frame": str((self.planned_run.get("tcp") or {}).get("frame") or base_frame),
+            "tcp_frame": str((_dict(self.planned_run.get("tcp"))).get("frame") or base_frame),
             "segments_included": list(seg_ids),
         }
 
-        # Eval – in substrate frame (strict evaluator expects it)
+        # Eval (strict): evaluator isolates MOVE_RECIPE from tcp.yaml.segments or meta.segment_slices.
         eval_dict: Dict[str, Any] = {}
         try:
             from .recipe_eval import RecipeEvaluator  # type: ignore
-            evaluator = RecipeEvaluator()
 
+            evaluator = RecipeEvaluator()
             fn = getattr(evaluator, "evaluate_runs", None)
             if callable(fn):
                 eval_dict = fn(
                     recipe=recipe,
                     planned_tcp=planned_tcp,
                     executed_tcp=executed_tcp,
-                    segment_order=list(segment_order),
+                    segment_order=list(seg_ids),
                     domain="tcp",
                 )
             else:

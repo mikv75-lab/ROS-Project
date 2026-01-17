@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import logging
 import os
+import inspect
+import functools
 from typing import Optional, Any, Dict, List, Tuple
 
 import yaml
+import numpy as np
 
 from PyQt6 import QtCore
 from PyQt6.QtWidgets import (
@@ -23,7 +26,7 @@ from PyQt6.QtWidgets import (
 )
 
 from geometry_msgs.msg import PoseArray  # type: ignore
-from visualization_msgs.msg import MarkerArray  # type: ignore
+from visualization_msgs.msg import MarkerArray, Marker  # type: ignore
 
 from plc.plc_client import PlcClientBase
 from ros.bridge.ros_bridge import RosBridge
@@ -61,22 +64,25 @@ class ProcessTab(QWidget):
     """
     STRICT ProcessTab.
 
-    Key fixes:
-      - NEVER publish PoseArray with empty header.frame_id (RViz drops it; latched topics keep it).
-      - Canonical publish frame is 'substrate' (as requested).
-      - On clear, publish empty PoseArray with frame_id='substrate' (not 'world').
-      - When loading/publishing layers, enforce frame_id on PoseArray and on every Marker.header.
+    UI fixes requested:
+      - Do NOT show "points=.." / "segments=.." / any TEXT markers when publishing paths.
+      - On load, always republish the current path layers (compiled/planned/executed) to refresh RViz,
+        even if the same recipe key was previously loaded.
 
-    FK/TCP strictness:
-      - FK->TCP must be produced from planned_traj / executed_traj (JTBySegment YAML), not from draft.
-      - TCP output frame is 'substrate' (publish frame).
-      - Mount offsets come from substrate_mounts.yaml (SSoT). For offline transform, RunResult requires:
-          scene_yaml_path + robot_yaml_path + mounts_yaml_path
-        (mounts YAML path, not only a loaded dict).
+    Publishing strictness:
+      - NEVER publish PoseArray with empty header.frame_id (RViz drops it).
+      - Canonical publish frame is 'substrate'.
+      - On clear, publish empty PoseArray with frame_id='substrate'.
     """
 
     _SEG_ORDER = (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME)
     _DEFAULT_PUBLISH_FRAME = "substrate"
+
+    # One-time runtime shim: older RunResult.postprocess() may still pass
+    # drop_duplicate_boundary=... into TrajFkBuilder.build_tcp_draft_yaml().
+    # Newer TrajFkBuilder versions removed that kwarg. We patch-in a wrapper
+    # that ignores the kwarg to keep the UI resilient across updates.
+    _FK_BUILDER_COMPAT_APPLIED: bool = False
 
     def __init__(
         self,
@@ -260,21 +266,15 @@ class ProcessTab(QWidget):
         init_running = bool(self._init_thread is not None and self._init_thread.isRunning())
         can_click = (not running) and (not init_running)
 
-        # Load is only allowed when nothing is running
         self.btnLoad.setEnabled(can_click)
-
-        # Init only when nothing running
         self.btnInit.setEnabled(can_click)
 
-        # Stop enabled if any worker active
         self.btnStop.setEnabled(bool(running or init_running))
 
-        # Process buttons
         self.btnValidate.setEnabled(can_click and has_recipe and self._robot_ready)
         self.btnOptimize.setEnabled(can_click and has_recipe and self._robot_ready)
         self.btnExecute.setEnabled(can_click and has_recipe and self._robot_ready and self._plc_execute_available())
 
-        # If no recipe -> disable all process
         if not has_recipe:
             self.btnValidate.setEnabled(False)
             self.btnOptimize.setEnabled(False)
@@ -339,42 +339,83 @@ class ProcessTab(QWidget):
             return "", ""
 
     def _ctx_mounts_yaml_path(self) -> str:
-        """
-        STRICT: Resolve substrate_mounts.yaml path (SSoT), required for offline TCP transform into 'substrate'.
-
-        We DO NOT guess defaults here. We only accept explicit configuration in ctx:
-          - ctx.ros.configs.mounts_file / substrate_mounts_file / mounts_yaml_file
-          - or ctx.mounts_yaml_path (if your startup stores it)
-
-        Returns "" if not resolvable.
-        """
         base_dir = os.environ.get("SC_PROJECT_ROOT", "").strip()
         if not base_dir:
             return ""
 
-        # 1) direct attribute if your startup stores it
+        def _resolve_abs(p: str) -> str:
+            p = str(p or "").strip()
+            if not p:
+                return ""
+            try:
+                abs_p = resolve_path(base_dir, p)
+                return abs_p if os.path.isfile(abs_p) else ""
+            except Exception:
+                return ""
+
         try:
             p = str(getattr(self.ctx, "mounts_yaml_path", "") or "").strip()
-            if p:
-                p_abs = resolve_path(base_dir, p)
-                if os.path.isfile(p_abs):
-                    return p_abs
+            p_abs = _resolve_abs(p)
+            if p_abs:
+                return p_abs
         except Exception:
             pass
 
-        # 2) from ctx.ros.configs
+        try:
+            ros_cfg = getattr(self.ctx, "ros", None)
+            if ros_cfg is not None:
+                for attr in (
+                    "substrate_mounts_file",
+                    "substrate_mounts_path",
+                    "substrate_mounts_yaml_file",
+                    "substrate_mounts_yaml_path",
+                    "mounts_file",
+                    "mounts_path",
+                    "mounts_yaml_file",
+                    "mounts_yaml_path",
+                ):
+                    uri = ""
+                    try:
+                        if isinstance(ros_cfg, dict):
+                            uri = str(ros_cfg.get(attr, "") or "").strip()
+                        else:
+                            uri = str(getattr(ros_cfg, attr, "") or "").strip()
+                    except Exception:
+                        uri = ""
+
+                    p_abs = _resolve_abs(uri)
+                    if p_abs:
+                        return p_abs
+        except Exception:
+            pass
+
         try:
             ros_cfg = getattr(self.ctx, "ros", None)
             cfgs = getattr(ros_cfg, "configs", None) if ros_cfg is not None else None
             if cfgs is None:
                 return ""
 
-            for attr in ("mounts_file", "substrate_mounts_file", "mounts_yaml_file", "substrate_mounts_yaml_file"):
-                uri = str(getattr(cfgs, attr, "") or "").strip()
-                if not uri:
-                    continue
-                p_abs = resolve_path(base_dir, uri)
-                if os.path.isfile(p_abs):
+            for attr in (
+                "mounts_file",
+                "mounts_path",
+                "mounts_yaml_file",
+                "mounts_yaml_path",
+                "substrate_mounts_file",
+                "substrate_mounts_path",
+                "substrate_mounts_yaml_file",
+                "substrate_mounts_yaml_path",
+            ):
+                uri = ""
+                try:
+                    if isinstance(cfgs, dict):
+                        uri = str(cfgs.get(attr, "") or "").strip()
+                    else:
+                        uri = str(getattr(cfgs, attr, "") or "").strip()
+                except Exception:
+                    uri = ""
+
+                p_abs = _resolve_abs(uri)
+                if p_abs:
                     return p_abs
         except Exception:
             return ""
@@ -444,6 +485,102 @@ class ProcessTab(QWidget):
         keys = [str(k) for k in keys if isinstance(k, str) and str(k).strip()]
         keys.sort()
         return keys
+
+    # ---------------- InfoGroupBox (NEW API) ----------------
+
+    def _info_points_from_current_recipe_best_effort(self, recipe: Optional[Recipe]) -> Optional[np.ndarray]:
+        """
+        Best-effort extraction of a points Nx3 array for InfoGroupBox.update_from_recipe().
+
+        We avoid hard dependencies on internal draft schemas; this is intentionally tolerant:
+          - recipe.draft.points_mm / recipe.draft['points_mm']
+          - recipe.compiled_points_mm
+          - recipe.info['points_mm'] / recipe.info['points']
+        """
+        if recipe is None:
+            return None
+
+        # 1) direct attribute candidates
+        for attr in ("compiled_points_mm", "points_mm", "path_points_mm"):
+            try:
+                v = getattr(recipe, attr, None)
+                if v is not None:
+                    P = np.asarray(v, dtype=float).reshape(-1, 3)
+                    if P.shape[0] > 0:
+                        return P
+            except Exception:
+                pass
+
+        # 2) draft container candidates
+        try:
+            d = getattr(recipe, "draft", None)
+            if d is not None:
+                # object style
+                for attr in ("points_mm", "points", "path_points_mm"):
+                    try:
+                        v = getattr(d, attr, None)
+                        if v is not None:
+                            P = np.asarray(v, dtype=float).reshape(-1, 3)
+                            if P.shape[0] > 0:
+                                return P
+                    except Exception:
+                        pass
+                # dict style
+                if isinstance(d, dict):
+                    for k in ("points_mm", "points", "path_points_mm"):
+                        if k in d and d.get(k) is not None:
+                            try:
+                                P = np.asarray(d.get(k), dtype=float).reshape(-1, 3)
+                                if P.shape[0] > 0:
+                                    return P
+                            except Exception:
+                                pass
+        except Exception:
+            pass
+
+        # 3) recipe.info fallback (sometimes holds just a count; accept Nx3 only)
+        try:
+            info = getattr(recipe, "info", None)
+            if isinstance(info, dict):
+                v = info.get("points_mm")
+                if v is not None:
+                    P = np.asarray(v, dtype=float).reshape(-1, 3)
+                    if P.shape[0] > 0:
+                        return P
+        except Exception:
+            pass
+
+        return None
+
+    def _update_info_box(self) -> None:
+        """
+        Updated for new widgets/info_groupbox.py:
+
+          InfoGroupBox.update_from_recipe(recipe, points)
+
+        Backward-compatible fallback:
+          If an older InfoGroupBox is still installed somewhere, we fall back to set_values().
+        """
+        recipe = self._recipe
+
+        # New API preferred
+        try:
+            fn = getattr(self.infoBox, "update_from_recipe", None)
+            if callable(fn):
+                pts = self._info_points_from_current_recipe_best_effort(recipe)
+                fn(recipe, pts)
+                return
+        except Exception:
+            _LOG.exception("ProcessTab: InfoGroupBox.update_from_recipe failed")
+
+        # Old API fallback
+        try:
+            if recipe is None:
+                self.infoBox.set_values({})
+            else:
+                self.infoBox.set_values(getattr(recipe, "info", {}) or {})
+        except Exception:
+            pass
 
     # ---------------- Spray toggles (cache only) ----------------
 
@@ -529,12 +666,6 @@ class ProcessTab(QWidget):
             "executed_traj_present": bool(getattr(r, "executed_traj", None) is not None),
         }
         self.txtRecipeDraft.setPlainText(self._yaml_dump(draft_view))
-
-    def _update_info_box(self) -> None:
-        if self._recipe is None:
-            self.infoBox.set_values({})
-            return
-        self.infoBox.set_values(getattr(self._recipe, "info", {}) or {})
 
     # ---------------- Eval UI ----------------
 
@@ -639,8 +770,73 @@ class ProcessTab(QWidget):
         self.lblExecutedSummary.setText("executed: – (no TCP)")
 
     # ---------------------------------------------------------------------
-    # Publishing helpers (STRICT frame_id)
+    # FK builder compat (drop_duplicate_boundary kw removal)
     # ---------------------------------------------------------------------
+
+    @classmethod
+    def _ensure_fk_builder_compat(cls) -> None:
+        """Make TrajFkBuilder.build_tcp_draft_yaml tolerant to signature drift.
+
+        This keeps existing RunResult.postprocess() code working even when
+        TrajFkBuilder removed the drop_duplicate_boundary kwarg.
+        """
+        if cls._FK_BUILDER_COMPAT_APPLIED:
+            return
+
+        try:
+            from model.recipe.traj_fk_builder import TrajFkBuilder  # type: ignore
+        except Exception:
+            cls._FK_BUILDER_COMPAT_APPLIED = True
+            return
+
+        try:
+            fn = getattr(TrajFkBuilder, "build_tcp_draft_yaml", None)
+            if not callable(fn):
+                cls._FK_BUILDER_COMPAT_APPLIED = True
+                return
+
+            sig = inspect.signature(fn)
+            if "drop_duplicate_boundary" in sig.parameters:
+                cls._FK_BUILDER_COMPAT_APPLIED = True
+                return
+
+            @functools.wraps(fn)
+            def _wrapped(*args, **kwargs):  # type: ignore[no-redef]
+                kwargs.pop("drop_duplicate_boundary", None)
+                return fn(*args, **kwargs)
+
+            setattr(TrajFkBuilder, "build_tcp_draft_yaml", staticmethod(_wrapped))
+            cls._FK_BUILDER_COMPAT_APPLIED = True
+        except Exception:
+            cls._FK_BUILDER_COMPAT_APPLIED = True
+
+    # ---------------------------------------------------------------------
+    # Publishing helpers (STRICT frame_id + NO TEXT MARKERS)
+    # ---------------------------------------------------------------------
+
+    @staticmethod
+    def _strip_text_markers(ma: MarkerArray) -> MarkerArray:
+        """
+        Remove TEXT_VIEW_FACING markers so RViz doesn't show:
+          - 'points=..'
+          - 'segments=..'
+          - any segment labels
+        """
+        try:
+            if ma is None or not isinstance(ma, MarkerArray):
+                return ma
+            out = MarkerArray()
+            out.markers = []
+            for m in list(ma.markers or []):
+                try:
+                    if int(getattr(m, "type", -1)) == int(Marker.TEXT_VIEW_FACING):
+                        continue
+                except Exception:
+                    pass
+                out.markers.append(m)
+            return out
+        except Exception:
+            return ma
 
     def _ensure_markerarray_frame(self, ma: MarkerArray, frame_id: str) -> MarkerArray:
         try:
@@ -655,29 +851,35 @@ class ProcessTab(QWidget):
 
     def _publish_compiled_from_recipe(self, recipe: Recipe, *, frame_id: str) -> None:
         if not self._show_compiled:
-            # Wenn compiled aus ist, lieber nichts setzen (oder optional löschen).
             return
         try:
             ma = build_marker_array_from_recipe(recipe)
+            ma = self._strip_text_markers(ma)
             ma = self._ensure_markerarray_frame(ma, frame_id)
             self.ros.spray_set_compiled(markers=ma)
         except Exception as e:
             self._append_log(f"W: publish compiled failed: {e}")
-            
+
     def _publish_tcp_layer(self, tcp_doc: Dict[str, Any], *, which: str, frame_id: str) -> None:
         if which == "planned" and (not self._show_traj):
             return
         if which == "executed" and (not self._show_executed):
             return
         try:
-            # PoseArray
-            pa = build_tcp_pose_array_from_tcp_yaml(tcp_doc, frame_id=str(frame_id))
+            # recipe_markers.py expects 'default_frame', NOT 'frame_id'
+            pa = build_tcp_pose_array_from_tcp_yaml(tcp_doc, default_frame=str(frame_id))
             if isinstance(pa, PoseArray):
                 pa.header.frame_id = str(frame_id)
 
-            # MarkerArray
-            ma = build_tcp_marker_array_from_tcp_yaml(tcp_doc, frame_id=str(frame_id))
+            ma = build_tcp_marker_array_from_tcp_yaml(
+                tcp_doc,
+                ns_prefix=str(f"tcp_{which}"),
+                mid_start=10_000 if which == "planned" else 20_000,
+                default_frame=str(frame_id),
+                include_text=False,
+            )
             if isinstance(ma, MarkerArray):
+                ma = self._strip_text_markers(ma)
                 ma = self._ensure_markerarray_frame(ma, frame_id)
 
             if which == "planned":
@@ -688,18 +890,14 @@ class ProcessTab(QWidget):
         except Exception as e:
             self._append_log(f"W: publish tcp({which}) failed: {e}")
 
-
     def _clear_layers(self, *, frame_id: str) -> None:
         frame_id = str(frame_id or self._DEFAULT_PUBLISH_FRAME)
 
         try:
-            # SprayPathBridge hat eine Clear-Funktion die alle Layer leert
             self.ros.spray_clear()
         except Exception:
             pass
 
-        # Optional: “leere” PoseArrays mit gültigem frame_id setzen,
-        # damit RViz das Topic nicht „verliert“ (falls SprayPathBridge das nicht selbst macht).
         try:
             pa = PoseArray()
             pa.header.frame_id = frame_id
@@ -713,18 +911,17 @@ class ProcessTab(QWidget):
         except Exception:
             pass
 
-
     def _publish_layers_from_bundle(self, *, reason: str = "") -> None:
         if not self._recipe_key:
             return
 
         frame_id = self._DEFAULT_PUBLISH_FRAME
 
-        # compiled from loaded recipe (if available)
+        self._clear_layers(frame_id=frame_id)
+
         if self._recipe is not None:
             self._publish_compiled_from_recipe(self._recipe, frame_id=frame_id)
 
-        # planned/executed tcp from persisted yaml (if exists)
         try:
             p = self.repo.bundle.paths(self._recipe_key)
             planned_tcp_path = str(getattr(p, "planned_tcp_yaml", "") or "")
@@ -757,7 +954,6 @@ class ProcessTab(QWidget):
         planned_tcp_doc = self._yaml_load_file(planned_tcp_path) if planned_tcp_path else {}
         executed_tcp_doc = self._yaml_load_file(executed_tcp_path) if executed_tcp_path else {}
 
-        # For display, we only need eval dicts; no need to reconstruct RunResult from disk.
         rr = RunResult(
             planned_run={"traj": {}, "tcp": planned_tcp_doc if isinstance(planned_tcp_doc, dict) else {}},
             executed_run={"traj": {}, "tcp": executed_tcp_doc if isinstance(executed_tcp_doc, dict) else {}},
@@ -801,6 +997,7 @@ class ProcessTab(QWidget):
             self._clear_layers(frame_id=self._DEFAULT_PUBLISH_FRAME)
             return
 
+        # IMPORTANT: on load, refresh (clear + republish) always
         self._load_runresult_from_bundle(publish_layers=True)
 
     # ---------------- Load ----------------
@@ -951,7 +1148,6 @@ class ProcessTab(QWidget):
         self._append_log(f"=== {mode.upper()} gestartet ===")
         self._update_buttons()
 
-        # IMPORTANT: ProcessThread gets ctx (RosBridge unchanged)
         self._process_thread = ProcessThread(
             ctx=self.ctx,
             recipe=recipe_run,
@@ -1045,7 +1241,6 @@ class ProcessTab(QWidget):
         planned_tcp_doc = rr.planned_run.get("tcp") if isinstance(rr.planned_run, dict) else {}
         executed_tcp_doc = rr.executed_run.get("tcp") if isinstance(rr.executed_run, dict) else {}
 
-        # planned overwrite prompt (executed always allowed)
         if planned_traj_path and not self._should_overwrite(which="planned", filename=planned_traj_path):
             self._append_log("Persist: planned_traj skipped (user declined overwrite).")
         else:
@@ -1055,7 +1250,6 @@ class ProcessTab(QWidget):
         if executed_traj_path:
             self._yaml_write_file(executed_traj_path, executed_traj_doc)
 
-        # TCP docs only if present
         if planned_tcp_path and isinstance(planned_tcp_doc, dict) and planned_tcp_doc:
             if planned_tcp_path and not self._should_overwrite(which="planned", filename=planned_tcp_path):
                 self._append_log("Persist: planned_tcp skipped (user declined overwrite).")
@@ -1069,9 +1263,6 @@ class ProcessTab(QWidget):
 
     @QtCore.pyqtSlot(object)
     def _on_process_finished_success(self, payload: object) -> None:
-        """
-        payload is RunResult.to_process_payload() dict emitted by statemachines/process_thread.
-        """
         try:
             rr = RunResult.from_process_payload(payload)
         except Exception as e:
@@ -1079,13 +1270,13 @@ class ProcessTab(QWidget):
             self._finish_process_ui()
             return
 
-        # Postprocess: FK->TCP->Eval (strict, but skip gracefully if missing prerequisites)
         extra = ""
         try:
             scene_yaml, robot_yaml = self._ctx_config_yaml_paths()
             mounts_yaml = self._ctx_mounts_yaml_path()
 
-            # If urdf/srdf empty -> RunResult.postprocess will raise
+            self._ensure_fk_builder_compat()
+
             rr.postprocess(
                 recipe=self._recipe if self._recipe is not None else getattr(self._process_thread, "recipe", None),
                 segment_order=self._SEG_ORDER,
@@ -1104,21 +1295,24 @@ class ProcessTab(QWidget):
             self._append_log(f"W: postprocess skipped/failed: {e}")
             self._set_eval_missing_fk(extra=extra)
 
-        # Update eval UI if we have it
         try:
             self._set_eval_from_runresult(rr)
         except Exception:
             pass
 
-        # Persist
         try:
             self._persist_runresult(rr=rr)
         except Exception as e:
             self._append_log(f"E: Persist failed: {e}")
 
-        # Publish layers from persisted bundle (single source of truth)
         try:
             self._publish_layers_from_bundle(reason="process_finished_success")
+        except Exception:
+            pass
+
+        # update InfoBox after run (planned/executed may have changed)
+        try:
+            self._update_info_box()
         except Exception:
             pass
 

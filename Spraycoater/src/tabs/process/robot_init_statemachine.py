@@ -496,10 +496,14 @@ class RobotInitStatemachine(QtCore.QObject):
 
             if self._state == self.S_WAIT_INITIALIZED:
                 if self._is_initialized():
-                    self._log("RobotInit: robot initialized")
-                    # FIX: Sofort auf IDLE zurück, keine TCP-Wartezeit mehr!
+                    self._log("RobotInit: robot initialized (waiting 1.0s for hardware stabilization)...")
+                    
+                    # FIX: Wartezeit für Hardware (Bremsen/Servos), damit 1. Move nicht abbricht
+                    QtCore.QThread.msleep(1000)
+
                     self._set_state(self.S_IDLE)
                     self._deadline_ms = 0
+                
                 elif self._deadline_passed():
                     self._finish_err(f"Timeout nach {self._init_timeout_s:.1f}s beim Warten auf initialized.")
                 return

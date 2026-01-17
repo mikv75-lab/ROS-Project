@@ -24,14 +24,19 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
     """
     Validate run: streams recipe points (Position + Orientation) as consecutive MoveIt pose commands.
 
-    STRICT (frame):
-      - HARD-CODE frame to 'substrate' for now.
-      - No 'scene' frame usage.
+    IMPORTANT FIX (missing first leg / "wird gefahren aber nicht gespeichert"):
+      - MOVE_RECIPE must NOT start with pts[0] (NO-OP), because predispense already moved to pts[0].
+        NO-OP => often no trajectory => nothing to capture.
+      - First MOVE_RECIPE command must be pts[1] so the first leg (pts[0]->pts[1]) is recorded.
 
-    Retry (STRICT):
-      - Base retries ONLY the last motion command on soft errors (ERROR:EXEC...).
-      - This class implements _on_retry_last_motion() to re-send the in-flight pose.
-      - No segment replay. No rebuilding pending queues on retry.
+      Therefore (compiled points list pts[]):
+        MOVE_PREDISPENSE: [pts[0]]
+        MOVE_RECIPE:      pts[1:-1]
+        MOVE_RETREAT:     [pts[-1]]
+
+    Trajectory capture is gated by BaseProcessStatemachine WAIT_RESULTS:
+      - We only proceed to the next streamed pose after planned+executed trajectories for the current
+        motion are actually available (or timeout -> error).
     """
 
     ROLE = "validate"
@@ -61,41 +66,30 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
 
         self._side = str(side or "top")
 
-        # Compiled poses: tuples of 7 floats: (x, y, z, qx, qy, qz, qw) in mm + quat
         self._compiled_poses: List[Tuple[float, float, float, float, float, float, float]] = []
         self._cmd_poses_by_seg: Dict[str, List[Tuple[float, ...]]] = {}
         self._pending_recipe_poses: List[Tuple[float, ...]] = []
 
-        # In-flight pose (last sent; waiting for EXECUTED:OK)
         self._inflight_pose: Optional[Tuple[float, ...]] = None
         self._inflight_seg: str = ""
 
-        # HARD-CODED (requested): always publish PoseStamped in 'substrate'
         self._frame: str = "substrate"
         self._speed_mm_s: float = 200.0
 
-        # Planner config
         self._planner_cfg: Dict[str, Any] = {}
 
-        # gating for recipe streaming
         self._await_joint_update_for_next_pose: bool = False
         self._joint_sig_connected: bool = False
 
-        # timers
         self._joint_fallback_timer = QtCore.QTimer(self)
         self._joint_fallback_timer.setSingleShot(True)
         self._joint_fallback_timer.timeout.connect(self._on_joint_fallback_timeout)
 
-        # robot joints gating (recipe streaming)
         try:
             self._ros.robot.signals.jointsChanged.connect(self._on_joints_changed)
             self._joint_sig_connected = True
         except Exception:
             self._joint_sig_connected = False
-
-    # ------------------------------------------------------------------
-    # STOP OVERRIDE
-    # ------------------------------------------------------------------
 
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
@@ -103,23 +97,13 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._pending_recipe_poses.clear()
         self._inflight_pose = None
         self._inflight_seg = ""
-
         try:
             self._joint_fallback_timer.stop()
         except Exception:
             pass
-
         super().request_stop()
 
-    # ------------------------------------------------------------------
-    # Retry hook (Base calls this on soft errors)
-    # ------------------------------------------------------------------
-
     def _on_retry_last_motion(self, seg_name: str, attempt: int, last_error: str) -> bool:
-        """
-        Re-send ONLY the last in-flight pose for the current segment.
-        IMPORTANT: Do not touch _pending_recipe_poses (no segment replay).
-        """
         if self._stop_requested:
             return False
         if not self._machine or not self._machine.isRunning():
@@ -131,7 +115,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         if pose is None:
             return False
 
-        # On retry, do not auto-advance; we are waiting for the retried motion result.
         self._await_joint_update_for_next_pose = False
         try:
             self._joint_fallback_timer.stop()
@@ -139,7 +122,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             pass
 
         _LOG.warning(
-            "Validate: retry last motion attempt %d for seg=%s (pose still in-flight). reason=%s",
+            "Validate: retry last motion attempt %d for seg=%s reason=%s",
             int(attempt),
             str(seg_name),
             str(last_error),
@@ -148,15 +131,9 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._ros_move_pose_tuple(pose)
         return True
 
-    # ------------------------------------------------------------------
-    # Hooks
-    # ------------------------------------------------------------------
-
     def _prepare_run(self) -> bool:
-        # 1) Frame: HARD-CODED
         self._frame = "substrate"
 
-        # 2) Speed
         self._speed_mm_s = 200.0
         try:
             params = getattr(self._recipe, "parameters", {}) or {}
@@ -164,14 +141,11 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         except Exception:
             pass
 
-        # 3) PLANNER CONFIG
         if not self._apply_planner_config():
             return False
 
-        # 4) Compiled poses (Position + Orientation)
         self._compiled_poses = self._get_compiled_poses(self._side)
 
-        # reset segment plans
         self._cmd_poses_by_seg.clear()
         self._pending_recipe_poses.clear()
         self._await_joint_update_for_next_pose = False
@@ -182,12 +156,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         except Exception:
             pass
 
-        # ensure Base buffers are clean
-        self._planned_by_segment.clear()
-        self._executed_by_segment.clear()
-        self._planned_steps_by_segment.clear()
-        self._executed_steps_by_segment.clear()
-
         if not self._compiled_poses:
             self._signal_error(f"Validate: compiled path ist leer (side='{self._side}').")
             return False
@@ -195,16 +163,21 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         pts = self._compiled_poses
         n = len(pts)
 
-        pre = [pts[0]] if n >= 1 else []
-        ret = [pts[-1]] if n >= 2 else []
-        mid = pts[1:-1] if n >= 3 else []
+        pre: List[Tuple[float, ...]] = [pts[0]] if n >= 1 else []
+
+        if n >= 2:
+            # critical: starts at pts[1] (avoid NO-OP pts[0])
+            recipe: List[Tuple[float, ...]] = list(pts[1:-1])
+            ret: List[Tuple[float, ...]] = [pts[-1]]
+        else:
+            recipe = []
+            ret = []
 
         self._cmd_poses_by_seg[STATE_MOVE_PREDISPENSE] = pre
-        self._cmd_poses_by_seg[STATE_MOVE_RECIPE] = list(mid)
+        self._cmd_poses_by_seg[STATE_MOVE_RECIPE] = recipe
         self._cmd_poses_by_seg[STATE_MOVE_RETREAT] = ret
         self._cmd_poses_by_seg[STATE_MOVE_HOME] = []
 
-        # recipe queue starts fresh on segment entry; we DO NOT rebuild it on retry
         self._pending_recipe_poses = list(self._cmd_poses_by_seg[STATE_MOVE_RECIPE])
         return True
 
@@ -265,7 +238,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         except Exception:
             pass
 
-        # entering a new segment resets in-flight (segment-local)
         self._inflight_pose = None
         self._inflight_seg = ""
 
@@ -285,29 +257,20 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._signal_error(f"Validate: Unknown segment '{seg_name}'")
 
     def _should_transition_on_ok(self, seg_name: str, result: str) -> bool:
-        """
-        Called by Base after EXECUTED:OK for this segment.
-        For MOVE_RECIPE we advance the queue by exactly ONE pose (the in-flight pose),
-        then either wait for jointsChanged and send the next, or transition to next segment.
-        """
-        # Clear in-flight on OK (for any segment)
+        # NOTE: Called only AFTER WAIT_RESULTS has captured planned+executed for this motion.
         if self._inflight_seg == seg_name:
             if seg_name == STATE_MOVE_RECIPE:
                 if self._inflight_pose is not None and self._pending_recipe_poses:
-                    # Queue head must match in-flight pose (strict)
                     if self._pending_recipe_poses[0] == self._inflight_pose:
                         self._pending_recipe_poses.pop(0)
                     else:
-                        self._signal_error(
-                            "Validate: queue/inflight mismatch in MOVE_RECIPE (refusing to continue)."
-                        )
+                        self._signal_error("Validate: queue/inflight mismatch in MOVE_RECIPE.")
                         return False
             self._inflight_pose = None
             self._inflight_seg = ""
 
         if seg_name == STATE_MOVE_RECIPE:
             if self._pending_recipe_poses:
-                # Wait for joints update (or fallback timer) before sending next pose
                 self._await_joint_update_for_next_pose = True
                 self._arm_joint_fallback_timer()
                 return False
@@ -315,16 +278,11 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
 
         return True
 
-    # ------------------------------------------------------------------
-    # Segment runners
-    # ------------------------------------------------------------------
-
     def _run_single_pose_segment(self, seg_name: str) -> None:
         poses = self._cmd_poses_by_seg.get(seg_name) or []
         if not poses:
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
-
         pose = poses[0]
         self._inflight_pose = pose
         self._inflight_seg = seg_name
@@ -346,7 +304,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         if not self._pending_recipe_poses:
             return
 
-        # STRICT: do not pop here; pop only after EXECUTED:OK
         pose_tuple = self._pending_recipe_poses[0]
         self._inflight_pose = pose_tuple
         self._inflight_seg = STATE_MOVE_RECIPE
@@ -362,10 +319,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             self._inflight_seg = STATE_MOVE_HOME
         except Exception as ex:
             self._signal_error(f"Validate: move_home failed: {ex}")
-
-    # ------------------------------------------------------------------
-    # Robot state gating
-    # ------------------------------------------------------------------
 
     def _arm_joint_fallback_timer(self) -> None:
         try:
@@ -390,11 +343,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         if not self._pending_recipe_poses:
             return
 
-        _LOG.warning(
-            "Validate: jointsChanged fallback triggered (no joint update within %d ms). Proceeding with next recipe pose.",
-            int(self._JOINT_UPDATE_FALLBACK_MS),
-        )
-
+        _LOG.warning("Validate: jointsChanged fallback triggered. Proceeding with next recipe pose.")
         self._await_joint_update_for_next_pose = False
         QtCore.QTimer.singleShot(self._NEXT_POSE_QT_DELAY_MS, self._send_next_recipe_pose)
 
@@ -418,15 +367,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._await_joint_update_for_next_pose = False
         QtCore.QTimer.singleShot(self._NEXT_POSE_QT_DELAY_MS, self._send_next_recipe_pose)
 
-    # ------------------------------------------------------------------
-    # ROS facade helpers
-    # ------------------------------------------------------------------
-
     def _ros_move_pose_tuple(self, p: Tuple[float, ...]) -> None:
-        """
-        Sends move command.
-        Expects tuple (x, y, z, qx, qy, qz, qw)
-        """
         if len(p) < 7:
             self._signal_error(f"Validate: Invalid pose tuple len={len(p)}")
             return
@@ -456,7 +397,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             except Exception:
                 pass
 
-            # mm -> m
             ps.pose.position.x = float(x) / 1000.0
             ps.pose.position.y = float(y) / 1000.0
             ps.pose.position.z = float(z) / 1000.0
@@ -465,31 +405,11 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             ps.pose.orientation.z = float(qz)
             ps.pose.orientation.w = float(qw)
 
-            _LOG.info(
-                "Validate: Moving to %s: Pos=%.1f/%.1f/%.1f Orient=%.3f/%.3f/%.3f/%.3f",
-                ps.header.frame_id,
-                float(x),
-                float(y),
-                float(z),
-                float(qx),
-                float(qy),
-                float(qz),
-                float(qw),
-            )
-
             self._ros.moveitpy.signals.moveToPoseRequested.emit(ps)
         except Exception as ex:
             self._signal_error(f"Validate: move_pose failed ({x:.1f},{y:.1f},{z:.1f}): {ex}")
 
-    # ------------------------------------------------------------------
-    # Compiled poses extraction (FULL POSE: Pos + Rot)
-    # ------------------------------------------------------------------
-
     def _get_compiled_poses(self, side: str) -> List[Tuple[float, float, float, float, float, float, float]]:
-        """
-        Returns list of (x, y, z, qx, qy, qz, qw).
-        Coordinates x,y,z in mm.
-        """
         out: List[Tuple[float, float, float, float, float, float, float]] = []
         try:
             poses = self._recipe.draft_poses_quat(str(side))
@@ -528,10 +448,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
                 continue
 
         return out
-
-    # ------------------------------------------------------------------
-    # Cleanup
-    # ------------------------------------------------------------------
 
     def _cleanup(self) -> None:
         try:

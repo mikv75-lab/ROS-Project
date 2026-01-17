@@ -167,7 +167,7 @@ class RecipeRepo:
     # Saving (rid-only)
     # ------------------------------------------------------------
 
-    def save_from_editor(self, recipe_id: str, *, draft: Recipe) -> None:
+    def save_from_editor(self, recipe_id: str, *, draft: Recipe, compiled: Optional[dict] = None) -> None:
         rid = self._norm_rid(recipe_id)
         if not rid:
             raise KeyError("save_from_editor: recipe_id leer")
@@ -175,6 +175,15 @@ class RecipeRepo:
             raise TypeError(f"save_from_editor: draft invalid: {type(draft)}")
 
         draft.id = rid
+
+        # compiled = optional UI artifact. Bundle-Versionen unterscheiden sich in der Signatur.
+        if compiled is not None and hasattr(self.bundle, "save_from_editor"):
+            try:
+                return self.bundle.save_from_editor(rid, draft=draft, compiled=compiled)  # type: ignore[arg-type]
+            except TypeError:
+                # älterer Bundle: compiled nicht unterstützt
+                return self.bundle.save_from_editor(rid, draft=draft)
+
         return self.bundle.save_from_editor(rid, draft=draft)
 
     # ------------------------------------------------------------

@@ -66,6 +66,31 @@ def _require_float(x: Any, *, name: str) -> float:
         raise ValueError(f"{name} muss float sein, ist {x!r}")
 
 
+def _as_bool(v: Any, default: bool = False) -> bool:
+    if v is None:
+        return bool(default)
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return bool(v)
+    if isinstance(v, str):
+        s = v.strip().lower()
+        if s in ("1", "true", "yes", "y", "on"):
+            return True
+        if s in ("0", "false", "no", "n", "off"):
+            return False
+    return bool(default)
+
+
+def _as_str(v: Any, default: str = "") -> str:
+    if v is None:
+        return str(default)
+    try:
+        return str(v)
+    except Exception:
+        return str(default)
+
+
 # ============================================================
 # Path (draft/planned_tcp/executed_tcp)
 # ============================================================
@@ -243,10 +268,6 @@ class JTBySegment:
     def to_yaml_dict(self) -> Dict[str, Any]:
         return {"version": 1, "segments": {k: v.to_dict() for k, v in self.segments.items()}}
 
-    # ------------------------------------------------------------
-    # Convert to trajectory_msgs/JointTrajectory (concat)
-    # ------------------------------------------------------------
-
     def to_joint_trajectory(self, *, segment_order: Optional[List[str]] = None):
         """
         Convert this JTBySegment into a single trajectory_msgs/JointTrajectory.
@@ -354,12 +375,84 @@ class Recipe:
     tool_frame: Optional[str] = None                                   # optional
     paths_compiled: Optional[Dict[str, Any]] = None                     # optional (Preview compiled)
 
+    # --- Preview save gating (persisted via params.yaml -> info[]) ---
+    # NOTE: persisted under info["validSave"] / info["validSaveReason"] (top-level schema unchanged).
+    valid_save: bool = False
+    valid_save_reason: str = "no_preview"
+
     # attachments (optional; strict schemas)
     draft: Optional[Draft] = None
     planned_traj: Optional[JTBySegment] = None
     executed_traj: Optional[JTBySegment] = None
     planned_tcp: Optional[Path] = None
     executed_tcp: Optional[Path] = None
+
+    # ----------------------------
+    # Backwards-compatible aliases (camelCase)
+    # ----------------------------
+
+    @property
+    def validSave(self) -> bool:
+        return bool(self.valid_save)
+
+    @validSave.setter
+    def validSave(self, v: Any) -> None:
+        self.set_valid_save(_as_bool(v, default=False), reason=None)
+
+    @property
+    def validSaveReason(self) -> str:
+        return str(self.valid_save_reason or "")
+
+    @validSaveReason.setter
+    def validSaveReason(self, v: Any) -> None:
+        # do not auto-flip valid flag here; only update the reason and persist
+        self.valid_save_reason = _as_str(v, default="")
+        self._sync_valid_save_to_info()
+
+    def set_validSave(self, ok: bool, reason: Optional[str] = None) -> None:
+        """
+        Alias for older/newer UI code that calls set_validSave(...).
+        """
+        self.set_valid_save(ok=ok, reason=reason)
+
+    # ----------------------------
+    # Internal sync helpers
+    # ----------------------------
+
+    def _sync_valid_save_from_info(self) -> None:
+        """
+        Load valid_save fields from self.info (if present).
+        """
+        try:
+            info = self.info if isinstance(self.info, dict) else {}
+            self.valid_save = _as_bool(info.get("validSave", self.valid_save), default=bool(self.valid_save))
+            self.valid_save_reason = _as_str(
+                info.get("validSaveReason", self.valid_save_reason),
+                default=str(self.valid_save_reason),
+            )
+        except Exception:
+            # keep defaults
+            pass
+
+    def _sync_valid_save_to_info(self) -> None:
+        """
+        Write valid_save fields into self.info for persistence.
+        """
+        if not isinstance(self.info, dict):
+            self.info = {}
+        self.info["validSave"] = bool(self.valid_save)
+        self.info["validSaveReason"] = _as_str(self.valid_save_reason, default="")
+
+    def set_valid_save(self, ok: bool, reason: Optional[str] = None) -> None:
+        """
+        Convenience used by preview pipeline: sets fields + updates info.
+        """
+        self.valid_save = bool(ok)
+        if reason is None:
+            self.valid_save_reason = "" if ok else (_as_str(self.valid_save_reason, default="invalid") or "invalid")
+        else:
+            self.valid_save_reason = _as_str(reason, default="")
+        self._sync_valid_save_to_info()
 
     # ----------------------------
     # Constructors / converters
@@ -371,7 +464,8 @@ class Recipe:
         rid = str(dd.get("id", "")).strip()
         if not rid:
             raise ValueError("params.yaml: id fehlt/leer.")
-        return Recipe(
+
+        r = Recipe(
             id=rid,
             description=str(dd.get("description", "") or ""),
             tool=dd.get("tool", None),
@@ -383,19 +477,19 @@ class Recipe:
             meta=_as_dict(dd.get("meta", {}), name="meta"),
             info=_as_dict(dd.get("info", {}), name="info"),
         )
+        # load persisted gating values from info
+        r._sync_valid_save_from_info()
+        return r
 
     @staticmethod
     def from_dict(d: Mapping[str, Any]) -> "Recipe":
         """
         UI-compat constructor.
 
-        RecipeEditorPanel baut ein Dict mit Keys:
-          id, description, tool, substrate, substrate_mount,
-          parameters, planner, paths_by_side,
-          trajectories (optional)
-
-        Zusätzlich tolerieren wir:
-          meta, info, tool_frame, paths_compiled
+        Tolerates:
+          - valid_save / valid_save_reason (snake)
+          - validSave / validSaveReason (camel)
+          - info["validSave"] / info["validSaveReason"] (persistence SSoT)
         """
         dd = _as_dict(dict(d), name="recipe")
         rid = str(dd.get("id", "")).strip()
@@ -418,7 +512,11 @@ class Recipe:
         tf = dd.get("tool_frame", None)
         pc = dd.get("paths_compiled", None)
 
-        return Recipe(
+        # accept both naming styles
+        vs = dd.get("valid_save", dd.get("validSave", None))
+        vsr = dd.get("valid_save_reason", dd.get("validSaveReason", None))
+
+        r = Recipe(
             id=rid,
             description=str(dd.get("description", "") or ""),
             tool=dd.get("tool", None),
@@ -432,9 +530,20 @@ class Recipe:
             trajectories=dict(traj),
             tool_frame=(str(tf) if tf is not None else None),
             paths_compiled=(dict(pc) if isinstance(pc, dict) else None),
+            valid_save=_as_bool(vs, default=False) if vs is not None else False,
+            valid_save_reason=_as_str(vsr, default="no_preview") if vsr is not None else "no_preview",
         )
 
+        # If info contains persisted values, it wins (SSoT for persistence)
+        r._sync_valid_save_from_info()
+        # Ensure info is in sync for downstream saves
+        r._sync_valid_save_to_info()
+        return r
+
     def to_params_dict(self) -> Dict[str, Any]:
+        # ensure persistence mirror
+        self._sync_valid_save_to_info()
+
         return {
             "id": self.id,
             "description": self.description or "",
@@ -453,6 +562,9 @@ class Recipe:
         UI-friendly export (mirrors from_dict inputs).
         Not intended as strict persistence format.
         """
+        # keep info mirrored
+        self._sync_valid_save_to_info()
+
         out: Dict[str, Any] = {
             "id": self.id,
             "description": self.description or "",
@@ -463,6 +575,11 @@ class Recipe:
             "planner": dict(self.planner or {}),
             "paths_by_side": dict(self.paths_by_side or {}),
             "trajectories": dict(self.trajectories or {}),
+            # keep both styles for maximal UI compatibility
+            "valid_save": bool(self.valid_save),
+            "valid_save_reason": str(self.valid_save_reason or ""),
+            "validSave": bool(self.valid_save),
+            "validSaveReason": str(self.valid_save_reason or ""),
         }
         if self.tool_frame is not None:
             out["tool_frame"] = self.tool_frame

@@ -31,15 +31,13 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
     """
     Execute run (STRICT):
 
-    Key differences vs Validate/Optimize:
-      - There may be NO PLANNED:OK events from MoveItPy during Execute.
-      - Planned baseline is recipe.planned_traj (YAML v1) and is used as "planned" for pairing.
-      - Executed truth is captured via BaseProcessStatemachine caches/getters.
+    - During Execute there may be NO PLANNED:OK events.
+    - Planned baseline is recipe.planned_traj (YAML v1).
+    - Executed truth is captured via BaseProcessStatemachine caches/getters.
 
-    Retry (STRICT):
-      - Base retries ONLY the last motion command on soft errors (ERROR:EXEC...).
-      - Execute implements _on_retry_last_motion() by re-sending the last segment trajectory.
-      - No segment replay logic; only re-issue the last execute command.
+    CRITICAL FIX:
+      - Seed BaseProcessStatemachine pending planned slot for current segment BEFORE executing.
+        Then EXECUTED:OK can commit a planned+executed pair even if PLANNED:OK never arrives.
     """
 
     ROLE = "execute"
@@ -93,7 +91,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
     # ------------------------------------------------------------------
 
     def _prepare_run(self) -> bool:
-        # side kept for compat (does not affect joint-trajectory execution)
         try:
             params = getattr(self._recipe, "parameters", {}) or {}
             self._side = str(params.get("active_side", self._side) or self._side)
@@ -103,7 +100,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         self._inflight_seg = ""
         self._inflight_traj = None
 
-        # REQUIRE recipe.planned_traj (no filesystem, no fallbacks)
         planned_traj = getattr(self._recipe, "planned_traj", None)
         if planned_traj is None:
             self._error_msg = "Execute: recipe.planned_traj fehlt (planned_traj.yaml nicht geladen?)."
@@ -119,7 +115,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             self._error_msg = "Execute: planned_traj.to_yaml_dict() returned non-dict."
             return False
 
-        # strict validate schema (JTBySegment YAML v1)
         try:
             self._validate_jtbysegment_yaml_v1(d)
         except Exception as e:
@@ -128,12 +123,12 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
 
         self._planned_loaded_yaml = d
 
-        # precompute segment availability (>=2 points)
+        # per-segment availability (>=2 points)
         self._yaml_segments_present = {}
         for seg_name in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME):
             self._yaml_segments_present[seg_name] = self._segment_has_points(seg_name)
 
-        # build strict planned JT dicts for pairing (time_from_start -> {sec,nanosec})
+        # build strict planned JT dicts for pairing (normalize time_from_start to dict)
         try:
             self._planned_jt_by_segment = {}
             for seg_name, present in self._yaml_segments_present.items():
@@ -143,13 +138,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         except Exception as e:
             self._error_msg = f"Execute: build planned JT cache failed: {e}"
             return False
-
-        # clear base capture buffers (strict)
-        self._planned_by_segment.clear()
-        self._executed_by_segment.clear()
-        self._planned_steps_by_segment.clear()
-        self._executed_steps_by_segment.clear()
-        self._seen_planned_ok.clear()
 
         # REQUIRE ROS API
         if not callable(getattr(self._ros, "moveit_execute_trajectory", None)):
@@ -202,7 +190,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
                         f"segment {seg_name!r}: point[{i}] positions length "
                         f"{0 if not isinstance(pos, list) else len(pos)} != {len(jn)}"
                     )
-                _ = [float(x) for x in pos]  # float-castable
+                _ = [float(x) for x in pos]
 
                 tfs = p.get("time_from_start", None)
                 if not (isinstance(tfs, (list, tuple)) and len(tfs) >= 2):
@@ -259,7 +247,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             out_pts.append(
                 {
                     "positions": [float(x) for x in pos],
-                    # normalize to dict (Base concat accepts dict or [sec,nsec])
                     "time_from_start": {"sec": int(tfs[0]), "nanosec": int(tfs[1])},
                 }
             )
@@ -270,42 +257,22 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         return {"joint_names": [str(x) for x in jn], "points": out_pts}
 
     # ------------------------------------------------------------------
-    # Override pairing source for Execute
+    # Override pairing source for Execute (Base uses this on capture)
     # ------------------------------------------------------------------
 
     def _get_step_sources(self) -> Tuple[Any, Any]:
-        """
-        Execute MUST pair:
-          planned  = baseline from YAML for current segment
-          executed = ros cache/getter
-        """
         seg = str(self._current_state or "")
         planned = self._planned_jt_by_segment.get(seg)
 
-        re = getattr(self._ros, "moveit_executed_trajectory", None)
-        if callable(re):
+        re_ = getattr(self._ros, "moveit_executed_trajectory", None)
+        if callable(re_):
             try:
-                return planned, re()
+                return planned, re_()
             except Exception as e:
                 self._signal_error(f"RosBridge moveit_executed_trajectory() failed: {e!r}")
                 return planned, None
 
         return planned, self._last_executed_any
-
-    # ------------------------------------------------------------------
-    # Cache-clear boundary: keep Execute ordering guard open
-    # ------------------------------------------------------------------
-
-    @QtCore.pyqtSlot()
-    def _on_traj_cache_clear(self) -> None:
-        try:
-            super()._on_traj_cache_clear()
-        except Exception:
-            pass
-
-        # Execute does NOT require PLANNED:OK events.
-        if self._current_state:
-            self._seen_planned_ok[self._current_state] = True
 
     # ------------------------------------------------------------------
     # Retry hook (Execute): re-send last execute command
@@ -362,7 +329,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             pt.positions = [float(x) for x in p["positions"]]
             pt.time_from_start = self._duration_from_yaml(p["time_from_start"])
 
-            # optional fields only if present
             if "velocities" in p:
                 pt.velocities = [float(x) for x in p["velocities"]]
             if "accelerations" in p:
@@ -388,13 +354,17 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
 
-        # If segment absent, skip deterministically
         if not bool(self._yaml_segments_present.get(seg_name, False)):
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
 
-        # Execute must NOT require PLANNED:OK events.
-        self._seen_planned_ok[seg_name] = True
+        # ---- CRITICAL: seed planned pending for this segment (no PLANNED:OK needed) ----
+        planned_jt = self._planned_jt_by_segment.get(seg_name)
+        if not isinstance(planned_jt, dict):
+            self._signal_error(f"Execute: missing planned baseline JT for seg={seg_name}")
+            return
+        self._pending_planned_step[seg_name] = copy.deepcopy(planned_jt)
+        self._pending_executed_step[seg_name] = None
 
         try:
             traj_msg = self._robot_trajectory_from_yaml(seg_name)
@@ -402,7 +372,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             self._signal_error(f"Execute: YAML->RobotTrajectory failed for {seg_name}: {e}")
             return
 
-        # store inflight for retry (last motion command)
         self._inflight_seg = str(seg_name)
         self._inflight_traj = traj_msg
 
@@ -423,7 +392,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
     def _on_finished(self) -> None:
         planned, executed = self._build_traj_payload()
 
-        # executed must exist (point of Execute)
         e_segs = executed.get("segments") if isinstance(executed, dict) else None
         if not (isinstance(e_segs, dict) and e_segs):
             self.notifyError.emit(
@@ -433,9 +401,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             self._cleanup()
             return
 
-        # IMPORTANT: use injected RunResult (seeded by ProcessThread)
         self._rr.set_planned(traj=planned)
         self._rr.set_executed(traj=executed)
-
         self.notifyFinished.emit(self._rr.to_process_payload())
         self._cleanup()

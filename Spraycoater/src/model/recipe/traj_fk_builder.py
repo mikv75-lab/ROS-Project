@@ -131,7 +131,10 @@ def _mat4_identity() -> List[List[float]]:
     ]
 
 
-def _mat4_from_xyz_quat_mm(xyz_mm: Tuple[float, float, float], q: Tuple[float, float, float, float]) -> List[List[float]]:
+def _mat4_from_xyz_quat_mm(
+    xyz_mm: Tuple[float, float, float],
+    q: Tuple[float, float, float, float],
+) -> List[List[float]]:
     R = _quat_to_rot3(q)
     tx, ty, tz = xyz_mm
     return [
@@ -147,10 +150,10 @@ def _mat4_mul(A: List[List[float]], B: List[List[float]]) -> List[List[float]]:
     for i in range(4):
         for j in range(4):
             out[i][j] = (
-                A[i][0] * B[0][j] +
-                A[i][1] * B[1][j] +
-                A[i][2] * B[2][j] +
-                A[i][3] * B[3][j]
+                A[i][0] * B[0][j]
+                + A[i][1] * B[1][j]
+                + A[i][2] * B[2][j]
+                + A[i][3] * B[3][j]
             )
     return out
 
@@ -293,22 +296,11 @@ def compute_T_substrate_robot_mount_mm_from_docs(
         substrate_mount -> substrate   (usually identity)
       robot.yaml:
         world -> robot_mount
-      substrate_mounts.yaml (OPTIONAL but recommended):
-        substrate_mount -> substrate_mount_offset  (active mount scene_offset, mm)
+      substrate_mounts.yaml (OPTIONAL):
+        substrate_mount -> active mount scene_offset (mm)
 
-    IMPORTANT (your requirement):
-      TCP points must be expressed in the effective 'substrate' frame that includes
-      the active mount offset (e.g. +50mm for h50 mounts).
-
-    Effective transform:
-      T_world_substrate =
-          (world->substrate_mount) *
-          (substrate_mount->mount_offset) *
-          (substrate_mount->substrate)
-
-    If mounts_doc is None:
-      - We still compute using scene.yaml only (mount_offset = identity),
-        but this will be wrong whenever active mounts introduce offsets.
+    STRICT:
+      - No "fallback resolution" of mounts here. You must pass mounts_doc if you want offsets.
     """
     o_mount = _scene_object_by_id(scene_doc, substrate_mount_id)
     o_substrate = _scene_object_by_id(scene_doc, substrate_id)
@@ -347,49 +339,21 @@ def compute_T_substrate_robot_mount_mm_from_paths(
     strict_mounts: bool = False,
 ) -> List[List[float]]:
     """
-    Backwards compatible entrypoint.
-
-    - If mounts_yaml_path is provided: it is loaded and applied (recommended).
-    - Else:
-        * If scene.yaml contains embedded keys ('active_mount' + 'mounts'), those are used.
-        * Else: we try a sibling file next to scene.yaml named 'substrate_mounts.yaml' if it exists.
-        * Else: mounts_doc=None.
-
-    If strict_mounts=True and no mounts_doc is resolved -> raises.
+    STRICT mounts resolution:
+      - If mounts_yaml_path is provided: load it.
+      - Else: mounts_doc=None (no mount offset applied).
+      - If strict_mounts=True and mounts_yaml_path is empty: hard error.
     """
     scene_doc = _load_yaml_file(scene_yaml_path)
     robot_doc = _load_yaml_file(robot_yaml_path)
 
-    mounts_doc: Optional[Mapping[str, Any]] = None
-
-    # (A) explicit mounts file
     mpath = str(mounts_yaml_path or "").strip()
-    if mpath:
+    if not mpath:
+        if strict_mounts:
+            raise ValueError("strict_mounts=True aber mounts_yaml_path ist leer.")
+        mounts_doc = None
+    else:
         mounts_doc = _load_yaml_file(mpath)
-
-    # (B) mounts embedded in scene.yaml (some users merge mounts + scene_objects)
-    if mounts_doc is None:
-        if isinstance(scene_doc.get("mounts"), dict) and isinstance(scene_doc.get("active_mount"), str):
-            mounts_doc = {
-                "active_mount": scene_doc.get("active_mount"),
-                "mounts": scene_doc.get("mounts"),
-            }
-
-    # (C) sibling lookup next to scene.yaml (deterministic)
-    if mounts_doc is None:
-        try:
-            scene_dir = os.path.dirname(os.path.abspath(scene_yaml_path))
-            sibling = os.path.join(scene_dir, "substrate_mounts.yaml")
-            if os.path.isfile(sibling):
-                mounts_doc = _load_yaml_file(sibling)
-        except Exception:
-            mounts_doc = None
-
-    if strict_mounts and mounts_doc is None:
-        raise ValueError(
-            "substrate_mounts.yaml konnte nicht bestimmt werden (mounts_yaml_path leer, "
-            "nicht in scene.yaml eingebettet, und kein sibling 'substrate_mounts.yaml')."
-        )
 
     return compute_T_substrate_robot_mount_mm_from_docs(scene_doc=scene_doc, robot_doc=robot_doc, mounts_doc=mounts_doc)
 
@@ -425,8 +389,6 @@ class TrajFkConfig:
         q_out = R_out_from_base * q_base
     """
     group_name: str = "omron_arm_group"
-
-    # IMPORTANT: default to your global robot base frame in TF
     base_link: str = "robot_mount"
     ee_link: str = "tcp"
 
@@ -443,14 +405,21 @@ class TrajFkBuilder:
     """
     STRICT Traj->FK builder (OFFLINE, no ROS nodes).
 
-    Backend: KDL (URDF -> KDL Tree/Chain; FK via ChainFkSolverPos_recursive).
+    STRICT:
+      - No boundary de-duplication anywhere. No synthetic edits of the signal.
+      - No legacy TCP draft builder kept here. Use build_tcp_draft_yaml() only.
 
-    IMPORTANT:
-      - Default TCP build includes ONLY (MOVE_RECIPE + MOVE_RETREAT).
-      - Planned and executed must be treated IDENTICALLY: same include list.
+    Output (TCP YAML with per-segment isolation):
+      {
+        "version": 1,
+        "frame": "...",
+        "sides": {side: {"poses_quat":[...]}},
+        "segments": {seg: {"sides": {side: {"poses_quat":[...]}}}},
+        "meta": {"segment_slices": {seg: {side: [a,b]}}},
+        "segments_included": [...]
+      }
     """
 
-    # Default: recipe + retreat (your requirement)
     DEFAULT_TCP_SEGMENTS: Tuple[str, str] = ("MOVE_RECIPE", "MOVE_RETREAT")
 
     # ------------------------------------------------------------
@@ -513,22 +482,22 @@ class TrajFkBuilder:
         T_to_from_mm: List[List[float]],
         out_frame: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """
+        Transforms Draft-like TCP YAML.
+
+        STRICT:
+          - transforms top-level sides
+          - transforms nested segments[seg].sides too (if present)
+          - keeps meta.segment_slices unchanged (indices remain valid)
+        """
         if not isinstance(draft, dict):
             raise TypeError("transform_draft_yaml: draft must be dict")
-        sides = draft.get("sides")
-        if not isinstance(sides, dict):
-            return dict(draft)
 
         out = dict(draft)
-        out_sides: Dict[str, Any] = {}
-        for side, sobj in sides.items():
-            if not isinstance(sobj, dict):
-                continue
-            poses = sobj.get("poses_quat")
-            if not isinstance(poses, list):
-                out_sides[str(side)] = dict(sobj)
-                continue
 
+        def _xform_pose_list(poses: Any) -> List[Dict[str, Any]]:
+            if not isinstance(poses, list):
+                return []
             new_poses: List[Dict[str, Any]] = []
             for p in poses:
                 if not isinstance(p, dict):
@@ -558,37 +527,57 @@ class TrajFkBuilder:
                         "qw": q2[3],
                     }
                 )
+            return new_poses
 
-            out_sides[str(side)] = {"poses_quat": new_poses}
+        # top-level sides
+        sides = out.get("sides")
+        if isinstance(sides, dict):
+            out_sides: Dict[str, Any] = {}
+            for side, sobj in sides.items():
+                if not isinstance(sobj, dict):
+                    continue
+                out_sides[str(side)] = {"poses_quat": _xform_pose_list(sobj.get("poses_quat"))}
+            out["sides"] = out_sides
 
-        out["sides"] = out_sides
+        # nested segments
+        segs = out.get("segments")
+        if isinstance(segs, dict):
+            out_segs: Dict[str, Any] = {}
+            for seg_id, seg_obj in segs.items():
+                if not isinstance(seg_obj, dict):
+                    continue
+                ss = seg_obj.get("sides")
+                if not isinstance(ss, dict):
+                    out_segs[str(seg_id)] = dict(seg_obj)
+                    continue
+                out_ss: Dict[str, Any] = {}
+                for side, sobj in ss.items():
+                    if not isinstance(sobj, dict):
+                        continue
+                    out_ss[str(side)] = {"poses_quat": _xform_pose_list(sobj.get("poses_quat"))}
+                out_segs[str(seg_id)] = {"sides": out_ss}
+            out["segments"] = out_segs
+
         if out_frame is not None:
             out["frame"] = str(out_frame)
         return out
 
     # ------------------------------------------------------------
-    # FK -> Draft (TCP poses)
+    # FK -> TCP YAML (STRICT, per-segment isolation)
     # ------------------------------------------------------------
 
     @staticmethod
-    def build_tcp_draft(
+    def build_tcp_draft_yaml(
         traj: Union[JTBySegment, Mapping[str, Any]],
         *,
         robot_model: Any,
         cfg: TrajFkConfig,
         segment_to_side: Optional[Dict[str, str]] = None,
         default_side: str = "top",
-        drop_duplicate_boundary: bool = True,
+        frame_id: Optional[str] = None,
         include_segments: Optional[Sequence[str]] = None,
         require_all_segments: bool = True,
-    ) -> Draft:
-        """
-        Build Draft (poses_quat per side) from JTBySegment.
-
-        Segment handling is STRICT by default:
-          - include_segments defaults to DEFAULT_TCP_SEGMENTS (RECIPE+RETREAT)
-          - if require_all_segments=True, every included segment must exist in jt.segments
-        """
+    ) -> Dict[str, Any]:
         jt = TrajFkBuilder._coerce_jt_by_segment(traj)
 
         if robot_model is None:
@@ -608,26 +597,34 @@ class TrajFkBuilder:
             ee_link=str(cfg.ee_link),
         )
 
-        # ---- segment selection (DEFAULT: recipe + retreat) ----
-        if include_segments is None:
-            seg_ids = list(TrajFkBuilder.DEFAULT_TCP_SEGMENTS)
-        else:
-            seg_ids = [str(s).strip() for s in include_segments if str(s).strip()]
-
+        seg_ids = (
+            list(TrajFkBuilder.DEFAULT_TCP_SEGMENTS)
+            if include_segments is None
+            else [str(s).strip() for s in include_segments if str(s).strip()]
+        )
         if not seg_ids:
-            raise ValueError("TrajFkBuilder.build_tcp_draft: include_segments ist leer.")
+            raise ValueError("TrajFkBuilder.build_tcp_draft_yaml: include_segments ist leer.")
 
-        # STRICT existence check
         missing = [sid for sid in seg_ids if sid not in jt.segments]
         if missing and require_all_segments:
             raise KeyError(f"TrajFkBuilder(KDL): JTBySegment fehlt Segmente: {missing!r}")
 
-        by_side: Dict[str, List[PoseQuat]] = {}
+        global_sides: Dict[str, Dict[str, Any]] = {}
+        out_segments: Dict[str, Dict[str, Any]] = {}
+        seg_slices: Dict[str, Dict[str, List[int]]] = {}
 
-        # IMPORTANT: iterate only seg_ids (planned/executed identical behavior)
+        def _ensure_global_side(side: str) -> List[Dict[str, Any]]:
+            side = str(side or default_side).strip() or default_side
+            if side not in global_sides:
+                global_sides[side] = {"poses_quat": []}
+            pq = global_sides[side].get("poses_quat")
+            if not isinstance(pq, list):
+                pq = []
+                global_sides[side]["poses_quat"] = pq
+            return pq  # type: ignore[return-value]
+
         for seg_id in seg_ids:
             if seg_id not in jt.segments:
-                # allowed only if require_all_segments=False
                 continue
 
             seg = jt.segments[seg_id]
@@ -638,12 +635,7 @@ class TrajFkBuilder:
                     raise KeyError(f"TrajFkBuilder(KDL): segment_to_side hat keinen Eintrag für seg_id={seg_id!r}")
                 side = str(segment_to_side[seg_id] or default_side).strip() or default_side
 
-            raw_poses = TrajFkBuilder._fk_segment_raw_kdl(
-                seg_id=seg_id,
-                seg=seg,
-                km=km,
-                cfg=cfg,
-            )
+            raw_poses = TrajFkBuilder._fk_segment_raw_kdl(seg_id=seg_id, seg=seg, km=km, cfg=cfg)
             if len(raw_poses) < 2:
                 raise RuntimeError(f"TrajFkBuilder(KDL): FK ergab <2 Posen für Segment {seg_id!r}.")
 
@@ -655,7 +647,6 @@ class TrajFkBuilder:
             if len(sampled) < 2:
                 raise RuntimeError(f"TrajFkBuilder(KDL): Resampling ergab <2 Posen für Segment {seg_id!r}.")
 
-            # Optional: map base_link -> out_frame
             if cfg.T_out_from_base_mm is not None:
                 T = cfg.T_out_from_base_mm
                 mapped: List[PoseQuat] = []
@@ -665,61 +656,44 @@ class TrajFkBuilder:
                     mapped.append(PoseQuat(x=x2, y=y2, z=z2, qx=q2[0], qy=q2[1], qz=q2[2], qw=q2[3]))
                 sampled = mapped
 
-            # boundary dedupe within same side
-            if drop_duplicate_boundary and side in by_side and by_side[side]:
-                last = by_side[side][-1]
-                first = sampled[0]
-                if abs(last.x - first.x) < 1e-9 and abs(last.y - first.y) < 1e-9 and abs(last.z - first.z) < 1e-9:
-                    sampled = sampled[1:]
+            seg_local: List[Dict[str, Any]] = [
+                {
+                    "x": float(p.x),
+                    "y": float(p.y),
+                    "z": float(p.z),
+                    "qx": float(p.qx),
+                    "qy": float(p.qy),
+                    "qz": float(p.qz),
+                    "qw": float(p.qw),
+                }
+                for p in sampled
+            ]
 
-            by_side.setdefault(side, []).extend(sampled)
+            # STRICT: no boundary edits, ever
+            gl = _ensure_global_side(side)
+            a = len(gl)
+            gl.extend(seg_local)
+            b = len(gl)
 
-        if not by_side:
-            raise RuntimeError("TrajFkBuilder(KDL): keine TCP Posen erzeugt (by_side leer).")
+            out_segments.setdefault(str(seg_id), {"sides": {}})
+            out_segments[str(seg_id)]["sides"][str(side)] = {"poses_quat": list(seg_local)}
 
-        sides_out: Dict[str, Any] = {}
-        for s, poses in by_side.items():
-            sides_out[s] = PathSide(poses_quat=list(poses))
+            seg_slices.setdefault(str(seg_id), {})
+            seg_slices[str(seg_id)][str(side)] = [int(a), int(b)]
 
-        return Draft(version=1, sides=sides_out)  # type: ignore[arg-type]
+        if not global_sides:
+            raise RuntimeError("TrajFkBuilder(KDL): keine TCP Posen erzeugt (global_sides leer).")
 
-    @staticmethod
-    def build_tcp_draft_yaml(
-        traj: Union[JTBySegment, Mapping[str, Any]],
-        *,
-        robot_model: Any,
-        cfg: TrajFkConfig,
-        segment_to_side: Optional[Dict[str, str]] = None,
-        default_side: str = "top",
-        drop_duplicate_boundary: bool = True,
-        frame_id: Optional[str] = None,
-        include_segments: Optional[Sequence[str]] = None,
-        require_all_segments: bool = True,
-    ) -> Dict[str, Any]:
-        d = TrajFkBuilder.build_tcp_draft(
-            traj,
-            robot_model=robot_model,
-            cfg=cfg,
-            segment_to_side=segment_to_side,
-            default_side=default_side,
-            drop_duplicate_boundary=drop_duplicate_boundary,
-            include_segments=include_segments,
-            require_all_segments=require_all_segments,
-        )
-        out = TrajFkBuilder._draft_to_yaml_dict(d)
-
-        # frame: explicit > cfg.out_frame > base_link
         fr = frame_id if frame_id is not None else (cfg.out_frame if cfg.out_frame else cfg.base_link)
-        out["frame"] = str(fr)
 
-        segs = (
-            list(TrajFkBuilder.DEFAULT_TCP_SEGMENTS)
-            if include_segments is None
-            else [str(s).strip() for s in include_segments if str(s).strip()]
-        )
-        out["segments_included"] = segs
-
-        return out
+        return {
+            "version": 1,
+            "frame": str(fr),
+            "sides": global_sides,
+            "segments": out_segments,
+            "meta": {"segment_slices": seg_slices},
+            "segments_included": list(seg_ids),
+        }
 
     # ------------------------------------------------------------
     # Internals
@@ -908,7 +882,7 @@ class TrajFkBuilder:
             poses_obj = getattr(side_obj, "poses_quat", None)
             if not isinstance(poses_obj, list):
                 raise TypeError(f"Draft.sides[{side!r}].poses_quat ist nicht list.")
-            poses = []
+            poses: List[Dict[str, Any]] = []
             for p in poses_obj:
                 poses.append(
                     {
