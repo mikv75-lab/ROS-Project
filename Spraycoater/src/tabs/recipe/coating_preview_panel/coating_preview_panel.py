@@ -299,8 +299,11 @@ class CoatingPreviewPanel(QWidget):
         self._preview_invalid_reason = "no_preview"
         self._final_tcp_world_mm = None
         
-        # Reset Views
-        self._tab2d.update_scene(substrate_mesh=None, path_xyz=None, bounds=self.get_bounds())
+        # Reset Views (tabs own their internal defaults)
+        try:
+            self._tab2d.clear_scene()
+        except Exception:
+            self._tab2d.update_scene(substrate_mesh=None, path_xyz=None, bounds=None)
         self._tab3d.clear_layers()
 
         if recipe is None:
@@ -394,7 +397,7 @@ class CoatingPreviewPanel(QWidget):
             self._preview_invalid_reason = "no_substrate_mesh"
             self._set_recipe_valid_save(recipe, False, self._preview_invalid_reason)
             # Update 2D with mask only
-            self._tab2d.update_scene(substrate_mesh=None, path_xyz=mask_points_mm, bounds=self.get_bounds())
+            self._tab2d.update_scene(substrate_mesh=None, path_xyz=mask_points_mm, bounds=None)
             self.render()
             return
 
@@ -413,7 +416,7 @@ class CoatingPreviewPanel(QWidget):
             self._preview_invalid_reason = f"raycast_failed: {e}"
             self._update_info(recipe, mask_points_mm)
             self._set_recipe_valid_save(recipe, False, self._preview_invalid_reason)
-            self._tab2d.update_scene(substrate_mesh=substrate_mesh, path_xyz=mask_points_mm, bounds=self.get_bounds())
+            self._tab2d.update_scene(substrate_mesh=substrate_mesh, path_xyz=mask_points_mm, bounds=None)
             self.render()
             return
 
@@ -477,7 +480,7 @@ class CoatingPreviewPanel(QWidget):
         self._tab2d.update_scene(
             substrate_mesh=substrate_mesh,
             path_xyz=path_for_display,
-            bounds=self.get_bounds()
+            bounds=None,
         )
 
         # 8) Finalize

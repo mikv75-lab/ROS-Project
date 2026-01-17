@@ -22,7 +22,7 @@ class Views3DBox(QGroupBox):
         iso_extra_zoom: float = 1.30,
         parent: Optional[QWidget] = None,
     ) -> None:
-        super().__init__("3D Views", parent)
+        super().__init__("Views", parent)
 
         self._vc = ViewController3D(
             interactor_getter=interactor_getter,
