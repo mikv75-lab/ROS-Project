@@ -6,7 +6,7 @@ from typing import Optional, Callable, Dict, Any
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QGroupBox, QWidget, QHBoxLayout, QCheckBox, QLabel, QSizePolicy
 
-from .views_3d.overlays import OverlayRenderer
+from .overlays import OverlayRenderer
 
 
 class OverlaysGroupBox(QGroupBox):
@@ -15,7 +15,6 @@ class OverlaysGroupBox(QGroupBox):
     hitsToggled = pyqtSignal(bool)
     missesToggled = pyqtSignal(bool)
     normalsToggled = pyqtSignal(bool)
-    localFramesToggled = pyqtSignal(bool)
 
     def __init__(
         self,
@@ -25,7 +24,6 @@ class OverlaysGroupBox(QGroupBox):
         clear_layer_fn: Callable[[str], None],
         add_path_polyline_fn: Callable[..., Any],
         show_poly_fn: Callable[..., Any],
-        show_frames_at_fn: Callable[..., None],
         set_layer_visible_fn: Callable[..., Any],
         update_2d_scene_fn: Callable[[Any, Any, Any], None],
         layers: Dict[str, str],
@@ -40,7 +38,7 @@ class OverlaysGroupBox(QGroupBox):
             clear_layer_fn=clear_layer_fn,
             add_path_polyline_fn=add_path_polyline_fn,
             show_poly_fn=show_poly_fn,
-            show_frames_at_fn=show_frames_at_fn,
+            # show_frames_at_fn entfernt
             set_layer_visible_fn=set_layer_visible_fn,
             update_2d_scene_fn=update_2d_scene_fn,
             layers=layers,
@@ -54,7 +52,7 @@ class OverlaysGroupBox(QGroupBox):
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(14)
 
-        def add_toggle(text: str, checked: bool = False) -> QCheckBox:
+        def add_toggle(text: str, checked: bool = True) -> QCheckBox:
             lab = QLabel(text, self)
             lab.setStyleSheet("font-weight:600;")
             chk = QCheckBox(self)
@@ -63,13 +61,13 @@ class OverlaysGroupBox(QGroupBox):
             lay.addWidget(chk)
             return chk
 
-        # All toggles default to checked so overlays are visible initially
+        # Alle standardmäßig auf True (checked)
         self.chkShowMask = add_toggle("Mask", True)
         self.chkShowPath = add_toggle("Path", True)
         self.chkShowHits = add_toggle("Hits", True)
         self.chkShowMisses = add_toggle("Misses", True)
         self.chkShowNormals = add_toggle("Normals", True)
-        self.chkShowLocalFrames = add_toggle("Lokale KS", True)
+        # Frames entfernt
 
         lay.addStretch(1)
 
@@ -84,14 +82,12 @@ class OverlaysGroupBox(QGroupBox):
         self.chkShowHits.toggled.connect(self._on_hits_toggled)
         self.chkShowMisses.toggled.connect(self._on_misses_toggled)
         self.chkShowNormals.toggled.connect(self._on_normals_toggled)
-        self.chkShowLocalFrames.toggled.connect(self._on_frames_toggled)
 
         self.chkShowMask.toggled.connect(self.maskToggled.emit)
         self.chkShowPath.toggled.connect(self.pathToggled.emit)
         self.chkShowHits.toggled.connect(self.hitsToggled.emit)
         self.chkShowMisses.toggled.connect(self.missesToggled.emit)
         self.chkShowNormals.toggled.connect(self.normalsToggled.emit)
-        self.chkShowLocalFrames.toggled.connect(self.localFramesToggled.emit)
 
     # ✅ WIRD VOM PreviewPanel BENÖTIGT
     def current_visibility(self) -> Dict[str, bool]:
@@ -100,8 +96,8 @@ class OverlaysGroupBox(QGroupBox):
             "hits": bool(self.chkShowHits.isChecked()),
             "misses": bool(self.chkShowMisses.isChecked()),
             "normals": bool(self.chkShowNormals.isChecked()),
-            "frames": bool(self.chkShowLocalFrames.isChecked()),
             "mask": bool(self.chkShowMask.isChecked()),
+            # "frames" entfernt
         }
 
     def _rebuild_if_enabled(self, flag: bool, keys: list[str]) -> None:
@@ -127,7 +123,3 @@ class OverlaysGroupBox(QGroupBox):
     def _on_normals_toggled(self, v: bool) -> None:
         self.overlays.set_normals_visible(v)
         self._rebuild_if_enabled(v, ["normals"])
-
-    def _on_frames_toggled(self, v: bool) -> None:
-        self.overlays.set_frames_visible(v)
-        self._rebuild_if_enabled(v, ["frames"])

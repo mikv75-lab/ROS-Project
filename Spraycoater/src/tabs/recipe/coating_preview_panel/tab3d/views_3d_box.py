@@ -5,7 +5,7 @@ from typing import Optional, Callable, Tuple, Any
 
 from PyQt6.QtWidgets import QWidget, QGroupBox, QHBoxLayout, QPushButton, QSizePolicy
 
-from .views_3d.view_controller_3d import ViewController3D
+from .view_controller_3d import ViewController3D
 
 Bounds = Tuple[float, float, float, float, float, float]
 

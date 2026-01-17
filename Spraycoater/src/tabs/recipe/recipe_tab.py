@@ -1,5 +1,5 @@
-# app/tabs/recipe/recipe_tab.py
 # -*- coding: utf-8 -*-
+# File: src/tabs/recipe/recipe_tab.py
 from __future__ import annotations
 
 import logging
@@ -18,14 +18,11 @@ _LOG = logging.getLogger("tabs.recipe")
 
 class RecipeTab(QWidget):
     """
-    Links:  RecipeEditorPanel
-    Rechts: CoatingPreviewPanel
+    Recipe Tab.
+    Left: RecipeEditorPanel (Editing)
+    Right: CoatingPreviewPanel (Preview 3D/2D)
 
-    Wichtig:
-      - Kein ROS/Bridge in diesem Tab.
-      - PyVista (QtInteractor) wird von außen über attach_preview_widget(...) eingesetzt.
-      - attach_preview_widget bekommt IMMER den pvHost des PreviewPanels,
-        damit der 3D View rechts UNTER der Overlays-Groupbox bleibt.
+    Note: PyVista is injected via attach_preview_widget to the *inner* widget of CoatingPreviewPanel.
     """
 
     def __init__(
@@ -41,11 +38,11 @@ class RecipeTab(QWidget):
         self.ctx = ctx
 
         if store is None:
-            raise RuntimeError("RecipeTab: store ist None (MainWindow muss store übergeben).")
+            raise RuntimeError("RecipeTab: store ist None.")
         if not isinstance(store, RecipeStore):
             raise TypeError(f"RecipeTab: store ist kein RecipeStore (got: {type(store)}).")
         if repo is None:
-            raise RuntimeError("RecipeTab: repo ist None (MainWindow muss repo übergeben).")
+            raise RuntimeError("RecipeTab: repo ist None.")
 
         self.store: RecipeStore = store
         self.repo = repo
@@ -55,6 +52,7 @@ class RecipeTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
 
+        # Left Panel: Editor
         self.recipePanel = RecipeEditorPanel(
             ctx=self.ctx,
             store=self.store,
@@ -62,7 +60,7 @@ class RecipeTab(QWidget):
             parent=self,
         )
 
-        # ✅ store hier mitgeben!
+        # Right Panel: Preview (passed ctx for SceneManager)
         self.previewPanel = CoatingPreviewPanel(
             ctx=self.ctx,
             store=self.store,
@@ -72,8 +70,11 @@ class RecipeTab(QWidget):
         layout.addWidget(self.recipePanel, 2)
         layout.addWidget(self.previewPanel, 3)
 
+        # Inject PyVista Interactor if callback provided
         if attach_preview_widget is not None:
-            attach_preview_widget(self.previewPanel.get_pv_host())
+            # We get the actual PV host widget from the preview panel (inside its 3D tab)
+            pv_host = self.previewPanel.get_pv_host()
+            attach_preview_widget(pv_host)
 
         self.recipePanel.updatePreviewRequested.connect(self._on_update_preview_requested)
 

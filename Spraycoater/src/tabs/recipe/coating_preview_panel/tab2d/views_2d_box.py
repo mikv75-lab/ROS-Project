@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# File: src/tabs/recipe/coating_preview_panel/tab2d/views_2d_box.py
 from __future__ import annotations
 
 from typing import Callable, Optional, Tuple
@@ -15,6 +16,10 @@ Bounds = Tuple[float, float, float, float, float, float]
 
 
 class Views2DBox(QGroupBox):
+    """
+    UI-Container für die 2D-Ansicht-Buttons.
+    Delegiert Aktionen über Callbacks (typischerweise an den ViewController).
+    """
     def __init__(
         self,
         *,
