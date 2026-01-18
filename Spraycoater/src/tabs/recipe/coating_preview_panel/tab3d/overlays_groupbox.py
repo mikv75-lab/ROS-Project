@@ -13,7 +13,7 @@ class OverlaysGroupBox(QGroupBox):
 
     IMPORTANT: This widget intentionally contains *no* rendering logic.
 
-    get_config() returns a stable dict consumed by Tab3D.update_preview():
+    get_config() returns a stable dict consumed by Tab3D:
       {
         'mask': bool,
         'path': bool,
@@ -22,6 +22,10 @@ class OverlaysGroupBox(QGroupBox):
         'normals': bool,
         'tcp': bool,
       }
+
+    RULE (your request):
+      - Default: everything checked True.
+      - Unchecking must not force a rebuild; Tab3D only hides actors.
     """
 
     sig_changed = pyqtSignal()
@@ -46,15 +50,13 @@ class OverlaysGroupBox(QGroupBox):
             chk.setProperty("overlay_key", key)
             return chk
 
-        # Defaults: what you typically want to see during recipe authoring
+        # Defaults: EVERYTHING ON (you can uncheck without recompute)
         self.chk_mask = add_toggle("mask", "Mask", True)
         self.chk_path = add_toggle("path", "Path", True)
         self.chk_tcp = add_toggle("tcp", "TCP", True)
-
-        # Debug layers default off
-        self.chk_hits = add_toggle("hits", "Hits", False)
-        self.chk_misses = add_toggle("misses", "Misses", False)
-        self.chk_normals = add_toggle("normals", "Normals", False)
+        self.chk_hits = add_toggle("hits", "Hits", True)
+        self.chk_misses = add_toggle("misses", "Misses", True)
+        self.chk_normals = add_toggle("normals", "Normals", True)
 
         lay.addStretch(1)
 

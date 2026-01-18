@@ -9,8 +9,8 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 import yaml
 
-# STRICT: must match your project layout
-from model.recipe.recipe import Draft, JTBySegment  # type: ignore
+from model.spraypaths.draft import Draft
+from Spraycoater.src.model.spraypaths.trajectory import JTBySegment
 
 
 # ============================================================

@@ -38,8 +38,6 @@ recipe_params:
       default: 1000
       plc: false
 
-    # max_angle_deg entfernt (Global verwaltet)
-
     pre_dispense_s:
       type: number
       min: 0.0
@@ -70,7 +68,7 @@ recipe_params:
     us_power_percent:
       type: number
       min: 0.0
-      max: 100.0
+      max: 100
       step: 1.0
       unit: "%"
       default: 60.0
@@ -132,67 +130,71 @@ recipe_params:
       plc: true
 
 
-# --- Meander (Ebene) ---
+  # ============================================================
+  # Path Types
+  # ============================================================
+
+  # --- Meander (Plane) ---
+  # CLEAN:
+  # - angle_deg entfernt
+  # - optional corner_radius_mm bewusst NICHT als Param (Code macht "immer rund" intern)
+  # - rename: edge_extend_mm -> extend_x_mm, margin_mm -> extend_y_mm
   path.meander.plane:
-    # Form-Auswahl
     area.shape:        { type: enum, values: ["circle","rect"], default: "circle" }
     area.center_xy_mm: { type: vec2, min: [-1000,-1000], max: [1000,1000], step: [0.1,0.1], unit: "mm", default: [0,0] }
-    
-    # Radius/Größe (je nach Shape sichtbar)
+
     area.radius_mm:    { type: number, min: 1.0, max: 2000, step: 0.1, unit: "mm", default: 50.0, visible_if: {"area.shape":"circle"} }
     area.size_mm:      { type: vec2,   min: [1.0,1.0], max: [5000,5000], step: [0.1,0.1], unit: "mm", default: [100.0,100.0], visible_if: {"area.shape":"rect"} }
 
     pitch_mm:          { type: number, min: 0.1, max: 200, step: 0.1, unit: "mm", default: 5.0 }
 
-    # --- GEOMETRIE ERWEITERUNG (PathBuilder) ---
-    # margin_mm: Fügt Zeilen oben/unten hinzu
-    margin_mm:         { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0, description: "Extra Bereich oben/unten (mehr Zeilen)" }
-    # edge_extend_mm: Verlängert Linien links/rechts
-    edge_extend_mm:    { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0, description: "Verlängerung links/rechts (längere Zeilen)" }
-
     start:             { type: enum, values: ["auto","minx_miny","minx_maxy","maxx_miny","maxx_maxy"], default: "auto" }
 
-    # --- POST-PROCESSING (Nur Luft-Bewegungen) ---
-    predispense_offset_mm: { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
-    retreat_offset_mm:     { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
-
-# --- Spiral (Ebene / Top) ---
-  path.spiral.plane:
-    center_xy_mm: { type: vec2,   min: [-1000,-1000], max: [1000,1000], step: [0.1,0.1], unit: "mm", default: [0,0] }
-    r_outer_mm:   { type: number, min: 0.1, max: 2000, step: 0.1, unit: "mm", default: 49.0 }
-    r_inner_mm:   { type: number, min: 0.0, max: 1000, step: 0.1, unit: "mm", default: 1.0 }
-    pitch_mm:     { type: number, min: 0.1, max: 200,  step: 0.1, unit: "mm", default: 4.0 }
-    # z_mm entfernt
-    direction:    { type: enum,   values: ["cw","ccw"], default: "ccw" }
-
-    # Post-Processing Params
-    # Nur noch Radial Offset (Aufblasen/Schrumpfen)
-    radial_offset_mm: { type: number, min: -100.0, max: 100.0, step: 0.1, unit: "mm", default: 0.0, description: "Vergrößert (+) oder verkleinert (-) den Radius der Spirale" }
-
-    # Air Moves (Abheben)
-    predispense_offset_mm: { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
-    retreat_offset_mm:     { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
-  
-  # --- Spiral (Zylinder / Helix) ---
-  path.spiral.cylinder:
-    radius_mm:        { type: number, min: 1.0, max: 2000, step: 0.1, unit: "mm", default: 50.0 }
-    height_mm:        { type: number, min: 1.0, max: 2000, step: 1.0, unit: "mm", default: 100.0 }
-
-    pitch_mm:         { type: number, min: 0.1, max: 200, step: 0.1, unit: "mm", default: 10.0 }
-    
-    # PathBuilder Params (Geometrie)
-    # Verlängert die Spirale einfach weiter nach oben/unten
-    top_extend_mm:    { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0, description: "Verlängert die Spirale über Z-Top hinaus" }
-    bottom_extend_mm: { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0, description: "Verlängert die Spirale über Z-Bottom hinaus" }
-    
-    start_from:       { type: enum, values: ["top","bottom"], default: "top" }
-    direction:        { type: enum, values: ["cw","ccw"],     default: "ccw" }
+    # Post-Processing (trim)
+    extend_x_mm:       { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0, description: "Verlängerung links/rechts (längere Zeilen)" }
+    extend_y_mm:       { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0, description: "Extra Bereich oben/unten (mehr Zeilen)" }
 
     # Air Moves
     predispense_offset_mm: { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
     retreat_offset_mm:     { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
 
-  # --- Polyhelix (Pyramide) ---
+
+  # --- Spiral (Plane) ---
+  path.spiral.plane:
+    center_xy_mm: { type: vec2,   min: [-1000,-1000], max: [1000,1000], step: [0.1,0.1], unit: "mm", default: [0,0] }
+    r_outer_mm:   { type: number, min: 0.1, max: 2000, step: 0.1, unit: "mm", default: 49.0 }
+    r_inner_mm:   { type: number, min: 0.0, max: 1000, step: 0.1, unit: "mm", default: 1.0 }
+    pitch_mm:     { type: number, min: 0.1, max: 200,  step: 0.1, unit: "mm", default: 4.0 }
+    direction:    { type: enum,   values: ["cw","ccw"], default: "ccw" }
+
+
+    # Post-Processing (trim)
+    radial_offset_mm: { type: number, min: -100.0, max: 100.0, step: 0.1, unit: "mm", default: 0.0, description: "Vergrößert (+) oder verkleinert (-) den Radius der Spirale" }
+
+    # Air Moves
+    predispense_offset_mm: { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
+    retreat_offset_mm:     { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
+
+
+  # --- Spiral (Cylinder / Helix) ---
+  path.spiral.cylinder:
+    radius_mm:        { type: number, min: 1.0, max: 2000, step: 0.1, unit: "mm", default: 50.0 }
+    height_mm:        { type: number, min: 1.0, max: 2000, step: 1.0, unit: "mm", default: 100.0 }
+    pitch_mm:         { type: number, min: 0.1, max: 200, step: 0.1, unit: "mm", default: 10.0 }
+
+    start_from:       { type: enum, values: ["top","bottom"], default: "top" }
+    direction:        { type: enum, values: ["cw","ccw"],     default: "ccw" }
+
+    # Post-Processing (trim)
+    top_extend_mm:    { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0, description: "Verlängert die Spirale über Z-Top hinaus" }
+    bottom_extend_mm: { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0, description: "Verlängert die Spirale über Z-Bottom hinaus" }
+
+    # Air Moves
+    predispense_offset_mm: { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
+    retreat_offset_mm:     { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
+
+
+  # --- Polyhelix (Pyramid) ---
   path.polyhelix.pyramid:
     base_polygon_sides:    { type: enum, values: [3,4,5,6], default: 4 }
     base_edge_len_mm:      { type: number, min: 5, max: 5000, step: 0.1, unit: "mm", default: 100.0 }
@@ -203,20 +205,17 @@ recipe_params:
     stand_off_mm:          { type: number, min: 0.1, max: 200, step: 0.1, unit: "mm", default: 25.0 }
     corner_roll_radius_mm: { type: number, min: 0, max: 50, step: 0.1, unit: "mm", default: 8.0 }
     cap_top_mm:            { type: number, min: 0, max: 200, step: 0.1, unit: "mm", default: 8.0 }
-    azimuth_sector_deg:    { type: vec2, min: [-180,-180], max: [180,180], step: [1,1], unit: "deg", default: [-180,180] }
-    flow_scale_min:        { type: number, min: 0.0, max: 1.0, step: 0.05, default: 0.3 }
-    flow_scale_max:        { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
-    cos_alpha_comp:        { type: boolean, default: true }
 
-    # Post-Processing Params
+    # Post-Processing (trim)
     start_offset_mm: { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
     end_offset_mm:   { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
 
+    # Air Moves
     predispense_offset_mm: { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
     retreat_offset_mm:     { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
 
 
-  # --- Polyhelix (Würfel) ---
+  # --- Polyhelix (Cube) ---
   path.polyhelix.cube:
     edge_len_mm:           { type: number, min: 5, max: 5000, step: 0.1, unit: "mm", default: 100.0 }
     height_mm:             { type: number, min: 5, max: 5000, step: 0.1, unit: "mm", default: 100.0 }
@@ -225,20 +224,20 @@ recipe_params:
     start_phase_deg:       { type: number, min: 0, max: 360, step: 1, unit: "deg", default: 0 }
     stand_off_mm:          { type: number, min: 0.1, max: 200, step: 0.1, unit: "mm", default: 25.0 }
     corner_roll_radius_mm: { type: number, min: 0, max: 50, step: 0.1, unit: "mm", default: 8.0 }
-    azimuth_sector_deg:    { type: vec2, min: [-180,-180], max: [180,180], step: [1,1], unit: "deg", default: [-180,180] }
-    flow_scale_min:        { type: number, min: 0.0, max: 1.0, step: 0.05, default: 0.3 }
-    flow_scale_max:        { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
-    cos_alpha_comp:        { type: boolean, default: true }
 
-    # Post-Processing Params
+    # Post-Processing (trim)
     start_offset_mm: { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
     end_offset_mm:   { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
 
+    # Air Moves
     predispense_offset_mm: { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
     retreat_offset_mm:     { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
 
 
-  # --- Perimeter-Follow (Rand, Ebene) ---
+  # --- Perimeter-Follow (Plane) ---
+  # CLEAN:
+  # - spray_angle_deg entfernt
+  # - flow_scale_min/max entfernt
   path.perimeter_follow.plane:
     area.shape:        { type: enum, values: ["circle","rect"], default: "circle" }
     area.center_xy_mm: { type: vec2, min: [-1000,-1000], max: [1000,1000], step: [0.1,0.1], unit: "mm", default: [0,0] }
@@ -249,9 +248,10 @@ recipe_params:
     offset_start_mm: { type: number, min: -20, max: 20, step: 0.1, unit: "mm", default: 1.0 }
     offset_step_mm:  { type: number, min: 0, max: 10, step: 0.1, unit: "mm", default: 1.0 }
     corner_blend_mm: { type: number, min: 0, max: 20, step: 0.1, unit: "mm", default: 5.0 }
-    spray_angle_deg: { type: number, min: 0, max: 20, step: 1, unit: "deg", default: 8 }
-    flow_scale_min:  { type: number, min: 0.0, max: 1.0, step: 0.05, default: 0.6 }
-    flow_scale_max:  { type: number, min: 0.0, max: 1.0, step: 0.05, default: 1.0 }
 
+    # Post-Processing (trim)
+    radial_offset_mm: { type: number, min: -100.0, max: 100.0, step: 0.1, unit: "mm", default: 0.0, description: "Vergrößert (+) oder verkleinert (-) den Radius der Spirale" }
+
+    # Air Moves
     predispense_offset_mm: { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
     retreat_offset_mm:     { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }

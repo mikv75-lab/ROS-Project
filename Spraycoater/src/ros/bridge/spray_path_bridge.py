@@ -36,6 +36,9 @@ class SprayPathSignals(QtCore.QObject):
     plannedAvailableChanged = QtCore.pyqtSignal(bool)
     executedAvailableChanged = QtCore.pyqtSignal(bool)
 
+    # Legacy alias support (UI might still connect to this)
+    trajAvailableChanged = QtCore.pyqtSignal(bool)
+
     def __init__(self, parent: Optional[QtCore.QObject] = None) -> None:
         super().__init__(parent)
 
@@ -48,6 +51,7 @@ class SprayPathSignals(QtCore.QObject):
     def reemit_cached(self) -> None:
         self.compiledAvailableChanged.emit(bool(self._last_avail_compiled))
         self.plannedAvailableChanged.emit(bool(self._last_avail_planned))
+        self.trajAvailableChanged.emit(bool(self._last_avail_planned)) # Legacy alias
         self.executedAvailableChanged.emit(bool(self._last_avail_executed))
 
 
@@ -55,21 +59,17 @@ class SprayPathBridge(BaseBridge):
     """
     STRICT bridge for spray_path cache node (2026-01):
 
-    Uses ONLY these topic IDs from topics.yaml group "spray_path":
+    Uses separate topics for New vs Stored (Ghosting), but unified Toggles.
 
       subscribe (GUI -> node):
         clear
-        show_compiled
-        show_planned
-        show_executed
-        compiled_poses_in
-        compiled_markers_in
-        planned_poses_in
-        planned_markers_in
-        executed_poses_in
-        executed_markers_in
+        show_compiled, show_planned, show_executed
+        
+        compiled_poses_in, compiled_markers_in
+        planned_new_poses_in, planned_new_markers_in, planned_stored_markers_in
+        executed_new_poses_in, executed_new_markers_in, executed_stored_markers_in
 
-    No legacy traj, no view setter, no additional signals.
+    No legacy traj topics, no view setter.
     """
 
     GROUP = "spray_path"
@@ -82,41 +82,55 @@ class SprayPathBridge(BaseBridge):
     ) -> None:
         self.signals = SprayPathSignals()
 
-        # local state
+        # local state (toggles)
         self._show_compiled = True
         self._show_planned = True
         self._show_executed = True
 
+        # local state (availability)
         self._avail_compiled = False
         self._avail_planned = False
         self._avail_executed = False
 
-        self._last_compiled_markers: Optional[MarkerArray] = None
-        self._last_planned_markers: Optional[MarkerArray] = None
-        self._last_executed_markers: Optional[MarkerArray] = None
-
+        # local state (data cache for republishing)
+        # Compiled
         self._last_compiled_poses: Optional[PoseArray] = None
-        self._last_planned_poses: Optional[PoseArray] = None
-        self._last_executed_poses: Optional[PoseArray] = None
+        self._last_compiled_markers: Optional[MarkerArray] = None
+        
+        # Planned
+        self._last_planned_new_poses: Optional[PoseArray] = None
+        self._last_planned_new_markers: Optional[MarkerArray] = None
+        self._last_planned_stored_markers: Optional[MarkerArray] = None
+        
+        # Executed
+        self._last_executed_new_poses: Optional[PoseArray] = None
+        self._last_executed_new_markers: Optional[MarkerArray] = None
+        self._last_executed_stored_markers: Optional[MarkerArray] = None
 
         super().__init__("spray_path_bridge", content, namespace=namespace, config=config)
 
         # allow optional overriding of IDs, default to strict topics.yaml IDs
         cfg = dict(config or {})
 
-        # inputs to node
-        self._id_compiled_poses_in = str(cfg.get("id_compiled_poses_in", "compiled_poses_in")).strip()
-        self._id_compiled_markers_in = str(cfg.get("id_compiled_markers_in", "compiled_markers_in")).strip()
-        self._id_planned_poses_in = str(cfg.get("id_planned_poses_in", "planned_poses_in")).strip()
-        self._id_planned_markers_in = str(cfg.get("id_planned_markers_in", "planned_markers_in")).strip()
-        self._id_executed_poses_in = str(cfg.get("id_executed_poses_in", "executed_poses_in")).strip()
-        self._id_executed_markers_in = str(cfg.get("id_executed_markers_in", "executed_markers_in")).strip()
-
-        # toggles + clear
+        # Toggles + Clear
+        self._id_clear = str(cfg.get("id_clear", "clear")).strip()
         self._id_show_compiled = str(cfg.get("id_show_compiled", "show_compiled")).strip()
         self._id_show_planned = str(cfg.get("id_show_planned", "show_planned")).strip()
         self._id_show_executed = str(cfg.get("id_show_executed", "show_executed")).strip()
-        self._id_clear = str(cfg.get("id_clear", "clear")).strip()
+
+        # Inputs (Compiled)
+        self._id_cp_in = str(cfg.get("id_compiled_poses_in", "compiled_poses_in")).strip()
+        self._id_cm_in = str(cfg.get("id_compiled_markers_in", "compiled_markers_in")).strip()
+
+        # Inputs (Planned)
+        self._id_pnp_in = str(cfg.get("id_planned_new_poses_in", "planned_new_poses_in")).strip()
+        self._id_pnm_in = str(cfg.get("id_planned_new_markers_in", "planned_new_markers_in")).strip()
+        self._id_psm_in = str(cfg.get("id_planned_stored_markers_in", "planned_stored_markers_in")).strip()
+
+        # Inputs (Executed)
+        self._id_enp_in = str(cfg.get("id_executed_new_poses_in", "executed_new_poses_in")).strip()
+        self._id_enm_in = str(cfg.get("id_executed_new_markers_in", "executed_new_markers_in")).strip()
+        self._id_esm_in = str(cfg.get("id_executed_stored_markers_in", "executed_stored_markers_in")).strip()
 
         # Qt wiring
         self.signals.showCompiledRequested.connect(lambda v: self._on_show_compiled(bool(v)))
@@ -133,20 +147,15 @@ class SprayPathBridge(BaseBridge):
     # ---------------- toggles + clear (GUI -> node) ----------------
 
     def _publish_toggle(self, topic_id: str, v: bool) -> None:
-        if not topic_id:
-            return
-        try:
-            self.pub(topic_id).publish(MsgBool(data=bool(v)))
-        except Exception as e:
-            # toggles are non-critical; keep noise low
-            self.get_logger().debug(f"[spray_path] toggle publish failed id={topic_id}: {e}")
+        if not topic_id: return
+        try: self.pub(topic_id).publish(MsgBool(data=bool(v)))
+        except Exception: pass
 
     def clear(self) -> None:
         """Tell spray_path node to reset caches + outputs."""
-        try:
-            self.pub(self._id_clear).publish(MsgEmpty())
+        try: self.pub(self._id_clear).publish(MsgEmpty())
         except Exception as e:
-            self.get_logger().warning(f"[spray_path] clear publish failed id={self._id_clear}: {e}")
+            self.get_logger().warning(f"[spray_path] clear failed: {e}")
 
     def _on_show_compiled(self, v: bool) -> None:
         self._show_compiled = bool(v)
@@ -166,132 +175,105 @@ class SprayPathBridge(BaseBridge):
     # ---------------- public API (ProcessTab publisher side) ----------------
 
     def set_compiled(self, *, poses: Optional[PoseArray] = None, markers: Optional[MarkerArray] = None) -> None:
-        if poses is not None:
-            self._last_compiled_poses = poses
-        if markers is not None:
-            self._last_compiled_markers = markers
-        self._set_avail("compiled", self._has_any(self._last_compiled_poses, self._last_compiled_markers))
+        if poses is not None: self._last_compiled_poses = poses
+        if markers is not None: self._last_compiled_markers = markers
+        self._update_avail("compiled")
         self._republish_compiled_inputs()
 
-    def set_planned(self, *, poses: Optional[PoseArray] = None, markers: Optional[MarkerArray] = None) -> None:
-        if poses is not None:
-            self._last_planned_poses = poses
-        if markers is not None:
-            self._last_planned_markers = markers
-        self._set_avail("planned", self._has_any(self._last_planned_poses, self._last_planned_markers))
+    def set_planned(self, *, 
+                    new_poses: Optional[PoseArray] = None, 
+                    new_markers: Optional[MarkerArray] = None,
+                    stored_markers: Optional[MarkerArray] = None) -> None:
+        """
+        Set Planned Layer data.
+        - new_poses/new_markers: Active run data (green/colored)
+        - stored_markers: Ghost data from disk (gray)
+        """
+        if new_poses is not None: self._last_planned_new_poses = new_poses
+        if new_markers is not None: self._last_planned_new_markers = new_markers
+        if stored_markers is not None: self._last_planned_stored_markers = stored_markers
+        
+        self._update_avail("planned")
         self._republish_planned_inputs()
 
-    def set_executed(self, *, poses: Optional[PoseArray] = None, markers: Optional[MarkerArray] = None) -> None:
-        if poses is not None:
-            self._last_executed_poses = poses
-        if markers is not None:
-            self._last_executed_markers = markers
-        self._set_avail("executed", self._has_any(self._last_executed_poses, self._last_executed_markers))
+    def set_executed(self, *, 
+                     new_poses: Optional[PoseArray] = None, 
+                     new_markers: Optional[MarkerArray] = None,
+                     stored_markers: Optional[MarkerArray] = None) -> None:
+        """
+        Set Executed Layer data.
+        - new_poses/new_markers: Active run data (red/colored)
+        - stored_markers: Ghost data from disk (gray)
+        """
+        if new_poses is not None: self._last_executed_new_poses = new_poses
+        if new_markers is not None: self._last_executed_new_markers = new_markers
+        if stored_markers is not None: self._last_executed_stored_markers = stored_markers
+        
+        self._update_avail("executed")
         self._republish_executed_inputs()
 
     # ---------------- helpers ----------------
 
-    def _has_any(self, poses: Any, markers: Any) -> bool:
-        return self._has_poses(poses) or self._has_markers(markers)
-
-    def _has_poses(self, msg: Any) -> bool:
-        try:
-            return bool(msg is not None and hasattr(msg, "poses") and isinstance(msg.poses, list) and len(msg.poses) > 0)
-        except Exception:
-            return False
-
-    def _has_markers(self, msg: Any) -> bool:
-        try:
-            return bool(msg is not None and hasattr(msg, "markers") and isinstance(msg.markers, list) and len(msg.markers) > 0)
-        except Exception:
-            return False
-
-    def _set_avail(self, which: str, v: bool) -> None:
-        v = bool(v)
-
+    def _update_avail(self, which: str) -> None:
         if which == "compiled":
+            v = self._has_any(self._last_compiled_poses, self._last_compiled_markers)
             if v != self._avail_compiled:
                 self._avail_compiled = v
                 self.signals._last_avail_compiled = v
                 self.signals.compiledAvailableChanged.emit(v)
 
         elif which == "planned":
+            # Check if ANY planned data exists (new or stored)
+            v = (self._has_any(self._last_planned_new_poses, self._last_planned_new_markers) or 
+                 self._has_markers(self._last_planned_stored_markers))
             if v != self._avail_planned:
                 self._avail_planned = v
                 self.signals._last_avail_planned = v
                 self.signals.plannedAvailableChanged.emit(v)
+                self.signals.trajAvailableChanged.emit(v)
 
         elif which == "executed":
+            v = (self._has_any(self._last_executed_new_poses, self._last_executed_new_markers) or 
+                 self._has_markers(self._last_executed_stored_markers))
             if v != self._avail_executed:
                 self._avail_executed = v
                 self.signals._last_avail_executed = v
                 self.signals.executedAvailableChanged.emit(v)
 
+    def _has_any(self, poses: Any, markers: Any) -> bool:
+        return self._has_poses(poses) or self._has_markers(markers)
+
+    def _has_poses(self, msg: Any) -> bool:
+        try: return bool(msg and hasattr(msg, "poses") and len(msg.poses) > 0)
+        except: return False
+
+    def _has_markers(self, msg: Any) -> bool:
+        try: return bool(msg and hasattr(msg, "markers") and len(msg.markers) > 0)
+        except: return False
+
     # ---------------- (re)publish to node inputs ----------------
-    # IMPORTANT: publish via BaseBridge.pub(<topic_id>) to avoid direction-mismatch
+
+    def _pub_if_shown(self, topic_id: str, msg: Any, show_flag: bool, empty_factory):
+        try:
+            if topic_id:
+                val = msg if (show_flag and msg is not None) else empty_factory()
+                self.pub(topic_id).publish(val)
+        except Exception:
+            _LOG.exception(f"SprayPathBridge: publish failed for {topic_id}")
 
     def _republish_compiled_inputs(self) -> None:
-        try:
-            if self._id_compiled_poses_in:
-                self.pub(self._id_compiled_poses_in).publish(
-                    self._last_compiled_poses
-                    if (self._show_compiled and self._last_compiled_poses is not None)
-                    else PoseArray()
-                )
-        except Exception:
-            _LOG.exception("SprayPathBridge: republish_compiled poses_in failed")
-
-        try:
-            if self._id_compiled_markers_in:
-                self.pub(self._id_compiled_markers_in).publish(
-                    self._last_compiled_markers
-                    if (self._show_compiled and self._last_compiled_markers is not None)
-                    else MarkerArray()
-                )
-        except Exception:
-            _LOG.exception("SprayPathBridge: republish_compiled markers_in failed")
+        self._pub_if_shown(self._id_cp_in, self._last_compiled_poses, self._show_compiled, PoseArray)
+        self._pub_if_shown(self._id_cm_in, self._last_compiled_markers, self._show_compiled, MarkerArray)
 
     def _republish_planned_inputs(self) -> None:
-        try:
-            if self._id_planned_poses_in:
-                self.pub(self._id_planned_poses_in).publish(
-                    self._last_planned_poses
-                    if (self._show_planned and self._last_planned_poses is not None)
-                    else PoseArray()
-                )
-        except Exception:
-            _LOG.exception("SprayPathBridge: republish_planned poses_in failed")
-
-        try:
-            if self._id_planned_markers_in:
-                self.pub(self._id_planned_markers_in).publish(
-                    self._last_planned_markers
-                    if (self._show_planned and self._last_planned_markers is not None)
-                    else MarkerArray()
-                )
-        except Exception:
-            _LOG.exception("SprayPathBridge: republish_planned markers_in failed")
+        self._pub_if_shown(self._id_pnp_in, self._last_planned_new_poses, self._show_planned, PoseArray)
+        self._pub_if_shown(self._id_pnm_in, self._last_planned_new_markers, self._show_planned, MarkerArray)
+        self._pub_if_shown(self._id_psm_in, self._last_planned_stored_markers, self._show_planned, MarkerArray)
 
     def _republish_executed_inputs(self) -> None:
-        try:
-            if self._id_executed_poses_in:
-                self.pub(self._id_executed_poses_in).publish(
-                    self._last_executed_poses
-                    if (self._show_executed and self._last_executed_poses is not None)
-                    else PoseArray()
-                )
-        except Exception:
-            _LOG.exception("SprayPathBridge: republish_executed poses_in failed")
-
-        try:
-            if self._id_executed_markers_in:
-                self.pub(self._id_executed_markers_in).publish(
-                    self._last_executed_markers
-                    if (self._show_executed and self._last_executed_markers is not None)
-                    else MarkerArray()
-                )
-        except Exception:
-            _LOG.exception("SprayPathBridge: republish_executed markers_in failed")
+        self._pub_if_shown(self._id_enp_in, self._last_executed_new_poses, self._show_executed, PoseArray)
+        self._pub_if_shown(self._id_enm_in, self._last_executed_new_markers, self._show_executed, MarkerArray)
+        self._pub_if_shown(self._id_esm_in, self._last_executed_stored_markers, self._show_executed, MarkerArray)
 
     def _republish_all_inputs(self) -> None:
         self._republish_compiled_inputs()

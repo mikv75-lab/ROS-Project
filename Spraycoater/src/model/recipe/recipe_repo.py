@@ -8,7 +8,10 @@ from typing import Any, List, Tuple, Optional
 import os
 import yaml
 
-from model.recipe.recipe import Recipe, Draft, JTBySegment
+# --- UPDATED IMPORTS ---
+from model.recipe.recipe import Recipe
+from model.spraypaths.draft import Draft
+from Spraycoater.src.model.spraypaths.trajectory import JTBySegment
 from model.recipe.recipe_bundle import RecipeBundle
 from model.recipe.recipe_run_result import RunResult
 
@@ -72,7 +75,7 @@ class RecipeRepo:
         except Exception:
             return recipe
 
-        # ---- draft ----
+        # ---- draft (Strict Type: Draft) ----
         try:
             draft_path = str(getattr(p, "draft_yaml", "") or "")
             if getattr(recipe, "draft", None) is None:
@@ -82,7 +85,7 @@ class RecipeRepo:
         except Exception:
             pass
 
-        # ---- planned_traj ----
+        # ---- planned_traj (Strict Type: JTBySegment) ----
         try:
             planned_path = str(getattr(p, "planned_traj_yaml", "") or getattr(p, "planned_yaml", "") or "")
             if getattr(recipe, "planned_traj", None) is None:
@@ -92,7 +95,7 @@ class RecipeRepo:
         except Exception:
             pass
 
-        # ---- executed_traj ----
+        # ---- executed_traj (Strict Type: JTBySegment) ----
         try:
             executed_path = str(getattr(p, "executed_traj_yaml", "") or getattr(p, "executed_yaml", "") or "")
             if getattr(recipe, "executed_traj", None) is None:
@@ -102,23 +105,23 @@ class RecipeRepo:
         except Exception:
             pass
 
-        # ---- planned_tcp (Draft schema) ----
+        # ---- planned_tcp (Strict Type: Draft) ----
         try:
             planned_tcp_path = str(getattr(p, "planned_tcp_yaml", "") or "")
-            if hasattr(recipe, "planned_tcp") and getattr(recipe, "planned_tcp", None) is None:
+            if getattr(recipe, "planned_tcp", None) is None:
                 d = self._read_yaml_file(planned_tcp_path)
                 if d is not None:
-                    setattr(recipe, "planned_tcp", Draft.from_yaml_dict(d))
+                    recipe.planned_tcp = Draft.from_yaml_dict(d)
         except Exception:
             pass
 
-        # ---- executed_tcp (Draft schema) ----
+        # ---- executed_tcp (Strict Type: Draft) ----
         try:
             executed_tcp_path = str(getattr(p, "executed_tcp_yaml", "") or "")
-            if hasattr(recipe, "executed_tcp") and getattr(recipe, "executed_tcp", None) is None:
+            if getattr(recipe, "executed_tcp", None) is None:
                 d = self._read_yaml_file(executed_tcp_path)
                 if d is not None:
-                    setattr(recipe, "executed_tcp", Draft.from_yaml_dict(d))
+                    recipe.executed_tcp = Draft.from_yaml_dict(d)
         except Exception:
             pass
 
@@ -196,13 +199,14 @@ class RecipeRepo:
         *,
         planned_traj: Optional[JTBySegment] = None,
         executed_traj: Optional[JTBySegment] = None,
-        planned_tcp: Optional[Draft | dict] = None,
-        executed_tcp: Optional[Draft | dict] = None,
+        planned_tcp: Optional[Draft] = None,
+        executed_tcp: Optional[Draft] = None,
     ) -> None:
         rid = self._norm_rid(recipe_id)
         if not rid:
             raise KeyError("save_run_artifacts: recipe_id leer")
 
+        # Prefer explicit batch method on bundle
         if hasattr(self.bundle, "save_run_artifacts"):
             return self.bundle.save_run_artifacts(
                 rid,
@@ -212,6 +216,7 @@ class RecipeRepo:
                 executed_tcp=executed_tcp,
             )
 
+        # Fallback to individual saves (if bundle API is older)
         if planned_traj is not None and hasattr(self.bundle, "save_planned_traj"):
             self.bundle.save_planned_traj(rid, planned_traj)
         if executed_traj is not None and hasattr(self.bundle, "save_executed_traj"):
@@ -233,13 +238,7 @@ class RecipeRepo:
     ) -> bool:
         """
         Saves run artifacts derived from RunResult ONLY if run_result.valid is True.
-
-        Writes:
-          - planned_traj.yaml / executed_traj.yaml   (JTBySegment schema)
-          - planned_tcp.yaml / executed_tcp.yaml     (Draft schema)
-
-        Returns:
-          True if saved, False if skipped (invalid).
+        Automatically converts dicts to strict Objects (JTBySegment/Draft).
         """
         rid = self._norm_rid(recipe_id)
         if not rid:
@@ -250,16 +249,17 @@ class RecipeRepo:
         if not bool(getattr(run_result, "valid", False)):
             return False
 
-        planned_traj_dict = dict((run_result.planned_run or {}).get("traj") or {})
-        executed_traj_dict = dict((run_result.executed_run or {}).get("traj") or {})
-        planned_tcp_dict = dict((run_result.planned_run or {}).get("tcp") or {})
-        executed_tcp_dict = dict((run_result.executed_run or {}).get("tcp") or {})
+        # Extract Raw Dicts
+        p_traj_dict = dict((run_result.planned_run or {}).get("traj") or {})
+        e_traj_dict = dict((run_result.executed_run or {}).get("traj") or {})
+        p_tcp_dict = dict((run_result.planned_run or {}).get("tcp") or {})
+        e_tcp_dict = dict((run_result.executed_run or {}).get("tcp") or {})
 
-        planned_traj = JTBySegment.from_yaml_dict(planned_traj_dict) if planned_traj_dict else None
-        executed_traj = JTBySegment.from_yaml_dict(executed_traj_dict) if executed_traj_dict else None
-        # IMPORTANT: keep TCP YAML as dict to preserve embedded metadata (eval, fk_meta, frame,...)
-        planned_tcp = dict(planned_tcp_dict) if planned_tcp_dict else None
-        executed_tcp = dict(executed_tcp_dict) if executed_tcp_dict else None
+        # Convert to Strict Objects (Bundle expects objects with .to_yaml_dict())
+        planned_traj = JTBySegment.from_yaml_dict(p_traj_dict) if p_traj_dict else None
+        executed_traj = JTBySegment.from_yaml_dict(e_traj_dict) if e_traj_dict else None
+        planned_tcp = Draft.from_yaml_dict(p_tcp_dict) if p_tcp_dict else None
+        executed_tcp = Draft.from_yaml_dict(e_tcp_dict) if e_tcp_dict else None
 
         self.save_run_artifacts(
             rid,

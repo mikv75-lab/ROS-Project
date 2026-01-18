@@ -9,7 +9,7 @@ from typing import Optional, Any
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QGuiApplication, QCloseEvent
-from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout
+from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QSizePolicy  # <-- FIX: add QSizePolicy
 
 from pyvistaqt import QtInteractor
 
@@ -63,18 +63,17 @@ class MainWindow(QMainWindow):
 
         tabs = QTabWidget(self)
 
-        # 1) Process: repo zum Laden/Speichern (draft/compiled/runs)
-        #    WICHTIG: ProcessTab-Parameter heißt recipe_repo
+        # 1) Process
         self.processTab = ProcessTab(
             ctx=ctx,
-            repo=ctx.repo,          # oder ctx.recipe_repo, je nachdem was du im ctx hast
+            repo=ctx.repo,
             ros=ros,
             plc=plc,
             parent=self,
         )
         tabs.addTab(self.processTab, "Process")
 
-        # 2) Recipe: store + repo (kein ROS)
+        # 2) Recipe
         self.recipeTab = RecipeTab(
             ctx=self.ctx,
             store=self.store,
@@ -119,13 +118,28 @@ class MainWindow(QMainWindow):
             if ly is None:
                 ly = QVBoxLayout(host_widget)
                 ly.setContentsMargins(0, 0, 0, 0)
+                ly.setSpacing(0)
+            else:
+                ly.setContentsMargins(0, 0, 0, 0)
+                ly.setSpacing(0)
+
+            # remove any placeholders already inside the host
+            while ly.count() > 0:
+                item = ly.takeAt(0)
+                w = item.widget()
+                if w is not None:
+                    try:
+                        w.setParent(None)
+                    except Exception:
+                        pass
 
             self.previewPlot.setParent(host_widget)
-            try:
-                ly.addWidget(self.previewPlot)
-            except Exception:
-                pass
+            self.previewPlot.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
+            # stretch=1 => takes all remaining space
+            ly.addWidget(self.previewPlot, 1)
+
+            # Walk up and inform Tab3D (it provides set_interactor)
             panel = host_widget
             while panel is not None and not hasattr(panel, "set_interactor"):
                 panel = panel.parent()

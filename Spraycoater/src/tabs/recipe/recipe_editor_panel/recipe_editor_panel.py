@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Optional, Dict, Any
 
+import numpy as np
+
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget,
@@ -38,42 +40,26 @@ def _set_policy(
 
 def _model_valid_save(model: Any) -> bool:
     """
-    Save-Gate (SSoT):
-      - Preferred: model.info['validSave'] (set by CoatingPreviewPanel after raycast)
-      - Fallback: model.valid_save / model.validSave attributes (if present)
+    STRICT Save-Gate (SSoT):
+      - ONLY model.info['validSave'] is allowed.
+      - No legacy fallback (valid_save / validSave attributes).
     """
-    try:
-        info = getattr(model, "info", None)
-        if isinstance(info, dict) and "validSave" in info:
-            return bool(info.get("validSave"))
-    except Exception:
-        pass
-
-    try:
-        if hasattr(model, "valid_save"):
-            return bool(getattr(model, "valid_save"))
-        if hasattr(model, "validSave"):
-            return bool(getattr(model, "validSave"))
-    except Exception:
-        pass
-
+    info = getattr(model, "info", None)
+    if isinstance(info, dict) and "validSave" in info:
+        return bool(info.get("validSave"))
     return False
 
 
 def _ensure_validsave_fields(model: Any) -> None:
     """
-    Ensure the fields exist (important for new + load),
-    so the UI always has deterministic defaults.
+    Deterministic defaults (not a fallback, just initialization).
     """
-    try:
-        if not isinstance(getattr(model, "info", None), dict):
-            model.info = {}
-        if "validSave" not in model.info:
-            model.info["validSave"] = False
-        if "validSaveReason" not in model.info:
-            model.info["validSaveReason"] = "no_preview"
-    except Exception:
-        pass
+    if not isinstance(getattr(model, "info", None), dict):
+        model.info = {}
+    if "validSave" not in model.info:
+        model.info["validSave"] = False
+    if "validSaveReason" not in model.info:
+        model.info["validSaveReason"] = "no_preview"
 
 
 class RecipeEditorPanel(QWidget):
@@ -83,13 +69,9 @@ class RecipeEditorPanel(QWidget):
     Persistence:
       <recipes_root_dir>/<recipe_name>/{params.yaml,draft.yaml,planned_traj.yaml,executed_traj.yaml}
 
-    UI:
-      - Meta->Recipe name = folder name (SSoT key)
-      - Selection->Recipe = template/type from store.recipes (drives defaults)
-
     Save policy (STRICT):
       - Saving is only allowed if model.info['validSave'] == True.
-      - If invalid -> MessageBox "Can not be saved" (per requirement).
+      - If invalid -> MessageBox "Can not be saved".
     """
 
     updatePreviewRequested = pyqtSignal(object)  # Recipe
@@ -113,7 +95,6 @@ class RecipeEditorPanel(QWidget):
         self.store: RecipeStore = store
         self.repo: RecipeRepo = repo
 
-        # Catalog templates by template-id (e.g. "cube")
         self._recipes_by_id: Dict[str, Dict[str, Any]] = {}
 
         self._active_model: Optional[Recipe] = None
@@ -215,7 +196,6 @@ class RecipeEditorPanel(QWidget):
     # ---------------------------------------------------------
 
     def _current_recipe_name(self) -> str:
-        # Meta->Recipe name (folder key)
         try:
             return str(self.content.get_recipe_name() or "").strip()
         except Exception:
@@ -228,7 +208,6 @@ class RecipeEditorPanel(QWidget):
         return name
 
     def _default_recipe_name_for_template(self, template_id: str) -> str:
-        # deterministic placeholder to satisfy strict Recipe.from_dict()
         tid = str(template_id or "recipe").strip() or "recipe"
         return f"{tid}_01"
 
@@ -297,12 +276,11 @@ class RecipeEditorPanel(QWidget):
             }
         )
 
-        # IMPORTANT: new model starts as not-saveable until preview ran
         _ensure_validsave_fields(model)
         return model
 
     # ---------------------------------------------------------
-    # Draft builder (UI-only)  -> draft.yaml schema (Path v1)
+    # Draft builder (UI-only) -> draft.yaml schema (Path v1)
     # ---------------------------------------------------------
 
     def _ensure_draft(self, model: Recipe) -> None:
@@ -335,6 +313,7 @@ class RecipeEditorPanel(QWidget):
                     globals_params=globals_params,
                     sample_step_mm=sample_step_mm,
                     max_points=max_points,
+                    include_airmoves=False,  # STRICT: airmoves are post-raycast
                 )
             except Exception:
                 continue
@@ -355,13 +334,16 @@ class RecipeEditorPanel(QWidget):
                     "path.spiral.plane",
                     "path.perimeter_follow.plane",
                 ):
-                    P = P.copy()
+                    P = np.asarray(P, dtype=float).reshape(-1, 3).copy()
                     if P.shape[0] > 0:
                         P[:, 2] = stand_off + z_mm
             except Exception:
                 pass
 
+            # Add predispense + retreat endpoints AFTER offset (UI draft only)
             P = self._apply_predispense_retreat_points(P, pbs.get(side) or {})
+            P = np.asarray(P, dtype=float).reshape(-1, 3)
+
             if P.shape[0] < 1:
                 continue
 
@@ -385,28 +367,27 @@ class RecipeEditorPanel(QWidget):
 
     @staticmethod
     def _apply_predispense_retreat_points(P: Any, path_dict: Any) -> Any:
-        """Add optional predispense/retreat points along the tangent."""
-        import numpy as np
-
+        """
+        STRICT:
+          - Only supports flat keys:
+              predispense_offset_mm
+              retreat_offset_mm
+          - No legacy nested blocks, no extend_mm, no fallback.
+        """
         pts = np.asarray(P, dtype=float).reshape(-1, 3)
         if pts.shape[0] < 2:
             return pts
 
-        pd = dict(path_dict) if isinstance(path_dict, dict) else {}
-        pre_mm = 0.0
-        ret_mm = 0.0
+        if not isinstance(path_dict, dict):
+            return pts
 
         try:
-            pre = pd.get("predispense")
-            if isinstance(pre, dict):
-                pre_mm = float(pre.get("extend_mm", 0.0) or 0.0)
+            pre_mm = max(0.0, float(path_dict.get("predispense_offset_mm", 0.0) or 0.0))
         except Exception:
             pre_mm = 0.0
 
         try:
-            ret = pd.get("retreat")
-            if isinstance(ret, dict):
-                ret_mm = float(ret.get("extend_mm", 0.0) or 0.0)
+            ret_mm = max(0.0, float(path_dict.get("retreat_offset_mm", 0.0) or 0.0))
         except Exception:
             ret_mm = 0.0
 
@@ -419,13 +400,13 @@ class RecipeEditorPanel(QWidget):
         if pre_mm > 0.0:
             t0 = _unit(out[1] - out[0])
             if float(np.linalg.norm(t0)) > 0.0:
-                pre_pt = out[0] - pre_mm * t0
+                pre_pt = out[0] - float(pre_mm) * t0
                 out = np.vstack([pre_pt.reshape(1, 3), out])
 
         if ret_mm > 0.0:
             t1 = _unit(out[-1] - out[-2])
             if float(np.linalg.norm(t1)) > 0.0:
-                ret_pt = out[-1] + ret_mm * t1
+                ret_pt = out[-1] + float(ret_mm) * t1
                 out = np.vstack([out, ret_pt.reshape(1, 3)])
 
         return out
@@ -478,7 +459,6 @@ class RecipeEditorPanel(QWidget):
         self._active_name = model.id
         self._active_template_id = template_id
 
-        # Keep save gate fields stable
         _ensure_validsave_fields(model)
 
         # Clear trajectories in editor context
@@ -512,11 +492,7 @@ class RecipeEditorPanel(QWidget):
             template_id = self._current_template_id() or self._first_template_id()
             rec_def = self._template_def_for_id(template_id) if template_id else {}
 
-        # Ensure id is the loaded folder name
         model.id = recipe_name
-
-        # IMPORTANT: loaded model must have deterministic save-gate fields.
-        # If params.yaml didn't have them yet -> defaults to False.
         _ensure_validsave_fields(model)
 
         self._active_name = recipe_name
@@ -599,13 +575,10 @@ class RecipeEditorPanel(QWidget):
             QMessageBox.warning(self, "Save", str(e))
             return
 
-        # STRICT: only allow saving if preview validated (validSave True)
         if not _model_valid_save(model):
-            # Requirement: simple messagebox "Can not be saved" (no extra info needed)
             QMessageBox.warning(self, "Save", "Can not be saved")
             return
 
-        # Save by folder key
         try:
             self._ensure_draft(model)
             self.repo.save_from_editor(name, draft=model, compiled=getattr(model, "paths_compiled", None))

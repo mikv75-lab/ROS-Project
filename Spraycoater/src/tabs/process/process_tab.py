@@ -36,8 +36,8 @@ class ProcessTab(QWidget):
       - slot: set_recipe(str key, object recipe_model)
       - slot: clear_recipe()
       - signals: sig_run_started(str mode, str key)
-                sig_run_finished(str key, object rr)
-                sig_run_error(str key, str message)
+                 sig_run_finished(str key, object rr)
+                 sig_run_error(str key, str message)
     """
 
     def __init__(

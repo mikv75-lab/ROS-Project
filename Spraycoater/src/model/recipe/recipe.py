@@ -3,651 +3,142 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional
 
-# ============================================================
-# YAML Schemas (v1, strict; no legacy)
-# ============================================================
-#
-# params.yaml  (authoritative parameters/meta; stored separately)
-#   id: str
-#   description: str
-#   tool: str | null
-#   substrate: str | null
-#   substrate_mount: str | null
-#   parameters: dict
-#   planner: dict
-#   paths_by_side: dict
-#   meta: dict (optional)
-#   info: dict (optional)
-#
-# draft.yaml  (coordinates only; no meta; no normals)
-# planned_tcp.yaml / executed_tcp.yaml  (coordinates only; same schema as draft)
-#   version: 1
-#   sides:
-#     <side>:
-#       poses_quat:
-#         - {x: float, y: float, z: float, qx: float, qy: float, qz: float, qw: float}
-#
-# planned_traj.yaml / executed_traj.yaml  (replay-able JointTrajectory by segment)
-#   version: 1
-#   segments:
-#     <SEGMENT_ID>:
-#       joint_names: [str, ...]
-#       points:
-#         - positions: [float, ...]
-#           time_from_start: [sec:int, nanosec:int]
-#         - ...
+# STRICT IMPORTS: Keine Definitionen mehr hier!
+from model.spraypaths.draft import Draft, PoseQuat
+from ..spraypaths.trajectory import JTBySegment
 
-
-def _as_dict(x: Any, *, name: str) -> Dict[str, Any]:
-    if not isinstance(x, dict):
-        raise ValueError(f"{name} muss dict sein, ist {type(x).__name__}")
-    return x
-
-
-def _as_list(x: Any, *, name: str) -> List[Any]:
-    if not isinstance(x, list):
-        raise ValueError(f"{name} muss list sein, ist {type(x).__name__}")
-    return x
-
-
-def _require_int(x: Any, *, name: str) -> int:
-    try:
-        return int(x)
-    except Exception:
-        raise ValueError(f"{name} muss int sein, ist {x!r}")
-
-
-def _require_float(x: Any, *, name: str) -> float:
-    try:
-        return float(x)
-    except Exception:
-        raise ValueError(f"{name} muss float sein, ist {x!r}")
-
-
-def _as_bool(v: Any, default: bool = False) -> bool:
-    if v is None:
-        return bool(default)
-    if isinstance(v, bool):
-        return v
-    if isinstance(v, (int, float)):
-        return bool(v)
-    if isinstance(v, str):
-        s = v.strip().lower()
-        if s in ("1", "true", "yes", "y", "on"):
-            return True
-        if s in ("0", "false", "no", "n", "off"):
-            return False
-    return bool(default)
-
-
-def _as_str(v: Any, default: str = "") -> str:
-    if v is None:
-        return str(default)
-    try:
-        return str(v)
-    except Exception:
-        return str(default)
-
-
-# ============================================================
-# Path (draft/planned_tcp/executed_tcp)
-# ============================================================
-
-@dataclass(frozen=True)
-class PoseQuat:
-    x: float
-    y: float
-    z: float
-    qx: float
-    qy: float
-    qz: float
-    qw: float
-
-    @staticmethod
-    def from_dict(d: Mapping[str, Any]) -> "PoseQuat":
-        return PoseQuat(
-            x=_require_float(d.get("x"), name="pose.x"),
-            y=_require_float(d.get("y"), name="pose.y"),
-            z=_require_float(d.get("z"), name="pose.z"),
-            qx=_require_float(d.get("qx"), name="pose.qx"),
-            qy=_require_float(d.get("qy"), name="pose.qy"),
-            qz=_require_float(d.get("qz"), name="pose.qz"),
-            qw=_require_float(d.get("qw"), name="pose.qw"),
-        )
-
-    def to_dict(self) -> Dict[str, float]:
-        return {
-            "x": float(self.x),
-            "y": float(self.y),
-            "z": float(self.z),
-            "qx": float(self.qx),
-            "qy": float(self.qy),
-            "qz": float(self.qz),
-            "qw": float(self.qw),
-        }
-
-
-@dataclass(frozen=True)
-class PathSide:
-    poses_quat: List[PoseQuat] = field(default_factory=list)
-
-    @staticmethod
-    def from_dict(d: Mapping[str, Any], *, name: str = "side") -> "PathSide":
-        dd = _as_dict(d, name=name)
-        poses = _as_list(dd.get("poses_quat", []), name=f"{name}.poses_quat")
-        poses_q = [PoseQuat.from_dict(_as_dict(p, name=f"{name}.pose")) for p in poses]
-        if not poses_q:
-            raise ValueError(f"{name}.poses_quat ist leer.")
-        return PathSide(poses_quat=poses_q)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"poses_quat": [p.to_dict() for p in self.poses_quat]}
-
-
-@dataclass(frozen=True)
-class Path:
-    """
-    Path v1 = pure geometry.
-    Used for:
-      - draft.yaml
-      - planned_tcp.yaml
-      - executed_tcp.yaml
-    """
-    version: int = 1
-    sides: Dict[str, PathSide] = field(default_factory=dict)
-
-    @staticmethod
-    def from_yaml_dict(d: Mapping[str, Any], *, name: str = "path.yaml") -> "Path":
-        root = _as_dict(dict(d), name=name)
-        version = _require_int(root.get("version", 1), name=f"{name}.version")
-        if version != 1:
-            raise ValueError(f"{name}: version muss 1 sein, ist {version}")
-
-        sides_raw = _as_dict(root.get("sides", {}), name=f"{name}.sides")
-        sides: Dict[str, PathSide] = {}
-        for side, v in sides_raw.items():
-            s = str(side)
-            sides[s] = PathSide.from_dict(_as_dict(v, name=f"{name}.sides[{s}]"), name=f"{name}.sides[{s}]")
-        if not sides:
-            raise ValueError(f"{name}: sides ist leer.")
-        return Path(version=version, sides=sides)
-
-    def to_yaml_dict(self) -> Dict[str, Any]:
-        return {"version": 1, "sides": {k: v.to_dict() for k, v in self.sides.items()}}
-
-    def poses_quat(self, side: str) -> List[PoseQuat]:
-        if side not in self.sides:
-            raise KeyError(f"sides hat keinen Eintrag für side={side!r}")
-        return self.sides[side].poses_quat
-
-
-# Backwards naming: keep Draft as alias to Path (so other modules can still import Draft)
-Draft = Path
-
-
-# ============================================================
-# planned_traj.yaml / executed_traj.yaml
-# ============================================================
-
-@dataclass(frozen=True)
-class JTPoint:
-    positions: List[float]
-    time_from_start: Tuple[int, int]  # (sec, nanosec)
-
-    @staticmethod
-    def from_dict(d: Mapping[str, Any]) -> "JTPoint":
-        dd = _as_dict(d, name="jt.point")
-        pos = _as_list(dd.get("positions", None), name="positions")
-        positions = [_require_float(x, name="positions[]") for x in pos]
-        tfs = _as_list(dd.get("time_from_start", None), name="time_from_start")
-        if len(tfs) != 2:
-            raise ValueError("time_from_start muss [sec, nanosec] sein.")
-        sec = _require_int(tfs[0], name="time_from_start[0]")
-        nsec = _require_int(tfs[1], name="time_from_start[1]")
-        if sec < 0 or nsec < 0:
-            raise ValueError("time_from_start darf nicht negativ sein.")
-        return JTPoint(positions=positions, time_from_start=(sec, nsec))
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "positions": [float(x) for x in self.positions],
-            "time_from_start": [int(self.time_from_start[0]), int(self.time_from_start[1])],
-        }
-
-
-@dataclass(frozen=True)
-class JTSegment:
-    joint_names: List[str]
-    points: List[JTPoint]
-
-    @staticmethod
-    def from_dict(d: Mapping[str, Any]) -> "JTSegment":
-        dd = _as_dict(d, name="jt.segment")
-        jn = _as_list(dd.get("joint_names", None), name="joint_names")
-        joint_names = [str(x) for x in jn]
-        pts = _as_list(dd.get("points", None), name="points")
-        points = [JTPoint.from_dict(_as_dict(p, name="jt.point")) for p in pts]
-        if not joint_names:
-            raise ValueError("jt.segment.joint_names ist leer.")
-        if not points:
-            raise ValueError("jt.segment.points ist leer.")
-        for p in points:
-            if len(p.positions) != len(joint_names):
-                raise ValueError(
-                    f"jt.point.positions Länge passt nicht zu joint_names "
-                    f"({len(p.positions)} != {len(joint_names)})"
-                )
-        return JTSegment(joint_names=joint_names, points=points)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"joint_names": list(self.joint_names), "points": [p.to_dict() for p in self.points]}
-
-
-@dataclass(frozen=True)
-class JTBySegment:
-    version: int = 1
-    segments: Dict[str, JTSegment] = field(default_factory=dict)
-
-    @staticmethod
-    def from_yaml_dict(d: Mapping[str, Any]) -> "JTBySegment":
-        root = _as_dict(dict(d), name="traj.yaml")
-        version = _require_int(root.get("version", 1), name="traj.version")
-        if version != 1:
-            raise ValueError(f"traj.yaml: version muss 1 sein, ist {version}")
-
-        segs_raw = _as_dict(root.get("segments", {}), name="traj.segments")
-        segs: Dict[str, JTSegment] = {}
-        for seg_id, seg in segs_raw.items():
-            segs[str(seg_id)] = JTSegment.from_dict(_as_dict(seg, name=f"traj.segments[{seg_id}]"))
-        if not segs:
-            raise ValueError("traj.yaml: segments ist leer.")
-        return JTBySegment(version=version, segments=segs)
-
-    def to_yaml_dict(self) -> Dict[str, Any]:
-        return {"version": 1, "segments": {k: v.to_dict() for k, v in self.segments.items()}}
-
-    def to_joint_trajectory(self, *, segment_order: Optional[List[str]] = None):
-        """
-        Convert this JTBySegment into a single trajectory_msgs/JointTrajectory.
-
-        - Concatenates segments in given segment_order (if provided), else in dict insertion order.
-        - Ensures time_from_start is monotonically non-decreasing across concatenation by applying
-          an offset at each segment boundary.
-        - Returns None if ROS messages are unavailable (import error).
-        """
-        try:
-            from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint  # type: ignore
-            from builtin_interfaces.msg import Duration as DurationMsg  # type: ignore
-        except Exception:
-            return None
-
-        if not self.segments:
-            return None
-
-        order: List[str]
-        if segment_order:
-            order = [s for s in segment_order if s in self.segments]
-            for s in self.segments.keys():
-                if s not in order:
-                    order.append(s)
-        else:
-            order = list(self.segments.keys())
-
-        first = self.segments[order[0]]
-        joint_names = list(first.joint_names)
-
-        for sid in order[1:]:
-            seg = self.segments[sid]
-            if list(seg.joint_names) != joint_names:
-                raise ValueError(
-                    f"JTBySegment.to_joint_trajectory: joint_names mismatch in segment '{sid}'. "
-                    f"expected={joint_names}, got={seg.joint_names}"
-                )
-
-        jt = JointTrajectory()
-        jt.joint_names = joint_names
-
-        off_sec = 0
-        off_nsec = 0
-
-        def _add_time(a_sec: int, a_nsec: int, b_sec: int, b_nsec: int) -> Tuple[int, int]:
-            n = a_nsec + b_nsec
-            s = a_sec + b_sec + (n // 1_000_000_000)
-            n = n % 1_000_000_000
-            return s, n
-
-        def _max_time_in_segment(seg: JTSegment) -> Tuple[int, int]:
-            ms, mn = 0, 0
-            for p in seg.points:
-                s, n = int(p.time_from_start[0]), int(p.time_from_start[1])
-                if (s > ms) or (s == ms and n > mn):
-                    ms, mn = s, n
-            return ms, mn
-
-        for sid in order:
-            seg = self.segments[sid]
-
-            for p in seg.points:
-                pt = JointTrajectoryPoint()
-                pt.positions = [float(x) for x in p.positions]
-
-                s, n = _add_time(off_sec, off_nsec, int(p.time_from_start[0]), int(p.time_from_start[1]))
-                d = DurationMsg()
-                d.sec = int(s)
-                d.nanosec = int(n)
-                pt.time_from_start = d
-
-                jt.points.append(pt)
-
-            ms, mn = _max_time_in_segment(seg)
-            off_sec, off_nsec = _add_time(off_sec, off_nsec, ms, mn)
-
-        return jt
-
-
-# ============================================================
-# Recipe (params + attachments)
-# ============================================================
+def _as_dict(x: Any) -> Dict[str, Any]:
+    return x if isinstance(x, dict) else {}
 
 @dataclass
 class Recipe:
     """
-    Recipe = params + optional attachments (draft/planned/executed).
-    Persistence lives in RecipeRepo/RecipeBundle.
+    Recipe Model (Strict V2).
+    Enthält Parameter (Meta) und Attachments (Draft, Trajectories).
+    Keine Legacy-Felder mehr.
     """
-
-    # params (authoritative)
+    # --- Identity ---
     id: str
     description: str = ""
+    
+    # --- Configuration ---
     tool: Optional[str] = None
     substrate: Optional[str] = None
     substrate_mount: Optional[str] = None
+    
+    # --- Parameters (dict based) ---
     parameters: Dict[str, Any] = field(default_factory=dict)
     planner: Dict[str, Any] = field(default_factory=dict)
     paths_by_side: Dict[str, Any] = field(default_factory=dict)
+    
+    # --- Metadata & Runtime Info ---
     meta: Dict[str, Any] = field(default_factory=dict)
     info: Dict[str, Any] = field(default_factory=dict)
 
-    # UI/runtime convenience (not part of strict YAML schemas)
-    trajectories: Dict[str, Any] = field(default_factory=dict)          # Editor scratch
-    tool_frame: Optional[str] = None                                   # optional
-    paths_compiled: Optional[Dict[str, Any]] = None                     # optional (Preview compiled)
-
-    # --- Preview save gating (persisted via params.yaml -> info[]) ---
-    # NOTE: persisted under info["validSave"] / info["validSaveReason"] (top-level schema unchanged).
+    # --- UI State (Non-persistent logic) ---
     valid_save: bool = False
     valid_save_reason: str = "no_preview"
-
-    # attachments (optional; strict schemas)
+    
+    # --- Attachments (Strong Types from Sub-Modules) ---
     draft: Optional[Draft] = None
+    
+    # Planning / Execution Artifacts
     planned_traj: Optional[JTBySegment] = None
     executed_traj: Optional[JTBySegment] = None
-    planned_tcp: Optional[Path] = None
-    executed_tcp: Optional[Path] = None
+    
+    # TCP Geometry (Visuals / Eval) - Uses Draft format
+    planned_tcp: Optional[Draft] = None
+    executed_tcp: Optional[Draft] = None
 
     # ----------------------------
-    # Backwards-compatible aliases (camelCase)
+    # Properties (UI Sync)
     # ----------------------------
-
     @property
     def validSave(self) -> bool:
-        return bool(self.valid_save)
-
+        return self.valid_save
+    
     @validSave.setter
-    def validSave(self, v: Any) -> None:
-        self.set_valid_save(_as_bool(v, default=False), reason=None)
+    def validSave(self, v: bool) -> None:
+        self.valid_save = bool(v)
+        self._sync_info()
 
     @property
     def validSaveReason(self) -> str:
-        return str(self.valid_save_reason or "")
+        return self.valid_save_reason
 
     @validSaveReason.setter
-    def validSaveReason(self, v: Any) -> None:
-        # do not auto-flip valid flag here; only update the reason and persist
-        self.valid_save_reason = _as_str(v, default="")
-        self._sync_valid_save_to_info()
+    def validSaveReason(self, v: str) -> None:
+        self.valid_save_reason = str(v or "")
+        self._sync_info()
 
-    def set_validSave(self, ok: bool, reason: Optional[str] = None) -> None:
-        """
-        Alias for older/newer UI code that calls set_validSave(...).
-        """
-        self.set_valid_save(ok=ok, reason=reason)
+    def _sync_info(self) -> None:
+        if not self.info: self.info = {}
+        self.info["validSave"] = self.valid_save
+        self.info["validSaveReason"] = self.valid_save_reason
 
     # ----------------------------
-    # Internal sync helpers
+    # Load / Save (Params only)
     # ----------------------------
-
-    def _sync_valid_save_from_info(self) -> None:
-        """
-        Load valid_save fields from self.info (if present).
-        """
-        try:
-            info = self.info if isinstance(self.info, dict) else {}
-            self.valid_save = _as_bool(info.get("validSave", self.valid_save), default=bool(self.valid_save))
-            self.valid_save_reason = _as_str(
-                info.get("validSaveReason", self.valid_save_reason),
-                default=str(self.valid_save_reason),
-            )
-        except Exception:
-            # keep defaults
-            pass
-
-    def _sync_valid_save_to_info(self) -> None:
-        """
-        Write valid_save fields into self.info for persistence.
-        """
-        if not isinstance(self.info, dict):
-            self.info = {}
-        self.info["validSave"] = bool(self.valid_save)
-        self.info["validSaveReason"] = _as_str(self.valid_save_reason, default="")
-
-    def set_valid_save(self, ok: bool, reason: Optional[str] = None) -> None:
-        """
-        Convenience used by preview pipeline: sets fields + updates info.
-        """
-        self.valid_save = bool(ok)
-        if reason is None:
-            self.valid_save_reason = "" if ok else (_as_str(self.valid_save_reason, default="invalid") or "invalid")
-        else:
-            self.valid_save_reason = _as_str(reason, default="")
-        self._sync_valid_save_to_info()
-
-    # ----------------------------
-    # Constructors / converters
-    # ----------------------------
-
     @staticmethod
     def from_params_dict(d: Mapping[str, Any]) -> "Recipe":
-        dd = _as_dict(d, name="params.yaml")
-        rid = str(dd.get("id", "")).strip()
-        if not rid:
-            raise ValueError("params.yaml: id fehlt/leer.")
-
+        """Strict loading of params.yaml content."""
+        d = dict(d or {})
         r = Recipe(
-            id=rid,
-            description=str(dd.get("description", "") or ""),
-            tool=dd.get("tool", None),
-            substrate=dd.get("substrate", None),
-            substrate_mount=dd.get("substrate_mount", None),
-            parameters=_as_dict(dd.get("parameters", {}), name="parameters"),
-            planner=_as_dict(dd.get("planner", {}), name="planner"),
-            paths_by_side=_as_dict(dd.get("paths_by_side", {}), name="paths_by_side"),
-            meta=_as_dict(dd.get("meta", {}), name="meta"),
-            info=_as_dict(dd.get("info", {}), name="info"),
+            id=str(d.get("id", "")).strip(),
+            description=str(d.get("description", "")),
+            tool=d.get("tool"),
+            substrate=d.get("substrate"),
+            substrate_mount=d.get("substrate_mount"),
+            parameters=_as_dict(d.get("parameters")),
+            planner=_as_dict(d.get("planner")),
+            paths_by_side=_as_dict(d.get("paths_by_side")),
+            meta=_as_dict(d.get("meta")),
+            info=_as_dict(d.get("info")),
         )
-        # load persisted gating values from info
-        r._sync_valid_save_from_info()
-        return r
-
-    @staticmethod
-    def from_dict(d: Mapping[str, Any]) -> "Recipe":
-        """
-        UI-compat constructor.
-
-        Tolerates:
-          - valid_save / valid_save_reason (snake)
-          - validSave / validSaveReason (camel)
-          - info["validSave"] / info["validSaveReason"] (persistence SSoT)
-        """
-        dd = _as_dict(dict(d), name="recipe")
-        rid = str(dd.get("id", "")).strip()
-        if not rid:
-            raise ValueError("recipe: id fehlt/leer.")
-
-        params = dd.get("parameters", {})
-        planner = dd.get("planner", {})
-        pbs = dd.get("paths_by_side", {})
-
-        traj = dd.get("trajectories", {})
-        if traj is None:
-            traj = {}
-        if not isinstance(traj, dict):
-            raise ValueError("recipe.trajectories muss dict sein (oder fehlen).")
-
-        meta = dd.get("meta", {}) or {}
-        info = dd.get("info", {}) or {}
-
-        tf = dd.get("tool_frame", None)
-        pc = dd.get("paths_compiled", None)
-
-        # accept both naming styles
-        vs = dd.get("valid_save", dd.get("validSave", None))
-        vsr = dd.get("valid_save_reason", dd.get("validSaveReason", None))
-
-        r = Recipe(
-            id=rid,
-            description=str(dd.get("description", "") or ""),
-            tool=dd.get("tool", None),
-            substrate=dd.get("substrate", None),
-            substrate_mount=dd.get("substrate_mount", None),
-            parameters=_as_dict(params, name="recipe.parameters"),
-            planner=_as_dict(planner, name="recipe.planner"),
-            paths_by_side=_as_dict(pbs, name="recipe.paths_by_side"),
-            meta=_as_dict(meta, name="recipe.meta"),
-            info=_as_dict(info, name="recipe.info"),
-            trajectories=dict(traj),
-            tool_frame=(str(tf) if tf is not None else None),
-            paths_compiled=(dict(pc) if isinstance(pc, dict) else None),
-            valid_save=_as_bool(vs, default=False) if vs is not None else False,
-            valid_save_reason=_as_str(vsr, default="no_preview") if vsr is not None else "no_preview",
-        )
-
-        # If info contains persisted values, it wins (SSoT for persistence)
-        r._sync_valid_save_from_info()
-        # Ensure info is in sync for downstream saves
-        r._sync_valid_save_to_info()
+        # Restore UI state from info block
+        r.valid_save = bool(r.info.get("validSave", False))
+        r.valid_save_reason = str(r.info.get("validSaveReason", "no_preview"))
         return r
 
     def to_params_dict(self) -> Dict[str, Any]:
-        # ensure persistence mirror
-        self._sync_valid_save_to_info()
-
+        """Strict dumping to params.yaml content."""
+        self._sync_info()
         return {
             "id": self.id,
-            "description": self.description or "",
+            "description": self.description,
             "tool": self.tool,
             "substrate": self.substrate,
             "substrate_mount": self.substrate_mount,
-            "parameters": dict(self.parameters or {}),
-            "planner": dict(self.planner or {}),
-            "paths_by_side": dict(self.paths_by_side or {}),
-            "meta": dict(self.meta or {}),
-            "info": dict(self.info or {}),
+            "parameters": self.parameters,
+            "planner": self.planner,
+            "paths_by_side": self.paths_by_side,
+            "meta": self.meta,
+            "info": self.info,
         }
 
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        UI-friendly export (mirrors from_dict inputs).
-        Not intended as strict persistence format.
-        """
-        # keep info mirrored
-        self._sync_valid_save_to_info()
-
-        out: Dict[str, Any] = {
-            "id": self.id,
-            "description": self.description or "",
-            "tool": self.tool,
-            "substrate": self.substrate,
-            "substrate_mount": self.substrate_mount,
-            "parameters": dict(self.parameters or {}),
-            "planner": dict(self.planner or {}),
-            "paths_by_side": dict(self.paths_by_side or {}),
-            "trajectories": dict(self.trajectories or {}),
-            # keep both styles for maximal UI compatibility
-            "valid_save": bool(self.valid_save),
-            "valid_save_reason": str(self.valid_save_reason or ""),
-            "validSave": bool(self.valid_save),
-            "validSaveReason": str(self.valid_save_reason or ""),
-        }
-        if self.tool_frame is not None:
-            out["tool_frame"] = self.tool_frame
-        if self.paths_compiled is not None:
-            out["paths_compiled"] = dict(self.paths_compiled)
-        if self.meta:
-            out["meta"] = dict(self.meta or {})
-        if self.info:
-            out["info"] = dict(self.info or {})
-        return out
-
     # ----------------------------
-    # canonical sampling parameters (from params.yaml)
+    # Convenience (Pass-Through)
     # ----------------------------
-
-    def sample_step_mm(self, default: float = 1.0) -> float:
-        try:
-            v = float(self.parameters.get("sample_step_mm", default))
-            return v if v > 0 else float(default)
-        except Exception:
-            return float(default)
-
-    def max_points(self, default: int = 500) -> int:
-        try:
-            v = int(self.parameters.get("max_points", default))
-            return v if v > 0 else int(default)
-        except Exception:
-            return int(default)
-
-    # ----------------------------
-    # convenience used by planning/process code
-    # ----------------------------
-
     def draft_poses_quat(self, side: str) -> List[PoseQuat]:
-        if not self.draft:
-            raise KeyError("Recipe hat kein draft geladen.")
+        if not self.draft: return []
         return self.draft.poses_quat(side)
 
-    def compiled_points_mm_for_side(self, side: str) -> List[List[float]]:
-        poses = self.draft_poses_quat(side)
-        return [[p.x, p.y, p.z] for p in poses]
-
     def planned_tcp_poses_quat(self, side: str) -> List[PoseQuat]:
-        if self.planned_tcp is None:
-            raise KeyError("Recipe hat kein planned_tcp geladen.")
+        if not self.planned_tcp: return []
         return self.planned_tcp.poses_quat(side)
 
     def executed_tcp_poses_quat(self, side: str) -> List[PoseQuat]:
-        if self.executed_tcp is None:
-            raise KeyError("Recipe hat kein executed_tcp geladen.")
+        if not self.executed_tcp: return []
         return self.executed_tcp.poses_quat(side)
+    
+    def compiled_points_mm_for_side(self, side: str) -> List[List[float]]:
+        # Helper used by UI SceneManager
+        return [[p.x, p.y, p.z] for p in self.draft_poses_quat(side)]
+    
+    def planned_joint_trajectory(self, *, segment_order=None):
+        return self.planned_traj.to_joint_trajectory(segment_order=segment_order) if self.planned_traj else None
 
-    # ------------------------------------------------------------
-    # traj convenience used by markers/FK tooling
-    # ------------------------------------------------------------
-
-    def planned_joint_trajectory(self, *, segment_order: Optional[List[str]] = None):
-        """
-        Returns a concatenated trajectory_msgs/JointTrajectory for planned_traj (or None if missing).
-        """
-        if self.planned_traj is None:
-            return None
-        return self.planned_traj.to_joint_trajectory(segment_order=segment_order)
-
-    def executed_joint_trajectory(self, *, segment_order: Optional[List[str]] = None):
-        """
-        Returns a concatenated trajectory_msgs/JointTrajectory for executed_traj (or None if missing).
-        """
-        if self.executed_traj is None:
-            return None
-        return self.executed_traj.to_joint_trajectory(segment_order=segment_order)
+    def executed_joint_trajectory(self, *, segment_order=None):
+        return self.executed_traj.to_joint_trajectory(segment_order=segment_order) if self.executed_traj else None
