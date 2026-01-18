@@ -215,12 +215,12 @@ topics:
         
   spray_path:
     subscribe:
-
-      # --- Toggles (GUI -> Node), NUR true/false ---
+      # --- Steuerung (Toggles) ---
+      # Diese schalten jeweils BEIDE (New + Stored) einer Kategorie an/aus
       - id: clear
         name: spraycoater/spray_path/clear
         type: std_msgs/msg/Empty
-        qos: latched   # oder default; latched ist ok
+        qos: latched
 
       - id: show_compiled
         name: spraycoater/spray_path/show_compiled
@@ -237,7 +237,7 @@ topics:
         type: std_msgs/msg/Bool
         qos: latched
 
-      # --- GUI -> ROS node (inputs) ---
+      # --- COMPILED (Maske) ---
       - id: compiled_poses_in
         name: spraycoater/spray_path/compiled/poses_in
         type: geometry_msgs/msg/PoseArray
@@ -248,55 +248,84 @@ topics:
         type: visualization_msgs/msg/MarkerArray
         qos: latched
 
-      - id: planned_poses_in
-        name: spraycoater/spray_path/planned/poses_in
+      # --- PLANNED: NEW (Aktueller Run / Optimierung) ---
+      - id: planned_new_poses_in
+        name: spraycoater/spray_path/planned/new/poses_in
         type: geometry_msgs/msg/PoseArray
         qos: latched
 
-      - id: planned_markers_in
-        name: spraycoater/spray_path/planned/markers_in
+      - id: planned_new_markers_in
+        name: spraycoater/spray_path/planned/new/markers_in
         type: visualization_msgs/msg/MarkerArray
         qos: latched
 
-      - id: executed_poses_in
-        name: spraycoater/spray_path/executed/poses_in
+      # --- PLANNED: STORED (Ghost vom Disk) ---
+      # Tipp: Für Stored reichen meist Marker (Linie), Posen (Pfeile) würden nur überlagern.
+      # Falls du Posen doch willst, einfach ergänzen.
+      - id: planned_stored_markers_in
+        name: spraycoater/spray_path/planned/stored/markers_in
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
+
+      # --- EXECUTED: NEW (Aktueller Run) ---
+      - id: executed_new_poses_in
+        name: spraycoater/spray_path/executed/new/poses_in
         type: geometry_msgs/msg/PoseArray
         qos: latched
 
-      - id: executed_markers_in
-        name: spraycoater/spray_path/executed/markers_in
+      - id: executed_new_markers_in
+        name: spraycoater/spray_path/executed/new/markers_in
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
+
+      # --- EXECUTED: STORED (Ghost vom Disk) ---
+      - id: executed_stored_markers_in
+        name: spraycoater/spray_path/executed/stored/markers_in
         type: visualization_msgs/msg/MarkerArray
         qos: latched
 
     publish:
-      # --- ROS node -> RViz / UI (outputs) ---
+      # --- Visualisierung (Cache Node -> RViz) ---
+      
+      # Compiled
       - id: compiled_poses
         name: spraycoater/spray_path/compiled/poses
         type: geometry_msgs/msg/PoseArray
         qos: latched
-
       - id: compiled_markers
         name: spraycoater/spray_path/compiled/markers
         type: visualization_msgs/msg/MarkerArray
         qos: latched
 
-      - id: planned_poses
-        name: spraycoater/spray_path/planned/poses
+      # Planned (New)
+      - id: planned_new_poses
+        name: spraycoater/spray_path/planned/new/poses
         type: geometry_msgs/msg/PoseArray
         qos: latched
-
-      - id: planned_markers
-        name: spraycoater/spray_path/planned/markers
+      - id: planned_new_markers
+        name: spraycoater/spray_path/planned/new/markers
         type: visualization_msgs/msg/MarkerArray
         qos: latched
 
-      - id: executed_poses
-        name: spraycoater/spray_path/executed/poses
-        type: geometry_msgs/msg/PoseArray
+      # Planned (Stored)
+      - id: planned_stored_markers
+        name: spraycoater/spray_path/planned/stored/markers
+        type: visualization_msgs/msg/MarkerArray
         qos: latched
 
-      - id: executed_markers
-        name: spraycoater/spray_path/executed/markers
+      # Executed (New)
+      - id: executed_new_poses
+        name: spraycoater/spray_path/executed/new/poses
+        type: geometry_msgs/msg/PoseArray
+        qos: latched
+      - id: executed_new_markers
+        name: spraycoater/spray_path/executed/new/markers
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
+
+      # Executed (Stored)
+      - id: executed_stored_markers
+        name: spraycoater/spray_path/executed/stored/markers
         type: visualization_msgs/msg/MarkerArray
         qos: latched
 

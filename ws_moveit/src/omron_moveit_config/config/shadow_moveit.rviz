@@ -7,10 +7,10 @@ Panels:
         - /TF1/Frames1
         - /PlanningScene1/Scene Geometry1
         - /PlanningScene1/Scene Robot1
-        - /MarkerArray1
-        - /PoseArray1
-        - /PoseArray2
-        - /PoseArray3
+        - /SprayPath1
+        - /SprayPath1/Compiled1
+        - /SprayPath1/Planned1
+        - /SprayPath1/Executed1
       Splitter Ratio: 0.36193448305130005
     Tree Height: 842
   - Class: rviz_common/Help
@@ -47,69 +47,12 @@ Visualization Manager:
       Filter (whitelist): ""
       Frame Timeout: 30
       Frames:
-        Adept_Viper_650_Interface_Plate:
-          Value: true
-        Adept_Viper_s650_Link1:
-          Value: true
-        Adept_Viper_s650_Link2:
-          Value: true
-        Adept_Viper_s650_Link3:
-          Value: true
-        Adept_Viper_s650_Link4:
-          Value: true
-        Adept_Viper_s650_Link5:
-          Value: true
-        Adept_Viper_s650_Link6:
-          Value: true
         All Enabled: true
-        cage:
-          Value: true
-        robot_mount:
-          Value: true
-        shadow/home:
-          Value: true
-        shadow/service:
-          Value: true
-        sonotek_vortex:
-          Value: true
-        substrate:
-          Value: true
-        substrate_mount:
-          Value: true
-        tcp:
-          Value: true
-        tool_mount:
-          Value: true
-        world:
-          Value: true
       Marker Scale: 0.25
       Name: TF
       Show Arrows: true
       Show Axes: true
       Show Names: true
-      Tree:
-        world:
-          cage:
-            {}
-          robot_mount:
-            Adept_Viper_s650_Link1:
-              Adept_Viper_s650_Link2:
-                Adept_Viper_s650_Link3:
-                  Adept_Viper_s650_Link4:
-                    Adept_Viper_s650_Link5:
-                      Adept_Viper_s650_Link6:
-                        Adept_Viper_650_Interface_Plate:
-                          tool_mount:
-                            sonotek_vortex:
-                              tcp:
-                                {}
-          shadow/home:
-            {}
-          shadow/service:
-            {}
-          substrate_mount:
-            substrate:
-              {}
       Update Interval: 0
       Value: true
     - Class: moveit_rviz_plugin/PlanningScene
@@ -121,172 +64,156 @@ Visualization Manager:
       Scene Geometry:
         Scene Alpha: 1
         Scene Color: 255; 255; 255
-        Scene Display Time: 9.999999747378752e-05
+        Scene Display Time: 0.0001
         Show Scene Geometry: true
         Voxel Coloring: Z-Axis
         Voxel Rendering: Occupied Voxels
       Scene Robot:
         Attached Body Color: 150; 50; 150
-        Links:
-          Adept_Viper_650_Interface_Plate:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link1:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link2:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link3:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link4:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link5:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          Adept_Viper_s650_Link6:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          All Links Enabled: true
-          Expand Joint Details: false
-          Expand Link Details: false
-          Expand Tree: false
-          Link Tree Style: Links in Alphabetic Order
-          robot_mount:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-          sonotek_vortex:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-            Value: true
-          tcp:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
-          tool_mount:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
         Robot Alpha: 1
         Show Robot Collision: false
         Show Robot Visual: true
       Value: true
-    - Class: rviz_default_plugins/MarkerArray
+    
+    # --- SPRAY PATH GROUP ---
+    - Class: rviz_common/Group
       Enabled: true
-      Name: MarkerArray
-      Namespaces:
-        Value: true
-        draft/top: true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /shadow/spraycoater/spray_path/compiled/markers
+      Name: SprayPath
       Value: true
-    - Alpha: 1
-      Arrow Length: 0.004999999888241291
-      Axes Length: 0.004999999888241291
-      Axes Radius: 0.0001500000071246177
-      Class: rviz_default_plugins/PoseArray
-      Color: 255; 25; 0
-      Enabled: true
-      Head Length: 0.07000000029802322
-      Head Radius: 0.029999999329447746
-      Name: PoseArray
-      Shaft Length: 0.23000000417232513
-      Shaft Radius: 0.009999999776482582
-      Shape: Axes
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /shadow/spraycoater/spray_path/compiled/poses
-      Value: true
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
-      Name: MarkerArray
-      Namespaces: true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /shadow/spraycoater/spray_path/executed/markers
-      Value: true
-    - Alpha: 1
-      Arrow Length: 0.0010000000474974513
-      Axes Length: 0.0020000000949949026
-      Axes Radius: 9.999999747378752e-05
-      Class: rviz_default_plugins/PoseArray
-      Color: 255; 25; 0
-      Enabled: true
-      Head Length: 0.07000000029802322
-      Head Radius: 0.029999999329447746
-      Name: PoseArray
-      Shaft Length: 0.23000000417232513
-      Shaft Radius: 0.009999999776482582
-      Shape: Axes
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /shadow/spraycoater/spray_path/executed/poses
-      Value: true
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
-      Name: MarkerArray
-      Namespaces: true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /shadow/spraycoater/spray_path/planned/markers
-      Value: true
-    - Alpha: 1
-      Arrow Length: 0.0010000000474974513
-      Axes Length: 0.0020000000949949026
-      Axes Radius: 9.999999747378752e-05
-      Class: rviz_default_plugins/PoseArray
-      Color: 255; 25; 0
-      Enabled: true
-      Head Length: 0.07000000029802322
-      Head Radius: 0.029999999329447746
-      Name: PoseArray
-      Shaft Length: 0.23000000417232513
-      Shaft Radius: 0.009999999776482582
-      Shape: Axes
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /shadow/spraycoater/spray_path/planned/poses
-      Value: true
+      Displays:
+        # --- COMPILED ---
+        - Class: rviz_common/Group
+          Enabled: true
+          Name: Compiled
+          Value: true
+          Displays:
+            - Class: rviz_default_plugins/MarkerArray
+              Enabled: true
+              Name: Markers
+              Namespaces:
+                Value: true
+              Topic:
+                Value: /shadow/spraycoater/spray_path/compiled/markers
+                Depth: 5
+                Durability Policy: Volatile
+                History Policy: Keep Last
+                Reliability Policy: Reliable
+              Value: true
+            - Class: rviz_default_plugins/PoseArray
+              Enabled: true
+              Name: Poses
+              Topic:
+                Value: /shadow/spraycoater/spray_path/compiled/poses
+                Depth: 5
+                Durability Policy: Volatile
+                History Policy: Keep Last
+                Reliability Policy: Reliable
+              Color: 255; 165; 0  # Orange
+              Alpha: 1
+              Arrow Length: 0.005
+              Axes Length: 0.005
+              Axes Radius: 0.00015
+              Head Length: 0.07
+              Head Radius: 0.03
+              Shaft Length: 0.23
+              Shaft Radius: 0.01
+              Shape: Axes
+              Value: true
+
+        # --- PLANNED (New + Stored) ---
+        - Class: rviz_common/Group
+          Enabled: true
+          Name: Planned
+          Value: true
+          Displays:
+            - Class: rviz_default_plugins/MarkerArray
+              Enabled: true
+              Name: New Markers
+              Namespaces:
+                Value: true
+              Topic:
+                Value: /shadow/spraycoater/spray_path/planned/new/markers
+                Depth: 5
+                Durability Policy: Volatile
+                History Policy: Keep Last
+                Reliability Policy: Reliable
+              Value: true
+            - Class: rviz_default_plugins/PoseArray
+              Enabled: true
+              Name: New Poses
+              Topic:
+                Value: /shadow/spraycoater/spray_path/planned/new/poses
+                Depth: 5
+                Durability Policy: Volatile
+                History Policy: Keep Last
+                Reliability Policy: Reliable
+              Color: 0; 255; 0  # Green
+              Alpha: 1
+              Arrow Length: 0.001
+              Axes Length: 0.002
+              Axes Radius: 0.0001
+              Shape: Axes
+              Value: true
+            - Class: rviz_default_plugins/MarkerArray
+              Enabled: true
+              Name: Stored Markers (Ghost)
+              Namespaces:
+                Value: true
+              Topic:
+                Value: /shadow/spraycoater/spray_path/planned/stored/markers
+                Depth: 5
+                Durability Policy: Volatile
+                History Policy: Keep Last
+                Reliability Policy: Reliable
+              Value: true
+
+        # --- EXECUTED (New + Stored) ---
+        - Class: rviz_common/Group
+          Enabled: true
+          Name: Executed
+          Value: true
+          Displays:
+            - Class: rviz_default_plugins/MarkerArray
+              Enabled: true
+              Name: New Markers
+              Namespaces:
+                Value: true
+              Topic:
+                Value: /shadow/spraycoater/spray_path/executed/new/markers
+                Depth: 5
+                Durability Policy: Volatile
+                History Policy: Keep Last
+                Reliability Policy: Reliable
+              Value: true
+            - Class: rviz_default_plugins/PoseArray
+              Enabled: true
+              Name: New Poses
+              Topic:
+                Value: /shadow/spraycoater/spray_path/executed/new/poses
+                Depth: 5
+                Durability Policy: Volatile
+                History Policy: Keep Last
+                Reliability Policy: Reliable
+              Color: 255; 0; 0  # Red
+              Alpha: 1
+              Arrow Length: 0.001
+              Axes Length: 0.002
+              Axes Radius: 0.0001
+              Shape: Axes
+              Value: true
+            - Class: rviz_default_plugins/MarkerArray
+              Enabled: true
+              Name: Stored Markers (Ghost)
+              Namespaces:
+                Value: true
+              Topic:
+                Value: /shadow/spraycoater/spray_path/executed/stored/markers
+                Depth: 5
+                Durability Policy: Volatile
+                History Policy: Keep Last
+                Reliability Policy: Reliable
+              Value: true
+
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -305,77 +232,14 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 0.47065970301628113
-      Enable Stereo Rendering:
-        Stereo Eye Separation: 0.05999999865889549
-        Stereo Focal Distance: 1
-        Swap Stereo Eyes: false
-        Value: false
+      Distance: 0.47
       Focal Point:
         X: 0
         Y: 0
         Z: 0
-      Focal Shape Fixed Size: false
-      Focal Shape Size: 0.05000000074505806
-      Invert Z Axis: false
       Name: Current View
-      Near Clip Distance: 0.009999999776482582
-      Pitch: 0.42539823055267334
+      Near Clip Distance: 0.01
+      Pitch: 0.42
       Target Frame: tcp
       Value: Orbit (rviz_default_plugins)
-      Yaw: 0.6753982305526733
-    Saved:
-      - Class: rviz_default_plugins/Orbit
-        Distance: 0.47065970301628113
-        Enable Stereo Rendering:
-          Stereo Eye Separation: 0.05999999865889549
-          Stereo Focal Distance: 1
-          Swap Stereo Eyes: false
-          Value: false
-        Focal Point:
-          X: 0
-          Y: 0
-          Z: 0
-        Focal Shape Fixed Size: false
-        Focal Shape Size: 0.05000000074505806
-        Invert Z Axis: false
-        Name: Orbit
-        Near Clip Distance: 0.009999999776482582
-        Pitch: 0.42539823055267334
-        Target Frame: tcp
-        Value: Orbit (rviz_default_plugins)
-        Yaw: 0.6753982305526733
-      - Class: rviz_default_plugins/Orbit
-        Distance: 0.47065970301628113
-        Enable Stereo Rendering:
-          Stereo Eye Separation: 0.05999999865889549
-          Stereo Focal Distance: 1
-          Swap Stereo Eyes: false
-          Value: false
-        Focal Point:
-          X: 0
-          Y: 0
-          Z: 0
-        Focal Shape Fixed Size: false
-        Focal Shape Size: 0.05000000074505806
-        Invert Z Axis: false
-        Name: Orbit
-        Near Clip Distance: 0.009999999776482582
-        Pitch: 0.42539823055267334
-        Target Frame: tcp
-        Value: Orbit (rviz_default_plugins)
-        Yaw: 0.6753982305526733
-Window Geometry:
-  Displays:
-    collapsed: false
-  Height: 1369
-  Help:
-    collapsed: false
-  Hide Left Dock: false
-  Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd00000001000000000000028300000503fc0200000003fb000000100044006900730070006c006100790073010000003b00000385000000c700fffffffb0000000800480065006c007001000003c60000008b0000006e00fffffffb0000000a005600690065007700730100000457000000e7000000a000ffffff000007770000050300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
-  Views:
-    collapsed: false
-  Width: 2560
-  X: 1928
-  Y: 31
+      Yaw: 0.67
