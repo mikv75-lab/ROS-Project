@@ -32,6 +32,252 @@ _ALLOWED_SIDES = ("top", "front", "back", "left", "right", "polyhelix", "helix")
 _DEFAULT_BOUNDS: Bounds = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
 
 
+def _safe_unit(v: np.ndarray, eps: float = 1e-12) -> np.ndarray:
+    v = np.asarray(v, dtype=float).reshape(3)
+    n = float(np.linalg.norm(v))
+    if not np.isfinite(n) or n < eps:
+        return np.array([1.0, 0.0, 0.0], dtype=float)
+    return v / n
+
+
+def _poly_segments(starts: np.ndarray, dirs: np.ndarray, length: float) -> Optional[pv.PolyData]:
+    """Create line segments from start points and direction vectors."""
+    S = np.asarray(starts, dtype=float).reshape(-1, 3)
+    D = np.asarray(dirs, dtype=float).reshape(-1, 3)
+    n = min(S.shape[0], D.shape[0])
+    if n <= 0:
+        return None
+    S = S[:n]
+    D = D[:n]
+    Dn = np.empty_like(D)
+    for i in range(n):
+        Dn[i] = _safe_unit(D[i])
+    E = S + Dn * float(length)
+
+    pts = np.vstack([S, E])
+    lines = np.empty((n, 3), dtype=np.int64)
+    lines[:, 0] = 2
+    lines[:, 1] = np.arange(0, n, dtype=np.int64)
+    lines[:, 2] = np.arange(n, 2 * n, dtype=np.int64)
+
+    poly = pv.PolyData(pts)
+    poly.lines = lines.reshape(-1)
+    return poly
+
+
+def _make_ground_box(bounds: Bounds, *, z_under: float, pad_factor: float = 3.0, thickness_mm: float = 0.6) -> pv.PolyData:
+    """Create a thin black ground box under the mount (large XY extent)."""
+    xmin, xmax, ymin, ymax, zmin, zmax = (float(bounds[0]), float(bounds[1]), float(bounds[2]), float(bounds[3]), float(bounds[4]), float(bounds[5]))
+    dx = max(10.0, xmax - xmin)
+    dy = max(10.0, ymax - ymin)
+    cx = 0.5 * (xmin + xmax)
+    cy = 0.5 * (ymin + ymax)
+
+    hx = 0.5 * dx * float(pad_factor)
+    hy = 0.5 * dy * float(pad_factor)
+    x0, x1 = (cx - hx, cx + hx)
+    y0, y1 = (cy - hy, cy + hy)
+    t = max(0.1, float(thickness_mm))
+    z1 = float(z_under)
+    z0 = z1 - t
+    return pv.Box(bounds=(x0, x1, y0, y1, z0, z1))
+
+
+def _tcp_frames_from_tangent_normal(
+    tcp_mm: np.ndarray,
+    normals: np.ndarray,
+    *,
+    max_frames: int = 160,
+    scale_mm: float = 8.0,
+) -> Tuple[Optional[pv.PolyData], Optional[pv.PolyData], Optional[pv.PolyData]]:
+    """Build small coordinate frames along the TCP path.
+
+    Orientation heuristic (strict, deterministic):
+      - z axis = surface normal
+      - x axis = path tangent
+      - y axis = z × x
+    """
+    P = np.asarray(tcp_mm, dtype=float).reshape(-1, 3)
+    N = np.asarray(normals, dtype=float).reshape(-1, 3)
+    n = min(P.shape[0], N.shape[0])
+    if n < 2:
+        return None, None, None
+    P = P[:n]
+    N = N[:n]
+
+    # choose frame origins (decimate)
+    if max_frames <= 0 or n <= max_frames:
+        idx = np.arange(n, dtype=int)
+    else:
+        idx = np.linspace(0, n - 1, num=int(max_frames), dtype=int)
+
+    origins = P[idx]
+
+    # tangent per selected idx
+    tangents = np.zeros_like(origins)
+    normals_sel = np.zeros_like(origins)
+    for k, i in enumerate(idx.tolist()):
+        i0 = max(0, i - 1)
+        i1 = min(n - 1, i + 1)
+        t = P[i1] - P[i0]
+        tangents[k] = _safe_unit(t)
+        normals_sel[k] = _safe_unit(N[i])
+
+    z_dirs = normals_sel
+    x_dirs = tangents
+    y_dirs = np.cross(z_dirs, x_dirs)
+    for i in range(y_dirs.shape[0]):
+        if np.linalg.norm(y_dirs[i]) < 1e-9:
+            # if tangent is parallel to normal -> pick a stable perpendicular
+            y_dirs[i] = _safe_unit(np.cross(z_dirs[i], np.array([0.0, 1.0, 0.0], dtype=float)))
+        else:
+            y_dirs[i] = _safe_unit(y_dirs[i])
+        x_dirs[i] = _safe_unit(np.cross(y_dirs[i], z_dirs[i]))
+
+    px = _poly_segments(origins, x_dirs, float(scale_mm))
+    py = _poly_segments(origins, y_dirs, float(scale_mm))
+    pz = _poly_segments(origins, z_dirs, float(scale_mm))
+    return px, py, pz
+
+
+# ------------------------------------------------------------
+# Visual style (SSoT for 3D colors)
+# ------------------------------------------------------------
+# NOTE: keep these broadly aligned with Matplot2DView._style.
+_LAYER_STYLE: Dict[str, Dict[str, Any]] = {
+    # Base meshes
+    "cage": {
+        "color": "#9aa0a6",
+        "opacity": 0.25,
+        "smooth_shading": True,
+        "specular": 0.05,
+    },
+    "ground": {
+        "color": "#000000",
+        "opacity": 1.00,
+        "smooth_shading": False,
+        "lighting": True,
+        "specular": 0.0,
+    },
+    "mount": {
+        "color": "#6b6f75",  # dark gray
+        "opacity": 1.00,
+        "smooth_shading": True,
+        "specular": 0.05,
+    },
+    "substrate": {
+        "color": "#d9d9d9",  # light gray
+        "opacity": 1.00,
+        "smooth_shading": True,
+        "specular": 0.10,
+    },
+
+    # Authoring/preview layers
+    "mask": {
+        "color": "#3498db",  # blue
+        "line_width": 2.4,
+        "render_lines_as_tubes": True,
+        "opacity": 1.0,
+        "lighting": False,
+    },
+    "path": {
+        "color": "#2ecc71",  # matches 2D path_color
+        "line_width": 2.8,
+        "render_lines_as_tubes": True,
+        "opacity": 1.0,
+        "lighting": False,
+    },
+    # Markers are intentionally not used by default (continuous polyline preferred).
+
+    # Raycast debug
+    "hits": {
+        "color": "#a569bd",  # purple
+        "line_width": 1.6,
+        "render_lines_as_tubes": True,
+        "opacity": 1.0,
+        "lighting": False,
+    },
+    "misses": {
+        "color": "#e74c3c",
+        "line_width": 1.6,
+        "render_lines_as_tubes": True,
+        "opacity": 1.0,
+        "lighting": False,
+    },
+    "tcp_line": {
+        "color": "#5dade2",
+        "line_width": 1.6,
+        "render_lines_as_tubes": True,
+        "opacity": 1.0,
+        "lighting": False,
+    },
+    "tcp_x": {
+        "color": "#e74c3c",
+        "line_width": 1.6,
+        "render_lines_as_tubes": True,
+        "opacity": 1.0,
+        "lighting": False,
+    },
+    "tcp_y": {
+        "color": "#2ecc71",
+        "line_width": 1.6,
+        "render_lines_as_tubes": True,
+        "opacity": 1.0,
+        "lighting": False,
+    },
+    "tcp_z": {
+        "color": "#3498db",
+        "line_width": 1.6,
+        "render_lines_as_tubes": True,
+        "opacity": 1.0,
+        "lighting": False,
+    },
+    "tcp": {
+        "color": "#5dade2",
+        "line_width": 1.6,
+        "render_lines_as_tubes": True,
+        "opacity": 1.0,
+        "lighting": False,
+    },
+    "normals": {
+        "color": "#a569bd",
+        "line_width": 1.5,
+        "render_lines_as_tubes": True,
+        "opacity": 1.0,
+        "lighting": False,
+    },
+}
+
+
+def _layer_style(layer: str) -> Dict[str, Any]:
+    """Return resolved style for layer (never None)."""
+    s = _LAYER_STYLE.get(str(layer), {})
+    return dict(s)
+
+
+def _poly_kind(poly: Any) -> str:
+    """Heuristic classification for PyVista PolyData."""
+    try:
+        # Lines: .lines array present and non-empty
+        if hasattr(poly, "lines"):
+            arr = np.asarray(getattr(poly, "lines"), dtype=np.int64).ravel()
+            if arr.size > 0:
+                return "lines"
+    except Exception:
+        pass
+
+    try:
+        # Points-only polydata often has 0 cells
+        n_cells = int(getattr(poly, "n_cells", 0) or 0)
+        n_faces = int(getattr(poly, "n_faces", 0) or 0)
+        if n_cells == 0 and n_faces == 0:
+            return "points"
+    except Exception:
+        pass
+
+    return "surface"
+
+
 # ------------------------------------------------------------
 # Helpers (strict, UI-neutral)
 # ------------------------------------------------------------
@@ -209,6 +455,17 @@ class Tab3D(QWidget):
         self.pv_plot = QtInteractor(self.pv_host)
         self._host_layout.addWidget(self.pv_plot, 1)
 
+        # Visual defaults
+        try:
+            self.pv_plot.set_background("white")
+        except Exception:
+            pass
+        try:
+            # Keep the view clean; users have dedicated view buttons.
+            self.pv_plot.hide_axes()
+        except Exception:
+            pass
+
         # 3) View Controls (use Tab3D as bounds authority)
         self.views_box = Views3DBox(
             interactor_getter=lambda: self.pv_plot,
@@ -304,8 +561,26 @@ class Tab3D(QWidget):
                     pass
             layer_obj.actors.clear()
 
-    def add_polydata(self, layer: str, poly: Any, *, name: str = "", opacity: float = 1.0) -> None:
-        """Adds a mesh/polydata to a specific layer."""
+    def add_polydata(
+        self,
+        layer: str,
+        poly: Any,
+        *,
+        name: str = "",
+        opacity: Optional[float] = None,
+        color: Optional[str] = None,
+        line_width: Optional[float] = None,
+        point_size: Optional[float] = None,
+        render_lines_as_tubes: Optional[bool] = None,
+        render_points_as_spheres: Optional[bool] = None,
+        smooth_shading: Optional[bool] = None,
+        lighting: Optional[bool] = None,
+        specular: Optional[float] = None,
+    ) -> None:
+        """Adds a mesh/polydata to a specific layer.
+
+        Style is resolved from _LAYER_STYLE by default and can be overridden per call.
+        """
         if self.pv_plot is None or poly is None:
             return
 
@@ -317,12 +592,58 @@ class Tab3D(QWidget):
             self._layers[layer] = _LayerActors(actors=[])
 
         try:
-            a = self.pv_plot.add_mesh(
-                poly,
-                name=str(name or layer),
-                opacity=float(opacity),
-                pickable=False,
-            )
+            style = _layer_style(layer)
+            kind = _poly_kind(poly)
+
+            # Resolve style + overrides
+            if color is None:
+                color = style.get("color")
+            if opacity is None:
+                opacity = style.get("opacity", 1.0)
+            if line_width is None:
+                line_width = style.get("line_width")
+            if point_size is None:
+                point_size = style.get("point_size")
+            if render_lines_as_tubes is None:
+                render_lines_as_tubes = style.get("render_lines_as_tubes")
+            if render_points_as_spheres is None:
+                render_points_as_spheres = style.get("render_points_as_spheres")
+            if smooth_shading is None:
+                smooth_shading = style.get("smooth_shading")
+            if lighting is None:
+                lighting = style.get("lighting")
+            if specular is None:
+                specular = style.get("specular")
+
+            kwargs: Dict[str, Any] = {
+                "name": str(name or layer),
+                "pickable": False,
+                "opacity": float(opacity),
+            }
+            if color is not None:
+                kwargs["color"] = str(color)
+
+            # Geometry-type specific knobs
+            if kind == "lines":
+                if line_width is not None:
+                    kwargs["line_width"] = float(line_width)
+                if render_lines_as_tubes is not None:
+                    kwargs["render_lines_as_tubes"] = bool(render_lines_as_tubes)
+            elif kind == "points":
+                if point_size is not None:
+                    kwargs["point_size"] = float(point_size)
+                if render_points_as_spheres is not None:
+                    kwargs["render_points_as_spheres"] = bool(render_points_as_spheres)
+            else:
+                if smooth_shading is not None:
+                    kwargs["smooth_shading"] = bool(smooth_shading)
+                if specular is not None:
+                    kwargs["specular"] = float(specular)
+
+            if lighting is not None:
+                kwargs["lighting"] = bool(lighting)
+
+            a = self.pv_plot.add_mesh(poly, **kwargs)
             self._layers[layer].actors.append(a)
         except Exception:
             pass
@@ -386,11 +707,24 @@ class Tab3D(QWidget):
         # 1b) Draw base meshes
         try:
             if self._scene and self._scene.cage_mesh is not None:
-                self.add_polydata("cage", self._scene.cage_mesh, name="cage", opacity=0.20)
+                self.add_polydata("cage", self._scene.cage_mesh, name="cage")
             if self._scene and self._scene.mount_mesh is not None:
-                self.add_polydata("mount", self._scene.mount_mesh, name="mount", opacity=0.35)
+                self.add_polydata("mount", self._scene.mount_mesh, name="mount")
+                # Ground plane: thin, large, black, directly under the mount
+                try:
+                    b = self._scene.mount_mesh.bounds
+                    z_under = float(b[4]) - 0.30
+                    ground = _make_ground_box(
+                        (float(b[0]), float(b[1]), float(b[2]), float(b[3]), float(b[4]), float(b[5])),
+                        z_under=z_under,
+                        pad_factor=3.2,
+                        thickness_mm=0.6,
+                    )
+                    self.add_polydata("ground", ground, name="ground")
+                except Exception:
+                    pass
             if substrate_mesh is not None:
-                self.add_polydata("substrate", substrate_mesh, name="substrate", opacity=0.55)
+                self.add_polydata("substrate", substrate_mesh, name="substrate")
         except Exception:
             _LOG.exception("draw base meshes failed")
 
@@ -453,7 +787,7 @@ class Tab3D(QWidget):
             cfg = self.get_overlay_config()
             if cfg.get("mask", True):
                 try:
-                    self.add_polydata("mask", pv.lines_from_points(mask_points_mm, close=False), name="mask", opacity=1.0)
+                    self.add_polydata("mask", pv.lines_from_points(mask_points_mm, close=False), name="mask")
                 except Exception:
                     _LOG.exception("draw mask failed")
 
@@ -474,7 +808,7 @@ class Tab3D(QWidget):
         # Show mask (3D)
         if cfg.get("mask", True):
             try:
-                self.add_polydata("mask", pv.lines_from_points(mask_points_mm, close=False), name="mask", opacity=1.0)
+                self.add_polydata("mask", pv.lines_from_points(mask_points_mm, close=False), name="mask")
             except Exception:
                 _LOG.exception("draw mask failed")
 
@@ -574,15 +908,50 @@ class Tab3D(QWidget):
             )
 
             if out.path_poly is not None and cfg.get("path", True):
-                self.add_polydata("path", out.path_poly, name="path", opacity=1.0)
+                self.add_polydata("path", out.path_poly, name="path")
             if out.rays_hit_poly is not None and cfg.get("hits", False):
-                self.add_polydata("hits", out.rays_hit_poly, name="hits", opacity=1.0)
+                self.add_polydata("hits", out.rays_hit_poly, name="hits")
             if out.rays_miss_poly is not None and cfg.get("misses", False):
-                self.add_polydata("misses", out.rays_miss_poly, name="misses", opacity=1.0)
+                self.add_polydata("misses", out.rays_miss_poly, name="misses")
             if out.normals_poly is not None and cfg.get("normals", False):
-                self.add_polydata("normals", out.normals_poly, name="normals", opacity=1.0)
-            if out.tcp_poly is not None and cfg.get("tcp", True):
-                self.add_polydata("tcp", out.tcp_poly, name="tcp", opacity=1.0)
+                self.add_polydata("normals", out.normals_poly, name="normals")
+
+            # TCP: show a continuous TCP line + small coordinate frames (KS) along the TCP path.
+            if cfg.get("tcp", True):
+                try:
+                    # continuous TCP centerline (prefer final postprocessed TCP if available)
+                    tcp_line_pts = None
+                    if self._final_tcp_world_mm is not None and self._preview_valid:
+                        tcp_line_pts = np.asarray(self._final_tcp_world_mm, dtype=float).reshape(-1, 3)
+                    else:
+                        vmask = np.asarray(getattr(rc, "valid", None), dtype=bool).reshape(-1)
+                        tcp_all = np.asarray(getattr(rc, "tcp_mm", None), dtype=float).reshape(-1, 3)
+                        if vmask.size and tcp_all.shape[0]:
+                            m = min(vmask.shape[0], tcp_all.shape[0])
+                            tcp_line_pts = tcp_all[:m][vmask[:m]]
+                        else:
+                            tcp_line_pts = tcp_all
+
+                    if tcp_line_pts is not None and tcp_line_pts.shape[0] >= 2:
+                        self.add_polydata("tcp_line", pv.lines_from_points(tcp_line_pts, close=False), name="tcp_line")
+
+                    # frames from raycast TCP+normals (only on valid hit points)
+                    vmask = np.asarray(getattr(rc, "valid", None), dtype=bool).reshape(-1)
+                    tcp_all = np.asarray(getattr(rc, "tcp_mm", None), dtype=float).reshape(-1, 3)
+                    n_all = np.asarray(getattr(rc, "normal", None), dtype=float).reshape(-1, 3)
+                    if vmask.size and tcp_all.shape[0] and n_all.shape[0]:
+                        m = min(vmask.shape[0], tcp_all.shape[0], n_all.shape[0])
+                        tcp_v = tcp_all[:m][vmask[:m]]
+                        n_v = n_all[:m][vmask[:m]]
+                        px, py, pz = _tcp_frames_from_tangent_normal(tcp_v, n_v, max_frames=160, scale_mm=8.0)
+                        if px is not None:
+                            self.add_polydata("tcp_x", px, name="tcp_x")
+                        if py is not None:
+                            self.add_polydata("tcp_y", py, name="tcp_y")
+                        if pz is not None:
+                            self.add_polydata("tcp_z", pz, name="tcp_z")
+                except Exception:
+                    _LOG.exception("TCP overlay failed")
         except Exception:
             _LOG.exception("Overlay rendering failed")
 

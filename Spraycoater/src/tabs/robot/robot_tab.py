@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# File: src/tabs/service/robot/service_robot_tab.py
 from __future__ import annotations
 
 import logging
@@ -20,7 +21,9 @@ from .tool_box import ToolGroupBox
 from .moveitpy_widget import MoveItPyWidget
 from .servo_widgets import JointJogWidget, CartesianJogWidget
 
-from ros.bridge.ros_bridge import RosBridge
+# If TYPE_CHECKING is needed for circular imports or similar
+if TYPE_CHECKING:
+    from ros.bridge.ros_bridge import RosBridge
 
 
 _LOG = logging.getLogger("tabs.service.robot")
@@ -32,8 +35,7 @@ class ServiceRobotTab(QWidget):
 
     Contract:
       - ros darf None sein -> UI deaktiviert (Hinweis wird angezeigt)
-      - sonst: ros ist RosBridge und connected (ensure_connected() wird hier 1x aufgerufen)
-      - keine Fallback-Attribute / kein "try multiple names"
+      - sonst: ros ist RosBridge und connected
     """
 
     def __init__(
@@ -53,6 +55,7 @@ class ServiceRobotTab(QWidget):
         self._rb = None   # RobotBridge
         self._sig = None  # RobotBridge.signals
 
+        # --- Root Layout ---
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
@@ -69,8 +72,6 @@ class ServiceRobotTab(QWidget):
             return
 
         # --- Hard contract: connected + Bridges vorhanden ---
-        # RosBridge already started by StartupMachine
-        # (no ensure_connected contract needed)
         self._rb = self.ros.robot
         self._sig = self._rb.signals
 
@@ -84,38 +85,31 @@ class ServiceRobotTab(QWidget):
         self.statusBox = RobotStatusInfoBox(self, title="Robot Status")
         self.omronWidget = OmronTcpWidget(self.ros, self)
 
+        # Policies
         for w in (self.commandBox, self.statusBox, self.omronWidget):
             sp = w.sizePolicy()
             sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
             sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
             w.setSizePolicy(sp)
 
+        # 1. Zeile befüllen
         top_row.addWidget(self.commandBox, 1)
         top_row.addWidget(self.statusBox, 2)
         top_row.addWidget(self.omronWidget, 2)
+        
+        # Oben zum Root hinzufügen
         root.addLayout(top_row)
 
-        # ================================================================
-        # BOTTOM ROW: Poses | Tools | Scene
-        # ================================================================
-        row_bottom = QHBoxLayout()
-        row_bottom.setSpacing(8)
-
-        self.posesBox = PosesGroupBox(self.ros, self)
-        self.toolBox = ToolGroupBox(self.ros, self)
-        self.sceneBox = SceneGroupBox(self.ros, self)
-
-        row_bottom.addWidget(self.posesBox)
-        row_bottom.addWidget(self.toolBox)
-        row_bottom.addWidget(self.sceneBox)
-        root.addLayout(row_bottom)
 
         # ================================================================
-        # SUBTABS: Motion | Joint Jog | Cartesian Jog
+        # BOTTOM AREA: HBox( TabWidget (links), VBox(Poses, Tool, Scene) (rechts) )
         # ================================================================
+        bottom_area = QHBoxLayout()
+        bottom_area.setSpacing(8)
+
+        # --- Linke Seite: Tabs (Motion, Jogging) ---
         self.tabs = QTabWidget(self)
-        root.addWidget(self.tabs)
-
+        
         self.moveitpyWidget = MoveItPyWidget(store=self.store, ros=self.ros, parent=self.tabs)
         self.tabs.addTab(self.moveitpyWidget, "Motion Planning")
 
@@ -125,20 +119,47 @@ class ServiceRobotTab(QWidget):
         self.cartJogWidget = CartesianJogWidget(self.ctx, self.ros, self.tabs)
         self.tabs.addTab(self.cartJogWidget, "Cartesian Jog")
 
-        for w in (
-            self.moveitpyWidget,
-            self.jointJogWidget,
-            self.cartJogWidget,
-            self.posesBox,
-            self.toolBox,
-            self.sceneBox,
-        ):
+        # Tab Policy
+        sp_tabs = self.tabs.sizePolicy()
+        sp_tabs.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        sp_tabs.setVerticalPolicy(QSizePolicy.Policy.Expanding)
+        self.tabs.setSizePolicy(sp_tabs)
+        
+        # Tabs zur Bottom Area (links, Stretch 2)
+        bottom_area.addWidget(self.tabs, 2)
+
+
+        # --- Rechte Seite: VBox(Poses, Tool, Scene) ---
+        right_col_layout = QVBoxLayout()
+        right_col_layout.setSpacing(8)
+        right_col_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.posesBox = PosesGroupBox(self.ros, self)
+        self.toolBox = ToolGroupBox(self.ros, self)
+        self.sceneBox = SceneGroupBox(self.ros, self)
+
+        # Policies für rechte Boxen
+        for w in (self.posesBox, self.toolBox, self.sceneBox):
             sp = w.sizePolicy()
-            sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-            sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+            sp.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+            sp.setVerticalPolicy(QSizePolicy.Policy.Preferred) # oder Expanding, je nach Inhalt
             w.setSizePolicy(sp)
 
-        # Wiring
+        right_col_layout.addWidget(self.posesBox)
+        right_col_layout.addWidget(self.toolBox)
+        right_col_layout.addWidget(self.sceneBox)
+        
+        # Spacer unten rechts, damit Boxen oben bleiben (optional)
+        right_col_layout.addStretch(1)
+
+        # Rechte Spalte zur Bottom Area (rechts, Stretch 1)
+        bottom_area.addLayout(right_col_layout, 1)
+
+        # Bottom Area zum Root hinzufügen
+        root.addLayout(bottom_area, 1) # Stretch 1 damit es den Rest füllt
+
+
+        # --- Wiring ---
         self._wire_bridge_inbound()
         self._wire_outbound()
 
@@ -199,16 +220,19 @@ class ServiceRobotTab(QWidget):
         page = self.tabs.widget(idx)
 
         # Hard contract: bridge ist verbunden
-        self.ros.robot.do_servo_on()
+        if hasattr(self.ros, 'robot') and self.ros.robot:
+             self.ros.robot.do_servo_on()
 
+        mode = "joint"
         if page is self.jointJogWidget:
             mode = "joint"
         elif page is self.cartJogWidget:
             mode = "cart"
-        else:
-            mode = "joint"
+        # else (Motion Planning): mode egal oder joint
 
-        self.ros.servo.signals.modeChanged.emit(mode)
+        # Optional: Dem Servo-Controller den Modus mitteilen (falls implementiert)
+        if hasattr(self.ros, 'servo') and self.ros.servo:
+             self.ros.servo.signals.modeChanged.emit(mode)
 
     # ==================================================================
     # Forwarder-API

@@ -29,7 +29,7 @@ class Views2DBox(QGroupBox):
         set_bounds: Optional[Callable[[Bounds], None]] = None,
         parent: Optional[QWidget] = None,
     ):
-        super().__init__("Views", parent)
+        super().__init__("2D Views", parent)
 
         self._switch_2d = switch_2d
         self._refresh = refresh_callable

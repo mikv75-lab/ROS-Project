@@ -58,8 +58,7 @@ class ViewController2D:
         """
         try:
             self._set_plane(plane)
-            # Oft triggert set_plane selbst ein draw_idle, aber ein expliziter
-            # Refresh schadet bei Button-Klicks meist nicht und stellt Konsistenz sicher.
+            # Ein expliziter Refresh stellt sicher, dass die Änderung sofort sichtbar ist.
             self._refresh()
         except Exception:
             _LOG.exception("2D plane switch failed (plane=%s)", plane)

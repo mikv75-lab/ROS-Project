@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 # File: src/tabs/recipe/coating_preview_panel/tab2d/matplot2d.py
 """
-This module contains the Matplot2DView class used in the coating preview panel.
-It handles Z-offsets to display the substrate at Z=0 relative to world coordinates.
+Optimized Matplot2DView:
+- True Autoscaling (fits view to mesh + path)
+- Performance Fix: Single redraw in set_scene instead of multiple
+- Interactions: Mouse Wheel Zoom & Left Click Pan
 """
 
 from __future__ import annotations
@@ -56,6 +58,7 @@ def _vtk_faces_to_tris(faces: np.ndarray) -> np.ndarray:
 class Matplot2DView(FigureCanvas):
     """
     A Matplotlib canvas for a simplified 2D preview of 3D coating data.
+    Supports Mouse Wheel Zoom, Left-Click Pan and Autoscaling.
     """
 
     def __init__(self, parent=None):
@@ -64,8 +67,18 @@ class Matplot2DView(FigureCanvas):
         self.setParent(parent)
 
         self._ax = self._fig.add_subplot(111)
-        self._ax.set_aspect("equal", adjustable="box")
-        self._ax.set_navigate(True)
+        self._ax.set_aspect("equal", adjustable="datalim")
+        
+        # Navigation State
+        self._dragging = False
+        self._drag_start = (0.0, 0.0)
+        self._drag_xlim = (0.0, 1.0)
+        self._drag_ylim = (0.0, 1.0)
+        
+        # User defined zoom limits (None = Autoscale)
+        self._user_limits = None
+
+        self._connect_events()
 
         self._legend_pad_frac = 0.18
 
@@ -89,8 +102,6 @@ class Matplot2DView(FigureCanvas):
         self._path2d: Dict[str, Optional[np.ndarray]] = {p: None for p in PLANES}
         self._mesh2d: Dict[str, Optional[Tuple[np.ndarray, np.ndarray]]] = {p: None for p in PLANES}
 
-        self._user_limits: Optional[Tuple[float, float, float, float]] = None
-
         self._style = {
             "grid_alpha_major": 0.35,
             "grid_alpha_minor": 0.15,
@@ -109,18 +120,88 @@ class Matplot2DView(FigureCanvas):
         self._z_offset: float = 0.0
         self._apply_layout_margins()
 
+    def _connect_events(self):
+        """Connect custom mouse events for Zoom/Pan."""
+        self.mpl_connect("scroll_event", self._on_scroll)
+        self.mpl_connect("button_press_event", self._on_press)
+        self.mpl_connect("button_release_event", self._on_release)
+        self.mpl_connect("motion_notify_event", self._on_motion)
+
+    # --- Interaction Handlers ---
+
+    def _on_scroll(self, event):
+        """Zoom with mouse wheel."""
+        if event.inaxes != self._ax:
+            return
+        
+        base_scale = 1.15
+        if event.button == 'up':
+            scale = 1.0 / base_scale
+        elif event.button == 'down':
+            scale = base_scale
+        else:
+            return
+
+        xlim = self._ax.get_xlim()
+        ylim = self._ax.get_ylim()
+        xdata, ydata = event.xdata, event.ydata
+
+        new_xlim = (xdata + (xlim[0] - xdata) * scale, xdata + (xlim[1] - xdata) * scale)
+        new_ylim = (ydata + (ylim[0] - ydata) * scale, ydata + (ylim[1] - ydata) * scale)
+
+        self._ax.set_xlim(new_xlim)
+        self._ax.set_ylim(new_ylim)
+        
+        self._user_limits = (new_xlim[0], new_xlim[1], new_ylim[0], new_ylim[1])
+        self.draw_idle()
+
+    def _on_press(self, event):
+        """Start panning on left click."""
+        if event.button == 1 and event.inaxes == self._ax:
+            self._dragging = True
+            self._drag_start = (event.x, event.y)
+            self._drag_xlim = self._ax.get_xlim()
+            self._drag_ylim = self._ax.get_ylim()
+
+    def _on_motion(self, event):
+        """Update view while panning."""
+        if self._dragging and event.inaxes == self._ax:
+            dx_pix = event.x - self._drag_start[0]
+            dy_pix = event.y - self._drag_start[1]
+
+            bbox = self._ax.get_window_extent()
+            if bbox.width == 0 or bbox.height == 0: return
+
+            dx_data_range = self._drag_xlim[1] - self._drag_xlim[0]
+            dy_data_range = self._drag_ylim[1] - self._drag_ylim[0]
+            
+            scale_x = dx_data_range / bbox.width
+            scale_y = dy_data_range / bbox.height
+
+            dx_data = -dx_pix * scale_x
+            dy_data = -dy_pix * scale_y
+
+            new_xlim = (self._drag_xlim[0] + dx_data, self._drag_xlim[1] + dx_data)
+            new_ylim = (self._drag_ylim[0] + dy_data, self._drag_ylim[1] + dy_data)
+
+            self._ax.set_xlim(new_xlim)
+            self._ax.set_ylim(new_ylim)
+            
+            self._user_limits = (new_xlim[0], new_xlim[1], new_ylim[0], new_ylim[1])
+            self.draw_idle()
+
+    def _on_release(self, event):
+        if event.button == 1:
+            self._dragging = False
+
+    # --- Public API ---
+
     def make_toolbar(self, parent=None):
         tb = NavToolbar(self, parent)
         self.toolbar = tb
         return tb
 
     def dispose(self):
-        tb = getattr(self, "toolbar", None)
-        if tb is not None:
-            tb.setParent(None)
-            tb.deleteLater()
-            self.toolbar = None
-
         self._fig.clf()
         self.setParent(None)
         self.deleteLater()
@@ -130,8 +211,9 @@ class Matplot2DView(FigureCanvas):
             _LOG.warning("Unknown plane '%s'", plane)
             return
         self._plane = plane
-        keep = self._user_limits is not None
-        self._redraw(keep_limits=keep)
+        # Reset user limits when switching plane to allow auto-fit for new view
+        self._user_limits = None
+        self._redraw(keep_limits=False)
 
     def get_plane(self) -> str:
         return self._plane
@@ -139,41 +221,46 @@ class Matplot2DView(FigureCanvas):
     def refresh(self):
         self._redraw(keep_limits=True)
 
-    def set_bounds(self, bounds: Tuple[float, float, float, float, float, float]):
+    # --- Data Setters (Optimized: No redraw) ---
+
+    def _set_bounds_data(self, bounds: Tuple[float, float, float, float, float, float]):
         self._bounds = tuple(map(float, bounds))
-        xmin, xmax, ymin, ymax, zmin, zmax = self._bounds
+        _, _, _, _, zmin, zmax = self._bounds
         self._z_offset = zmin
         self._world["z"] = (0.0, max(10.0, float(zmax - zmin)))
-        self._redraw(keep_limits=self._user_limits is not None)
 
-    def set_path_xyz(self, path_xyz: np.ndarray | None):
+    def _set_path_xyz_data(self, path_xyz: np.ndarray | None):
         if path_xyz is not None:
             P = np.asarray(path_xyz, float).reshape(-1, 3).copy()
+            # Apply Z-offset shift
             P[:, 2] -= self._z_offset
             self._path_xyz = P
         else:
             self._path_xyz = None
+        
         for p in PLANES:
             self._path2d[p] = None if self._path_xyz is None else _project_xyz_to_plane(self._path_xyz, p)
-        self._redraw(keep_limits=True)
 
-    def _set_mesh(self, mesh: Any | None):
+    def _set_mesh_data(self, mesh: Any | None):
         if mesh is None or not hasattr(mesh, "points"):
             self._mesh_pts = None
             self._mesh_tris = None
-        else:
-            try:
-                P = np.asarray(mesh.points, dtype=float).reshape(-1, 3).copy()
-                P[:, 2] -= self._z_offset
-                tris = None
-                if hasattr(mesh, "faces"):
-                    tris = _vtk_faces_to_tris(np.asarray(mesh.faces))
-                self._mesh_pts = P
-                self._mesh_tris = tris if tris is not None and tris.size else None
-            except Exception:
-                _LOG.exception("Failed to extract triangles from substrate mesh")
-                self._mesh_pts = None
-                self._mesh_tris = None
+            for p in PLANES: self._mesh2d[p] = None
+            return
+
+        try:
+            P = np.asarray(mesh.points, dtype=float).reshape(-1, 3).copy()
+            P[:, 2] -= self._z_offset
+            tris = None
+            if hasattr(mesh, "faces"):
+                tris = _vtk_faces_to_tris(np.asarray(mesh.faces))
+            self._mesh_pts = P
+            self._mesh_tris = tris if tris is not None and tris.size else None
+        except Exception:
+            _LOG.exception("Failed to extract triangles from substrate mesh")
+            self._mesh_pts = None
+            self._mesh_tris = None
+        
         for p in PLANES:
             if self._mesh_pts is None or self._mesh_tris is None:
                 self._mesh2d[p] = None
@@ -181,18 +268,37 @@ class Matplot2DView(FigureCanvas):
                 V2 = _project_xyz_to_plane(self._mesh_pts, p)
                 self._mesh2d[p] = (V2, self._mesh_tris)
 
-    def set_scene(self, *, substrate_mesh=None, path_xyz=None, bounds=None, **_kwargs):
-        if bounds is not None:
-            self.set_bounds(bounds)
-        self.set_path_xyz(path_xyz)
-        self._set_mesh(substrate_mesh)
+    # --- Public Setters (With Redraw) ---
+
+    def set_bounds(self, bounds: Tuple[float, float, float, float, float, float]):
+        self._set_bounds_data(bounds)
+        self._redraw(keep_limits=self._user_limits is not None)
+
+    def set_path_xyz(self, path_xyz: np.ndarray | None):
+        self._set_path_xyz_data(path_xyz)
         self._redraw(keep_limits=True)
+
+    def set_scene(self, *, substrate_mesh=None, path_xyz=None, bounds=None, **_kwargs):
+        """
+        Updates full scene.
+        OPTIMIZATION: Updates data first, then triggers ONE single redraw.
+        """
+        if bounds is not None:
+            self._set_bounds_data(bounds)
+        
+        self._set_path_xyz_data(path_xyz)
+        self._set_mesh_data(substrate_mesh)
+        
+        # Redraw once!
+        self._redraw(keep_limits=self._user_limits is not None)
 
     def show_top(self):   self.set_plane("top")
     def show_front(self): self.set_plane("front")
     def show_back(self):  self.set_plane("back")
     def show_left(self):  self.set_plane("left")
     def show_right(self): self.set_plane("right")
+
+    # --- Internals ---
 
     def _apply_layout_margins(self):
         engine = self._fig.get_layout_engine()
@@ -224,19 +330,48 @@ class Matplot2DView(FigureCanvas):
         return Y[0], Y[1], Z[0], Z[1]
 
     def _extents_from_data(self) -> Tuple[float, float, float, float]:
-        return self._fixed_plane_extents()
+        """
+        Calculate tight bounds around mesh + path for the current plane.
+        Used for Autoscaling.
+        """
+        xs, ys = [], []
+        
+        # Collect Mesh points
+        mesh_item = self._mesh2d.get(self._plane)
+        if mesh_item is not None:
+            pts, _ = mesh_item
+            if pts is not None and pts.size > 0:
+                xs.append(pts[:, 0])
+                ys.append(pts[:, 1])
+
+        # Collect Path points
+        path_pts = self._path2d.get(self._plane)
+        if path_pts is not None and path_pts.size > 0:
+            xs.append(path_pts[:, 0])
+            ys.append(path_pts[:, 1])
+
+        if not xs:
+            return self._fixed_plane_extents()
+
+        all_x = np.concatenate(xs)
+        all_y = np.concatenate(ys)
+
+        if all_x.size == 0 or all_y.size == 0:
+             return self._fixed_plane_extents()
+
+        xmin, xmax = float(np.min(all_x)), float(np.max(all_x))
+        ymin, ymax = float(np.min(all_y)), float(np.max(all_y))
+
+        # Add 10% margin
+        dx = (xmax - xmin) * 0.1 if xmax != xmin else 10.0
+        dy = (ymax - ymin) * 0.1 if ymax != ymin else 10.0
+        
+        return xmin - dx, xmax + dx, ymin - dy, ymax + dy
 
     def _configure_grid(self):
         self._ax.xaxis.set_major_locator(MultipleLocator(10.0))
         self._ax.yaxis.set_major_locator(MultipleLocator(10.0))
-        self._ax.xaxis.set_minor_locator(MultipleLocator(1.0))
-        self._ax.yaxis.set_minor_locator(MultipleLocator(1.0))
-        self._ax.grid(True, which="major",
-                      alpha=self._style["grid_alpha_major"],
-                      linestyle=":", linewidth=0.8)
-        self._ax.grid(True, which="minor",
-                      alpha=self._style["grid_alpha_minor"],
-                      linestyle=":", linewidth=0.5)
+        self._ax.grid(True, which="major", alpha=self._style["grid_alpha_major"], linestyle=":", linewidth=0.8)
 
     def _draw_substrate(self):
         item = self._mesh2d.get(self._plane)
@@ -306,24 +441,23 @@ class Matplot2DView(FigureCanvas):
         try:
             saved = self._user_limits if keep_limits and (self._user_limits is not None) else None
             self._ax.clear()
-            self._ax.set_aspect("equal", adjustable="box")
             self._apply_layout_margins()
             self._set_labels()
+            
+            # Determine Limits
             if saved is None:
                 x0, x1, y0, y1 = self._extents_from_data()
-                self._ax.set_xlim(x0, x1)
-                self._ax.set_ylim(y0, y1)
             else:
-                self._ax.set_xlim(saved[0], saved[1])
-                self._ax.set_ylim(saved[2], saved[3])
+                x0, x1, y0, y1 = saved
+
+            self._ax.set_xlim(x0, x1)
+            self._ax.set_ylim(y0, y1)
+            
             self._configure_grid()
             self._draw_substrate()
             self._draw_path()
             self._add_legend()
-            if saved is None:
-                x0, x1 = self._ax.get_xlim()
-                y0, y1 = self._ax.get_ylim()
-                self._user_limits = (x0, x1, y0, y1)
+
         except Exception:
             _LOG.exception("Matplot2DView._redraw failed")
         finally:
