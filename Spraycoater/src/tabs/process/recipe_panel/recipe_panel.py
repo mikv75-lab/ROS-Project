@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, Any, Dict
+from typing import Optional, Any
 
 import numpy as np
 from PyQt6 import QtCore
@@ -54,17 +54,12 @@ class RecipePanel(QWidget):
 
         # ============================================================
         # Active Recipe
-        #   VBOX(
-        #     HBOX(btnLoad, lblRecipeName),
-        #     GroupBox("Recipe Parameters", formatted string)
-        #   )
         # ============================================================
         self.RecipeGRP = QGroupBox("Active Recipe", self)
         vrec = QVBoxLayout(self.RecipeGRP)
         vrec.setContentsMargins(8, 8, 8, 8)
         vrec.setSpacing(8)
 
-        # HBOX(btn load, lblrecipename)
         top_row = QWidget(self.RecipeGRP)
         htop = QHBoxLayout(top_row)
         htop.setContentsMargins(0, 0, 0, 0)
@@ -76,10 +71,8 @@ class RecipePanel(QWidget):
 
         htop.addWidget(self.btnLoad, 0)
         htop.addWidget(self.lblRecipeName, 1)
-
         vrec.addWidget(top_row, 0)
 
-        # GroupInfo (Recipe Parameters)
         self.grpRecipeParams = QGroupBox("Recipe Parameters", self.RecipeGRP)
         vparams = QVBoxLayout(self.grpRecipeParams)
         vparams.setContentsMargins(8, 8, 8, 8)
@@ -93,7 +86,9 @@ class RecipePanel(QWidget):
         vrec.addWidget(self.grpRecipeParams, 1)
         root.addWidget(self.RecipeGRP, 2)
 
+        # ============================================================
         # Middle: Info (left) + SprayPaths (right)
+        # ============================================================
         mid = QWidget(self)
         hmid = QHBoxLayout(mid)
         hmid.setContentsMargins(0, 0, 0, 0)
@@ -115,41 +110,52 @@ class RecipePanel(QWidget):
         hmid.addWidget(self.sprayPathBox, 1)
         root.addWidget(mid, 0)
 
-        # Bottom: Comparison View (Disk vs. Current Run)
-        res_split = QSplitter(QtCore.Qt.Orientation.Horizontal, self)
-        self.txtStored = QTextEdit(res_split)  # Ergebnisse von Festplatte
-        self.txtNewRun = QTextEdit(res_split)  # Live-Ergebnisse
+        # ============================================================
+        # Bottom: STORED vs CURRENT (each in a named GroupBox)
+        # ============================================================
+        bottom = QWidget(self)
+        hbot = QHBoxLayout(bottom)
+        hbot.setContentsMargins(0, 0, 0, 0)
+        hbot.setSpacing(8)
+
+        self.grpStored = QGroupBox("Stored Eval (Disk)", bottom)
+        vstored = QVBoxLayout(self.grpStored)
+        vstored.setContentsMargins(8, 8, 8, 8)
+        self.txtStored = QTextEdit(self.grpStored)
         self.txtStored.setReadOnly(True)
+        vstored.addWidget(self.txtStored, 1)
+
+        self.grpCurrent = QGroupBox("Current Run (Live)", bottom)
+        vcur = QVBoxLayout(self.grpCurrent)
+        vcur.setContentsMargins(8, 8, 8, 8)
+        self.txtNewRun = QTextEdit(self.grpCurrent)
         self.txtNewRun.setReadOnly(True)
-        root.addWidget(res_split, 2)
+        vcur.addWidget(self.txtNewRun, 1)
+
+        hbot.addWidget(self.grpStored, 1)
+        hbot.addWidget(self.grpCurrent, 1)
+        root.addWidget(bottom, 2)
 
     # --------------- Recipe binding ----------------
 
     def set_recipe(self, key: str, model: Recipe) -> None:
-        """Lädt ein hydriertes Rezept in die UI."""
         self._recipe_key = key
         self._recipe = model
 
         recipe_name = getattr(model, "id", None) or getattr(model, "key", None) or key
         self.lblRecipeName.setText(f"Recipe: {recipe_name}")
 
-        # Recipe Parameters: sauber formatiert
         self.txtRecipeParams.setPlainText(self._format_recipe_params(model))
 
-        # STORED ist Disk-SSoT: immer refresh von Disk (beim Load)
+        # STORED ist Disk-SSoT: beim Load immer refresh von Disk
         self._refresh_stored_from_disk(key)
 
-        # InfoBox aktualisieren (best-effort: compiled/draft points)
         self._update_infobox_from_recipe(model)
 
         self.txtNewRun.clear()
         self.sig_recipe_selected.emit(key, model)
 
     def _format_recipe_params(self, model: Recipe) -> str:
-        """
-        Liefert eine gut lesbare String-Darstellung der Recipe-Parameter.
-        Prefer: model.to_params_dict().
-        """
         try:
             d = model.to_params_dict()
         except Exception:
@@ -188,34 +194,28 @@ class RecipePanel(QWidget):
 
     @QtCore.pyqtSlot(str, str)
     def on_run_started(self, mode: str, key: str) -> None:
-        """Wird aufgerufen, wenn ein neuer Prozesslauf startet."""
         self.txtNewRun.clear()
         self.txtNewRun.setPlaceholderText(f"Running {mode} for {key}...")
         _LOG.info("RecipePanel: Run started (mode=%s, key=%s)", mode, key)
 
     @QtCore.pyqtSlot(str, object)
     def on_run_finished(self, key: str, rr: RunResult) -> None:
-        """Pipeline nach Roboterlauf: Postprocess -> Eval -> Persist -> Disk refresh."""
         if not self._recipe:
             return
 
         try:
             self.txtNewRun.setPlaceholderText("")
 
-            # 1) Geometrische Aufarbeitung & Evaluation
             rr.postprocess(
                 recipe=self._recipe,
                 segment_order=("MOVE_PREDISPENSE", "MOVE_RECIPE", "MOVE_RETREAT"),
                 tcp_target_frame="substrate",
             )
 
-            # 2) Speichern über das Repo (nur wenn valid) -> Disk kann überschrieben werden
             success = self.repo.save_run_result_if_valid(key, run_result=rr)
 
-            # 3) UI Update (Live-Ergebnisse)
             self.txtNewRun.setPlainText(rr.format_eval_text())
 
-            # 4) STORED ist Disk-SSoT: nach erfolgreichem Save immer neu aus Disk laden
             if success:
                 _LOG.info("RunResult persistiert (Disk ggf. überschrieben). Refresh STORED aus Disk.")
                 self._refresh_stored_from_disk(key)
@@ -227,7 +227,6 @@ class RecipePanel(QWidget):
 
     @QtCore.pyqtSlot(str, str)
     def on_run_error(self, key: str, message: str) -> None:
-        """Handhabt Fehler während des Prozesslaufs."""
         self.txtNewRun.setPlaceholderText("")
         self.txtNewRun.setPlainText(f"ERROR for {key}:\n{message}")
         _LOG.error("RecipePanel: Run error for %s: %s", key, message)
@@ -235,13 +234,8 @@ class RecipePanel(QWidget):
     # --- Interne Helfer ---
 
     def _refresh_stored_from_disk(self, key: str) -> None:
-        """
-        STORED muss immer Disk-SSoT sein.
-        Daher: beim Load und nach erfolgreichem Save immer neu aus Disk laden.
-        """
         try:
-            fresh = self.repo.load_for_process(key)  # volle Hydrierung inkl. planned/executed TCP/JT
-            # In-memory Rezept konsistent halten (optional, aber praktisch)
+            fresh = self.repo.load_for_process(key)
             self._recipe = fresh
             self._recipe_key = key
             self._update_stored_view(fresh)
@@ -250,15 +244,7 @@ class RecipePanel(QWidget):
             self.txtStored.setPlainText(f"=== STORED EVAL (Disk) ===\nERROR reloading: {e}")
 
     def _update_infobox_from_recipe(self, recipe: Recipe) -> None:
-        """
-        Best-effort: versucht Punkte aus dem Rezept zu extrahieren, um die InfoBox zu füttern.
-        Erwartete Kandidaten (je nach deinem Modell):
-          - recipe.compiled_draft.points_mm
-          - recipe.draft.points_mm
-          - recipe.compiled.points_mm
-        """
         pts = None
-
         for attr in ("compiled_draft", "draft", "compiled"):
             d = getattr(recipe, attr, None)
             if d is None:
@@ -273,23 +259,23 @@ class RecipePanel(QWidget):
                     break
             except Exception:
                 continue
-
         self.infoBox.update_from_recipe(recipe, points=pts)
 
     def _update_stored_view(self, recipe: Recipe) -> None:
-        """Extrahiert Eval-Daten aus dem hydrierten Modell (Disk-SSoT)."""
         lines = ["=== STORED EVAL (Disk) ==="]
         found = False
 
-        for mode, draft in [("Planned", getattr(recipe, "planned_tcp", None)), ("Executed", getattr(recipe, "executed_tcp", None))]:
+        for mode, draft in [
+            ("Planned", getattr(recipe, "planned_tcp", None)),
+            ("Executed", getattr(recipe, "executed_tcp", None)),
+        ]:
             if draft:
                 eval_data = getattr(draft, "eval", None)
                 if eval_data:
                     lines.append(f"{mode}: {str(eval_data)}")
-                    found = True
                 else:
                     lines.append(f"{mode}: (no eval)")
-                    found = True
+                found = True
 
         if not found:
             lines.append("(No stored evaluations found)")
@@ -300,7 +286,5 @@ class RecipePanel(QWidget):
         keys = self.repo.list_recipes()
         choice, ok = QInputDialog.getItem(self, "Load", "Select Recipe:", keys, 0, False)
         if ok and choice:
-            # Erst laden (für UI) ...
             model = self.repo.load_for_process(choice)
-            # ... und set_recipe triggert STORED Disk-refresh deterministisch
             self.set_recipe(choice, model)
