@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
-# app/tabs/recipe/coating_preview_panel/views_3d/overlays.py
-
+# File: src/tabs/recipe/coating_preview_panel/tab3d/overlays.py
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, List
+from typing import Any, Dict, Optional, Tuple
 
 import logging
 import numpy as np
@@ -12,58 +11,63 @@ import pyvista as pv
 
 _LOG = logging.getLogger("tabs.recipe.preview.overlays")
 
-
-# ============================================================
-# Types
-# ============================================================
-
 Bounds = Tuple[float, float, float, float, float, float]
 
 
 @dataclass
 class OverlayOut:
-    """
-    Output bundle for a single side that Views3DBox can consume.
-
-    All fields are optional; consumers should null-check.
-    """
     side: str
 
-    # base path (local mm, world already in raycast_result if needed)
-    path_poly: Optional[pv.PolyData] = None
-    path_markers: Optional[pv.PolyData] = None
+    # mask (PathBuilder output, ray start polyline)
+    mask_poly: Optional[pv.PolyData] = None
 
-    # raycast visuals (already prepared by raycast_projector wrapper)
+    # final path (postprocessed TCP polyline)
+    path_poly: Optional[pv.PolyData] = None
+
+    # raycast visuals
     rays_hit_poly: Optional[pv.PolyData] = None
     rays_miss_poly: Optional[pv.PolyData] = None
+
+    # tcp points (optional debug/inspection)
     tcp_poly: Optional[pv.PolyData] = None
 
-    # normals/frames derived from raycast result (or provided)
+    # normals / frames
     normals_poly: Optional[pv.PolyData] = None
-    frames: Optional[Dict[str, Any]] = None  # {origins,x_dirs,z_dirs,scale_mm,step}
+    tcp_x_poly: Optional[pv.PolyData] = None
+    tcp_y_poly: Optional[pv.PolyData] = None
+    tcp_z_poly: Optional[pv.PolyData] = None
 
-    # visibility resolved here (views can still override)
     visibility: Dict[str, bool] = None  # type: ignore[assignment]
 
 
-# ============================================================
-# Helpers (STRICT, UI-neutral)
-# ============================================================
+def _sanitize_points(P: Any) -> np.ndarray:
+    A = np.asarray(P, dtype=float).reshape(-1, 3)
+    if A.size == 0:
+        return np.zeros((0, 3), dtype=float)
+    m = np.isfinite(A).all(axis=1)
+    return A[m]
 
-def _safe_norm(v: np.ndarray, eps: float = 1e-12) -> np.ndarray:
-    v = np.asarray(v, dtype=float).reshape(-1)
+
+def _polyline_from_points(P: Any) -> Optional[pv.PolyData]:
+    pts = _sanitize_points(P)
+    if pts.shape[0] < 2:
+        return None
+    return pv.lines_from_points(pts, close=False)
+
+
+def _points_poly(P: Any) -> Optional[pv.PolyData]:
+    pts = _sanitize_points(P)
+    if pts.shape[0] == 0:
+        return None
+    return pv.PolyData(pts)
+
+
+def _unit(v: np.ndarray, eps: float = 1e-12) -> np.ndarray:
+    v = np.asarray(v, dtype=float).reshape(3)
     n = float(np.linalg.norm(v))
     if not np.isfinite(n) or n < eps:
         return np.array([1.0, 0.0, 0.0], dtype=float)
     return v / n
-
-
-def _sanitize_points(P: Any) -> np.ndarray:
-    P = np.asarray(P, dtype=float).reshape(-1, 3)
-    if P.size == 0:
-        return np.zeros((0, 3), dtype=float)
-    mask = np.isfinite(P).all(axis=1)
-    return P[mask]
 
 
 def _decimate_indices(n: int, max_keep: int) -> np.ndarray:
@@ -74,238 +78,217 @@ def _decimate_indices(n: int, max_keep: int) -> np.ndarray:
     return np.linspace(0, n - 1, num=max_keep, dtype=int)
 
 
-def _polyline_from_points(P: np.ndarray) -> Optional[pv.PolyData]:
-    P = _sanitize_points(P)
-    if P.shape[0] < 2:
-        return None
-    try:
-        return pv.lines_from_points(P, close=False)
-    except Exception:
-        _LOG.exception("lines_from_points failed")
+def _segments(starts: np.ndarray, dirs: np.ndarray, length: float, max_keep: int) -> Optional[pv.PolyData]:
+    S = _sanitize_points(starts)
+    D = np.asarray(dirs, dtype=float).reshape(-1, 3)
+    n = min(S.shape[0], D.shape[0])
+    if n <= 0:
         return None
 
+    S = S[:n]
+    D = D[:n]
 
-def _point_markers(P: np.ndarray, *, max_points: int) -> Optional[pv.PolyData]:
-    P = _sanitize_points(P)
-    if P.shape[0] == 0:
-        return None
-    idx = _decimate_indices(P.shape[0], max_points)
-    if idx.size == 0:
-        return None
-    try:
-        return pv.PolyData(P[idx])
-    except Exception:
-        _LOG.exception("marker PolyData failed")
-        return None
+    idx = _decimate_indices(n, max_keep)
+    S = S[idx]
+    D = D[idx]
 
+    # normalize D
+    Dn = np.zeros_like(D)
+    for i in range(D.shape[0]):
+        Dn[i] = _unit(D[i])
 
-def _poly_segments(starts: np.ndarray, dirs: np.ndarray, length: float) -> Optional[pv.PolyData]:
-    """
-    Create line segments from start points and direction vectors.
-    """
-    try:
-        S = _sanitize_points(starts)
-        D = np.asarray(dirs, dtype=float).reshape(-1, 3)
-        n = min(S.shape[0], D.shape[0])
-        if n <= 0:
-            return None
-        S = S[:n]
-        D = D[:n]
+    E = S + Dn * float(length)
 
-        # normalize dirs
-        Dn = np.empty_like(D)
-        for i in range(n):
-            Dn[i] = _safe_norm(D[i])
+    pts = np.vstack([S, E])
+    m = S.shape[0]
+    lines = np.empty((m, 3), dtype=np.int64)
+    lines[:, 0] = 2
+    lines[:, 1] = np.arange(0, m, dtype=np.int64)
+    lines[:, 2] = np.arange(m, 2 * m, dtype=np.int64)
 
-        E = S + Dn * float(length)
-
-        pts = np.vstack([S, E])
-        lines = np.empty((n, 3), dtype=np.int64)
-        lines[:, 0] = 2
-        lines[:, 1] = np.arange(0, n, dtype=np.int64)
-        lines[:, 2] = np.arange(n, 2 * n, dtype=np.int64)
-
-        poly = pv.PolyData(pts)
-        poly.lines = lines.reshape(-1)
-        return poly
-    except Exception:
-        _LOG.exception("poly_segments failed")
-        return None
+    poly = pv.PolyData(pts)
+    poly.lines = lines.reshape(-1)
+    return poly
 
 
-# ============================================================
-# Overlay config normalization
-# ============================================================
+def _tangents_from_path(P: np.ndarray) -> np.ndarray:
+    """Compute per-point tangent directions for a polyline."""
+    A = _sanitize_points(P)
+    n = int(A.shape[0])
+    if n <= 1:
+        return np.zeros((0, 3), dtype=float)
 
-def _get_bool(cfg: Dict[str, Any], keys: Tuple[str, ...], default: bool) -> bool:
-    for k in keys:
-        if k in cfg:
-            return bool(cfg.get(k))
-    return bool(default)
-
-
-def _get_int(cfg: Dict[str, Any], keys: Tuple[str, ...], default: int) -> int:
-    for k in keys:
-        if k in cfg:
-            try:
-                return int(cfg.get(k))
-            except Exception:
-                pass
-    return int(default)
+    T = np.zeros((n, 3), dtype=float)
+    for i in range(n):
+        if i == 0:
+            d = A[1] - A[0]
+        elif i == n - 1:
+            d = A[n - 1] - A[n - 2]
+        else:
+            d = A[i + 1] - A[i - 1]
+        T[i] = _unit(d)
+    return T
 
 
-def _get_float(cfg: Dict[str, Any], keys: Tuple[str, ...], default: float) -> float:
-    for k in keys:
-        if k in cfg:
-            try:
-                return float(cfg.get(k))
-            except Exception:
-                pass
-    return float(default)
+def _get_bool(cfg: Dict[str, Any], key: str, default: bool) -> bool:
+    if key not in cfg:
+        return bool(default)
+    return bool(cfg[key])
+
+
+def _get_int(cfg: Dict[str, Any], key: str, default: int) -> int:
+    if key not in cfg:
+        return int(default)
+    return int(cfg[key])
+
+
+def _get_float(cfg: Dict[str, Any], key: str, default: float) -> float:
+    if key not in cfg:
+        return float(default)
+    return float(cfg[key])
 
 
 def _normalize_overlay_cfg(cfg: Any) -> Dict[str, Any]:
     """
-    Accepts arbitrary groupbox cfg formats; returns a normalized dict.
+    STRICT keys:
+      visibility: {mask,path,hits,misses,tcp,normals,tcp_axes}
+      normals_len_mm, normals_max
+      tcp_axes_len_mm, tcp_axes_max
     """
     if not isinstance(cfg, dict):
         cfg = {}
 
-    # common keys from your existing panels: mask/path/hits/misses/normals/frames
-    vis = {
-        "path": _get_bool(cfg, ("path", "show_path"), True),
-        "hits": _get_bool(cfg, ("hits", "show_hits"), False),
-        "misses": _get_bool(cfg, ("misses", "show_misses"), False),
-        "tcp": _get_bool(cfg, ("tcp", "show_tcp"), True),
-        "normals": _get_bool(cfg, ("normals", "show_normals"), False),
-        "frames": _get_bool(cfg, ("frames", "show_frames"), False),
+    vis_in = cfg.get("visibility", {})
+    if not isinstance(vis_in, dict):
+        vis_in = {}
+
+    visibility = {
+        "mask": _get_bool(vis_in, "mask", True),
+        "path": _get_bool(vis_in, "path", True),
+        "hits": _get_bool(vis_in, "hits", True),
+        "misses": _get_bool(vis_in, "misses", True),
+        "tcp": _get_bool(vis_in, "tcp", True),
+        "normals": _get_bool(vis_in, "normals", True),
+        "tcp_axes": _get_bool(vis_in, "tcp_axes", True),
     }
 
-    # sampling/scale knobs (safe defaults)
-    out = {
-        "visibility": vis,
-        "path_marker_max": _get_int(cfg, ("path_marker_max", "path_markers", "path_marker_points"), 200),
-        "frame_step_max": _get_int(cfg, ("frame_step_max", "frames_max", "frame_max"), 50),
-        "frame_scale_mm": _get_float(cfg, ("frame_scale_mm", "frame_scale"), 10.0),
-        "normal_len_mm": _get_float(cfg, ("normal_len_mm", "normal_length"), 10.0),
-        "normal_step_max": _get_int(cfg, ("normal_step_max", "normals_max", "normal_max"), 200),
+    return {
+        "visibility": visibility,
+        "normals_len_mm": _get_float(cfg, "normals_len_mm", 10.0),
+        "normals_max": _get_int(cfg, "normals_max", 250),
+        "tcp_axes_len_mm": _get_float(cfg, "tcp_axes_len_mm", 12.0),
+        "tcp_axes_max": _get_int(cfg, "tcp_axes_max", 80),
     }
-    return out
 
-
-# ============================================================
-# OverlayRenderer (SSoT, UI-neutral)
-# ============================================================
 
 class OverlayRenderer:
-    """
-    Produces overlay geometries for a given side, WITHOUT rendering.
-
-    The 3D view layer (Views3DBox) decides how to display (colors/layers).
-    """
-
-    def __init__(self) -> None:
-        # reserved for future caching if needed
-        self._cache: Dict[str, Any] = {}
-
     def render_for_side(
         self,
         *,
         side: str,
-        scene: Any,
-        points_local_mm: np.ndarray,
+        mask_points_world_mm: np.ndarray,
+        path_points_world_mm: Optional[np.ndarray],
+        tcp_points_world_mm: Optional[np.ndarray],
         raycast_result: Any,
         hit_poly: Optional[pv.PolyData],
         miss_poly: Optional[pv.PolyData],
-        tcp_poly: Optional[pv.PolyData],
         overlay_cfg: Any,
     ) -> OverlayOut:
         cfg = _normalize_overlay_cfg(overlay_cfg)
         vis = dict(cfg["visibility"])
 
-        P_local = _sanitize_points(points_local_mm)
+        out = OverlayOut(side=str(side), visibility=vis)
 
-        out = OverlayOut(
-            side=str(side),
-            visibility=vis,
-        )
+        # mask/path
+        if vis["mask"]:
+            out.mask_poly = _polyline_from_points(mask_points_world_mm)
+        if vis["path"] and path_points_world_mm is not None:
+            out.path_poly = _polyline_from_points(path_points_world_mm)
 
-        # --- path poly + markers (local; world embedding is done elsewhere if needed) ---
-        if vis.get("path", True):
-            out.path_poly = _polyline_from_points(P_local)
-            out.path_markers = _point_markers(P_local, max_points=int(cfg["path_marker_max"]))
-
-        # --- raycast polydatas (already computed in projector wrapper) ---
-        if vis.get("hits", False):
+        # hits/misses (points from raycaster)
+        if vis["hits"]:
             out.rays_hit_poly = hit_poly
-        if vis.get("misses", False):
+        if vis["misses"]:
             out.rays_miss_poly = miss_poly
-        if vis.get("tcp", True):
-            out.tcp_poly = tcp_poly
 
-        # --- normals / frames ---
-        # We derive normals from raycast_result if possible.
-        # Expected from raycast_projector: rc.valid, rc.hit_mm, rc.normal, rc.tcp_mm (or similar).
-        try:
-            rc = raycast_result
-            valid = np.asarray(getattr(rc, "valid", None))
-            normals = np.asarray(getattr(rc, "normal", None))
-            hits = np.asarray(getattr(rc, "hit_mm", None))
-            tcps = np.asarray(getattr(rc, "tcp_mm", None))
+        # tcp points ONLY (no tcp_line; Path draws the line)
+        if vis["tcp"] and tcp_points_world_mm is not None:
+            out.tcp_poly = _points_poly(tcp_points_world_mm)
 
-            # sanitize
-            if valid is None or normals is None:
-                valid = np.zeros((0,), dtype=bool)
-            else:
-                valid = np.asarray(valid, dtype=bool).reshape(-1)
+        # normals derived from raycast_result (hits + normals)
+        if vis["normals"]:
+            try:
+                valid = np.asarray(getattr(raycast_result, "valid", None), dtype=bool).reshape(-1)
+                hits = np.asarray(getattr(raycast_result, "hit_mm", None), dtype=float).reshape(-1, 3)
+                norms = np.asarray(getattr(raycast_result, "normal", None), dtype=float).reshape(-1, 3)
 
-            if normals is None:
-                normals = np.zeros((0, 3), dtype=float)
-            else:
-                normals = np.asarray(normals, dtype=float).reshape(-1, 3)
+                n = min(valid.shape[0], hits.shape[0], norms.shape[0])
+                if n > 0:
+                    valid = valid[:n]
+                    hits = hits[:n]
+                    norms = norms[:n]
+                    idx = np.where(valid)[0]
+                    if idx.size:
+                        out.normals_poly = _segments(
+                            hits[idx],
+                            norms[idx],
+                            float(cfg["normals_len_mm"]),
+                            int(cfg["normals_max"]),
+                        )
+            except Exception:
+                _LOG.exception("normals overlay failed (side=%s)", side)
 
-            if hits is None:
-                hits = np.zeros((0, 3), dtype=float)
-            else:
-                hits = np.asarray(hits, dtype=float).reshape(-1, 3)
+        # TCP axes (local KS) at TCP points:
+        # X = tangent along path, Z = surface normal, Y = Z x X
+        if vis["tcp_axes"] and tcp_points_world_mm is not None:
+            try:
+                tcps = _sanitize_points(tcp_points_world_mm)
+                if tcps.shape[0] >= 2:
+                    # normals from raycast_result (prefer), else fallback
+                    norms = None
+                    try:
+                        valid = np.asarray(getattr(raycast_result, "valid", None), dtype=bool).reshape(-1)
+                        nrm = np.asarray(getattr(raycast_result, "normal", None), dtype=float).reshape(-1, 3)
+                        tcp_raw = np.asarray(getattr(raycast_result, "tcp_mm", None), dtype=float).reshape(-1, 3)
+                        m = min(valid.shape[0], nrm.shape[0], tcp_raw.shape[0])
+                        if m > 0:
+                            valid = valid[:m]
+                            nrm = nrm[:m]
+                            tcp_raw = tcp_raw[:m]
+                            idxv = np.where(valid)[0]
+                            if idxv.size:
+                                norms = nrm[idxv]
+                                k = min(int(tcps.shape[0]), int(norms.shape[0]))
+                                tcps = tcps[:k]
+                                norms = norms[:k]
+                    except Exception:
+                        norms = None
 
-            if tcps is None:
-                tcps = np.zeros((0, 3), dtype=float)
-            else:
-                tcps = np.asarray(tcps, dtype=float).reshape(-1, 3)
+                    if norms is None or norms.shape[0] != tcps.shape[0]:
+                        norms = np.tile(np.array([[0.0, 0.0, 1.0]], dtype=float), (tcps.shape[0], 1))
 
-            if vis.get("normals", False) and hits.shape[0] and normals.shape[0]:
-                # only valid indices
-                vidx = np.where(valid)[0] if valid.size else np.arange(min(hits.shape[0], normals.shape[0]))
-                if vidx.size:
-                    # decimate to avoid huge polydata
-                    keep = _decimate_indices(vidx.size, int(cfg["normal_step_max"]))
-                    vidx = vidx[keep]
-                    seg = _poly_segments(hits[vidx], normals[vidx], float(cfg["normal_len_mm"]))
-                    out.normals_poly = seg
+                    T = _tangents_from_path(tcps)
+                    k = min(int(tcps.shape[0]), int(T.shape[0]), int(norms.shape[0]))
+                    if k >= 2:
+                        tcps = tcps[:k]
+                        T = T[:k]
+                        Z = np.zeros_like(norms[:k])
+                        for i in range(k):
+                            Z[i] = _unit(norms[i])
 
-            if vis.get("frames", False) and tcps.shape[0] and normals.shape[0]:
-                # frames at TCP points; z_dir = normal; x_dir unknown here (views may compute)
-                vidx = np.where(valid)[0] if valid.size else np.arange(min(tcps.shape[0], normals.shape[0]))
-                if vidx.size:
-                    # sample ~frame_step_max
-                    step = max(1, int(round(max(1, vidx.size // int(cfg["frame_step_max"])))))
-                    sel = vidx[::step]
-                    out.frames = {
-                        "origins": tcps[sel],
-                        "z_dirs": normals[sel],
-                        "x_dirs": None,
-                        "scale_mm": float(cfg["frame_scale_mm"]),
-                        "step": int(step),
-                    }
+                        X = np.zeros_like(T)
+                        Y = np.zeros_like(T)
+                        for i in range(k):
+                            x = _unit(T[i])
+                            z = _unit(Z[i])
+                            x = _unit(x - float(np.dot(x, z)) * z)
+                            y = _unit(np.cross(z, x))
+                            X[i], Y[i], Z[i] = x, y, z
 
-        except Exception:
-            _LOG.exception("render_for_side normals/frames failed (%s)", side)
-
-        # cache for potential rebuilds
-        self._cache[str(side)] = {
-            "cfg": cfg,
-            "vis": vis,
-        }
+                        out.tcp_x_poly = _segments(tcps, X, float(cfg["tcp_axes_len_mm"]), int(cfg["tcp_axes_max"]))
+                        out.tcp_y_poly = _segments(tcps, Y, float(cfg["tcp_axes_len_mm"]), int(cfg["tcp_axes_max"]))
+                        out.tcp_z_poly = _segments(tcps, Z, float(cfg["tcp_axes_len_mm"]), int(cfg["tcp_axes_max"]))
+            except Exception:
+                _LOG.exception("tcp_axes overlay failed (side=%s)", side)
 
         return out

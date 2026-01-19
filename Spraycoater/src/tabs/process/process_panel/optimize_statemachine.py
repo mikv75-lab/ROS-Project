@@ -56,7 +56,6 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
         run_result: RunResult,
         parent: Optional[QtCore.QObject] = None,
         max_retries: int = 2,
-        skip_home: bool = False,
         side: str = "top",
     ) -> None:
         super().__init__(
@@ -65,7 +64,6 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
             run_result=run_result,
             parent=parent,
             max_retries=max_retries,
-            skip_home=bool(skip_home),
         )
 
         self._side: str = str(side or "top")
@@ -267,8 +265,6 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
     # ------------------------------------------------------------------
 
     def _segment_exists(self, seg_name: str) -> bool:
-        if seg_name == STATE_MOVE_HOME and bool(self._skip_home):
-            return False
         return bool(self._yaml_segments_present.get(seg_name, False))
 
     # ------------------------------------------------------------------
@@ -276,10 +272,6 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
     # ------------------------------------------------------------------
 
     def _on_enter_segment(self, seg_name: str) -> None:
-        if seg_name == STATE_MOVE_HOME and bool(self._skip_home):
-            QtCore.QTimer.singleShot(0, self._sig_done.emit)
-            return
-
         present = bool(self._yaml_segments_present.get(seg_name, False))
         if not present:
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
@@ -414,8 +406,6 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
     def _build_traj_payload(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         segments: Dict[str, Any] = {}
         for seg in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME):
-            if seg == STATE_MOVE_HOME and bool(self._skip_home):
-                continue
             jt = self._planned_jt_by_segment.get(seg)
             seg_yaml = self._jt_dict_to_segment_yaml(jt)
             if seg_yaml:

@@ -152,6 +152,10 @@ def _project_root() -> str:
 
 
 def _looks_like_mesh_path(s: str) -> bool:
+    """
+    Generic heuristic used for mounts (supports bare '*.stl' as path-like).
+    For substrates we use a stricter check (see _is_direct_mesh_ref_for_substrate).
+    """
     s = (s or "").strip()
     if not s:
         return False
@@ -281,6 +285,57 @@ def _mount_scene_offset_xyz_mm(ctx: Any, mount_key: str) -> Optional[Tuple[float
 
 
 # ============================================================
+# Substrate key -> bringup/resource/substrates/<key>.stl (SSoT)
+# ============================================================
+
+def _is_direct_mesh_ref_for_substrate(s: str) -> bool:
+    """
+    True only if s is an explicit path/URI for the substrate mesh.
+
+    IMPORTANT:
+      - Bare keys like 'wafer_d100_h2' MUST be treated as keys.
+      - Also bare filenames like 'wafer_d100_h2.stl' (no slash) are treated as keys,
+        to avoid ambiguity and to keep recipes stable.
+    """
+    s = (s or "").strip()
+    if not s:
+        return False
+    if s.startswith("package://"):
+        return True
+    if os.path.isabs(s):
+        return True
+    return ("/" in s) or ("\\" in s)
+
+
+def _substrate_mesh_ref_by_convention(ctx: Any, substrate_key: str) -> str:
+    """
+    Convention resolver:
+      key 'wafer_d100_h2' -> package://<bringup_pkg>/resource/substrates/wafer_d100_h2.stl
+
+    Strict requirements:
+      - ctx.ros.bringup_package must be set (SSoT)
+      - mesh must exist after resolve_package_uri
+    """
+    substrate_key = str(substrate_key or "").strip()
+    if not substrate_key:
+        raise ValueError("substrate_key is empty")
+
+    ros = getattr(ctx, "ros", None)
+    bringup_pkg = str(getattr(ros, "bringup_package", "") or "").strip()
+    if not bringup_pkg:
+        raise RuntimeError(
+            "Substrate-Key kann nicht per Konvention aufgeloest werden, weil ctx.ros.bringup_package fehlt/leer ist. "
+            "Loesung: recipe.substrate als package://... setzen oder ctx.ros.bringup_package sicherstellen."
+        )
+
+    name = substrate_key
+    if not os.path.splitext(name)[1]:
+        name = f"{name}.stl"
+
+    return f"package://{bringup_pkg}/resource/substrates/{name}"
+
+
+# ============================================================
 # Mesh Loading / Placement (SSoT-aware)
 # ============================================================
 
@@ -309,25 +364,24 @@ def load_substrate_mesh_from_key(ctx: Any, substrate_key: str) -> pv.PolyData:
     """
     Load substrate mesh by key.
 
-    NOTE: Your project likely has a substrate catalog too (similar to mounts).
-    For now (strict, but practical):
-      - If substrate_key is path-like -> read directly.
-      - Else try to resolve it as relative mesh name inside the bringup resources, if possible:
-          ctx.content.scene_yaml may define substrate meshes, or your recipes may store package:// already.
+    Project reality (SSoT):
+      - Substrates are stored as STL files in the bringup package:
+          package://spraycoater_bringup/resource/substrates/<key>.stl
+      - Recipes typically store substrate as a KEY (e.g. 'wafer_d100_h2').
+
+    Behavior (STRICT):
+      1) If substrate_key is an explicit path/URI (package://, abs, rel with slash) -> load directly.
+      2) Else treat as KEY and resolve via convention to bringup/resource/substrates/<key>.stl.
     """
     substrate_key = str(substrate_key or "").strip()
     if not substrate_key:
         raise ValueError("substrate_key is empty")
 
-    if _looks_like_mesh_path(substrate_key):
+    if _is_direct_mesh_ref_for_substrate(substrate_key):
         return _read_mesh(substrate_key, ctx)
 
-    # If recipe provides only a key, this is ambiguous without a dedicated substrate catalog.
-    # Fail loudly so you can enforce SSoT (recommended: store package://... in recipe.substrate).
-    raise FileNotFoundError(
-        f"Substrate mesh key '{substrate_key}' ist kein Pfad und es gibt hier keinen Substrate-Katalog-Resolver. "
-        "Empfehlung: Rezept.substrate als package://.../*.stl speichern (SSoT)."
-    )
+    mesh_ref = _substrate_mesh_ref_by_convention(ctx, substrate_key)
+    return _read_mesh(mesh_ref, ctx)
 
 
 def load_cage_mesh(ctx: Any) -> pv.PolyData:
@@ -365,6 +419,9 @@ def load_cage_mesh(ctx: Any) -> pv.PolyData:
 def place_substrate_on_mount(ctx: Any, substrate_mesh: pv.PolyData, *, mount_key: str) -> pv.PolyData:
     """
     Place substrate on mount.
+
+    Your SSoT:
+      - mounts[mount_key].scene_offset.xyz defines the spawn/placement point for the substrate per mount.
 
     Minimal but consistent behavior:
       - if mounts[mount_key].scene_offset.xyz exists, apply it (mm translation)

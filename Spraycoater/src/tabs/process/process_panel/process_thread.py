@@ -58,7 +58,6 @@ class ProcessThread(QtCore.QObject):
         srdf_xml: str = "",
         parent: Optional[QtCore.QObject] = None,
         max_retries: int = 100,
-        skip_home: bool = False,
     ) -> None:
         super().__init__(parent)
 
@@ -77,7 +76,6 @@ class ProcessThread(QtCore.QObject):
         self._srdf_xml = str(srdf_xml or "")
 
         self._max_retries = int(max_retries)
-        self._skip_home = bool(skip_home)
 
         self._thread: Optional[QtCore.QThread] = None
         self._worker: Optional[QtCore.QObject] = None
@@ -136,15 +134,6 @@ class ProcessThread(QtCore.QObject):
         except Exception:
             pass
 
-        # skip_home best-effort from recipe if present
-        skip_home = self._skip_home
-        try:
-            params = getattr(self._recipe, "parameters", {}) or {}
-            if "skip_home" in params:
-                skip_home = bool(params.get("skip_home"))
-        except Exception:
-            pass
-
         mode = self._mode
         if mode == self.MODE_VALIDATE:
             return ProcessValidateStatemachine(
@@ -153,7 +142,6 @@ class ProcessThread(QtCore.QObject):
                 run_result=rr,
                 parent=None,
                 max_retries=self._max_retries,
-                skip_home=skip_home,
                 side=side,
             )
         if mode == self.MODE_OPTIMIZE:
@@ -163,7 +151,6 @@ class ProcessThread(QtCore.QObject):
                 run_result=rr,
                 parent=None,
                 max_retries=self._max_retries,
-                skip_home=skip_home,
                 side=side,
             )
         if mode == self.MODE_EXECUTE:
@@ -174,7 +161,6 @@ class ProcessThread(QtCore.QObject):
                 run_result=rr,
                 parent=None,
                 max_retries=self._max_retries,
-                skip_home=skip_home,
                 side=side,
             )
 

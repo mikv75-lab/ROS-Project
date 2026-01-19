@@ -51,7 +51,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         run_result: RunResult,
         parent: Optional[QtCore.QObject] = None,
         max_retries: int = 2,
-        skip_home: bool = False,
         side: str = "top",
     ) -> None:
         super().__init__(
@@ -60,7 +59,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             run_result=run_result,
             parent=parent,
             max_retries=max_retries,
-            skip_home=bool(skip_home),
         )
         self._plc = plc
         self._side: str = str(side or "top")
@@ -219,8 +217,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
     # ------------------------------------------------------------------
 
     def _segment_exists(self, seg_name: str) -> bool:
-        if seg_name == STATE_MOVE_HOME and bool(self._skip_home):
-            return False
         return bool(self._yaml_segments_present.get(seg_name, False))
 
     # ------------------------------------------------------------------
@@ -350,10 +346,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
     # ------------------------------------------------------------------
 
     def _on_enter_segment(self, seg_name: str) -> None:
-        if seg_name == STATE_MOVE_HOME and bool(self._skip_home):
-            QtCore.QTimer.singleShot(0, self._sig_done.emit)
-            return
-
         if not bool(self._yaml_segments_present.get(seg_name, False)):
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return

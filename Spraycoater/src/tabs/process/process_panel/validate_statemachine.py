@@ -52,7 +52,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         run_result: RunResult,
         parent: Optional[QtCore.QObject] = None,
         max_retries: int = 3,
-        skip_home: bool = False,
         side: str = "top",
     ) -> None:
         super().__init__(
@@ -61,7 +60,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             run_result=run_result,
             parent=parent,
             max_retries=max_retries,
-            skip_home=skip_home,
         )
 
         self._side = str(side or "top")
@@ -225,8 +223,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         return True
 
     def _segment_exists(self, seg_name: str) -> bool:
-        if seg_name == STATE_MOVE_HOME and self._skip_home:
-            return False
         if seg_name in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT):
             return bool(self._cmd_poses_by_seg.get(seg_name))
         return True
@@ -310,9 +306,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._ros_move_pose_tuple(pose_tuple)
 
     def _run_home_segment(self) -> None:
-        if self._skip_home:
-            QtCore.QTimer.singleShot(0, self._sig_done.emit)
-            return
         try:
             self._ros.moveitpy.signals.moveToHomeRequestedWithSpeed.emit(float(self._speed_mm_s))
             self._inflight_pose = None

@@ -1,133 +1,264 @@
 # -*- coding: utf-8 -*-
+# File: src/model/spray_paths/raycast_projector.py
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Optional, Tuple
 import concurrent.futures
 import math
 import os
+
 import numpy as np
 import pyvista as pv
 from pyvista import _vtk
 
-# ---------- Utilities ----------
-def _normalize(v: np.ndarray, eps: float = 1e-12) -> np.ndarray:
-    v = np.asarray(v, dtype=float)
+
+# ============================================================
+# STRICT utilities (no silent fallbacks)
+# ============================================================
+
+def _require_finite_array(name: str, a: np.ndarray) -> np.ndarray:
+    a = np.asarray(a, dtype=float)
+    if a.size and (not np.isfinite(a).all()):
+        bad = np.where(~np.isfinite(a))
+        raise ValueError(f"{name} contains non-finite values at indices {bad}.")
+    return a
+
+
+def _normalize_strict(v: np.ndarray, eps: float = 1e-12, name: str = "v") -> np.ndarray:
+    v = _require_finite_array(name, np.asarray(v, dtype=float))
+    if v.size == 0:
+        return v
     n = np.linalg.norm(v, axis=-1, keepdims=True)
-    n = np.where(n < eps, 1.0, n)
+    if (not np.isfinite(n).all()):
+        raise ValueError(f"Cannot normalize {name}: non-finite norm encountered.")
+    if np.any(n < eps):
+        idx = np.where((n < eps).reshape(-1))[0]
+        raise ValueError(f"Cannot normalize {name}: near-zero vectors at indices {idx.tolist()} (eps={eps}).")
     return v / n
 
-def raydir_radial_xy(P_mm: np.ndarray, center_xy: Tuple[float, float] = (0.0, 0.0)) -> np.ndarray:
-    cx, cy = center_xy
-    V = np.array([cx, cy], dtype=float) - np.asarray(P_mm, dtype=float)[:, :2]
-    V = _normalize(V)
-    return np.column_stack([V, np.zeros((len(P_mm),), dtype=float)])
 
-# ---------- Data contracts ----------
+def _mesh_center_xy(mesh: pv.PolyData) -> Tuple[float, float]:
+    b = mesh.bounds
+    return (0.5 * (b[0] + b[1]), 0.5 * (b[2] + b[3]))
+
+
+def raydir_radial_xy(P_mm: np.ndarray, center_xy: Tuple[float, float] = (0.0, 0.0)) -> np.ndarray:
+    P = _require_finite_array("P_mm", np.asarray(P_mm, dtype=float)).reshape(-1, 3)
+    cx, cy = float(center_xy[0]), float(center_xy[1])
+    V2 = np.array([cx, cy], dtype=float) - P[:, :2]
+    V2 = _normalize_strict(V2, name="radial_xy_dirs")  # (N,2)
+    return np.column_stack([V2, np.zeros((len(P),), dtype=float)])
+
+
+def _side_dir(side: str) -> np.ndarray:
+    sd = str(side or "").strip().lower()
+    base = {
+        "front": [0.0, 1.0, 0.0],
+        "back": [0.0, -1.0, 0.0],
+        "left": [1.0, 0.0, 0.0],
+        "right": [-1.0, 0.0, 0.0],
+        # default for "top": towards -Z
+        "top": [0.0, 0.0, -1.0],
+    }.get(sd)
+    if base is None:
+        raise ValueError(f"Unknown axis-aligned side {side!r}. Allowed: top/front/back/left/right.")
+    return _normalize_strict(np.asarray(base, dtype=float).reshape(1, 3), name="side_dir")[0]
+
+
+def _points_poly(points: np.ndarray) -> pv.PolyData:
+    pts = _require_finite_array("points", np.asarray(points, dtype=float)).reshape(-1, 3)
+    if pts.shape[0] == 0:
+        return pv.PolyData()
+    return pv.PolyData(pts)
+
+
+# ============================================================
+# Data contract
+# ============================================================
+
 @dataclass
 class RayProjectResult:
-    valid: np.ndarray
-    hit_mm: np.ndarray
-    normal: np.ndarray
-    refl_dir: np.ndarray
-    tcp_mm: np.ndarray
+    valid: np.ndarray      # (N,) bool
+    hit_mm: np.ndarray     # (N,3) float (undefined for invalid -> zeros)
+    normal: np.ndarray     # (N,3) float (undefined for invalid -> zeros)
+    refl_dir: np.ndarray   # (N,3) float (undefined for invalid -> zeros)
+    tcp_mm: np.ndarray     # (N,3) float (undefined for invalid -> zeros)
 
-# ---------- Optimized Raycasting ----------
+
+# ============================================================
+# Optimized raycasting core (STRICT)
+# ============================================================
+
 def _intersect_line_obb_fast(obb, p0, p1):
     pts, ids = _vtk.vtkPoints(), _vtk.vtkIdList()
-    if obb.IntersectWithLine(p0, p1, pts, ids) <= 0: return None, None
+    if obb.IntersectWithLine(p0, p1, pts, ids) <= 0:
+        return None, None
     return np.array(pts.GetPoint(0), dtype=float), int(ids.GetId(0))
 
-def _process_chunk(idx, starts, ends, D, obb, face_normals, cos_min):
+
+def _process_chunk(idx, starts, ends, D, obb, face_normals, cos_min: float):
     N = len(idx)
-    hits, norms, refl = np.zeros((N,3)), np.zeros((N,3)), np.zeros((N,3))
-    valid = np.zeros(N, bool)
-    
+    hits = np.zeros((N, 3), dtype=float)
+    norms = np.zeros((N, 3), dtype=float)
+    refl = np.zeros((N, 3), dtype=float)
+    valid = np.zeros(N, dtype=bool)
+
+    n_faces = int(face_normals.shape[0])
+
     for i in range(N):
         hit, cid = _intersect_line_obb_fast(obb, starts[i], ends[i])
-        if hit is None: # try reverse
+        if hit is None:
             hit, cid = _intersect_line_obb_fast(obb, ends[i], starts[i])
-            if hit is None: continue
-            
+            if hit is None:
+                continue
+
+        if cid is None or cid < 0 or cid >= n_faces:
+            raise RuntimeError(f"OBB returned cell id out of range: cid={cid}, n_face_normals={n_faces}")
+
         n = face_normals[cid]
         d = D[i]
-        if np.dot(n, d) > 0: n = -n
-        if -np.dot(d, n) < cos_min: continue
-        
+
+        # ensure normal points "against" the ray direction
+        if float(np.dot(n, d)) > 0.0:
+            n = -n
+
+        # incidence check
+        if -float(np.dot(d, n)) < float(cos_min):
+            continue
+
         valid[i] = True
         hits[i] = hit
         norms[i] = n
-        refl[i] = d - 2 * np.dot(d, n) * n
-        
+        refl[i] = d - 2.0 * float(np.dot(d, n)) * n
+
     return idx, valid, hits, norms, refl
 
-# ---------- High-Level API ----------
+
+# ============================================================
+# High-Level API (STRICT; no `source`)
+# ============================================================
+
 def cast_rays_for_side(
     P_world_start: np.ndarray,
     *,
     sub_mesh_world: pv.PolyData,
     side: str,
-    source: str,
     stand_off_mm: float,
     ray_len_mm: float = 1000.0,
     start_lift_mm: float = 10.0,
     invert_dirs: bool = False,
-    **kwargs
+    # Optional override; if None -> auto from `side` (your rule)
+    radial_xy: Optional[bool] = None,
 ) -> tuple[RayProjectResult, pv.PolyData, pv.PolyData, pv.PolyData]:
-    
-    mesh = sub_mesh_world.triangulate() if not sub_mesh_world.is_all_triangles else sub_mesh_world
-    obb = mesh.obbTree
-    face_norms = _normalize(np.asarray(mesh.face_normals))
-    
-    P = np.asarray(P_world_start, float).reshape(-1, 3)
-    N = len(P)
-    
-    if N == 0: return RayProjectResult([],[],[],[],[]), None, None, None
+    """
+    Raycast projection used by editor/preview.
 
-    # 1. Directions
-    use_radial = any(k in str(source).lower() for k in ("spiral", "cylinder", "helix"))
-    if use_radial:
-        b = mesh.bounds
-        D = raydir_radial_xy(P, (0.5*(b[0]+b[1]), 0.5*(b[2]+b[3])))
+    Direction selection (AUTO, per your rule):
+      - side in {"top","front","back","left","right"}  -> axis-aligned (NOT radial)
+      - any other side string                           -> radial in XY (radial_xy=True)
+
+    All math is done in the same frame as `sub_mesh_world` and `P_world_start`.
+    """
+
+    if not isinstance(sub_mesh_world, pv.PolyData):
+        raise ValueError(f"sub_mesh_world must be pyvista.PolyData, got {type(sub_mesh_world).__name__}")
+
+    P = _require_finite_array("P_world_start", np.asarray(P_world_start, dtype=float)).reshape(-1, 3)
+    N = int(P.shape[0])
+
+    if N == 0:
+        empty = RayProjectResult(
+            valid=np.zeros((0,), dtype=bool),
+            hit_mm=np.zeros((0, 3), dtype=float),
+            normal=np.zeros((0, 3), dtype=float),
+            refl_dir=np.zeros((0, 3), dtype=float),
+            tcp_mm=np.zeros((0, 3), dtype=float),
+        )
+        return empty, pv.PolyData(), pv.PolyData(), pv.PolyData()
+
+    sd = str(side or "").strip().lower()
+    axis_sides = {"top", "front", "left", "right", "back"}
+
+    if radial_xy is None:
+        radial_xy = sd not in axis_sides
+
+    mesh = sub_mesh_world.triangulate() if (hasattr(sub_mesh_world, "is_all_triangles") and not sub_mesh_world.is_all_triangles) else sub_mesh_world
+    if mesh.n_cells <= 0:
+        raise ValueError("sub_mesh_world has no cells; cannot raycast.")
+
+    obb = mesh.obbTree
+    if obb is None:
+        raise RuntimeError("sub_mesh_world.obbTree is None; cannot raycast.")
+
+    face_norms = _normalize_strict(np.asarray(mesh.face_normals, dtype=float), name="face_normals")
+    if face_norms.shape[0] != mesh.n_cells:
+        # In pyvista, face_normals are per-cell; if this diverges, it is unsafe to index by cell-id.
+        raise RuntimeError(f"face_normals size mismatch: {face_norms.shape[0]} != n_cells {mesh.n_cells}")
+
+    # 1) Directions
+    if radial_xy:
+        cx, cy = _mesh_center_xy(mesh)
+        D = raydir_radial_xy(P, (cx, cy))
     else:
-        sd = str(side).lower()
-        base = {
-            "front": [0,1,0], "back": [0,-1,0],
-            "left": [1,0,0], "right": [-1,0,0]
-        }.get(sd, [0,0,-1]) # default top
-        D = np.tile(_normalize([base]), (N, 1))
-        
-    if invert_dirs: D = -D
-        
-    # 2. Bracketing
+        base = _side_dir(sd)
+        D = np.tile(base.reshape(1, 3), (N, 1))
+
+    if invert_dirs:
+        D = -D
+
+    # 2) Bracketing
     starts = P - D * float(start_lift_mm)
     ends = P + D * float(ray_len_mm)
-    
-    # 3. Parallel Compute
-    valid = np.zeros(N, bool)
-    hits, norms, refl = np.zeros((N,3)), np.zeros((N,3)), np.zeros((N,3))
-    
-    try: cpu = len(os.sched_getaffinity(0))
-    except: cpu = os.cpu_count() or 4
-    
-    chunk = int(math.ceil(N/cpu))
-    with concurrent.futures.ThreadPoolExecutor(cpu) as exc:
-        futs = [exc.submit(_process_chunk, np.arange(i, min(i+chunk, N)), starts[i:i+chunk], ends[i:i+chunk], D[i:i+chunk], obb, face_norms, 1e-3) for i in range(0, N, chunk)]
-        for f in concurrent.futures.as_completed(futs):
-            try:
-                idx, v, h, n, r = f.result()
-                valid[idx], hits[idx], norms[idx], refl[idx] = v, h, n, r
-            except: pass
 
-    # 4. Result
+    # 3) Parallel compute (STRICT: any worker error -> raise)
+    valid = np.zeros((N,), dtype=bool)
+    hits = np.zeros((N, 3), dtype=float)
+    norms = np.zeros((N, 3), dtype=float)
+    refl = np.zeros((N, 3), dtype=float)
+
+    try:
+        cpu = len(os.sched_getaffinity(0))
+    except Exception:
+        cpu = os.cpu_count() or 4
+    cpu = max(1, int(cpu))
+
+    chunk = int(math.ceil(N / cpu))
+    if chunk <= 0:
+        raise RuntimeError("Internal: chunk<=0")
+
+    futures = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=cpu) as exc:
+        for i in range(0, N, chunk):
+            idx = np.arange(i, min(i + chunk, N))
+            futures.append(
+                exc.submit(
+                    _process_chunk,
+                    idx,
+                    starts[i : i + chunk],
+                    ends[i : i + chunk],
+                    D[i : i + chunk],
+                    obb,
+                    face_norms,
+                    1e-3,
+                )
+            )
+
+        for f in concurrent.futures.as_completed(futures):
+            idx, v, h, n, r = f.result()  # STRICT: propagate worker exceptions
+            valid[idx] = v
+            hits[idx] = h
+            norms[idx] = n
+            refl[idx] = r
+
+    # 4) Result
     tcp = hits + norms * float(stand_off_mm)
-    
-    # Debug geometry
-    def mk_lines(A, B):
-        if len(A) == 0: return None
-        return pv.lines_from_points(np.column_stack([A, B]).reshape(-1,3)) # simplified
 
-    # (Note: SceneManager expects polydata with 'lines' attribute set correctly)
-    # Using simple pyvista construct here for brevity, SceneManager handles None checks.
-    
-    return RayProjectResult(valid, hits, norms, refl, tcp), None, None, None
+    res = RayProjectResult(valid=valid, hit_mm=hits, normal=norms, refl_dir=refl, tcp_mm=tcp)
+
+    # Debug geometry: point clouds
+    hit_p = _points_poly(hits[valid]) if np.any(valid) else pv.PolyData()
+    miss_p = _points_poly(P[~valid]) if np.any(~valid) else pv.PolyData()
+    tcp_p = _points_poly(tcp[valid]) if np.any(valid) else pv.PolyData()
+
+    return res, hit_p, miss_p, tcp_p
