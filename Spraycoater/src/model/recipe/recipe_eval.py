@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional, Tuple, List
 import numpy as np
 
 # STRICT IMPORTS: Use the new models directly
-from model.spraypaths.draft import Draft, PoseQuat
+from model.spray_paths.draft import Draft, PoseQuat
 from .recipe import Recipe
 
 # ============================================================

@@ -5,9 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional
 
-# STRICT IMPORTS: Keine Definitionen mehr hier!
-from model.spraypaths.draft import Draft, PoseQuat
-from ..spraypaths.trajectory import JTBySegment
+from model.spray_paths.draft import Draft, PoseQuat
+from model.spray_paths.trajectory import JTBySegment
 
 def _as_dict(x: Any) -> Dict[str, Any]:
     return x if isinstance(x, dict) else {}

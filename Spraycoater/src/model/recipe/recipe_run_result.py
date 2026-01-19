@@ -571,8 +571,7 @@ class RunResult:
         robot_yaml_path: Optional[str] = None,
         mounts_yaml_path: Optional[str] = None,
     ) -> None:
-        # IMPORTANT: src/model/recipe/traj_fk_builder.py (new builder that emits tcp.segments + meta.segment_slices)
-        from model.spraypaths.traj_fk_builder import TrajFkBuilder, TrajFkConfig
+        from model.spray_paths.traj_fk_builder import TrajFkBuilder, TrajFkConfig
         urdf_xml = str(urdf_xml or "")
         srdf_xml = str(srdf_xml or "")
         if not urdf_xml.strip() or not srdf_xml.strip():

@@ -2,13 +2,10 @@
 # File: src/tabs/process/recipe_panel/recipe_panel.py
 from __future__ import annotations
 
-import os
 import logging
-from typing import Optional, Any, Dict, List, Tuple
+from typing import Optional, Any, Dict
 
-import yaml
 import numpy as np
-
 from PyQt6 import QtCore
 from PyQt6.QtWidgets import (
     QWidget,
@@ -18,445 +15,292 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QTextEdit,
     QLabel,
-    QSizePolicy,
     QSplitter,
     QMessageBox,
     QInputDialog,
+    QSizePolicy,
 )
-from PyQt6.QtCore import Qt
-
-from widgets.info_groupbox import InfoGroupBox
-from .spray_path_box import SprayPathBox
 
 from model.recipe.recipe import Recipe
 from model.recipe.recipe_run_result import RunResult
-from config.startup import resolve_path
+
+from .spray_path_box import SprayPathBox
+from widgets.info_groupbox import InfoGroupBox
 
 _LOG = logging.getLogger("tabs.process.recipe_panel")
 
 
 class RecipePanel(QWidget):
-    """
-    RecipePanel (Logic + UI).
-    
-    Verantwortlichkeiten:
-      - Laden von Rezepten.
-      - Anzeige Draft/Meta.
-      - Split-View unten: "Stored Result" (vom Datenträger) vs. "New Run Result" (aktueller Lauf).
-      - Beide Views zeigen kombiniert Planned + Executed Eval an.
-    """
+    """Anzeige und Management von Rezepten und deren Ausführungsergebnissen (Strict V2)."""
 
     sig_recipe_selected = QtCore.pyqtSignal(str, object)
     sig_recipe_cleared = QtCore.pyqtSignal()
 
     def __init__(self, *, ctx: Any, repo: Any, ros: Any, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-
-        if ctx is None or repo is None or ros is None:
-            raise RuntimeError("RecipePanel: ctx, repo, ros must not be None (strict)")
-
-        self.ctx = ctx
-        self.repo = repo
-        self.ros = ros
-
-        self._recipe_key: Optional[str] = None
+        self.ctx, self.repo, self.ros = ctx, repo, ros
         self._recipe: Optional[Recipe] = None
+        self._recipe_key: Optional[str] = None
 
         self._build_ui()
-        
         self.btnLoad.clicked.connect(self._on_load_clicked)
-        
-        # Initial Reset
-        self._update_recipe_ui()
-        self._clear_result_ui()
+
+    # ---------------- UI ----------------
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(8)
 
-        # ------------------------------------------------------------
-        # 1. Top: RecipeGRP (Load, Key, Meta, Draft)
-        # ------------------------------------------------------------
-        self.RecipeGRP = QGroupBox("Recipe", self)
+        # ============================================================
+        # Active Recipe
+        #   VBOX(
+        #     HBOX(btnLoad, lblRecipeName),
+        #     GroupBox("Recipe Parameters", formatted string)
+        #   )
+        # ============================================================
+        self.RecipeGRP = QGroupBox("Active Recipe", self)
         vrec = QVBoxLayout(self.RecipeGRP)
-        vrec.setSpacing(6)
+        vrec.setContentsMargins(8, 8, 8, 8)
+        vrec.setSpacing(8)
 
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        self.btnLoad = QPushButton("Load", self.RecipeGRP)
-        self.btnLoad.setMinimumHeight(28)
-        self.lblRecipeKey = QLabel("Key: –", self.RecipeGRP)
-        self.lblRecipeKey.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        
-        row.addWidget(self.btnLoad, 0)
-        row.addWidget(self.lblRecipeKey, 1)
-        vrec.addLayout(row)
+        # HBOX(btn load, lblrecipename)
+        top_row = QWidget(self.RecipeGRP)
+        htop = QHBoxLayout(top_row)
+        htop.setContentsMargins(0, 0, 0, 0)
+        htop.setSpacing(10)
 
-        self.lblRecipeMeta = QLabel("Info: –", self.RecipeGRP)
-        self.lblRecipeMeta.setWordWrap(True)
-        self.lblRecipeMeta.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        vrec.addWidget(self.lblRecipeMeta)
+        self.btnLoad = QPushButton("Load Recipe", top_row)
+        self.lblRecipeName = QLabel("Recipe: –", top_row)
+        self.lblRecipeName.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
-        self.txtRecipeDraft = QTextEdit(self.RecipeGRP)
-        self.txtRecipeDraft.setReadOnly(True)
-        self.txtRecipeDraft.setPlaceholderText("recipe draft view")
-        vrec.addWidget(self.txtRecipeDraft, 1)
+        htop.addWidget(self.btnLoad, 0)
+        htop.addWidget(self.lblRecipeName, 1)
 
+        vrec.addWidget(top_row, 0)
+
+        # GroupInfo (Recipe Parameters)
+        self.grpRecipeParams = QGroupBox("Recipe Parameters", self.RecipeGRP)
+        vparams = QVBoxLayout(self.grpRecipeParams)
+        vparams.setContentsMargins(8, 8, 8, 8)
+        vparams.setSpacing(6)
+
+        self.txtRecipeParams = QTextEdit(self.grpRecipeParams)
+        self.txtRecipeParams.setReadOnly(True)
+        self.txtRecipeParams.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        vparams.addWidget(self.txtRecipeParams, 1)
+
+        vrec.addWidget(self.grpRecipeParams, 1)
         root.addWidget(self.RecipeGRP, 2)
 
-        # ------------------------------------------------------------
-        # 2. Middle: Info + SprayPaths (Side-by-Side Splitter)
-        # ------------------------------------------------------------
-        mid_split = QSplitter(Qt.Orientation.Horizontal, self)
-        mid_split.setChildrenCollapsible(False)
+        # Middle: Info (left) + SprayPaths (right)
+        mid = QWidget(self)
+        hmid = QHBoxLayout(mid)
+        hmid.setContentsMargins(0, 0, 0, 0)
+        hmid.setSpacing(8)
 
-        # Left: Info
-        self.infoBox = InfoGroupBox(parent=mid_split, title="Info")
-        mid_split.addWidget(self.infoBox)
+        self.infoBox = InfoGroupBox(mid, title="Info")
+        sp = self.infoBox.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+        self.infoBox.setSizePolicy(sp)
+        self.infoBox.setMinimumWidth(320)
+        self.infoBox.setMaximumWidth(520)
 
-        # Right: Spray Paths
-        self.sprayPathBox = SprayPathBox(ros=self.ros, parent=mid_split, title="Spray Paths")
-        mid_split.addWidget(self.sprayPathBox)
+        self.sprayPathBox = SprayPathBox(ros=self.ros, parent=mid)
+        sp2 = self.sprayPathBox.sizePolicy()
+        sp2.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        self.sprayPathBox.setSizePolicy(sp2)
 
-        mid_split.setStretchFactor(0, 3)
-        mid_split.setStretchFactor(1, 2)
-        root.addWidget(mid_split, 0)
+        hmid.addWidget(self.infoBox, 0)
+        hmid.addWidget(self.sprayPathBox, 1)
+        root.addWidget(mid, 0)
 
-        # ------------------------------------------------------------
-        # 3. Bottom: Stored Result vs. New Run Result
-        # ------------------------------------------------------------
-        res_split = QSplitter(Qt.Orientation.Horizontal, self)
-        res_split.setChildrenCollapsible(False)
-
-        # Left: Stored (Disk)
-        self.StoredGRP = QGroupBox("Stored Result (Disk)", res_split)
-        vsto = QVBoxLayout(self.StoredGRP)
-        vsto.setContentsMargins(8, 8, 8, 8)
-        vsto.setSpacing(6)
-        
-        self.txtStored = QTextEdit(self.StoredGRP)
+        # Bottom: Comparison View (Disk vs. Current Run)
+        res_split = QSplitter(QtCore.Qt.Orientation.Horizontal, self)
+        self.txtStored = QTextEdit(res_split)  # Ergebnisse von Festplatte
+        self.txtNewRun = QTextEdit(res_split)  # Live-Ergebnisse
         self.txtStored.setReadOnly(True)
-        self.txtStored.setPlaceholderText("Stored results (Planned + Executed)...")
-        vsto.addWidget(self.txtStored)
-        
-        res_split.addWidget(self.StoredGRP)
-
-        # Right: New Run (Memory/Current)
-        self.NewRunGRP = QGroupBox("New Run Result", res_split)
-        vnew = QVBoxLayout(self.NewRunGRP)
-        vnew.setContentsMargins(8, 8, 8, 8)
-        vnew.setSpacing(6)
-
-        self.txtNewRun = QTextEdit(self.NewRunGRP)
         self.txtNewRun.setReadOnly(True)
-        self.txtNewRun.setPlaceholderText("Result of current run...")
-        vnew.addWidget(self.txtNewRun)
-
-        res_split.addWidget(self.NewRunGRP)
-
-        # 50/50 Split
-        res_split.setStretchFactor(0, 1)
-        res_split.setStretchFactor(1, 1)
         root.addWidget(res_split, 2)
 
-        # Policies
-        sp = self.sizePolicy()
-        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        sp.setVerticalPolicy(QSizePolicy.Policy.Expanding)
-        self.setSizePolicy(sp)
+    # --------------- Recipe binding ----------------
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
-    def set_load_enabled(self, enabled: bool) -> None:
-        self.btnLoad.setEnabled(enabled)
-
-    def set_recipe(self, key: str, recipe_model: Recipe) -> None:
-        if not key or recipe_model is None:
-            self.clear_recipe()
-            return
-            
+    def set_recipe(self, key: str, model: Recipe) -> None:
+        """Lädt ein hydriertes Rezept in die UI."""
         self._recipe_key = key
-        self._recipe = recipe_model
+        self._recipe = model
 
-        # Reset UI
-        self._update_recipe_ui()
-        self._update_info_box()
-        
-        # Load stored data into LEFT box, clear RIGHT box
-        self._load_stored_results_ui()
+        recipe_name = getattr(model, "id", None) or getattr(model, "key", None) or key
+        self.lblRecipeName.setText(f"Recipe: {recipe_name}")
+
+        # Recipe Parameters: sauber formatiert
+        self.txtRecipeParams.setPlainText(self._format_recipe_params(model))
+
+        # STORED ist Disk-SSoT: immer refresh von Disk (beim Load)
+        self._refresh_stored_from_disk(key)
+
+        # InfoBox aktualisieren (best-effort: compiled/draft points)
+        self._update_infobox_from_recipe(model)
+
         self.txtNewRun.clear()
-        
-        # Spray paths defaults
-        self.sprayPathBox.set_defaults(compiled=True, planned=True, executed=True)
+        self.sig_recipe_selected.emit(key, model)
 
-        self.sig_recipe_selected.emit(key, recipe_model)
+    def _format_recipe_params(self, model: Recipe) -> str:
+        """
+        Liefert eine gut lesbare String-Darstellung der Recipe-Parameter.
+        Prefer: model.to_params_dict().
+        """
+        try:
+            d = model.to_params_dict()
+        except Exception:
+            d = {"repr": repr(model)}
 
-    def clear_recipe(self) -> None:
-        self._recipe_key = None
-        self._recipe = None
-        self._update_recipe_ui()
-        self._update_info_box()
-        self._clear_result_ui()
-        self.sig_recipe_cleared.emit()
+        def fmt(obj: Any, indent: int = 0) -> str:
+            pad = " " * indent
+            if isinstance(obj, dict):
+                if not obj:
+                    return f"{pad}{{}}"
+                lines = []
+                for k in sorted(obj.keys(), key=lambda x: str(x)):
+                    v = obj[k]
+                    if isinstance(v, (dict, list, tuple)):
+                        lines.append(f"{pad}{k}:")
+                        lines.append(fmt(v, indent + 2))
+                    else:
+                        lines.append(f"{pad}{k}: {v}")
+                return "\n".join(lines)
+            if isinstance(obj, (list, tuple)):
+                if not obj:
+                    return f"{pad}[]"
+                lines = []
+                for v in obj:
+                    if isinstance(v, (dict, list, tuple)):
+                        lines.append(f"{pad}-")
+                        lines.append(fmt(v, indent + 2))
+                    else:
+                        lines.append(f"{pad}- {v}")
+                return "\n".join(lines)
+            return f"{pad}{obj}"
 
-    # ------------------------------------------------------------------
-    # Run Lifecycle
-    # ------------------------------------------------------------------
+        return fmt(d, 0)
+
+    # --- Slots für den Prozess-Lifecycle (Strict V2) ---
 
     @QtCore.pyqtSlot(str, str)
     def on_run_started(self, mode: str, key: str) -> None:
-        """Called when process starts. Lock UI, clear New Run box."""
-        self.btnLoad.setEnabled(False)
-        self.txtNewRun.setPlainText("Running...")
+        """Wird aufgerufen, wenn ein neuer Prozesslauf startet."""
+        self.txtNewRun.clear()
+        self.txtNewRun.setPlaceholderText(f"Running {mode} for {key}...")
+        _LOG.info("RecipePanel: Run started (mode=%s, key=%s)", mode, key)
 
     @QtCore.pyqtSlot(str, object)
-    def on_run_finished(self, key: str, rr_obj: object) -> None:
-        """
-        Wird aufgerufen, wenn der Roboterprozess fertig ist.
-        Führt Post-Processing, Evaluation und Speichern durch.
-        """
-        self.btnLoad.setEnabled(True)
-
-        if not isinstance(rr_obj, RunResult):
-            _LOG.error("on_run_finished: Payload is not RunResult.")
+    def on_run_finished(self, key: str, rr: RunResult) -> None:
+        """Pipeline nach Roboterlauf: Postprocess -> Eval -> Persist -> Disk refresh."""
+        if not self._recipe:
             return
 
-        rr: RunResult = rr_obj
-        
-        # 1. Post-Process (FK, TCP, Eval)
         try:
-            self._postprocess_and_eval(rr)
-        except Exception as e:
-            _LOG.error(f"Postprocess failed: {e}")
-            QMessageBox.warning(self, "Postprocess Error", str(e))
-        
-        # 2. Persist (Save to Disk)
-        # Note: This overwrites the files on disk. 
-        # The "Stored" box currently shows what was loaded BEFORE this run.
-        # This allows comparison: Left=Old, Right=New.
-        try:
-            self._persist_runresult(key=key, rr=rr)
-        except Exception as e:
-            _LOG.error(f"Persist failed: {e}")
-            QMessageBox.warning(self, "Persist Error", str(e))
+            self.txtNewRun.setPlaceholderText("")
 
-        # 3. Update RIGHT box (New Run)
-        self._display_run_result(rr, target_widget=self.txtNewRun)
-        
-        # 4. Update Info Box (e.g. duration)
-        self._update_info_box()
-        
-        # 5. Trigger SprayPath update
-        self.sprayPathBox.publish_current()
+            # 1) Geometrische Aufarbeitung & Evaluation
+            rr.postprocess(
+                recipe=self._recipe,
+                segment_order=("MOVE_PREDISPENSE", "MOVE_RECIPE", "MOVE_RETREAT"),
+                tcp_target_frame="substrate",
+            )
+
+            # 2) Speichern über das Repo (nur wenn valid) -> Disk kann überschrieben werden
+            success = self.repo.save_run_result_if_valid(key, run_result=rr)
+
+            # 3) UI Update (Live-Ergebnisse)
+            self.txtNewRun.setPlainText(rr.format_eval_text())
+
+            # 4) STORED ist Disk-SSoT: nach erfolgreichem Save immer neu aus Disk laden
+            if success:
+                _LOG.info("RunResult persistiert (Disk ggf. überschrieben). Refresh STORED aus Disk.")
+                self._refresh_stored_from_disk(key)
+
+        except Exception as e:
+            _LOG.exception("Fehler im Post-Processing")
+            self.txtNewRun.setPlainText(f"Post-Processing Error: {e}")
+            QMessageBox.warning(self, "Postprocess Error", str(e))
 
     @QtCore.pyqtSlot(str, str)
     def on_run_error(self, key: str, message: str) -> None:
-        self.btnLoad.setEnabled(True)
-        self.txtNewRun.setPlainText(f"ERROR: {message}")
-        QMessageBox.critical(self, "Process Error", str(message))
+        """Handhabt Fehler während des Prozesslaufs."""
+        self.txtNewRun.setPlaceholderText("")
+        self.txtNewRun.setPlainText(f"ERROR for {key}:\n{message}")
+        _LOG.error("RecipePanel: Run error for %s: %s", key, message)
 
-    # ------------------------------------------------------------------
-    # Internal Logic
-    # ------------------------------------------------------------------
+    # --- Interne Helfer ---
+
+    def _refresh_stored_from_disk(self, key: str) -> None:
+        """
+        STORED muss immer Disk-SSoT sein.
+        Daher: beim Load und nach erfolgreichem Save immer neu aus Disk laden.
+        """
+        try:
+            fresh = self.repo.load_for_process(key)  # volle Hydrierung inkl. planned/executed TCP/JT
+            # In-memory Rezept konsistent halten (optional, aber praktisch)
+            self._recipe = fresh
+            self._recipe_key = key
+            self._update_stored_view(fresh)
+        except Exception as e:
+            _LOG.exception("Failed to refresh STORED from disk (key=%s)", key)
+            self.txtStored.setPlainText(f"=== STORED EVAL (Disk) ===\nERROR reloading: {e}")
+
+    def _update_infobox_from_recipe(self, recipe: Recipe) -> None:
+        """
+        Best-effort: versucht Punkte aus dem Rezept zu extrahieren, um die InfoBox zu füttern.
+        Erwartete Kandidaten (je nach deinem Modell):
+          - recipe.compiled_draft.points_mm
+          - recipe.draft.points_mm
+          - recipe.compiled.points_mm
+        """
+        pts = None
+
+        for attr in ("compiled_draft", "draft", "compiled"):
+            d = getattr(recipe, attr, None)
+            if d is None:
+                continue
+            p = getattr(d, "points_mm", None)
+            if p is None:
+                continue
+            try:
+                arr = np.asarray(p, dtype=float).reshape(-1, 3)
+                if arr.size > 0:
+                    pts = arr
+                    break
+            except Exception:
+                continue
+
+        self.infoBox.update_from_recipe(recipe, points=pts)
+
+    def _update_stored_view(self, recipe: Recipe) -> None:
+        """Extrahiert Eval-Daten aus dem hydrierten Modell (Disk-SSoT)."""
+        lines = ["=== STORED EVAL (Disk) ==="]
+        found = False
+
+        for mode, draft in [("Planned", getattr(recipe, "planned_tcp", None)), ("Executed", getattr(recipe, "executed_tcp", None))]:
+            if draft:
+                eval_data = getattr(draft, "eval", None)
+                if eval_data:
+                    lines.append(f"{mode}: {str(eval_data)}")
+                    found = True
+                else:
+                    lines.append(f"{mode}: (no eval)")
+                    found = True
+
+        if not found:
+            lines.append("(No stored evaluations found)")
+
+        self.txtStored.setPlainText("\n".join(lines))
 
     def _on_load_clicked(self) -> None:
-        keys = self._list_repo_keys()
-        if not keys:
-            QMessageBox.information(self, "Load", "Keine Rezepte gefunden.")
-            return
-
-        current = self._recipe_key if (self._recipe_key in keys) else keys[0]
-        idx = keys.index(current) if current in keys else 0
-
-        choice, ok = QInputDialog.getItem(self, "Recipe laden", "Auswahl:", keys, idx, False)
-        if not ok or not choice.strip(): return
-        
-        key = choice.strip()
-        try:
-            model = self.repo.load_for_process(key)
-            self.set_recipe(key, model)
-        except Exception as e:
-            QMessageBox.critical(self, "Load Error", f"Fehler beim Laden:\n{e}")
-
-    def _list_repo_keys(self) -> List[str]:
-        try:
-            keys = self.repo.list_recipes() or []
-            return sorted([str(k) for k in keys if str(k).strip()])
-        except Exception:
-            return []
-
-    def _postprocess_and_eval(self, rr: RunResult) -> None:
-        if self._recipe is None:
-            raise RuntimeError("Kein Rezept geladen für Postprocessing.")
-
-        scene_yaml, robot_yaml = self._ctx_scene_robot_yaml_paths()
-        mounts_yaml = self._ctx_mounts_yaml_path()
-
-        rr.postprocess(
-            recipe=self._recipe,
-            segment_order=("MOVE_PREDISPENSE", "MOVE_RECIPE", "MOVE_RETREAT", "MOVE_HOME"),
-            ee_link="tcp",
-            step_mm=1.0,
-            max_points=0,
-            gate_valid_on_eval=False,
-            require_tcp=True,
-            tcp_target_frame="substrate",
-            scene_yaml_path=scene_yaml,
-            robot_yaml_path=robot_yaml,
-            mounts_yaml_path=mounts_yaml,
-        )
-
-    def _persist_runresult(self, *, key: str, rr: RunResult) -> None:
-        p = self.repo.bundle.paths(key)
-        
-        # Save raw trajectory & TCP YAMLs
-        planned_traj = rr.planned_run.get("traj")
-        executed_traj = rr.executed_run.get("traj")
-        planned_tcp = rr.planned_run.get("tcp")
-        executed_tcp = rr.executed_run.get("tcp")
-
-        if p.planned_traj_yaml and planned_traj:
-            self._yaml_write_file(p.planned_traj_yaml, planned_traj)
-        if p.executed_traj_yaml and executed_traj:
-            self._yaml_write_file(p.executed_traj_yaml, executed_traj)
-        if p.planned_tcp_yaml and planned_tcp:
-            self._yaml_write_file(p.planned_tcp_yaml, planned_tcp)
-        if p.executed_tcp_yaml and executed_tcp:
-            self._yaml_write_file(p.executed_tcp_yaml, executed_tcp)
-
-    def _load_stored_results_ui(self) -> None:
-        """Loads data from disk into the 'Stored' box."""
-        self.txtStored.clear()
-        if not self._recipe_key: return
-        
-        try:
-            p = self.repo.bundle.paths(self._recipe_key)
-            # Load stored TCP results (containing eval)
-            pt_doc = self._yaml_load_file(p.planned_tcp_yaml) if p.planned_tcp_yaml else {}
-            et_doc = self._yaml_load_file(p.executed_tcp_yaml) if p.executed_tcp_yaml else {}
-            
-            # Create a temporary/dummy RR to reuse formatting logic
-            rr_stored = RunResult(
-                planned_run={"tcp": pt_doc},
-                executed_run={"tcp": et_doc},
-                eval={
-                    "planned": pt_doc.get("eval", {}),
-                    "executed": et_doc.get("eval", {})
-                },
-                valid=True, invalid_reason=""
-            )
-            self._display_run_result(rr_stored, target_widget=self.txtStored)
-        except Exception as e:
-            self.txtStored.setPlainText(f"Failed to load stored results: {e}")
-
-    # ------------------------------------------------------------------
-    # UI Helper & Formatting
-    # ------------------------------------------------------------------
-
-    def _display_run_result(self, rr: RunResult, target_widget: QTextEdit) -> None:
-        """Formats combined Planned + Executed stats into one text box."""
-        ev = rr.eval or {}
-        # Try finding eval in explicit .eval, else fallback to .run.tcp.eval
-        p_eval = ev.get("planned") or rr.planned_run.get("tcp", {}).get("eval", {})
-        e_eval = ev.get("executed") or rr.executed_run.get("tcp", {}).get("eval", {})
-
-        lines = []
-        
-        # --- Planned Section ---
-        lines.append("=== PLANNED ===")
-        if p_eval:
-            lines.append(f"Summary: {self._summary_line(p_eval)}")
-            lines.append(self._yaml_dump(p_eval))
-        else:
-            lines.append("No data.")
-        
-        lines.append("") # Spacer
-
-        # --- Executed Section ---
-        lines.append("=== EXECUTED ===")
-        if e_eval:
-            lines.append(f"Summary: {self._summary_line(e_eval)}")
-            lines.append(self._yaml_dump(e_eval))
-        else:
-            lines.append("No data.")
-
-        target_widget.setPlainText("\n".join(lines))
-
-    def _update_recipe_ui(self) -> None:
-        r = self._recipe
-        if r is None:
-            self.lblRecipeKey.setText("Key: –")
-            self.lblRecipeMeta.setText("Info: –")
-            self.txtRecipeDraft.clear()
-            return
-
-        self.lblRecipeKey.setText(f"Key: {self._recipe_key}")
-        info = f"id={r.id} | tool={r.tool} | sub={r.substrate}"
-        self.lblRecipeMeta.setText(f"Info: {info}")
-        
-        dump_data = {
-            "id": r.id, "tool": r.tool, "substrate": r.substrate,
-            "parameters": r.parameters, "planner": r.planner, "meta": r.meta,
-        }
-        self.txtRecipeDraft.setPlainText(self._yaml_dump(dump_data))
-
-    def _update_info_box(self) -> None:
-        points = None
-        if self._recipe:
-            v = getattr(self._recipe, "compiled_points_mm", None)
-            if v is not None:
-                try: points = np.asarray(v).reshape(-1, 3)
-                except: pass
-        self.infoBox.update_from_recipe(self._recipe, points)
-
-    def _clear_result_ui(self) -> None:
-        self.txtStored.clear()
-        self.txtNewRun.clear()
-
-    @staticmethod
-    def _summary_line(ev: Dict) -> str:
-        if not ev: return "–"
-        try:
-            score = ev.get("total", {}).get("score")
-            valid = ev.get("valid")
-            ret = []
-            if score is not None: ret.append(f"score={score:.3f}")
-            if valid is not None: ret.append(f"valid={valid}")
-            return " | ".join(ret) if ret else "–"
-        except: return "–"
-
-    # ------------------------------------------------------------------
-    # File / Path Utils
-    # ------------------------------------------------------------------
-
-    def _yaml_dump(self, obj: Any) -> str:
-        try: return yaml.safe_dump(obj or {}, allow_unicode=True, sort_keys=False)
-        except: return str(obj)
-
-    def _yaml_write_file(self, path: str, obj: Any) -> None:
-        if not path: return
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(obj or {}, f, allow_unicode=True, sort_keys=False)
-
-    def _yaml_load_file(self, path: str) -> Dict:
-        if not path or not os.path.isfile(path): return {}
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f) or {}
-        except: return {}
-
-    def _ctx_scene_robot_yaml_paths(self) -> Tuple[Optional[str], Optional[str]]:
-        try:
-            base = os.environ.get("SC_PROJECT_ROOT", "")
-            cfgs = self.ctx.ros.configs
-            return resolve_path(base, cfgs.scene_file), resolve_path(base, cfgs.robot_file)
-        except: return None, None
-
-    def _ctx_mounts_yaml_path(self) -> Optional[str]:
-        try:
-            return resolve_path(os.environ.get("SC_PROJECT_ROOT", ""), self.ctx.mounts_yaml_path)
-        except: return None
+        keys = self.repo.list_recipes()
+        choice, ok = QInputDialog.getItem(self, "Load", "Select Recipe:", keys, 0, False)
+        if ok and choice:
+            # Erst laden (für UI) ...
+            model = self.repo.load_for_process(choice)
+            # ... und set_recipe triggert STORED Disk-refresh deterministisch
+            self.set_recipe(choice, model)

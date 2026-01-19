@@ -2,10 +2,11 @@
 # File: src/tabs/process/process_tab.py
 from __future__ import annotations
 
-from typing import Optional, Any
+import logging
+from typing import Any, Optional
 
 from PyQt6 import QtCore
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QSizePolicy
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
 
 from plc.plc_client import PlcClientBase
 from ros.bridge.ros_bridge import RosBridge
@@ -13,31 +14,26 @@ from ros.bridge.ros_bridge import RosBridge
 from .recipe_panel.recipe_panel import RecipePanel
 from .process_panel.process_panel import ProcessPanel
 
+_LOG = logging.getLogger("tabs.process")
+
 
 class ProcessTab(QWidget):
     """
-    STRICT split:
+    STRICT V2 ProcessTab (Option 2)
 
-      - ProcessTab hosts exactly two panels:
-          * RecipePanel (load + UI + postprocess/eval/persist on finished)
-          * ProcessPanel (threads + buttons + runresult creation only)
+    Responsibilities:
+      - Layout panels
+      - Wire signals between RecipePanel and ProcessPanel
 
-      - ProcessTab contains no process logic.
-      - Panels communicate exclusively via Qt signals/slots.
+    ProcessPanel:
+      - Starts/stops ProcessThread
+      - Emits sig_run_started/sig_run_finished/sig_run_error
 
-    RecipePanel API (STRICT):
-      - sig_recipe_selected(str key, object recipe_model)
-      - sig_recipe_cleared()
-      - slot: on_run_started(str mode, str key)
-      - slot: on_run_finished(str key, object rr)
-      - slot: on_run_error(str key, str message)
-
-    ProcessPanel API (STRICT):
-      - slot: set_recipe(str key, object recipe_model)
-      - slot: clear_recipe()
-      - signals: sig_run_started(str mode, str key)
-                 sig_run_finished(str key, object rr)
-                 sig_run_error(str key, str message)
+    RecipePanel:
+      - Selects/loads recipes via repo
+      - Displays recipe + stored results
+      - Handles on_run_started/on_run_finished/on_run_error
+      - Persists via repo.save_run_result_if_valid(...)
     """
 
     def __init__(
@@ -52,72 +48,63 @@ class ProcessTab(QWidget):
         super().__init__(parent)
 
         if ctx is None:
-            raise RuntimeError("ProcessTab: ctx is None (strict)")
+            raise RuntimeError("ProcessTab(V2): ctx ist None (strict)")
         if repo is None:
-            raise RuntimeError("ProcessTab: repo is None (strict)")
+            raise RuntimeError("ProcessTab(V2): repo ist None (strict)")
         if ros is None:
-            raise RuntimeError("ProcessTab: ros is None (strict)")
+            raise RuntimeError("ProcessTab(V2): ros ist None (strict)")
+
+        # Basic repo validations (strict-minimum)
+        for name in ("list_recipes", "load_for_process"):
+            fn = getattr(repo, name, None)
+            if not callable(fn):
+                raise RuntimeError(f"ProcessTab(V2): repo missing required API: {name}()")
+        if not callable(getattr(repo, "save_run_result_if_valid", None)):
+            _LOG.warning("ProcessTab(V2): repo.save_run_result_if_valid() fehlt – Persist wird im RecipePanel fehlschlagen.")
 
         self.ctx = ctx
         self.repo = repo
-        self.ros = ros
+        self.ros: RosBridge = ros
         self.plc = plc
 
-        self.recipePanel = RecipePanel(ctx=self.ctx, repo=self.repo, ros=self.ros, parent=self)
-        self.processPanel = ProcessPanel(ctx=self.ctx, ros=self.ros, plc=self.plc, parent=self)
-
-        root = QHBoxLayout(self)
+        # ---------------- UI ----------------
+        root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
 
-        root.addWidget(self.recipePanel, 3)
-        root.addWidget(self.processPanel, 2)
+        row = QHBoxLayout()
+        row.setSpacing(8)
 
-        sp = self.sizePolicy()
-        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        sp.setVerticalPolicy(QSizePolicy.Policy.Expanding)
-        self.setSizePolicy(sp)
+        self.recipePanel = RecipePanel(ctx=self.ctx, repo=self.repo, ros=self.ros, parent=self)
+        self.processPanel = ProcessPanel(repo=self.repo, ctx=self.ctx, ros=self.ros, plc=self.plc, parent=self)
+        row.addWidget(self.recipePanel, 3)
+        row.addWidget(self.processPanel, 2)
 
-        self._wire_panels_strict()
+        root.addLayout(row, 1)
 
-    def _wire_panels_strict(self) -> None:
-        rp = self.recipePanel
-        pp = self.processPanel
+        # ---------------- Wiring ----------------
 
-        # RecipePanel -> ProcessPanel
-        sig_recipe_selected = getattr(rp, "sig_recipe_selected", None)
-        if not isinstance(sig_recipe_selected, QtCore.pyqtBoundSignal):
-            raise RuntimeError("ProcessTab: RecipePanel missing sig_recipe_selected(key, recipe_model) (strict)")
-        sig_recipe_cleared = getattr(rp, "sig_recipe_cleared", None)
-        if not isinstance(sig_recipe_cleared, QtCore.pyqtBoundSignal):
-            raise RuntimeError("ProcessTab: RecipePanel missing sig_recipe_cleared() (strict)")
+        # Recipe selection -> ProcessPanel context
+        self.recipePanel.sig_recipe_selected.connect(self._on_recipe_selected)
+        self.recipePanel.sig_recipe_cleared.connect(self._on_recipe_cleared)
 
-        if not callable(getattr(pp, "set_recipe", None)):
-            raise RuntimeError("ProcessTab: ProcessPanel missing set_recipe(key, recipe_model) (strict)")
-        if not callable(getattr(pp, "clear_recipe", None)):
-            raise RuntimeError("ProcessTab: ProcessPanel missing clear_recipe() (strict)")
+        # Process lifecycle -> RecipePanel
+        self.processPanel.sig_run_started.connect(self.recipePanel.on_run_started)
+        self.processPanel.sig_run_finished.connect(self.recipePanel.on_run_finished)
+        self.processPanel.sig_run_error.connect(self.recipePanel.on_run_error)
 
-        sig_recipe_selected.connect(pp.set_recipe)
-        sig_recipe_cleared.connect(pp.clear_recipe)
+    # ---------------- Slots ----------------
 
-        # ProcessPanel -> RecipePanel
-        sig_run_started = getattr(pp, "sig_run_started", None)
-        if not isinstance(sig_run_started, QtCore.pyqtBoundSignal):
-            raise RuntimeError("ProcessTab: ProcessPanel missing sig_run_started(mode, key) (strict)")
-        sig_run_finished = getattr(pp, "sig_run_finished", None)
-        if not isinstance(sig_run_finished, QtCore.pyqtBoundSignal):
-            raise RuntimeError("ProcessTab: ProcessPanel missing sig_run_finished(key, rr) (strict)")
-        sig_run_error = getattr(pp, "sig_run_error", None)
-        if not isinstance(sig_run_error, QtCore.pyqtBoundSignal):
-            raise RuntimeError("ProcessTab: ProcessPanel missing sig_run_error(key, message) (strict)")
+    @QtCore.pyqtSlot(str, object)
+    def _on_recipe_selected(self, key: str, model: object) -> None:
+        try:
+            self.processPanel.set_recipe(key, model)  # RecipePanel emits (key, Recipe)
+        except Exception as e:
+            _LOG.exception("ProcessTab(V2): processPanel.set_recipe failed: %s", e)
 
-        if not callable(getattr(rp, "on_run_started", None)):
-            raise RuntimeError("ProcessTab: RecipePanel missing on_run_started(mode, key) (strict)")
-        if not callable(getattr(rp, "on_run_finished", None)):
-            raise RuntimeError("ProcessTab: RecipePanel missing on_run_finished(key, rr) (strict)")
-        if not callable(getattr(rp, "on_run_error", None)):
-            raise RuntimeError("ProcessTab: RecipePanel missing on_run_error(key, message) (strict)")
-
-        sig_run_started.connect(rp.on_run_started)
-        sig_run_finished.connect(rp.on_run_finished)
-        sig_run_error.connect(rp.on_run_error)
+    @QtCore.pyqtSlot()
+    def _on_recipe_cleared(self) -> None:
+        try:
+            self.processPanel.clear_recipe()
+        except Exception as e:
+            _LOG.exception("ProcessTab(V2): processPanel.clear_recipe failed: %s", e)

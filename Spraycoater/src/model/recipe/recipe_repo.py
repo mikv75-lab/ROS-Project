@@ -10,8 +10,8 @@ import yaml
 
 # --- UPDATED IMPORTS ---
 from model.recipe.recipe import Recipe
-from model.spraypaths.draft import Draft
-from Spraycoater.src.model.spraypaths.trajectory import JTBySegment
+from model.spray_paths.draft import Draft
+from model.spray_paths.trajectory import JTBySegment
 from model.recipe.recipe_bundle import RecipeBundle
 from model.recipe.recipe_run_result import RunResult
 

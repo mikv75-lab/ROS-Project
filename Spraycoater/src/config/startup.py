@@ -10,6 +10,9 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import yaml
 
+from model.recipe.recipe_bundle import RecipeBundle
+from model.recipe.recipe_repo import RecipeRepo
+
 
 # ============================================================
 # Helpers (strict, no silent fallbacks)
@@ -920,8 +923,8 @@ def load_startup(startup_yaml_path: str) -> AppContext:
         recipe_catalog_yaml=rc_y,
     )
 
-    repo = RecipeRepo(bundle=RecipeBundle(recipes_root_dir=paths.recipe_dir))
-
+    repo = RecipeRepo(bundle=RecipeBundle(recipes_root=paths.recipe_dir))
+    
     return AppContext(
         paths=paths,
         ros=ros_cfg,

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# File: app/tabs/recipe/recipe_editor_panel/recipe_editor_content.py
+# File: src/tabs/recipe/recipe_editor_panel/recipe_editor_content.py
 from __future__ import annotations
 
 from typing import Optional, Dict, Any, Tuple, List

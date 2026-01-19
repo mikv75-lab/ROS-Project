@@ -6,22 +6,23 @@ import logging
 from typing import Any, Optional, Tuple
 
 import numpy as np
+
 from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtWidgets import QTabWidget, QVBoxLayout, QWidget, QSizePolicy
 from PyQt6.sip import isdeleted
 
+# --- Models & Widgets ---
 from model.recipe.recipe import Recipe
 from model.recipe.recipe_store import RecipeStore
 from widgets.info_groupbox import InfoGroupBox
 
+# --- UI Sub-Components (Tabs) ---
 from .tab2d.tab2d import Tab2D
-from .tab3d.tab3d import Tab3D, PreviewResult
-
+from .tab3d.tab3d import Tab3D
 
 _LOG = logging.getLogger("tabs.recipe.preview.panel")
 
 Bounds = Tuple[float, float, float, float, float, float]
-_DEFAULT_BOUNDS: Bounds = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
 
 
 def _set_policy(
@@ -37,12 +38,16 @@ def _set_policy(
 
 
 class CoatingPreviewPanel(QWidget):
-    """GUI container for the coating preview.
+    """UI wrapper for the coating preview.
 
-    NEW FILESYSTEM RULE (strict):
-      - Panel builds UI and debounces updates.
-      - All preview logic lives in the tabs (Tab3D owns the pipeline; Tab2D is a pure consumer).
-      - Panel only forwards (recipe, ctx) to Tab3D and propagates the resulting scene/path into Tab2D + Info.
+    IMPORTANT (new filesystem rule):
+      - This panel builds the GUI and forwards update calls.
+      - All 3D preview logic lives in Tab3D.
+      - The 2D tab is updated with the results returned by Tab3D.
+
+    Layout:
+      - InfoGroupBox (header)
+      - QTabWidget (2D / 3D)
     """
 
     sig_request_update = pyqtSignal()
@@ -65,29 +70,44 @@ class CoatingPreviewPanel(QWidget):
         self._recipe: Optional[Recipe] = None
         self._busy = False
 
-        # SSoT for status API
+        # Status (mirrors Tab3D latest result)
         self._preview_valid: bool = False
         self._preview_invalid_reason: Optional[str] = "no_preview"
         self._final_tcp_world_mm: Optional[np.ndarray] = None
-        self._last_preview: Optional[PreviewResult] = None
 
-        # Debounced update timer
+        # Update Timer (debounce)
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._on_update_timer)
 
+        # UI
         self._build_ui()
         self._wire_signals()
 
-        # Initial header state
+        # Initial reset (must exist as class method)
         self._update_info(None, None)
 
-    # ------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------
+    # ---------------- Public API ----------------
 
     def get_pv_host(self) -> QWidget:
-        return self._tab3d.get_pv_host()
+        """
+        RecipeTab expects this.
+        We delegate to Tab3D; Tab3D must expose pv_host (and ideally get_pv_host()).
+        """
+        try:
+            # preferred (if Tab3D implements it)
+            m = getattr(self._tab3d, "get_pv_host", None)
+            if callable(m):
+                return m()
+        except Exception:
+            pass
+
+        # fallback: attribute (not a "legacy fallback", just API glue)
+        pv_host = getattr(self._tab3d, "pv_host", None)
+        if isinstance(pv_host, QWidget):
+            return pv_host
+
+        raise RuntimeError("CoatingPreviewPanel: Tab3D has no pv_host/get_pv_host()")
 
     def update_preview(self, model: Optional[Recipe]) -> None:
         self._recipe = model
@@ -96,11 +116,9 @@ class CoatingPreviewPanel(QWidget):
     def request_update(self) -> None:
         if isdeleted(self):
             return
-        # small debounce to coalesce many small edits (slider typing etc.)
         self._timer.start(30)
 
     def render(self) -> None:
-        # Delegate rendering to Tab3D (PyVista plotter lives there)
         self._tab3d.render()
 
     def preview_is_valid(self) -> bool:
@@ -114,34 +132,33 @@ class CoatingPreviewPanel(QWidget):
             return None
         return np.asarray(self._final_tcp_world_mm, dtype=float).reshape(-1, 3)
 
-    # ------------------------------------------------------------
-    # Bounds getters (consumed by 2D + view controllers)
-    # ------------------------------------------------------------
+    # ---------------- Bounds Getters ----------------
 
     def get_bounds(self) -> Bounds:
-        if self._last_preview is not None and isinstance(self._last_preview.bounds, (tuple, list)):
-            try:
-                b = tuple(float(x) for x in self._last_preview.bounds)
-                if len(b) == 6:
-                    return b  # type: ignore[return-value]
-            except Exception:
-                pass
-        return _DEFAULT_BOUNDS
+        # Delegate to Tab3D (source of truth)
+        try:
+            return self._tab3d.get_bounds()
+        except Exception:
+            return (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
 
     def get_substrate_bounds(self) -> Optional[Bounds]:
-        if self._last_preview is not None:
-            return self._last_preview.substrate_bounds
-        return None
+        try:
+            return self._tab3d.get_substrate_bounds()
+        except Exception:
+            return None
 
-    # ------------------------------------------------------------
-    # UI helpers
-    # ------------------------------------------------------------
+    # ---------------- Info box ----------------
 
     def _update_info(self, recipe: Optional[Recipe], points_mm: Optional[np.ndarray]) -> None:
+        """
+        Must be a real bound method (inside class).
+        """
         try:
             self._info_box.update_from_recipe(recipe, points_mm)
         except Exception:
             _LOG.exception("InfoGroupBox.update_from_recipe failed")
+
+    # ---------------- UI Construction ----------------
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -157,48 +174,67 @@ class CoatingPreviewPanel(QWidget):
         self._tabs = QTabWidget(self)
         root.addWidget(self._tabs, 1)
 
-        # 2D tab consumes (mesh, path, bounds) and renders with Matplotlib.
-        self._tab2d = Tab2D(
-            parent=self,
-            refresh_callable=self.render,
-            get_bounds_callable=self.get_bounds,
-        )
-        self._tabs.addTab(self._tab2d, "2D View")
+        # Always define members BEFORE use (prevents AttributeError)
+        self._tab3d = QWidget(self)
+        self._tab2d = QWidget(self)
 
-        # 3D tab owns the preview pipeline and rendering.
-        self._tab3d = Tab3D(
-            parent=self,
-            render_callable=self.render,
-            get_bounds_callable=self.get_bounds,
-            get_substrate_bounds_callable=self.get_substrate_bounds,
-            on_overlay_changed=self.request_update,
-        )
+        # Create Tab3D (authoritative bounds)
+        try:
+            self._tab3d = Tab3D(
+                parent=self,
+                render_callable=None,  # IMPORTANT: avoid recursion (Tab3D.render must not call back into panel)
+            )
+        except Exception:
+            _LOG.exception("CoatingPreviewPanel: Tab3D construction failed")
+            self._tab3d = QWidget(self)
+
+        # Create Tab2D
+        try:
+            self._tab2d = Tab2D(
+                parent=self,
+                refresh_callable=self.render,
+                get_bounds_callable=self.get_bounds,
+            )
+        except Exception:
+            _LOG.exception("CoatingPreviewPanel: Tab2D construction failed")
+            self._tab2d = QWidget(self)
+
+        # Add tabs AFTER successful member assignment (or placeholders)
+        self._tabs.addTab(self._tab2d, "2D View")
         self._tabs.addTab(self._tab3d, "3D View")
 
-        # Default to 3D.
+        # Default to 3D view
         self._tabs.setCurrentIndex(1)
 
     def _wire_signals(self) -> None:
         self.sig_request_update.connect(self.request_update)
 
-    # ------------------------------------------------------------
-    # Persisted validity flag (recipe metadata)
-    # ------------------------------------------------------------
+    # ---------------- ValidSave flag (STRICT SSoT) ----------------
+
+    @staticmethod
+    def _ensure_info(recipe: Recipe) -> None:
+        info = getattr(recipe, "info", None)
+        if not isinstance(info, dict):
+            recipe.info = {}
+        if "validSave" not in recipe.info:
+            recipe.info["validSave"] = False
+        if "validSaveReason" not in recipe.info:
+            recipe.info["validSaveReason"] = "no_preview"
 
     def _set_recipe_valid_save(self, recipe: Recipe, ok: bool, reason: Optional[str]) -> None:
+        """
+        STRICT:
+          - Only recipe.info['validSave'] is authoritative.
+          - No attributes, no meta mirroring (RecipeEditorPanel gate uses info dict).
+        """
         try:
-            setattr(recipe, "validSave", bool(ok))
-            setattr(recipe, "validSaveReason", (None if ok else str(reason or "invalid")))
-            meta = getattr(recipe, "meta", None)
-            if isinstance(meta, dict):
-                meta["valid_save"] = bool(ok)
-                meta["valid_save_reason"] = (None if ok else str(reason or "invalid"))
+            self._ensure_info(recipe)
+            recipe.info["validSave"] = bool(ok)
+            recipe.info["validSaveReason"] = (None if ok else str(reason or "invalid"))
         except Exception:
             pass
 
-    # ------------------------------------------------------------
-    # Update pipeline (debounced)
-    # ------------------------------------------------------------
+    # ---------------- Update pipeline ----------------
 
     def _on_update_timer(self) -> None:
         if self._busy:
@@ -214,51 +250,50 @@ class CoatingPreviewPanel(QWidget):
     def _update_preview(self) -> None:
         recipe = self._recipe
 
-        # Reset state
+        # Reset status
         self._preview_valid = False
         self._preview_invalid_reason = "no_preview"
         self._final_tcp_world_mm = None
-        self._last_preview = None
+
+        # Reset tabs
+        try:
+            self._tab2d.update_scene(substrate_mesh=None, path_xyz=None, bounds=self.get_bounds())
+        except Exception:
+            pass
+        try:
+            self._tab3d.clear_layers()
+        except Exception:
+            pass
 
         if recipe is None:
-            try:
-                self._tab2d.clear_scene()
-            except Exception:
-                pass
-            try:
-                self._tab3d.clear_layers()
-            except Exception:
-                pass
             self._update_info(None, None)
             self.render()
             return
 
-        # 1) Let Tab3D compute+render preview (SSoT)
+        # Ensure info exists (for gate UI)
+        self._ensure_info(recipe)
+
+        # 1) Delegate full 3D preview build to Tab3D
         res = self._tab3d.update_preview(recipe=recipe, ctx=self.ctx)
-        self._last_preview = res
 
-        # 2) Propagate status + path to consumers
-        self._preview_valid = bool(res.valid)
-        self._preview_invalid_reason = res.invalid_reason
-        self._final_tcp_world_mm = res.final_tcp_world_mm
+        # 2) Mirror status to panel API
+        self._preview_valid = bool(getattr(res, "valid", False))
+        self._preview_invalid_reason = getattr(res, "invalid_reason", None)
+        self._final_tcp_world_mm = getattr(res, "final_tcp_world_mm", None)
 
-        # 3) Push to 2D (substrate + consumer path)
+        # 3) Update 2D view + info header
+        bounds = getattr(res, "bounds", None) or self.get_bounds()
+        path_xyz = getattr(res, "path_xyz_mm", None)
+        substrate_mesh = getattr(res, "substrate_mesh", None)
+
         try:
-            self._tab2d.update_scene(
-                substrate_mesh=res.substrate_mesh,
-                path_xyz=res.path_xyz_mm,
-                bounds=res.bounds,
-            )
+            self._tab2d.update_scene(substrate_mesh=substrate_mesh, path_xyz=path_xyz, bounds=bounds)
         except Exception:
             _LOG.exception("Tab2D.update_scene failed")
 
-        # 4) Update header + recipe metadata
-        try:
-            self._update_info(recipe, res.path_xyz_mm)
-        except Exception:
-            pass
-        self._set_recipe_valid_save(recipe, bool(res.valid), res.invalid_reason)
+        self._update_info(recipe, path_xyz)
+        self._set_recipe_valid_save(recipe, self._preview_valid, self._preview_invalid_reason)
 
-        # 5) Render
+        # 4) Render and notify
         self.render()
         self.sig_preview_updated.emit()

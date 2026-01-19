@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# File: src/model/recipe/trajectory.py
+# File: src/model/spray_paths/trajectory.py
 from __future__ import annotations
 
 from dataclasses import dataclass, field

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# File: app/tabs/recipe/recipe_editor_panel/recipe_editor_panel.py
+# File: src/tabs/recipe/recipe_editor_panel/recipe_editor_panel.py
 from __future__ import annotations
 
 from typing import Optional, Dict, Any
@@ -18,10 +18,12 @@ from PyQt6.QtWidgets import (
     QInputDialog,
 )
 
-from model.recipe.recipe import Recipe, Draft, PathSide, PoseQuat
-from model.recipe.path_builder import PathBuilder
+from model.recipe.recipe import Recipe
+from model.spray_paths.path_builder import PathBuilder
 from model.recipe.recipe_store import RecipeStore
 from model.recipe.recipe_repo import RecipeRepo
+
+from model.spray_paths.draft import Draft, PoseQuat, PathSide
 
 from .recipe_editor_content import RecipeEditorContent
 
@@ -261,7 +263,8 @@ class RecipeEditorPanel(QWidget):
 
         placeholder_id = self._current_recipe_name() or self._default_recipe_name_for_template(template_id)
 
-        model = Recipe.from_dict(
+        # V2: params.yaml only (attachments are stored separately)
+        model = Recipe.from_params_dict(
             {
                 "id": placeholder_id,
                 "description": rec_def.get("description") or "",
@@ -271,8 +274,8 @@ class RecipeEditorPanel(QWidget):
                 "parameters": params,
                 "planner": move_planner,
                 "paths_by_side": pbs,
-                "trajectories": {},
                 "meta": {"template_id": template_id},
+                "info": {},
             }
         )
 
@@ -461,9 +464,6 @@ class RecipeEditorPanel(QWidget):
 
         _ensure_validsave_fields(model)
 
-        # Clear trajectories in editor context
-        model.trajectories = {}
-
         self._active_model = model
         return model
 
@@ -581,9 +581,8 @@ class RecipeEditorPanel(QWidget):
 
         try:
             self._ensure_draft(model)
-            self.repo.save_from_editor(name, draft=model, compiled=getattr(model, "paths_compiled", None))
-        except TypeError:
-            self.repo.save_from_editor(name, draft=model)  # type: ignore[arg-type]
+            # V2: persist params.yaml + (optional) draft.yaml
+            self.repo.save_from_editor(name, draft=model)
         except Exception as e:
             QMessageBox.warning(self, "Save", f"Speichern fehlgeschlagen:\n{e}")
             return
@@ -601,7 +600,7 @@ class RecipeEditorPanel(QWidget):
         reply = QMessageBox.question(
             self,
             "Löschen",
-            f"Rezept '{name}' wirklich löschen?\n(params + draft + trajectories)",
+            f"Rezept '{name}' wirklich löschen?\n(params + draft + planned/executed traj + planned/executed tcp)",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

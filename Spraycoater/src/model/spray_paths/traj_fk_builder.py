@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# File: src/model/recipe/traj_fk_builder.py
+# File: src/model/spray_paths/traj_fk_builder.py
 from __future__ import annotations
 
 import math
@@ -9,8 +9,8 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 import yaml
 
-from model.spraypaths.draft import Draft
-from Spraycoater.src.model.spraypaths.trajectory import JTBySegment
+from model.spray_paths.draft import Draft
+from model.spray_paths.trajectory import JTBySegment
 
 
 # ============================================================
