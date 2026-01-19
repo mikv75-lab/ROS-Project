@@ -34,9 +34,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         MOVE_RECIPE:      pts[1:-1]
         MOVE_RETREAT:     [pts[-1]]
 
-    Trajectory capture is gated by BaseProcessStatemachine WAIT_RESULTS:
-      - We only proceed to the next streamed pose after planned+executed trajectories for the current
-        motion are actually available (or timeout -> error).
+    Trajectory capture is gated by BaseProcessStatemachine WAIT_RESULTS.
     """
 
     ROLE = "validate"
@@ -101,10 +99,12 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             pass
         super().request_stop()
 
+    # --------- Retry Hook (called by Base) ---------
+
     def _on_retry_last_motion(self, seg_name: str, attempt: int, last_error: str) -> bool:
         if self._stop_requested:
             return False
-        if not self._machine or not self._machine.isRunning():
+        if self._machine is None:
             return False
         if seg_name != self._current_state:
             return False
@@ -128,6 +128,8 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
 
         self._ros_move_pose_tuple(pose)
         return True
+
+    # --------- Prepare / Segment wiring ---------
 
     def _prepare_run(self) -> bool:
         self._frame = "substrate"
@@ -164,7 +166,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         pre: List[Tuple[float, ...]] = [pts[0]] if n >= 1 else []
 
         if n >= 2:
-            # critical: starts at pts[1] (avoid NO-OP pts[0])
             recipe: List[Tuple[float, ...]] = list(pts[1:-1])
             ret: List[Tuple[float, ...]] = [pts[-1]]
         else:
@@ -253,7 +254,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._signal_error(f"Validate: Unknown segment '{seg_name}'")
 
     def _should_transition_on_ok(self, seg_name: str, result: str) -> bool:
-        # NOTE: Called only AFTER WAIT_RESULTS has captured planned+executed for this motion.
         if self._inflight_seg == seg_name:
             if seg_name == STATE_MOVE_RECIPE:
                 if self._inflight_pose is not None and self._pending_recipe_poses:
@@ -325,7 +325,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
 
     @QtCore.pyqtSlot()
     def _on_joint_fallback_timeout(self) -> None:
-        if not self._machine or not self._machine.isRunning():
+        if self._machine is None:
             return
         if self._stop_requested:
             return
@@ -342,7 +342,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
 
     @QtCore.pyqtSlot(object)
     def _on_joints_changed(self, _msg: object) -> None:
-        if not self._machine or not self._machine.isRunning():
+        if self._machine is None:
             return
         if self._stop_requested:
             return

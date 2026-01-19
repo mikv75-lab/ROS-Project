@@ -24,11 +24,19 @@ Bounds = Tuple[float, float, float, float, float, float]
 _ALLOWED_SIDES = ("top", "front", "back", "left", "right", "polyhelix", "helix")
 _DEFAULT_BOUNDS: Bounds = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
 
+# ---------------------------------------------------------------------------
+# IMPORTANT:
+# You requested a fixed 90° Z-rotation for the TCP local frame (KS).
+# This rotates the TCP X/Y axes around Z by +90° (Z unchanged).
+# If the direction is wrong, flip the sign to -90.0.
+# ---------------------------------------------------------------------------
+_TCP_YAW_DEG: float = 0.0
+
 _LAYER_STYLE: Dict[str, Dict[str, Any]] = {
-    "cage": {"color": "#9aa0a6", "opacity": 0.25, "smooth_shading": True, "specular": 0.05},
-    "ground": {"color": "#000000", "opacity": 1.00, "smooth_shading": False, "lighting": True, "specular": 0.0},
+    "cage": {"color": "#6b6f75", "opacity": 0.25, "smooth_shading": True, "specular": 0.05},
+    "ground": {"color": "#6b6f75", "opacity": 1.00, "smooth_shading": False, "lighting": True, "specular": 0.0},
     "mount": {"color": "#6b6f75", "opacity": 1.00, "smooth_shading": True, "specular": 0.05},
-    "substrate": {"color": "#d9d9d9", "opacity": 1.00, "smooth_shading": True, "specular": 0.10},
+    "substrate": {"color": "#d0d6df", "opacity": 1.00, "smooth_shading": True, "specular": 0.10},
     # overlays
     "mask": {"color": "#3498db", "line_width": 2.4, "render_lines_as_tubes": True, "opacity": 1.0, "lighting": False},
     "path": {"color": "#2ecc71", "line_width": 2.8, "render_lines_as_tubes": True, "opacity": 1.0, "lighting": False},
@@ -134,18 +142,15 @@ def _unit(v: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     return v / n
 
 
-def _rotation_matrix_from_vectors(x_axis: np.ndarray, z_axis: np.ndarray) -> np.ndarray:
-    """
-    Legacy: tangent-following frame (rotates on spirals).
-    Kept for reference; not used by default.
-    """
-    z = _unit(z_axis)
-    x_raw = np.asarray(x_axis, dtype=float).reshape(3)
-    x = _unit(x_raw - float(np.dot(x_raw, z)) * z)  # orthogonalize
-    y = np.cross(z, x)
-    R = np.identity(3, dtype=float)
-    R[:, 0], R[:, 1], R[:, 2] = x, y, z
-    return R
+def _rot_z_deg(deg: float) -> np.ndarray:
+    a = math.radians(float(deg))
+    c, s = math.cos(a), math.sin(a)
+    return np.array(
+        [[c, -s, 0.0],
+         [s,  c, 0.0],
+         [0.0, 0.0, 1.0]],
+        dtype=float,
+    )
 
 
 def _quat_from_rotmat(R: np.ndarray) -> Tuple[float, float, float, float]:
@@ -186,22 +191,43 @@ def _quat_from_rotmat(R: np.ndarray) -> Tuple[float, float, float, float]:
     return (float(q[0]), float(q[1]), float(q[2]), float(q[3]))
 
 
-def _fixed_frame_from_z(z_axis: np.ndarray) -> np.ndarray:
+def _fixed_frame_from_z(z_axis: np.ndarray, *, yaw_deg_about_z: float = 0.0) -> np.ndarray:
     """
     Stable right-handed frame from Z only:
       Z = normalized z_axis
-      X chosen deterministically from a global reference
+      X derived deterministically from a fixed global reference (projected into plane orthogonal to Z)
       Y = Z x X
-    This prevents "spinning" on spirals (no tangent usage).
+
+    Additionally:
+      - apply a fixed yaw rotation around local Z (keeps Z unchanged, rotates X/Y).
+      - This is the requested +90° (or -90°) TCP KS correction.
     """
     z = _unit(z_axis).reshape(3)
-    up = np.array([0.0, 0.0, 1.0], dtype=float)
-    if abs(float(np.dot(up, z))) > 0.95:
-        up = np.array([1.0, 0.0, 0.0], dtype=float)
-    x = _unit(np.cross(up, z))
+
+    # Deterministic reference: prefer global +X; if nearly parallel to Z, use global +Y.
+    ref = np.array([1.0, 0.0, 0.0], dtype=float)
+    if abs(float(np.dot(ref, z))) > 0.95:
+        ref = np.array([0.0, 1.0, 0.0], dtype=float)
+
+    # Project ref into plane orthogonal to Z
+    x = ref - float(np.dot(ref, z)) * z
+    x = _unit(x)
     y = _unit(np.cross(z, x))
+
     R = np.identity(3, dtype=float)
     R[:, 0], R[:, 1], R[:, 2] = x, y, z
+
+    if abs(float(yaw_deg_about_z)) > 1e-9:
+        # rotate X/Y about local Z: R = R * Rz(yaw)
+        R = R @ _rot_z_deg(float(yaw_deg_about_z))
+
+        # Re-orthonormalize lightly (numerical safety)
+        x2 = _unit(R[:, 0])
+        z2 = _unit(R[:, 2])
+        y2 = _unit(np.cross(z2, x2))
+        x2 = _unit(np.cross(y2, z2))
+        R[:, 0], R[:, 1], R[:, 2] = x2, y2, z2
+
     return R
 
 
@@ -211,7 +237,7 @@ def _compute_poses(points: np.ndarray, normals: np.ndarray) -> List[PoseQuat]:
 
     IMPORTANT:
       - XY stable: derive frame only from Z (normal).
-      - No tangent-following rotation (fixes spiral KS spinning).
+      - Apply fixed yaw correction (_TCP_YAW_DEG) around local Z as requested.
     """
     P = np.asarray(points, dtype=float).reshape(-1, 3)
     N = np.asarray(normals, dtype=float).reshape(-1, 3)
@@ -221,7 +247,7 @@ def _compute_poses(points: np.ndarray, normals: np.ndarray) -> List[PoseQuat]:
 
     poses: List[PoseQuat] = []
     for i in range(n):
-        R = _fixed_frame_from_z(N[i])
+        R = _fixed_frame_from_z(N[i], yaw_deg_about_z=_TCP_YAW_DEG)
         qx, qy, qz, qw = _quat_from_rotmat(R)
         poses.append(
             PoseQuat(
@@ -278,6 +304,11 @@ def _draft_display_points_local(draft: Optional[Draft], side: str) -> Optional[n
     """
     Build a display polyline in mount-top-frame that includes:
       predispense[0] + poses_quat + retreat[0] (if present)
+
+    NOTE:
+      - This returns POSITIONS only (not orientations).
+      - The requested 90° correction is applied to TCP ORIENTATION (KS) in _compute_poses(),
+        not to the positions here.
     """
     if draft is None or not isinstance(draft, Draft):
         return None
@@ -538,7 +569,7 @@ class SceneManager:
                 side_path_params=p_side,
             )
 
-            # Convert to local (mount-top KS)
+            # Convert to local (mount-top KS) positions only (translation)
             final_tcp_local = _shift_points(final_tcp_world, origin_world) if final_tcp_world is not None else None
 
             if final_tcp_local is not None and final_norms_world is not None:
@@ -566,7 +597,7 @@ class SceneManager:
                     Nw = Nw[:n]
 
                     # Build extended points (pre + main + ret) in LOCAL, with normals padded for endpoints.
-                    # pre/ret positions follow neighbor tangent; orientation comes from normals (stable frame).
+                    # pre/ret positions follow neighbor tangent; orientation comes from normals (stable frame + yaw fix).
                     t0 = P[1] - P[0]
                     t1 = P[-1] - P[-2]
                     t0n = t0 / (np.linalg.norm(t0) + 1e-12)
@@ -613,7 +644,6 @@ class SceneManager:
 
         # 5) Overlays (WORLD): ALWAYS build all overlay geometries.
         # IMPORTANT: UI has ONLY these toggles: mask,path,tcp,hits,misses,normals
-        # We force tcp_axes off here to avoid hidden toggles.
         cfg_all = dict(overlay_cfg or {})
         cfg_all["visibility"] = {
             "mask": True,
@@ -666,6 +696,7 @@ class SceneManager:
                 "side": side,
                 "frame": "mount_top",
                 "origin_world_mm": origin_world,
+                "tcp_yaw_deg": float(_TCP_YAW_DEG),
             },
         )
 
@@ -703,7 +734,6 @@ class SceneManager:
             return Draft(version=1, sides=cur_sides)
 
         # Always split pre/main/ret from EXTENDED list.
-        # If poses has < 2 items, we cannot build a meaningful segment; drop side.
         if len(poses) < 2:
             cur_sides.pop(s, None)
             return Draft(version=1, sides=cur_sides)

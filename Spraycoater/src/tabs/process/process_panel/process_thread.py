@@ -24,12 +24,6 @@ class ProcessThread(QtCore.QObject):
     """
     Runs Validate / Optimize / Execute in a dedicated QThread.
 
-    STRICT fixes:
-      - Do NOT reference non-existent worker attributes (e.g. worker.notify).
-      - Always wire worker signals by capability detection.
-      - Seed RunResult with URDF/SRDF provided by ProcessTab (ctx).
-      - RosBridge remains unchanged.
-
     Signals:
       - stateChanged(str): current segment/state name
       - logMessage(str): textual log lines
@@ -111,7 +105,6 @@ class ProcessThread(QtCore.QObject):
             except Exception as e:
                 self.logMessage.emit(f"Stop: worker.request_stop failed: {e!r}")
 
-        # best-effort: quit thread
         if self._thread is not None:
             try:
                 self._thread.quit()
@@ -123,10 +116,8 @@ class ProcessThread(QtCore.QObject):
     # ------------------------------------------------------------------
 
     def _create_worker(self) -> QtCore.QObject:
-        # seed RunResult (SSoT)
         rr = RunResult(urdf_xml=self._urdf_xml, srdf_xml=self._srdf_xml)
 
-        # side param (best-effort; used by your SMs for compat)
         side = "top"
         try:
             params = getattr(self._recipe, "parameters", {}) or {}
@@ -167,21 +158,18 @@ class ProcessThread(QtCore.QObject):
         raise RuntimeError(f"ProcessThread: unknown mode={mode!r}")
 
     def _wire_worker_signals(self, w: QtCore.QObject) -> None:
-        # log
         if hasattr(w, "logMessage"):
             try:
                 w.logMessage.connect(self.logMessage.emit)  # type: ignore[attr-defined]
             except Exception:
                 pass
 
-        # state
         if hasattr(w, "stateChanged"):
             try:
                 w.stateChanged.connect(self.stateChanged.emit)  # type: ignore[attr-defined]
             except Exception:
                 pass
 
-        # finished/error
         if hasattr(w, "notifyFinished"):
             try:
                 w.notifyFinished.connect(self._on_worker_finished)  # type: ignore[attr-defined]
@@ -194,7 +182,6 @@ class ProcessThread(QtCore.QObject):
             except Exception:
                 pass
 
-        # also allow older naming (best-effort)
         if hasattr(w, "finished"):
             try:
                 w.finished.connect(self._on_worker_finished)  # type: ignore[attr-defined]
@@ -208,22 +195,16 @@ class ProcessThread(QtCore.QObject):
                 pass
 
     def _start_worker(self, w: QtCore.QObject) -> None:
-        """
-        Start the worker without assuming a specific API.
-        """
-        # Preferred: explicit start() method
         fn = getattr(w, "start", None)
         if callable(fn):
             fn()
             return
 
-        # Alternative: startSignal pyqtSignal
         sig = getattr(w, "startSignal", None)
         if sig is not None and hasattr(sig, "emit"):
             sig.emit()
             return
 
-        # Alternative: run() method
         fn = getattr(w, "run", None)
         if callable(fn):
             fn()
@@ -250,7 +231,6 @@ class ProcessThread(QtCore.QObject):
 
         self._worker = w
 
-        # move worker into thread
         if self._thread is not None:
             try:
                 w.moveToThread(self._thread)
@@ -259,12 +239,18 @@ class ProcessThread(QtCore.QObject):
 
         self._wire_worker_signals(w)
 
-        # start worker ASAP in its thread context
+        # Start in worker thread context (queued) to avoid affinity/timing issues.
         try:
-            QtCore.QTimer.singleShot(0, lambda: self._safe_start_worker())
+            QtCore.QMetaObject.invokeMethod(
+                w,
+                "start",
+                QtCore.Qt.ConnectionType.QueuedConnection,
+            )
         except Exception:
-            # fallback: direct
-            self._safe_start_worker()
+            try:
+                QtCore.QTimer.singleShot(0, lambda: self._safe_start_worker())
+            except Exception:
+                self._safe_start_worker()
 
     def _safe_start_worker(self) -> None:
         w = self._worker
@@ -290,7 +276,6 @@ class ProcessThread(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def _on_thread_finished(self) -> None:
-        # cleanup (worker is deleted via deleteLater)
         self._thread = None
         self._worker = None
 
@@ -299,7 +284,6 @@ class ProcessThread(QtCore.QObject):
     # ------------------------------------------------------------------
 
     def _shutdown_thread(self) -> None:
-        # delete worker in its own thread
         w = self._worker
         if w is not None:
             try:
