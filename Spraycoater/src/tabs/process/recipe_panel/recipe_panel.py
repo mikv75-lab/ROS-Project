@@ -15,7 +15,6 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QTextEdit,
     QLabel,
-    QSplitter,
     QMessageBox,
     QInputDialog,
     QSizePolicy,
@@ -23,6 +22,9 @@ from PyQt6.QtWidgets import (
 
 from model.recipe.recipe import Recipe
 from model.recipe.recipe_run_result import RunResult
+
+# NOTE: recipe_markers moved under spray_paths (spraypaths package)
+from model.spray_paths import recipe_markers
 
 from .spray_path_box import SprayPathBox
 from widgets.info_groupbox import InfoGroupBox
@@ -153,6 +155,13 @@ class RecipePanel(QWidget):
         self._update_infobox_from_recipe(model)
 
         self.txtNewRun.clear()
+
+        # spraypaths on recipe load (compiled + stored ghosts)
+        try:
+            self._republish_spraypaths_for_key(key, model)
+        except Exception as e:
+            _LOG.warning("RecipePanel: spraypath republish failed: %s", e)
+
         self.sig_recipe_selected.emit(key, model)
 
     def _format_recipe_params(self, model: Recipe) -> str:
@@ -239,9 +248,98 @@ class RecipePanel(QWidget):
             self._recipe = fresh
             self._recipe_key = key
             self._update_stored_view(fresh)
+
+            # after disk refresh, republish ghosts (and compiled if available)
+            try:
+                self._republish_spraypaths_for_key(key, fresh)
+            except Exception as e2:
+                _LOG.warning("RecipePanel: spraypath republish after disk refresh failed: %s", e2)
+
         except Exception as e:
             _LOG.exception("Failed to refresh STORED from disk (key=%s)", key)
             self.txtStored.setPlainText(f"=== STORED EVAL (Disk) ===\nERROR reloading: {e}")
+
+    def _republish_spraypaths_for_key(self, key: str, recipe_model: Recipe) -> None:
+        """
+        Republishes spray path layers to RViz when a recipe is loaded/selected in RecipePanel.
+
+        - Compiled: from current recipe model (draft)
+        - Planned/Executed STORED: from disk (repo.load_for_process) as ghost markers
+        """
+        key = str(key or "").strip()
+        if not key:
+            return
+        if self.ros is None or not getattr(self.ros, "spray", None):
+            return
+
+        # Clean slate to avoid cross-recipe overlay bleed
+        try:
+            self.ros.spray_clear()
+        except Exception:
+            pass
+
+        # 1) Compiled (Draft) from recipe_model
+        try:
+            pa, ma = recipe_markers.build_draft_pose_and_markers(
+                recipe_model,
+                frame_id="substrate",
+                ns_prefix="draft",
+                clear_legacy=True,
+                rgba_line=(0.0, 0.0, 1.0, 1.0),
+                line_width_m=0.0008,
+                round_style="none",
+            )
+            has_poses = bool(getattr(pa, "poses", None)) and len(pa.poses) > 0
+            has_markers = bool(getattr(ma, "markers", None)) and len(ma.markers) > 0
+            if has_poses or has_markers:
+                self.ros.spray_set_compiled(poses=pa if has_poses else None, markers=ma if has_markers else None)
+        except Exception as e:
+            _LOG.warning("RecipePanel: publish compiled failed: %s", e)
+
+        # 2) Stored ghost layers from disk SSoT
+        try:
+            recipe_disk = self.repo.load_for_process(key)
+        except Exception as e:
+            _LOG.warning("RecipePanel: load_for_process(%s) for stored spraypaths failed: %s", key, e)
+            return
+
+        # Planned stored -> ghost markers
+        try:
+            planned_obj = getattr(recipe_disk, "planned_tcp", None)
+            if planned_obj:
+                _, ma = recipe_markers.build_tcp_pose_and_markers(
+                    planned_obj,
+                    ns_prefix="planned_tcp/stored",
+                    mid_start=33000,
+                    default_frame="substrate",
+                    clear_legacy=True,
+                    line_width_m=0.0005,
+                    rgba_line=(0.7, 0.7, 0.7, 0.4),
+                    round_style="none",
+                )
+                if getattr(ma, "markers", None) and len(ma.markers) > 0:
+                    self.ros.spray_set_planned(stored_markers=ma)
+        except Exception as e:
+            _LOG.warning("RecipePanel: publish planned stored failed: %s", e)
+
+        # Executed stored -> ghost markers
+        try:
+            executed_obj = getattr(recipe_disk, "executed_tcp", None)
+            if executed_obj:
+                _, ma = recipe_markers.build_tcp_pose_and_markers(
+                    executed_obj,
+                    ns_prefix="executed_tcp/stored",
+                    mid_start=43000,
+                    default_frame="substrate",
+                    clear_legacy=True,
+                    line_width_m=0.0005,
+                    rgba_line=(0.7, 0.7, 0.7, 0.4),
+                    round_style="none",
+                )
+                if getattr(ma, "markers", None) and len(ma.markers) > 0:
+                    self.ros.spray_set_executed(stored_markers=ma)
+        except Exception as e:
+            _LOG.warning("RecipePanel: publish executed stored failed: %s", e)
 
     def _update_infobox_from_recipe(self, recipe: Recipe) -> None:
         pts = None
