@@ -113,7 +113,14 @@ class ProcessPanel(QWidget):
         self._recipe_key: Optional[str] = None
         self._recipe: Optional[Recipe] = None
 
+        # Robot readiness policy:
+        #   - _robot_initialized tracks ROS robot initialized state
+        #   - _require_reinit gates "ready" after Stop was pressed; must press Init again
+        #   - _robot_ready is derived from both
+        self._robot_initialized: bool = False
+        self._require_reinit: bool = False
         self._robot_ready: bool = False
+
         self._process_active: bool = False
         self._init_active: bool = False
         self._active_mode: str = ""
@@ -220,6 +227,13 @@ class ProcessPanel(QWidget):
 
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
+        # STRICT policy requested:
+        #   - Stop always enabled
+        #   - Pressing Stop forces "re-init required" before starting any statemachine again
+        #     (even if robot still reports initialized via ROS).
+        self._require_reinit = True
+        self._recompute_robot_ready()
+
         if self._process_thread is not None:
             self._log("Stop: request_stop() -> ProcessThread")
             self._process_thread.request_stop()
@@ -227,6 +241,10 @@ class ProcessPanel(QWidget):
         if self._init_thread is not None and self._init_thread.isRunning():
             self._log("Stop: request_stop() -> RobotInitThread")
             self._init_thread.request_stop()
+
+        # UI hint: init is now considered invalid until user presses Init again.
+        if not self._init_active:
+            self.lblInit.setText("Init: – (required)")
 
         self._update_buttons()
 
@@ -250,8 +268,14 @@ class ProcessPanel(QWidget):
         can_click = (not running) and (not init_running)
 
         self.btnInit.setEnabled(can_click)
-        self.btnStop.setEnabled(bool(running or init_running))
 
+        # IMPORTANT: Stop button must NEVER be disabled.
+        self.btnStop.setEnabled(True)
+
+        # Validate/Optimize/Execute require:
+        #   - not running/not init_running
+        #   - recipe present
+        #   - robot_ready (initialized AND not require_reinit)
         self.btnValidate.setEnabled(can_click and has_recipe and self._robot_ready)
         self.btnOptimize.setEnabled(can_click and has_recipe and self._robot_ready)
         self.btnExecute.setEnabled(can_click and has_recipe and self._robot_ready and self._plc_execute_available())
@@ -289,21 +313,20 @@ class ProcessPanel(QWidget):
         sig.jointsChanged.connect(self._on_joints)
 
     def _refresh_robot_ready_initial(self) -> None:
-        # STRICT: if RosBridge exposes current init state via robot (best-effort read),
-        # we seed _robot_ready so buttons behave correctly at startup.
         rb = getattr(self.ros, "robot", None)
         if rb is None:
             return
         try:
-            # Common pattern: rb.initialized bool, else keep False
             cur = getattr(rb, "initialized", None)
             if cur is not None:
-                self._set_robot_ready(bool(cur))
+                self._robot_initialized = bool(cur)
+                self._recompute_robot_ready()
         except Exception:
             pass
 
-    def _set_robot_ready(self, v: bool) -> None:
-        v = bool(v)
+    def _recompute_robot_ready(self) -> None:
+        # Effective readiness is gated by "require re-init" after Stop.
+        v = bool(self._robot_initialized) and (not bool(self._require_reinit))
         if self._robot_ready == v:
             return
         self._robot_ready = v
@@ -312,8 +335,9 @@ class ProcessPanel(QWidget):
 
     @QtCore.pyqtSlot(bool)
     def _on_robot_initialized_changed(self, v: bool) -> None:
-        # Robot readiness is tied to actual robot initialized state.
-        self._set_robot_ready(bool(v))
+        # Track raw init state, but effective readiness is gated by _require_reinit.
+        self._robot_initialized = bool(v)
+        self._recompute_robot_ready()
 
     @QtCore.pyqtSlot(object)
     def _on_joints(self, js) -> None:
@@ -356,8 +380,8 @@ class ProcessPanel(QWidget):
         self.lblInit.setText("Init: START")
         self._log("=== Robot-Init gestartet ===")
 
-        # Do not force _robot_ready False here; we let ros.initializedChanged drive it.
-        # But we can pessimistically disable process buttons while init is active.
+        # While init is running, processes are disabled via _init_active.
+        # Do NOT clear _require_reinit here; only an OK finish clears the gate.
         self._update_buttons()
 
         self._init_thread.startSignal.emit()
@@ -366,12 +390,22 @@ class ProcessPanel(QWidget):
         self._init_active = False
         self.lblInit.setText("Init: OK")
         self._log("=== Robot-Init erfolgreich abgeschlossen ===")
+
+        # IMPORTANT: After Stop, a successful Init is required to re-enable processes.
+        self._require_reinit = False
+        self._recompute_robot_ready()
+
         self._update_buttons()
 
     def _on_init_finished_err(self, msg: str) -> None:
         self._init_active = False
         self.lblInit.setText("Init: ERROR")
         self._log(f"=== Robot-Init Fehler: {msg} ===")
+
+        # Init failed -> still require re-init.
+        self._require_reinit = True
+        self._recompute_robot_ready()
+
         self._update_buttons()
 
     # ------------------------------------------------------------------
@@ -412,7 +446,9 @@ class ProcessPanel(QWidget):
         if not base_dir:
             return None
 
-        uri = str(getattr(self.ctx, "mounts_yaml_path", "") or "").strip()
+        # STRICT: mounts path comes from SSoT (startup.yaml -> ctx.ros.substrate_mounts_file).
+        ros_cfg = getattr(self.ctx, "ros", None)
+        uri = str(getattr(ros_cfg, "substrate_mounts_file", "") or "").strip() if ros_cfg is not None else ""
         if not uri:
             return None
 
@@ -434,6 +470,12 @@ class ProcessPanel(QWidget):
         if not self._recipe_key:
             QMessageBox.warning(self, "Process", "Kein Rezept geladen.")
             return
+
+        # IMPORTANT: Stop forces re-init gate.
+        if self._require_reinit:
+            QMessageBox.warning(self, "Process", "Nach STOP muss zuerst wieder Init ausgeführt werden.")
+            return
+
         if not self._robot_ready:
             QMessageBox.warning(self, "Process", "Robot nicht initialisiert / nicht ready.")
             return

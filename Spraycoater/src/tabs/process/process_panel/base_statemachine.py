@@ -97,6 +97,7 @@ class BaseProcessStatemachine(QtCore.QObject):
 
         self._stop_requested = False
         self._stopped = False
+        self._stop_emitted = False  # STRICT: ensure we terminate exactly once on Stop
         self._error_msg: Optional[str] = None
 
         self._machine: Optional[QStateMachine] = None
@@ -496,6 +497,8 @@ class BaseProcessStatemachine(QtCore.QObject):
         return {"version": 1, "segments": segments}
 
     def _signal_error(self, msg: str) -> None:
+        if self._error_msg:
+            return
         self._error_msg = msg
         _LOG.error("Statemachine Error: %s", msg)
         QtCore.QTimer.singleShot(0, self._sig_error.emit)
@@ -529,21 +532,45 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def start(self) -> None:
+        # STRICT: reset stop guards for clean restarts
         self._stop_requested = False
+        self._stopped = False
+        self._stop_emitted = False
         self._error_msg = None
+
         if not self._prepare_run():
             self.notifyError.emit(self._error_msg or "Prepare failed")
             return
+
         self._machine = self._build_machine()
         self._machine.start()
 
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
+        # STRICT: idempotent cancel -> route through existing error path so ProcessThread always gets an end-signal
+        if self._stop_requested:
+            return
+
         self._stop_requested = True
+
         try:
             self._ros.moveit_stop()
         except Exception:
             pass
+
+        # Ensure the state machine transitions to the error final state and emits notifyError exactly once.
+        if not self._stop_emitted:
+            self._stop_emitted = True
+            if not self._error_msg:
+                self._error_msg = "Gestoppt"
+
+            # If machine not started yet, directly emit notifyError + cleanup to avoid deadlocks.
+            if self._machine is None:
+                self.notifyError.emit(self._error_msg)
+                self._cleanup()
+                return
+
+            QtCore.QTimer.singleShot(0, self._sig_error.emit)
 
     # ---------------- Hooks for Subclasses ----------------
 

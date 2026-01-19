@@ -452,7 +452,9 @@ class RunResult:
             f_ex = (ex_tcp.get("frame") if isinstance(ex_tcp, dict) else "") or ""
             frame_txt = f" frame(planned={f_pl or 'n/a'}, executed={f_ex or 'n/a'})"
             lines.append("")
-            lines.append(f"tcp: planned={_count_tcp_global(pl_tcp)} poses | executed={_count_tcp_global(ex_tcp)} poses |{frame_txt}")
+            lines.append(
+                f"tcp: planned={_count_tcp_global(pl_tcp)} poses | executed={_count_tcp_global(ex_tcp)} poses |{frame_txt}"
+            )
 
         if self.fk_meta:
             ee = self.fk_meta.get("ee_link") or ""
@@ -572,6 +574,7 @@ class RunResult:
         mounts_yaml_path: Optional[str] = None,
     ) -> None:
         from model.spray_paths.traj_fk_builder import TrajFkBuilder, TrajFkConfig
+
         urdf_xml = str(urdf_xml or "")
         srdf_xml = str(srdf_xml or "")
         if not urdf_xml.strip() or not srdf_xml.strip():
@@ -596,14 +599,14 @@ class RunResult:
         if not seg_ids:
             raise ValueError("RunResult.postprocess_from_urdf_srdf: segment_order ist leer (seg_ids).")
 
-        # Build TCP YAML with segments + slices for ALL segments in segment_order.
+        # Build TCP YAML with per-segment isolation for ALL segments in segment_order.
+        # NOTE: TrajFkBuilder is STRICT and does NOT support boundary de-duplication.
         planned_tcp = TrajFkBuilder.build_tcp_draft_yaml(
             planned_traj,
             robot_model=robot_model,
             cfg=cfg,
             segment_to_side=segment_to_side,
             default_side=str(default_side or "top"),
-            drop_duplicate_boundary=True,
             frame_id=base_frame,
             include_segments=seg_ids,
             require_all_segments=True,
@@ -615,7 +618,6 @@ class RunResult:
             cfg=cfg,
             segment_to_side=segment_to_side,
             default_side=str(default_side or "top"),
-            drop_duplicate_boundary=True,
             frame_id=base_frame,
             include_segments=seg_ids,
             require_all_segments=True,
@@ -649,8 +651,16 @@ class RunResult:
                 robot_yaml_path=str(robot_yaml_path),
                 mounts_yaml_path=str(mounts_yaml_path),
             )
-            planned_tcp = TrajFkBuilder.transform_draft_yaml(planned_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate")
-            executed_tcp = TrajFkBuilder.transform_draft_yaml(executed_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate")
+            planned_tcp = TrajFkBuilder.transform_draft_yaml(
+                planned_tcp,
+                T_to_from_mm=T_substrate_robot_mount,
+                out_frame="substrate",
+            )
+            executed_tcp = TrajFkBuilder.transform_draft_yaml(
+                executed_tcp,
+                T_to_from_mm=T_substrate_robot_mount,
+                out_frame="substrate",
+            )
 
         self.planned_run["tcp"] = _dict(planned_tcp)
         self.executed_run["tcp"] = _dict(executed_tcp)

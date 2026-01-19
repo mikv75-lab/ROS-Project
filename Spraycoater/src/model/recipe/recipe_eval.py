@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple, List
+from typing import Any, Dict, Optional, Tuple, List, Sequence
 
 import numpy as np
 
@@ -22,6 +22,7 @@ class EvalWeights:
     w_p95: float = 0.40
     w_max: float = 0.20
 
+
 @dataclass
 class EvalResult:
     score: float = 0.0
@@ -35,18 +36,23 @@ class EvalResult:
             "details": dict(self.details or {}),
         }
 
+
 # ============================================================
-# Evaluator (TCP vs Draft; MOVE_RECIPE segment only)
+# Evaluator (TCP vs Draft; prefer MOVE_RECIPE segment)
 # ============================================================
 
 class RecipeEvaluator:
     """
     Evaluates geometric accuracy between a Reference (Draft) and a Test Path (TCP).
-    
-    Refactored to use strict 'Draft' and 'Recipe' objects.
+
+    STRICT:
+      - REQUIRED_FRAME: substrate
+      - Prefer segment isolation for MOVE_RECIPE if tcp YAML provides segments[seg]['sides']
+      - Otherwise fall back to global sides
     """
 
     REQUIRED_FRAME = "substrate"
+    DEFAULT_SEGMENT = "MOVE_RECIPE"
 
     def __init__(
         self,
@@ -57,7 +63,83 @@ class RecipeEvaluator:
     ) -> None:
         self.weights = weights or EvalWeights()
         self.clamp_mean, self.clamp_p95, self.clamp_max = [float(x) for x in clamp_mm]
-        self.tcp_resample_n = int(max(50, tcp_resample_n))
+        self.tcp_resample_n = int(max(50, int(tcp_resample_n)))
+
+    # ============================================================
+    # Helpers
+    # ============================================================
+
+    @staticmethod
+    def _as_str(v: Any) -> str:
+        return str(v or "").strip()
+
+    def _pick_segment(self, segment_order: Optional[Sequence[str]] = None) -> str:
+        if segment_order:
+            segs = [self._as_str(s) for s in segment_order if self._as_str(s)]
+            if self.DEFAULT_SEGMENT in segs:
+                return self.DEFAULT_SEGMENT
+        return self.DEFAULT_SEGMENT
+
+    def _require_frame(self, frame: str, *, who: str) -> None:
+        fr = self._as_str(frame)
+        if fr and fr != self.REQUIRED_FRAME:
+            raise ValueError(f"{who} frame mismatch: {fr!r} != {self.REQUIRED_FRAME!r}")
+
+    def _draft_from_tcp_yaml_for_segment(
+        self,
+        tcp_doc: Dict[str, Any],
+        *,
+        seg_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Returns a YAML dict shaped like Draft.from_yaml_dict expects:
+          {"frame": ..., "sides": {...}}
+        Prefer: tcp_doc["segments"][seg_id]["sides"]
+        Fallback: tcp_doc["sides"]
+        """
+        if not isinstance(tcp_doc, dict):
+            return {}
+
+        frame = self._as_str(tcp_doc.get("frame") or "")
+        if frame:
+            self._require_frame(frame, who="tcp")
+
+        segs = tcp_doc.get("segments")
+        if isinstance(segs, dict):
+            seg = segs.get(seg_id)
+            if isinstance(seg, dict):
+                sides = seg.get("sides")
+                if isinstance(sides, dict) and sides:
+                    seg_frame = self._as_str(seg.get("frame") or frame or self.REQUIRED_FRAME)
+                    if seg_frame:
+                        self._require_frame(seg_frame, who=f"tcp.segments[{seg_id}]")
+                    return {"frame": seg_frame or self.REQUIRED_FRAME, "sides": sides}
+
+        sides = tcp_doc.get("sides")
+        if isinstance(sides, dict) and sides:
+            return {"frame": frame or self.REQUIRED_FRAME, "sides": sides}
+
+        return {}
+
+    def _draft_from_recipe_draft(self, recipe: Recipe) -> Draft:
+        d = getattr(recipe, "draft", None)
+        if d is None:
+            raise ValueError("no_draft")
+        # recipe.draft is already Draft in your architecture
+        if isinstance(d, Draft):
+            fr = self._as_str(getattr(d, "frame", "") or "")
+            if fr:
+                self._require_frame(fr, who="recipe.draft")
+            return d
+
+        # last-resort compat if recipe.draft became dict somehow
+        if isinstance(d, dict):
+            fr = self._as_str(d.get("frame") or "")
+            if fr:
+                self._require_frame(fr, who="recipe.draft(dict)")
+            return Draft.from_yaml_dict(d)
+
+        raise ValueError(f"recipe.draft invalid type: {type(d).__name__}")
 
     # ============================================================
     # Math Helpers (Quaternions & SLERP)
@@ -65,7 +147,6 @@ class RecipeEvaluator:
 
     @staticmethod
     def _score_from_error(err_val: float, target_val: float) -> float:
-        """Score in [0..100], exponentially decaying."""
         err = max(0.0, float(err_val))
         target = max(1e-9, float(target_val))
         x = err / target
@@ -75,8 +156,10 @@ class RecipeEvaluator:
     @staticmethod
     def _quat_angle_deg(q1: np.ndarray, q2: np.ndarray) -> float:
         n1, n2 = np.linalg.norm(q1), np.linalg.norm(q2)
-        if n1 > 1e-9: q1 = q1 / n1
-        if n2 > 1e-9: q2 = q2 / n2
+        if n1 > 1e-9:
+            q1 = q1 / n1
+        if n2 > 1e-9:
+            q2 = q2 / n2
         dot = np.abs(np.dot(q1, q2))
         dot = min(1.0, max(-1.0, dot))
         return float(np.degrees(2.0 * np.arccos(dot)))
@@ -92,7 +175,7 @@ class RecipeEvaluator:
         if dot > 0.9995:
             res = (1.0 - t) * q0 + t * q1
             return res / np.linalg.norm(res)
-        
+
         theta_0 = np.arccos(dot)
         theta = theta_0 * t
         s0 = np.cos(theta) - dot * np.sin(theta) / np.sin(theta_0)
@@ -101,52 +184,41 @@ class RecipeEvaluator:
         return res / np.linalg.norm(res)
 
     # ============================================================
-    # Extraction & Trimming
+    # Extraction & Resampling
     # ============================================================
 
     def _extract_arrays(self, poses: List[PoseQuat]) -> Tuple[np.ndarray, np.ndarray]:
         if not poses:
             return np.zeros((0, 3)), np.zeros((0, 4))
-        
-        # Fast conversion using list comprehension + numpy
         pts = np.array([[p.x, p.y, p.z] for p in poses], dtype=float)
         quats = np.array([[p.qx, p.qy, p.qz, p.qw] for p in poses], dtype=float)
         return pts, quats
 
-    def _trim_test_to_ref_span(self, ref_pts: np.ndarray, test_pts: np.ndarray, test_quats: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Trims TCP polyline (test) to match Draft start/end (ref) based on Euclidean distance."""
+    def _trim_test_to_ref_span(
+        self,
+        ref_pts: np.ndarray,
+        test_pts: np.ndarray,
+        test_quats: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
         if len(ref_pts) < 2 or len(test_pts) < 2:
             return test_pts, test_quats
 
         a, b = ref_pts[0], ref_pts[-1]
-        
-        # Distance to start (a) and end (b)
         d_start = np.linalg.norm(test_pts - a, axis=1)
         d_end = np.linalg.norm(test_pts - b, axis=1)
 
-        # Find closest indices in test path
         i_start = int(np.argmin(d_start))
-        
-        # Search for end index AFTER start index (forward pass)
         i_end = i_start + int(np.argmin(d_end[i_start:]))
 
-        # Check reverse direction case (if robot ran path backwards)
-        i_end_rev = int(np.argmin(d_start)) # closest to 'a'
-        i_start_rev = int(np.argmin(d_end)) # closest to 'b'
-        
-        # Heuristic: pick the one covering more points or better matching length
-        # Simple: assume forward. If indices are same, return whole or nothing.
-        
         if i_end > i_start:
-            return test_pts[i_start : i_end+1], test_quats[i_start : i_end+1]
-        
+            return test_pts[i_start : i_end + 1], test_quats[i_start : i_end + 1]
+
         return test_pts, test_quats
 
     def _resample_pose_mm_quat(self, pts: np.ndarray, quats: np.ndarray, n: int) -> Tuple[np.ndarray, np.ndarray]:
-        """Synchronous LERP (pos) + SLERP (rot) resampling by arc length."""
         if len(pts) < 2:
             return pts, quats
-            
+
         d = np.linalg.norm(np.diff(pts, axis=0), axis=1)
         s = np.concatenate([[0.0], np.cumsum(d)])
         total_len = float(s[-1])
@@ -156,77 +228,76 @@ class RecipeEvaluator:
         target_s = np.linspace(0.0, total_len, n)
         out_pts = np.zeros((n, 3))
         out_quats = np.zeros((n, 4))
-        
-        # Vectorized interpolation for positions (numpy.interp handles element-wise)
+
         for dim in range(3):
             out_pts[:, dim] = np.interp(target_s, s, pts[:, dim])
 
-        # Rotation requires stepwise SLERP (hard to vectorize efficiently without libs)
-        # Using a simplified fast-path for small N
         seg_idx = 0
         max_idx = len(s) - 2
-        
         out_quats[0] = quats[0]
-        
+
         for i in range(1, n):
             val = target_s[i]
             while seg_idx < max_idx and s[seg_idx + 1] < val:
                 seg_idx += 1
-            
             len_seg = s[seg_idx + 1] - s[seg_idx]
             t = (val - s[seg_idx]) / len_seg if len_seg > 1e-9 else 0.0
             t = max(0.0, min(1.0, t))
-            
             out_quats[i] = self._slerp(quats[seg_idx], quats[seg_idx + 1], t)
 
         return out_pts, out_quats
 
     # ============================================================
-    # Core Logic
+    # Core
     # ============================================================
 
     def evaluate_side(
-        self, 
-        *, 
-        ref_poses: List[PoseQuat], 
-        test_poses: List[PoseQuat], 
-        label: str
+        self,
+        *,
+        ref_poses: List[PoseQuat],
+        test_poses: List[PoseQuat],
+        label: str,
     ) -> EvalResult:
         ref_p, ref_q = self._extract_arrays(ref_poses)
         test_p, test_q = self._extract_arrays(test_poses)
-        
+
         metrics = {"label": label, "num_ref": len(ref_p), "num_test_raw": len(test_p)}
         if len(ref_p) < 2 or len(test_p) < 2:
             return EvalResult(score=0.0, metrics=metrics, details={"reason": "not_enough_points"})
 
-        # Trim & Resample
         test_p_trim, test_q_trim = self._trim_test_to_ref_span(ref_p, test_p, test_q)
         metrics["num_test_trim"] = len(test_p_trim)
 
         ref_rp, ref_rq = self._resample_pose_mm_quat(ref_p, ref_q, self.tcp_resample_n)
         test_rp, test_rq = self._resample_pose_mm_quat(test_p_trim, test_q_trim, self.tcp_resample_n)
 
-        # Error Metrics
         n = len(ref_rp)
         err_mm = np.linalg.norm(ref_rp - test_rp, axis=1)
-        mean_mm, p95_mm, max_mm = float(np.mean(err_mm)), float(np.percentile(err_mm, 95)), float(np.max(err_mm))
+        mean_mm = float(np.mean(err_mm))
+        p95_mm = float(np.percentile(err_mm, 95))
+        max_mm = float(np.max(err_mm))
 
         angle_errs = [self._quat_angle_deg(ref_rq[i], test_rq[i]) for i in range(n)]
-        mean_deg, max_deg = float(np.mean(angle_errs)), float(np.max(angle_errs))
+        mean_deg = float(np.mean(angle_errs))
+        max_deg = float(np.max(angle_errs))
 
-        metrics.update({
-            "mean_l2_mm": mean_mm, "p95_l2_mm": p95_mm, "max_l2_mm": max_mm,
-            "mean_angle_deg": mean_deg, "max_angle_deg": max_deg
-        })
+        metrics.update(
+            {
+                "mean_l2_mm": mean_mm,
+                "p95_l2_mm": p95_mm,
+                "max_l2_mm": max_mm,
+                "mean_angle_deg": mean_deg,
+                "max_angle_deg": max_deg,
+            }
+        )
 
-        # Score Calculation
         s_mean = self._score_from_error(mean_mm, self.clamp_mean)
         s_p95 = self._score_from_error(p95_mm, self.clamp_p95)
         s_max = self._score_from_error(max_mm, self.clamp_max)
-        
+
         score_pos = (self.weights.w_mean * s_mean) + (self.weights.w_p95 * s_p95) + (self.weights.w_max * s_max)
         s_rot = self._score_from_error(mean_deg, target_val=3.0)
-        
+
         total_score = (0.7 * score_pos) + (0.3 * s_rot)
         return EvalResult(score=total_score, metrics=metrics)
 
@@ -235,64 +306,89 @@ class RecipeEvaluator:
     # ============================================================
 
     def evaluate_tcp_against_draft(
-        self, 
-        *, 
-        recipe: Recipe, 
-        planned_tcp: Optional[Draft | Dict], 
-        executed_tcp: Optional[Draft | Dict]
+        self,
+        *,
+        recipe: Recipe,
+        planned_tcp: Optional[Draft | Dict[str, Any]],
+        executed_tcp: Optional[Draft | Dict[str, Any]],
+        segment_order: Optional[Sequence[str]] = None,
+        domain: str = "tcp",
     ) -> Dict[str, Any]:
         """
-        Main Entry Point.
-        Accepts strict Recipe/Draft objects (or dicts for compat/safety).
-        """
-        # 1. Resolve objects
-        if isinstance(planned_tcp, dict): planned_tcp = Draft.from_yaml_dict(planned_tcp)
-        if isinstance(executed_tcp, dict): executed_tcp = Draft.from_yaml_dict(executed_tcp)
-        
-        if not recipe.draft:
-            return {"valid": False, "invalid_reason": "no_draft"}
+        Entry point used by RunResult.postprocess_from_urdf_srdf().
 
-        sides = list(recipe.draft.sides.keys())
+        IMPORTANT:
+          - planned_tcp/executed_tcp are TCP YAML dicts from TrajFkBuilder (with segments)
+          - recipe.draft is Draft (reference)
+        """
+        if recipe is None:
+            return {"valid": False, "invalid_reason": "recipe_none"}
+
+        seg_id = self._pick_segment(segment_order)
+
+        # Reference draft (recipe)
+        try:
+            ref_draft = self._draft_from_recipe_draft(recipe)
+        except Exception as e:
+            return {"valid": False, "invalid_reason": f"no_draft: {e}"}
+
+        sides = list(getattr(ref_draft, "sides", {}).keys())
         if not sides:
             return {"valid": False, "invalid_reason": "draft_empty"}
 
-        # 2. Helper to run evaluation for one mode (planned/executed)
+        # Normalize TCP objects: accept Draft or dict, but if dict -> select MOVE_RECIPE segment
+        def to_tcp_draft(obj: Optional[Draft | Dict[str, Any]], *, name: str) -> Optional[Draft]:
+            if obj is None:
+                return None
+            if isinstance(obj, Draft):
+                fr = self._as_str(getattr(obj, "frame", "") or "")
+                if fr:
+                    self._require_frame(fr, who=name)
+                return obj
+            if isinstance(obj, dict):
+                dd = self._draft_from_tcp_yaml_for_segment(obj, seg_id=seg_id)
+                if not dd:
+                    return None
+                return Draft.from_yaml_dict(dd)
+            return None
+
+        pl = to_tcp_draft(planned_tcp, name="planned_tcp")
+        ex = to_tcp_draft(executed_tcp, name="executed_tcp")
+
+        # Eval per mode
         def run_mode(tcp_draft: Optional[Draft], mode_name: str) -> Dict[str, Any]:
             if not tcp_draft:
                 return {"valid": False, "invalid_reason": "missing_tcp"}
-            
-            # Simple aggregation: arithmetic mean of scores over all sides
-            side_results = {}
-            scores = []
-            
+
+            side_results: Dict[str, Any] = {}
+            scores: List[float] = []
+
             for side in sides:
-                ref = recipe.draft.poses_quat(side)
+                ref = ref_draft.poses_quat(side)
                 test = tcp_draft.poses_quat(side)
-                
-                res = self.evaluate_side(ref_poses=ref, test_poses=test, label=f"{mode_name}/{side}")
+                res = self.evaluate_side(ref_poses=ref, test_poses=test, label=f"{mode_name}/{seg_id}/{side}")
                 side_results[side] = res.to_dict()
                 scores.append(res.score)
-            
+
             avg_score = float(np.mean(scores)) if scores else 0.0
             return {
                 "valid": True,
                 "score": avg_score,
+                "segment": seg_id,
                 "by_side": side_results,
-                # Flatten first side metrics for simple table display (assuming single side mostly)
-                "metrics": side_results.get(sides[0], {}).get("metrics", {})
+                "metrics": side_results.get(sides[0], {}).get("metrics", {}),
             }
 
-        p_eval = run_mode(planned_tcp, "planned")
-        e_eval = run_mode(executed_tcp, "executed")
+        p_eval = run_mode(pl, "planned")
+        e_eval = run_mode(ex, "executed")
 
-        # 3. Threshold Check
-        thr = float(recipe.parameters.get("eval_threshold", 90.0))
-        valid = (p_eval.get("score", 0) >= thr) and (e_eval.get("score", 0) >= thr)
+        thr = float(getattr(recipe, "parameters", {}).get("eval_threshold", 90.0))
+        valid = (p_eval.get("score", 0.0) >= thr) and (e_eval.get("score", 0.0) >= thr)
 
-        # 4. Build Table
-        def _fmt(x): return f"{x:.3f}" if isinstance(x, (float, int)) else "-"
+        def _fmt(x: Any) -> str:
+            return f"{x:.3f}" if isinstance(x, (float, int)) else "-"
+
         pm, em = p_eval.get("metrics", {}), e_eval.get("metrics", {})
-        
         table = [
             {"metric": "Score", "planned": _fmt(p_eval.get("score")), "executed": _fmt(e_eval.get("score"))},
             {"metric": "Ø Pos (mm)", "planned": _fmt(pm.get("mean_l2_mm")), "executed": _fmt(em.get("mean_l2_mm"))},
@@ -301,15 +397,26 @@ class RecipeEvaluator:
         ]
 
         return {
-            "version": 3,
-            "valid": valid,
-            "threshold": thr,
+            "version": 4,
+            "domain": str(domain or "tcp"),
+            "segment": seg_id,
+            "valid": bool(valid),
+            "threshold": float(thr),
             "comparison": table,
             "planned": p_eval,
             "executed": e_eval,
-            "invalid_reason": "" if valid else "score_below_threshold"
+            "invalid_reason": "" if valid else "score_below_threshold",
         }
 
-    # Compat API for old callers
+    # Compat API for callers (RunResult uses evaluate_runs with extra kwargs)
     def evaluate_runs(self, **kwargs) -> Dict[str, Any]:
-        return self.evaluate_tcp_against_draft(**kwargs)
+        """
+        Accepts extra kwargs safely (segment_order, domain, etc.).
+        """
+        return self.evaluate_tcp_against_draft(
+            recipe=kwargs.get("recipe"),
+            planned_tcp=kwargs.get("planned_tcp"),
+            executed_tcp=kwargs.get("executed_tcp"),
+            segment_order=kwargs.get("segment_order"),
+            domain=kwargs.get("domain", "tcp"),
+        )

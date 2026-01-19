@@ -40,6 +40,8 @@ class ProcessThread(QtCore.QObject):
     notifyFinished = QtCore.pyqtSignal(object)
     notifyError = QtCore.pyqtSignal(str)
 
+    _STOP_FORCE_QUIT_MS = 500  # safety net if worker never emits after stop
+
     def __init__(
         self,
         *,
@@ -96,26 +98,29 @@ class ProcessThread(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
+        # STRICT: request_stop must be queued into worker thread affinity.
         self._stop_requested = True
+
         w = self._worker
         if w is not None and hasattr(w, "request_stop"):
             try:
-                w.request_stop()  # type: ignore[attr-defined]
-                return
+                QtCore.QMetaObject.invokeMethod(
+                    w,
+                    "request_stop",
+                    QtCore.Qt.ConnectionType.QueuedConnection,
+                )
             except Exception as e:
-                self.logMessage.emit(f"Stop: worker.request_stop failed: {e!r}")
+                self.logMessage.emit(f"Stop: invokeMethod(request_stop) failed: {e!r}")
 
-        if self._thread is not None:
-            try:
-                self._thread.quit()
-            except Exception:
-                pass
+        # Safety net: if worker does not emit notifyError/notifyFinished, ensure thread can unwind.
+        QtCore.QTimer.singleShot(self._STOP_FORCE_QUIT_MS, self._force_quit_after_stop)
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
     def _create_worker(self) -> QtCore.QObject:
+        # Seed RunResult with robot description (strict: downstream FK/postprocess needs it)
         rr = RunResult(urdf_xml=self._urdf_xml, srdf_xml=self._srdf_xml)
 
         side = "top"
@@ -158,6 +163,7 @@ class ProcessThread(QtCore.QObject):
         raise RuntimeError(f"ProcessThread: unknown mode={mode!r}")
 
     def _wire_worker_signals(self, w: QtCore.QObject) -> None:
+        # STRICT: wire only the canonical signals used across our statemachines.
         if hasattr(w, "logMessage"):
             try:
                 w.logMessage.connect(self.logMessage.emit)  # type: ignore[attr-defined]
@@ -182,35 +188,36 @@ class ProcessThread(QtCore.QObject):
             except Exception:
                 pass
 
-        if hasattr(w, "finished"):
-            try:
-                w.finished.connect(self._on_worker_finished)  # type: ignore[attr-defined]
-            except Exception:
-                pass
+    def _start_worker_queued(self, w: QtCore.QObject) -> None:
+        """
+        Start worker in its own thread context.
 
-        if hasattr(w, "error"):
-            try:
-                w.error.connect(self._on_worker_error)  # type: ignore[attr-defined]
-            except Exception:
-                pass
-
-    def _start_worker(self, w: QtCore.QObject) -> None:
+        STRICT contract:
+          - prefer worker.start() via queued invokeMethod
+          - else accept worker.startSignal.emit() (signal emission is thread-safe; receivers run queued)
+          - no direct run() call (would execute in caller thread)
+        """
         fn = getattr(w, "start", None)
         if callable(fn):
-            fn()
-            return
+            try:
+                QtCore.QMetaObject.invokeMethod(
+                    w,
+                    "start",
+                    QtCore.Qt.ConnectionType.QueuedConnection,
+                )
+                return
+            except Exception as e:
+                raise RuntimeError(f"ProcessThread: invokeMethod(worker.start) failed: {e}") from e
 
         sig = getattr(w, "startSignal", None)
         if sig is not None and hasattr(sig, "emit"):
-            sig.emit()
-            return
+            try:
+                sig.emit()
+                return
+            except Exception as e:
+                raise RuntimeError(f"ProcessThread: worker.startSignal.emit() failed: {e}") from e
 
-        fn = getattr(w, "run", None)
-        if callable(fn):
-            fn()
-            return
-
-        raise RuntimeError("ProcessThread: worker has no start()/startSignal/run()")
+        raise RuntimeError("ProcessThread: worker has no start() and no startSignal")
 
     # ------------------------------------------------------------------
     # Slots
@@ -239,38 +246,18 @@ class ProcessThread(QtCore.QObject):
 
         self._wire_worker_signals(w)
 
-        # Start in worker thread context (queued) to avoid affinity/timing issues.
         try:
-            QtCore.QMetaObject.invokeMethod(
-                w,
-                "start",
-                QtCore.Qt.ConnectionType.QueuedConnection,
-            )
-        except Exception:
-            try:
-                QtCore.QTimer.singleShot(0, lambda: self._safe_start_worker())
-            except Exception:
-                self._safe_start_worker()
-
-    def _safe_start_worker(self) -> None:
-        w = self._worker
-        if w is None:
-            return
-        if self._stop_requested:
-            self._shutdown_thread()
-            return
-        try:
-            self._start_worker(w)
+            self._start_worker_queued(w)
         except Exception as e:
-            self._on_worker_error(f"Process start failed: {e}")
+            self.notifyError.emit(str(e))
+            self._shutdown_thread()
 
-    @QtCore.pyqtSlot(object)
-    def _on_worker_finished(self, payload: object) -> None:
-        self.notifyFinished.emit(payload)
+    def _on_worker_finished(self, payload: object = None) -> None:
+        # payload is expected to be RunResult.to_process_payload(), but tolerate None.
+        self.notifyFinished.emit(payload if payload is not None else {})
         self._shutdown_thread()
 
-    @QtCore.pyqtSlot(str)
-    def _on_worker_error(self, msg: str) -> None:
+    def _on_worker_error(self, msg: object = "") -> None:
         self.notifyError.emit(str(msg or "Unknown error"))
         self._shutdown_thread()
 
@@ -278,6 +265,27 @@ class ProcessThread(QtCore.QObject):
     def _on_thread_finished(self) -> None:
         self._thread = None
         self._worker = None
+
+    # ------------------------------------------------------------------
+    # Stop safety net
+    # ------------------------------------------------------------------
+
+    @QtCore.pyqtSlot()
+    def _force_quit_after_stop(self) -> None:
+        # If stop was requested but the worker never emitted an end-signal, unwind the thread.
+        if not self._stop_requested:
+            return
+
+        t = self._thread
+        if t is None:
+            return
+
+        try:
+            if t.isRunning():
+                self.logMessage.emit("Stop: force quitting thread (worker unresponsive)")
+                t.quit()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Shutdown

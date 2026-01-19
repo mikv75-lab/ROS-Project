@@ -40,6 +40,13 @@ class RecipePanel(QWidget):
 
     def __init__(self, *, ctx: Any, repo: Any, ros: Any, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        if ctx is None:
+            raise RuntimeError("RecipePanel: ctx is None (strict)")
+        if repo is None:
+            raise RuntimeError("RecipePanel: repo is None (strict)")
+        if ros is None:
+            raise RuntimeError("RecipePanel: ros is None (strict)")
+
         self.ctx, self.repo, self.ros = ctx, repo, ros
         self._recipe: Optional[Recipe] = None
         self._recipe_key: Optional[str] = None
@@ -141,6 +148,12 @@ class RecipePanel(QWidget):
     # --------------- Recipe binding ----------------
 
     def set_recipe(self, key: str, model: Recipe) -> None:
+        key = str(key or "").strip()
+        if not key:
+            raise ValueError("RecipePanel.set_recipe: empty key (strict)")
+        if model is None:
+            raise ValueError("RecipePanel.set_recipe: model is None (strict)")
+
         self._recipe_key = key
         self._recipe = model
 
@@ -153,7 +166,6 @@ class RecipePanel(QWidget):
         self._refresh_stored_from_disk(key)
 
         self._update_infobox_from_recipe(model)
-
         self.txtNewRun.clear()
 
         # spraypaths on recipe load (compiled + stored ghosts)
@@ -207,32 +219,51 @@ class RecipePanel(QWidget):
         self.txtNewRun.setPlaceholderText(f"Running {mode} for {key}...")
         _LOG.info("RecipePanel: Run started (mode=%s, key=%s)", mode, key)
 
-    @QtCore.pyqtSlot(str, object)
-    def on_run_finished(self, key: str, rr: RunResult) -> None:
-        if not self._recipe:
+    @QtCore.pyqtSlot(str, object, object)
+    def on_run_finished(self, key: str, payload: object, rr_obj: object) -> None:
+        """
+        STRICT: must match ProcessPanel.sig_run_finished(str, object, object).
+
+        ProcessPanel already:
+          - rr = RunResult.from_process_payload(payload)
+          - rr.postprocess(...)
+          - persisted YAML (repo.bundle.paths)
+        RecipePanel responsibilities:
+          - display rr
+          - refresh STORED from disk
+          - republish overlays
+        """
+        key = str(key or "").strip()
+        self.txtNewRun.setPlaceholderText("")
+
+        if not key:
+            self.txtNewRun.setPlainText("Run finished, but key is empty.")
             return
 
+        if not isinstance(rr_obj, RunResult):
+            self.txtNewRun.setPlainText(f"Run finished for {key}, but rr is not RunResult.")
+            _LOG.warning("RecipePanel.on_run_finished: rr_obj invalid type=%s", type(rr_obj).__name__)
+            return
+
+        rr: RunResult = rr_obj
+
+        # Show current run summary
         try:
-            self.txtNewRun.setPlaceholderText("")
-
-            rr.postprocess(
-                recipe=self._recipe,
-                segment_order=("MOVE_PREDISPENSE", "MOVE_RECIPE", "MOVE_RETREAT"),
-                tcp_target_frame="substrate",
-            )
-
-            success = self.repo.save_run_result_if_valid(key, run_result=rr)
-
             self.txtNewRun.setPlainText(rr.format_eval_text())
-
-            if success:
-                _LOG.info("RunResult persistiert (Disk ggf. überschrieben). Refresh STORED aus Disk.")
-                self._refresh_stored_from_disk(key)
-
         except Exception as e:
-            _LOG.exception("Fehler im Post-Processing")
-            self.txtNewRun.setPlainText(f"Post-Processing Error: {e}")
-            QMessageBox.warning(self, "Postprocess Error", str(e))
+            self.txtNewRun.setPlainText(f"Run finished for {key}, but format_eval_text failed: {e}")
+
+        # Refresh disk SSoT + republish stored overlays
+        try:
+            self._refresh_stored_from_disk(key)
+        except Exception as e:
+            _LOG.warning("RecipePanel: refresh stored after run failed: %s", e)
+
+        # Optional: republish NEW overlays immediately from rr TCP docs
+        try:
+            self._republish_newrun_overlays_from_rr(key, rr)
+        except Exception as e:
+            _LOG.warning("RecipePanel: republish newrun overlays failed: %s", e)
 
     @QtCore.pyqtSlot(str, str)
     def on_run_error(self, key: str, message: str) -> None:
@@ -243,42 +274,45 @@ class RecipePanel(QWidget):
     # --- Interne Helfer ---
 
     def _refresh_stored_from_disk(self, key: str) -> None:
+        key = str(key or "").strip()
+        if not key:
+            raise ValueError("_refresh_stored_from_disk: empty key")
+
+        fresh = self.repo.load_for_process(key)
+        self._recipe = fresh
+        self._recipe_key = key
+        self._update_stored_view(fresh)
+
         try:
-            fresh = self.repo.load_for_process(key)
-            self._recipe = fresh
-            self._recipe_key = key
-            self._update_stored_view(fresh)
+            self._republish_spraypaths_for_key(key, fresh)
+        except Exception as e2:
+            _LOG.warning("RecipePanel: spraypath republish after disk refresh failed: %s", e2)
 
-            # after disk refresh, republish ghosts (and compiled if available)
-            try:
-                self._republish_spraypaths_for_key(key, fresh)
-            except Exception as e2:
-                _LOG.warning("RecipePanel: spraypath republish after disk refresh failed: %s", e2)
-
-        except Exception as e:
-            _LOG.exception("Failed to refresh STORED from disk (key=%s)", key)
-            self.txtStored.setPlainText(f"=== STORED EVAL (Disk) ===\nERROR reloading: {e}")
+    def _ros_has(self, name: str) -> bool:
+        return bool(self.ros is not None and hasattr(self.ros, name) and callable(getattr(self.ros, name)))
 
     def _republish_spraypaths_for_key(self, key: str, recipe_model: Recipe) -> None:
         """
-        Republishes spray path layers to RViz when a recipe is loaded/selected in RecipePanel.
+        Republishes spray path layers to RViz:
 
         - Compiled: from current recipe model (draft)
         - Planned/Executed STORED: from disk (repo.load_for_process) as ghost markers
+
+        Bridge remains unchanged; we capability-detect:
+          - prefer ros.spray_set_planned(...stored_markers=...)
+          - else fallback to legacy ros.spray_set_traj(markers=...)
         """
         key = str(key or "").strip()
-        if not key:
-            return
-        if self.ros is None or not getattr(self.ros, "spray", None):
+        if not key or self.ros is None:
             return
 
-        # Clean slate to avoid cross-recipe overlay bleed
-        try:
-            self.ros.spray_clear()
-        except Exception:
-            pass
+        if self._ros_has("spray_clear"):
+            try:
+                self.ros.spray_clear()
+            except Exception:
+                pass
 
-        # 1) Compiled (Draft) from recipe_model
+        # 1) Compiled (Draft)
         try:
             pa, ma = recipe_markers.build_draft_pose_and_markers(
                 recipe_model,
@@ -292,18 +326,15 @@ class RecipePanel(QWidget):
             has_poses = bool(getattr(pa, "poses", None)) and len(pa.poses) > 0
             has_markers = bool(getattr(ma, "markers", None)) and len(ma.markers) > 0
             if has_poses or has_markers:
-                self.ros.spray_set_compiled(poses=pa if has_poses else None, markers=ma if has_markers else None)
+                if self._ros_has("spray_set_compiled"):
+                    self.ros.spray_set_compiled(poses=pa if has_poses else None, markers=ma if has_markers else None)
         except Exception as e:
             _LOG.warning("RecipePanel: publish compiled failed: %s", e)
 
-        # 2) Stored ghost layers from disk SSoT
-        try:
-            recipe_disk = self.repo.load_for_process(key)
-        except Exception as e:
-            _LOG.warning("RecipePanel: load_for_process(%s) for stored spraypaths failed: %s", key, e)
-            return
+        # 2) STORED (Disk) ghosts
+        recipe_disk = self.repo.load_for_process(key)
 
-        # Planned stored -> ghost markers
+        # Planned stored
         try:
             planned_obj = getattr(recipe_disk, "planned_tcp", None)
             if planned_obj:
@@ -318,11 +349,14 @@ class RecipePanel(QWidget):
                     round_style="none",
                 )
                 if getattr(ma, "markers", None) and len(ma.markers) > 0:
-                    self.ros.spray_set_planned(stored_markers=ma)
+                    if self._ros_has("spray_set_planned"):
+                        self.ros.spray_set_planned(stored_markers=ma)
+                    elif self._ros_has("spray_set_traj"):
+                        self.ros.spray_set_traj(markers=ma)
         except Exception as e:
             _LOG.warning("RecipePanel: publish planned stored failed: %s", e)
 
-        # Executed stored -> ghost markers
+        # Executed stored
         try:
             executed_obj = getattr(recipe_disk, "executed_tcp", None)
             if executed_obj:
@@ -337,9 +371,60 @@ class RecipePanel(QWidget):
                     round_style="none",
                 )
                 if getattr(ma, "markers", None) and len(ma.markers) > 0:
-                    self.ros.spray_set_executed(stored_markers=ma)
+                    if self._ros_has("spray_set_executed"):
+                        self.ros.spray_set_executed(stored_markers=ma)
         except Exception as e:
             _LOG.warning("RecipePanel: publish executed stored failed: %s", e)
+
+    def _republish_newrun_overlays_from_rr(self, key: str, rr: RunResult) -> None:
+        """
+        Optional NEW overlays from rr TCP docs (already postprocessed in ProcessPanel).
+        """
+        if self.ros is None:
+            return
+
+        planned_tcp_doc = rr.planned_run.get("tcp") if isinstance(rr.planned_run, dict) else None
+        executed_tcp_doc = rr.executed_run.get("tcp") if isinstance(rr.executed_run, dict) else None
+
+        # Planned NEW
+        try:
+            if isinstance(planned_tcp_doc, dict) and planned_tcp_doc:
+                _, ma = recipe_markers.build_tcp_pose_and_markers(
+                    planned_tcp_doc,
+                    ns_prefix="planned_tcp/new",
+                    mid_start=23000,
+                    default_frame="substrate",
+                    clear_legacy=True,
+                    line_width_m=0.0007,
+                    rgba_line=(0.0, 1.0, 0.0, 0.8),
+                    round_style="none",
+                )
+                if getattr(ma, "markers", None) and len(ma.markers) > 0:
+                    if self._ros_has("spray_set_planned"):
+                        self.ros.spray_set_planned(new_markers=ma)
+                    elif self._ros_has("spray_set_traj"):
+                        self.ros.spray_set_traj(markers=ma)
+        except Exception as e:
+            _LOG.warning("RecipePanel: publish planned newrun failed: %s", e)
+
+        # Executed NEW
+        try:
+            if isinstance(executed_tcp_doc, dict) and executed_tcp_doc:
+                _, ma = recipe_markers.build_tcp_pose_and_markers(
+                    executed_tcp_doc,
+                    ns_prefix="executed_tcp/new",
+                    mid_start=53000,
+                    default_frame="substrate",
+                    clear_legacy=True,
+                    line_width_m=0.0007,
+                    rgba_line=(1.0, 0.0, 0.0, 0.8),
+                    round_style="none",
+                )
+                if getattr(ma, "markers", None) and len(ma.markers) > 0:
+                    if self._ros_has("spray_set_executed"):
+                        self.ros.spray_set_executed(new_markers=ma)
+        except Exception as e:
+            _LOG.warning("RecipePanel: publish executed newrun failed: %s", e)
 
     def _update_infobox_from_recipe(self, recipe: Recipe) -> None:
         pts = None
