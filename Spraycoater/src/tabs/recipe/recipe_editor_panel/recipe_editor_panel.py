@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Optional, Dict, Any
 
-import numpy as np
-
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget,
@@ -19,13 +17,8 @@ from PyQt6.QtWidgets import (
 )
 
 from model.recipe.recipe import Recipe
-from model.spray_paths.path_builder import PathBuilder
 from model.recipe.recipe_store import RecipeStore
 from model.recipe.recipe_repo import RecipeRepo
-
-from model.spray_paths.draft import Draft, PoseQuat, PathSide
-
-from .recipe_editor_content import RecipeEditorContent
 
 
 def _set_policy(
@@ -44,7 +37,6 @@ def _model_valid_save(model: Any) -> bool:
     """
     STRICT Save-Gate (SSoT):
       - ONLY model.info['validSave'] is allowed.
-      - No legacy fallback (valid_save / validSave attributes).
     """
     info = getattr(model, "info", None)
     if isinstance(info, dict) and "validSave" in info:
@@ -53,9 +45,6 @@ def _model_valid_save(model: Any) -> bool:
 
 
 def _ensure_validsave_fields(model: Any) -> None:
-    """
-    Deterministic defaults (not a fallback, just initialization).
-    """
     if not isinstance(getattr(model, "info", None), dict):
         model.info = {}
     if "validSave" not in model.info:
@@ -66,14 +55,9 @@ def _ensure_validsave_fields(model: Any) -> None:
 
 class RecipeEditorPanel(QWidget):
     """
-    Editor (Folder-name based).
-
-    Persistence:
-      <recipes_root_dir>/<recipe_name>/{params.yaml,draft.yaml,planned_traj.yaml,executed_traj.yaml}
-
-    Save policy (STRICT):
-      - Saving is only allowed if model.info['validSave'] == True.
-      - If invalid -> MessageBox "Can not be saved".
+    Save writes:
+      - params.yaml
+      - draft.yaml   (must include predispense+retreat; produced by Update Preview)
     """
 
     updatePreviewRequested = pyqtSignal(object)  # Recipe
@@ -100,10 +84,9 @@ class RecipeEditorPanel(QWidget):
         self._recipes_by_id: Dict[str, Dict[str, Any]] = {}
 
         self._active_model: Optional[Recipe] = None
-        self._active_template_id: str = ""  # template/type from store
-        self._active_name: str = ""         # folder name (persistence key)
+        self._active_template_id: str = ""
+        self._active_name: str = ""
 
-        # ---------------- UI ----------------
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(6)
@@ -127,11 +110,11 @@ class RecipeEditorPanel(QWidget):
         gb_cmd_l.addWidget(self.btn_delete)
         root.addWidget(gb_cmd)
 
+        from .recipe_editor_content import RecipeEditorContent
         self.content = RecipeEditorContent(ctx=self.ctx, store=self.store, parent=self)
         root.addWidget(self.content, 1)
         _set_policy(self.content)
 
-        # ---------------- Signals ----------------
         self.btn_new.clicked.connect(self._on_new_clicked)
         self.btn_load.clicked.connect(self._on_load_clicked)
         self.btn_save.clicked.connect(self._on_save_clicked)
@@ -141,13 +124,12 @@ class RecipeEditorPanel(QWidget):
         if getattr(self.content, "sel_recipe", None) is not None:
             self.content.sel_recipe.currentIndexChanged.connect(self._on_template_select_changed)
 
-        # init
         self._rebuild_recipe_defs()
         self._populate_template_combo()
         self._load_default_into_editor(trigger_preview=True)
 
     # ---------------------------------------------------------
-    # Catalog / Selection (templates)
+    # Catalog / Selection
     # ---------------------------------------------------------
 
     def _rebuild_recipe_defs(self) -> None:
@@ -194,7 +176,7 @@ class RecipeEditorPanel(QWidget):
         return rids[0] if rids else ""
 
     # ---------------------------------------------------------
-    # Helpers (name / id)
+    # Helpers
     # ---------------------------------------------------------
 
     def _current_recipe_name(self) -> str:
@@ -214,7 +196,7 @@ class RecipeEditorPanel(QWidget):
         return f"{tid}_01"
 
     # ---------------------------------------------------------
-    # Model creation (from template)
+    # Model creation
     # ---------------------------------------------------------
 
     def _new_model_from_template(self, rec_def: Dict[str, Any]) -> Recipe:
@@ -263,7 +245,6 @@ class RecipeEditorPanel(QWidget):
 
         placeholder_id = self._current_recipe_name() or self._default_recipe_name_for_template(template_id)
 
-        # V2: params.yaml only (attachments are stored separately)
         model = Recipe.from_params_dict(
             {
                 "id": placeholder_id,
@@ -281,138 +262,6 @@ class RecipeEditorPanel(QWidget):
 
         _ensure_validsave_fields(model)
         return model
-
-    # ---------------------------------------------------------
-    # Draft builder (UI-only) -> draft.yaml schema (Path v1)
-    # ---------------------------------------------------------
-
-    def _ensure_draft(self, model: Recipe) -> None:
-        """Create/refresh model.draft from current paths_by_side + globals."""
-        pbs = getattr(model, "paths_by_side", None) or {}
-        if not isinstance(pbs, dict) or not pbs:
-            model.draft = None
-            return
-
-        params = getattr(model, "parameters", None) or {}
-        if not isinstance(params, dict):
-            params = {}
-
-        sample_step_mm = float(params.get("sample_step_mm", 1.0))
-        max_points = int(params.get("max_points", 1000))
-        globals_params = dict(params)
-
-        sides = [str(s) for s in pbs.keys() if str(s).strip()]
-        if not sides:
-            model.draft = None
-            return
-
-        out_sides: Dict[str, PathSide] = {}
-
-        for side in sides:
-            try:
-                pd = PathBuilder.from_side(
-                    model,
-                    side=side,
-                    globals_params=globals_params,
-                    sample_step_mm=sample_step_mm,
-                    max_points=max_points,
-                    include_airmoves=False,  # STRICT: airmoves are post-raycast
-                )
-            except Exception:
-                continue
-
-            P = pd.points_mm
-            if P is None:
-                continue
-
-            # Plane Z offset: z = stand_off_mm + z_mm (if present)
-            try:
-                path_dict = dict((pbs.get(side) or {}) if isinstance(pbs.get(side), dict) else {})
-                ptype = str(path_dict.get("type") or "").strip().lower()
-                stand_off = float(globals_params.get("stand_off_mm", 0.0) or 0.0)
-                z_mm = float(path_dict.get("z_mm", 0.0) or 0.0)
-
-                if ptype in (
-                    "path.meander.plane",
-                    "path.spiral.plane",
-                    "path.perimeter_follow.plane",
-                ):
-                    P = np.asarray(P, dtype=float).reshape(-1, 3).copy()
-                    if P.shape[0] > 0:
-                        P[:, 2] = stand_off + z_mm
-            except Exception:
-                pass
-
-            # Add predispense + retreat endpoints AFTER offset (UI draft only)
-            P = self._apply_predispense_retreat_points(P, pbs.get(side) or {})
-            P = np.asarray(P, dtype=float).reshape(-1, 3)
-
-            if P.shape[0] < 1:
-                continue
-
-            poses = [
-                PoseQuat(
-                    x=float(x),
-                    y=float(y),
-                    z=float(z),
-                    qx=0.0,
-                    qy=0.0,
-                    qz=0.0,
-                    qw=1.0,
-                )
-                for x, y, z in P.tolist()
-            ]
-
-            if poses:
-                out_sides[side] = PathSide(poses_quat=poses)
-
-        model.draft = Draft(version=1, sides=out_sides) if out_sides else None
-
-    @staticmethod
-    def _apply_predispense_retreat_points(P: Any, path_dict: Any) -> Any:
-        """
-        STRICT:
-          - Only supports flat keys:
-              predispense_offset_mm
-              retreat_offset_mm
-          - No legacy nested blocks, no extend_mm, no fallback.
-        """
-        pts = np.asarray(P, dtype=float).reshape(-1, 3)
-        if pts.shape[0] < 2:
-            return pts
-
-        if not isinstance(path_dict, dict):
-            return pts
-
-        try:
-            pre_mm = max(0.0, float(path_dict.get("predispense_offset_mm", 0.0) or 0.0))
-        except Exception:
-            pre_mm = 0.0
-
-        try:
-            ret_mm = max(0.0, float(path_dict.get("retreat_offset_mm", 0.0) or 0.0))
-        except Exception:
-            ret_mm = 0.0
-
-        def _unit(v: np.ndarray) -> np.ndarray:
-            n = float(np.linalg.norm(v))
-            return v / n if n > 1e-12 else np.zeros_like(v)
-
-        out = pts
-
-        if pre_mm > 0.0:
-            t0 = _unit(out[1] - out[0])
-            if float(np.linalg.norm(t0)) > 0.0:
-                pre_pt = out[0] - float(pre_mm) * t0
-                out = np.vstack([pre_pt.reshape(1, 3), out])
-
-        if ret_mm > 0.0:
-            t1 = _unit(out[-1] - out[-2])
-            if float(np.linalg.norm(t1)) > 0.0:
-                ret_pt = out[-1] + float(ret_mm) * t1
-                out = np.vstack([out, ret_pt.reshape(1, 3)])
-
-        return out
 
     # ---------------------------------------------------------
     # UI apply
@@ -450,8 +299,15 @@ class RecipeEditorPanel(QWidget):
         rec_def = self._template_def_for_id(template_id)
         model = self._active_model or self._new_model_from_template(rec_def)
 
+        # Preserve preview-produced draft across UI->model apply
+        prev_draft = getattr(model, "draft", None)
+
         # UI -> model
         self.content.apply_ui_to_model(model)
+
+        # If UI code cleared draft inadvertently, restore it (preview is authoritative)
+        if getattr(model, "draft", None) is None and prev_draft is not None:
+            model.draft = prev_draft
 
         name_ui = self._current_recipe_name()
         if name_ui:
@@ -517,7 +373,9 @@ class RecipeEditorPanel(QWidget):
         if not str(model.id or "").strip():
             QMessageBox.warning(self, "Preview", "Recipe name ist leer (Meta).")
             return
-        self._ensure_draft(model)
+
+        # Update Preview builds a NEW draft in preview pipeline (SceneManager),
+        # uses it for 2D/3D display, and writes it on Save.
         self.updatePreviewRequested.emit(model)
 
     def _on_new_clicked(self) -> None:
@@ -579,16 +437,20 @@ class RecipeEditorPanel(QWidget):
             QMessageBox.warning(self, "Save", "Can not be saved")
             return
 
+        # STRICT: draft must come from Update Preview (SceneManager) so it contains pre/ret
+        if getattr(model, "draft", None) is None:
+            QMessageBox.warning(self, "Save", "Draft fehlt. Bitte zuerst 'Update Preview' ausführen.")
+            return
+
         try:
-            self._ensure_draft(model)
-            # V2: persist params.yaml + (optional) draft.yaml
+            # RecipeBundle.save_from_editor writes params.yaml and (if present) draft.yaml
             self.repo.save_from_editor(name, draft=model)
         except Exception as e:
             QMessageBox.warning(self, "Save", f"Speichern fehlgeschlagen:\n{e}")
             return
 
         self._active_name = name
-        QMessageBox.information(self, "Gespeichert", f"{name} (params.yaml; draft.yaml falls vorhanden)")
+        QMessageBox.information(self, "Gespeichert", f"{name} (params.yaml + draft.yaml)")
 
     def _on_delete_clicked(self) -> None:
         name = self._current_recipe_name() or self._active_name

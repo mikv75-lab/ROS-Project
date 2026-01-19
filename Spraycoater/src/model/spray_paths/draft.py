@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-# File: src/model/spraypaths/draft.py
+# File: src/model/spray_paths/draft.py
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping
 
 
 # ============================================================
@@ -19,6 +19,27 @@ def _float(v: Any, default: float = 0.0) -> float:
 
 def _as_dict(v: Any) -> Dict[str, Any]:
     return v if isinstance(v, dict) else {}
+
+
+def _as_list(v: Any) -> List[Any]:
+    return v if isinstance(v, list) else []
+
+
+def _parse_pose_list(v: Any, *, name: str) -> List["PoseQuat"]:
+    """
+    Accepts:
+      - list[dict]
+      - dict (single pose -> wrapped into list)
+      - None/other -> []
+    """
+    if isinstance(v, dict):
+        v = [v]
+    raw = _as_list(v)
+    out: List[PoseQuat] = []
+    for i, p in enumerate(raw):
+        if isinstance(p, dict):
+            out.append(PoseQuat.from_dict(p, name=f"{name}[{i}]"))
+    return out
 
 
 # ============================================================
@@ -64,24 +85,42 @@ class PoseQuat:
 
 @dataclass(frozen=True)
 class PathSide:
-    """A list of poses for one side (e.g. 'top')."""
+    """
+    Per-side TCP geometry.
 
+    YAML v1 (extended):
+      sides:
+        top:
+          predispense: [ {pose}, ... ]   # usually 1 pose (derived from first)
+          retreat:     [ {pose}, ... ]   # usually 1 pose (derived from last)
+          poses_quat:  [ {pose}, ... ]   # full path
+    """
+
+    predispense: List[PoseQuat] = field(default_factory=list)
+    retreat: List[PoseQuat] = field(default_factory=list)
     poses_quat: List[PoseQuat] = field(default_factory=list)
 
     @staticmethod
     def from_dict(d: Mapping[str, Any], *, name: str = "side") -> "PathSide":
-        d = dict(d or {})
-        raw = d.get("poses_quat", [])
-        if not isinstance(raw, list):
-            raw = []
-        poses: List[PoseQuat] = []
-        for i, p in enumerate(raw):
-            if isinstance(p, dict):
-                poses.append(PoseQuat.from_dict(p, name=f"{name}.poses_quat[{i}]"))
-        return PathSide(poses_quat=poses)
+        dct = dict(d or {})
+
+        pre = _parse_pose_list(dct.get("predispense", []), name=f"{name}.predispense")
+        ret = _parse_pose_list(dct.get("retreat", []), name=f"{name}.retreat")
+        poses = _parse_pose_list(dct.get("poses_quat", []), name=f"{name}.poses_quat")
+
+        return PathSide(predispense=pre, retreat=ret, poses_quat=poses)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"poses_quat": [p.to_dict() for p in self.poses_quat]}
+        out: Dict[str, Any] = {}
+
+        # Keep YAML tidy: only emit if present
+        if self.predispense:
+            out["predispense"] = [p.to_dict() for p in self.predispense]
+        if self.retreat:
+            out["retreat"] = [p.to_dict() for p in self.retreat]
+
+        out["poses_quat"] = [p.to_dict() for p in self.poses_quat]
+        return out
 
 
 @dataclass(frozen=True)
@@ -93,7 +132,9 @@ class Draft:
       version: 1
       sides:
         top:
-          poses_quat: [ {x,y,z,qx,qy,qz,qw}, ... ]
+          predispense: [...]
+          retreat: [...]
+          poses_quat: [...]
         front: ...
     """
 
@@ -122,7 +163,18 @@ class Draft:
             "sides": {k: v.to_dict() for k, v in (self.sides or {}).items()},
         }
 
+    # Convenience getters
     def poses_quat(self, side: str) -> List[PoseQuat]:
         s = str(side)
         ps = (self.sides or {}).get(s)
         return list(ps.poses_quat) if ps else []
+
+    def predispense(self, side: str) -> List[PoseQuat]:
+        s = str(side)
+        ps = (self.sides or {}).get(s)
+        return list(ps.predispense) if ps else []
+
+    def retreat(self, side: str) -> List[PoseQuat]:
+        s = str(side)
+        ps = (self.sides or {}).get(s)
+        return list(ps.retreat) if ps else []

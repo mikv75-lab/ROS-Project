@@ -251,6 +251,36 @@ def _polyline(P: np.ndarray) -> Optional[pv.PolyData]:
         return None
 
 
+def _draft_display_points_local(draft: Optional[Draft], side: str) -> Optional[np.ndarray]:
+    """
+    Build a display polyline in mount-top-frame that includes:
+      predispense[0] + poses_quat + retreat[0] (if present)
+    """
+    if draft is None or not isinstance(draft, Draft):
+        return None
+    s = str(side or "").strip()
+    if not s:
+        return None
+
+    ps = (draft.sides or {}).get(s)
+    if ps is None or not isinstance(ps, PathSide):
+        return None
+
+    pts: List[List[float]] = []
+    if ps.predispense:
+        p0 = ps.predispense[0]
+        pts.append([float(p0.x), float(p0.y), float(p0.z)])
+    for p in (ps.poses_quat or []):
+        pts.append([float(p.x), float(p.y), float(p.z)])
+    if ps.retreat:
+        p1 = ps.retreat[0]
+        pts.append([float(p1.x), float(p1.y), float(p1.z)])
+
+    if len(pts) < 2:
+        return None
+    return np.asarray(pts, dtype=float).reshape(-1, 3)
+
+
 class SceneManager:
     """
     Preview pipeline (STRICT):
@@ -449,12 +479,8 @@ class SceneManager:
             stand_off_mm=stand_off,
         )
 
-        # STRICT fix: no "or" with numpy arrays
         v_raw = getattr(rc, "valid", None)
-        if v_raw is None:
-            valid_mask = np.zeros((0,), dtype=bool)
-        else:
-            valid_mask = np.asarray(v_raw, dtype=bool).reshape(-1)
+        valid_mask = np.zeros((0,), dtype=bool) if v_raw is None else np.asarray(v_raw, dtype=bool).reshape(-1)
 
         miss_n = int(len(valid_mask) - int(np.sum(valid_mask))) if len(valid_mask) else 0
         preview_valid = (miss_n == 0)
@@ -462,7 +488,6 @@ class SceneManager:
         final_tcp_world: Optional[np.ndarray] = None
         final_norms_world: Optional[np.ndarray] = None
 
-        final_tcp_local: Optional[np.ndarray] = None
         substrate_local_mesh: Optional[pv.PolyData] = None
         substrate_bounds_local: Optional[Bounds] = None
 
@@ -476,7 +501,11 @@ class SceneManager:
             substrate_local_mesh = None
             substrate_bounds_local = None
 
+        # Default displayed path (local)
+        display_path_local: Optional[np.ndarray] = None
+
         if preview_valid:
+            # postprocess compiled (WORLD)
             p_side = (getattr(recipe, "paths_by_side", {}) or {}).get(side, {}) or {}
             final_tcp_world, final_norms_world = mesh_utils._postprocess_compiled_path_strict(
                 getattr(rc, "tcp_mm", None),
@@ -484,8 +513,41 @@ class SceneManager:
                 side_path_params=p_side,
             )
 
-            # Render final path (WORLD)
-            path_poly = _polyline(final_tcp_world) if final_tcp_world is not None else None
+            # Convert to local (mount-top KS)
+            final_tcp_local = _shift_points(final_tcp_world, origin_world) if final_tcp_world is not None else None
+
+            if final_tcp_local is not None and final_norms_world is not None:
+                poses = _compute_poses(final_tcp_local, final_norms_world)
+
+                # offsets (STRICT flat keys)
+                try:
+                    pre_mm = float((p_side or {}).get("predispense_offset_mm", 0.0) or 0.0)
+                except Exception:
+                    pre_mm = 0.0
+                try:
+                    ret_mm = float((p_side or {}).get("retreat_offset_mm", 0.0) or 0.0)
+                except Exception:
+                    ret_mm = 0.0
+
+                # Build/overwrite draft for this side (incl. pre/ret derived from first/last)
+                recipe.draft = self._merge_draft_side(
+                    getattr(recipe, "draft", None),
+                    side=side,
+                    poses=poses,
+                    pre_mm=max(0.0, float(pre_mm)),
+                    ret_mm=max(0.0, float(ret_mm)),
+                )
+
+                # Use draft for 2D display path (includes pre/ret)
+                display_path_local = _draft_display_points_local(recipe.draft, side)
+
+            # Render final path (WORLD) using draft display points if available
+            if display_path_local is not None:
+                path_world_for_display = _add_points_offset(display_path_local, origin_world)
+            else:
+                path_world_for_display = final_tcp_world
+
+            path_poly = _polyline(path_world_for_display) if path_world_for_display is not None else None
             if path_poly is not None:
                 renderables.append(
                     Renderable(
@@ -496,18 +558,7 @@ class SceneManager:
                     )
                 )
 
-            # Store in mount-top KS for 2D + draft
-            final_tcp_local = _shift_points(final_tcp_world, origin_world) if final_tcp_world is not None else None
-
-            if final_tcp_local is not None and final_norms_world is not None:
-                recipe.draft = self._merge_draft_side(
-                    getattr(recipe, "draft", None),
-                    side=side,
-                    poses=_compute_poses(final_tcp_local, final_norms_world),
-                )
-
         # 5) Overlays (WORLD): ALWAYS build all overlay geometries.
-        # UI toggles only set visibility; no rebuild needed.
         cfg_all = dict(overlay_cfg or {})
         cfg_all["visibility"] = {
             "mask": True,
@@ -549,12 +600,12 @@ class SceneManager:
             valid=preview_valid,
             invalid_reason=None if preview_valid else "raycast_miss",
             scene=scene,
-            substrate_mesh=substrate_local_mesh,      # 2D substrate in mount-top-frame
-            path_xyz_mm=final_tcp_local,              # 2D final path in mount-top-frame
-            final_tcp_world_mm=final_tcp_local,       # kept name, but contract: mount-top-frame
-            renderables=renderables,                  # WORLD renderables for 3D
-            bounds=scene.bounds or _DEFAULT_BOUNDS,   # WORLD bounds
-            substrate_bounds=substrate_bounds_local,  # mount-top-frame bounds for 2D scaling
+            substrate_mesh=substrate_local_mesh,       # 2D substrate in mount-top-frame
+            path_xyz_mm=display_path_local,            # 2D display path (incl pre/ret) in mount-top-frame
+            final_tcp_world_mm=display_path_local,     # kept name; contract here: mount-top-frame
+            renderables=renderables,                   # WORLD renderables for 3D
+            bounds=scene.bounds or _DEFAULT_BOUNDS,    # WORLD bounds
+            substrate_bounds=substrate_bounds_local,   # mount-top-frame bounds for 2D scaling
             meta={
                 "miss_n": miss_n,
                 "side": side,
@@ -569,7 +620,16 @@ class SceneManager:
         *,
         side: str,
         poses: List[PoseQuat],
+        pre_mm: float,
+        ret_mm: float,
     ) -> Draft:
+        """
+        Merge/overwrite one side and derive:
+          - predispense pose from first pose (shifted backward by pre_mm along start tangent)
+          - retreat pose from last pose (shifted forward by ret_mm along end tangent)
+
+        Orientation is kept from first/last pose.
+        """
         s = str(side or "").strip()
         if not s:
             cur_sides: Dict[str, PathSide] = {}
@@ -585,7 +645,55 @@ class SceneManager:
 
         if not poses:
             cur_sides.pop(s, None)
-        else:
-            cur_sides[s] = PathSide(poses_quat=list(poses))
+            return Draft(version=1, sides=cur_sides)
 
+        def _pos(p: PoseQuat) -> np.ndarray:
+            return np.array([float(p.x), float(p.y), float(p.z)], dtype=float)
+
+        def _unit(v: np.ndarray) -> np.ndarray:
+            n = float(np.linalg.norm(v))
+            return v / n if n > 1e-12 else np.zeros_like(v)
+
+        first = poses[0]
+        last = poses[-1]
+
+        # Start tangent from first->second if possible
+        if len(poses) >= 2:
+            t0 = _unit(_pos(poses[1]) - _pos(first))
+        else:
+            t0 = np.zeros((3,), dtype=float)
+
+        # End tangent from secondlast->last if possible
+        if len(poses) >= 2:
+            t1 = _unit(_pos(last) - _pos(poses[-2]))
+        else:
+            t1 = np.zeros((3,), dtype=float)
+
+        pre_pos = _pos(first) - float(max(0.0, pre_mm)) * t0
+        ret_pos = _pos(last) + float(max(0.0, ret_mm)) * t1
+
+        pre = PoseQuat(
+            x=float(pre_pos[0]),
+            y=float(pre_pos[1]),
+            z=float(pre_pos[2]),
+            qx=float(first.qx),
+            qy=float(first.qy),
+            qz=float(first.qz),
+            qw=float(first.qw),
+        )
+        ret = PoseQuat(
+            x=float(ret_pos[0]),
+            y=float(ret_pos[1]),
+            z=float(ret_pos[2]),
+            qx=float(last.qx),
+            qy=float(last.qy),
+            qz=float(last.qz),
+            qw=float(last.qw),
+        )
+
+        cur_sides[s] = PathSide(
+            predispense=[pre],
+            retreat=[ret],
+            poses_quat=list(poses),
+        )
         return Draft(version=1, sides=cur_sides)
