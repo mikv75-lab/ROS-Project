@@ -157,30 +157,14 @@ class RecipeEvaluator:
         """
         STRICT: Reference poses must be recipe-only for MOVE_RECIPE.
 
-        Preferred:
-          - Draft.poses_quat_segment(side, seg_id) if available.
-        Fallback:
-          - Draft.recipe_poses_quat(side) if available.
-        Last resort:
-          - Draft.poses_quat(side)
+        Draft implements poses_quat_segment() and ensures MOVE_RECIPE maps to recipe-only poses.
         """
-        fn_seg = getattr(ref_draft, "poses_quat_segment", None)
-        if callable(fn_seg):
-            try:
-                v = fn_seg(side, seg_id)
-                return list(v or [])
-            except Exception:
-                pass
-
-        fn_recipe = getattr(ref_draft, "recipe_poses_quat", None)
-        if callable(fn_recipe):
-            try:
-                v = fn_recipe(side)
-                return list(v or [])
-            except Exception:
-                pass
-
-        return list(ref_draft.poses_quat(side) or [])
+        try:
+            v = ref_draft.poses_quat_segment(side, seg_id)
+            return list(v or [])
+        except Exception:
+            # last resort: keep legacy safety without capability probing
+            return list(ref_draft.poses_quat(side) or [])
 
     @staticmethod
     def _threshold_from_recipe(recipe: Recipe) -> float:
@@ -222,34 +206,65 @@ class RecipeEvaluator:
         return float(np.clip(s, 0.0, 100.0))
 
     @staticmethod
-    def _quat_angle_deg(q1: np.ndarray, q2: np.ndarray) -> float:
-        n1, n2 = np.linalg.norm(q1), np.linalg.norm(q2)
-        if n1 > 1e-9:
-            q1 = q1 / n1
-        if n2 > 1e-9:
-            q2 = q2 / n2
-        dot = np.abs(np.dot(q1, q2))
-        dot = min(1.0, max(-1.0, dot))
-        return float(np.degrees(2.0 * np.arccos(dot)))
+    def _quat_angle_deg_vec(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
+        """
+        Vectorized quaternion angular error (deg) for arrays Nx4.
+        Uses abs(dot) to account for q and -q equivalence.
+        """
+        if q1.size == 0 or q2.size == 0:
+            return np.zeros((0,), dtype=float)
+
+        q1 = np.asarray(q1, dtype=float).reshape(-1, 4)
+        q2 = np.asarray(q2, dtype=float).reshape(-1, 4)
+
+        n1 = np.linalg.norm(q1, axis=1, keepdims=True)
+        n2 = np.linalg.norm(q2, axis=1, keepdims=True)
+        n1 = np.where(n1 > 1e-12, n1, 1.0)
+        n2 = np.where(n2 > 1e-12, n2, 1.0)
+        q1n = q1 / n1
+        q2n = q2 / n2
+
+        dot = np.abs(np.sum(q1n * q2n, axis=1))
+        dot = np.clip(dot, -1.0, 1.0)
+        ang = np.degrees(2.0 * np.arccos(dot))
+        return ang.astype(float)
 
     @staticmethod
     def _slerp(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
-        q0 = q0 / np.linalg.norm(q0)
-        q1 = q1 / np.linalg.norm(q1)
+        q0 = np.asarray(q0, dtype=float).reshape(4,)
+        q1 = np.asarray(q1, dtype=float).reshape(4,)
+
+        n0 = float(np.linalg.norm(q0))
+        n1 = float(np.linalg.norm(q1))
+        if n0 > 1e-12:
+            q0 = q0 / n0
+        else:
+            q0 = np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
+        if n1 > 1e-12:
+            q1 = q1 / n1
+        else:
+            q1 = np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
+
         dot = float(np.dot(q0, q1))
         if dot < 0.0:
             q1 = -q1
             dot = -dot
         if dot > 0.9995:
             res = (1.0 - t) * q0 + t * q1
-            return res / np.linalg.norm(res)
+            nr = float(np.linalg.norm(res))
+            return res / nr if nr > 1e-12 else np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
 
         theta_0 = float(np.arccos(dot))
         theta = theta_0 * float(t)
-        s0 = math.cos(theta) - dot * math.sin(theta) / math.sin(theta_0)
-        s1 = math.sin(theta) / math.sin(theta_0)
+        sin_theta_0 = math.sin(theta_0)
+        if abs(sin_theta_0) < 1e-12:
+            return q0
+
+        s0 = math.cos(theta) - dot * math.sin(theta) / sin_theta_0
+        s1 = math.sin(theta) / sin_theta_0
         res = (s0 * q0) + (s1 * q1)
-        return res / np.linalg.norm(res)
+        nr = float(np.linalg.norm(res))
+        return res / nr if nr > 1e-12 else np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
 
     # ============================================================
     # Extraction & Resampling
@@ -257,7 +272,7 @@ class RecipeEvaluator:
 
     def _extract_arrays(self, poses: List[PoseQuat]) -> Tuple[np.ndarray, np.ndarray]:
         if not poses:
-            return np.zeros((0, 3)), np.zeros((0, 4))
+            return np.zeros((0, 3), dtype=float), np.zeros((0, 4), dtype=float)
         pts = np.array([[p.x, p.y, p.z] for p in poses], dtype=float)
         quats = np.array([[p.qx, p.qy, p.qz, p.qw] for p in poses], dtype=float)
         return pts, quats
@@ -294,8 +309,8 @@ class RecipeEvaluator:
             return np.repeat(pts[:1], n, axis=0), np.repeat(quats[:1], n, axis=0)
 
         target_s = np.linspace(0.0, total_len, n)
-        out_pts = np.zeros((n, 3))
-        out_quats = np.zeros((n, 4))
+        out_pts = np.zeros((n, 3), dtype=float)
+        out_quats = np.zeros((n, 4), dtype=float)
 
         for dim in range(3):
             out_pts[:, dim] = np.interp(target_s, s, pts[:, dim])
@@ -329,25 +344,35 @@ class RecipeEvaluator:
         ref_p, ref_q = self._extract_arrays(ref_poses)
         test_p, test_q = self._extract_arrays(test_poses)
 
-        metrics = {"label": label, "num_ref": len(ref_p), "num_test_raw": len(test_p)}
+        metrics = {
+            "label": label,
+            "num_ref": int(len(ref_p)),
+            "num_test_raw": int(len(test_p)),
+            "num_test_trim": int(len(test_p)),
+        }
         if len(ref_p) < 2 or len(test_p) < 2:
             return EvalResult(score=0.0, metrics=metrics, details={"reason": "not_enough_points"})
 
         test_p_trim, test_q_trim = self._trim_test_to_ref_span(ref_p, test_p, test_q)
-        metrics["num_test_trim"] = len(test_p_trim)
+        metrics["num_test_trim"] = int(len(test_p_trim))
+        if len(test_p_trim) < 2:
+            return EvalResult(score=0.0, metrics=metrics, details={"reason": "not_enough_points"})
 
         ref_rp, ref_rq = self._resample_pose_mm_quat(ref_p, ref_q, self.tcp_resample_n)
         test_rp, test_rq = self._resample_pose_mm_quat(test_p_trim, test_q_trim, self.tcp_resample_n)
 
-        n = len(ref_rp)
+        n = int(len(ref_rp))
+        if n < 2:
+            return EvalResult(score=0.0, metrics=metrics, details={"reason": "not_enough_points"})
+
         err_mm = np.linalg.norm(ref_rp - test_rp, axis=1)
         mean_mm = float(np.mean(err_mm))
         p95_mm = float(np.percentile(err_mm, 95))
         max_mm = float(np.max(err_mm))
 
-        angle_errs = [self._quat_angle_deg(ref_rq[i], test_rq[i]) for i in range(n)]
-        mean_deg = float(np.mean(angle_errs))
-        max_deg = float(np.max(angle_errs))
+        angle_errs = self._quat_angle_deg_vec(ref_rq, test_rq)
+        mean_deg = float(np.mean(angle_errs)) if angle_errs.size else 0.0
+        max_deg = float(np.max(angle_errs)) if angle_errs.size else 0.0
 
         metrics.update(
             {
@@ -431,38 +456,43 @@ class RecipeEvaluator:
             side_results: Dict[str, Any] = {}
             scores: List[float] = []
             metrics_first: Dict[str, Any] = {}
+            bad_sides: List[str] = []
 
             for idx, side in enumerate(sides):
                 ref = self._ref_recipe_segment_poses(ref_draft, side=side, seg_id=seg_id)
 
-                # STRICT: If tcp_draft can isolate by segment, use it. Otherwise use global side.
-                fn_test_seg = getattr(tcp_draft, "poses_quat_segment", None)
-                if callable(fn_test_seg):
-                    try:
-                        test = list(fn_test_seg(side, seg_id) or [])
-                    except Exception:
-                        test = list(tcp_draft.poses_quat(side) or [])
-                else:
+                try:
+                    test = list(tcp_draft.poses_quat_segment(side, seg_id) or [])
+                except Exception:
                     test = list(tcp_draft.poses_quat(side) or [])
 
                 res = self.evaluate_side(ref_poses=ref, test_poses=test, label=f"{mode_name}/{seg_id}/{side}")
                 dct = res.to_dict()
                 side_results[side] = dct
-                scores.append(res.score)
+                scores.append(float(res.score))
 
                 if idx == 0:
                     m = dct.get("metrics")
                     if isinstance(m, dict):
                         metrics_first = dict(m)
 
+                det = dct.get("details")
+                if isinstance(det, dict) and det.get("reason") == "not_enough_points":
+                    bad_sides.append(str(side))
+
+            computed_ok = (len(bad_sides) == 0) and bool(scores)
             avg_score = float(np.mean(scores)) if scores else 0.0
-            return {
-                "valid": True,  # means "mode had enough inputs", NOT threshold gating
+
+            out = {
+                "valid": bool(computed_ok),  # STRICT: computed_ok
                 "score": float(avg_score),
                 "segment": seg_id,
                 "by_side": side_results,
                 "metrics": metrics_first,
             }
+            if not computed_ok:
+                out["invalid_reason"] = f"not_enough_points sides={bad_sides}" if bad_sides else "not_enough_points"
+            return out
 
         p_eval = run_mode(pl, "planned")
         e_eval = run_mode(ex, "executed")
@@ -471,6 +501,7 @@ class RecipeEvaluator:
         p_score = float(p_eval.get("score", 0.0) or 0.0)
         e_score = float(e_eval.get("score", 0.0) or 0.0)
 
+        # Threshold-aware gating
         planned_ok = bool(p_eval.get("valid", False)) and (p_score >= thr)
         executed_ok = bool(e_eval.get("valid", False)) and (e_score >= thr)
         valid = bool(planned_ok and executed_ok)
@@ -495,8 +526,15 @@ class RecipeEvaluator:
             reason_parts.append(f"planned:{p_eval.get('invalid_reason') or 'invalid'}")
         if not bool(e_eval.get("valid", False)):
             reason_parts.append(f"executed:{e_eval.get('invalid_reason') or 'invalid'}")
+
+        # If both computed_ok but threshold failed, say so explicitly.
         if not reason_parts and not valid:
-            reason_parts.append("score_below_threshold")
+            if p_score < thr:
+                reason_parts.append("planned:score_below_threshold")
+            if e_score < thr:
+                reason_parts.append("executed:score_below_threshold")
+            if not reason_parts:
+                reason_parts.append("score_below_threshold")
 
         return {
             "version": 4,
@@ -509,7 +547,7 @@ class RecipeEvaluator:
             "score": float(overall_score),
             "total": {"score": float(overall_score)},
 
-            # Mode gating booleans (threshold-aware) for table columns
+            # Mode gating booleans (threshold-aware)
             "planned_valid": bool(planned_ok),
             "executed_valid": bool(executed_ok),
 

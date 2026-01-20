@@ -25,6 +25,7 @@ from model.recipe.recipe_run_result import RunResult
 
 # NEW location (no legacy)
 from model.spray_paths import recipe_markers
+from model.spray_paths.draft import Draft  # <-- FIX: use Draft API for points extraction
 
 from config.startup import require_env_dir, resolve_path
 
@@ -43,6 +44,10 @@ class RecipePanel(QWidget):
       - ctx is expected to be AppContext from config.startup.load_startup().
       - Offline TF paths are derived deterministically from ctx.content and ctx.ros.
       - ROS bridge methods required by this panel are enforced.
+
+    UI simplification:
+      - RecipePanel does NOT build tables itself.
+      - It only displays prebuilt report strings from RunResult / stored TCP eval.
     """
 
     sig_recipe_selected = QtCore.pyqtSignal(str, object)
@@ -191,12 +196,17 @@ class RecipePanel(QWidget):
         # Disk SSoT refresh on load
         self._refresh_stored_from_disk(key)
 
-        self._update_infobox_from_recipe(model)
+        # NOTE: _refresh_stored_from_disk() updates self._recipe -> use that for infobox
+        if self._recipe is not None:
+            self._update_infobox_from_recipe(self._recipe)
+
         self.txtNewRun.clear()
 
         # Publish current recipe draft + stored ghosts
-        self._republish_spraypaths_for_key(key, model)
-        self.sig_recipe_selected.emit(key, model)
+        if self._recipe is not None:
+            self._republish_spraypaths_for_key(key, self._recipe)
+
+        self.sig_recipe_selected.emit(key, self._recipe if self._recipe is not None else model)
 
     def _format_active_recipe_info(self, model: Recipe) -> str:
         src: Dict[str, Any] = {}
@@ -289,17 +299,6 @@ class RecipePanel(QWidget):
 
     @QtCore.pyqtSlot(str, object, object)
     def on_run_finished(self, key: str, payload: object, rr_obj: object) -> None:
-        """
-        STRICT: must match ProcessPanel.sig_run_finished(str, object, object).
-
-        Responsibilities:
-          - POSTPROCESS (FK -> TCP docs) for rr
-          - EVALUATE rr (tcp vs draft)
-          - PERSIST run result if valid (disk SSoT)
-          - display rr (string prebuilt by rr/eval)
-          - refresh STORED from disk
-          - republish overlays
-        """
         key = str(key or "").strip()
         self.txtNewRun.setPlaceholderText("")
 
@@ -314,7 +313,6 @@ class RecipePanel(QWidget):
 
         rr: RunResult = rr_obj
 
-        # Disk SSoT recipe for evaluation base
         recipe_disk: Optional[Recipe]
         try:
             recipe_disk = self.repo.load_for_process(key)
@@ -324,7 +322,6 @@ class RecipePanel(QWidget):
 
         seg_order = list(self._default_segment_order())
 
-        # 1) Postprocess (FK -> TCP docs)
         post_err: Optional[str] = None
         try:
             scene_yaml_path, robot_yaml_path, mounts_yaml_path = self._required_offline_tf_paths()
@@ -339,7 +336,7 @@ class RecipePanel(QWidget):
                 },
                 step_mm=2.0,
                 max_points=20000,
-                require_tcp=False,  # UI soll Fehler zeigen, nicht crashen
+                require_tcp=False,
                 scene_yaml_path=scene_yaml_path,
                 robot_yaml_path=robot_yaml_path,
                 mounts_yaml_path=mounts_yaml_path,
@@ -349,7 +346,6 @@ class RecipePanel(QWidget):
             post_err = str(e)
             _LOG.error("RecipePanel: rr.postprocess failed (key=%s): %s", key, e)
 
-        # 2) Evaluate (TCP vs draft) – only if recipe is available
         eval_err: Optional[str] = None
         try:
             if recipe_disk is not None:
@@ -363,7 +359,6 @@ class RecipePanel(QWidget):
             eval_err = str(e)
             _LOG.error("RecipePanel: rr.evaluate_tcp_against_draft failed (key=%s): %s", key, e)
 
-        # 3) Persist if valid (RecipeRepo API: recipe_id positional + run_result keyword-only)
         persist_err: Optional[str] = None
         try:
             self.repo.save_run_result_if_valid(key, run_result=rr)
@@ -371,9 +366,8 @@ class RecipePanel(QWidget):
             persist_err = str(e)
             _LOG.error("RecipePanel: save_run_result_if_valid failed (key=%s): %s", key, e)
 
-        # 4) Display CURRENT RUN (prebuilt report string from rr/eval)
         try:
-            txt = rr.report_text(title="=== CURRENT RUN (Live) ===")
+            txt = self._current_run_report_text(rr)
             extra: List[str] = []
             if post_err:
                 extra.append(f"postprocess_error: {post_err}")
@@ -387,13 +381,11 @@ class RecipePanel(QWidget):
         except Exception as e:
             self.txtNewRun.setPlainText(f"Run finished for {key}, but report render failed: {e}")
 
-        # 5) Refresh STORED from disk
         try:
             self._refresh_stored_from_disk(key)
         except Exception as e:
             _LOG.error("RecipePanel: refresh stored after run failed: %s", e)
 
-        # 6) Republish NEW overlays from rr
         try:
             self._republish_newrun_overlays_from_rr(rr)
         except Exception as e:
@@ -410,11 +402,6 @@ class RecipePanel(QWidget):
     # ============================================================
 
     def _required_offline_tf_paths(self) -> Tuple[str, str, str]:
-        """
-        STRICT:
-          - ctx.content must provide scene_yaml_path() and robot_yaml_path()
-          - mounts path is derived from ctx.ros.substrate_mounts_file (resolved via SC_PROJECT_ROOT)
-        """
         if not hasattr(self.ctx, "content") or self.ctx.content is None:
             raise RuntimeError("ctx.content is missing (strict)")
 
@@ -439,7 +426,6 @@ class RecipePanel(QWidget):
         base = require_env_dir("SC_PROJECT_ROOT")
         mounts_yaml_path = resolve_path(base, mounts_uri)
 
-        # hard sanity
         if not os.path.isfile(scene_yaml_path):
             raise RuntimeError(f"scene_yaml_path does not exist: {scene_yaml_path}")
         if not os.path.isfile(robot_yaml_path):
@@ -474,80 +460,50 @@ class RecipePanel(QWidget):
         self.txtRecipeParams.setPlainText(self._format_recipe_params(fresh))
 
         self._update_stored_view(fresh)
+
+        # FIX: InfoBox must update whenever we rebind the recipe from disk
+        self._update_infobox_from_recipe(fresh)
+
         self._republish_spraypaths_for_key(key, fresh)
 
     # ============================================================
-    # Stored view (Disk) - display string only
+    # Report strings (ONLY display, no local table logic)
     # ============================================================
 
-    def _extract_eval_pair(self, recipe: Recipe) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        pl: Dict[str, Any] = {}
-        ex: Dict[str, Any] = {}
+    @staticmethod
+    def _get_eval_report_text_from_tcp_obj(tcp_obj: Any) -> Optional[str]:
+        if tcp_obj is None:
+            return None
+        ev = getattr(tcp_obj, "eval", None)
+        if isinstance(ev, dict):
+            s = ev.get("report_text")
+            if isinstance(s, str) and s.strip():
+                return s.strip()
+        return None
 
+    def _stored_report_text(self, recipe: Recipe) -> str:
         planned_obj = getattr(recipe, "planned_tcp", None)
         executed_obj = getattr(recipe, "executed_tcp", None)
 
-        if planned_obj is not None:
-            v = getattr(planned_obj, "eval", None)
-            if isinstance(v, dict):
-                pl = v
-        if executed_obj is not None:
-            v = getattr(executed_obj, "eval", None)
-            if isinstance(v, dict):
-                ex = v
-
-        return pl, ex
-
-    def _stored_report_text(self, recipe: Recipe, *, title: str = "=== STORED EVAL (Disk) ===") -> str:
-        """
-        STRICT: Panel does not format tables.
-        Prefers stored per-tcp eval['report_text'] written by RunResult.set_eval().
-        Falls back to a minimal summary if report_text is missing.
-        """
-        pl_eval, ex_eval = self._extract_eval_pair(recipe)
-
-        rep = None
-        if isinstance(pl_eval, dict):
-            rep = pl_eval.get("report_text")
-        if not rep and isinstance(ex_eval, dict):
-            rep = ex_eval.get("report_text")
-
-        if isinstance(rep, str) and rep.strip():
-            return rep
-
-        # Fallback: minimal, no table formatting.
-        def _score_of(ev2: Dict[str, Any]) -> Any:
-            s = ev2.get("score")
-            if s is None and isinstance(ev2.get("total"), dict):
-                s = ev2["total"].get("score")
+        s = self._get_eval_report_text_from_tcp_obj(planned_obj)
+        if s:
+            return s
+        s = self._get_eval_report_text_from_tcp_obj(executed_obj)
+        if s:
             return s
 
-        thr = pl_eval.get("threshold") if isinstance(pl_eval, dict) else None
-        dom = pl_eval.get("domain") if isinstance(pl_eval, dict) else None
+        return "=== STORED EVAL (Disk) ===\nmissing: planned_tcp.eval['report_text'] / executed_tcp.eval['report_text']"
 
-        lines: List[str] = []
-        lines.append(str(title or "").strip())
-        if dom:
-            lines.append(f"domain: {dom}")
-        if thr is not None:
-            try:
-                lines.append(f"threshold: {float(thr):.3f}")
-            except Exception:
-                lines.append(f"threshold: {thr}")
-        if isinstance(pl_eval, dict) and pl_eval:
-            lines.append(f"planned_valid: {pl_eval.get('valid', '–')}")
-            lines.append(f"planned_score: {_score_of(pl_eval)}")
-            inv = pl_eval.get("invalid_reason")
-            if inv:
-                lines.append(f"planned_reason: {inv}")
-        if isinstance(ex_eval, dict) and ex_eval:
-            lines.append(f"executed_valid: {ex_eval.get('valid', '–')}")
-            lines.append(f"executed_score: {_score_of(ex_eval)}")
-            inv = ex_eval.get("invalid_reason")
-            if inv:
-                lines.append(f"executed_reason: {inv}")
+    def _current_run_report_text(self, rr: RunResult) -> str:
+        ev = rr.eval if isinstance(getattr(rr, "eval", None), dict) else {}
+        s = ev.get("report_text_live") if isinstance(ev, dict) else None
+        if isinstance(s, str) and s.strip():
+            return s.strip()
 
-        return "\n".join(lines).strip() if lines else "–"
+        if hasattr(rr, "report_text") and callable(getattr(rr, "report_text")):
+            return rr.report_text(title="=== CURRENT RUN (Live) ===", include_traj=True, include_tcp=True, include_reason=True)
+
+        return "=== CURRENT RUN (Live) ===\nmissing: rr.eval['report_text_live'] and rr.report_text()"
 
     # ============================================================
     # Publishing / overlays (STRICT: required ROS methods)
@@ -568,7 +524,6 @@ class RecipePanel(QWidget):
 
         self._ros_req("spray_clear")()
 
-        # 1) Compiled (Draft)
         pa, ma = recipe_markers.build_draft_pose_and_markers(
             recipe_model,
             frame_id="substrate",
@@ -583,7 +538,6 @@ class RecipePanel(QWidget):
         if has_poses or has_markers:
             self._ros_req("spray_set_compiled")(poses=pa if has_poses else None, markers=ma if has_markers else None)
 
-        # 2) STORED ghosts (disk SSoT)
         recipe_disk = self.repo.load_for_process(key)
 
         planned_obj = getattr(recipe_disk, "planned_tcp", None)
@@ -648,20 +602,56 @@ class RecipePanel(QWidget):
             if getattr(ma, "markers", None) and len(ma.markers) > 0:
                 self._ros_req("spray_set_executed")(new_markers=ma)
 
-    def _update_infobox_from_recipe(self, recipe: Recipe) -> None:
-        pts = None
+    # ============================================================
+    # InfoBox (FIX)
+    # ============================================================
+
+    @staticmethod
+    def _draft_points_mm_from_recipe(recipe: Recipe) -> Optional[np.ndarray]:
+        """
+        Extract Nx3 points for InfoGroupBox from recipe.draft.
+
+        STRICT:
+          - Use Draft API (recipe_poses_quat preferred).
+          - Prefer side 'top' if present else first available side.
+        """
         d = getattr(recipe, "draft", None)
-        if d is not None:
-            p = getattr(d, "points_mm", None)
-            if p is not None:
-                arr = np.asarray(p, dtype=float).reshape(-1, 3)
-                if arr.size > 0:
-                    pts = arr
+        if d is None:
+            return None
+
+        if isinstance(d, Draft):
+            draft = d
+        elif isinstance(d, dict):
+            draft = Draft.from_yaml_dict(d, name="recipe.draft")
+        else:
+            return None
+
+        sides = list((draft.sides or {}).keys())
+        if not sides:
+            return None
+
+        side = "top" if "top" in sides else sides[0]
+
+        poses = []
+        fn = getattr(draft, "recipe_poses_quat", None)
+        if callable(fn):
+            poses = list(fn(side) or [])
+        if not poses:
+            poses = list(draft.poses_quat(side) or [])
+
+        if not poses:
+            return None
+
+        pts = np.array([[p.x, p.y, p.z] for p in poses], dtype=float).reshape(-1, 3)
+        return pts if pts.size > 0 else None
+
+    def _update_infobox_from_recipe(self, recipe: Recipe) -> None:
+        pts = self._draft_points_mm_from_recipe(recipe)
         self.infoBox.update_from_recipe(recipe, points=pts)
 
     def _update_stored_view(self, recipe: Recipe) -> None:
         try:
-            self.txtStored.setPlainText(self._stored_report_text(recipe, title="=== STORED EVAL (Disk) ==="))
+            self.txtStored.setPlainText(self._stored_report_text(recipe))
         except Exception as e:
             self.txtStored.setPlainText(f"=== STORED EVAL (Disk) ===\n(render failed: {e})")
 
