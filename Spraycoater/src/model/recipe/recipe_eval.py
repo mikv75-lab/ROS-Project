@@ -12,6 +12,7 @@ import numpy as np
 from model.spray_paths.draft import Draft, PoseQuat
 from .recipe import Recipe
 
+
 # ============================================================
 # Data containers
 # ============================================================
@@ -52,6 +53,10 @@ class RecipeEvaluator:
       - Prefer segment isolation for MOVE_RECIPE if tcp YAML provides segments[seg]['sides']
       - Otherwise fall back to global sides
       - Reference must be recipe-only for MOVE_RECIPE (NOT predispense/retreat)
+
+    NOTE:
+      - Report string generation is handled by RunResult (post-eval) so UI panels only display strings.
+      - Evaluator returns structured metrics and threshold gating booleans (planned_valid/executed_valid).
     """
 
     REQUIRED_FRAME = "substrate"
@@ -177,6 +182,33 @@ class RecipeEvaluator:
 
         return list(ref_draft.poses_quat(side) or [])
 
+    @staticmethod
+    def _threshold_from_recipe(recipe: Recipe) -> float:
+        # Prefer recipe.parameters as dict-like; otherwise look for attribute.
+        thr = None
+        params = getattr(recipe, "parameters", None)
+
+        if isinstance(params, dict):
+            thr = params.get("eval_threshold", None)
+        else:
+            thr = getattr(params, "eval_threshold", None) if params is not None else None
+
+        # fallback: params dict from to_params_dict if present
+        if thr is None:
+            fn = getattr(recipe, "to_params_dict", None)
+            if callable(fn):
+                try:
+                    d = fn()
+                    if isinstance(d, dict):
+                        thr = d.get("eval_threshold", None)
+                except Exception:
+                    pass
+
+        try:
+            return float(thr) if thr is not None else 90.0
+        except Exception:
+            return 90.0
+
     # ============================================================
     # Math Helpers (Quaternions & SLERP)
     # ============================================================
@@ -204,7 +236,7 @@ class RecipeEvaluator:
     def _slerp(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
         q0 = q0 / np.linalg.norm(q0)
         q1 = q1 / np.linalg.norm(q1)
-        dot = np.dot(q0, q1)
+        dot = float(np.dot(q0, q1))
         if dot < 0.0:
             q1 = -q1
             dot = -dot
@@ -212,10 +244,10 @@ class RecipeEvaluator:
             res = (1.0 - t) * q0 + t * q1
             return res / np.linalg.norm(res)
 
-        theta_0 = np.arccos(dot)
-        theta = theta_0 * t
-        s0 = np.cos(theta) - dot * np.sin(theta) / np.sin(theta_0)
-        s1 = np.sin(theta) / np.sin(theta_0)
+        theta_0 = float(np.arccos(dot))
+        theta = theta_0 * float(t)
+        s0 = math.cos(theta) - dot * math.sin(theta) / math.sin(theta_0)
+        s1 = math.sin(theta) / math.sin(theta_0)
         res = (s0 * q0) + (s1 * q1)
         return res / np.linalg.norm(res)
 
@@ -273,11 +305,11 @@ class RecipeEvaluator:
         out_quats[0] = quats[0]
 
         for i in range(1, n):
-            val = target_s[i]
+            val = float(target_s[i])
             while seg_idx < max_idx and s[seg_idx + 1] < val:
                 seg_idx += 1
-            len_seg = s[seg_idx + 1] - s[seg_idx]
-            t = (val - s[seg_idx]) / len_seg if len_seg > 1e-9 else 0.0
+            len_seg = float(s[seg_idx + 1] - s[seg_idx])
+            t = (val - float(s[seg_idx])) / len_seg if len_seg > 1e-9 else 0.0
             t = max(0.0, min(1.0, t))
             out_quats[i] = self._slerp(quats[seg_idx], quats[seg_idx + 1], t)
 
@@ -359,7 +391,7 @@ class RecipeEvaluator:
           - STRICT: reference is segment-sliced MOVE_RECIPE (recipe-only)
         """
         if recipe is None:
-            return {"valid": False, "invalid_reason": "recipe_none"}
+            return {"valid": False, "invalid_reason": "recipe_none", "domain": str(domain or "tcp")}
 
         seg_id = self._pick_segment(segment_order)
 
@@ -367,11 +399,11 @@ class RecipeEvaluator:
         try:
             ref_draft = self._draft_from_recipe_draft(recipe)
         except Exception as e:
-            return {"valid": False, "invalid_reason": f"no_draft: {e}"}
+            return {"valid": False, "invalid_reason": f"no_draft: {e}", "domain": str(domain or "tcp")}
 
         sides = list(getattr(ref_draft, "sides", {}).keys())
         if not sides:
-            return {"valid": False, "invalid_reason": "draft_empty"}
+            return {"valid": False, "invalid_reason": "draft_empty", "domain": str(domain or "tcp")}
 
         # Normalize TCP objects: accept Draft or dict, but if dict -> select seg_id sides
         def to_tcp_draft(obj: Optional[Draft | Dict[str, Any]], *, name: str) -> Optional[Draft]:
@@ -398,7 +430,9 @@ class RecipeEvaluator:
 
             side_results: Dict[str, Any] = {}
             scores: List[float] = []
-            for side in sides:
+            metrics_first: Dict[str, Any] = {}
+
+            for idx, side in enumerate(sides):
                 ref = self._ref_recipe_segment_poses(ref_draft, side=side, seg_id=seg_id)
 
                 # STRICT: If tcp_draft can isolate by segment, use it. Otherwise use global side.
@@ -412,22 +446,28 @@ class RecipeEvaluator:
                     test = list(tcp_draft.poses_quat(side) or [])
 
                 res = self.evaluate_side(ref_poses=ref, test_poses=test, label=f"{mode_name}/{seg_id}/{side}")
-                side_results[side] = res.to_dict()
+                dct = res.to_dict()
+                side_results[side] = dct
                 scores.append(res.score)
+
+                if idx == 0:
+                    m = dct.get("metrics")
+                    if isinstance(m, dict):
+                        metrics_first = dict(m)
 
             avg_score = float(np.mean(scores)) if scores else 0.0
             return {
-                "valid": True,
+                "valid": True,  # means "mode had enough inputs", NOT threshold gating
                 "score": float(avg_score),
                 "segment": seg_id,
                 "by_side": side_results,
-                "metrics": side_results.get(sides[0], {}).get("metrics", {}),
+                "metrics": metrics_first,
             }
 
         p_eval = run_mode(pl, "planned")
         e_eval = run_mode(ex, "executed")
 
-        thr = float(getattr(recipe, "parameters", {}).get("eval_threshold", 90.0))
+        thr = self._threshold_from_recipe(recipe)
         p_score = float(p_eval.get("score", 0.0) or 0.0)
         e_score = float(e_eval.get("score", 0.0) or 0.0)
 
@@ -438,7 +478,9 @@ class RecipeEvaluator:
         overall_score = float(min(p_score, e_score))
 
         def _fmt(x: Any) -> str:
-            return f"{x:.3f}" if isinstance(x, (float, int)) else "-"
+            if isinstance(x, (float, int)):
+                return f"{float(x):.3f}"
+            return "-"
 
         pm, em = p_eval.get("metrics", {}), e_eval.get("metrics", {})
         table = [
@@ -467,6 +509,10 @@ class RecipeEvaluator:
             "score": float(overall_score),
             "total": {"score": float(overall_score)},
 
+            # Mode gating booleans (threshold-aware) for table columns
+            "planned_valid": bool(planned_ok),
+            "executed_valid": bool(executed_ok),
+
             # Convenience for splitting (RunResult embeds per-mode into tcp docs)
             "planned_score": float(p_score),
             "executed_score": float(e_score),
@@ -481,7 +527,7 @@ class RecipeEvaluator:
                 }
             },
 
-            # Table for: topic | planned | executed
+            # Metrics rows for the planned/executed column table
             "comparison": table,
 
             "planned": p_eval,

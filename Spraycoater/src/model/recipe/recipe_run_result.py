@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple, List
 
 import os
 import yaml
@@ -227,22 +227,17 @@ def _compute_T_substrate_robot_mount_mm(
     robot_doc = _load_yaml_file(robot_yaml_path)
     mounts_doc = _load_yaml_file(mounts_yaml_path)
 
-    # world -> substrate_mount (from scene objects)
     o_mount = _scene_object_by_id(scene_doc, substrate_mount_id)
     if str(o_mount.get("frame", "world")) != "world":
         raise ValueError("scene.yaml: substrate_mount.frame must be 'world' for this helper")
     T_world_sub_mount = _tf_from_scene_obj_meters(o_mount)
 
-    # substrate_mount -> substrate (SSoT: mounts yaml)
     T_sub_mount_substrate = _tf_substrate_mount_to_substrate_from_mounts_yaml(mounts_doc=mounts_doc)
 
-    # world -> substrate
     T_world_substrate = _mat4_mul(T_world_sub_mount, T_sub_mount_substrate)
 
-    # world -> robot_mount
     T_world_robot_mount = _tf_world_robot_mount_from_robot_yaml(robot_doc)
 
-    # substrate <- robot_mount : inv(world->substrate) * (world->robot_mount)
     T_substrate_world = _mat4_inv_rigid(T_world_substrate)
     return _mat4_mul(T_substrate_world, T_world_robot_mount)
 
@@ -261,6 +256,7 @@ class RunResult:
       - Process collects ONLY raw artifacts (traj + robot_description).
       - FK/TCP building is a deterministic post-step.
       - Evaluation is explicit (call evaluate_tcp_against_draft()).
+      - Report string is generated INSIDE RunResult (no panel formatting).
 
     planned_run  = {"traj": <JTBySegment YAML dict>, "tcp": <TCP YAML dict>}
     executed_run = {"traj": <JTBySegment YAML dict>, "tcp": <TCP YAML dict>}
@@ -281,6 +277,9 @@ class RunResult:
     # STRICT invariant: TCP target frame is ALWAYS substrate.
     TCP_TARGET_FRAME: str = "substrate"
 
+    # Report title defaults (panels can simply display rr.eval["report_text"])
+    DEFAULT_REPORT_TITLE: str = "=== CURRENT RUN (Live) ==="
+
     def __post_init__(self) -> None:
         self.urdf_xml = str(self.urdf_xml or "")
         self.srdf_xml = str(self.srdf_xml or "")
@@ -298,6 +297,13 @@ class RunResult:
 
         self.valid = bool(self.valid)
         self.invalid_reason = str(self.invalid_reason or "")
+
+        # Ensure report_text exists if eval already loaded from disk/payload
+        if isinstance(self.eval, dict) and self.eval and "report_text" not in self.eval:
+            try:
+                self.eval["report_text"] = self._build_report_text(title=self.DEFAULT_REPORT_TITLE)
+            except Exception:
+                pass
 
     # ------------------------------------------------------------
     # basic setters
@@ -323,6 +329,162 @@ class RunResult:
         self.fk_meta = _dict(meta)
 
     # ------------------------------------------------------------
+    # report builder (panel reads string only)
+    # ------------------------------------------------------------
+
+    @staticmethod
+    def _as_text(x: Any) -> str:
+        s = str(x or "").strip()
+        return s if s else "–"
+
+    @staticmethod
+    def _fmt_num(x: Any) -> str:
+        if x is None:
+            return "–"
+        if isinstance(x, bool):
+            return "true" if x else "false"
+        if isinstance(x, (int, float)):
+            return f"{float(x):.3f}"
+        return str(x)
+
+    @staticmethod
+    def _count_tcp_poses(doc: Any) -> int:
+        if not isinstance(doc, dict):
+            return 0
+        sides = doc.get("sides")
+        if not isinstance(sides, dict):
+            return 0
+        n = 0
+        for _, s in sides.items():
+            if isinstance(s, dict):
+                pq = s.get("poses_quat")
+                if isinstance(pq, list):
+                    n += len(pq)
+        return int(n)
+
+    @staticmethod
+    def _count_traj_points(doc: Any) -> int:
+        if not isinstance(doc, dict):
+            return 0
+        segs = doc.get("segments")
+        if not isinstance(segs, dict):
+            return 0
+        total = 0
+        for _, s in segs.items():
+            if not isinstance(s, dict):
+                continue
+            pts = s.get("points")
+            if isinstance(pts, list):
+                total += len(pts)
+                continue
+            jt = s.get("joint_trajectory")
+            if isinstance(jt, dict):
+                pts2 = jt.get("points")
+                if isinstance(pts2, list):
+                    total += len(pts2)
+        return int(total)
+
+    @staticmethod
+    def _pad_table(rows: List[Tuple[str, str, str]]) -> str:
+        if not rows:
+            return ""
+        c0 = max(len(r[0]) for r in rows)
+        c1 = max(len(r[1]) for r in rows)
+        c2 = max(len(r[2]) for r in rows)
+
+        def line(a: str, b: str, c: str) -> str:
+            return f"{a.ljust(c0)} | {b.ljust(c1)} | {c.ljust(c2)}"
+
+        out: List[str] = []
+        out.append(line("topic", "planned", "executed"))
+        out.append(line("-" * 5, "-" * 6, "-" * 8))
+        for a, b, c in rows:
+            out.append(line(a, b, c))
+        return "\n".join(out)
+
+    def _build_report_text(self, *, title: str) -> str:
+        """
+        Builds the exact text the panels should display.
+
+        Includes:
+          - topic | planned | executed table
+          - "reason:" line if invalid_reason is present
+        """
+        pl_tcp = self.planned_run.get("tcp") if isinstance(self.planned_run, dict) else {}
+        ex_tcp = self.executed_run.get("tcp") if isinstance(self.executed_run, dict) else {}
+        pl_traj = self.planned_run.get("traj") if isinstance(self.planned_run, dict) else {}
+        ex_traj = self.executed_run.get("traj") if isinstance(self.executed_run, dict) else {}
+
+        ev = self.eval if isinstance(self.eval, dict) else {}
+
+        # threshold + scores
+        thr = ev.get("threshold", None)
+        total_score = ev.get("score")
+        if total_score is None and isinstance(ev.get("total"), dict):
+            total_score = ev["total"].get("score")
+
+        # planned/executed score convenience (from evaluator)
+        p_score = ev.get("planned_score", None)
+        e_score = ev.get("executed_score", None)
+        if p_score is None:
+            p_score = _get_nested(ev, ["planned", "score"], None)
+        if e_score is None:
+            e_score = _get_nested(ev, ["executed", "score"], None)
+
+        # planned/executed valid (threshold-aware if provided)
+        p_ok = ev.get("planned_valid", None)
+        e_ok = ev.get("executed_valid", None)
+        if p_ok is None:
+            # fallback: if we have split eval in docs later, report builder still ok with "–"
+            p_ok = None
+        if e_ok is None:
+            e_ok = None
+
+        rows: List[Tuple[str, str, str]] = []
+        rows.append(("traj_points", str(self._count_traj_points(pl_traj)), str(self._count_traj_points(ex_traj))))
+        rows.append(("tcp_poses", str(self._count_tcp_poses(pl_tcp)), str(self._count_tcp_poses(ex_tcp))))
+        rows.append(("tcp_frame", self._as_text(_dict(pl_tcp).get("frame")), self._as_text(_dict(ex_tcp).get("frame"))))
+
+        rows.append(("eval_valid", self._as_text(p_ok), self._as_text(e_ok)))
+        rows.append(("eval_thr", self._fmt_num(thr), self._fmt_num(thr)))
+        rows.append(("eval_score", self._fmt_num(total_score), self._fmt_num(total_score)))
+        rows.append(("planned_score", self._fmt_num(p_score), "–"))
+        rows.append(("executed_score", "–", self._fmt_num(e_score)))
+
+        comp = ev.get("comparison")
+        if isinstance(comp, list):
+            for r in comp:
+                if not isinstance(r, dict):
+                    continue
+                metric = self._as_text(r.get("metric"))
+                rows.append((f"metric:{metric}", self._as_text(r.get("planned")), self._as_text(r.get("executed"))))
+
+        txt: List[str] = []
+        txt.append(str(title or "").strip() or self.DEFAULT_REPORT_TITLE)
+        txt.append(self._pad_table(rows))
+
+        inv = self._as_text(ev.get("invalid_reason"))
+        if inv != "–" and inv != "":
+            txt.append("")
+            txt.append(f"reason: {inv}")
+
+        return "\n".join(txt).strip()
+
+    def report_text(self, *, title: Optional[str] = None) -> str:
+        """
+        Panel convenience accessor:
+          panel can do: rr.report_text()
+        """
+        if isinstance(self.eval, dict):
+            s = self.eval.get("report_text")
+            if isinstance(s, str) and s.strip():
+                return s
+        try:
+            return self._build_report_text(title=(title or self.DEFAULT_REPORT_TITLE))
+        except Exception:
+            return "–"
+
+    # ------------------------------------------------------------
     # eval persistence helpers (split planned/executed)
     # ------------------------------------------------------------
 
@@ -333,6 +495,10 @@ class RunResult:
 
           - planned_tcp.eval   -> planned score/valid/invalid_reason
           - executed_tcp.eval  -> executed score/valid/invalid_reason
+
+        Additionally keeps:
+          - threshold, domain, segment, comparison, etc.
+          - report_text (generated by RunResult)
         """
         ev = _dict(full_eval)
         thr = ev.get("threshold", None)
@@ -341,39 +507,39 @@ class RunResult:
         except Exception:
             thr_f = 90.0
 
-        p = _dict(ev.get("planned"))
-        e = _dict(ev.get("executed"))
+        # Scores (prefer convenience keys)
+        p_score = ev.get("planned_score", None)
+        e_score = ev.get("executed_score", None)
+        try:
+            p_score_f = float(p_score) if p_score is not None else float(_get_nested(ev, ["planned", "score"], 0.0) or 0.0)
+        except Exception:
+            p_score_f = 0.0
+        try:
+            e_score_f = float(e_score) if e_score is not None else float(_get_nested(ev, ["executed", "score"], 0.0) or 0.0)
+        except Exception:
+            e_score_f = 0.0
 
-        def _score_of(mode: Dict[str, Any]) -> float:
-            s = mode.get("score")
-            if s is None and isinstance(mode.get("total"), dict):
-                s = mode["total"].get("score")
-            try:
-                return float(s) if s is not None else 0.0
-            except Exception:
-                return 0.0
-
-        p_score = _score_of(p)
-        e_score = _score_of(e)
-
-        p_valid = bool(p.get("valid", True)) and (p_score >= thr_f)
-        e_valid = bool(e.get("valid", True)) and (e_score >= thr_f)
+        # If evaluator already computed threshold-aware booleans, trust them; else compute from scores.
+        p_ok = ev.get("planned_valid", None)
+        e_ok = ev.get("executed_valid", None)
+        p_valid = bool(p_ok) if isinstance(p_ok, bool) else (p_score_f >= thr_f)
+        e_valid = bool(e_ok) if isinstance(e_ok, bool) else (e_score_f >= thr_f)
 
         base: Dict[str, Any] = dict(ev)
-        base.pop("fk_meta", None)
+        base.pop("fk_meta", None)  # fk_meta stays in TCP doc root, not inside eval
 
         planned_ev = dict(base)
         planned_ev["mode"] = "planned"
         planned_ev["valid"] = bool(p_valid)
-        planned_ev["score"] = float(p_score)
-        planned_ev["total"] = {"score": float(p_score)}
+        planned_ev["score"] = float(p_score_f)
+        planned_ev["total"] = {"score": float(p_score_f)}
         planned_ev["invalid_reason"] = "" if p_valid else "score_below_threshold"
 
         executed_ev = dict(base)
         executed_ev["mode"] = "executed"
         executed_ev["valid"] = bool(e_valid)
-        executed_ev["score"] = float(e_score)
-        executed_ev["total"] = {"score": float(e_score)}
+        executed_ev["score"] = float(e_score_f)
+        executed_ev["total"] = {"score": float(e_score_f)}
         executed_ev["invalid_reason"] = "" if e_valid else "score_below_threshold"
 
         return planned_ev, executed_ev
@@ -385,9 +551,17 @@ class RunResult:
         STRICT:
           - No recursion.
           - Writes ONLY into TCP YAML docs.
-          - Splits into planned/executed so Disk UI columns differ.
+          - Splits into planned/executed so disk can persist both.
+          - Generates report_text inside RunResult so panels only display strings.
         """
         self.eval = _dict(eval_dict)
+
+        # Always (re)build report_text from current rr state (traj/tcp + eval)
+        try:
+            self.eval["report_text"] = self._build_report_text(title=self.DEFAULT_REPORT_TITLE)
+        except Exception:
+            # keep best-effort; panel should still render something
+            pass
 
         pl_tcp_doc = _dict(self.planned_run.get("tcp"))
         ex_tcp_doc = _dict(self.executed_run.get("tcp"))
@@ -398,6 +572,14 @@ class RunResult:
 
         if self.eval:
             pl_eval, ex_eval = self._split_eval_for_tcp_docs(self.eval)
+
+            # Mirror the single report string into BOTH eval dicts on disk,
+            # so stored view can also just display eval.report_text.
+            rep = self.eval.get("report_text")
+            if isinstance(rep, str) and rep.strip():
+                pl_eval["report_text"] = rep
+                ex_eval["report_text"] = rep
+
             pl_tcp_doc["eval"] = pl_eval
             ex_tcp_doc["eval"] = ex_eval
 
@@ -453,11 +635,7 @@ class RunResult:
 
     def format_eval_text(self, *, include_tcp: bool = True) -> str:
         """
-        UI text:
-          - overall eval line
-          - per-segment summary if present
-          - tcp pose counts (global sides)
-          - fk_meta essentials
+        Legacy-ish textual summary (kept for debugging); panels should prefer eval['report_text'].
         """
         lines: list[str] = []
         lines.append(self.eval_summary_line())
@@ -492,26 +670,12 @@ class RunResult:
             pl_tcp = self.planned_run.get("tcp") if isinstance(self.planned_run, dict) else {}
             ex_tcp = self.executed_run.get("tcp") if isinstance(self.executed_run, dict) else {}
 
-            def _count_tcp_global(doc: Any) -> int:
-                if not isinstance(doc, dict):
-                    return 0
-                sides = doc.get("sides")
-                if not isinstance(sides, dict):
-                    return 0
-                n = 0
-                for _, s in sides.items():
-                    if isinstance(s, dict):
-                        pq = s.get("poses_quat")
-                        if isinstance(pq, list):
-                            n += len(pq)
-                return n
-
             f_pl = (pl_tcp.get("frame") if isinstance(pl_tcp, dict) else "") or ""
             f_ex = (ex_tcp.get("frame") if isinstance(ex_tcp, dict) else "") or ""
             frame_txt = f" frame(planned={f_pl or 'n/a'}, executed={f_ex or 'n/a'})"
             lines.append("")
             lines.append(
-                f"tcp: planned={_count_tcp_global(pl_tcp)} poses | executed={_count_tcp_global(ex_tcp)} poses |{frame_txt}"
+                f"tcp: planned={self._count_tcp_poses(pl_tcp)} poses | executed={self._count_tcp_poses(ex_tcp)} poses |{frame_txt}"
             )
 
         if self.fk_meta:
@@ -642,7 +806,6 @@ class RunResult:
         self.urdf_xml = urdf_xml
         self.srdf_xml = srdf_xml
 
-        # STRICT: substrate is the only supported TCP target frame
         if self.TCP_TARGET_FRAME != "substrate":
             raise ValueError(f"RunResult TCP_TARGET_FRAME must be 'substrate', got {self.TCP_TARGET_FRAME!r}")
 
@@ -684,7 +847,6 @@ class RunResult:
             require_all_segments=True,
         )
 
-        # STRICT: always transform into substrate.
         if base_link != "robot_mount":
             raise ValueError(
                 f"postprocess_from_urdf_srdf: expected cfg.base_link='robot_mount' for offline substrate transform, got {base_link!r}"
@@ -744,6 +906,8 @@ class RunResult:
         """
         Explicit evaluation step. Intended to be called in RecipePanel (NOT in process thread).
         Stores result via set_eval() and embeds per-mode eval into TCP docs.
+
+        Panels should display rr.eval["report_text"] or rr.report_text().
         """
         planned_tcp = _dict(self.planned_run.get("tcp"))
         executed_tcp = _dict(self.executed_run.get("tcp"))
@@ -762,9 +926,10 @@ class RunResult:
         except Exception as e:
             eval_dict = {"valid": False, "invalid_reason": f"eval_failed: {e}", "domain": str(domain or "tcp")}
 
+        # set_eval builds report_text and mirrors it into tcp docs
         self.set_eval(_dict(eval_dict))
 
         if gate_valid_on_eval and self.eval and self.eval.get("valid") is False:
             self.invalidate(f"eval_invalid: {self.eval.get('invalid_reason') or 'invalid'}")
 
-        return _dict(eval_dict)
+        return _dict(self.eval)
