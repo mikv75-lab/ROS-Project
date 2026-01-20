@@ -93,7 +93,9 @@ def _quat_to_rot3(q: Tuple[float, float, float, float]) -> list[list[float]]:
     ]
 
 
-def _mat4_from_xyz_quat_mm(xyz_mm: Tuple[float, float, float], q: Tuple[float, float, float, float]) -> list[list[float]]:
+def _mat4_from_xyz_quat_mm(
+    xyz_mm: Tuple[float, float, float], q: Tuple[float, float, float, float]
+) -> list[list[float]]:
     R = _quat_to_rot3(q)
     tx, ty, tz = xyz_mm
     return [
@@ -316,6 +318,11 @@ class RunResult:
         """
         Stores eval dict AND embeds it into planned/executed TCP YAML docs.
         IMPORTANT: This function must not recurse.
+
+        STRICT:
+          - Persist the FULL eval for disk/UI ("eval_full") so tables like
+            topic | planned | executed are available after reload.
+          - Persist per-mode eval under "eval" for compatibility.
         """
         self.eval = _dict(eval_dict)
 
@@ -329,7 +336,11 @@ class RunResult:
                 ex_tcp_doc["fk_meta"] = dict(self.fk_meta)
 
             if self.eval:
-                # If caller provides v2 split, honor it; else store same dict
+                # NEW: store full eval (includes comparison/threshold/domain/valid)
+                pl_tcp_doc["eval_full"] = dict(self.eval)
+                ex_tcp_doc["eval_full"] = dict(self.eval)
+
+                # Existing behavior: store per-mode split if provided, else store same dict
                 pl_eval = _dict(self.eval.get("planned"))
                 ex_eval = _dict(self.eval.get("executed"))
 
@@ -368,7 +379,14 @@ class RunResult:
 
         valid = self.eval.get("valid")
         dom = self.eval.get("domain") or ""
+
+        # Support both schemas:
+        # - old: total.score
+        # - new: score (top-level)
         total = _get_nested(self.eval, ["total", "score"], None)
+        if total is None:
+            total = self.eval.get("score", None)
+
         thr = self.eval.get("threshold", None)
 
         parts = []

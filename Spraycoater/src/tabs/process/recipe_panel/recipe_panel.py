@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, Any
+from typing import Optional, Any, Dict, List, Tuple
 
 import numpy as np
 from PyQt6 import QtCore
@@ -15,7 +15,6 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QTextEdit,
     QLabel,
-    QMessageBox,
     QInputDialog,
     QSizePolicy,
 )
@@ -247,11 +246,11 @@ class RecipePanel(QWidget):
 
         rr: RunResult = rr_obj
 
-        # Show current run summary
+        # Show current run in TABLE format (topic | planned | executed)
         try:
-            self.txtNewRun.setPlainText(rr.format_eval_text())
+            self.txtNewRun.setPlainText(self._format_eval_table_for_run(rr, title="=== CURRENT RUN (Live) ==="))
         except Exception as e:
-            self.txtNewRun.setPlainText(f"Run finished for {key}, but format_eval_text failed: {e}")
+            self.txtNewRun.setPlainText(f"Run finished for {key}, but table render failed: {e}")
 
         # Refresh disk SSoT + republish stored overlays
         try:
@@ -290,6 +289,263 @@ class RecipePanel(QWidget):
 
     def _ros_has(self, name: str) -> bool:
         return bool(self.ros is not None and hasattr(self.ros, name) and callable(getattr(self.ros, name)))
+
+    # ============================================================
+    # Table rendering (topic | planned | executed)
+    # ============================================================
+
+    @staticmethod
+    def _count_tcp_poses(doc: Any) -> int:
+        if not isinstance(doc, dict):
+            return 0
+        sides = doc.get("sides")
+        if not isinstance(sides, dict):
+            return 0
+        n = 0
+        for _, s in sides.items():
+            if isinstance(s, dict):
+                pq = s.get("poses_quat")
+                if isinstance(pq, list):
+                    n += len(pq)
+        return int(n)
+
+    @staticmethod
+    def _count_traj_points(doc: Any) -> int:
+        """
+        Best-effort count for JTBySegment YAML.
+        Expected: {"segments": {seg: {"points": [...]}}} or {"segments": {seg: {"joint_trajectory": {"points": [...]}}}}
+        """
+        if not isinstance(doc, dict):
+            return 0
+        segs = doc.get("segments")
+        if not isinstance(segs, dict):
+            return 0
+        total = 0
+        for _, s in segs.items():
+            if not isinstance(s, dict):
+                continue
+            pts = s.get("points")
+            if isinstance(pts, list):
+                total += len(pts)
+                continue
+            jt = s.get("joint_trajectory")
+            if isinstance(jt, dict):
+                pts2 = jt.get("points")
+                if isinstance(pts2, list):
+                    total += len(pts2)
+        return int(total)
+
+    @staticmethod
+    def _fmt_num(x: Any) -> str:
+        if x is None:
+            return "–"
+        if isinstance(x, bool):
+            return "true" if x else "false"
+        if isinstance(x, (int, float)):
+            try:
+                return f"{float(x):.3f}"
+            except Exception:
+                return str(x)
+        return str(x)
+
+    @staticmethod
+    def _as_text(x: Any) -> str:
+        s = str(x or "").strip()
+        return s if s else "–"
+
+    def _pad_table(self, rows: List[Tuple[str, str, str]]) -> str:
+        """
+        Render as monospaced aligned text. QTextEdit uses default font; alignment still helps.
+        """
+        if not rows:
+            return ""
+
+        c0 = max(len(r[0]) for r in rows)
+        c1 = max(len(r[1]) for r in rows)
+        c2 = max(len(r[2]) for r in rows)
+
+        def line(a: str, b: str, c: str) -> str:
+            return f"{a.ljust(c0)} | {b.ljust(c1)} | {c.ljust(c2)}"
+
+        out: List[str] = []
+        out.append(line("topic", "planned", "executed"))
+        out.append(line("-" * 5, "-" * 6, "-" * 8))
+        for a, b, c in rows:
+            out.append(line(a, b, c))
+        return "\n".join(out)
+
+    def _extract_eval_pair(self, recipe: Recipe) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        STRICT-ish:
+          - Primary: recipe.planned_tcp.eval and recipe.executed_tcp.eval (stored on disk)
+          - Fallback: empty dicts
+        """
+        pl: Dict[str, Any] = {}
+        ex: Dict[str, Any] = {}
+        planned_obj = getattr(recipe, "planned_tcp", None)
+        executed_obj = getattr(recipe, "executed_tcp", None)
+
+        if planned_obj is not None:
+            v = getattr(planned_obj, "eval", None)
+            if isinstance(v, dict):
+                pl = v
+        if executed_obj is not None:
+            v = getattr(executed_obj, "eval", None)
+            if isinstance(v, dict):
+                ex = v
+        return pl, ex
+
+    def _format_eval_table_for_run(self, rr: RunResult, *, title: str) -> str:
+        """
+        Build a compact overview for a RunResult:
+          - tcp counts + frames
+          - fk meta
+          - eval summary + score/threshold/valid
+          - comparison rows from eval (if present): Score / mean/max etc.
+        """
+        pl_tcp = rr.planned_run.get("tcp") if isinstance(rr.planned_run, dict) else {}
+        ex_tcp = rr.executed_run.get("tcp") if isinstance(rr.executed_run, dict) else {}
+        pl_traj = rr.planned_run.get("traj") if isinstance(rr.planned_run, dict) else {}
+        ex_traj = rr.executed_run.get("traj") if isinstance(rr.executed_run, dict) else {}
+
+        rows: List[Tuple[str, str, str]] = []
+
+        # Trajectory point counts (best-effort)
+        rows.append(("traj_points", str(self._count_traj_points(pl_traj)), str(self._count_traj_points(ex_traj))))
+
+        # TCP pose counts + frame
+        rows.append(("tcp_poses", str(self._count_tcp_poses(pl_tcp)), str(self._count_tcp_poses(ex_tcp))))
+        rows.append(
+            ("tcp_frame", self._as_text(pl_tcp.get("frame") if isinstance(pl_tcp, dict) else ""), self._as_text(ex_tcp.get("frame") if isinstance(ex_tcp, dict) else ""))
+        )
+
+        # Eval summary
+        ev = rr.eval if isinstance(rr.eval, dict) else {}
+        rows.append(("eval_valid", self._as_text(ev.get("valid")), self._as_text(ev.get("valid"))))
+        rows.append(("eval_thr", self._fmt_num(ev.get("threshold")), self._fmt_num(ev.get("threshold"))))
+
+        # Prefer ev["score"] then ev["total"]["score"]
+        total_score = ev.get("score")
+        if total_score is None and isinstance(ev.get("total"), dict):
+            total_score = ev["total"].get("score")
+        rows.append(("eval_score", self._fmt_num(total_score), self._fmt_num(total_score)))
+
+        # Per-mode scores (if v4 evaluator returned planned/executed)
+        p = ev.get("planned") if isinstance(ev.get("planned"), dict) else {}
+        e = ev.get("executed") if isinstance(ev.get("executed"), dict) else {}
+        if p or e:
+            rows.append(("planned_score", self._fmt_num(p.get("score")), "–"))
+            rows.append(("executed_score", "–", self._fmt_num(e.get("score"))))
+
+        # Comparison table rows (Score / mean / max / rot) if provided
+        comp = ev.get("comparison")
+        if isinstance(comp, list) and comp:
+            for r in comp:
+                if not isinstance(r, dict):
+                    continue
+                metric = self._as_text(r.get("metric"))
+                rows.append((f"metric:{metric}", self._as_text(r.get("planned")), self._as_text(r.get("executed"))))
+
+        # FK meta (same for both columns; show once mirrored)
+        fk = rr.fk_meta if isinstance(rr.fk_meta, dict) else {}
+        if fk:
+            rows.append(("fk.base_link", self._as_text(fk.get("base_link")), self._as_text(fk.get("base_link"))))
+            rows.append(("fk.ee_link", self._as_text(fk.get("ee_link")), self._as_text(fk.get("ee_link"))))
+            rows.append(("fk.step_mm", self._fmt_num(fk.get("step_mm")), self._fmt_num(fk.get("step_mm"))))
+            segs = fk.get("segments_included") or fk.get("segment_order") or []
+            rows.append(("fk.segments", str(len(segs)) if isinstance(segs, list) else self._as_text(segs), str(len(segs)) if isinstance(segs, list) else self._as_text(segs)))
+
+        txt = []
+        txt.append(str(title or "").strip())
+        txt.append(self._pad_table(rows))
+        inv = self._as_text(ev.get("invalid_reason"))
+        if inv and inv != "–":
+            txt.append("")
+            txt.append(f"reason: {inv}")
+        return "\n".join(txt).strip()
+
+    def _format_eval_table_for_recipe_disk(self, recipe: Recipe, *, title: str) -> str:
+        """
+        Disk view: render eval using recipe.planned_tcp.eval and recipe.executed_tcp.eval (per-mode).
+        Additionally show stored TCP counts + frame if available as dict-like or Draft-like.
+        """
+        rows: List[Tuple[str, str, str]] = []
+
+        # Try to extract stored tcp docs if they exist (Draft or dict)
+        planned_obj = getattr(recipe, "planned_tcp", None)
+        executed_obj = getattr(recipe, "executed_tcp", None)
+
+        # TCP counts
+        def _count_from_obj(o: Any) -> int:
+            if o is None:
+                return 0
+            if isinstance(o, dict):
+                return self._count_tcp_poses(o)
+            # Draft-like: o.sides[side].poses_quat
+            sides = getattr(o, "sides", None)
+            if isinstance(sides, dict):
+                n = 0
+                for _, s in sides.items():
+                    if isinstance(s, dict):
+                        pq = s.get("poses_quat")
+                        if isinstance(pq, list):
+                            n += len(pq)
+                return int(n)
+            return 0
+
+        def _frame_from_obj(o: Any) -> str:
+            if o is None:
+                return "–"
+            if isinstance(o, dict):
+                return self._as_text(o.get("frame"))
+            fr = getattr(o, "frame", None)
+            return self._as_text(fr)
+
+        rows.append(("tcp_poses", str(_count_from_obj(planned_obj)), str(_count_from_obj(executed_obj))))
+        rows.append(("tcp_frame", _frame_from_obj(planned_obj), _frame_from_obj(executed_obj)))
+
+        # Eval dicts (stored separately per TCP)
+        pl_eval, ex_eval = self._extract_eval_pair(recipe)
+
+        rows.append(("eval_valid", self._as_text(pl_eval.get("valid")), self._as_text(ex_eval.get("valid"))))
+        rows.append(("eval_thr", self._fmt_num(pl_eval.get("threshold")), self._fmt_num(ex_eval.get("threshold"))))
+
+        # Prefer per-mode score fields
+        def _score_of(ev: Dict[str, Any]) -> Any:
+            s = ev.get("score")
+            if s is None and isinstance(ev.get("total"), dict):
+                s = ev["total"].get("score")
+            return s
+
+        rows.append(("eval_score", self._fmt_num(_score_of(pl_eval)), self._fmt_num(_score_of(ex_eval))))
+
+        # If each eval stored a comparison table, try to show it; else nothing
+        # (Typically you store full v4 dict into both, so comparison exists.)
+        comp = pl_eval.get("comparison")
+        if isinstance(comp, list) and comp:
+            for r in comp:
+                if not isinstance(r, dict):
+                    continue
+                metric = self._as_text(r.get("metric"))
+                rows.append((f"metric:{metric}", self._as_text(r.get("planned")), self._as_text(r.get("executed"))))
+
+        txt = []
+        txt.append(str(title or "").strip())
+        txt.append(self._pad_table(rows))
+
+        # show reasons if present
+        pl_reason = self._as_text(pl_eval.get("invalid_reason"))
+        ex_reason = self._as_text(ex_eval.get("invalid_reason"))
+        if (pl_reason and pl_reason != "–") or (ex_reason and ex_reason != "–"):
+            txt.append("")
+            txt.append(f"planned_reason: {pl_reason}")
+            txt.append(f"executed_reason: {ex_reason}")
+
+        return "\n".join(txt).strip()
+
+    # ============================================================
+    # Publishing / overlays
+    # ============================================================
 
     def _republish_spraypaths_for_key(self, key: str, recipe_model: Recipe) -> None:
         """
@@ -445,25 +701,14 @@ class RecipePanel(QWidget):
         self.infoBox.update_from_recipe(recipe, points=pts)
 
     def _update_stored_view(self, recipe: Recipe) -> None:
-        lines = ["=== STORED EVAL (Disk) ==="]
-        found = False
-
-        for mode, draft in [
-            ("Planned", getattr(recipe, "planned_tcp", None)),
-            ("Executed", getattr(recipe, "executed_tcp", None)),
-        ]:
-            if draft:
-                eval_data = getattr(draft, "eval", None)
-                if eval_data:
-                    lines.append(f"{mode}: {str(eval_data)}")
-                else:
-                    lines.append(f"{mode}: (no eval)")
-                found = True
-
-        if not found:
-            lines.append("(No stored evaluations found)")
-
-        self.txtStored.setPlainText("\n".join(lines))
+        """
+        STORED view shows a table: topic | planned | executed.
+        Uses per-mode eval stored on disk (recipe.planned_tcp.eval + recipe.executed_tcp.eval).
+        """
+        try:
+            self.txtStored.setPlainText(self._format_eval_table_for_recipe_disk(recipe, title="=== STORED EVAL (Disk) ==="))
+        except Exception as e:
+            self.txtStored.setPlainText(f"=== STORED EVAL (Disk) ===\n(render failed: {e})")
 
     def _on_load_clicked(self) -> None:
         keys = self.repo.list_recipes()

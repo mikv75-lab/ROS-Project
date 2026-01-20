@@ -426,14 +426,19 @@ class RecipeEvaluator:
         e_eval = run_mode(ex, "executed")
 
         thr = float(getattr(recipe, "parameters", {}).get("eval_threshold", 90.0))
-        valid = (p_eval.get("score", 0.0) >= thr) and (e_eval.get("score", 0.0) >= thr)
+        p_score = float(p_eval.get("score", 0.0) or 0.0)
+        e_score = float(e_eval.get("score", 0.0) or 0.0)
+
+        # STRICT overall: consistent with gating semantics
+        overall_score = float(min(p_score, e_score))
+        valid = (p_score >= thr) and (e_score >= thr)
 
         def _fmt(x: Any) -> str:
             return f"{x:.3f}" if isinstance(x, (float, int)) else "-"
 
         pm, em = p_eval.get("metrics", {}), e_eval.get("metrics", {})
         table = [
-            {"metric": "Score", "planned": _fmt(p_eval.get("score")), "executed": _fmt(e_eval.get("score"))},
+            {"metric": "Score", "planned": _fmt(p_score), "executed": _fmt(e_score)},
             {"metric": "Ø Pos (mm)", "planned": _fmt(pm.get("mean_l2_mm")), "executed": _fmt(em.get("mean_l2_mm"))},
             {"metric": "Max Pos (mm)", "planned": _fmt(pm.get("max_l2_mm")), "executed": _fmt(em.get("max_l2_mm"))},
             {"metric": "Ø Rot (deg)", "planned": _fmt(pm.get("mean_angle_deg")), "executed": _fmt(em.get("mean_angle_deg"))},
@@ -445,7 +450,24 @@ class RecipeEvaluator:
             "segment": seg_id,
             "valid": bool(valid),
             "threshold": float(thr),
+
+            # NEW: stable overall score for summary + legacy UI paths
+            "score": float(overall_score),
+            "total": {"score": float(overall_score)},
+
+            # For RunResult.format_eval_text()
+            "segments": {
+                str(seg_id): {
+                    "valid": bool(valid),
+                    "score": float(overall_score),
+                    "planned_score": float(p_score),
+                    "executed_score": float(e_score),
+                }
+            },
+
+            # Table for: topic | planned | executed (your UI can render directly)
             "comparison": table,
+
             "planned": p_eval,
             "executed": e_eval,
             "invalid_reason": "" if valid else "score_below_threshold",
