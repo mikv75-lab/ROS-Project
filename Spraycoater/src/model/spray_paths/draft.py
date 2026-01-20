@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List, Mapping, Sequence
 
 
 # ============================================================
@@ -40,6 +40,41 @@ def _parse_pose_list(v: Any, *, name: str) -> List["PoseQuat"]:
         if isinstance(p, dict):
             out.append(PoseQuat.from_dict(p, name=f"{name}[{i}]"))
     return out
+
+
+def _pose_close(a: "PoseQuat", b: "PoseQuat", *, pos_eps: float = 1e-6, quat_eps: float = 1e-6) -> bool:
+    return (
+        abs(a.x - b.x) <= pos_eps
+        and abs(a.y - b.y) <= pos_eps
+        and abs(a.z - b.z) <= pos_eps
+        and abs(a.qx - b.qx) <= quat_eps
+        and abs(a.qy - b.qy) <= quat_eps
+        and abs(a.qz - b.qz) <= quat_eps
+        and abs(a.qw - b.qw) <= quat_eps
+    )
+
+
+def _strip_prefix(full: Sequence["PoseQuat"], prefix: Sequence["PoseQuat"]) -> List["PoseQuat"]:
+    if not prefix:
+        return list(full)
+    if len(full) < len(prefix):
+        return list(full)
+    for i in range(len(prefix)):
+        if not _pose_close(full[i], prefix[i]):
+            return list(full)
+    return list(full[len(prefix) :])
+
+
+def _strip_suffix(full: Sequence["PoseQuat"], suffix: Sequence["PoseQuat"]) -> List["PoseQuat"]:
+    if not suffix:
+        return list(full)
+    if len(full) < len(suffix):
+        return list(full)
+    off = len(full) - len(suffix)
+    for i in range(len(suffix)):
+        if not _pose_close(full[off + i], suffix[i]):
+            return list(full)
+    return list(full[:off])
 
 
 # ============================================================
@@ -91,9 +126,9 @@ class PathSide:
     YAML v1 (extended):
       sides:
         top:
-          predispense: [ {pose}, ... ]   # usually 1 pose (derived from first)
-          retreat:     [ {pose}, ... ]   # usually 1 pose (derived from last)
-          poses_quat:  [ {pose}, ... ]   # full path
+          predispense: [ {pose}, ... ]   # may be 1 pose or a short path
+          retreat:     [ {pose}, ... ]   # may be 1 pose or a short path
+          poses_quat:  [ {pose}, ... ]   # full path (may include pre/ret depending on producer)
     """
 
     predispense: List[PoseQuat] = field(default_factory=list)
@@ -163,7 +198,10 @@ class Draft:
             "sides": {k: v.to_dict() for k, v in (self.sides or {}).items()},
         }
 
+    # ------------------------------------------------------------
     # Convenience getters
+    # ------------------------------------------------------------
+
     def poses_quat(self, side: str) -> List[PoseQuat]:
         s = str(side)
         ps = (self.sides or {}).get(s)
@@ -178,3 +216,56 @@ class Draft:
         s = str(side)
         ps = (self.sides or {}).get(s)
         return list(ps.retreat) if ps else []
+
+    # ------------------------------------------------------------
+    # STRICT: recipe-only extraction + segment API
+    # ------------------------------------------------------------
+
+    def recipe_poses_quat(self, side: str) -> List[PoseQuat]:
+        """
+        Returns ONLY the recipe portion of the path.
+
+        If producers accidentally concatenate pre/ret into poses_quat, we remove:
+          - an exact prefix match of side.predispense
+          - an exact suffix match of side.retreat
+
+        Tolerant compare is used; if no match, nothing is stripped.
+        """
+        s = str(side)
+        ps = (self.sides or {}).get(s)
+        if not ps:
+            return []
+
+        full = list(ps.poses_quat)
+        if not full:
+            return []
+
+        pre = list(ps.predispense)
+        ret = list(ps.retreat)
+
+        # Strip only when it would not trivially delete the entire sequence.
+        out = full
+        if pre and len(out) > len(pre) + 1:
+            out = _strip_prefix(out, pre)
+        if ret and len(out) > len(ret) + 1:
+            out = _strip_suffix(out, ret)
+
+        return list(out)
+
+    def poses_quat_segment(self, side: str, seg_id: str) -> List[PoseQuat]:
+        """
+        Segment accessor for evaluators.
+
+        Mapping:
+          - MOVE_PREDISPENSE -> predispense(side)
+          - MOVE_RETREAT     -> retreat(side)
+          - MOVE_RECIPE      -> recipe_poses_quat(side)
+          - default          -> recipe_poses_quat(side)
+        """
+        sid = str(seg_id or "").strip()
+        if sid == "MOVE_PREDISPENSE":
+            return self.predispense(side)
+        if sid == "MOVE_RETREAT":
+            return self.retreat(side)
+        # Default and MOVE_RECIPE
+        return self.recipe_poses_quat(side)

@@ -16,6 +16,7 @@ from .recipe import Recipe
 # Data containers
 # ============================================================
 
+
 @dataclass
 class EvalWeights:
     w_mean: float = 0.40
@@ -41,6 +42,7 @@ class EvalResult:
 # Evaluator (TCP vs Draft; prefer MOVE_RECIPE segment)
 # ============================================================
 
+
 class RecipeEvaluator:
     """
     Evaluates geometric accuracy between a Reference (Draft) and a Test Path (TCP).
@@ -49,6 +51,7 @@ class RecipeEvaluator:
       - REQUIRED_FRAME: substrate
       - Prefer segment isolation for MOVE_RECIPE if tcp YAML provides segments[seg]['sides']
       - Otherwise fall back to global sides
+      - Reference must be recipe-only for MOVE_RECIPE (NOT predispense/retreat)
     """
 
     REQUIRED_FRAME = "substrate"
@@ -58,7 +61,7 @@ class RecipeEvaluator:
         self,
         *,
         weights: Optional[EvalWeights] = None,
-        clamp_mm: Tuple[float, float, float] = (1.0, 3.0, 8.0),   # mean, p95, max targets
+        clamp_mm: Tuple[float, float, float] = (1.0, 3.0, 8.0),  # mean, p95, max targets
         tcp_resample_n: int = 600,
     ) -> None:
         self.weights = weights or EvalWeights()
@@ -94,8 +97,13 @@ class RecipeEvaluator:
         """
         Returns a YAML dict shaped like Draft.from_yaml_dict expects:
           {"frame": ..., "sides": {...}}
-        Prefer: tcp_doc["segments"][seg_id]["sides"]
+
+        Prefer:  tcp_doc["segments"][seg_id]["sides"]
         Fallback: tcp_doc["sides"]
+
+        NOTE:
+          - Draft model does not necessarily carry "frame". We still validate tcp_doc["frame"]
+            here to keep strictness on the TCP docs.
         """
         if not isinstance(tcp_doc, dict):
             return {}
@@ -113,6 +121,7 @@ class RecipeEvaluator:
                     seg_frame = self._as_str(seg.get("frame") or frame or self.REQUIRED_FRAME)
                     if seg_frame:
                         self._require_frame(seg_frame, who=f"tcp.segments[{seg_id}]")
+                    # Draft.from_yaml_dict ignores unknown keys; keep "frame" for forward-compat.
                     return {"frame": seg_frame or self.REQUIRED_FRAME, "sides": sides}
 
         sides = tcp_doc.get("sides")
@@ -125,8 +134,10 @@ class RecipeEvaluator:
         d = getattr(recipe, "draft", None)
         if d is None:
             raise ValueError("no_draft")
+
         # recipe.draft is already Draft in your architecture
         if isinstance(d, Draft):
+            # Draft currently may not carry a frame attribute; keep this tolerant.
             fr = self._as_str(getattr(d, "frame", "") or "")
             if fr:
                 self._require_frame(fr, who="recipe.draft")
@@ -140,6 +151,35 @@ class RecipeEvaluator:
             return Draft.from_yaml_dict(d)
 
         raise ValueError(f"recipe.draft invalid type: {type(d).__name__}")
+
+    def _ref_recipe_segment_poses(self, ref_draft: Draft, *, side: str, seg_id: str) -> List[PoseQuat]:
+        """
+        STRICT: Reference poses must be recipe-only for MOVE_RECIPE.
+
+        Preferred:
+          - Draft.poses_quat_segment(side, seg_id) if available.
+        Fallback:
+          - Draft.recipe_poses_quat(side) if available.
+        Last resort:
+          - Draft.poses_quat(side)
+        """
+        fn_seg = getattr(ref_draft, "poses_quat_segment", None)
+        if callable(fn_seg):
+            try:
+                v = fn_seg(side, seg_id)
+                return list(v or [])
+            except Exception:
+                pass
+
+        fn_recipe = getattr(ref_draft, "recipe_poses_quat", None)
+        if callable(fn_recipe):
+            try:
+                v = fn_recipe(side)
+                return list(v or [])
+            except Exception:
+                pass
+
+        return list(ref_draft.poses_quat(side) or [])
 
     # ============================================================
     # Math Helpers (Quaternions & SLERP)
@@ -320,6 +360,7 @@ class RecipeEvaluator:
         IMPORTANT:
           - planned_tcp/executed_tcp are TCP YAML dicts from TrajFkBuilder (with segments)
           - recipe.draft is Draft (reference)
+          - STRICT: reference is segment-sliced MOVE_RECIPE (recipe-only)
         """
         if recipe is None:
             return {"valid": False, "invalid_reason": "recipe_none"}
@@ -336,7 +377,7 @@ class RecipeEvaluator:
         if not sides:
             return {"valid": False, "invalid_reason": "draft_empty"}
 
-        # Normalize TCP objects: accept Draft or dict, but if dict -> select MOVE_RECIPE segment
+        # Normalize TCP objects: accept Draft or dict, but if dict -> select seg_id sides
         def to_tcp_draft(obj: Optional[Draft | Dict[str, Any]], *, name: str) -> Optional[Draft]:
             if obj is None:
                 return None
@@ -364,8 +405,10 @@ class RecipeEvaluator:
             scores: List[float] = []
 
             for side in sides:
-                ref = ref_draft.poses_quat(side)
+                # STRICT: reference must be recipe-only for seg_id (MOVE_RECIPE)
+                ref = self._ref_recipe_segment_poses(ref_draft, side=side, seg_id=seg_id)
                 test = tcp_draft.poses_quat(side)
+
                 res = self.evaluate_side(ref_poses=ref, test_poses=test, label=f"{mode_name}/{seg_id}/{side}")
                 side_results[side] = res.to_dict()
                 scores.append(res.score)
