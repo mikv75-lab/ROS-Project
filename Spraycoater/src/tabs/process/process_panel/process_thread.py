@@ -24,6 +24,11 @@ class ProcessThread(QtCore.QObject):
     """
     Runs Validate / Optimize / Execute in a dedicated QThread.
 
+    STRICT (collect-only):
+      - The process statemachines may populate raw artifacts in RunResult (traj, logs, etc.)
+      - This thread does NOT run FK/TCP postprocess and does NOT run evaluation.
+      - ProcessPanel persists raw trajectories only.
+
     Signals:
       - stateChanged(str): current segment/state name
       - logMessage(str): textual log lines
@@ -68,6 +73,7 @@ class ProcessThread(QtCore.QObject):
         self._plc = plc
         self._mode = str(mode or "").strip().lower()
 
+        # Collect-only: still embed robot_description into RunResult so RecipePanel can postprocess.
         self._urdf_xml = str(urdf_xml or "")
         self._srdf_xml = str(srdf_xml or "")
 
@@ -98,7 +104,6 @@ class ProcessThread(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
-        # STRICT: request_stop must be queued into worker thread affinity.
         self._stop_requested = True
 
         w = self._worker
@@ -112,7 +117,6 @@ class ProcessThread(QtCore.QObject):
             except Exception as e:
                 self.logMessage.emit(f"Stop: invokeMethod(request_stop) failed: {e!r}")
 
-        # Safety net: if worker does not emit notifyError/notifyFinished, ensure thread can unwind.
         QtCore.QTimer.singleShot(self._STOP_FORCE_QUIT_MS, self._force_quit_after_stop)
 
     # ------------------------------------------------------------------
@@ -120,7 +124,7 @@ class ProcessThread(QtCore.QObject):
     # ------------------------------------------------------------------
 
     def _create_worker(self) -> QtCore.QObject:
-        # Seed RunResult with robot description (strict: downstream FK/postprocess needs it)
+        # Seed RunResult with robot description (strict: downstream RecipePanel postprocess needs it)
         rr = RunResult(urdf_xml=self._urdf_xml, srdf_xml=self._srdf_xml)
 
         side = "top"
@@ -163,7 +167,6 @@ class ProcessThread(QtCore.QObject):
         raise RuntimeError(f"ProcessThread: unknown mode={mode!r}")
 
     def _wire_worker_signals(self, w: QtCore.QObject) -> None:
-        # STRICT: wire only the canonical signals used across our statemachines.
         if hasattr(w, "logMessage"):
             try:
                 w.logMessage.connect(self.logMessage.emit)  # type: ignore[attr-defined]
@@ -194,28 +197,22 @@ class ProcessThread(QtCore.QObject):
 
         STRICT contract:
           - prefer worker.start() via queued invokeMethod
-          - else accept worker.startSignal.emit() (signal emission is thread-safe; receivers run queued)
-          - no direct run() call (would execute in caller thread)
+          - else accept worker.startSignal.emit()
+          - no direct run() call
         """
         fn = getattr(w, "start", None)
         if callable(fn):
-            try:
-                QtCore.QMetaObject.invokeMethod(
-                    w,
-                    "start",
-                    QtCore.Qt.ConnectionType.QueuedConnection,
-                )
-                return
-            except Exception as e:
-                raise RuntimeError(f"ProcessThread: invokeMethod(worker.start) failed: {e}") from e
+            QtCore.QMetaObject.invokeMethod(
+                w,
+                "start",
+                QtCore.Qt.ConnectionType.QueuedConnection,
+            )
+            return
 
         sig = getattr(w, "startSignal", None)
         if sig is not None and hasattr(sig, "emit"):
-            try:
-                sig.emit()
-                return
-            except Exception as e:
-                raise RuntimeError(f"ProcessThread: worker.startSignal.emit() failed: {e}") from e
+            sig.emit()
+            return
 
         raise RuntimeError("ProcessThread: worker has no start() and no startSignal")
 
@@ -253,7 +250,6 @@ class ProcessThread(QtCore.QObject):
             self._shutdown_thread()
 
     def _on_worker_finished(self, payload: object = None) -> None:
-        # payload is expected to be RunResult.to_process_payload(), but tolerate None.
         self.notifyFinished.emit(payload if payload is not None else {})
         self._shutdown_thread()
 
@@ -272,14 +268,11 @@ class ProcessThread(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def _force_quit_after_stop(self) -> None:
-        # If stop was requested but the worker never emitted an end-signal, unwind the thread.
         if not self._stop_requested:
             return
-
         t = self._thread
         if t is None:
             return
-
         try:
             if t.isRunning():
                 self.logMessage.emit("Stop: force quitting thread (worker unresponsive)")

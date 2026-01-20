@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, Any, Dict, List, Tuple
+from typing import Optional, Any, Dict, List, Tuple, Sequence
 
 import numpy as np
 from PyQt6 import QtCore
@@ -56,32 +56,84 @@ class RecipePanel(QWidget):
     # ---------------- UI ----------------
 
     def _build_ui(self) -> None:
+        """
+        Layout:
+
+        vbox(
+          hbox( ActiveRecipe, Info, SprayPaths ),
+          hbox( RecipeParams, StoredEval, CurrentEval )
+        )
+        """
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(8)
 
         # ============================================================
-        # Active Recipe
+        # Top row: Active Recipe + Info + Spray Paths
         # ============================================================
-        self.RecipeGRP = QGroupBox("Active Recipe", self)
-        vrec = QVBoxLayout(self.RecipeGRP)
-        vrec.setContentsMargins(8, 8, 8, 8)
-        vrec.setSpacing(8)
-
-        top_row = QWidget(self.RecipeGRP)
-        htop = QHBoxLayout(top_row)
+        top = QWidget(self)
+        htop = QHBoxLayout(top)
         htop.setContentsMargins(0, 0, 0, 0)
-        htop.setSpacing(10)
+        htop.setSpacing(8)
 
-        self.btnLoad = QPushButton("Load Recipe", top_row)
-        self.lblRecipeName = QLabel("Recipe: –", top_row)
+        # --- Active Recipe (Load button + compact info string) ---
+        self.grpActive = QGroupBox("Active Recipe", top)
+        vactive = QVBoxLayout(self.grpActive)
+        vactive.setContentsMargins(8, 8, 8, 8)
+        vactive.setSpacing(6)
+
+        row = QWidget(self.grpActive)
+        hrow = QHBoxLayout(row)
+        hrow.setContentsMargins(0, 0, 0, 0)
+        hrow.setSpacing(10)
+
+        self.btnLoad = QPushButton("Load Recipe", row)
+        self.lblRecipeName = QLabel("Recipe: –", row)
         self.lblRecipeName.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
-        htop.addWidget(self.btnLoad, 0)
-        htop.addWidget(self.lblRecipeName, 1)
-        vrec.addWidget(top_row, 0)
+        hrow.addWidget(self.btnLoad, 0)
+        hrow.addWidget(self.lblRecipeName, 1)
+        vactive.addWidget(row, 0)
 
-        self.grpRecipeParams = QGroupBox("Recipe Parameters", self.RecipeGRP)
+        self.txtActiveInfo = QTextEdit(self.grpActive)
+        self.txtActiveInfo.setReadOnly(True)
+        self.txtActiveInfo.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        vactive.addWidget(self.txtActiveInfo, 1)
+
+        spA = self.grpActive.sizePolicy()
+        spA.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+        self.grpActive.setSizePolicy(spA)
+        self.grpActive.setMinimumWidth(360)
+        self.grpActive.setMaximumWidth(560)
+
+        # --- Info (existing) ---
+        self.infoBox = InfoGroupBox(top, title="Info")
+        spI = self.infoBox.sizePolicy()
+        spI.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+        self.infoBox.setSizePolicy(spI)
+        self.infoBox.setMinimumWidth(320)
+        self.infoBox.setMaximumWidth(520)
+
+        # --- SprayPaths (existing) ---
+        self.sprayPathBox = SprayPathBox(ros=self.ros, parent=top)
+        spS = self.sprayPathBox.sizePolicy()
+        spS.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        self.sprayPathBox.setSizePolicy(spS)
+
+        htop.addWidget(self.grpActive, 0)
+        htop.addWidget(self.infoBox, 0)
+        htop.addWidget(self.sprayPathBox, 1)
+        root.addWidget(top, 0)
+
+        # ============================================================
+        # Bottom row: Recipe Params + Stored Eval + Current Eval
+        # ============================================================
+        bottom = QWidget(self)
+        hbot = QHBoxLayout(bottom)
+        hbot.setContentsMargins(0, 0, 0, 0)
+        hbot.setSpacing(8)
+
+        self.grpRecipeParams = QGroupBox("Recipe Parameters", bottom)
         vparams = QVBoxLayout(self.grpRecipeParams)
         vparams.setContentsMargins(8, 8, 8, 8)
         vparams.setSpacing(6)
@@ -90,41 +142,6 @@ class RecipePanel(QWidget):
         self.txtRecipeParams.setReadOnly(True)
         self.txtRecipeParams.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         vparams.addWidget(self.txtRecipeParams, 1)
-
-        vrec.addWidget(self.grpRecipeParams, 1)
-        root.addWidget(self.RecipeGRP, 2)
-
-        # ============================================================
-        # Middle: Info (left) + SprayPaths (right)
-        # ============================================================
-        mid = QWidget(self)
-        hmid = QHBoxLayout(mid)
-        hmid.setContentsMargins(0, 0, 0, 0)
-        hmid.setSpacing(8)
-
-        self.infoBox = InfoGroupBox(mid, title="Info")
-        sp = self.infoBox.sizePolicy()
-        sp.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
-        self.infoBox.setSizePolicy(sp)
-        self.infoBox.setMinimumWidth(320)
-        self.infoBox.setMaximumWidth(520)
-
-        self.sprayPathBox = SprayPathBox(ros=self.ros, parent=mid)
-        sp2 = self.sprayPathBox.sizePolicy()
-        sp2.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        self.sprayPathBox.setSizePolicy(sp2)
-
-        hmid.addWidget(self.infoBox, 0)
-        hmid.addWidget(self.sprayPathBox, 1)
-        root.addWidget(mid, 0)
-
-        # ============================================================
-        # Bottom: STORED vs CURRENT (each in a named GroupBox)
-        # ============================================================
-        bottom = QWidget(self)
-        hbot = QHBoxLayout(bottom)
-        hbot.setContentsMargins(0, 0, 0, 0)
-        hbot.setSpacing(8)
 
         self.grpStored = QGroupBox("Stored Eval (Disk)", bottom)
         vstored = QVBoxLayout(self.grpStored)
@@ -140,9 +157,10 @@ class RecipePanel(QWidget):
         self.txtNewRun.setReadOnly(True)
         vcur.addWidget(self.txtNewRun, 1)
 
+        hbot.addWidget(self.grpRecipeParams, 2)
         hbot.addWidget(self.grpStored, 1)
         hbot.addWidget(self.grpCurrent, 1)
-        root.addWidget(bottom, 2)
+        root.addWidget(bottom, 1)
 
     # --------------- Recipe binding ----------------
 
@@ -159,6 +177,10 @@ class RecipePanel(QWidget):
         recipe_name = getattr(model, "id", None) or getattr(model, "key", None) or key
         self.lblRecipeName.setText(f"Recipe: {recipe_name}")
 
+        # Active info (split-out)
+        self.txtActiveInfo.setPlainText(self._format_active_recipe_info(model))
+
+        # Remaining params (without active fields)
         self.txtRecipeParams.setPlainText(self._format_recipe_params(model))
 
         # STORED ist Disk-SSoT: beim Load immer refresh von Disk
@@ -175,11 +197,75 @@ class RecipePanel(QWidget):
 
         self.sig_recipe_selected.emit(key, model)
 
+    def _format_active_recipe_info(self, model: Recipe) -> str:
+        """
+        Active Recipe block (fixed order):
+
+        description:
+        id:
+        info:
+          validSave:
+          validSaveReason:
+        meta:
+          template_id:
+        substrate:
+        substrate_mount:
+        tool:
+        """
+        # Prefer direct attrs; if missing, fall back to to_params_dict()
+        src: Dict[str, Any] = {}
+        try:
+            d = model.to_params_dict()
+            if isinstance(d, dict):
+                src = d
+        except Exception:
+            src = {}
+
+        def pick_attr(name: str) -> Any:
+            v = getattr(model, name, None)
+            if v is not None and v != "":
+                return v
+            return src.get(name)
+
+        description = pick_attr("description")
+        rid = pick_attr("id") or pick_attr("key")
+        info = pick_attr("info")
+        meta = pick_attr("meta")
+        substrate = pick_attr("substrate")
+        substrate_mount = pick_attr("substrate_mount")
+        tool = pick_attr("tool")
+
+        info_d: Dict[str, Any] = info if isinstance(info, dict) else {}
+        meta_d: Dict[str, Any] = meta if isinstance(meta, dict) else {}
+
+        lines: List[str] = []
+        lines.append(f"description: {description if description not in (None, '') else '–'}")
+        lines.append(f"id: {rid if rid not in (None, '') else '–'}")
+        lines.append("info:")
+        lines.append(f"  validSave: {info_d.get('validSave', '–')}")
+        lines.append(f"  validSaveReason: {info_d.get('validSaveReason', '–')}")
+        lines.append("meta:")
+        lines.append(f"  template_id: {meta_d.get('template_id', '–')}")
+        lines.append(f"substrate: {substrate if substrate not in (None, '') else '–'}")
+        lines.append(f"substrate_mount: {substrate_mount if substrate_mount not in (None, '') else '–'}")
+        lines.append(f"tool: {tool if tool not in (None, '') else '–'}")
+        return "\n".join(lines).strip()
+
     def _format_recipe_params(self, model: Recipe) -> str:
+        """
+        Render *only* the long parameter block (everything except Active Recipe fields).
+        """
         try:
             d = model.to_params_dict()
         except Exception:
             d = {"repr": repr(model)}
+
+        # Split: these keys must NOT be duplicated in "Recipe Parameters".
+        if isinstance(d, dict):
+            d = dict(d)  # shallow copy
+            for k in ("description", "id", "key", "info", "meta", "substrate", "substrate_mount", "tool"):
+                if k in d:
+                    d.pop(k, None)
 
         def fmt(obj: Any, indent: int = 0) -> str:
             pad = " " * indent
@@ -223,11 +309,10 @@ class RecipePanel(QWidget):
         """
         STRICT: must match ProcessPanel.sig_run_finished(str, object, object).
 
-        ProcessPanel already:
-          - rr = RunResult.from_process_payload(payload)
-          - rr.postprocess(...)
-          - persisted YAML (repo.bundle.paths)
-        RecipePanel responsibilities:
+        RecipePanel responsibilities (Strict V2):
+          - POSTPROCESS (FK -> TCP docs) for rr
+          - EVALUATE rr (tcp vs draft)
+          - PERSIST run result if valid (disk SSoT)
           - display rr
           - refresh STORED from disk
           - republish overlays
@@ -246,19 +331,90 @@ class RecipePanel(QWidget):
 
         rr: RunResult = rr_obj
 
-        # Show current run in TABLE format (topic | planned | executed)
+        # Always base evaluation on disk SSoT recipe (includes latest draft/params)
         try:
-            self.txtNewRun.setPlainText(self._format_eval_table_for_run(rr, title="=== CURRENT RUN (Live) ==="))
+            recipe_disk = self.repo.load_for_process(key)
+        except Exception as e:
+            recipe_disk = None
+            _LOG.warning("RecipePanel: load_for_process failed for eval base (key=%s): %s", key, e)
+
+        seg_order = list(self._default_segment_order())
+
+        # 1) Postprocess (FK -> TCP docs)
+        post_err: Optional[str] = None
+        try:
+            rr.postprocess(
+                recipe=recipe_disk,
+                scene_yaml_path=self._ctx_path(("scene_yaml_path", "scene_yaml", "scene_path")),
+                robot_yaml_path=self._ctx_path(("robot_yaml_path", "robot_yaml", "robot_path")),
+                mounts_yaml_path=self._ctx_path(
+                    ("mounts_yaml_path", "substrate_mounts_yaml_path", "substrate_mounts_yaml", "mounts_yaml")
+                ),
+                base_frame="robot_mount",
+                tcp_target_frame="substrate",
+                segment_order=seg_order,
+                segment_to_side={
+                    # conservative default: everything maps to "top" unless your evaluator uses per-side segments
+                    "MOVE_PREDISPENSE": "top",
+                    "MOVE_RECIPE": "top",
+                    "MOVE_RETREAT": "top",
+                    "MOVE_HOME": "top",
+                },
+                step_mm=2.0,
+                max_points=20000,
+                require_tcp=False,  # do not hard-fail UI; we’ll show errors in reason
+                evaluate=False,  # evaluation is explicit below
+            )
+        except Exception as e:
+            post_err = str(e)
+            _LOG.warning("RecipePanel: rr.postprocess failed (key=%s): %s", key, e)
+
+        # 2) Evaluate (TCP vs draft) – only if recipe is available and we have *some* TCP docs
+        eval_err: Optional[str] = None
+        try:
+            if recipe_disk is not None:
+                rr.evaluate_tcp_against_draft(
+                    recipe=recipe_disk,
+                    segment_order=seg_order,
+                    domain="tcp",
+                    gate_valid_on_eval=False,
+                )
+        except Exception as e:
+            eval_err = str(e)
+            _LOG.warning("RecipePanel: rr.evaluate_tcp_against_draft failed (key=%s): %s", key, e)
+
+        # 3) Persist if valid (this writes planned/executed TCP+eval to disk and updates recipe info.validSave)
+        persist_err: Optional[str] = None
+        try:
+            self.repo.save_run_result_if_valid(key, rr)
+        except Exception as e:
+            persist_err = str(e)
+            _LOG.warning("RecipePanel: save_run_result_if_valid failed (key=%s): %s", key, e)
+
+        # 4) Display CURRENT RUN table (now after postprocess/eval)
+        try:
+            txt = self._format_eval_table_for_run(rr, title="=== CURRENT RUN (Live) ===")
+            # surface pipeline errors deterministically (without breaking table)
+            extra: List[str] = []
+            if post_err:
+                extra.append(f"postprocess_error: {post_err}")
+            if eval_err:
+                extra.append(f"eval_error: {eval_err}")
+            if persist_err:
+                extra.append(f"persist_error: {persist_err}")
+            if extra:
+                txt = f"{txt}\n\n" + "\n".join(extra)
+            self.txtNewRun.setPlainText(txt)
         except Exception as e:
             self.txtNewRun.setPlainText(f"Run finished for {key}, but table render failed: {e}")
 
-        # Refresh disk SSoT + republish stored overlays
+        # 5) Refresh STORED from disk (disk is authoritative)
         try:
             self._refresh_stored_from_disk(key)
         except Exception as e:
             _LOG.warning("RecipePanel: refresh stored after run failed: %s", e)
 
-        # Optional: republish NEW overlays immediately from rr TCP docs
+        # 6) Republish NEW overlays from rr (planned/executed TCP docs)
         try:
             self._republish_newrun_overlays_from_rr(key, rr)
         except Exception as e:
@@ -272,6 +428,37 @@ class RecipePanel(QWidget):
 
     # --- Interne Helfer ---
 
+    def _ctx_path(self, names: Sequence[str]) -> Optional[str]:
+        """
+        STRICT-ish helper to fetch config paths from ctx (supports multiple attribute spellings).
+        Returns a cleaned non-empty string or None.
+        """
+        for n in names:
+            try:
+                v = getattr(self.ctx, n, None)
+            except Exception:
+                v = None
+            s = str(v or "").strip()
+            if s:
+                return s
+        return None
+
+    def _default_segment_order(self) -> Tuple[str, str, str, str]:
+        """
+        Prefer canonical constants from process base_statemachine; fallback to literal names.
+        """
+        try:
+            from tabs.process.process_panel.base_statemachine import (  # type: ignore
+                STATE_MOVE_PREDISPENSE,
+                STATE_MOVE_RECIPE,
+                STATE_MOVE_RETREAT,
+                STATE_MOVE_HOME,
+            )
+
+            return (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME)
+        except Exception:
+            return ("MOVE_PREDISPENSE", "MOVE_RECIPE", "MOVE_RETREAT", "MOVE_HOME")
+
     def _refresh_stored_from_disk(self, key: str) -> None:
         key = str(key or "").strip()
         if not key:
@@ -280,6 +467,13 @@ class RecipePanel(QWidget):
         fresh = self.repo.load_for_process(key)
         self._recipe = fresh
         self._recipe_key = key
+
+        # Keep UI in sync with disk SSoT
+        recipe_name = getattr(fresh, "id", None) or getattr(fresh, "key", None) or key
+        self.lblRecipeName.setText(f"Recipe: {recipe_name}")
+        self.txtActiveInfo.setPlainText(self._format_active_recipe_info(fresh))
+        self.txtRecipeParams.setPlainText(self._format_recipe_params(fresh))
+
         self._update_stored_view(fresh)
 
         try:
@@ -354,9 +548,7 @@ class RecipePanel(QWidget):
         return s if s else "–"
 
     def _pad_table(self, rows: List[Tuple[str, str, str]]) -> str:
-        """
-        Render as monospaced aligned text. QTextEdit uses default font; alignment still helps.
-        """
+        """Render as monospaced aligned text."""
         if not rows:
             return ""
 
@@ -401,7 +593,7 @@ class RecipePanel(QWidget):
           - tcp counts + frames
           - fk meta
           - eval summary + score/threshold/valid
-          - comparison rows from eval (if present): Score / mean/max etc.
+          - comparison rows from eval (if present)
         """
         pl_tcp = rr.planned_run.get("tcp") if isinstance(rr.planned_run, dict) else {}
         ex_tcp = rr.executed_run.get("tcp") if isinstance(rr.executed_run, dict) else {}
@@ -410,34 +602,31 @@ class RecipePanel(QWidget):
 
         rows: List[Tuple[str, str, str]] = []
 
-        # Trajectory point counts (best-effort)
         rows.append(("traj_points", str(self._count_traj_points(pl_traj)), str(self._count_traj_points(ex_traj))))
-
-        # TCP pose counts + frame
         rows.append(("tcp_poses", str(self._count_tcp_poses(pl_tcp)), str(self._count_tcp_poses(ex_tcp))))
         rows.append(
-            ("tcp_frame", self._as_text(pl_tcp.get("frame") if isinstance(pl_tcp, dict) else ""), self._as_text(ex_tcp.get("frame") if isinstance(ex_tcp, dict) else ""))
+            (
+                "tcp_frame",
+                self._as_text(pl_tcp.get("frame") if isinstance(pl_tcp, dict) else ""),
+                self._as_text(ex_tcp.get("frame") if isinstance(ex_tcp, dict) else ""),
+            )
         )
 
-        # Eval summary
         ev = rr.eval if isinstance(rr.eval, dict) else {}
         rows.append(("eval_valid", self._as_text(ev.get("valid")), self._as_text(ev.get("valid"))))
         rows.append(("eval_thr", self._fmt_num(ev.get("threshold")), self._fmt_num(ev.get("threshold"))))
 
-        # Prefer ev["score"] then ev["total"]["score"]
         total_score = ev.get("score")
         if total_score is None and isinstance(ev.get("total"), dict):
             total_score = ev["total"].get("score")
         rows.append(("eval_score", self._fmt_num(total_score), self._fmt_num(total_score)))
 
-        # Per-mode scores (if v4 evaluator returned planned/executed)
         p = ev.get("planned") if isinstance(ev.get("planned"), dict) else {}
         e = ev.get("executed") if isinstance(ev.get("executed"), dict) else {}
         if p or e:
             rows.append(("planned_score", self._fmt_num(p.get("score")), "–"))
             rows.append(("executed_score", "–", self._fmt_num(e.get("score"))))
 
-        # Comparison table rows (Score / mean / max / rot) if provided
         comp = ev.get("comparison")
         if isinstance(comp, list) and comp:
             for r in comp:
@@ -446,14 +635,19 @@ class RecipePanel(QWidget):
                 metric = self._as_text(r.get("metric"))
                 rows.append((f"metric:{metric}", self._as_text(r.get("planned")), self._as_text(r.get("executed"))))
 
-        # FK meta (same for both columns; show once mirrored)
         fk = rr.fk_meta if isinstance(rr.fk_meta, dict) else {}
         if fk:
             rows.append(("fk.base_link", self._as_text(fk.get("base_link")), self._as_text(fk.get("base_link"))))
             rows.append(("fk.ee_link", self._as_text(fk.get("ee_link")), self._as_text(fk.get("ee_link"))))
             rows.append(("fk.step_mm", self._fmt_num(fk.get("step_mm")), self._fmt_num(fk.get("step_mm"))))
             segs = fk.get("segments_included") or fk.get("segment_order") or []
-            rows.append(("fk.segments", str(len(segs)) if isinstance(segs, list) else self._as_text(segs), str(len(segs)) if isinstance(segs, list) else self._as_text(segs)))
+            rows.append(
+                (
+                    "fk.segments",
+                    str(len(segs)) if isinstance(segs, list) else self._as_text(segs),
+                    str(len(segs)) if isinstance(segs, list) else self._as_text(segs),
+                )
+            )
 
         txt = []
         txt.append(str(title or "").strip())
@@ -471,17 +665,14 @@ class RecipePanel(QWidget):
         """
         rows: List[Tuple[str, str, str]] = []
 
-        # Try to extract stored tcp docs if they exist (Draft or dict)
         planned_obj = getattr(recipe, "planned_tcp", None)
         executed_obj = getattr(recipe, "executed_tcp", None)
 
-        # TCP counts
         def _count_from_obj(o: Any) -> int:
             if o is None:
                 return 0
             if isinstance(o, dict):
                 return self._count_tcp_poses(o)
-            # Draft-like: o.sides[side].poses_quat
             sides = getattr(o, "sides", None)
             if isinstance(sides, dict):
                 n = 0
@@ -504,13 +695,11 @@ class RecipePanel(QWidget):
         rows.append(("tcp_poses", str(_count_from_obj(planned_obj)), str(_count_from_obj(executed_obj))))
         rows.append(("tcp_frame", _frame_from_obj(planned_obj), _frame_from_obj(executed_obj)))
 
-        # Eval dicts (stored separately per TCP)
         pl_eval, ex_eval = self._extract_eval_pair(recipe)
 
         rows.append(("eval_valid", self._as_text(pl_eval.get("valid")), self._as_text(ex_eval.get("valid"))))
         rows.append(("eval_thr", self._fmt_num(pl_eval.get("threshold")), self._fmt_num(ex_eval.get("threshold"))))
 
-        # Prefer per-mode score fields
         def _score_of(ev: Dict[str, Any]) -> Any:
             s = ev.get("score")
             if s is None and isinstance(ev.get("total"), dict):
@@ -519,8 +708,6 @@ class RecipePanel(QWidget):
 
         rows.append(("eval_score", self._fmt_num(_score_of(pl_eval)), self._fmt_num(_score_of(ex_eval))))
 
-        # If each eval stored a comparison table, try to show it; else nothing
-        # (Typically you store full v4 dict into both, so comparison exists.)
         comp = pl_eval.get("comparison")
         if isinstance(comp, list) and comp:
             for r in comp:
@@ -533,7 +720,6 @@ class RecipePanel(QWidget):
         txt.append(str(title or "").strip())
         txt.append(self._pad_table(rows))
 
-        # show reasons if present
         pl_reason = self._as_text(pl_eval.get("invalid_reason"))
         ex_reason = self._as_text(ex_eval.get("invalid_reason"))
         if (pl_reason and pl_reason != "–") or (ex_reason and ex_reason != "–"):
@@ -553,10 +739,6 @@ class RecipePanel(QWidget):
 
         - Compiled: from current recipe model (draft)
         - Planned/Executed STORED: from disk (repo.load_for_process) as ghost markers
-
-        Bridge remains unchanged; we capability-detect:
-          - prefer ros.spray_set_planned(...stored_markers=...)
-          - else fallback to legacy ros.spray_set_traj(markers=...)
         """
         key = str(key or "").strip()
         if not key or self.ros is None:
@@ -633,9 +815,7 @@ class RecipePanel(QWidget):
             _LOG.warning("RecipePanel: publish executed stored failed: %s", e)
 
     def _republish_newrun_overlays_from_rr(self, key: str, rr: RunResult) -> None:
-        """
-        Optional NEW overlays from rr TCP docs (already postprocessed in ProcessPanel).
-        """
+        """Optional NEW overlays from rr TCP docs."""
         if self.ros is None:
             return
 
@@ -701,10 +881,7 @@ class RecipePanel(QWidget):
         self.infoBox.update_from_recipe(recipe, points=pts)
 
     def _update_stored_view(self, recipe: Recipe) -> None:
-        """
-        STORED view shows a table: topic | planned | executed.
-        Uses per-mode eval stored on disk (recipe.planned_tcp.eval + recipe.executed_tcp.eval).
-        """
+        """STORED view shows a table: topic | planned | executed."""
         try:
             self.txtStored.setPlainText(self._format_eval_table_for_recipe_disk(recipe, title="=== STORED EVAL (Disk) ==="))
         except Exception as e:

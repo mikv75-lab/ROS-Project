@@ -29,15 +29,19 @@ _LOG = logging.getLogger("tabs.process.execute_sm")
 
 class ProcessExecuteStatemachine(BaseProcessStatemachine):
     """
-    Execute run (STRICT):
+    Execute run (STRICT, collect-only):
 
     - During Execute there may be NO PLANNED:OK events.
     - Planned baseline is recipe.planned_traj (YAML v1).
     - Executed truth is captured via BaseProcessStatemachine caches/getters.
 
-    CRITICAL FIX:
+    CRITICAL:
       - Seed BaseProcessStatemachine pending planned slot for current segment BEFORE executing.
         Then EXECUTED:OK can commit a planned+executed pair even if PLANNED:OK never arrives.
+
+    Notes:
+      - No evaluation here. Only trajectory collection into RunResult.
+      - This class relies on BaseProcessStatemachine's capture logic for executed trajectories.
     """
 
     ROLE = "execute"
@@ -67,7 +71,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         self._planned_loaded_yaml: Dict[str, Any] = {}
         self._yaml_segments_present: Dict[str, bool] = {}
 
-        # cached planned JT dict per segment (for strict pairing)
+        # cached planned JT dict per segment (for strict pairing) -> normalized time_from_start dict
         self._planned_jt_by_segment: Dict[str, Dict[str, Any]] = {}
 
         # last "motion command" for retry (execute only)
@@ -220,7 +224,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         return bool(self._yaml_segments_present.get(seg_name, False))
 
     # ------------------------------------------------------------------
-    # Planned JT dict from YAML (for pairing)
+    # Planned JT dict from YAML (for pairing) -> normalized time_from_start dict
     # ------------------------------------------------------------------
 
     def _jt_dict_from_yaml_segment(self, seg_name: str) -> Dict[str, Any]:
@@ -251,24 +255,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             raise ValueError(f"Execute: Segment '{seg_name}' has <2 valid points after normalization.")
 
         return {"joint_names": [str(x) for x in jn], "points": out_pts}
-
-    # ------------------------------------------------------------------
-    # Override pairing source for Execute (Base uses this on capture)
-    # ------------------------------------------------------------------
-
-    def _get_step_sources(self) -> Tuple[Any, Any]:
-        seg = str(self._current_state or "")
-        planned = self._planned_jt_by_segment.get(seg)
-
-        re_ = getattr(self._ros, "moveit_executed_trajectory", None)
-        if callable(re_):
-            try:
-                return planned, re_()
-            except Exception as e:
-                self._signal_error(f"RosBridge moveit_executed_trajectory() failed: {e!r}")
-                return planned, None
-
-        return planned, self._last_executed_any
 
     # ------------------------------------------------------------------
     # Retry hook (Execute): re-send last execute command
@@ -304,9 +290,20 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
 
     @staticmethod
     def _duration_from_yaml(tfs: Any) -> RosDuration:
+        """
+        Accept both JTBySegment YAML v1 style [sec,nsec] and normalized dict {"sec","nanosec"}.
+        """
         d = RosDuration()
-        d.sec = int(tfs[0])
-        d.nanosec = int(tfs[1])
+        if isinstance(tfs, dict):
+            d.sec = int(tfs.get("sec", 0))
+            d.nanosec = int(tfs.get("nanosec", 0))
+            return d
+        if isinstance(tfs, (list, tuple)) and len(tfs) >= 2:
+            d.sec = int(tfs[0])
+            d.nanosec = int(tfs[1])
+            return d
+        d.sec = 0
+        d.nanosec = 0
         return d
 
     def _robot_trajectory_from_yaml(self, seg_name: str) -> RobotTrajectoryMsg:
@@ -314,23 +311,28 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         if not isinstance(seg, dict):
             raise ValueError(f"Execute: Segment '{seg_name}' fehlt in planned_traj.")
 
-        joint_names = seg["joint_names"]
-        points = seg["points"]
+        joint_names = seg.get("joint_names", [])
+        points = seg.get("points", [])
 
         jt = JointTrajectory()
         jt.joint_names = [str(x) for x in joint_names]
 
         for p in points:
+            if not isinstance(p, dict):
+                continue
+            if "positions" not in p:
+                continue
+
             pt = JointTrajectoryPoint()
-            pt.positions = [float(x) for x in p["positions"]]
-            pt.time_from_start = self._duration_from_yaml(p["time_from_start"])
+            pt.positions = [float(x) for x in p.get("positions") or []]
+            pt.time_from_start = self._duration_from_yaml(p.get("time_from_start"))
 
             if "velocities" in p:
-                pt.velocities = [float(x) for x in p["velocities"]]
+                pt.velocities = [float(x) for x in p.get("velocities") or []]
             if "accelerations" in p:
-                pt.accelerations = [float(x) for x in p["accelerations"]]
+                pt.accelerations = [float(x) for x in p.get("accelerations") or []]
             if "effort" in p:
-                pt.effort = [float(x) for x in p["effort"]]
+                pt.effort = [float(x) for x in p.get("effort") or []]
 
             jt.points.append(pt)
 
@@ -350,7 +352,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             QtCore.QTimer.singleShot(0, self._sig_done.emit)
             return
 
-        # ---- CRITICAL: seed planned pending for this segment (no PLANNED:OK needed) ----
+        # CRITICAL: seed planned pending for this segment (no PLANNED:OK needed)
         planned_jt = self._planned_jt_by_segment.get(seg_name)
         if not isinstance(planned_jt, dict):
             self._signal_error(f"Execute: missing planned baseline JT for seg={seg_name}")
@@ -373,10 +375,11 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             self._signal_error(f"Execute: moveit_execute_trajectory failed for {seg_name}: {e}")
 
     # ------------------------------------------------------------------
-    # Planned/Executed payload override
+    # Planned/Executed payload
     # ------------------------------------------------------------------
 
     def _build_traj_payload(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        # Planned should be persisted in JTBySegment YAML v1 format (time_from_start as [sec,nsec])
         planned = copy.deepcopy(self._planned_loaded_yaml)
         executed = self._jt_by_segment_yaml(which="executed")
         return planned, executed

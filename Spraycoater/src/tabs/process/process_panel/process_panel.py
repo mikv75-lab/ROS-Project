@@ -28,31 +28,24 @@ from model.recipe.recipe_run_result import RunResult
 
 from widgets.robot_status_box import RobotStatusInfoBox
 
-from config.startup import resolve_path
-
 from .process_thread import ProcessThread
 from .robot_init_thread import RobotInitThread
-from .base_statemachine import (
-    STATE_MOVE_PREDISPENSE,
-    STATE_MOVE_RECIPE,
-    STATE_MOVE_RETREAT,
-    STATE_MOVE_HOME,
-)
 
 _LOG = logging.getLogger("tabs.process.process_panel")
 
 
 class ProcessPanel(QWidget):
     """
-    ProcessPanel (STRICT):
+    ProcessPanel (STRICT, "collect-only"):
 
-    Owns ALL process-side responsibilities previously living in ProcessTab:
+    Owns ALL process-side responsibilities:
       - Start/stop RobotInitThread
       - Start/stop ProcessThread (validate/optimize/execute)
       - Button enable/disable rules + runtime checks
       - Log view
       - RobotStatusInfoBox wiring to RosBridge robot signals
-      - Postprocess + persist RunResult artifacts via repo.bundle.paths(key)
+      - Persist ONLY raw artifacts (planned_traj / executed_traj) via repo.bundle.paths(key)
+      - Emit RunResult to RecipePanel for postprocess + evaluation + TCP persistence
 
     It does NOT load/select recipes. It only receives set_recipe/clear_recipe.
 
@@ -77,9 +70,6 @@ class ProcessPanel(QWidget):
     sig_run_started = QtCore.pyqtSignal(str, str)
     sig_run_finished = QtCore.pyqtSignal(str, object, object)
     sig_run_error = QtCore.pyqtSignal(str, str)
-
-    _SEG_ORDER = (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME)
-    _TCP_TARGET_FRAME = "substrate"
 
     def __init__(
         self,
@@ -133,9 +123,7 @@ class ProcessPanel(QWidget):
         self._wire_robot_status_inbound()
         self._setup_init_thread()
 
-        # Seed robot readiness from RosBridge signal if available
         self._refresh_robot_ready_initial()
-
         self._update_buttons()
 
     # ------------------------------------------------------------------
@@ -143,16 +131,23 @@ class ProcessPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        root = QVBoxLayout(self)
+        """
+        NEW layout requested:
+
+        HBox( Process, RobotStatus, Log )
+
+        (No separate Log block below; Log is the 3rd column.)
+        """
+        root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(8)
 
-        top = QHBoxLayout()
-        top.setSpacing(8)
-
-        # Process group
+        # ============================================================
+        # Column 1: Process buttons
+        # ============================================================
         self.ProzessGroupbox = QGroupBox("Process", self)
         vproc = QVBoxLayout(self.ProzessGroupbox)
+        vproc.setContentsMargins(8, 8, 8, 8)
         vproc.setSpacing(6)
 
         self.btnInit = QPushButton("Init", self.ProzessGroupbox)
@@ -168,20 +163,42 @@ class ProcessPanel(QWidget):
         self.lblInit = QLabel("Init: –", self.ProzessGroupbox)
         vproc.addWidget(self.lblInit)
 
-        top.addWidget(self.ProzessGroupbox, 1)
+        spP = self.ProzessGroupbox.sizePolicy()
+        spP.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+        self.ProzessGroupbox.setSizePolicy(spP)
+        self.ProzessGroupbox.setMinimumWidth(140)
+        self.ProzessGroupbox.setMaximumWidth(220)
 
-        # Robot Status
+        root.addWidget(self.ProzessGroupbox, 0)
+
+        # ============================================================
+        # Column 2: Robot Status
+        # ============================================================
         self.RobotStatusGrp = RobotStatusInfoBox(self, title="Robot Status")
-        top.addWidget(self.RobotStatusGrp, 2)
+        spR = self.RobotStatusGrp.sizePolicy()
+        spR.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+        self.RobotStatusGrp.setSizePolicy(spR)
+        self.RobotStatusGrp.setMinimumWidth(360)
+        self.RobotStatusGrp.setMaximumWidth(560)
 
-        root.addLayout(top, 0)
+        root.addWidget(self.RobotStatusGrp, 0)
 
-        # Log
+        # ============================================================
+        # Column 3: Log
+        # ============================================================
         self.LogGroup = QGroupBox("Log", self)
         vlog = QVBoxLayout(self.LogGroup)
+        vlog.setContentsMargins(8, 8, 8, 8)
+
         self.txtLog = QTextEdit(self.LogGroup)
         self.txtLog.setReadOnly(True)
         vlog.addWidget(self.txtLog, 1)
+
+        spL = self.LogGroup.sizePolicy()
+        spL.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        spL.setVerticalPolicy(QSizePolicy.Policy.Expanding)
+        self.LogGroup.setSizePolicy(spL)
+
         root.addWidget(self.LogGroup, 1)
 
         sp = self.sizePolicy()
@@ -227,10 +244,9 @@ class ProcessPanel(QWidget):
 
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
-        # STRICT policy requested:
+        # STRICT:
         #   - Stop always enabled
         #   - Pressing Stop forces "re-init required" before starting any statemachine again
-        #     (even if robot still reports initialized via ROS).
         self._require_reinit = True
         self._recompute_robot_ready()
 
@@ -242,7 +258,6 @@ class ProcessPanel(QWidget):
             self._log("Stop: request_stop() -> RobotInitThread")
             self._init_thread.request_stop()
 
-        # UI hint: init is now considered invalid until user presses Init again.
         if not self._init_active:
             self.lblInit.setText("Init: – (required)")
 
@@ -253,7 +268,6 @@ class ProcessPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _plc_execute_available(self) -> bool:
-        # STRICT: Execute requires PLC OR ctx.plc.sim == True
         if self.plc is not None:
             return True
         plc_cfg = getattr(self.ctx, "plc", None)
@@ -269,13 +283,9 @@ class ProcessPanel(QWidget):
 
         self.btnInit.setEnabled(can_click)
 
-        # IMPORTANT: Stop button must NEVER be disabled.
+        # Stop button must NEVER be disabled.
         self.btnStop.setEnabled(True)
 
-        # Validate/Optimize/Execute require:
-        #   - not running/not init_running
-        #   - recipe present
-        #   - robot_ready (initialized AND not require_reinit)
         self.btnValidate.setEnabled(can_click and has_recipe and self._robot_ready)
         self.btnOptimize.setEnabled(can_click and has_recipe and self._robot_ready)
         self.btnExecute.setEnabled(can_click and has_recipe and self._robot_ready and self._plc_execute_available())
@@ -325,7 +335,6 @@ class ProcessPanel(QWidget):
             pass
 
     def _recompute_robot_ready(self) -> None:
-        # Effective readiness is gated by "require re-init" after Stop.
         v = bool(self._robot_initialized) and (not bool(self._require_reinit))
         if self._robot_ready == v:
             return
@@ -335,7 +344,6 @@ class ProcessPanel(QWidget):
 
     @QtCore.pyqtSlot(bool)
     def _on_robot_initialized_changed(self, v: bool) -> None:
-        # Track raw init state, but effective readiness is gated by _require_reinit.
         self._robot_initialized = bool(v)
         self._recompute_robot_ready()
 
@@ -380,10 +388,7 @@ class ProcessPanel(QWidget):
         self.lblInit.setText("Init: START")
         self._log("=== Robot-Init gestartet ===")
 
-        # While init is running, processes are disabled via _init_active.
-        # Do NOT clear _require_reinit here; only an OK finish clears the gate.
         self._update_buttons()
-
         self._init_thread.startSignal.emit()
 
     def _on_init_finished_ok(self) -> None:
@@ -391,10 +396,8 @@ class ProcessPanel(QWidget):
         self.lblInit.setText("Init: OK")
         self._log("=== Robot-Init erfolgreich abgeschlossen ===")
 
-        # IMPORTANT: After Stop, a successful Init is required to re-enable processes.
         self._require_reinit = False
         self._recompute_robot_ready()
-
         self._update_buttons()
 
     def _on_init_finished_err(self, msg: str) -> None:
@@ -402,14 +405,12 @@ class ProcessPanel(QWidget):
         self.lblInit.setText("Init: ERROR")
         self._log(f"=== Robot-Init Fehler: {msg} ===")
 
-        # Init failed -> still require re-init.
         self._require_reinit = True
         self._recompute_robot_ready()
-
         self._update_buttons()
 
     # ------------------------------------------------------------------
-    # Context inputs for postprocess
+    # Context inputs for collection (robot_description)
     # ------------------------------------------------------------------
 
     def _ctx_robot_xml(self) -> Tuple[str, str]:
@@ -417,43 +418,6 @@ class ProcessPanel(QWidget):
         urdf = str(getattr(rd, "urdf_xml", "") or "")
         srdf = str(getattr(rd, "srdf_xml", "") or "")
         return urdf, srdf
-
-    def _ctx_scene_robot_yaml_paths(self) -> Tuple[Optional[str], Optional[str]]:
-        # Optional inputs for rr.postprocess(). Persistence does not depend on them.
-        base_dir = os.environ.get("SC_PROJECT_ROOT", "").strip()
-        if not base_dir:
-            return None, None
-
-        ros_cfg = getattr(self.ctx, "ros", None)
-        cfgs = getattr(ros_cfg, "configs", None) if ros_cfg is not None else None
-        if cfgs is None:
-            return None, None
-
-        scene_uri = str(getattr(cfgs, "scene_file", "") or "").strip()
-        robot_uri = str(getattr(cfgs, "robot_file", "") or "").strip()
-        if not scene_uri or not robot_uri:
-            return None, None
-
-        scene_abs = resolve_path(base_dir, scene_uri)
-        robot_abs = resolve_path(base_dir, robot_uri)
-
-        if not os.path.isfile(scene_abs) or not os.path.isfile(robot_abs):
-            return None, None
-        return scene_abs, robot_abs
-
-    def _ctx_mounts_yaml_path(self) -> Optional[str]:
-        base_dir = os.environ.get("SC_PROJECT_ROOT", "").strip()
-        if not base_dir:
-            return None
-
-        # STRICT: mounts path comes from SSoT (startup.yaml -> ctx.ros.substrate_mounts_file).
-        ros_cfg = getattr(self.ctx, "ros", None)
-        uri = str(getattr(ros_cfg, "substrate_mounts_file", "") or "").strip() if ros_cfg is not None else ""
-        if not uri:
-            return None
-
-        p = resolve_path(base_dir, uri)
-        return p if os.path.isfile(p) else None
 
     # ------------------------------------------------------------------
     # Process lifecycle
@@ -471,7 +435,6 @@ class ProcessPanel(QWidget):
             QMessageBox.warning(self, "Process", "Kein Rezept geladen.")
             return
 
-        # IMPORTANT: Stop forces re-init gate.
         if self._require_reinit:
             QMessageBox.warning(self, "Process", "Nach STOP muss zuerst wieder Init ausgeführt werden.")
             return
@@ -542,7 +505,7 @@ class ProcessPanel(QWidget):
                 pass
 
     # ------------------------------------------------------------------
-    # Persistence (STRICT: repo.bundle.paths contract)
+    # Persistence (STRICT: raw-only here)
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -551,30 +514,26 @@ class ProcessPanel(QWidget):
         with open(path, "w", encoding="utf-8") as f:
             yaml.safe_dump(obj or {}, f, allow_unicode=True, sort_keys=False)
 
-    def _persist_runresult(self, *, key: str, rr: RunResult) -> None:
+    def _persist_raw_runresult(self, *, key: str, rr: RunResult) -> None:
+        """
+        STRICT collect-only:
+          - Persist planned_traj.yaml + executed_traj.yaml
+          - DO NOT generate or persist TCP here (RecipePanel does postprocess+eval and persists TCP)
+        """
         p = self.repo.bundle.paths(key)
 
         planned_traj_path = str(getattr(p, "planned_traj_yaml", "") or "")
         executed_traj_path = str(getattr(p, "executed_traj_yaml", "") or "")
-        planned_tcp_path = str(getattr(p, "planned_tcp_yaml", "") or "")
-        executed_tcp_path = str(getattr(p, "executed_tcp_yaml", "") or "")
 
         planned_traj_doc = rr.planned_run.get("traj") if isinstance(rr.planned_run, dict) else {}
         executed_traj_doc = rr.executed_run.get("traj") if isinstance(rr.executed_run, dict) else {}
-        planned_tcp_doc = rr.planned_run.get("tcp") if isinstance(rr.planned_run, dict) else {}
-        executed_tcp_doc = rr.executed_run.get("tcp") if isinstance(rr.executed_run, dict) else {}
 
         if planned_traj_path:
             self._yaml_write_file(planned_traj_path, planned_traj_doc)
         if executed_traj_path:
             self._yaml_write_file(executed_traj_path, executed_traj_doc)
 
-        if planned_tcp_path and isinstance(planned_tcp_doc, dict) and planned_tcp_doc:
-            self._yaml_write_file(planned_tcp_path, planned_tcp_doc)
-        if executed_tcp_path and isinstance(executed_tcp_doc, dict) and executed_tcp_doc:
-            self._yaml_write_file(executed_tcp_path, executed_tcp_doc)
-
-        self._log("Persist: OK")
+        self._log("Persist(raw): OK")
 
     # ------------------------------------------------------------------
     # Finished handlers
@@ -585,38 +544,18 @@ class ProcessPanel(QWidget):
         key = str(self._recipe_key or "")
 
         try:
-            rr = RunResult.from_process_payload(payload)
+            rr = RunResult.from_process_payload(payload if isinstance(payload, dict) else {})
         except Exception as e:
             self._log(f"E: RunResult.from_process_payload failed: {e}")
             self._finish_process_ui()
             self.sig_run_error.emit(key, f"payload_decode_failed: {e}")
             return
 
-        # Postprocess is process-side responsibility. It must never block persistence.
+        # STRICT: Collect-only. No FK, no TCP, no eval in ProcessPanel.
         try:
-            scene_yaml, robot_yaml = self._ctx_scene_robot_yaml_paths()
-            mounts_yaml = self._ctx_mounts_yaml_path()
-
-            rr.postprocess(
-                recipe=self._recipe,
-                segment_order=self._SEG_ORDER,
-                ee_link="tcp",
-                step_mm=1.0,
-                max_points=0,
-                gate_valid_on_eval=False,
-                require_tcp=True,
-                tcp_target_frame=self._TCP_TARGET_FRAME,
-                scene_yaml_path=scene_yaml,
-                robot_yaml_path=robot_yaml,
-                mounts_yaml_path=mounts_yaml,
-            )
+            self._persist_raw_runresult(key=key, rr=rr)
         except Exception as e:
-            self._log(f"W: postprocess failed: {e}")
-
-        try:
-            self._persist_runresult(key=key, rr=rr)
-        except Exception as e:
-            self._log(f"E: persist failed: {e}")
+            self._log(f"E: persist(raw) failed: {e}")
             self._finish_process_ui()
             self.sig_run_error.emit(key, f"persist_failed: {e}")
             return

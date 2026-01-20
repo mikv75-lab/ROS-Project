@@ -55,6 +55,11 @@ class BaseProcessStatemachine(QtCore.QObject):
       - Stattdessen wird bis max_retries die letzte Bewegung erneut ausgelöst
         via Hook: _on_retry_last_motion(seg_name, attempt, last_error) -> bool.
       - Nur wenn Retry nicht möglich oder max_retries überschritten => final error.
+
+    IMPORTANT (FIX for premature timeout while robot is still moving):
+      - Trajectory capture may only become available AFTER the robot finished moving.
+      - Therefore WAIT_RESULTS timeout starts ONLY once robot is NOT moving anymore.
+        While moving, we keep ticking but do not arm the timeout deadline.
     """
 
     ROLE = "process"
@@ -69,6 +74,8 @@ class BaseProcessStatemachine(QtCore.QObject):
     _sig_error = QtCore.pyqtSignal()
 
     _RETRY_DELAY_MS = 250
+
+    # Timeout/loop for trajectory capture *after* motion ends
     _WAIT_RESULTS_TIMEOUT_MS = 1000
     _WAIT_RESULTS_TICK_MS = 15
 
@@ -117,11 +124,16 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._pending_planned_step: Dict[str, Optional[Dict[str, Any]]] = {}
         self._pending_executed_step: Dict[str, Optional[Dict[str, Any]]] = {}
 
-        # WAIT_RESULTS state
+        # WAIT_RESULTS state (armed only once robot stopped moving)
         self._wait_active: bool = False
         self._wait_seg: str = ""
         self._wait_deadline_ms: int = 0
         self._wait_last_result: str = ""
+        self._wait_timeout_ms: int = int(self._WAIT_RESULTS_TIMEOUT_MS)
+        self._wait_deadline_armed: bool = False  # starts when robot is NOT moving
+
+        # Robot moving state (best-effort, cached from RosBridge.robot.signals.movingChanged)
+        self._robot_moving: bool = False
 
         # MoveItPy Handles
         self._moveitpy = getattr(self._ros, "moveitpy", None)
@@ -143,6 +155,8 @@ class BaseProcessStatemachine(QtCore.QObject):
 
         self._connect_traj_cache_signals()
         self._connect_traj_cache_clear_signal()
+        self._connect_robot_moving_signal()
+        self._refresh_robot_moving_initial()
 
     # ---------------- Machine ----------------
 
@@ -174,6 +188,42 @@ class BaseProcessStatemachine(QtCore.QObject):
     def _segment_exists(self, seg_name: str) -> bool:
         """Subclass prüft, ob das Segment im Rezept definiert ist."""
         return True
+
+    # ---------------- Robot moving gating (STRICT) ----------------
+
+    def _connect_robot_moving_signal(self) -> None:
+        try:
+            rb = getattr(self._ros, "robot", None)
+            sig = getattr(rb, "signals", None) if rb is not None else None
+            if sig is not None and hasattr(sig, "movingChanged"):
+                sig.movingChanged.connect(self._on_robot_moving_changed)
+        except Exception:
+            pass
+
+    def _refresh_robot_moving_initial(self) -> None:
+        # Best-effort: try to read current moving state if exposed by RosBridge.robot
+        try:
+            rb = getattr(self._ros, "robot", None)
+            cur = getattr(rb, "moving", None) if rb is not None else None
+            if cur is not None:
+                self._robot_moving = bool(cur)
+        except Exception:
+            pass
+
+    @QtCore.pyqtSlot(bool)
+    def _on_robot_moving_changed(self, v: bool) -> None:
+        self._robot_moving = bool(v)
+
+    def _robot_is_moving(self) -> bool:
+        # Prefer cached signal value; also try to refresh from attribute if present.
+        try:
+            rb = getattr(self._ros, "robot", None)
+            cur = getattr(rb, "moving", None) if rb is not None else None
+            if cur is not None:
+                self._robot_moving = bool(cur)
+        except Exception:
+            pass
+        return bool(self._robot_moving)
 
     # ---------------- Segment capture reset ----------------
 
@@ -227,20 +277,46 @@ class BaseProcessStatemachine(QtCore.QObject):
         return True
 
     def _start_wait_results(self, seg: str, *, result: str, timeout_ms: Optional[int] = None) -> None:
+        """
+        Start the "wait for trajectories" loop.
+
+        STRICT FIX:
+          - Do not arm timeout while robot is still moving.
+          - Deadline is armed only once robot is NOT moving.
+        """
         if self._wait_active:
             self._wait_last_result = str(result or "")
             return
-        t_ms = int(timeout_ms) if timeout_ms is not None else int(self._WAIT_RESULTS_TIMEOUT_MS)
+
         self._wait_active = True
         self._wait_seg = str(seg)
         self._wait_last_result = str(result or "")
-        self._wait_deadline_ms = int(QtCore.QTime.currentTime().msecsSinceStartOfDay()) + t_ms
+
+        self._wait_timeout_ms = int(timeout_ms) if timeout_ms is not None else int(self._WAIT_RESULTS_TIMEOUT_MS)
+        self._wait_deadline_ms = 0
+        self._wait_deadline_armed = False
+
         QtCore.QTimer.singleShot(0, self._wait_results_tick)
 
     def _wait_results_tick(self) -> None:
         if not self._wait_active or self._stop_requested:
             return
+
         seg = self._wait_seg
+
+        # STRICT: wait until robot finished moving, then start timeout window.
+        if not self._wait_deadline_armed:
+            if self._robot_is_moving():
+                QtCore.QTimer.singleShot(int(self._WAIT_RESULTS_TICK_MS), self._wait_results_tick)
+                return
+
+            now0 = int(QtCore.QTime.currentTime().msecsSinceStartOfDay())
+            t_ms = int(self._wait_timeout_ms)
+            if t_ms <= 0:
+                t_ms = 1
+            self._wait_deadline_ms = now0 + t_ms
+            self._wait_deadline_armed = True
+            # fallthrough: try capture immediately on first "not moving" tick
 
         if self._pending_planned_step.get(seg) is None:
             p = self._capture_planned_step(seg)
@@ -258,7 +334,7 @@ class BaseProcessStatemachine(QtCore.QObject):
             return
 
         now = int(QtCore.QTime.currentTime().msecsSinceStartOfDay())
-        if now >= self._wait_deadline_ms:
+        if now >= int(self._wait_deadline_ms):
             self._signal_error(f"Trajectory capture timeout for segment '{seg}'")
             return
 
@@ -322,6 +398,8 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._pending_planned_step[seg] = None
         self._pending_executed_step[seg] = None
         self._wait_active = False
+        self._wait_deadline_armed = False
+        self._wait_deadline_ms = 0
 
     # ---------------- MotionResult slot ----------------
 
@@ -353,6 +431,8 @@ class BaseProcessStatemachine(QtCore.QObject):
             e = self._capture_executed_step(seg)
             if e:
                 self._pending_executed_step[seg] = copy.deepcopy(e)
+
+            # IMPORTANT: wait until robot stops, then arm timeout and capture remaining pieces
             self._start_wait_results(seg, result=res)
 
     # ---------------- Trajectory extraction (FULL RECURSION) ----------------
@@ -513,6 +593,9 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     def _cleanup(self) -> None:
         self._wait_active = False
+        self._wait_deadline_armed = False
+        self._wait_deadline_ms = 0
+
         if self._machine:
             try:
                 self._machine.stop()

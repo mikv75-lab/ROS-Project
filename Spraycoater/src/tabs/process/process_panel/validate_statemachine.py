@@ -24,6 +24,12 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
     """
     Validate run: streams recipe points (Position + Orientation) as consecutive MoveIt pose commands.
 
+    COLLECT-ONLY (STRICT):
+      - This statemachine ONLY drives motions and lets BaseProcessStatemachine collect raw trajectory snapshots.
+      - It does NOT run FK, does NOT compute TCP docs, and does NOT evaluate anything.
+      - The returned RunResult payload contains planned/executed trajectories by segment only.
+        Postprocess (FK/TCP) + evaluation happens later in RecipePanel/RecipeEvaluator.
+
     IMPORTANT FIX (missing first leg / "wird gefahren aber nicht gespeichert"):
       - MOVE_RECIPE must NOT start with pts[0] (NO-OP), because predispense already moved to pts[0].
         NO-OP => often no trajectory => nothing to capture.
@@ -34,7 +40,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         MOVE_RECIPE:      pts[1:-1]
         MOVE_RETREAT:     [pts[-1]]
 
-    Trajectory capture is gated by BaseProcessStatemachine WAIT_RESULTS.
+    Trajectory capture is handled by BaseProcessStatemachine (pairing + timeout; timeout starts after robot stops).
     """
 
     ROLE = "validate"
@@ -132,6 +138,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
     # --------- Prepare / Segment wiring ---------
 
     def _prepare_run(self) -> bool:
+        # STRICT: frame for pose commands in this architecture
         self._frame = "substrate"
 
         self._speed_mm_s = 200.0
@@ -254,6 +261,14 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._signal_error(f"Validate: Unknown segment '{seg_name}'")
 
     def _should_transition_on_ok(self, seg_name: str, result: str) -> bool:
+        """
+        Base calls this AFTER it has a committed planned+executed pair and wants to know
+        whether it can transition to the next segment.
+
+        For MOVE_RECIPE we stream multiple poses. Therefore:
+          - If there are still pending poses, do NOT transition yet.
+          - Instead wait for jointsChanged (or fallback timer) then send next pose.
+        """
         if self._inflight_seg == seg_name:
             if seg_name == STATE_MOVE_RECIPE:
                 if self._inflight_pose is not None and self._pending_recipe_poses:
@@ -390,6 +405,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             except Exception:
                 pass
 
+            # Input tuples are in mm; ROS uses meters
             ps.pose.position.x = float(x) / 1000.0
             ps.pose.position.y = float(y) / 1000.0
             ps.pose.position.z = float(z) / 1000.0

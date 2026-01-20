@@ -8,18 +8,17 @@ from typing import Any, List, Tuple, Optional
 import os
 import yaml
 
-# --- UPDATED IMPORTS ---
 from model.recipe.recipe import Recipe
-from model.spray_paths.draft import Draft
-from model.spray_paths.trajectory import JTBySegment
 from model.recipe.recipe_bundle import RecipeBundle
 from model.recipe.recipe_run_result import RunResult
+from model.spray_paths.draft import Draft
+from model.spray_paths.trajectory import JTBySegment
 
 
 @dataclass
 class RecipeRepo:
     """
-    Thin repo wrapper around RecipeBundle.
+    STRICT repo wrapper around RecipeBundle.
 
     SSoT (rid-only):
       <recipes_root_dir>/<recipe_id>/
@@ -33,7 +32,7 @@ class RecipeRepo:
 
     bundle: RecipeBundle
 
-    def __init__(self, *, bundle: RecipeBundle, **_ignored: Any) -> None:
+    def __init__(self, *, bundle: RecipeBundle) -> None:
         if bundle is None or not isinstance(bundle, RecipeBundle):
             raise TypeError(f"RecipeRepo: bundle invalid: {type(bundle)}")
         self.bundle = bundle
@@ -55,75 +54,60 @@ class RecipeRepo:
         return self.bundle.paths(rid)
 
     @staticmethod
-    def _read_yaml_file(path: str) -> Optional[dict]:
-        if not path or not os.path.isfile(path):
+    def _read_yaml_dict_or_none(path: str) -> Optional[dict]:
+        if not path:
             return None
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-            return data if isinstance(data, dict) else None
-        except Exception:
+        p = os.path.abspath(os.path.expanduser(path))
+        if not os.path.isfile(p):
             return None
+        with open(p, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if data is None:
+            return None
+        if not isinstance(data, dict):
+            raise ValueError(f"YAML file must contain dict, got {type(data).__name__}: {p}")
+        return data
 
     def _hydrate_optional_attachments(self, rid: str, recipe: Recipe) -> Recipe:
         """
-        Best-effort load optional attachments if files exist on disk.
-        MUST NOT raise due to missing/invalid optional files.
+        STRICT:
+          - Optional files are loaded if present.
+          - If a file exists but is invalid/unparseable, we raise (no silent fallback).
+          - If a file is missing, we simply leave the attachment unset.
         """
-        try:
-            p = self._paths(rid)
-        except Exception:
-            return recipe
+        p = self._paths(rid)
 
-        # ---- draft (Strict Type: Draft) ----
-        try:
-            draft_path = str(getattr(p, "draft_yaml", "") or "")
-            if getattr(recipe, "draft", None) is None:
-                d = self._read_yaml_file(draft_path)
-                if d is not None:
-                    recipe.draft = Draft.from_yaml_dict(d)
-        except Exception:
-            pass
+        # draft
+        if getattr(recipe, "draft", None) is None:
+            d = self._read_yaml_dict_or_none(str(getattr(p, "draft_yaml", "") or ""))
+            if d is not None:
+                recipe.draft = Draft.from_yaml_dict(d)
 
-        # ---- planned_traj (Strict Type: JTBySegment) ----
-        try:
+        # planned_traj
+        if getattr(recipe, "planned_traj", None) is None:
             planned_path = str(getattr(p, "planned_traj_yaml", "") or getattr(p, "planned_yaml", "") or "")
-            if getattr(recipe, "planned_traj", None) is None:
-                d = self._read_yaml_file(planned_path)
-                if d is not None:
-                    recipe.planned_traj = JTBySegment.from_yaml_dict(d)
-        except Exception:
-            pass
+            d = self._read_yaml_dict_or_none(planned_path)
+            if d is not None:
+                recipe.planned_traj = JTBySegment.from_yaml_dict(d)
 
-        # ---- executed_traj (Strict Type: JTBySegment) ----
-        try:
+        # executed_traj
+        if getattr(recipe, "executed_traj", None) is None:
             executed_path = str(getattr(p, "executed_traj_yaml", "") or getattr(p, "executed_yaml", "") or "")
-            if getattr(recipe, "executed_traj", None) is None:
-                d = self._read_yaml_file(executed_path)
-                if d is not None:
-                    recipe.executed_traj = JTBySegment.from_yaml_dict(d)
-        except Exception:
-            pass
+            d = self._read_yaml_dict_or_none(executed_path)
+            if d is not None:
+                recipe.executed_traj = JTBySegment.from_yaml_dict(d)
 
-        # ---- planned_tcp (Strict Type: Draft) ----
-        try:
-            planned_tcp_path = str(getattr(p, "planned_tcp_yaml", "") or "")
-            if getattr(recipe, "planned_tcp", None) is None:
-                d = self._read_yaml_file(planned_tcp_path)
-                if d is not None:
-                    recipe.planned_tcp = Draft.from_yaml_dict(d)
-        except Exception:
-            pass
+        # planned_tcp
+        if getattr(recipe, "planned_tcp", None) is None:
+            d = self._read_yaml_dict_or_none(str(getattr(p, "planned_tcp_yaml", "") or ""))
+            if d is not None:
+                recipe.planned_tcp = Draft.from_yaml_dict(d)
 
-        # ---- executed_tcp (Strict Type: Draft) ----
-        try:
-            executed_tcp_path = str(getattr(p, "executed_tcp_yaml", "") or "")
-            if getattr(recipe, "executed_tcp", None) is None:
-                d = self._read_yaml_file(executed_tcp_path)
-                if d is not None:
-                    recipe.executed_tcp = Draft.from_yaml_dict(d)
-        except Exception:
-            pass
+        # executed_tcp
+        if getattr(recipe, "executed_tcp", None) is None:
+            d = self._read_yaml_dict_or_none(str(getattr(p, "executed_tcp_yaml", "") or ""))
+            if d is not None:
+                recipe.executed_tcp = Draft.from_yaml_dict(d)
 
         return recipe
 
@@ -144,7 +128,9 @@ class RecipeRepo:
     # ------------------------------------------------------------
 
     def list_recipes(self) -> List[str]:
-        keys = self.bundle.list_recipes() if hasattr(self.bundle, "list_recipes") else []
+        if not hasattr(self.bundle, "list_recipes"):
+            raise AttributeError("RecipeBundle hat keine list_recipes() API.")
+        keys = self.bundle.list_recipes()
         out: List[str] = []
         for k in (keys or []):
             rid = self._norm_rid(k)
@@ -156,14 +142,22 @@ class RecipeRepo:
         rid = self._norm_rid(recipe_id)
         if not rid:
             raise KeyError("load_for_editor: recipe_id leer")
+        if not hasattr(self.bundle, "load_for_editor"):
+            raise AttributeError("RecipeBundle hat keine load_for_editor(rid) API.")
         r = self.bundle.load_for_editor(rid)
+        if r is None or not isinstance(r, Recipe):
+            raise TypeError(f"bundle.load_for_editor() returned invalid: {type(r)}")
         return self._hydrate_optional_attachments(rid, r)
 
     def load_for_process(self, recipe_id: str) -> Recipe:
         rid = self._norm_rid(recipe_id)
         if not rid:
             raise KeyError("load_for_process: recipe_id leer")
+        if not hasattr(self.bundle, "load_for_process"):
+            raise AttributeError("RecipeBundle hat keine load_for_process(rid) API.")
         r = self.bundle.load_for_process(rid)
+        if r is None or not isinstance(r, Recipe):
+            raise TypeError(f"bundle.load_for_process() returned invalid: {type(r)}")
         return self._hydrate_optional_attachments(rid, r)
 
     # ------------------------------------------------------------
@@ -179,18 +173,16 @@ class RecipeRepo:
 
         draft.id = rid
 
-        # compiled = optional UI artifact. Bundle-Versionen unterscheiden sich in der Signatur.
-        if compiled is not None and hasattr(self.bundle, "save_from_editor"):
-            try:
-                return self.bundle.save_from_editor(rid, draft=draft, compiled=compiled)  # type: ignore[arg-type]
-            except TypeError:
-                # älterer Bundle: compiled nicht unterstützt
-                return self.bundle.save_from_editor(rid, draft=draft)
+        if not hasattr(self.bundle, "save_from_editor"):
+            raise AttributeError("RecipeBundle hat keine save_from_editor(rid, ...) API.")
 
-        return self.bundle.save_from_editor(rid, draft=draft)
+        # STRICT: call bundle API directly; if signature mismatches, let it raise.
+        if compiled is None:
+            return self.bundle.save_from_editor(rid, draft=draft)
+        return self.bundle.save_from_editor(rid, draft=draft, compiled=compiled)  # type: ignore[arg-type]
 
     # ------------------------------------------------------------
-    # Option A: persist run artifacts (traj + tcp)
+    # Persist run artifacts (traj + tcp)
     # ------------------------------------------------------------
 
     def save_run_artifacts(
@@ -206,39 +198,23 @@ class RecipeRepo:
         if not rid:
             raise KeyError("save_run_artifacts: recipe_id leer")
 
-        # Prefer explicit batch method on bundle
-        if hasattr(self.bundle, "save_run_artifacts"):
-            return self.bundle.save_run_artifacts(
-                rid,
-                planned_traj=planned_traj,
-                executed_traj=executed_traj,
-                planned_tcp=planned_tcp,
-                executed_tcp=executed_tcp,
-            )
+        if not hasattr(self.bundle, "save_run_artifacts"):
+            raise AttributeError("RecipeBundle hat keine save_run_artifacts(rid, ...) API.")
 
-        # Fallback to individual saves (if bundle API is older)
-        if planned_traj is not None and hasattr(self.bundle, "save_planned_traj"):
-            self.bundle.save_planned_traj(rid, planned_traj)
-        if executed_traj is not None and hasattr(self.bundle, "save_executed_traj"):
-            self.bundle.save_executed_traj(rid, executed_traj)
-        if planned_tcp is not None and hasattr(self.bundle, "save_planned_tcp"):
-            self.bundle.save_planned_tcp(rid, planned_tcp)
-        if executed_tcp is not None and hasattr(self.bundle, "save_executed_tcp"):
-            self.bundle.save_executed_tcp(rid, executed_tcp)
+        return self.bundle.save_run_artifacts(
+            rid,
+            planned_traj=planned_traj,
+            executed_traj=executed_traj,
+            planned_tcp=planned_tcp,
+            executed_tcp=executed_tcp,
+        )
 
-    # ------------------------------------------------------------
-    # NEW: persist from RunResult (ONLY if valid)
-    # ------------------------------------------------------------
-
-    def save_run_result_if_valid(
-        self,
-        recipe_id: str,
-        *,
-        run_result: RunResult,
-    ) -> bool:
+    def save_run_result_if_valid(self, recipe_id: str, *, run_result: RunResult) -> bool:
         """
-        Saves run artifacts derived from RunResult ONLY if run_result.valid is True.
-        Automatically converts dicts to strict Objects (JTBySegment/Draft).
+        STRICT:
+          - run_result is kw-only and must be RunResult.
+          - saves ONLY if run_result.valid is True.
+          - converts dicts to strict objects (JTBySegment/Draft).
         """
         rid = self._norm_rid(recipe_id)
         if not rid:
@@ -249,13 +225,11 @@ class RecipeRepo:
         if not bool(getattr(run_result, "valid", False)):
             return False
 
-        # Extract Raw Dicts
         p_traj_dict = dict((run_result.planned_run or {}).get("traj") or {})
         e_traj_dict = dict((run_result.executed_run or {}).get("traj") or {})
         p_tcp_dict = dict((run_result.planned_run or {}).get("tcp") or {})
         e_tcp_dict = dict((run_result.executed_run or {}).get("tcp") or {})
 
-        # Convert to Strict Objects (Bundle expects objects with .to_yaml_dict())
         planned_traj = JTBySegment.from_yaml_dict(p_traj_dict) if p_traj_dict else None
         executed_traj = JTBySegment.from_yaml_dict(e_traj_dict) if e_traj_dict else None
         planned_tcp = Draft.from_yaml_dict(p_tcp_dict) if p_tcp_dict else None

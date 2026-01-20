@@ -121,7 +121,6 @@ class RecipeEvaluator:
                     seg_frame = self._as_str(seg.get("frame") or frame or self.REQUIRED_FRAME)
                     if seg_frame:
                         self._require_frame(seg_frame, who=f"tcp.segments[{seg_id}]")
-                    # Draft.from_yaml_dict ignores unknown keys; keep "frame" for forward-compat.
                     return {"frame": seg_frame or self.REQUIRED_FRAME, "sides": sides}
 
         sides = tcp_doc.get("sides")
@@ -135,15 +134,12 @@ class RecipeEvaluator:
         if d is None:
             raise ValueError("no_draft")
 
-        # recipe.draft is already Draft in your architecture
         if isinstance(d, Draft):
-            # Draft currently may not carry a frame attribute; keep this tolerant.
             fr = self._as_str(getattr(d, "frame", "") or "")
             if fr:
                 self._require_frame(fr, who="recipe.draft")
             return d
 
-        # last-resort compat if recipe.draft became dict somehow
         if isinstance(d, dict):
             fr = self._as_str(d.get("frame") or "")
             if fr:
@@ -355,7 +351,7 @@ class RecipeEvaluator:
         domain: str = "tcp",
     ) -> Dict[str, Any]:
         """
-        Entry point used by RunResult.postprocess_from_urdf_srdf().
+        Entry point used by RunResult.evaluate_tcp_against_draft().
 
         IMPORTANT:
           - planned_tcp/executed_tcp are TCP YAML dicts from TrajFkBuilder (with segments)
@@ -396,18 +392,24 @@ class RecipeEvaluator:
         pl = to_tcp_draft(planned_tcp, name="planned_tcp")
         ex = to_tcp_draft(executed_tcp, name="executed_tcp")
 
-        # Eval per mode
         def run_mode(tcp_draft: Optional[Draft], mode_name: str) -> Dict[str, Any]:
             if not tcp_draft:
                 return {"valid": False, "invalid_reason": "missing_tcp"}
 
             side_results: Dict[str, Any] = {}
             scores: List[float] = []
-
             for side in sides:
-                # STRICT: reference must be recipe-only for seg_id (MOVE_RECIPE)
                 ref = self._ref_recipe_segment_poses(ref_draft, side=side, seg_id=seg_id)
-                test = tcp_draft.poses_quat(side)
+
+                # STRICT: If tcp_draft can isolate by segment, use it. Otherwise use global side.
+                fn_test_seg = getattr(tcp_draft, "poses_quat_segment", None)
+                if callable(fn_test_seg):
+                    try:
+                        test = list(fn_test_seg(side, seg_id) or [])
+                    except Exception:
+                        test = list(tcp_draft.poses_quat(side) or [])
+                else:
+                    test = list(tcp_draft.poses_quat(side) or [])
 
                 res = self.evaluate_side(ref_poses=ref, test_poses=test, label=f"{mode_name}/{seg_id}/{side}")
                 side_results[side] = res.to_dict()
@@ -416,7 +418,7 @@ class RecipeEvaluator:
             avg_score = float(np.mean(scores)) if scores else 0.0
             return {
                 "valid": True,
-                "score": avg_score,
+                "score": float(avg_score),
                 "segment": seg_id,
                 "by_side": side_results,
                 "metrics": side_results.get(sides[0], {}).get("metrics", {}),
@@ -429,9 +431,11 @@ class RecipeEvaluator:
         p_score = float(p_eval.get("score", 0.0) or 0.0)
         e_score = float(e_eval.get("score", 0.0) or 0.0)
 
-        # STRICT overall: consistent with gating semantics
+        planned_ok = bool(p_eval.get("valid", False)) and (p_score >= thr)
+        executed_ok = bool(e_eval.get("valid", False)) and (e_score >= thr)
+        valid = bool(planned_ok and executed_ok)
+
         overall_score = float(min(p_score, e_score))
-        valid = (p_score >= thr) and (e_score >= thr)
 
         def _fmt(x: Any) -> str:
             return f"{x:.3f}" if isinstance(x, (float, int)) else "-"
@@ -444,16 +448,28 @@ class RecipeEvaluator:
             {"metric": "Ø Rot (deg)", "planned": _fmt(pm.get("mean_angle_deg")), "executed": _fmt(em.get("mean_angle_deg"))},
         ]
 
+        reason_parts: List[str] = []
+        if not bool(p_eval.get("valid", False)):
+            reason_parts.append(f"planned:{p_eval.get('invalid_reason') or 'invalid'}")
+        if not bool(e_eval.get("valid", False)):
+            reason_parts.append(f"executed:{e_eval.get('invalid_reason') or 'invalid'}")
+        if not reason_parts and not valid:
+            reason_parts.append("score_below_threshold")
+
         return {
             "version": 4,
             "domain": str(domain or "tcp"),
             "segment": seg_id,
-            "valid": bool(valid),
             "threshold": float(thr),
 
-            # NEW: stable overall score for summary + legacy UI paths
+            # Unified summary for RunResult.eval (overall gating = min(planned, executed))
+            "valid": bool(valid),
             "score": float(overall_score),
             "total": {"score": float(overall_score)},
+
+            # Convenience for splitting (RunResult embeds per-mode into tcp docs)
+            "planned_score": float(p_score),
+            "executed_score": float(e_score),
 
             # For RunResult.format_eval_text()
             "segments": {
@@ -465,15 +481,14 @@ class RecipeEvaluator:
                 }
             },
 
-            # Table for: topic | planned | executed (your UI can render directly)
+            # Table for: topic | planned | executed
             "comparison": table,
 
             "planned": p_eval,
             "executed": e_eval,
-            "invalid_reason": "" if valid else "score_below_threshold",
+            "invalid_reason": "" if valid else "; ".join(reason_parts),
         }
 
-    # Compat API for callers (RunResult uses evaluate_runs with extra kwargs)
     def evaluate_runs(self, **kwargs) -> Dict[str, Any]:
         """
         Accepts extra kwargs safely (segment_order, domain, etc.).

@@ -13,12 +13,6 @@ def _dict(v: Any) -> Dict[str, Any]:
     return v if isinstance(v, dict) else {}
 
 
-def _as_bool(v: Any, default: bool = False) -> bool:
-    if v is None:
-        return default
-    return bool(v)
-
-
 def _get_nested(d: Dict[str, Any], path: Sequence[str], default: Any = None) -> Any:
     cur: Any = d
     for k in path:
@@ -44,8 +38,10 @@ def _require_list3(v: Any, name: str) -> Tuple[float, float, float]:
 # Minimal rigid transform helpers (mm)
 # ============================================================
 
+
 def _rpy_deg_to_quat_xyzw(r: float, p: float, y: float) -> Tuple[float, float, float, float]:
     import math
+
     rr = math.radians(float(r))
     pp = math.radians(float(p))
     yy = math.radians(float(y))
@@ -70,6 +66,7 @@ def _rpy_deg_to_quat_xyzw(r: float, p: float, y: float) -> Tuple[float, float, f
 
 def _quat_to_rot3(q: Tuple[float, float, float, float]) -> list[list[float]]:
     import math
+
     qx, qy, qz, qw = q
     n = math.sqrt(qx * qx + qy * qy + qz * qz + qw * qw)
     if n <= 0.0:
@@ -94,7 +91,8 @@ def _quat_to_rot3(q: Tuple[float, float, float, float]) -> list[list[float]]:
 
 
 def _mat4_from_xyz_quat_mm(
-    xyz_mm: Tuple[float, float, float], q: Tuple[float, float, float, float]
+    xyz_mm: Tuple[float, float, float],
+    q: Tuple[float, float, float, float],
 ) -> list[list[float]]:
     R = _quat_to_rot3(q)
     tx, ty, tz = xyz_mm
@@ -143,6 +141,7 @@ def _mat4_inv_rigid(T: list[list[float]]) -> list[list[float]]:
 # ============================================================
 # YAML loading + scene/mount helpers
 # ============================================================
+
 
 def _load_yaml_file(path: str) -> Dict[str, Any]:
     if not path:
@@ -252,10 +251,16 @@ def _compute_T_substrate_robot_mount_mm(
 # RunResult
 # ============================================================
 
+
 @dataclass
 class RunResult:
     """
     STRICT run result container (SSoT).
+
+    IMPORTANT:
+      - Process collects ONLY raw artifacts (traj + robot_description).
+      - FK/TCP building is a deterministic post-step.
+      - Evaluation is explicit (call evaluate_tcp_against_draft()).
 
     planned_run  = {"traj": <JTBySegment YAML dict>, "tcp": <TCP YAML dict>}
     executed_run = {"traj": <JTBySegment YAML dict>, "tcp": <TCP YAML dict>}
@@ -272,6 +277,9 @@ class RunResult:
 
     valid: bool = True
     invalid_reason: str = ""
+
+    # STRICT invariant: TCP target frame is ALWAYS substrate.
+    TCP_TARGET_FRAME: str = "substrate"
 
     def __post_init__(self) -> None:
         self.urdf_xml = str(self.urdf_xml or "")
@@ -314,48 +322,87 @@ class RunResult:
     def set_fk_meta(self, meta: Dict[str, Any] | None) -> None:
         self.fk_meta = _dict(meta)
 
+    # ------------------------------------------------------------
+    # eval persistence helpers (split planned/executed)
+    # ------------------------------------------------------------
+
+    @staticmethod
+    def _split_eval_for_tcp_docs(full_eval: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Convert a unified evaluator output into two per-TCP eval dicts:
+
+          - planned_tcp.eval   -> planned score/valid/invalid_reason
+          - executed_tcp.eval  -> executed score/valid/invalid_reason
+        """
+        ev = _dict(full_eval)
+        thr = ev.get("threshold", None)
+        try:
+            thr_f = float(thr) if thr is not None else 90.0
+        except Exception:
+            thr_f = 90.0
+
+        p = _dict(ev.get("planned"))
+        e = _dict(ev.get("executed"))
+
+        def _score_of(mode: Dict[str, Any]) -> float:
+            s = mode.get("score")
+            if s is None and isinstance(mode.get("total"), dict):
+                s = mode["total"].get("score")
+            try:
+                return float(s) if s is not None else 0.0
+            except Exception:
+                return 0.0
+
+        p_score = _score_of(p)
+        e_score = _score_of(e)
+
+        p_valid = bool(p.get("valid", True)) and (p_score >= thr_f)
+        e_valid = bool(e.get("valid", True)) and (e_score >= thr_f)
+
+        base: Dict[str, Any] = dict(ev)
+        base.pop("fk_meta", None)
+
+        planned_ev = dict(base)
+        planned_ev["mode"] = "planned"
+        planned_ev["valid"] = bool(p_valid)
+        planned_ev["score"] = float(p_score)
+        planned_ev["total"] = {"score": float(p_score)}
+        planned_ev["invalid_reason"] = "" if p_valid else "score_below_threshold"
+
+        executed_ev = dict(base)
+        executed_ev["mode"] = "executed"
+        executed_ev["valid"] = bool(e_valid)
+        executed_ev["score"] = float(e_score)
+        executed_ev["total"] = {"score": float(e_score)}
+        executed_ev["invalid_reason"] = "" if e_valid else "score_below_threshold"
+
+        return planned_ev, executed_ev
+
     def set_eval(self, eval_dict: Dict[str, Any] | None) -> None:
         """
-        Stores eval dict AND embeds it into planned/executed TCP YAML docs.
-        IMPORTANT: This function must not recurse.
+        Stores eval dict on RunResult AND embeds per-mode eval into planned/executed TCP YAML docs.
 
         STRICT:
-          - Persist the FULL eval for disk/UI ("eval_full") so tables like
-            topic | planned | executed are available after reload.
-          - Persist per-mode eval under "eval" for compatibility.
+          - No recursion.
+          - Writes ONLY into TCP YAML docs.
+          - Splits into planned/executed so Disk UI columns differ.
         """
         self.eval = _dict(eval_dict)
 
-        # Persist eval into the TCP YAML docs (NOT into traj YAML).
-        try:
-            pl_tcp_doc = _dict(self.planned_run.get("tcp"))
-            ex_tcp_doc = _dict(self.executed_run.get("tcp"))
+        pl_tcp_doc = _dict(self.planned_run.get("tcp"))
+        ex_tcp_doc = _dict(self.executed_run.get("tcp"))
 
-            if self.fk_meta:
-                pl_tcp_doc["fk_meta"] = dict(self.fk_meta)
-                ex_tcp_doc["fk_meta"] = dict(self.fk_meta)
+        if self.fk_meta:
+            pl_tcp_doc["fk_meta"] = dict(self.fk_meta)
+            ex_tcp_doc["fk_meta"] = dict(self.fk_meta)
 
-            if self.eval:
-                # NEW: store full eval (includes comparison/threshold/domain/valid)
-                pl_tcp_doc["eval_full"] = dict(self.eval)
-                ex_tcp_doc["eval_full"] = dict(self.eval)
+        if self.eval:
+            pl_eval, ex_eval = self._split_eval_for_tcp_docs(self.eval)
+            pl_tcp_doc["eval"] = pl_eval
+            ex_tcp_doc["eval"] = ex_eval
 
-                # Existing behavior: store per-mode split if provided, else store same dict
-                pl_eval = _dict(self.eval.get("planned"))
-                ex_eval = _dict(self.eval.get("executed"))
-
-                if not pl_eval and self.eval.get("version") != 2:
-                    pl_eval = dict(self.eval)
-                if not ex_eval and self.eval.get("version") != 2:
-                    ex_eval = dict(self.eval)
-
-                pl_tcp_doc["eval"] = pl_eval
-                ex_tcp_doc["eval"] = ex_eval
-
-            self.planned_run["tcp"] = pl_tcp_doc
-            self.executed_run["tcp"] = ex_tcp_doc
-        except Exception:
-            pass
+        self.planned_run["tcp"] = pl_tcp_doc
+        self.executed_run["tcp"] = ex_tcp_doc
 
     def invalidate(self, reason: str) -> None:
         self.valid = False
@@ -379,14 +426,7 @@ class RunResult:
 
         valid = self.eval.get("valid")
         dom = self.eval.get("domain") or ""
-
-        # Support both schemas:
-        # - old: total.score
-        # - new: score (top-level)
         total = _get_nested(self.eval, ["total", "score"], None)
-        if total is None:
-            total = self.eval.get("score", None)
-
         thr = self.eval.get("threshold", None)
 
         parts = []
@@ -532,7 +572,7 @@ class RunResult:
         )
 
     # ------------------------------------------------------------
-    # FK/TCP + Eval
+    # FK/TCP building (NO eval by default)
     # ------------------------------------------------------------
 
     def postprocess(
@@ -543,17 +583,18 @@ class RunResult:
         ee_link: str = "tcp",
         step_mm: float = 1.0,
         max_points: int = 0,
-        gate_valid_on_eval: bool = False,
         require_tcp: bool = True,
         segment_to_side: Optional[Dict[str, str]] = None,
         default_side: str = "top",
-        tcp_target_frame: str = "substrate",
-        scene_yaml_path: Optional[str] = None,
-        robot_yaml_path: Optional[str] = None,
-        mounts_yaml_path: Optional[str] = None,
+        scene_yaml_path: str,
+        robot_yaml_path: str,
+        mounts_yaml_path: str,
+        evaluate: bool = False,
+        gate_valid_on_eval: bool = False,
     ) -> None:
         if not self.urdf_xml.strip() or not self.srdf_xml.strip():
             raise ValueError("RunResult.postprocess: urdf_xml/srdf_xml fehlt (leer).")
+
         self.postprocess_from_urdf_srdf(
             urdf_xml=self.urdf_xml,
             srdf_xml=self.srdf_xml,
@@ -562,14 +603,14 @@ class RunResult:
             ee_link=ee_link,
             step_mm=step_mm,
             max_points=max_points,
-            gate_valid_on_eval=gate_valid_on_eval,
             require_tcp=require_tcp,
             segment_to_side=segment_to_side,
             default_side=default_side,
-            tcp_target_frame=tcp_target_frame,
-            scene_yaml_path=scene_yaml_path,
-            robot_yaml_path=robot_yaml_path,
-            mounts_yaml_path=mounts_yaml_path,
+            scene_yaml_path=str(scene_yaml_path),
+            robot_yaml_path=str(robot_yaml_path),
+            mounts_yaml_path=str(mounts_yaml_path),
+            evaluate=evaluate,
+            gate_valid_on_eval=gate_valid_on_eval,
         )
 
     def postprocess_from_urdf_srdf(
@@ -582,14 +623,14 @@ class RunResult:
         ee_link: str = "tcp",
         step_mm: float = 1.0,
         max_points: int = 0,
-        gate_valid_on_eval: bool = False,
         require_tcp: bool = True,
         segment_to_side: Optional[Dict[str, str]] = None,
         default_side: str = "top",
-        tcp_target_frame: str = "substrate",
-        scene_yaml_path: Optional[str] = None,
-        robot_yaml_path: Optional[str] = None,
-        mounts_yaml_path: Optional[str] = None,
+        scene_yaml_path: str,
+        robot_yaml_path: str,
+        mounts_yaml_path: str,
+        evaluate: bool = False,
+        gate_valid_on_eval: bool = False,
     ) -> None:
         from model.spray_paths.traj_fk_builder import TrajFkBuilder, TrajFkConfig
 
@@ -601,6 +642,10 @@ class RunResult:
         self.urdf_xml = urdf_xml
         self.srdf_xml = srdf_xml
 
+        # STRICT: substrate is the only supported TCP target frame
+        if self.TCP_TARGET_FRAME != "substrate":
+            raise ValueError(f"RunResult TCP_TARGET_FRAME must be 'substrate', got {self.TCP_TARGET_FRAME!r}")
+
         robot_model = TrajFkBuilder.build_robot_model_from_urdf_srdf(urdf_xml=urdf_xml, srdf_xml=srdf_xml)
 
         planned_traj = _dict(self.planned_run.get("traj"))
@@ -611,21 +656,19 @@ class RunResult:
             raise ValueError("RunResult.postprocess_from_urdf_srdf: executed_run.traj ist leer.")
 
         cfg = TrajFkConfig(ee_link=str(ee_link or "tcp"), step_mm=float(step_mm), max_points=int(max_points or 0))
-        base_frame = str(cfg.base_link)
+        base_link = str(cfg.base_link)
 
         seg_ids = [str(s).strip() for s in list(segment_order) if str(s).strip()]
         if not seg_ids:
             raise ValueError("RunResult.postprocess_from_urdf_srdf: segment_order ist leer (seg_ids).")
 
-        # Build TCP YAML with per-segment isolation for ALL segments in segment_order.
-        # NOTE: TrajFkBuilder is STRICT and does NOT support boundary de-duplication.
         planned_tcp = TrajFkBuilder.build_tcp_draft_yaml(
             planned_traj,
             robot_model=robot_model,
             cfg=cfg,
             segment_to_side=segment_to_side,
             default_side=str(default_side or "top"),
-            frame_id=base_frame,
+            frame_id=base_link,
             include_segments=seg_ids,
             require_all_segments=True,
         )
@@ -636,49 +679,29 @@ class RunResult:
             cfg=cfg,
             segment_to_side=segment_to_side,
             default_side=str(default_side or "top"),
-            frame_id=base_frame,
+            frame_id=base_link,
             include_segments=seg_ids,
             require_all_segments=True,
         )
 
-        # Optional: transform TCP into substrate (offline; includes mount scene_offset).
-        target = str(tcp_target_frame or "").strip()
-        if target and target != base_frame:
-            if target != "substrate":
-                raise ValueError(
-                    f"postprocess_from_urdf_srdf: unsupported tcp_target_frame={target!r} "
-                    f"(supported: {base_frame!r} or 'substrate')"
-                )
-            if base_frame != "robot_mount":
-                raise ValueError(
-                    f"postprocess_from_urdf_srdf: expected cfg.base_link='robot_mount' for offline transform, got {base_frame!r}"
-                )
-            if not scene_yaml_path or not robot_yaml_path:
-                raise ValueError(
-                    "postprocess_from_urdf_srdf: tcp_target_frame='substrate', "
-                    "aber scene_yaml_path/robot_yaml_path fehlen."
-                )
-            if not mounts_yaml_path:
-                raise ValueError(
-                    "postprocess_from_urdf_srdf: tcp_target_frame='substrate', "
-                    "aber mounts_yaml_path fehlt (substrate_mounts.yaml ist SSoT für mount scene_offset)."
-                )
+        # STRICT: always transform into substrate.
+        if base_link != "robot_mount":
+            raise ValueError(
+                f"postprocess_from_urdf_srdf: expected cfg.base_link='robot_mount' for offline substrate transform, got {base_link!r}"
+            )
 
-            T_substrate_robot_mount = _compute_T_substrate_robot_mount_mm(
-                scene_yaml_path=str(scene_yaml_path),
-                robot_yaml_path=str(robot_yaml_path),
-                mounts_yaml_path=str(mounts_yaml_path),
+        if not scene_yaml_path or not robot_yaml_path or not mounts_yaml_path:
+            raise ValueError(
+                "postprocess_from_urdf_srdf: substrate transform requires scene_yaml_path, robot_yaml_path, mounts_yaml_path."
             )
-            planned_tcp = TrajFkBuilder.transform_draft_yaml(
-                planned_tcp,
-                T_to_from_mm=T_substrate_robot_mount,
-                out_frame="substrate",
-            )
-            executed_tcp = TrajFkBuilder.transform_draft_yaml(
-                executed_tcp,
-                T_to_from_mm=T_substrate_robot_mount,
-                out_frame="substrate",
-            )
+
+        T_substrate_robot_mount = _compute_T_substrate_robot_mount_mm(
+            scene_yaml_path=str(scene_yaml_path),
+            robot_yaml_path=str(robot_yaml_path),
+            mounts_yaml_path=str(mounts_yaml_path),
+        )
+        planned_tcp = TrajFkBuilder.transform_draft_yaml(planned_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate")
+        executed_tcp = TrajFkBuilder.transform_draft_yaml(executed_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate")
 
         self.planned_run["tcp"] = _dict(planned_tcp)
         self.executed_run["tcp"] = _dict(executed_tcp)
@@ -690,40 +713,58 @@ class RunResult:
             "max_points": int(cfg.max_points),
             "segment_order": list(seg_ids),
             "backend": "kdl",
-            "tcp_frame": str((_dict(self.planned_run.get("tcp"))).get("frame") or base_frame),
+            "tcp_frame": str((_dict(self.planned_run.get("tcp"))).get("frame") or base_link),
             "segments_included": list(seg_ids),
         }
-
-        # Eval (strict): evaluator isolates MOVE_RECIPE from tcp.yaml.segments or meta.segment_slices.
-        eval_dict: Dict[str, Any] = {}
-        try:
-            from .recipe_eval import RecipeEvaluator  # type: ignore
-
-            evaluator = RecipeEvaluator()
-            fn = getattr(evaluator, "evaluate_runs", None)
-            if callable(fn):
-                eval_dict = fn(
-                    recipe=recipe,
-                    planned_tcp=planned_tcp,
-                    executed_tcp=executed_tcp,
-                    segment_order=list(seg_ids),
-                    domain="tcp",
-                )
-            else:
-                fn2 = getattr(evaluator, "evaluate", None)
-                if callable(fn2):
-                    eval_dict = fn2(recipe=recipe, planned=planned_tcp, executed=executed_tcp)
-                else:
-                    raise RuntimeError("RecipeEvaluator: keine evaluate_runs()/evaluate() API gefunden.")
-        except Exception as e:
-            eval_dict = {"valid": False, "invalid_reason": f"eval_failed: {e}"}
-
-        self.set_eval(_dict(eval_dict))
 
         if require_tcp:
             if not _dict(self.planned_run.get("tcp")) or not _dict(self.executed_run.get("tcp")):
                 raise ValueError("RunResult.postprocess_from_urdf_srdf: TCP Draft leer (require_tcp=true).")
 
-        if gate_valid_on_eval:
-            if self.eval and self.eval.get("valid") is False:
-                self.invalidate(f"eval_invalid: {self.eval.get('invalid_reason') or 'invalid'}")
+        if evaluate:
+            self.evaluate_tcp_against_draft(
+                recipe=recipe,
+                segment_order=list(seg_ids),
+                domain="tcp",
+                gate_valid_on_eval=gate_valid_on_eval,
+            )
+
+    # ------------------------------------------------------------
+    # Explicit evaluation (call from RecipePanel)
+    # ------------------------------------------------------------
+
+    def evaluate_tcp_against_draft(
+        self,
+        *,
+        recipe: Any,
+        segment_order: Optional[Sequence[str]] = None,
+        domain: str = "tcp",
+        gate_valid_on_eval: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Explicit evaluation step. Intended to be called in RecipePanel (NOT in process thread).
+        Stores result via set_eval() and embeds per-mode eval into TCP docs.
+        """
+        planned_tcp = _dict(self.planned_run.get("tcp"))
+        executed_tcp = _dict(self.executed_run.get("tcp"))
+
+        try:
+            from .recipe_eval import RecipeEvaluator  # local import to avoid circulars
+
+            evaluator = RecipeEvaluator()
+            eval_dict = evaluator.evaluate_runs(
+                recipe=recipe,
+                planned_tcp=planned_tcp,
+                executed_tcp=executed_tcp,
+                segment_order=list(segment_order) if segment_order else None,
+                domain=str(domain or "tcp"),
+            )
+        except Exception as e:
+            eval_dict = {"valid": False, "invalid_reason": f"eval_failed: {e}", "domain": str(domain or "tcp")}
+
+        self.set_eval(_dict(eval_dict))
+
+        if gate_valid_on_eval and self.eval and self.eval.get("valid") is False:
+            self.invalidate(f"eval_invalid: {self.eval.get('invalid_reason') or 'invalid'}")
+
+        return _dict(eval_dict)

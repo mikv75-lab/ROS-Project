@@ -6,7 +6,7 @@ import logging
 from typing import Any, Optional
 
 from PyQt6 import QtCore
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
+from PyQt6.QtWidgets import QWidget, QVBoxLayout
 
 from plc.plc_client import PlcClientBase
 from ros.bridge.ros_bridge import RosBridge
@@ -21,19 +21,15 @@ class ProcessTab(QWidget):
     """
     STRICT V2 ProcessTab (Option 2)
 
+    NEW layout:
+      vbox(
+        processPanel,
+        recipePanel
+      )
+
     Responsibilities:
       - Layout panels
       - Wire signals between RecipePanel and ProcessPanel
-
-    ProcessPanel:
-      - Starts/stops ProcessThread
-      - Emits sig_run_started/sig_run_finished/sig_run_error
-
-    RecipePanel:
-      - Selects/loads recipes via repo
-      - Displays recipe + stored results
-      - Handles on_run_started/on_run_finished/on_run_error
-      - Persists via repo.save_run_result_if_valid(...)
     """
 
     def __init__(
@@ -72,15 +68,12 @@ class ProcessTab(QWidget):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
 
-        row = QHBoxLayout()
-        row.setSpacing(8)
-
-        self.recipePanel = RecipePanel(ctx=self.ctx, repo=self.repo, ros=self.ros, parent=self)
         self.processPanel = ProcessPanel(repo=self.repo, ctx=self.ctx, ros=self.ros, plc=self.plc, parent=self)
-        row.addWidget(self.recipePanel, 3)
-        row.addWidget(self.processPanel, 2)
+        self.recipePanel = RecipePanel(ctx=self.ctx, repo=self.repo, ros=self.ros, parent=self)
 
-        root.addLayout(row, 1)
+        # Put Process on top, Recipe below
+        root.addWidget(self.processPanel, 0)
+        root.addWidget(self.recipePanel, 1)
 
         # ---------------- Wiring ----------------
 
