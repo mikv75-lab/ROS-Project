@@ -353,6 +353,88 @@ def _draft_display_points_local(draft: Optional[Draft], side: str) -> Optional[n
     return np.asarray(pts, dtype=float).reshape(-1, 3)
 
 
+def _place_mask_world_for_side(
+    mask_local: np.ndarray,
+    *,
+    origin_world: Tuple[float, float, float],
+    substrate_bounds_world: Bounds,
+    side: str,
+    stand_off_mm: float,
+) -> np.ndarray:
+    """
+    Correct face mapping using SUBSTRATE bounds (not mount origin z).
+    This ensures mount->substrate height offset is included automatically.
+
+    Local convention: planar paths authored in local XY (z optional, usually 0).
+      - local x: lateral along face
+      - local y: vertical along face (mapped to world z for side faces)
+
+    Faces:
+      top   : z = zmax + stand_off (+ local z); x/y around substrate center
+      front : y = ymax + stand_off; x around substrate center; z = zmid + local y
+      back  : y = ymin - stand_off; x around substrate center; z = zmid + local y
+      left  : x = xmax + stand_off; y around substrate center; z = zmid + local y
+      right : x = xmin - stand_off; y around substrate center; z = zmid + local y
+    """
+    P = np.asarray(mask_local, dtype=float).reshape(-1, 3)
+    if P.size == 0:
+        return P.copy()
+
+    xmin, xmax, ymin, ymax, zmin, zmax = map(float, substrate_bounds_world)
+    xmid = 0.5 * (xmin + xmax)
+    ymid = 0.5 * (ymin + ymax)
+    zmid = 0.5 * (zmin + zmax)
+
+    sd = str(side or "").strip().lower()
+    out = np.zeros_like(P, dtype=float)
+
+    if sd == "top":
+        out[:, 0] = xmid + P[:, 0]
+        out[:, 1] = ymid + P[:, 1]
+        out[:, 2] = zmax + float(stand_off_mm) + P[:, 2]
+        return out
+
+    if sd == "front":
+        out[:, 0] = xmid + P[:, 0]
+        out[:, 1] = ymax + float(stand_off_mm)
+        out[:, 2] = zmid + P[:, 1]  # local y -> world z
+        return out
+
+    if sd == "back":
+        out[:, 0] = xmid + P[:, 0]
+        out[:, 1] = ymin - float(stand_off_mm)
+        out[:, 2] = zmid + P[:, 1]
+        return out
+
+    if sd == "left":
+        out[:, 0] = xmax + float(stand_off_mm)
+        out[:, 1] = ymid + P[:, 0]  # local x -> world y
+        out[:, 2] = zmid + P[:, 1]
+        return out
+
+    if sd == "right":
+        out[:, 0] = xmin - float(stand_off_mm)
+        out[:, 1] = ymid + P[:, 0]
+        out[:, 2] = zmid + P[:, 1]
+        return out
+
+    # helix/polyhelix: translate by mount origin (kept)
+    out[:, 2] = zmin + P[:, 2]
+    return out
+
+
+
+def _nonempty_poly(poly: Optional[pv.PolyData]) -> Optional[pv.PolyData]:
+    if poly is None:
+        return None
+    try:
+        if getattr(poly, "n_points", 0) <= 0:
+            return None
+    except Exception:
+        return None
+    return poly
+
+
 class SceneManager:
     _ATTR_TO_LAYER: Dict[str, str] = {
         "rays_hit_poly": "hits",
@@ -396,10 +478,14 @@ class SceneManager:
             dx = float(b[1] - b[0])
             dy = float(b[3] - b[2])
             size = max(dx, dy) * 2.2 if max(dx, dy) > 1e-6 else 400.0
-            ground_mesh = pv.Plane(center=(xmid, ymid, 0.0),
-                                   direction=(0.0, 0.0, 1.0),
-                                   i_size=float(size), j_size=float(size),
-                                   i_resolution=1, j_resolution=1)
+            ground_mesh = pv.Plane(
+                center=(xmid, ymid, 0.0),
+                direction=(0.0, 0.0, 1.0),
+                i_size=float(size),
+                j_size=float(size),
+                i_resolution=1,
+                j_resolution=1,
+            )
 
         bounds_list: List[Bounds] = []
         for m in (cage_mesh, ground_mesh, mount_mesh, substrate_mesh):
@@ -427,19 +513,15 @@ class SceneManager:
     def build_preview(self, *, recipe: Recipe, ctx: Any, overlay_cfg: Dict[str, Any]) -> PreviewResult:
         """
         MULTI-SIDE preview (Fix):
-        - enabled_sides (from recipe.parameters["enabled_sides"]) drive which sides are rendered.
-        - active_side (recipe.parameters["active_side"]) selects which side is returned for 2D/local path fields.
-        - 3D renderables include mask/path/overlays for ALL enabled sides (names are side-prefixed).
-        - valid = AND across enabled sides; invalid_reason carries first failing side.
+        - enabled_sides drive which sides are rendered.
+        - active_side selects which side is returned for 2D/local path fields.
+        - 3D renderables include mask/path/overlays for ALL enabled sides.
 
-        Contract:
-        - substrate_mesh / substrate_bounds are mount-top-frame (local) for 2D.
-        - path_xyz_mm / final_tcp_world_mm are mount-top-frame display path for ACTIVE side.
-
-        HELIX FIX:
-        - For side in {"helix","polyhelix"}: do NOT force mask_world[:,2] = sub_top + stand_off + ...
-            (keep helix Z as defined by the path).
-        - Stand-off for helix is handled in cast_rays_for_side() (eff_stand_off=0 there).
+        HELIX FIX (your rule):
+        - helix/polyhelix mask_world must be shifted up by substrate Z offset (mount->substrate),
+        BUT must NOT include global stand_off in the mask start Z.
+        - stand_off is handled by the projector TCP computation (tcp = hit + normal*stand_off),
+        so helix mask should represent the geometric path around the substrate.
         """
         renderables: List[Renderable] = []
 
@@ -459,13 +541,14 @@ class SceneManager:
                 meta={},
             )
 
+        # mount-top world origin (used for local<->world for the 2D plane paths)
         origin_world = (0.0, 0.0, 0.0)
         if scene.mount_mesh is not None:
             b = scene.mount_mesh.bounds
             origin_world = (
                 0.5 * (float(b[0]) + float(b[1])),
                 0.5 * (float(b[2]) + float(b[3])),
-                float(b[5]),
+                float(b[5]),  # mount top Z
             )
 
         # Static WORLD renderables
@@ -533,10 +616,18 @@ class SceneManager:
                 },
             )
 
-        sub_top_world_z = float(scene.substrate_mesh.bounds[5])
+        # Substrate world reference
+        sb = scene.substrate_mesh.bounds
+        sub_top_world_z = float(sb[5])
+        sub_mid_world_z = 0.5 * (float(sb[4]) + float(sb[5]))
+        sub_mid_world_x = 0.5 * (float(sb[0]) + float(sb[1]))
+        sub_mid_world_y = 0.5 * (float(sb[2]) + float(sb[3]))
+
         stand_off = float(params.get("stand_off_mm", 50.0))
         helix_sides = {"helix", "polyhelix"}
+        axis_sides = {"top", "front", "back", "left", "right"}
 
+        # 2D substrate in mount-top frame (local)
         substrate_local_mesh: Optional[pv.PolyData] = None
         substrate_bounds_local: Optional[Bounds] = None
         try:
@@ -572,18 +663,27 @@ class SceneManager:
                 continue
 
             # 2) Mask -> WORLD (ray start points)
+            # Default: local frame anchored at mount-top origin_world
             mask_world = _add_points_offset(mask_local, origin_world)
 
-            # FIX: only force-anchor Z for axis sides.
-            # For helix/polyhelix keep the path-defined Z (do not add stand_off/sub_top).
+            # IMPORTANT: fix Z anchoring rules
             if mask_world.size:
                 if side in helix_sides:
-                    pass
+                    # HELIX: must include mount->substrate height, but NO stand_off here.
+                    # local z is typically [-h/2..+h/2], so anchor at substrate mid-Z.
+                    mask_world[:, 0] = sub_mid_world_x + mask_local[:, 0]
+                    mask_world[:, 1] = sub_mid_world_y + mask_local[:, 1]
+                    mask_world[:, 2] = sub_mid_world_z + mask_local[:, 2]
+                elif side in axis_sides:
+                    # AXIS SIDES: anchor at substrate top + stand_off (your existing behavior)
+                    mask_world[:, 2] = sub_top_world_z + stand_off + mask_local[:, 2]
                 else:
+                    # Fallback: treat like axis side (conservative)
                     mask_world[:, 2] = sub_top_world_z + stand_off + mask_local[:, 2]
 
+            # Render mask polyline (WORLD)
             mask_poly = _polyline(mask_world)
-            if mask_poly is not None:
+            if mask_poly is not None and getattr(mask_poly, "n_points", 0) > 0:
                 renderables.append(Renderable(
                     layer="mask",
                     name=f"{side}_mask_poly",
@@ -617,6 +717,12 @@ class SceneManager:
                 preview_valid_all = False
                 if invalid_reason is None:
                     invalid_reason = f"raycast_miss:{side}"
+
+            # Guard against empty debug point clouds (prevents "Empty meshes cannot be plotted")
+            if hit_p is not None and getattr(hit_p, "n_points", 0) == 0:
+                hit_p = pv.PolyData()
+            if miss_p is not None and getattr(miss_p, "n_points", 0) == 0:
+                miss_p = pv.PolyData()
 
             path_world_for_display: Optional[np.ndarray] = None
             tcp_world_for_overlay: Optional[np.ndarray] = None
@@ -694,7 +800,7 @@ class SceneManager:
                     path_world_for_display = main_tcp_world
 
                 path_poly = _polyline(path_world_for_display) if path_world_for_display is not None else None
-                if path_poly is not None:
+                if path_poly is not None and getattr(path_poly, "n_points", 0) > 0:
                     renderables.append(Renderable(
                         layer="path",
                         name=f"{side}_final_path_poly",
@@ -705,6 +811,7 @@ class SceneManager:
                 if side == active_side:
                     active_display_path_local = display_path_local
 
+            # 5) Overlays (WORLD)
             cfg_all = dict(overlay_cfg or {})
             if "visibility" not in cfg_all or not isinstance(cfg_all.get("visibility"), dict):
                 cfg_all["visibility"] = {}
@@ -723,6 +830,9 @@ class SceneManager:
             for attr, layer in self._ATTR_TO_LAYER.items():
                 poly = getattr(out, attr, None)
                 if poly is None:
+                    continue
+                # Avoid plotting empty meshes
+                if getattr(poly, "n_points", 0) == 0:
                     continue
                 renderables.append(Renderable(
                     layer=layer,

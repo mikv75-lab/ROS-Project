@@ -18,7 +18,7 @@ tools:
     tcp_offset: [0.086, 0.02, 0.04]
     tcp_rpy:    [90.0, 0.0, -90.0]
     mesh: "package://spraycoater_bringup/resource/tools/spray_nozzle_01.stl"
-    mesh_offset: [0.001, 0.0, 0.0]
+    mesh_offset: [0.001, 0.0, 0.1]
     mesh_rpy:    [0.0, 90.0, 0.0]
 
   spray_nozzle_02:
