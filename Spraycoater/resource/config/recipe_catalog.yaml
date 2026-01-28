@@ -5,7 +5,7 @@ recipes:
     substrate_type: "wafer"
     tools: ["spray_nozzle_01", "spray_nozzle_02"]
     substrates: ["wafer_d100_h2", "wafer_d150_h2", "wafer_d200_h2"]
-    substrate_mounts: ["circle_d240_h50"]
+    substrate_mounts: ["circle_d240_h25","circle_d240_h50"]
     parameters: {}
     sides:
       top:
@@ -19,7 +19,7 @@ recipes:
     substrate_type: "mask"
     tools: ["spray_nozzle_01", "spray_nozzle_02"]
     substrates: ["mask_100_10"]
-    substrate_mounts: ["flat_240x240x50"]
+    substrate_mounts: ["flat_240x240x25","flat_240x240x50"]
     parameters: {}
     sides:
       top:
@@ -68,7 +68,7 @@ recipes:
     substrate_type: "cube"
     tools: ["spray_nozzle_01", "spray_nozzle_02"]
     substrates: ["cube_100", "cube_150"]
-    substrate_mounts: ["flat_240x240x50"]
+    substrate_mounts: ["flat_240x240x25","flat_240x240x50"]
     parameters: {}
     sides:
       top:
@@ -106,7 +106,7 @@ recipes:
     substrate_type: "hemisphere"
     tools: ["spray_nozzle_01", "spray_nozzle_02"]
     substrates: ["hemisphere_d100_h2mm","hemisphere_d100_h5mm","hemisphere_d100","hemisphere_d100_h10mm","hemisphere_d150", "hemisphere_d200"]
-    substrate_mounts: ["circle_d240_h50", "flat_240x240x50"]
+    substrate_mounts: ["circle_d240_h25","circle_d240_h50"]
     parameters: {}
     sides:
       top:
@@ -119,7 +119,7 @@ recipes:
     substrate_type: "pyramid"
     tools: ["spray_nozzle_01", "spray_nozzle_02"]
     substrates: ["pyramid_d150_h150", "pyramid_d200_h200"]
-    substrate_mounts: ["flat_240x240x50"]
+    substrate_mounts: ["flat_240x240x25","flat_240x240x50"]
     parameters: {}
     sides:
       front:

@@ -105,6 +105,12 @@ class MoveItPyWidget(QWidget):
         row.addStretch(1)
         root.addLayout(row)
 
+        # >>> WICHTIG: Restplatz nach unten drücken
+        root.addStretch(1)
+
+        # Optional (empfohlen): Planner darf wachsen, Rest bleibt oben kompakt
+        root.setStretchFactor(self.planner, 1)
+
         self.btnHome.clicked.connect(self._on_move_home)
         self.btnService.clicked.connect(self._on_move_service)
 

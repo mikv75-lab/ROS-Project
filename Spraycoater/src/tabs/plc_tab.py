@@ -11,13 +11,10 @@ from PyQt6.QtWidgets import (
     QWidget,
     QGridLayout,
     QGroupBox,
-    QVBoxLayout,
-    QHBoxLayout,
     QLabel,
     QCheckBox,
     QPushButton,
     QDoubleSpinBox,
-    QSpacerItem,
     QSizePolicy,
 )
 
@@ -30,9 +27,9 @@ class PlcTab(QWidget):
     """
     Kombinierter Tab: Signals + Syringe in einem Widget.
 
-    Layout:
-      [ Signals-GroupBox ] [ Syringe-GroupBox ]  (nebeneinander)
-      Beide Bereiche bleiben kompakt (Spacers fressen freien Platz).
+    Layout (Grid):
+      [ Signals-GroupBox ] [ Syringe-GroupBox ]
+      -> füllt das Fenster; Spacer via Row/Col-Stretch rechts+unten.
     """
 
     # ---- Commands → nach außen signalisieren ----
@@ -46,11 +43,8 @@ class PlcTab(QWidget):
         *,
         ctx: Any,
         store: Any,
-        # NEU: ros=... akzeptieren
         ros: Any = None,
-        # ALT: bridge=... weiterhin akzeptieren
         bridge: Any = None,
-        # optional weitere Legacy-Namen, falls irgendwo verwendet
         ui_bridge: Any = None,
         ros_bridge: Any = None,
         plc: Optional[PlcClientBase],
@@ -61,7 +55,6 @@ class PlcTab(QWidget):
         self.ctx = ctx
         self.store = store
 
-        # unify -> self.bridge (damit dein restlicher Code unverändert bleibt)
         self.bridge = (
             ros
             if ros is not None
@@ -89,7 +82,6 @@ class PlcTab(QWidget):
     # Thread-safe UI update helper
     # ------------------------------------------------------------------
     def _ui(self, fn: Callable[[], None]) -> None:
-        """Hoppt sicher in den GUI-Thread (und ignoriert Updates beim Zerstören)."""
         if self._dying:
             return
 
@@ -100,34 +92,37 @@ class PlcTab(QWidget):
         QtCore.QTimer.singleShot(0, lambda: (None if self._dying else fn()))
 
     # ------------------------------------------------------------------
-    # UI-Aufbau (kompakt + Spacer)
+    # UI-Aufbau (alles Grid + Stretch rechts/unten)
     # ------------------------------------------------------------------
     def _build_ui(self) -> None:
+        # Root grid: füllt das gesamte Tab
         root = QGridLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(10)
-        root.setAlignment(
-            QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft
-        )
+        root.setHorizontalSpacing(10)
+        root.setVerticalSpacing(10)
+
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # ===== Signals GroupBox (links) =====
         gb_signals = QGroupBox("Signals", self)
-        gb_signals.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
+        gb_signals.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
         signals_grid = QGridLayout(gb_signals)
         signals_grid.setContentsMargins(8, 8, 8, 8)
-        signals_grid.setSpacing(8)
-        signals_grid.setAlignment(
-            QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft
-        )
+        signals_grid.setHorizontalSpacing(10)
+        signals_grid.setVerticalSpacing(10)
 
         # Subbox 1: Türen
         left_box = QGroupBox("Schutzeinrichtungen / Türen", gb_signals)
-        left_box.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
-        left_layout = QVBoxLayout(left_box)
-        left_layout.setContentsMargins(8, 8, 8, 8)
-        left_layout.setSpacing(4)
+        left_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        left_grid = QGridLayout(left_box)
+        left_grid.setContentsMargins(8, 8, 8, 8)
+        left_grid.setHorizontalSpacing(8)
+        left_grid.setVerticalSpacing(4)
+        left_grid.setColumnStretch(0, 1)  # Label wächst
+        left_grid.setColumnStretch(1, 0)  # Checkbox bleibt kompakt
 
-        for key, text in [
+        for r, (key, text) in enumerate([
             ("estop", "Notaus"),
             ("cabinet_temp_ok", "Temperatur im Schaltschrank OK"),
             ("exhaust_ok", "Absaugung vorhanden"),
@@ -137,40 +132,42 @@ class PlcTab(QWidget):
             ("door_right_closed", "Schutztür rechts geschlossen"),
             ("door_right_locked", "Schutztür rechts verriegelt"),
             ("door_right_front_closed", "Schutztür rechts vorn geschlossen"),
-        ]:
-            cb = self._make_status_row(left_layout, text)
+        ]):
+            cb = self._add_status_row(left_grid, r, text)
             self._inputs[key] = cb
-
-        signals_grid.addWidget(left_box, 0, 0)
 
         # Subbox 2: Ampel
         mid_box = QGroupBox("Ampel / Allgemeine Signale", gb_signals)
-        mid_box.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
-        mid_layout = QVBoxLayout(mid_box)
-        mid_layout.setContentsMargins(8, 8, 8, 8)
-        mid_layout.setSpacing(4)
+        mid_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        mid_grid = QGridLayout(mid_box)
+        mid_grid.setContentsMargins(8, 8, 8, 8)
+        mid_grid.setHorizontalSpacing(8)
+        mid_grid.setVerticalSpacing(4)
+        mid_grid.setColumnStretch(0, 1)
+        mid_grid.setColumnStretch(1, 0)
 
-        for key, text in [
+        for r, (key, text) in enumerate([
             ("lamp_red", "Ampel Rot"),
             ("lamp_yellow", "Ampel Gelb"),
             ("lamp_green", "Ampel Grün"),
             ("lamp_blue", "Ampel Blau"),
             ("lamp_white", "Ampel Weiss"),
             ("horn", "Horn"),
-        ]:
-            cb = self._make_status_row(mid_layout, text)
+        ]):
+            cb = self._add_status_row(mid_grid, r, text)
             self._inputs[key] = cb
-
-        signals_grid.addWidget(mid_box, 0, 1)
 
         # Subbox 3: Prozess/Vakuum
         right_box = QGroupBox("Ladeschublade / Vakuum / Prozess", gb_signals)
-        right_box.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
-        right_layout = QVBoxLayout(right_box)
-        right_layout.setContentsMargins(8, 8, 8, 8)
-        right_layout.setSpacing(4)
+        right_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        right_grid = QGridLayout(right_box)
+        right_grid.setContentsMargins(8, 8, 8, 8)
+        right_grid.setHorizontalSpacing(8)
+        right_grid.setVerticalSpacing(4)
+        right_grid.setColumnStretch(0, 1)
+        right_grid.setColumnStretch(1, 0)
 
-        for key, text in [
+        for r, (key, text) in enumerate([
             ("tray_locked", "Ladeschublade verriegelt"),
             ("tray_unlocked", "Ladeschublade entriegelt"),
             ("tray_closed", "Ladeschublade geschlossen"),
@@ -183,139 +180,113 @@ class PlcTab(QWidget):
             ("ultrasonic_error", "Ultraschall Generatorfehler"),
             ("ultrasonic_on", "Ultraschall an"),
             ("syringe_running", "Kartusche Start"),
-        ]:
-            cb = self._make_status_row(right_layout, text)
+        ]):
+            cb = self._add_status_row(right_grid, r, text)
             self._inputs[key] = cb
 
+        # Subboxes in signals grid
+        signals_grid.addWidget(left_box, 0, 0)
+        signals_grid.addWidget(mid_box, 0, 1)
         signals_grid.addWidget(right_box, 0, 2)
 
-        # Signals-Spacer: rechts + unten
-        signals_grid.addItem(
-            QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum),
-            0, 3
-        )
-        signals_grid.addItem(
-            QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding),
-            1, 0, 1, 4
-        )
-        signals_grid.setColumnStretch(0, 0)
-        signals_grid.setColumnStretch(1, 0)
-        signals_grid.setColumnStretch(2, 0)
-        signals_grid.setColumnStretch(3, 1)
+        # Spacer rechts/unten durch Stretch (robuster als QSpacerItem)
+        signals_grid.setColumnStretch(0, 1)
+        signals_grid.setColumnStretch(1, 1)
+        signals_grid.setColumnStretch(2, 1)
         signals_grid.setRowStretch(0, 0)
         signals_grid.setRowStretch(1, 1)
 
         # ===== Syringe GroupBox (rechts) =====
         gb_syringe = QGroupBox("Syringe", self)
-        gb_syringe.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
+        gb_syringe.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
         syringe_grid = QGridLayout(gb_syringe)
         syringe_grid.setContentsMargins(8, 8, 8, 8)
-        syringe_grid.setSpacing(8)
-        syringe_grid.setAlignment(
-            QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft
-        )
+        syringe_grid.setHorizontalSpacing(10)
+        syringe_grid.setVerticalSpacing(10)
 
         # Status box
         status_box = QGroupBox("Status", gb_syringe)
-        status_box.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
-        status_layout = QVBoxLayout(status_box)
-        status_layout.setContentsMargins(8, 8, 8, 8)
-        status_layout.setSpacing(6)
+        status_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        status_grid = QGridLayout(status_box)
+        status_grid.setContentsMargins(8, 8, 8, 8)
+        status_grid.setHorizontalSpacing(8)
+        status_grid.setVerticalSpacing(6)
+        status_grid.setColumnStretch(0, 1)
+        status_grid.setColumnStretch(1, 0)
 
-        row_running = QHBoxLayout()
-        row_running.setSpacing(6)
-        lbl_running = QLabel("Kartusche läuft:", gb_syringe)
-        chk_running = QCheckBox(gb_syringe)
+        status_grid.addWidget(QLabel("Kartusche läuft:", status_box), 0, 0)
+        chk_running = QCheckBox(status_box)
         chk_running.setEnabled(False)
-        row_running.addWidget(lbl_running)
-        row_running.addStretch(1)
-        row_running.addWidget(chk_running)
-        status_layout.addLayout(row_running)
+        status_grid.addWidget(
+            chk_running, 0, 1, alignment=QtCore.Qt.AlignmentFlag.AlignRight
+        )
         self._chk_running = chk_running
 
-        lbl_alarm_title = QLabel("Alarm:", gb_syringe)
-        lbl_alarm = QLabel("-", gb_syringe)
-        status_layout.addWidget(lbl_alarm_title)
-        status_layout.addWidget(lbl_alarm)
+        status_grid.addWidget(QLabel("Alarm:", status_box), 1, 0, 1, 2)
+        lbl_alarm = QLabel("-", status_box)
+        lbl_alarm.setWordWrap(True)
+        status_grid.addWidget(lbl_alarm, 2, 0, 1, 2)
         self._lbl_alarm = lbl_alarm
-
-        syringe_grid.addWidget(status_box, 0, 0)
 
         # Parameter box
         param_box = QGroupBox("Parameter", gb_syringe)
-        param_box.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
-        param_layout = QVBoxLayout(param_box)
-        param_layout.setContentsMargins(8, 8, 8, 8)
-        param_layout.setSpacing(6)
+        param_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        param_grid = QGridLayout(param_box)
+        param_grid.setContentsMargins(8, 8, 8, 8)
+        param_grid.setHorizontalSpacing(8)
+        param_grid.setVerticalSpacing(6)
+        param_grid.setColumnStretch(0, 1)
+        param_grid.setColumnStretch(1, 0)
 
-        row_speed = QHBoxLayout()
-        row_speed.setSpacing(6)
-        lbl_speed = QLabel("Geschwindigkeit [mm/s]:", gb_syringe)
-        speed_spin = QDoubleSpinBox(gb_syringe)
+        param_grid.addWidget(QLabel("Geschwindigkeit [mm/s]:", param_box), 0, 0)
+        speed_spin = QDoubleSpinBox(param_box)
         speed_spin.setRange(0.1, 100.0)
         speed_spin.setSingleStep(0.1)
         speed_spin.setDecimals(2)
         speed_spin.setValue(10.0)
-        row_speed.addWidget(lbl_speed)
-        row_speed.addStretch(1)
-        row_speed.addWidget(speed_spin)
-        param_layout.addLayout(row_speed)
-
+        param_grid.addWidget(
+            speed_spin, 0, 1, alignment=QtCore.Qt.AlignmentFlag.AlignRight
+        )
         self._speed_spin = speed_spin
-        syringe_grid.addWidget(param_box, 0, 1)
 
         # Steuerung box
         ctrl_box = QGroupBox("Steuerung", gb_syringe)
-        ctrl_box.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
-        ctrl_layout = QVBoxLayout(ctrl_box)
-        ctrl_layout.setContentsMargins(8, 8, 8, 8)
-        ctrl_layout.setSpacing(6)
+        ctrl_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        ctrl_grid = QGridLayout(ctrl_box)
+        ctrl_grid.setContentsMargins(8, 8, 8, 8)
+        ctrl_grid.setHorizontalSpacing(8)
+        ctrl_grid.setVerticalSpacing(6)
+        ctrl_grid.setColumnStretch(0, 1)
+        ctrl_grid.setColumnStretch(1, 1)
+        ctrl_grid.setColumnStretch(2, 1)
 
-        row_buttons = QHBoxLayout()
-        row_buttons.setSpacing(6)
-        btn_start = QPushButton("Start", gb_syringe)
-        btn_stop = QPushButton("Stop", gb_syringe)
-        btn_purge = QPushButton("Spülen", gb_syringe)
-        row_buttons.addWidget(btn_start)
-        row_buttons.addWidget(btn_stop)
-        row_buttons.addWidget(btn_purge)
-        ctrl_layout.addLayout(row_buttons)
+        btn_start = QPushButton("Start", ctrl_box)
+        btn_stop = QPushButton("Stop", ctrl_box)
+        btn_purge = QPushButton("Spülen", ctrl_box)
+        ctrl_grid.addWidget(btn_start, 0, 0)
+        ctrl_grid.addWidget(btn_stop, 0, 1)
+        ctrl_grid.addWidget(btn_purge, 0, 2)
 
+        # Place syringe boxes
+        syringe_grid.addWidget(status_box, 0, 0)
+        syringe_grid.addWidget(param_box, 0, 1)
         syringe_grid.addWidget(ctrl_box, 1, 0, 1, 2)
 
-        # Syringe-Spacer: rechts + unten
-        syringe_grid.addItem(
-            QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum),
-            0, 2
-        )
-        syringe_grid.addItem(
-            QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding),
-            2, 0, 1, 3
-        )
-        syringe_grid.setColumnStretch(0, 0)
-        syringe_grid.setColumnStretch(1, 0)
-        syringe_grid.setColumnStretch(2, 1)
+        # Spacer rechts/unten via Stretch
+        syringe_grid.setColumnStretch(0, 1)
+        syringe_grid.setColumnStretch(1, 1)
         syringe_grid.setRowStretch(0, 0)
         syringe_grid.setRowStretch(1, 0)
         syringe_grid.setRowStretch(2, 1)
 
-        # Root: nebeneinander + Root-Spacer
+        # ===== Root placement =====
         root.addWidget(gb_signals, 0, 0)
         root.addWidget(gb_syringe, 0, 1)
 
-        # Root spacer rechts / unten (falls MainWindow riesig wird)
-        root.addItem(
-            QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum),
-            0, 2
-        )
-        root.addItem(
-            QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding),
-            1, 0, 1, 3
-        )
-
-        root.setColumnStretch(0, 0)
-        root.setColumnStretch(1, 0)
-        root.setColumnStretch(2, 1)
+        # Root spacer rechts/unten via Stretch
+        root.setColumnStretch(0, 3)  # Signals bekommt mehr Platz
+        root.setColumnStretch(1, 2)  # Syringe etwas weniger
         root.setRowStretch(0, 0)
         root.setRowStretch(1, 1)
 
@@ -325,18 +296,12 @@ class PlcTab(QWidget):
         btn_purge.clicked.connect(self._on_purge_clicked)
         speed_spin.valueChanged.connect(self._on_speed_changed)
 
-    def _make_status_row(self, parent_layout: QVBoxLayout, text: str) -> QCheckBox:
-        row = QHBoxLayout()
-        row.setSpacing(6)
-
+    def _add_status_row(self, grid: QGridLayout, row: int, text: str) -> QCheckBox:
         lbl = QLabel(text, self)
         cb = QCheckBox(self)
         cb.setEnabled(False)
-
-        row.addWidget(lbl)
-        row.addStretch(1)
-        row.addWidget(cb)
-        parent_layout.addLayout(row)
+        grid.addWidget(lbl, row, 0)
+        grid.addWidget(cb, row, 1, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
         return cb
 
     # ------------------------------------------------------------------
@@ -350,7 +315,6 @@ class PlcTab(QWidget):
             self._ui(lambda: (self._set_syringe_running(False), self._set_syringe_alarm_text("")))
             return
 
-        # Signals: Status snapshot
         try:
             st = plc.read_status()
         except Exception as e:
@@ -359,7 +323,6 @@ class PlcTab(QWidget):
 
         self._apply_status_to_ui(st)
 
-        # Syringe: optional snapshot (falls im Status enthalten)
         def _maybe_syringe_from_status() -> None:
             running = bool(getattr(st, "syringe_running", False))
             alarm = int(getattr(st, "syringe_alarm_code", 0) or 0)
@@ -377,7 +340,6 @@ class PlcTab(QWidget):
             return
 
         try:
-            # Signals
             plc.register_bool_callback("process_active", self._cb_process_active)
             plc.register_bool_callback("process_done", self._cb_process_done)
             plc.register_bool_callback("process_error", self._cb_process_error)
@@ -385,7 +347,6 @@ class PlcTab(QWidget):
             plc.register_bool_callback("vacuum_ok", self._cb_vacuum_ok)
             plc.register_int_callback("alarm_code", self._cb_alarm_code)
 
-            # Syringe
             plc.register_bool_callback("syringe_running", self._cb_syringe_running)
             plc.register_int_callback("syringe_alarm_code", self._cb_syringe_alarm_code)
 
@@ -397,7 +358,6 @@ class PlcTab(QWidget):
     # ------------------------------------------------------------------
     def _apply_status_to_ui(self, st: PlcStatus) -> None:
         def _do() -> None:
-            # 1) Best effort: gleichnamige Felder übernehmen
             for key, cb in (self._inputs or {}).items():
                 try:
                     if hasattr(st, key):
@@ -405,7 +365,6 @@ class PlcTab(QWidget):
                 except Exception:
                     pass
 
-            # 2) Grobe Mapping-Logik
             self._set_checked("vacuum_present", bool(getattr(st, "vacuum_ok", False)))
             self._set_checked("vacuum_on", bool(getattr(st, "vacuum_ok", False)))
             self._set_checked("tray_safe", bool(getattr(st, "interlock_ok", False)))

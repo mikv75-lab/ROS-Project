@@ -24,31 +24,33 @@ Bounds = Tuple[float, float, float, float, float, float]
 _ALLOWED_SIDES = ("top", "front", "back", "left", "right", "polyhelix", "helix")
 _DEFAULT_BOUNDS: Bounds = (-120.0, 120.0, -120.0, 120.0, 0.0, 240.0)
 
-# ---------------------------------------------------------------------------
-# IMPORTANT:
-# You requested a fixed 90° Z-rotation for the TCP local frame (KS).
-# This rotates the TCP X/Y axes around Z by +90° (Z unchanged).
-# If the direction is wrong, flip the sign to -90.0.
-# ---------------------------------------------------------------------------
+# Fixed yaw correction around TCP local Z (optional)
 _TCP_YAW_DEG: float = 0.0
 
 _LAYER_STYLE: Dict[str, Dict[str, Any]] = {
-    "cage": {"color": "#6b6f75", "opacity": 0.25, "smooth_shading": True, "specular": 0.05},
-    "ground": {"color": "#6b6f75", "opacity": 1.00, "smooth_shading": False, "lighting": True, "specular": 0.0},
-    "mount": {"color": "#6b6f75", "opacity": 1.00, "smooth_shading": True, "specular": 0.05},
-    "substrate": {"color": "#d0d6df", "opacity": 1.00, "smooth_shading": True, "specular": 0.10},
+    # matte solids (no lighting/shading tricks)
+    "cage": {"color": "#6b6f75", "opacity": 0.25, "smooth_shading": False, "lighting": False, "specular": 0.0},
+
+    # floor: darker than mount
+    "ground": {"color": "#2b2f33", "opacity": 1.00, "smooth_shading": False, "lighting": False, "specular": 0.0},
+
+    # mount: dark gray
+    "mount": {"color": "#3f454c", "opacity": 1.00, "smooth_shading": False, "lighting": False, "specular": 0.0},
+
+    # substrate: light gray
+    "substrate": {"color": "#d0d6df", "opacity": 1.00, "smooth_shading": False, "lighting": False, "specular": 0.0},
+
     # overlays
     "mask": {"color": "#3498db", "line_width": 2.4, "render_lines_as_tubes": True, "opacity": 1.0, "lighting": False},
     "path": {"color": "#2ecc71", "line_width": 2.8, "render_lines_as_tubes": True, "opacity": 1.0, "lighting": False},
-    # IMPORTANT: hits/misses are POINT clouds -> need point_size
-    "hits": {"color": "#a569bd", "opacity": 1.0, "lighting": False, "point_size": 10.0, "render_points_as_spheres": True},
-    "misses": {"color": "#e74c3c", "opacity": 1.0, "lighting": False, "point_size": 10.0, "render_points_as_spheres": True},
+    "hits": {"color": "#a569bd", "opacity": 1.0, "lighting": False, "point_size": 10.0, "render_points_as_spheres": False},
+    "misses": {"color": "#e74c3c", "opacity": 1.0, "lighting": False, "point_size": 10.0, "render_points_as_spheres": False},
     "normals": {"color": "#a569bd", "line_width": 1.5, "render_lines_as_tubes": True, "opacity": 1.0, "lighting": False},
-    # TCP local frame axes at points (no tcp_line: Path draws the line)
     "tcp_x": {"color": "#d62728", "line_width": 1.4, "render_lines_as_tubes": True, "opacity": 1.0, "lighting": False},
     "tcp_y": {"color": "#2ca02c", "line_width": 1.4, "render_lines_as_tubes": True, "opacity": 1.0, "lighting": False},
     "tcp_z": {"color": "#1f77b4", "line_width": 1.6, "render_lines_as_tubes": True, "opacity": 1.0, "lighting": False},
 }
+
 
 
 @dataclass
@@ -77,18 +79,63 @@ class PreviewResult:
     invalid_reason: Optional[str]
     scene: Optional[PreviewScene]
 
-    # For 2D: substrate + FINAL path in mount-top-frame (KS at mount top)
     substrate_mesh: Optional[pv.PolyData]          # mount-top-frame mesh (for 2D)
-    path_xyz_mm: Optional[np.ndarray]              # final path (mount-top-frame; display polyline points)
-    final_tcp_world_mm: Optional[np.ndarray]       # kept name for API; here: mount-top-frame final TCP/path
+    path_xyz_mm: Optional[np.ndarray]              # display path (mount-top-frame; incl pre/ret)
+    final_tcp_world_mm: Optional[np.ndarray]       # kept name for API; here: mount-top-frame display path
 
-    # For 3D rendering: WORLD renderables
-    renderables: List[Renderable]
+    renderables: List[Renderable]                  # WORLD renderables for 3D
 
-    # Camera framing in WORLD
-    bounds: Bounds
+    bounds: Bounds                                 # WORLD bounds
     substrate_bounds: Optional[Bounds]             # mount-top-frame bounds (2D extents)
     meta: Dict[str, Any]
+
+
+# ============================================================
+# Local post-processing hook (moved from mesh_utils)
+# ============================================================
+
+def _postprocess_compiled_path_strict(
+    tcp_mm: Any,
+    normal: Any,
+    *,
+    side_path_params: Dict[str, Any],
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    STRICT postprocess hook used by SceneManager.
+
+    Minimal safe behavior:
+      - converts tcp_mm and normal to Nx3 float arrays
+      - ensures same length by truncation
+      - optional trim support (start/end indices)
+      - returns (tcp, normals)
+    """
+    P = np.asarray(tcp_mm, dtype=float).reshape(-1, 3) if tcp_mm is not None else np.zeros((0, 3), dtype=float)
+    N = np.asarray(normal, dtype=float).reshape(-1, 3) if normal is not None else np.zeros((0, 3), dtype=float)
+
+    n = int(min(len(P), len(N)))
+    if n <= 0:
+        return np.zeros((0, 3), dtype=float), np.zeros((0, 3), dtype=float)
+
+    P = P[:n].copy()
+    N = N[:n].copy()
+
+    # Optional: basic trim config
+    try:
+        trim = side_path_params.get("trim", None)
+        if isinstance(trim, dict):
+            a = int(trim.get("start", 0) or 0)
+            b = trim.get("end", None)
+            b_i = int(b) if b is not None else n
+            if b_i < 0:
+                b_i = max(0, n + b_i)
+            a = max(0, min(n, a))
+            b_i = max(a, min(n, b_i))
+            P = P[a:b_i]
+            N = N[a:b_i]
+    except Exception:
+        pass
+
+    return P, N
 
 
 def _render_kwargs_for(layer: str, poly: Any) -> Dict[str, Any]:
@@ -110,26 +157,11 @@ def _render_kwargs_for(layer: str, poly: Any) -> Dict[str, Any]:
     }
 
     if kind == "lines":
-        kwargs.update(
-            {
-                "line_width": style.get("line_width"),
-                "render_lines_as_tubes": style.get("render_lines_as_tubes"),
-            }
-        )
+        kwargs.update({"line_width": style.get("line_width"), "render_lines_as_tubes": style.get("render_lines_as_tubes")})
     elif kind == "points":
-        kwargs.update(
-            {
-                "point_size": style.get("point_size", 8.0),
-                "render_points_as_spheres": style.get("render_points_as_spheres", True),
-            }
-        )
+        kwargs.update({"point_size": style.get("point_size", 8.0), "render_points_as_spheres": style.get("render_points_as_spheres", True)})
     else:
-        kwargs.update(
-            {
-                "smooth_shading": style.get("smooth_shading"),
-                "specular": style.get("specular"),
-            }
-        )
+        kwargs.update({"smooth_shading": style.get("smooth_shading"), "specular": style.get("specular")})
 
     return {k: v for k, v in kwargs.items() if v is not None}
 
@@ -145,12 +177,9 @@ def _unit(v: np.ndarray, eps: float = 1e-12) -> np.ndarray:
 def _rot_z_deg(deg: float) -> np.ndarray:
     a = math.radians(float(deg))
     c, s = math.cos(a), math.sin(a)
-    return np.array(
-        [[c, -s, 0.0],
-         [s,  c, 0.0],
-         [0.0, 0.0, 1.0]],
-        dtype=float,
-    )
+    return np.array([[c, -s, 0.0],
+                     [s,  c, 0.0],
+                     [0.0, 0.0, 1.0]], dtype=float)
 
 
 def _quat_from_rotmat(R: np.ndarray) -> Tuple[float, float, float, float]:
@@ -192,24 +221,12 @@ def _quat_from_rotmat(R: np.ndarray) -> Tuple[float, float, float, float]:
 
 
 def _fixed_frame_from_z(z_axis: np.ndarray, *, yaw_deg_about_z: float = 0.0) -> np.ndarray:
-    """
-    Stable right-handed frame from Z only:
-      Z = normalized z_axis
-      X derived deterministically from a fixed global reference (projected into plane orthogonal to Z)
-      Y = Z x X
-
-    Additionally:
-      - apply a fixed yaw rotation around local Z (keeps Z unchanged, rotates X/Y).
-      - This is the requested +90° (or -90°) TCP KS correction.
-    """
     z = _unit(z_axis).reshape(3)
 
-    # Deterministic reference: prefer global +X; if nearly parallel to Z, use global +Y.
     ref = np.array([1.0, 0.0, 0.0], dtype=float)
     if abs(float(np.dot(ref, z))) > 0.95:
         ref = np.array([0.0, 1.0, 0.0], dtype=float)
 
-    # Project ref into plane orthogonal to Z
     x = ref - float(np.dot(ref, z)) * z
     x = _unit(x)
     y = _unit(np.cross(z, x))
@@ -218,10 +235,7 @@ def _fixed_frame_from_z(z_axis: np.ndarray, *, yaw_deg_about_z: float = 0.0) -> 
     R[:, 0], R[:, 1], R[:, 2] = x, y, z
 
     if abs(float(yaw_deg_about_z)) > 1e-9:
-        # rotate X/Y about local Z: R = R * Rz(yaw)
         R = R @ _rot_z_deg(float(yaw_deg_about_z))
-
-        # Re-orthonormalize lightly (numerical safety)
         x2 = _unit(R[:, 0])
         z2 = _unit(R[:, 2])
         y2 = _unit(np.cross(z2, x2))
@@ -231,36 +245,50 @@ def _fixed_frame_from_z(z_axis: np.ndarray, *, yaw_deg_about_z: float = 0.0) -> 
     return R
 
 
-def _compute_poses(points: np.ndarray, normals: np.ndarray) -> List[PoseQuat]:
+def _compute_main_poses(points: np.ndarray, normals_world: np.ndarray) -> List[PoseQuat]:
     """
-    Build PoseQuat list from points+normals.
-
-    IMPORTANT:
-      - XY stable: derive frame only from Z (normal).
-      - Apply fixed yaw correction (_TCP_YAW_DEG) around local Z as requested.
+    Main (on-surface) poses from points+normals.
     """
     P = np.asarray(points, dtype=float).reshape(-1, 3)
-    N = np.asarray(normals, dtype=float).reshape(-1, 3)
+    N = np.asarray(normals_world, dtype=float).reshape(-1, 3)
     n = int(min(len(P), len(N)))
     if n < 1:
         return []
 
-    poses: List[PoseQuat] = []
+    out: List[PoseQuat] = []
     for i in range(n):
         R = _fixed_frame_from_z(N[i], yaw_deg_about_z=_TCP_YAW_DEG)
         qx, qy, qz, qw = _quat_from_rotmat(R)
-        poses.append(
-            PoseQuat(
-                x=float(P[i, 0]),
-                y=float(P[i, 1]),
-                z=float(P[i, 2]),
-                qx=float(qx),
-                qy=float(qy),
-                qz=float(qz),
-                qw=float(qw),
-            )
-        )
-    return poses
+        out.append(PoseQuat(x=float(P[i, 0]), y=float(P[i, 1]), z=float(P[i, 2]),
+                            qx=float(qx), qy=float(qy), qz=float(qz), qw=float(qw)))
+    return out
+
+
+def _extend_pre_ret_points_local(P_local: np.ndarray, *, pre_mm: float, ret_mm: float) -> Tuple[np.ndarray, bool, bool]:
+    """
+    Create pre/ret points by extending along the path tangents in LOCAL frame.
+    Returns (P_ext, has_pre, has_ret).
+    """
+    P = np.asarray(P_local, dtype=float).reshape(-1, 3)
+    if P.shape[0] < 2:
+        return P.copy(), False, False
+
+    has_pre = float(pre_mm) > 0.0
+    has_ret = float(ret_mm) > 0.0
+
+    t0 = P[1] - P[0]
+    t1 = P[-1] - P[-2]
+    t0n = t0 / (np.linalg.norm(t0) + 1e-12)
+    t1n = t1 / (np.linalg.norm(t1) + 1e-12)
+
+    pts: List[np.ndarray] = []
+    if has_pre:
+        pts.append((P[0] - float(pre_mm) * t0n).reshape(1, 3))
+    pts.append(P)
+    if has_ret:
+        pts.append((P[-1] + float(ret_mm) * t1n).reshape(1, 3))
+
+    return np.vstack(pts), has_pre, has_ret
 
 
 def _shift_points(P: Optional[np.ndarray], off: Tuple[float, float, float]) -> Optional[np.ndarray]:
@@ -301,15 +329,6 @@ def _polyline(P: np.ndarray) -> Optional[pv.PolyData]:
 
 
 def _draft_display_points_local(draft: Optional[Draft], side: str) -> Optional[np.ndarray]:
-    """
-    Build a display polyline in mount-top-frame that includes:
-      predispense[0] + poses_quat + retreat[0] (if present)
-
-    NOTE:
-      - This returns POSITIONS only (not orientations).
-      - The requested 90° correction is applied to TCP ORIENTATION (KS) in _compute_poses(),
-        not to the positions here.
-    """
     if draft is None or not isinstance(draft, Draft):
         return None
     s = str(side or "").strip()
@@ -336,27 +355,10 @@ def _draft_display_points_local(draft: Optional[Draft], side: str) -> Optional[n
 
 
 class SceneManager:
-    """
-    Preview pipeline (STRICT):
-
-    WORLD:
-      - ground plane
-      - mount mesh
-      - substrate mesh (placed on mount)
-      - cage mesh (optional)
-
-    Compute-frame (mount-top KS):
-      - origin = (mount center XY, mount top Z) in WORLD
-      - (0,0,0) is mount-top plane
-      - 2D receives substrate + final path in this compute-frame
-    """
-
     _ATTR_TO_LAYER: Dict[str, str] = {
-        # raycaster debug
         "rays_hit_poly": "hits",
         "rays_miss_poly": "misses",
         "normals_poly": "normals",
-        # tcp local frame axes (no tcp_line: Path draws the line)
         "tcp_x_poly": "tcp_x",
         "tcp_y_poly": "tcp_y",
         "tcp_z_poly": "tcp_z",
@@ -395,14 +397,10 @@ class SceneManager:
             dx = float(b[1] - b[0])
             dy = float(b[3] - b[2])
             size = max(dx, dy) * 2.2 if max(dx, dy) > 1e-6 else 400.0
-            ground_mesh = pv.Plane(
-                center=(xmid, ymid, 0.0),
-                direction=(0.0, 0.0, 1.0),
-                i_size=float(size),
-                j_size=float(size),
-                i_resolution=1,
-                j_resolution=1,
-            )
+            ground_mesh = pv.Plane(center=(xmid, ymid, 0.0),
+                                   direction=(0.0, 0.0, 1.0),
+                                   i_size=float(size), j_size=float(size),
+                                   i_resolution=1, j_resolution=1)
 
         bounds_list: List[Bounds] = []
         for m in (cage_mesh, ground_mesh, mount_mesh, substrate_mesh):
@@ -432,46 +430,26 @@ class SceneManager:
 
         scene = self.build_scene(recipe, ctx)
         if not scene:
-            return PreviewResult(
-                recipe=recipe,
-                valid=False,
-                invalid_reason="scene_fail",
-                scene=None,
-                substrate_mesh=None,
-                path_xyz_mm=None,
-                final_tcp_world_mm=None,
-                renderables=[],
-                bounds=_DEFAULT_BOUNDS,
-                substrate_bounds=None,
-                meta={},
-            )
+            return PreviewResult(recipe=recipe, valid=False, invalid_reason="scene_fail",
+                                 scene=None, substrate_mesh=None, path_xyz_mm=None, final_tcp_world_mm=None,
+                                 renderables=[], bounds=_DEFAULT_BOUNDS, substrate_bounds=None, meta={})
 
         # Compute-frame origin = mount center XY, mount top Z in WORLD
         origin_world = (0.0, 0.0, 0.0)
         if scene.mount_mesh is not None:
             b = scene.mount_mesh.bounds
-            origin_world = (
-                0.5 * (float(b[0]) + float(b[1])),
-                0.5 * (float(b[2]) + float(b[3])),
-                float(b[5]),
-            )
+            origin_world = (0.5 * (float(b[0]) + float(b[1])),
+                            0.5 * (float(b[2]) + float(b[3])),
+                            float(b[5]))
 
         # Static WORLD renderables
-        for layer_name, mesh in (
-            ("ground", scene.ground_mesh),
-            ("cage", scene.cage_mesh),
-            ("mount", scene.mount_mesh),
-            ("substrate", scene.substrate_mesh),
-        ):
+        for layer_name, mesh in (("ground", scene.ground_mesh),
+                                 ("cage", scene.cage_mesh),
+                                 ("mount", scene.mount_mesh),
+                                 ("substrate", scene.substrate_mesh)):
             if mesh is not None:
-                renderables.append(
-                    Renderable(
-                        layer=layer_name,
-                        name=layer_name,
-                        poly=mesh,
-                        render_kwargs=_render_kwargs_for(layer_name, mesh),
-                    )
-                )
+                renderables.append(Renderable(layer=layer_name, name=layer_name, poly=mesh,
+                                              render_kwargs=_render_kwargs_for(layer_name, mesh)))
 
         # Side + params
         side = str(getattr(recipe, "parameters", {}).get("active_side", "top")).lower().strip()
@@ -490,19 +468,10 @@ class SceneManager:
         mask_local = np.asarray(pd_mask.points_mm, dtype=float).reshape(-1, 3).copy()
 
         if scene.substrate_mesh is None:
-            return PreviewResult(
-                recipe=recipe,
-                valid=False,
-                invalid_reason="no_substrate",
-                scene=scene,
-                substrate_mesh=None,
-                path_xyz_mm=mask_local,
-                final_tcp_world_mm=None,
-                renderables=renderables,
-                bounds=scene.bounds or _DEFAULT_BOUNDS,
-                substrate_bounds=None,
-                meta={"side": side, "frame": "mount_top", "origin_world_mm": origin_world},
-            )
+            return PreviewResult(recipe=recipe, valid=False, invalid_reason="no_substrate",
+                                 scene=scene, substrate_mesh=None, path_xyz_mm=mask_local, final_tcp_world_mm=None,
+                                 renderables=renderables, bounds=scene.bounds or _DEFAULT_BOUNDS,
+                                 substrate_bounds=None, meta={"side": side, "frame": "mount_top", "origin_world_mm": origin_world})
 
         # 2) Mask -> WORLD (ray start points). Anchor to substrate top + stand_off.
         sub_top_world_z = float(scene.substrate_mesh.bounds[5])
@@ -515,16 +484,10 @@ class SceneManager:
         # Render mask (WORLD)
         mask_poly = _polyline(mask_world)
         if mask_poly is not None:
-            renderables.append(
-                Renderable(
-                    layer="mask",
-                    name="mask_poly",
-                    poly=mask_poly,
-                    render_kwargs=_render_kwargs_for("mask", mask_poly),
-                )
-            )
+            renderables.append(Renderable(layer="mask", name="mask_poly", poly=mask_poly,
+                                          render_kwargs=_render_kwargs_for("mask", mask_poly)))
 
-        # 3) Raycast (WORLD)
+        # 3) Raycast (WORLD) -> produces on-surface tcp + normals for valid points
         rc, hit_p, miss_p, _tcp_p_from_projector = cast_rays_for_side(
             P_world_start=mask_world,
             sub_mesh_world=scene.substrate_mesh,
@@ -534,17 +497,12 @@ class SceneManager:
 
         v_raw = getattr(rc, "valid", None)
         valid_mask = np.zeros((0,), dtype=bool) if v_raw is None else np.asarray(v_raw, dtype=bool).reshape(-1)
-
         miss_n = int(len(valid_mask) - int(np.sum(valid_mask))) if len(valid_mask) else 0
         preview_valid = (miss_n == 0)
 
-        final_tcp_world: Optional[np.ndarray] = None
-        final_norms_world: Optional[np.ndarray] = None
-
+        # 4) Substrate for 2D (mount-top KS): copy + shift by origin_world
         substrate_local_mesh: Optional[pv.PolyData] = None
         substrate_bounds_local: Optional[Bounds] = None
-
-        # 4) Substrate for 2D (mount-top KS): copy + shift by origin_world
         try:
             substrate_local_mesh = scene.substrate_mesh.copy(deep=True) if scene.substrate_mesh is not None else None
             if substrate_local_mesh is not None:
@@ -554,26 +512,29 @@ class SceneManager:
             substrate_local_mesh = None
             substrate_bounds_local = None
 
-        # Default displayed path (local)
         display_path_local: Optional[np.ndarray] = None
 
-        # For overlays: prefer "display path" (incl. pre/ret) once available
+        # For overlays:
+        # - path_points_world_mm: display polyline (may include off-surface offsets!)
+        # - tcp_points_world_mm : ONLY main on-surface TCP points (must match rc.valid length semantics)
         path_world_for_display: Optional[np.ndarray] = None
+        tcp_world_for_overlay: Optional[np.ndarray] = None
 
         if preview_valid:
-            # postprocess compiled (WORLD)
             p_side = (getattr(recipe, "paths_by_side", {}) or {}).get(side, {}) or {}
-            final_tcp_world, final_norms_world = mesh_utils._postprocess_compiled_path_strict(
+
+            main_tcp_world, main_norms_world = _postprocess_compiled_path_strict(
                 getattr(rc, "tcp_mm", None),
                 getattr(rc, "normal", None),
                 side_path_params=p_side,
             )
 
-            # Convert to local (mount-top KS) positions only (translation)
-            final_tcp_local = _shift_points(final_tcp_world, origin_world) if final_tcp_world is not None else None
+            tcp_world_for_overlay = main_tcp_world  # IMPORTANT: overlays expect on-surface here
 
-            if final_tcp_local is not None and final_norms_world is not None:
-                # offsets (STRICT flat keys)
+            # Convert to local (mount-top KS) positions only (translation)
+            main_tcp_local = _shift_points(main_tcp_world, origin_world) if main_tcp_world is not None else None
+
+            if main_tcp_local is not None and main_norms_world is not None:
                 try:
                     pre_mm = float((p_side or {}).get("predispense_offset_mm", 0.0) or 0.0)
                 except Exception:
@@ -585,65 +546,60 @@ class SceneManager:
                 pre_mm = max(0.0, float(pre_mm))
                 ret_mm = max(0.0, float(ret_mm))
 
-                # IMPORTANT:
-                # Pipeline is: raycast -> (valid) -> offset points -> THEN poses (incl. pre/ret).
-                # If offset==0 we still create the point (same position).
-                P = np.asarray(final_tcp_local, dtype=float).reshape(-1, 3)
-                Nw = np.asarray(final_norms_world, dtype=float).reshape(-1, 3)
+                Pm = np.asarray(main_tcp_local, dtype=float).reshape(-1, 3)
+                NmW = np.asarray(main_norms_world, dtype=float).reshape(-1, 3)
 
-                n = int(min(P.shape[0], Nw.shape[0]))
+                n = int(min(Pm.shape[0], NmW.shape[0]))
                 if n >= 2:
-                    P = P[:n]
-                    Nw = Nw[:n]
+                    Pm = Pm[:n]
+                    NmW = NmW[:n]
 
-                    # Build extended points (pre + main + ret) in LOCAL, with normals padded for endpoints.
-                    # pre/ret positions follow neighbor tangent; orientation comes from normals (stable frame + yaw fix).
-                    t0 = P[1] - P[0]
-                    t1 = P[-1] - P[-2]
-                    t0n = t0 / (np.linalg.norm(t0) + 1e-12)
-                    t1n = t1 / (np.linalg.norm(t1) + 1e-12)
+                    # 1) Build MAIN poses (on-surface) from normals
+                    main_poses = _compute_main_poses(Pm, NmW)
+                    if len(main_poses) >= 2:
+                        # 2) Extend points (pre/ret) AFTER raycast (can be off-surface)
+                        P_ext, has_pre, has_ret = _extend_pre_ret_points_local(Pm, pre_mm=pre_mm, ret_mm=ret_mm)
 
-                    pre_pt = P[0] - pre_mm * t0n
-                    ret_pt = P[-1] + ret_mm * t1n
+                        # 3) Create EXTENDED poses by copying orientation from neighbor MAIN pose
+                        poses_ext: List[PoseQuat] = []
+                        if has_pre:
+                            ppre = P_ext[0]
+                            qref = main_poses[0]
+                            poses_ext.append(PoseQuat(x=float(ppre[0]), y=float(ppre[1]), z=float(ppre[2]),
+                                                      qx=float(qref.qx), qy=float(qref.qy), qz=float(qref.qz), qw=float(qref.qw)))
 
-                    P_ext = np.vstack([pre_pt.reshape(1, 3), P, ret_pt.reshape(1, 3)])
-                    N_ext = np.vstack([Nw[0].reshape(1, 3), Nw, Nw[-1].reshape(1, 3)])
+                        # main poses as-is (positions already match Pm)
+                        poses_ext.extend(main_poses)
 
-                    poses_ext = _compute_poses(P_ext, N_ext)
+                        if has_ret:
+                            pret = P_ext[-1]
+                            qref = main_poses[-1]
+                            poses_ext.append(PoseQuat(x=float(pret[0]), y=float(pret[1]), z=float(pret[2]),
+                                                      qx=float(qref.qx), qy=float(qref.qy), qz=float(qref.qz), qw=float(qref.qw)))
 
-                    # Merge draft using split:
-                    #   predispense = first pose (after offset)
-                    #   poses_quat  = middle poses (main TCPs)
-                    #   retreat     = last pose (after offset)
-                    recipe.draft = self._merge_draft_side(
-                        getattr(recipe, "draft", None),
-                        side=side,
-                        poses=poses_ext,
-                        pre_mm=pre_mm,
-                        ret_mm=ret_mm,
-                    )
+                        # Merge into Draft (this is what should be persisted elsewhere)
+                        recipe.draft = self._merge_draft_side(
+                            getattr(recipe, "draft", None),
+                            side=side,
+                            poses=poses_ext,
+                            pre_mm=pre_mm,
+                            ret_mm=ret_mm,
+                        )
 
-                    display_path_local = _draft_display_points_local(recipe.draft, side)
+                        display_path_local = _draft_display_points_local(recipe.draft, side)
 
-            # Render final path (WORLD) using draft display points if available
+            # Render final path (WORLD) using display path (incl pre/ret)
             if display_path_local is not None:
                 path_world_for_display = _add_points_offset(display_path_local, origin_world)
             else:
-                path_world_for_display = final_tcp_world
+                path_world_for_display = main_tcp_world
 
             path_poly = _polyline(path_world_for_display) if path_world_for_display is not None else None
             if path_poly is not None:
-                renderables.append(
-                    Renderable(
-                        layer="path",
-                        name="final_path_poly",
-                        poly=path_poly,
-                        render_kwargs=_render_kwargs_for("path", path_poly),
-                    )
-                )
+                renderables.append(Renderable(layer="path", name="final_path_poly", poly=path_poly,
+                                              render_kwargs=_render_kwargs_for("path", path_poly)))
 
         # 5) Overlays (WORLD): ALWAYS build all overlay geometries.
-        # IMPORTANT: UI has ONLY these toggles: mask,path,tcp,hits,misses,normals
         cfg_all = dict(overlay_cfg or {})
         cfg_all["visibility"] = {
             "mask": True,
@@ -663,34 +619,31 @@ class SceneManager:
             miss_poly=miss_p,
             overlay_cfg=cfg_all,
             mask_points_world_mm=np.asarray(mask_world, dtype=float).reshape(-1, 3) if mask_world is not None else empty3,
+
+            # IMPORTANT FIX:
+            # - path_points can include off-surface offsets (pure display)
+            # - tcp_points MUST be on-surface (to avoid "offsets marked wrong")
             path_points_world_mm=np.asarray(path_world_for_display, dtype=float).reshape(-1, 3) if path_world_for_display is not None else empty3,
-            tcp_points_world_mm=np.asarray(path_world_for_display, dtype=float).reshape(-1, 3) if path_world_for_display is not None else empty3,
+            tcp_points_world_mm=np.asarray(tcp_world_for_overlay, dtype=float).reshape(-1, 3) if tcp_world_for_overlay is not None else empty3,
         )
 
         for attr, layer in self._ATTR_TO_LAYER.items():
             poly = getattr(out, attr, None)
             if poly is None:
                 continue
-            renderables.append(
-                Renderable(
-                    layer=layer,
-                    name=attr,
-                    poly=poly,
-                    render_kwargs=_render_kwargs_for(layer, poly),
-                )
-            )
+            renderables.append(Renderable(layer=layer, name=attr, poly=poly, render_kwargs=_render_kwargs_for(layer, poly)))
 
         return PreviewResult(
             recipe=recipe,
             valid=preview_valid,
             invalid_reason=None if preview_valid else "raycast_miss",
             scene=scene,
-            substrate_mesh=substrate_local_mesh,       # 2D substrate in mount-top-frame
-            path_xyz_mm=display_path_local,            # 2D display path (incl pre/ret) in mount-top-frame
-            final_tcp_world_mm=display_path_local,     # kept name; contract here: mount-top-frame
-            renderables=renderables,                   # WORLD renderables for 3D
-            bounds=scene.bounds or _DEFAULT_BOUNDS,    # WORLD bounds
-            substrate_bounds=substrate_bounds_local,   # mount-top-frame bounds for 2D scaling
+            substrate_mesh=substrate_local_mesh,
+            path_xyz_mm=display_path_local,
+            final_tcp_world_mm=display_path_local,  # contract: mount-top-frame display path
+            renderables=renderables,
+            bounds=scene.bounds or _DEFAULT_BOUNDS,
+            substrate_bounds=substrate_bounds_local,
             meta={
                 "miss_n": miss_n,
                 "side": side,
@@ -709,17 +662,6 @@ class SceneManager:
         pre_mm: float,
         ret_mm: float,
     ) -> Draft:
-        """
-        Merge/overwrite one side.
-
-        IMPORTANT (STRICT):
-          - predispense/retreat are defined AFTER offset.
-          - Here, `poses` is expected to already be the EXTENDED pose list:
-              poses[0]        = predispense pose (offset applied; if offset==0 -> same as first)
-              poses[1:-1]     = main TCP poses
-              poses[-1]       = retreat pose (offset applied; if offset==0 -> same as last)
-          - pre_mm/ret_mm are kept only for signature compatibility; no additional shifting happens here.
-        """
         s = str(side or "").strip()
 
         cur_sides: Dict[str, PathSide] = {}
@@ -733,18 +675,19 @@ class SceneManager:
             cur_sides.pop(s, None)
             return Draft(version=1, sides=cur_sides)
 
-        # Always split pre/main/ret from EXTENDED list.
-        if len(poses) < 2:
+        if len(poses) < 1:
             cur_sides.pop(s, None)
             return Draft(version=1, sides=cur_sides)
 
-        pre = poses[0]
-        ret = poses[-1]
-        main = poses[1:-1] if len(poses) >= 3 else []
+        # If you generated explicit pre/ret, keep split, else treat everything as main.
+        # Here: convention = first is pre, last is ret, middle is main, BUT only if len>=3.
+        if len(poses) >= 3:
+            pre = poses[0]
+            ret = poses[-1]
+            main = poses[1:-1]
+            cur_sides[s] = PathSide(predispense=[pre], retreat=[ret], poses_quat=list(main))
+        else:
+            # fallback: just store as main poses
+            cur_sides[s] = PathSide(predispense=[], retreat=[], poses_quat=list(poses))
 
-        cur_sides[s] = PathSide(
-            predispense=[pre],
-            retreat=[ret],
-            poses_quat=list(main),
-        )
         return Draft(version=1, sides=cur_sides)
