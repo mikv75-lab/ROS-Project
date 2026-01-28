@@ -231,18 +231,17 @@ class RunResult:
     """
     STRICT run result container.
 
-    Contracts:
-      - planned_run/executed_run contain raw traj and derived tcp.
-      - tcp target frame MUST be 'substrate'.
-      - evaluation is explicit via evaluate_tcp_against_draft().
-      - UI shows the report_text from this class (stable schema).
+    IMPORTANT COMPATIBILITY:
+      - Some parts of the stack create RunResult(urdf_xml=..., srdf_xml=...) directly.
+      - Others pass process payload with nested robot_description.
+      => This class supports BOTH shapes.
 
     NOTE:
-      - attach_recipe() attaches the current Recipe object to this RunResult.
-        This enables display-only metrics (e.g. speed setpoint) without having
-        to pass recipe around everywhere.
+      - attach_recipe() attaches a Recipe object to enable display-only metrics
+        such as speed setpoint.
     """
 
+    # MUST EXIST: fixes "unexpected keyword argument 'urdf_xml'"
     urdf_xml: str = ""
     srdf_xml: str = ""
 
@@ -256,11 +255,8 @@ class RunResult:
     invalid_reason: str = ""
 
     TCP_TARGET_FRAME: str = "substrate"
-
-    # speed metric: we only display it (no score), recipe segment only
     DEFAULT_RECIPE_SEGMENT: str = "MOVE_RECIPE"
 
-    # attached recipe (UI-owned object reference; NOT persisted)
     _attached_recipe: Any = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -289,16 +285,12 @@ class RunResult:
     # ------------------------------------------------------------
 
     def attach_recipe(self, recipe: Any) -> None:
-        """
-        Attaches a Recipe object reference (UI-side) to this RunResult.
-
-        STRICT:
-          - recipe must not be None
-          - no persistence; this is runtime-only
-        """
         if recipe is None:
             raise ValueError("RunResult.attach_recipe: recipe is None (strict)")
         self._attached_recipe = recipe
+
+    def attach_recipe_context(self, recipe: Any) -> None:
+        self.attach_recipe(recipe)
 
     def _require_attached_recipe(self) -> Any:
         r = self._attached_recipe
@@ -380,7 +372,6 @@ class RunResult:
 
     @staticmethod
     def _duration_s_from_tfs(tfs: Any) -> float:
-        # supports {"sec","nanosec"} or [sec,nsec]
         if isinstance(tfs, dict):
             sec = int(tfs.get("sec", 0))
             nsec = int(tfs.get("nanosec", 0))
@@ -401,14 +392,12 @@ class RunResult:
             return None
         pts = seg.get("points")
         if not isinstance(pts, list) or len(pts) < 2:
-            # also allow nested joint_trajectory.points
             jt = seg.get("joint_trajectory")
             if isinstance(jt, dict):
                 pts = jt.get("points")
         if not isinstance(pts, list) or len(pts) < 2:
             return None
 
-        # duration from first->last time_from_start (assumes monotonic)
         t0 = cls._duration_s_from_tfs(_dict(pts[0]).get("time_from_start"))
         t1 = cls._duration_s_from_tfs(_dict(pts[-1]).get("time_from_start"))
         dt = float(t1 - t0)
@@ -418,9 +407,6 @@ class RunResult:
 
     @staticmethod
     def _extract_xyz_mm_from_pose(p: Any) -> Optional[Tuple[float, float, float]]:
-        # supports:
-        #   [x,y,z,qx,qy,qz,qw]
-        #   {"xyz":[...]} / {"position":[...]} / {"p":[...]} / {"xyz_mm":[...]}
         if isinstance(p, (list, tuple)) and len(p) >= 3:
             try:
                 return (float(p[0]), float(p[1]), float(p[2]))
@@ -438,13 +424,6 @@ class RunResult:
 
     @classmethod
     def _tcp_segment_poses_quat(cls, tcp_doc: Dict[str, Any], seg_name: str) -> Optional[List[Any]]:
-        """
-        STRICT-ish: only returns poses if segmentation exists in tcp doc.
-        We do NOT guess across all poses, because you explicitly want recipe-segment-only.
-        Supported shapes:
-          tcp["segments"][seg]["poses_quat"]
-          tcp["sides"][side]["segments"][seg]["poses_quat"]
-        """
         segs = tcp_doc.get("segments")
         if isinstance(segs, dict):
             seg = segs.get(seg_name)
@@ -492,21 +471,58 @@ class RunResult:
 
     @staticmethod
     def _speed_setpoint_mm_s(recipe: Any) -> Optional[float]:
-        # display-only; omit if not present
+        """
+        STRICT but robust extraction:
+          - prefer recipe.to_params_dict()
+          - else recipe.parameters / recipe.params dict-like
+          - allow nesting globals.speed_mm_s
+        """
+        if recipe is None:
+            return None
+
+        # 1) to_params_dict() (preferred)
+        try:
+            fn = getattr(recipe, "to_params_dict", None)
+            if callable(fn):
+                d = fn()
+                if isinstance(d, dict):
+                    # common layouts:
+                    # - {"globals": {"speed_mm_s": ...}}
+                    # - {"speed_mm_s": ...}
+                    g = d.get("globals")
+                    if isinstance(g, dict) and "speed_mm_s" in g:
+                        v = g.get("speed_mm_s")
+                    else:
+                        v = d.get("speed_mm_s")
+                    if v is not None:
+                        vv = float(v)
+                        return vv if vv > 0.0 else None
+        except Exception:
+            pass
+
+        # 2) recipe.parameters or recipe.params
         try:
             params = getattr(recipe, "parameters", None)
+            if params is None:
+                params = getattr(recipe, "params", None)
+
             if isinstance(params, dict):
-                v = params.get("speed_mm_s", None)
-            else:
-                v = getattr(params, "speed_mm_s", None) if params is not None else None
-            if v is None:
-                return None
-            vv = float(v)
-            if vv <= 0.0:
-                return None
-            return vv
+                if "speed_mm_s" in params:
+                    vv = float(params["speed_mm_s"])
+                    return vv if vv > 0.0 else None
+                g = params.get("globals")
+                if isinstance(g, dict) and "speed_mm_s" in g:
+                    vv = float(g["speed_mm_s"])
+                    return vv if vv > 0.0 else None
+
+            # 3) object-like: params.speed_mm_s
+            if params is not None and hasattr(params, "speed_mm_s"):
+                vv = float(getattr(params, "speed_mm_s"))
+                return vv if vv > 0.0 else None
         except Exception:
-            return None
+            pass
+
+        return None
 
     def _compute_avg_speed_recipe_segment(
         self,
@@ -523,8 +539,9 @@ class RunResult:
         if speed_set is None:
             return None
 
-        traj_doc = _dict((_dict(self.planned_run) if which == "planned" else _dict(self.executed_run)).get("traj"))
-        tcp_doc = _dict((_dict(self.planned_run) if which == "planned" else _dict(self.executed_run)).get("tcp"))
+        run_doc = _dict(self.planned_run) if which == "planned" else _dict(self.executed_run)
+        traj_doc = _dict(run_doc.get("traj"))
+        tcp_doc = _dict(run_doc.get("tcp"))
 
         dt = self._segment_duration_s_from_traj(traj_doc, seg_name)
         if dt is None:
@@ -556,19 +573,13 @@ class RunResult:
         try:
             return f"{float(v):.{nd}f}"
         except Exception:
-            return "0.000" if nd >= 3 else "0.000"
+            return "0.000" if nd >= 3 else "0.0"
 
     @staticmethod
     def _fmt_bool_yesno(v: Any) -> str:
         return "yes" if bool(v) else "no"
 
     def report_text(self, *, title: str = "=== CURRENT RUN (Live) ===") -> str:
-        """
-        EXACT UI string (stable) with TWO columns: planned + executed.
-
-        Speed is display-only and will be shown if recipe is attached and
-        both planned/executed values exist in eval summaries.
-        """
         ev = _dict(self.eval)
 
         sel = _dict(ev.get("selection"))
@@ -611,7 +622,6 @@ class RunResult:
                 return default
             return v
 
-        # position
         pl_pos_mean = gsum(pl_sum, "mean_l2_mm", 0.0) or 0.0
         pl_pos_p95 = gsum(pl_sum, "p95_l2_mm", 0.0) or 0.0
         pl_pos_worst = gsum(pl_sum, "max_l2_mm", 0.0) or 0.0
@@ -620,7 +630,6 @@ class RunResult:
         ex_pos_p95 = gsum(ex_sum, "p95_l2_mm", 0.0) or 0.0
         ex_pos_worst = gsum(ex_sum, "max_l2_mm", 0.0) or 0.0
 
-        # orientation
         pl_ori_mean = gsum(pl_sum, "mean_angle_deg", 0.0) or 0.0
         pl_ori_p95 = gsum(pl_sum, "p95_angle_deg", 0.0) or 0.0
         pl_ori_worst = gsum(pl_sum, "max_angle_deg", 0.0) or 0.0
@@ -629,7 +638,6 @@ class RunResult:
         ex_ori_p95 = gsum(ex_sum, "p95_angle_deg", 0.0) or 0.0
         ex_ori_worst = gsum(ex_sum, "max_angle_deg", 0.0) or 0.0
 
-        # stand-off Z
         pl_z_mean = gsum(pl_sum, "mean_abs_dz_mm", 0.0) or 0.0
         pl_z_p95 = gsum(pl_sum, "p95_abs_dz_mm", 0.0) or 0.0
         pl_z_worst = gsum(pl_sum, "max_abs_dz_mm", 0.0) or 0.0
@@ -638,23 +646,16 @@ class RunResult:
         ex_z_p95 = gsum(ex_sum, "p95_abs_dz_mm", 0.0) or 0.0
         ex_z_worst = gsum(ex_sum, "max_abs_dz_mm", 0.0) or 0.0
 
-        # path length delta
         pl_delta_L = gsum(pl_sum, "delta_L_percent", 0.0) or 0.0
         ex_delta_L = gsum(ex_sum, "delta_L_percent", 0.0) or 0.0
 
-        # --------------------------------------------------------
-        # Speed (display-only, recipe-derived; NO have_speed gate)
-        # We show speed only if keys exist (no NaN logic).
-        # --------------------------------------------------------
         sp = gsum(ex_sum, "speed_set_mm_s", None)
         if sp is None:
             sp = gsum(pl_sum, "speed_set_mm_s", None)
-
         pl_v = gsum(pl_sum, "avg_speed_mm_s", None)
         ex_v = gsum(ex_sum, "avg_speed_mm_s", None)
         pl_vpct = gsum(pl_sum, "speed_percent", None)
         ex_vpct = gsum(ex_sum, "speed_percent", None)
-
         show_speed = (sp is not None) and (pl_v is not None) and (ex_v is not None) and (pl_vpct is not None) and (ex_vpct is not None)
 
         lines: list[str] = []
@@ -674,35 +675,17 @@ class RunResult:
         lines.append("")
 
         lines.append("Deviations vs. draft (planned | executed):")
-        lines.append(
-            f"  Position (XYZ) mean:    {self._fmt_float(pl_pos_mean, 3)} mm | {self._fmt_float(ex_pos_mean, 3)} mm"
-        )
-        lines.append(
-            f"  Position (XYZ) p95:     {self._fmt_float(pl_pos_p95, 3)} mm | {self._fmt_float(ex_pos_p95, 3)} mm"
-        )
-        lines.append(
-            f"  Position (XYZ) worst:   {self._fmt_float(pl_pos_worst, 3)} mm | {self._fmt_float(ex_pos_worst, 3)} mm"
-        )
+        lines.append(f"  Position (XYZ) mean:    {self._fmt_float(pl_pos_mean, 3)} mm | {self._fmt_float(ex_pos_mean, 3)} mm")
+        lines.append(f"  Position (XYZ) p95:     {self._fmt_float(pl_pos_p95, 3)} mm | {self._fmt_float(ex_pos_p95, 3)} mm")
+        lines.append(f"  Position (XYZ) worst:   {self._fmt_float(pl_pos_worst, 3)} mm | {self._fmt_float(ex_pos_worst, 3)} mm")
         lines.append("")
-        lines.append(
-            f"  Orientation (RPY) mean: {self._fmt_float(pl_ori_mean, 3)} deg | {self._fmt_float(ex_ori_mean, 3)} deg"
-        )
-        lines.append(
-            f"  Orientation (RPY) p95:  {self._fmt_float(pl_ori_p95, 3)} deg | {self._fmt_float(ex_ori_p95, 3)} deg"
-        )
-        lines.append(
-            f"  Orientation (RPY) worst:{self._fmt_float(pl_ori_worst, 3)} deg | {self._fmt_float(ex_ori_worst, 3)} deg"
-        )
+        lines.append(f"  Orientation (RPY) mean: {self._fmt_float(pl_ori_mean, 3)} deg | {self._fmt_float(ex_ori_mean, 3)} deg")
+        lines.append(f"  Orientation (RPY) p95:  {self._fmt_float(pl_ori_p95, 3)} deg | {self._fmt_float(ex_ori_p95, 3)} deg")
+        lines.append(f"  Orientation (RPY) worst:{self._fmt_float(pl_ori_worst, 3)} deg | {self._fmt_float(ex_ori_worst, 3)} deg")
         lines.append("")
-        lines.append(
-            f"  Stand-off (Z) mean:     {self._fmt_float(pl_z_mean, 3)} mm | {self._fmt_float(ex_z_mean, 3)} mm"
-        )
-        lines.append(
-            f"  Stand-off (Z) p95:      {self._fmt_float(pl_z_p95, 3)} mm | {self._fmt_float(ex_z_p95, 3)} mm"
-        )
-        lines.append(
-            f"  Stand-off (Z) worst:    {self._fmt_float(pl_z_worst, 3)} mm | {self._fmt_float(ex_z_worst, 3)} mm"
-        )
+        lines.append(f"  Stand-off (Z) mean:     {self._fmt_float(pl_z_mean, 3)} mm | {self._fmt_float(ex_z_mean, 3)} mm")
+        lines.append(f"  Stand-off (Z) p95:      {self._fmt_float(pl_z_p95, 3)} mm | {self._fmt_float(ex_z_p95, 3)} mm")
+        lines.append(f"  Stand-off (Z) worst:    {self._fmt_float(pl_z_worst, 3)} mm | {self._fmt_float(ex_z_worst, 3)} mm")
         lines.append("")
         lines.append(f"Path length delta:  {self._fmt_float(pl_delta_L, 3)} % | {self._fmt_float(ex_delta_L, 3)} %")
 
@@ -728,13 +711,6 @@ class RunResult:
     # ------------------------------------------------------------
 
     def set_eval(self, eval_dict: Dict[str, Any] | None) -> None:
-        """
-        Stores eval dict on RunResult and embeds it into tcp docs.
-
-        STRICT:
-          - No legacy splitting/fallback.
-          - planned_run.tcp.eval and executed_run.tcp.eval each get the same eval dict.
-        """
         self.eval = _dict(eval_dict)
 
         pl_tcp_doc = _dict(self.planned_run.get("tcp"))
@@ -744,7 +720,6 @@ class RunResult:
             pl_tcp_doc["fk_meta"] = dict(self.fk_meta)
             ex_tcp_doc["fk_meta"] = dict(self.fk_meta)
 
-        # Precompute report string (the UI can display exactly this)
         if self.eval:
             self.eval["report_text_live"] = self.report_text(title="=== CURRENT RUN (Live) ===")
             self.eval["report_text_disk"] = self.report_text(title="=== STORED EVAL (Disk) ===")
@@ -760,7 +735,10 @@ class RunResult:
     # ------------------------------------------------------------
 
     def to_process_payload(self) -> Dict[str, Any]:
+        # COMPAT: write both shapes (flat + nested)
         return {
+            "urdf_xml": self.urdf_xml,
+            "srdf_xml": self.srdf_xml,
             "robot_description": {
                 "urdf_xml": self.urdf_xml,
                 "srdf_xml": self.srdf_xml,
@@ -778,12 +756,19 @@ class RunResult:
         if not isinstance(payload, dict):
             raise ValueError("RunResult.from_process_payload: payload muss dict sein.")
 
-        rd = payload.get("robot_description")
-        rd = rd if isinstance(rd, dict) else {}
+        # COMPAT: accept flat OR nested
+        urdf_xml = str(payload.get("urdf_xml") or "")
+        srdf_xml = str(payload.get("srdf_xml") or "")
+
+        if not urdf_xml.strip() or not srdf_xml.strip():
+            rd = payload.get("robot_description")
+            rd = rd if isinstance(rd, dict) else {}
+            urdf_xml = str(rd.get("urdf_xml") or urdf_xml or "")
+            srdf_xml = str(rd.get("srdf_xml") or srdf_xml or "")
 
         return cls(
-            urdf_xml=str(rd.get("urdf_xml") or ""),
-            srdf_xml=str(rd.get("srdf_xml") or ""),
+            urdf_xml=urdf_xml,
+            srdf_xml=srdf_xml,
             planned_run=payload.get("planned_run"),
             executed_run=payload.get("executed_run"),
             fk_meta=payload.get("fk_meta"),
@@ -900,7 +885,6 @@ class RunResult:
             require_all_segments=True,
         )
 
-        # STRICT: always transform into substrate
         if base_link != "robot_mount":
             raise ValueError(
                 f"postprocess_from_urdf_srdf: expected cfg.base_link='robot_mount' for offline substrate transform, got {base_link!r}"
@@ -958,12 +942,6 @@ class RunResult:
         domain: str = "tcp",
         gate_valid_on_eval: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Evaluate planned/executed TCP against draft reference.
-
-        STRICT:
-          - recipe MUST be available (either passed, or attached via attach_recipe()).
-        """
         if recipe is None:
             recipe = self._require_attached_recipe()
 
@@ -985,11 +963,7 @@ class RunResult:
             tcp_poses_executed=self._count_tcp_poses(executed_tcp),
         )
 
-        # --------------------------------------------------------
-        # Add SPEED metric (display-only; no score impact)
-        # - recipe segment only
-        # - only if we can compute it strictly (segmented TCP + traj times)
-        # --------------------------------------------------------
+        # SPEED (display-only; strictly computed; omit if cannot)
         try:
             seg_recipe = self.DEFAULT_RECIPE_SEGMENT
             if segment_order:
@@ -1019,7 +993,6 @@ class RunResult:
                 eval_dict["planned"]["summary"] = ps
                 eval_dict["executed"]["summary"] = es
         except Exception:
-            # strict: do not fake values; just omit
             pass
 
         self.set_eval(_dict(eval_dict))
