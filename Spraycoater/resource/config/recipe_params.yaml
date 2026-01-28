@@ -38,6 +38,15 @@ recipe_params:
       default: 1000
       plc: false
 
+    max_nozzle_tilt_deg:
+      type: number
+      min: 0.0
+      max: 45.0
+      step: 1.0
+      unit: "deg"
+      default: 0.0
+      plc: false
+      
     pre_dispense_s:
       type: number
       min: 0.0

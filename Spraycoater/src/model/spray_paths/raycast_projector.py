@@ -73,6 +73,10 @@ def _points_poly(points: np.ndarray) -> pv.PolyData:
     return pv.PolyData(pts)
 
 
+def _clamp(x: float, lo: float, hi: float) -> float:
+    return lo if x < lo else hi if x > hi else x
+
+
 # ============================================================
 # Data contract
 # ============================================================
@@ -97,7 +101,12 @@ def _intersect_line_obb_fast(obb, p0, p1):
     return np.array(pts.GetPoint(0), dtype=float), int(ids.GetId(0))
 
 
-def _process_chunk(idx, starts, ends, D, obb, face_normals, cos_min: float):
+def _process_chunk(idx, starts, ends, D, obb, face_normals, cos_min: float, sin_min: float, tilt_enabled: bool):
+    """
+    cos_min = cos(max_tilt_rad)
+    sin_min = sin(max_tilt_rad)
+    If tilt_enabled: clamp normals to max tilt instead of rejecting hits.
+    """
     N = len(idx)
     hits = np.zeros((N, 3), dtype=float)
     norms = np.zeros((N, 3), dtype=float)
@@ -116,17 +125,48 @@ def _process_chunk(idx, starts, ends, D, obb, face_normals, cos_min: float):
         if cid is None or cid < 0 or cid >= n_faces:
             raise RuntimeError(f"OBB returned cell id out of range: cid={cid}, n_face_normals={n_faces}")
 
-        n = face_normals[cid]
+        n = face_normals[cid].copy()
         d = D[i]
 
         # ensure normal points "against" the ray direction
         if float(np.dot(n, d)) > 0.0:
             n = -n
 
-        # incidence check
-        if -float(np.dot(d, n)) < float(cos_min):
-            continue
+        # incidence / tilt:
+        # cos(theta) = -dot(d, n), theta=0 => perfect incidence (n aligned with -d).
+        c = -float(np.dot(d, n))
 
+        if tilt_enabled and (c < cos_min):
+            # Clamp n to have exactly theta = max_tilt (i.e. cos(theta)=cos_min),
+            # in the plane spanned by n and a=-d, choosing the closest such vector to n.
+            a = -d
+            na = float(np.linalg.norm(a))
+            if na > 1e-12:
+                a = a / na
+            else:
+                # degenerate direction; keep original n (should not happen due to _side_dir/_normalize)
+                a = np.array([0.0, 0.0, 1.0], dtype=float)
+
+            # Build u = normalized component of n orthogonal to a
+            # n = c*a + s*u  (s = sin(theta))
+            u = n - float(np.dot(n, a)) * a
+            nu = float(np.linalg.norm(u))
+            if nu < 1e-12:
+                # n already (anti)parallel to a; just set to a
+                n = a
+            else:
+                u = u / nu
+                # Clamp to max tilt:
+                # n' = cos_min*a + sin_min*u
+                n = (float(cos_min) * a) + (float(sin_min) * u)
+                nn = float(np.linalg.norm(n))
+                if nn > 1e-12:
+                    n = n / nn
+
+            # recompute c after clamp (for numerical sanity)
+            c = -float(np.dot(d, n))
+
+        # NOTE: No rejection by tilt anymore (unless tilt_enabled==False and you want old behavior)
         valid[i] = True
         hits[i] = hit
         norms[i] = n
@@ -150,6 +190,8 @@ def cast_rays_for_side(
     invert_dirs: bool = False,
     # Optional override; if None -> auto from `side` (your rule)
     radial_xy: Optional[bool] = None,
+    # NEW: nozzle tilt constraint in degrees (0 disables clamping). Expected range: 0..45
+    max_nozzle_tilt_deg: float = 0.0,
 ) -> tuple[RayProjectResult, pv.PolyData, pv.PolyData, pv.PolyData]:
     """
     Raycast projection used by editor/preview.
@@ -157,6 +199,11 @@ def cast_rays_for_side(
     Direction selection (AUTO, per your rule):
       - side in {"top","front","back","left","right"}  -> axis-aligned (NOT radial)
       - any other side string                           -> radial in XY (radial_xy=True)
+
+    Nozzle tilt constraint (CLAMP, not reject):
+      - max_nozzle_tilt_deg <= 0 : disabled (use raw face normals)
+      - otherwise                : clamp surface normals such that
+                                  incidence angle <= max_nozzle_tilt_deg
 
     All math is done in the same frame as `sub_mesh_world` and `P_world_start`.
     """
@@ -193,8 +240,20 @@ def cast_rays_for_side(
 
     face_norms = _normalize_strict(np.asarray(mesh.face_normals, dtype=float), name="face_normals")
     if face_norms.shape[0] != mesh.n_cells:
-        # In pyvista, face_normals are per-cell; if this diverges, it is unsafe to index by cell-id.
         raise RuntimeError(f"face_normals size mismatch: {face_norms.shape[0]} != n_cells {mesh.n_cells}")
+
+    # 0..45 deg clamp parameters
+    tilt = float(max_nozzle_tilt_deg or 0.0)
+    tilt_enabled = tilt > 0.0
+    if tilt_enabled:
+        tilt = _clamp(tilt, 0.0, 45.0)
+        tilt_rad = float(math.radians(tilt))
+        cos_min = float(math.cos(tilt_rad))
+        sin_min = float(math.sin(tilt_rad))
+    else:
+        # unused when disabled
+        cos_min = -1.0
+        sin_min = 0.0
 
     # 1) Directions
     if radial_xy:
@@ -235,23 +294,25 @@ def cast_rays_for_side(
                 exc.submit(
                     _process_chunk,
                     idx,
-                    starts[i : i + chunk],
-                    ends[i : i + chunk],
-                    D[i : i + chunk],
+                    starts[i: i + chunk],
+                    ends[i: i + chunk],
+                    D[i: i + chunk],
                     obb,
                     face_norms,
-                    1e-3,
+                    cos_min,
+                    sin_min,
+                    tilt_enabled,
                 )
             )
 
         for f in concurrent.futures.as_completed(futures):
-            idx, v, h, n, r = f.result()  # STRICT: propagate worker exceptions
+            idx, v, h, n, r = f.result()
             valid[idx] = v
             hits[idx] = h
             norms[idx] = n
             refl[idx] = r
 
-    # 4) Result
+    # 4) Result (tcp uses the (possibly clamped) normals)
     tcp = hits + norms * float(stand_off_mm)
 
     res = RayProjectResult(valid=valid, hit_mm=hits, normal=norms, refl_dir=refl, tcp_mm=tcp)

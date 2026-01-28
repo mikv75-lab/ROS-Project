@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 from PyQt6 import QtCore
 from PyQt6.QtStateMachine import QStateMachine, QState, QFinalState
@@ -60,6 +60,14 @@ class BaseProcessStatemachine(QtCore.QObject):
       - Trajectory capture may only become available AFTER the robot finished moving.
       - Therefore WAIT_RESULTS timeout starts ONLY once robot is NOT moving anymore.
         While moving, we keep ticking but do not arm the timeout deadline.
+
+    Draft segmentation contract (STRICT helper, optional for subclasses):
+      - MOVE_PREDISPENSE must use draft.side.predispense (NOT recipe[0])
+      - MOVE_RECIPE must use recipe-only poses (draft.side.poses_quat only)
+      - MOVE_RETREAT must use draft.side.retreat (NOT recipe[-1])
+
+    This base class provides helper `_draft_segment_pose_tuples()` to obtain
+    segment-specific pose tuples from the current `Recipe` without guessing.
     """
 
     ROLE = "process"
@@ -157,6 +165,109 @@ class BaseProcessStatemachine(QtCore.QObject):
         self._connect_traj_cache_clear_signal()
         self._connect_robot_moving_signal()
         self._refresh_robot_moving_initial()
+
+    # ============================================================
+    # STRICT helper: draft segmentation → pose tuples
+    # ============================================================
+
+    @staticmethod
+    def _pose_to_tuple_mm_quat(p: Any) -> Tuple[float, float, float, float, float, float, float]:
+        """
+        Accepts either Draft PoseQuat-like object or dict and returns:
+          (x_mm, y_mm, z_mm, qx, qy, qz, qw)
+        """
+        if hasattr(p, "x"):
+            return (
+                float(p.x),
+                float(p.y),
+                float(p.z),
+                float(p.qx),
+                float(p.qy),
+                float(p.qz),
+                float(p.qw),
+            )
+        if isinstance(p, dict):
+            return (
+                float(p["x"]),
+                float(p["y"]),
+                float(p["z"]),
+                float(p["qx"]),
+                float(p["qy"]),
+                float(p["qz"]),
+                float(p["qw"]),
+            )
+        raise TypeError(f"pose has unsupported type: {type(p).__name__}")
+
+    def _draft_segment_pose_tuples(
+        self,
+        *,
+        side: str,
+        seg: str,
+    ) -> List[Tuple[float, float, float, float, float, float, float]]:
+        """
+        STRICT extraction of segment poses from Recipe draft.
+
+        Priority:
+          1) Recipe method `draft_poses_quat_segment(side, seg)` if available
+          2) Draft model method `draft.poses_quat_segment(side, seg)` if available
+          3) Dict-like draft schema:
+             sides[side].predispense / poses_quat / retreat  (single-point lists for predispense/retreat)
+
+        No silent guessing:
+          - If required keys are missing for the requested segment, raises ValueError.
+        """
+        s = str(side or "").strip()
+        seg_id = str(seg or "").strip()
+
+        # 1) Preferred: Recipe facade
+        fn = getattr(self._recipe, "draft_poses_quat_segment", None)
+        if callable(fn):
+            poses = fn(s, seg_id)
+            return [self._pose_to_tuple_mm_quat(p) for p in list(poses or [])]
+
+        # 2) Draft model
+        d = getattr(self._recipe, "draft", None)
+        fn2 = getattr(d, "poses_quat_segment", None) if d is not None else None
+        if callable(fn2):
+            poses = fn2(s, seg_id)
+            return [self._pose_to_tuple_mm_quat(p) for p in list(poses or [])]
+
+        # 3) Dict schema (your new draft yaml layout)
+        if isinstance(d, dict):
+            sides = d.get("sides")
+            if not isinstance(sides, dict):
+                raise ValueError("draft dict missing 'sides'")
+
+            sd = sides.get(s)
+            if not isinstance(sd, dict):
+                raise ValueError(f"draft dict missing side {s!r}")
+
+            if seg_id == STATE_MOVE_PREDISPENSE:
+                lst = sd.get("predispense")
+                if not isinstance(lst, list) or not lst:
+                    raise ValueError(f"draft side {s!r} missing non-empty 'predispense' for {seg_id}")
+                return [self._pose_to_tuple_mm_quat(lst[0])]
+
+            if seg_id == STATE_MOVE_RECIPE:
+                lst = sd.get("poses_quat")
+                if not isinstance(lst, list) or not lst:
+                    raise ValueError(f"draft side {s!r} missing non-empty 'poses_quat' for {seg_id}")
+                # IMPORTANT: recipe-only; do NOT inject predispense/retreat here.
+                return [self._pose_to_tuple_mm_quat(p) for p in lst]
+
+            if seg_id == STATE_MOVE_RETREAT:
+                lst = sd.get("retreat")
+                if not isinstance(lst, list) or not lst:
+                    raise ValueError(f"draft side {s!r} missing non-empty 'retreat' for {seg_id}")
+                return [self._pose_to_tuple_mm_quat(lst[0])]
+
+            # MOVE_HOME has no draft poses by contract
+            if seg_id == STATE_MOVE_HOME:
+                return []
+
+            raise ValueError(f"unknown segment {seg_id!r} for draft segmentation")
+
+        raise ValueError("draft has no segment-capable API (missing draft_poses_quat_segment / poses_quat_segment / dict schema)")
 
     # ---------------- Machine ----------------
 

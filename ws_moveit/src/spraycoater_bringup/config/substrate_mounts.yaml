@@ -1,18 +1,18 @@
 version: 1
-active_mount: circle_d240_h50
+active_mount: flat_240x240x25
 mounts:
   flat_240x240x25:
-      description: Standard Flachhalter 240x240mm
-      mesh: package://spraycoater_bringup/resource/substrate_mounts/flat_240x240x25.stl
-      scene_offset:
-        xyz:
-        - 0.0
-        - 0.0
-        - 25.0
-        rpy_deg:
-        - 0.0
-        - 0.0
-        - 0.0
+    description: Standard Flachhalter 240x240mm
+    mesh: package://spraycoater_bringup/resource/substrate_mounts/flat_240x240x25.stl
+    scene_offset:
+      xyz:
+      - 0.0
+      - 0.0
+      - 25.0
+      rpy_deg:
+      - 0.0
+      - 0.0
+      - 0.0
   flat_240x240x50:
     description: Standard Flachhalter 240x240mm
     mesh: package://spraycoater_bringup/resource/substrate_mounts/flat_240x240x50.stl

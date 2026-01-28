@@ -27,6 +27,7 @@ from model.recipe.recipe import Recipe
 from model.recipe.recipe_run_result import RunResult
 
 from widgets.robot_status_box import RobotStatusInfoBox
+from .setup_info_box import SetupInfoBox  # Sicherstellen, dass die Datei existiert
 
 from .process_thread import ProcessThread
 from .robot_init_thread import RobotInitThread
@@ -37,30 +38,11 @@ _LOG = logging.getLogger("tabs.process.process_panel")
 class ProcessPanel(QWidget):
     """
     ProcessPanel (STRICT, "collect-only"):
-
-    Owns ALL process-side responsibilities:
-      - Start/stop RobotInitThread
-      - Start/stop ProcessThread (validate/optimize/execute)
-      - Button enable/disable rules + runtime checks
-      - Log view
-      - RobotStatusInfoBox wiring to RosBridge robot signals
-      - Persist ONLY raw artifacts (planned_traj / executed_traj) via repo.bundle.paths(key)
-      - Emit RunResult to RecipePanel for postprocess + evaluation + TCP persistence
-
-    It does NOT load/select recipes. It only receives set_recipe/clear_recipe.
-
-    Public API (STRICT):
-      - set_recipe(key: str, recipe: Recipe)
-      - clear_recipe()
-      - request_stop()
-
-    Signals (panel -> outer):
-      - sig_robot_ready_changed(bool)
-      - sig_process_state(str)
-      - sig_log(str)
-      - sig_run_started(str mode, str key)
-      - sig_run_finished(str key, object payload, object rr)
-      - sig_run_error(str key, str message)
+    Verantwortlich für:
+      - Start/Stop RobotInitThread
+      - Start/Stop ProcessThread (Validate/Optimize/Execute)
+      - UI Statusanzeige (Robot & Setup)
+      - Logging
     """
 
     sig_robot_ready_changed = QtCore.pyqtSignal(bool)
@@ -82,18 +64,9 @@ class ProcessPanel(QWidget):
     ) -> None:
         super().__init__(parent)
 
-        if ctx is None:
-            raise RuntimeError("ProcessPanel: ctx is None (strict)")
-        if repo is None:
-            raise RuntimeError("ProcessPanel: repo is None (strict)")
-        if ros is None:
-            raise RuntimeError("ProcessPanel: ros is None (strict)")
-
-        if not callable(getattr(repo, "load_for_process", None)):
-            raise RuntimeError("ProcessPanel: repo.load_for_process(key) missing (strict)")
-        bundle = getattr(repo, "bundle", None)
-        if bundle is None or not callable(getattr(bundle, "paths", None)):
-            raise RuntimeError("ProcessPanel: repo.bundle.paths(key) missing (strict)")
+        if ctx is None: raise RuntimeError("ProcessPanel: ctx is None")
+        if repo is None: raise RuntimeError("ProcessPanel: repo is None")
+        if ros is None: raise RuntimeError("ProcessPanel: ros is None")
 
         self.ctx = ctx
         self.repo = repo
@@ -103,10 +76,6 @@ class ProcessPanel(QWidget):
         self._recipe_key: Optional[str] = None
         self._recipe: Optional[Recipe] = None
 
-        # Robot readiness policy:
-        #   - _robot_initialized tracks ROS robot initialized state
-        #   - _require_reinit gates "ready" after Stop was pressed; must press Init again
-        #   - _robot_ready is derived from both
         self._robot_initialized: bool = False
         self._require_reinit: bool = False
         self._robot_ready: bool = False
@@ -127,24 +96,18 @@ class ProcessPanel(QWidget):
         self._update_buttons()
 
     # ------------------------------------------------------------------
-    # UI
+    # UI Layout & Wiring
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
         """
-        NEW layout requested:
-
-        HBox( Process, RobotStatus, Log )
-
-        (No separate Log block below; Log is the 3rd column.)
+        4-Spalten Layout: [Process] | [Setup] | [Robot Status] | [Log]
         """
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(8)
 
-        # ============================================================
-        # Column 1: Process buttons
-        # ============================================================
+        # Spalte 1: Prozess Buttons
         self.ProzessGroupbox = QGroupBox("Process", self)
         vproc = QVBoxLayout(self.ProzessGroupbox)
         vproc.setContentsMargins(8, 8, 8, 8)
@@ -163,29 +126,21 @@ class ProcessPanel(QWidget):
         self.lblInit = QLabel("Init: –", self.ProzessGroupbox)
         vproc.addWidget(self.lblInit)
 
-        spP = self.ProzessGroupbox.sizePolicy()
-        spP.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
-        self.ProzessGroupbox.setSizePolicy(spP)
-        self.ProzessGroupbox.setMinimumWidth(140)
-        self.ProzessGroupbox.setMaximumWidth(220)
-
+        self.ProzessGroupbox.setFixedWidth(160)
         root.addWidget(self.ProzessGroupbox, 0)
 
-        # ============================================================
-        # Column 2: Robot Status
-        # ============================================================
-        self.RobotStatusGrp = RobotStatusInfoBox(self, title="Robot Status")
-        spR = self.RobotStatusGrp.sizePolicy()
-        spR.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
-        self.RobotStatusGrp.setSizePolicy(spR)
-        self.RobotStatusGrp.setMinimumWidth(360)
-        self.RobotStatusGrp.setMaximumWidth(560)
+        # Spalte 2: Setup Info (Tool, Substrate, Mount)
+        self.SetupGrp = SetupInfoBox(self, title="Hardware Setup")
+        self.SetupGrp.setFixedWidth(240)
+        root.addWidget(self.SetupGrp, 0)
 
+        # Spalte 3: Robot Status
+        self.RobotStatusGrp = RobotStatusInfoBox(self, title="Robot Status")
+        self.RobotStatusGrp.setMinimumWidth(360)
+        self.RobotStatusGrp.setMaximumWidth(500)
         root.addWidget(self.RobotStatusGrp, 0)
 
-        # ============================================================
-        # Column 3: Log
-        # ============================================================
+        # Spalte 4: Log (nimmt restlichen Platz ein)
         self.LogGroup = QGroupBox("Log", self)
         vlog = QVBoxLayout(self.LogGroup)
         vlog.setContentsMargins(8, 8, 8, 8)
@@ -194,19 +149,10 @@ class ProcessPanel(QWidget):
         self.txtLog.setReadOnly(True)
         vlog.addWidget(self.txtLog, 1)
 
-        spL = self.LogGroup.sizePolicy()
-        spL.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        spL.setVerticalPolicy(QSizePolicy.Policy.Expanding)
-        self.LogGroup.setSizePolicy(spL)
-
         root.addWidget(self.LogGroup, 1)
 
-        sp = self.sizePolicy()
-        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        sp.setVerticalPolicy(QSizePolicy.Policy.Expanding)
-        self.setSizePolicy(sp)
-
     def _wire_ui(self) -> None:
+        """Koppelt UI-Events an die Logik."""
         self.btnInit.clicked.connect(self._on_init_clicked)
         self.btnValidate.clicked.connect(lambda: self._start_process(ProcessThread.MODE_VALIDATE))
         self.btnOptimize.clicked.connect(lambda: self._start_process(ProcessThread.MODE_OPTIMIZE))
@@ -215,105 +161,15 @@ class ProcessPanel(QWidget):
 
         self.sig_log.connect(self._append_log)
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
-    @QtCore.pyqtSlot(str, object)
-    def set_recipe(self, key: str, recipe: Recipe) -> None:
-        if self._process_active or self._init_active:
-            raise RuntimeError("ProcessPanel.set_recipe while active (strict)")
-
-        key = str(key or "").strip()
-        if not key:
-            raise ValueError("ProcessPanel.set_recipe: empty key (strict)")
-        if recipe is None:
-            raise ValueError("ProcessPanel.set_recipe: recipe is None (strict)")
-
-        self._recipe_key = key
-        self._recipe = recipe
-        self._update_buttons()
-
-    @QtCore.pyqtSlot()
-    def clear_recipe(self) -> None:
-        if self._process_active or self._init_active:
-            raise RuntimeError("ProcessPanel.clear_recipe while active (strict)")
-        self._recipe_key = None
-        self._recipe = None
-        self._update_buttons()
-
-    @QtCore.pyqtSlot()
-    def request_stop(self) -> None:
-        # STRICT:
-        #   - Stop always enabled
-        #   - Pressing Stop forces "re-init required" before starting any statemachine again
-        self._require_reinit = True
-        self._recompute_robot_ready()
-
-        if self._process_thread is not None:
-            self._log("Stop: request_stop() -> ProcessThread")
-            self._process_thread.request_stop()
-
-        if self._init_thread is not None and self._init_thread.isRunning():
-            self._log("Stop: request_stop() -> RobotInitThread")
-            self._init_thread.request_stop()
-
-        if not self._init_active:
-            self.lblInit.setText("Init: – (required)")
-
-        self._update_buttons()
-
-    # ------------------------------------------------------------------
-    # Button rules (STRICT)
-    # ------------------------------------------------------------------
-
-    def _plc_execute_available(self) -> bool:
-        if self.plc is not None:
-            return True
-        plc_cfg = getattr(self.ctx, "plc", None)
-        if plc_cfg is None:
-            return False
-        return bool(getattr(plc_cfg, "sim", False))
-
-    def _update_buttons(self) -> None:
-        has_recipe = bool(self._recipe_key)
-        running = bool(self._process_active)
-        init_running = bool(self._init_active)
-        can_click = (not running) and (not init_running)
-
-        self.btnInit.setEnabled(can_click)
-
-        # Stop button must NEVER be disabled.
-        self.btnStop.setEnabled(True)
-
-        self.btnValidate.setEnabled(can_click and has_recipe and self._robot_ready)
-        self.btnOptimize.setEnabled(can_click and has_recipe and self._robot_ready)
-        self.btnExecute.setEnabled(can_click and has_recipe and self._robot_ready and self._plc_execute_available())
-
-    # ------------------------------------------------------------------
-    # Logging
-    # ------------------------------------------------------------------
-
-    def _append_log(self, msg: str) -> None:
-        if msg:
-            self.txtLog.append(str(msg))
-
-    def _log(self, msg: str) -> None:
-        self.sig_log.emit(str(msg))
-
-    # ------------------------------------------------------------------
-    # Robot Status wiring
-    # ------------------------------------------------------------------
-
     def _wire_robot_status_inbound(self) -> None:
+        """Verbindet ROS-Signale mit den Info-Boxen."""
+        # 1. Robot Bridge
         rb = self.ros.robot
         sig = rb.signals
-
         sig.connectionChanged.connect(self.RobotStatusGrp.set_connection)
         sig.modeChanged.connect(self.RobotStatusGrp.set_mode)
         sig.initializedChanged.connect(self.RobotStatusGrp.set_initialized)
         sig.initializedChanged.connect(self._on_robot_initialized_changed)
-
         sig.movingChanged.connect(self.RobotStatusGrp.set_moving)
         sig.powerChanged.connect(self.RobotStatusGrp.set_power)
         sig.servoEnabledChanged.connect(self.RobotStatusGrp.set_servo_enabled)
@@ -322,17 +178,48 @@ class ProcessPanel(QWidget):
         sig.tcpPoseChanged.connect(self.RobotStatusGrp.set_tcp_from_ps)
         sig.jointsChanged.connect(self._on_joints)
 
+        # 2. Tool & Scene Bridge (Setup)
+        if hasattr(self.ros, "tool") and self.ros.tool:
+            self.ros.tool.signals.currentToolChanged.connect(self.SetupGrp.set_tool)
+        
+        if self.ros.scene:
+            sc_sig = self.ros.scene.signals
+            sc_sig.substrateCurrentChanged.connect(self.SetupGrp.set_substrate)
+            sc_sig.mountCurrentChanged.connect(self.SetupGrp.set_mount)
+
+    # ------------------------------------------------------------------
+    # Initialisierung & Button-Logik
+    # ------------------------------------------------------------------
+
     def _refresh_robot_ready_initial(self) -> None:
+        """Liest initiale Zustände beim Start aus der Bridge."""
         rb = getattr(self.ros, "robot", None)
-        if rb is None:
-            return
-        try:
+        if rb:
             cur = getattr(rb, "initialized", None)
             if cur is not None:
                 self._robot_initialized = bool(cur)
                 self._recompute_robot_ready()
-        except Exception:
-            pass
+
+        if self.ros.scene:
+            st = self.ros._scene_state 
+            self.SetupGrp.set_substrate(st.substrate_current)
+            self.SetupGrp.set_mount(st.mount_current)
+
+        if hasattr(self.ros, "tool") and self.ros.tool:
+            self.SetupGrp.set_tool(getattr(self.ros.tool, "current_tool_name", "-"))
+
+    def _update_buttons(self) -> None:
+        has_recipe = bool(self._recipe_key)
+        running = bool(self._process_active)
+        init_running = bool(self._init_active)
+        can_click = (not running) and (not init_running)
+
+        self.btnInit.setEnabled(can_click)
+        self.btnStop.setEnabled(True) # Stop ist immer aktiv
+
+        self.btnValidate.setEnabled(can_click and has_recipe and self._robot_ready)
+        self.btnOptimize.setEnabled(can_click and has_recipe and self._robot_ready)
+        self.btnExecute.setEnabled(can_click and has_recipe and self._robot_ready and self._plc_execute_available())
 
     def _recompute_robot_ready(self) -> None:
         v = bool(self._robot_initialized) and (not bool(self._require_reinit))
@@ -342,6 +229,124 @@ class ProcessPanel(QWidget):
         self.sig_robot_ready_changed.emit(v)
         self._update_buttons()
 
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    @QtCore.pyqtSlot(str, object)
+    def set_recipe(self, key: str, recipe: Recipe) -> None:
+        if self._process_active or self._init_active:
+            raise RuntimeError("ProcessPanel.set_recipe while active")
+        self._recipe_key = key
+        self._recipe = recipe
+        self._update_buttons()
+
+    @QtCore.pyqtSlot()
+    def clear_recipe(self) -> None:
+        if self._process_active or self._init_active:
+            raise RuntimeError("ProcessPanel.clear_recipe while active")
+        self._recipe_key = None
+        self._recipe = None
+        self._update_buttons()
+
+    @QtCore.pyqtSlot()
+    def request_stop(self) -> None:
+        self._require_reinit = True
+        self._recompute_robot_ready()
+
+        if self._process_thread is not None:
+            self._log("Stop: Anfrage an ProcessThread")
+            self._process_thread.request_stop()
+
+        if self._init_thread is not None and self._init_thread.isRunning():
+            self._log("Stop: Anfrage an RobotInitThread")
+            self._init_thread.request_stop()
+
+        if not self._init_active:
+            self.lblInit.setText("Init: – (required)")
+        self._update_buttons()
+
+    # ------------------------------------------------------------------
+    # Prozess & Init Handhabung
+    # ------------------------------------------------------------------
+
+    def _start_process(self, mode: str) -> None:
+        if self._process_active or self._init_active or not self._recipe_key:
+            return
+
+        if self._require_reinit:
+            QMessageBox.warning(self, "Process", "Nach STOP muss zuerst Init ausgeführt werden.")
+            return
+
+        self._process_active = True
+        self._active_mode = str(mode)
+        self.txtLog.clear()
+        self._log(f"=== {str(mode).upper()} gestartet ===")
+        self._update_buttons()
+
+        # Laden der aktuellen Rezept-Daten
+        recipe_run = self.repo.load_for_process(str(self._recipe_key))
+        
+        # XML-Kontext laden
+        rd = getattr(self.ctx, "robot_description", None)
+        u_xml = str(getattr(rd, "urdf_xml", "") or "")
+        s_xml = str(getattr(rd, "srdf_xml", "") or "")
+
+        self._process_thread = ProcessThread(
+            ctx=self.ctx, recipe=recipe_run, ros=self.ros, plc=self.plc,
+            mode=str(mode), urdf_xml=u_xml, srdf_xml=s_xml
+        )
+        self._process_thread.stateChanged.connect(self._on_process_state)
+        self._process_thread.logMessage.connect(self._log)
+        self._process_thread.notifyFinished.connect(self._on_process_finished_success)
+        self._process_thread.notifyError.connect(self._on_process_finished_error)
+        self._process_thread.start()
+
+    def _setup_init_thread(self) -> None:
+        self._init_thread = RobotInitThread(ros=self.ros)
+        self._init_thread.notifyFinished.connect(self._on_init_finished_ok)
+        self._init_thread.notifyError.connect(self._on_init_finished_err)
+        self._init_thread.logMessage.connect(self._log)
+        self._init_thread.stateChanged.connect(self._on_init_state)
+
+    def _on_init_clicked(self) -> None:
+        if self._process_active: return
+        self._init_active = True
+        self.lblInit.setText("Init: START")
+        self._update_buttons()
+        self._init_thread.startSignal.emit()
+
+    def _on_init_finished_ok(self) -> None:
+        self._init_active = False
+        self.lblInit.setText("Init: OK")
+        self._require_reinit = False
+        self._recompute_robot_ready()
+
+    def _on_init_finished_err(self, msg: str) -> None:
+        self._init_active = False
+        self.lblInit.setText("Init: ERROR")
+        self._require_reinit = True
+        self._recompute_robot_ready()
+
+    # ------------------------------------------------------------------
+    # Hilfsfunktionen
+    # ------------------------------------------------------------------
+
+    def _plc_execute_available(self) -> bool:
+        if self.plc is not None: return True
+        cfg = getattr(self.ctx, "plc", None)
+        return bool(getattr(cfg, "sim", False))
+
+    def _append_log(self, msg: str) -> None:
+        if msg: self.txtLog.append(str(msg))
+
+    def _log(self, msg: str) -> None:
+        self.sig_log.emit(str(msg))
+
+    @QtCore.pyqtSlot(str)
+    def _on_init_state(self, s: str) -> None:
+        self.lblInit.setText(f"Init: {s}")
+
     @QtCore.pyqtSlot(bool)
     def _on_robot_initialized_changed(self, v: bool) -> None:
         self._robot_initialized = bool(v)
@@ -349,141 +354,8 @@ class ProcessPanel(QWidget):
 
     @QtCore.pyqtSlot(object)
     def _on_joints(self, js) -> None:
-        if js is None or not hasattr(js, "position"):
-            self.RobotStatusGrp.set_joints(None)
-            return
-        self.RobotStatusGrp.set_joints(list(js.position or []))
-
-    # ------------------------------------------------------------------
-    # Robot Init
-    # ------------------------------------------------------------------
-
-    def _setup_init_thread(self) -> None:
-        if self._init_thread is not None:
-            return
-
-        self._init_thread = RobotInitThread(ros=self.ros)
-
-        self._init_thread.notifyFinished.connect(self._on_init_finished_ok)
-        self._init_thread.notifyError.connect(self._on_init_finished_err)
-
-        self._init_thread.logMessage.connect(self._log)
-        self._init_thread.stateChanged.connect(self._on_init_state)
-
-    @QtCore.pyqtSlot(str)
-    def _on_init_state(self, s: str) -> None:
-        self.lblInit.setText(f"Init: {s}")
-
-    def _on_init_clicked(self) -> None:
-        if self._process_active:
-            QMessageBox.warning(self, "Init", "Während eines laufenden Prozesses nicht möglich.")
-            return
-        if self._init_thread is None:
-            raise RuntimeError("ProcessPanel: RobotInitThread missing (strict)")
-        if self._init_thread.isRunning():
-            self._log("RobotInit: already running")
-            return
-
-        self._init_active = True
-        self.lblInit.setText("Init: START")
-        self._log("=== Robot-Init gestartet ===")
-
-        self._update_buttons()
-        self._init_thread.startSignal.emit()
-
-    def _on_init_finished_ok(self) -> None:
-        self._init_active = False
-        self.lblInit.setText("Init: OK")
-        self._log("=== Robot-Init erfolgreich abgeschlossen ===")
-
-        self._require_reinit = False
-        self._recompute_robot_ready()
-        self._update_buttons()
-
-    def _on_init_finished_err(self, msg: str) -> None:
-        self._init_active = False
-        self.lblInit.setText("Init: ERROR")
-        self._log(f"=== Robot-Init Fehler: {msg} ===")
-
-        self._require_reinit = True
-        self._recompute_robot_ready()
-        self._update_buttons()
-
-    # ------------------------------------------------------------------
-    # Context inputs for collection (robot_description)
-    # ------------------------------------------------------------------
-
-    def _ctx_robot_xml(self) -> Tuple[str, str]:
-        rd = getattr(self.ctx, "robot_description", None)
-        urdf = str(getattr(rd, "urdf_xml", "") or "")
-        srdf = str(getattr(rd, "srdf_xml", "") or "")
-        return urdf, srdf
-
-    # ------------------------------------------------------------------
-    # Process lifecycle
-    # ------------------------------------------------------------------
-
-    def _start_process(self, mode: str) -> None:
-        if self._process_active:
-            QMessageBox.warning(self, "Process", "Es läuft bereits ein Prozess.")
-            return
-        if self._init_active:
-            QMessageBox.warning(self, "Process", "Während RobotInit läuft nicht möglich.")
-            return
-
-        if not self._recipe_key:
-            QMessageBox.warning(self, "Process", "Kein Rezept geladen.")
-            return
-
-        if self._require_reinit:
-            QMessageBox.warning(self, "Process", "Nach STOP muss zuerst wieder Init ausgeführt werden.")
-            return
-
-        if not self._robot_ready:
-            QMessageBox.warning(self, "Process", "Robot nicht initialisiert / nicht ready.")
-            return
-        if mode == ProcessThread.MODE_EXECUTE and not self._plc_execute_available():
-            QMessageBox.warning(self, "Execute", "PLC nicht verfügbar (Execute benötigt PLC oder plc.sim=true).")
-            return
-
-        key = str(self._recipe_key)
-        recipe_run = self.repo.load_for_process(key)
-
-        # STRICT: Execute requires planned_traj baseline
-        if mode == ProcessThread.MODE_EXECUTE and getattr(recipe_run, "planned_traj", None) is None:
-            QMessageBox.warning(
-                self,
-                "Execute",
-                "Execute benötigt planned_traj.yaml (Baseline). Bitte zuerst Validate/Optimize ausführen.",
-            )
-            return
-
-        urdf_xml, srdf_xml = self._ctx_robot_xml()
-
-        self._process_active = True
-        self._active_mode = str(mode)
-        self.txtLog.clear()
-
-        self._log(f"=== {str(mode).upper()} gestartet ===")
-        self._update_buttons()
-        self.sig_run_started.emit(str(mode), key)
-
-        pt = ProcessThread(
-            ctx=self.ctx,
-            recipe=recipe_run,
-            ros=self.ros,
-            plc=self.plc,
-            mode=str(mode),
-            urdf_xml=urdf_xml,
-            srdf_xml=srdf_xml,
-        )
-        pt.stateChanged.connect(self._on_process_state)
-        pt.logMessage.connect(self._log)
-        pt.notifyFinished.connect(self._on_process_finished_success)
-        pt.notifyError.connect(self._on_process_finished_error)
-
-        self._process_thread = pt
-        pt.start()
+        if js is not None and hasattr(js, "position"):
+            self.RobotStatusGrp.set_joints(list(js.position or []))
 
     @QtCore.pyqtSlot(str)
     def _on_process_state(self, s: str) -> None:
@@ -493,79 +365,36 @@ class ProcessPanel(QWidget):
     def _finish_process_ui(self) -> None:
         pt = self._process_thread
         self._process_thread = None
-
         self._process_active = False
         self._active_mode = ""
         self._update_buttons()
-
-        if pt is not None:
-            try:
-                pt.deleteLater()
-            except Exception:
-                pass
-
-    # ------------------------------------------------------------------
-    # Persistence (STRICT: raw-only here)
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _yaml_write_file(path: str, obj: Any) -> None:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(obj or {}, f, allow_unicode=True, sort_keys=False)
-
-    def _persist_raw_runresult(self, *, key: str, rr: RunResult) -> None:
-        """
-        STRICT collect-only:
-          - Persist planned_traj.yaml + executed_traj.yaml
-          - DO NOT generate or persist TCP here (RecipePanel does postprocess+eval and persists TCP)
-        """
-        p = self.repo.bundle.paths(key)
-
-        planned_traj_path = str(getattr(p, "planned_traj_yaml", "") or "")
-        executed_traj_path = str(getattr(p, "executed_traj_yaml", "") or "")
-
-        planned_traj_doc = rr.planned_run.get("traj") if isinstance(rr.planned_run, dict) else {}
-        executed_traj_doc = rr.executed_run.get("traj") if isinstance(rr.executed_run, dict) else {}
-
-        if planned_traj_path:
-            self._yaml_write_file(planned_traj_path, planned_traj_doc)
-        if executed_traj_path:
-            self._yaml_write_file(executed_traj_path, executed_traj_doc)
-
-        self._log("Persist(raw): OK")
-
-    # ------------------------------------------------------------------
-    # Finished handlers
-    # ------------------------------------------------------------------
+        if pt: pt.deleteLater()
 
     @QtCore.pyqtSlot(object)
     def _on_process_finished_success(self, payload: object) -> None:
         key = str(self._recipe_key or "")
-
         try:
             rr = RunResult.from_process_payload(payload if isinstance(payload, dict) else {})
-        except Exception as e:
-            self._log(f"E: RunResult.from_process_payload failed: {e}")
-            self._finish_process_ui()
-            self.sig_run_error.emit(key, f"payload_decode_failed: {e}")
-            return
-
-        # STRICT: Collect-only. No FK, no TCP, no eval in ProcessPanel.
-        try:
             self._persist_raw_runresult(key=key, rr=rr)
         except Exception as e:
-            self._log(f"E: persist(raw) failed: {e}")
-            self._finish_process_ui()
-            self.sig_run_error.emit(key, f"persist_failed: {e}")
-            return
-
+            self._log(f"E: Post-Process Fehler: {e}")
         self._finish_process_ui()
-        self.sig_run_finished.emit(key, payload, rr)
+        self.sig_run_finished.emit(key, payload, None) # Payload reicht für RecipePanel
 
     @QtCore.pyqtSlot(str)
     def _on_process_finished_error(self, msg: str) -> None:
-        key = str(self._recipe_key or "")
-        self._log(f"=== Process ERROR: {msg} ===")
+        self._log(f"=== Prozess Fehler: {msg} ===")
         self._finish_process_ui()
-        self.sig_run_error.emit(key, str(msg or "unknown_error"))
+        self.sig_run_error.emit(str(self._recipe_key), str(msg))
+
+    def _persist_raw_runresult(self, *, key: str, rr: RunResult) -> None:
+        p = self.repo.bundle.paths(key)
+        def save(path, data):
+            if path:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    yaml.safe_dump(data or {}, f, allow_unicode=True, sort_keys=False)
+
+        save(getattr(p, "planned_traj_yaml", ""), rr.planned_run.get("traj"))
+        save(getattr(p, "executed_traj_yaml", ""), rr.executed_run.get("traj"))
+        self._log("Rohdaten gespeichert.")

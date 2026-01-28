@@ -213,141 +213,157 @@ topics:
         type: geometry_msgs/msg/PoseStamped
         qos: latched
         
-spray_path:
-  subscribe:
-    # --- Steuerung (Toggles) ---
-    # Compiled bleibt global (ein Toggle).
-    # Planned/Executed werden getrennt nach Stored vs Run getoggelt.
-    # show_planned/show_executed bleiben als "Master" (schalten beide).
-    - id: clear
-      name: spraycoater/spray_path/clear
-      type: std_msgs/msg/Empty
-      qos: latched
+  spray_path:
+    # NOTE (SSoT-Konvention):
+    # - subscribe: Topics, die DIESES Node abonniert (UI/Bridge -> Node => Bridge muss publishen)
+    # - publish:   Topics, die DIESES Node publiziert (Node -> RViz)
+    #
+    # Für BaseBridge.pub(...) müssen die UI->Node IDs zusätzlich in der Bridge-SSoT
+    # als "publish" geführt werden (Bridge-Perspektive). Wenn du NUR EINE topics.yaml
+    # fahren willst, musst du im Bridge-Loader beide Sektionen mappen.
+    #
+    # Inhaltlich (Node-Perspektive) ist das hier korrekt.
 
-    - id: show_compiled
-      name: spraycoater/spray_path/show_compiled
-      type: std_msgs/msg/Bool
-      qos: latched
+    subscribe:
+      # --- Steuerung (Toggles) ---
+      # Compiled bleibt global (ein Toggle).
+      # Planned/Executed werden getrennt nach Stored vs Run getoggelt.
+      # show_planned/show_executed bleiben als "Master" (schalten beide).
+      - id: clear
+        name: spraycoater/spray_path/clear
+        type: std_msgs/msg/Empty
+        qos: latched
 
-    # Master (optional / backward compatible)
-    - id: show_planned
-      name: spraycoater/spray_path/show_planned
-      type: std_msgs/msg/Bool
-      qos: latched
-    - id: show_executed
-      name: spraycoater/spray_path/show_executed
-      type: std_msgs/msg/Bool
-      qos: latched
+      - id: show_compiled
+        name: spraycoater/spray_path/show_compiled
+        type: std_msgs/msg/Bool
+        qos: latched
 
-    # Split toggles (NEU)
-    - id: show_planned_run
-      name: spraycoater/spray_path/show_planned_run
-      type: std_msgs/msg/Bool
-      qos: latched
-    - id: show_planned_stored
-      name: spraycoater/spray_path/show_planned_stored
-      type: std_msgs/msg/Bool
-      qos: latched
+      # Master (optional / backward compatible)
+      - id: show_planned
+        name: spraycoater/spray_path/show_planned
+        type: std_msgs/msg/Bool
+        qos: latched
 
-    - id: show_executed_run
-      name: spraycoater/spray_path/show_executed_run
-      type: std_msgs/msg/Bool
-      qos: latched
-    - id: show_executed_stored
-      name: spraycoater/spray_path/show_executed_stored
-      type: std_msgs/msg/Bool
-      qos: latched
+      - id: show_executed
+        name: spraycoater/spray_path/show_executed
+        type: std_msgs/msg/Bool
+        qos: latched
 
-    # --- COMPILED (Maske) ---
-    - id: compiled_poses_in
-      name: spraycoater/spray_path/compiled/poses_in
-      type: geometry_msgs/msg/PoseArray
-      qos: latched
+      # Split toggles (NEU)
+      - id: show_planned_run
+        name: spraycoater/spray_path/show_planned_run
+        type: std_msgs/msg/Bool
+        qos: latched
 
-    - id: compiled_markers_in
-      name: spraycoater/spray_path/compiled/markers_in
-      type: visualization_msgs/msg/MarkerArray
-      qos: latched
+      - id: show_planned_stored
+        name: spraycoater/spray_path/show_planned_stored
+        type: std_msgs/msg/Bool
+        qos: latched
 
-    # --- PLANNED: NEW (Run) ---
-    - id: planned_new_poses_in
-      name: spraycoater/spray_path/planned/new/poses_in
-      type: geometry_msgs/msg/PoseArray
-      qos: latched
+      - id: show_executed_run
+        name: spraycoater/spray_path/show_executed_run
+        type: std_msgs/msg/Bool
+        qos: latched
 
-    - id: planned_new_markers_in
-      name: spraycoater/spray_path/planned/new/markers_in
-      type: visualization_msgs/msg/MarkerArray
-      qos: latched
+      - id: show_executed_stored
+        name: spraycoater/spray_path/show_executed_stored
+        type: std_msgs/msg/Bool
+        qos: latched
 
-    # --- PLANNED: STORED (Disk) ---
-    - id: planned_stored_markers_in
-      name: spraycoater/spray_path/planned/stored/markers_in
-      type: visualization_msgs/msg/MarkerArray
-      qos: latched
+      # --- COMPILED (Maske) ---
+      - id: compiled_poses_in
+        name: spraycoater/spray_path/compiled/poses_in
+        type: geometry_msgs/msg/PoseArray
+        qos: latched
 
-    # --- EXECUTED: NEW (Run) ---
-    - id: executed_new_poses_in
-      name: spraycoater/spray_path/executed/new/poses_in
-      type: geometry_msgs/msg/PoseArray
-      qos: latched
+      - id: compiled_markers_in
+        name: spraycoater/spray_path/compiled/markers_in
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
 
-    - id: executed_new_markers_in
-      name: spraycoater/spray_path/executed/new/markers_in
-      type: visualization_msgs/msg/MarkerArray
-      qos: latched
+      # --- PLANNED: NEW (Run) ---
+      - id: planned_new_poses_in
+        name: spraycoater/spray_path/planned/new/poses_in
+        type: geometry_msgs/msg/PoseArray
+        qos: latched
 
-    # --- EXECUTED: STORED (Disk) ---
-    - id: executed_stored_markers_in
-      name: spraycoater/spray_path/executed/stored/markers_in
-      type: visualization_msgs/msg/MarkerArray
-      qos: latched
+      - id: planned_new_markers_in
+        name: spraycoater/spray_path/planned/new/markers_in
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
 
-  publish:
-    # --- Visualisierung (Cache Node -> RViz) ---
-    # (unveraendert)
+      # --- PLANNED: STORED (Disk) ---
+      - id: planned_stored_markers_in
+        name: spraycoater/spray_path/planned/stored/markers_in
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
 
-    # Compiled
-    - id: compiled_poses
-      name: spraycoater/spray_path/compiled/poses
-      type: geometry_msgs/msg/PoseArray
-      qos: latched
-    - id: compiled_markers
-      name: spraycoater/spray_path/compiled/markers
-      type: visualization_msgs/msg/MarkerArray
-      qos: latched
+      # --- EXECUTED: NEW (Run) ---
+      - id: executed_new_poses_in
+        name: spraycoater/spray_path/executed/new/poses_in
+        type: geometry_msgs/msg/PoseArray
+        qos: latched
 
-    # Planned (New)
-    - id: planned_new_poses
-      name: spraycoater/spray_path/planned/new/poses
-      type: geometry_msgs/msg/PoseArray
-      qos: latched
-    - id: planned_new_markers
-      name: spraycoater/spray_path/planned/new/markers
-      type: visualization_msgs/msg/MarkerArray
-      qos: latched
+      - id: executed_new_markers_in
+        name: spraycoater/spray_path/executed/new/markers_in
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
 
-    # Planned (Stored)
-    - id: planned_stored_markers
-      name: spraycoater/spray_path/planned/stored/markers
-      type: visualization_msgs/msg/MarkerArray
-      qos: latched
+      # --- EXECUTED: STORED (Disk) ---
+      - id: executed_stored_markers_in
+        name: spraycoater/spray_path/executed/stored/markers_in
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
 
-    # Executed (New)
-    - id: executed_new_poses
-      name: spraycoater/spray_path/executed/new/poses
-      type: geometry_msgs/msg/PoseArray
-      qos: latched
-    - id: executed_new_markers
-      name: spraycoater/spray_path/executed/new/markers
-      type: visualization_msgs/msg/MarkerArray
-      qos: latched
+    publish:
+      # --- Visualisierung (Cache Node -> RViz) ---
 
-    # Executed (Stored)
-    - id: executed_stored_markers
-      name: spraycoater/spray_path/executed/stored/markers
-      type: visualization_msgs/msg/MarkerArray
-      qos: latched
+      # Compiled
+      - id: compiled_poses
+        name: spraycoater/spray_path/compiled/poses
+        type: geometry_msgs/msg/PoseArray
+        qos: latched
+
+      - id: compiled_markers
+        name: spraycoater/spray_path/compiled/markers
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
+
+      # Planned (New)
+      - id: planned_new_poses
+        name: spraycoater/spray_path/planned/new/poses
+        type: geometry_msgs/msg/PoseArray
+        qos: latched
+
+      - id: planned_new_markers
+        name: spraycoater/spray_path/planned/new/markers
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
+
+      # Planned (Stored)
+      - id: planned_stored_markers
+        name: spraycoater/spray_path/planned/stored/markers
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
+
+      # Executed (New)
+      - id: executed_new_poses
+        name: spraycoater/spray_path/executed/new/poses
+        type: geometry_msgs/msg/PoseArray
+        qos: latched
+
+      - id: executed_new_markers
+        name: spraycoater/spray_path/executed/new/markers
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
+
+      # Executed (Stored)
+      - id: executed_stored_markers
+        name: spraycoater/spray_path/executed/stored/markers
+        type: visualization_msgs/msg/MarkerArray
+        qos: latched
+
 
 
 

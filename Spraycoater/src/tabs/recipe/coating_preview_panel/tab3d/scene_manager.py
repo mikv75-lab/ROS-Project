@@ -52,7 +52,6 @@ _LAYER_STYLE: Dict[str, Dict[str, Any]] = {
 }
 
 
-
 @dataclass
 class PreviewScene:
     bounds: Optional[Bounds]
@@ -493,6 +492,8 @@ class SceneManager:
             sub_mesh_world=scene.substrate_mesh,
             side=side,
             stand_off_mm=stand_off,
+            # NEW: 0..45 deg nozzle-tilt constraint (0 disables filter)
+            max_nozzle_tilt_deg=float(params.get("max_nozzle_tilt_deg", 0.0) or 0.0),
         )
 
         v_raw = getattr(rc, "valid", None)

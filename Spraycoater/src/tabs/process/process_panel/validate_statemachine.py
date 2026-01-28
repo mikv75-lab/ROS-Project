@@ -22,7 +22,7 @@ _LOG = logging.getLogger("tabs.process.validate_statemachine")
 
 class ProcessValidateStatemachine(BaseProcessStatemachine):
     """
-    Validate run: streams recipe points (Position + Orientation) as consecutive MoveIt pose commands.
+    Validate run: streams poses as consecutive MoveIt pose commands.
 
     COLLECT-ONLY (STRICT):
       - This statemachine ONLY drives motions and lets BaseProcessStatemachine collect raw trajectory snapshots.
@@ -30,17 +30,15 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
       - The returned RunResult payload contains planned/executed trajectories by segment only.
         Postprocess (FK/TCP) + evaluation happens later in RecipePanel/RecipeEvaluator.
 
-    IMPORTANT FIX (missing first leg / "wird gefahren aber nicht gespeichert"):
-      - MOVE_RECIPE must NOT start with pts[0] (NO-OP), because predispense already moved to pts[0].
-        NO-OP => often no trajectory => nothing to capture.
-      - First MOVE_RECIPE command must be pts[1] so the first leg (pts[0]->pts[1]) is recorded.
+    Segment/pose contract (STRICT, NEW draft layout):
+      - MOVE_PREDISPENSE: exactly draft.sides[side].predispense[0]
+      - MOVE_RECIPE:      exactly draft.sides[side].poses_quat[*]   (recipe-only)
+      - MOVE_RETREAT:     exactly draft.sides[side].retreat[0]
+      - MOVE_HOME:        (no poses; dedicated command)
 
-      Therefore (compiled points list pts[]):
-        MOVE_PREDISPENSE: [pts[0]]
-        MOVE_RECIPE:      pts[1:-1]
-        MOVE_RETREAT:     [pts[-1]]
-
-    Trajectory capture is handled by BaseProcessStatemachine (pairing + timeout; timeout starts after robot stops).
+    IMPORTANT:
+      - No slicing like recipe[0] / recipe[-1] anymore.
+      - We rely on Base helper `_draft_segment_pose_tuples()` so the contract is enforced in one place.
     """
 
     ROLE = "validate"
@@ -68,7 +66,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
 
         self._side = str(side or "top")
 
-        self._compiled_poses: List[Tuple[float, float, float, float, float, float, float]] = []
         self._cmd_poses_by_seg: Dict[str, List[Tuple[float, ...]]] = {}
         self._pending_recipe_poses: List[Tuple[float, ...]] = []
 
@@ -151,8 +148,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         if not self._apply_planner_config():
             return False
 
-        self._compiled_poses = self._get_compiled_poses(self._side)
-
         self._cmd_poses_by_seg.clear()
         self._pending_recipe_poses.clear()
         self._await_joint_update_for_next_pose = False
@@ -163,25 +158,28 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         except Exception:
             pass
 
-        if not self._compiled_poses:
-            self._signal_error(f"Validate: compiled path ist leer (side='{self._side}').")
+        # STRICT: segment-specific extraction (no slicing)
+        try:
+            pre = self._draft_segment_pose_tuples(side=self._side, seg=STATE_MOVE_PREDISPENSE)
+            recipe = self._draft_segment_pose_tuples(side=self._side, seg=STATE_MOVE_RECIPE)
+            ret = self._draft_segment_pose_tuples(side=self._side, seg=STATE_MOVE_RETREAT)
+        except Exception as e:
+            self._signal_error(f"Validate: Draft-Segmentierung fehlgeschlagen (side='{self._side}'): {e}")
             return False
 
-        pts = self._compiled_poses
-        n = len(pts)
+        if not pre:
+            self._signal_error(f"Validate: predispense fehlt (side='{self._side}').")
+            return False
+        if not recipe:
+            self._signal_error(f"Validate: poses_quat (recipe) ist leer (side='{self._side}').")
+            return False
+        if not ret:
+            self._signal_error(f"Validate: retreat fehlt (side='{self._side}').")
+            return False
 
-        pre: List[Tuple[float, ...]] = [pts[0]] if n >= 1 else []
-
-        if n >= 2:
-            recipe: List[Tuple[float, ...]] = list(pts[1:-1])
-            ret: List[Tuple[float, ...]] = [pts[-1]]
-        else:
-            recipe = []
-            ret = []
-
-        self._cmd_poses_by_seg[STATE_MOVE_PREDISPENSE] = pre
-        self._cmd_poses_by_seg[STATE_MOVE_RECIPE] = recipe
-        self._cmd_poses_by_seg[STATE_MOVE_RETREAT] = ret
+        self._cmd_poses_by_seg[STATE_MOVE_PREDISPENSE] = list(pre[:1])  # exactly one
+        self._cmd_poses_by_seg[STATE_MOVE_RECIPE] = list(recipe)        # full recipe list
+        self._cmd_poses_by_seg[STATE_MOVE_RETREAT] = list(ret[:1])      # exactly one
         self._cmd_poses_by_seg[STATE_MOVE_HOME] = []
 
         self._pending_recipe_poses = list(self._cmd_poses_by_seg[STATE_MOVE_RECIPE])
@@ -417,46 +415,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             self._ros.moveitpy.signals.moveToPoseRequested.emit(ps)
         except Exception as ex:
             self._signal_error(f"Validate: move_pose failed ({x:.1f},{y:.1f},{z:.1f}): {ex}")
-
-    def _get_compiled_poses(self, side: str) -> List[Tuple[float, float, float, float, float, float, float]]:
-        out: List[Tuple[float, float, float, float, float, float, float]] = []
-        try:
-            poses = self._recipe.draft_poses_quat(str(side))
-        except Exception:
-            return []
-
-        if not poses:
-            return []
-
-        for p in poses:
-            try:
-                if hasattr(p, "x"):
-                    val = (
-                        float(p.x),
-                        float(p.y),
-                        float(p.z),
-                        float(p.qx),
-                        float(p.qy),
-                        float(p.qz),
-                        float(p.qw),
-                    )
-                elif isinstance(p, dict):
-                    val = (
-                        float(p["x"]),
-                        float(p["y"]),
-                        float(p["z"]),
-                        float(p["qx"]),
-                        float(p["qy"]),
-                        float(p["qz"]),
-                        float(p["qw"]),
-                    )
-                else:
-                    continue
-                out.append(val)
-            except Exception:
-                continue
-
-        return out
 
     def _cleanup(self) -> None:
         try:

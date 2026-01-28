@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple, List
 
 import os
 import yaml
@@ -12,15 +12,6 @@ import functools
 
 def _dict(v: Any) -> Dict[str, Any]:
     return v if isinstance(v, dict) else {}
-
-
-def _get_nested(d: Dict[str, Any], path: Sequence[str], default: Any = None) -> Any:
-    cur: Any = d
-    for k in path:
-        if not isinstance(cur, dict):
-            return default
-        cur = cur.get(k)
-    return cur if cur is not None else default
 
 
 def _require_dict(d: Any, name: str) -> Dict[str, Any]:
@@ -145,10 +136,6 @@ def _mat4_inv_rigid(T: list[list[float]]) -> list[list[float]]:
 
 
 def _load_yaml_file(path: str) -> Dict[str, Any]:
-    """
-    Load YAML with an mtime-aware LRU cache.
-    This avoids re-reading SSoT YAMLs on every preview/eval cycle.
-    """
     if not path:
         raise ValueError("YAML path is empty")
     p = os.path.abspath(os.path.expanduser(path))
@@ -165,7 +152,8 @@ def _load_yaml_file(path: str) -> Dict[str, Any]:
 def _load_yaml_file_cached(abs_path: str, mtime: float) -> Dict[str, Any]:
     _ = float(mtime)  # part of cache key; invalidates when file changes
     with open(abs_path, "r", encoding="utf-8") as f:
-        return _dict(yaml.safe_load(f) or {})
+        v = yaml.safe_load(f)
+        return v if isinstance(v, dict) else {}
 
 
 def _scene_object_by_id(scene_doc: Dict[str, Any], oid: str) -> Dict[str, Any]:
@@ -196,18 +184,6 @@ def _tf_world_robot_mount_from_robot_yaml(robot_doc: Dict[str, Any]) -> list[lis
 
 
 def _tf_substrate_mount_to_substrate_from_mounts_yaml(*, mounts_doc: Dict[str, Any]) -> list[list[float]]:
-    """
-    Compute substrate_mount -> substrate from substrate_mounts.yaml SSoT.
-
-    Expected schema:
-      version: 1
-      active_mount: <name>
-      mounts:
-        <name>:
-          scene_offset:
-            xyz: [x,y,z]   # mm
-            rpy_deg: [r,p,y]
-    """
     active = str(mounts_doc.get("active_mount") or "").strip()
     if not active:
         raise ValueError("substrate_mounts.yaml: active_mount missing/empty")
@@ -227,17 +203,6 @@ def _compute_T_substrate_robot_mount_mm(
     mounts_yaml_path: str,
     substrate_mount_id: str = "substrate_mount",
 ) -> list[list[float]]:
-    """
-    Compute rigid transform: p_substrate = T_substrate_robot_mount * p_robot_mount
-
-    Uses:
-      scene.yaml:
-        world -> substrate_mount (id='substrate_mount', frame='world')
-      substrate_mounts.yaml:
-        substrate_mount -> substrate (active_mount.scene_offset)  [SSoT]
-      robot.yaml:
-        world -> robot_mount
-    """
     scene_doc = _load_yaml_file(scene_yaml_path)
     robot_doc = _load_yaml_file(robot_yaml_path)
     mounts_doc = _load_yaml_file(mounts_yaml_path)
@@ -248,7 +213,6 @@ def _compute_T_substrate_robot_mount_mm(
     T_world_sub_mount = _tf_from_scene_obj_meters(o_mount)
 
     T_sub_mount_substrate = _tf_substrate_mount_to_substrate_from_mounts_yaml(mounts_doc=mounts_doc)
-
     T_world_substrate = _mat4_mul(T_world_sub_mount, T_sub_mount_substrate)
 
     T_world_robot_mount = _tf_world_robot_mount_from_robot_yaml(robot_doc)
@@ -258,22 +222,25 @@ def _compute_T_substrate_robot_mount_mm(
 
 
 # ============================================================
-# RunResult
+# RunResult (STRICT, no legacy/fallback)
 # ============================================================
 
 
 @dataclass
 class RunResult:
     """
-    STRICT run result container (SSoT).
+    STRICT run result container.
 
-    IMPORTANT:
-      - Process collects ONLY raw artifacts (traj + robot_description).
-      - FK/TCP building is a deterministic post-step.
-      - Evaluation is explicit (call evaluate_tcp_against_draft()).
+    Contracts:
+      - planned_run/executed_run contain raw traj and derived tcp.
+      - tcp target frame MUST be 'substrate'.
+      - evaluation is explicit via evaluate_tcp_against_draft().
+      - UI shows the report_text from this class (stable schema).
 
-    planned_run  = {"traj": <JTBySegment YAML dict>, "tcp": <TCP YAML dict>}
-    executed_run = {"traj": <JTBySegment YAML dict>, "tcp": <TCP YAML dict>}
+    NOTE:
+      - attach_recipe() attaches the current Recipe object to this RunResult.
+        This enables display-only metrics (e.g. speed setpoint) without having
+        to pass recipe around everywhere.
     """
 
     urdf_xml: str = ""
@@ -288,8 +255,13 @@ class RunResult:
     valid: bool = True
     invalid_reason: str = ""
 
-    # STRICT invariant: TCP target frame is ALWAYS substrate.
     TCP_TARGET_FRAME: str = "substrate"
+
+    # speed metric: we only display it (no score), recipe segment only
+    DEFAULT_RECIPE_SEGMENT: str = "MOVE_RECIPE"
+
+    # attached recipe (UI-owned object reference; NOT persisted)
+    _attached_recipe: Any = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self.urdf_xml = str(self.urdf_xml or "")
@@ -308,6 +280,31 @@ class RunResult:
 
         self.valid = bool(self.valid)
         self.invalid_reason = str(self.invalid_reason or "")
+
+        if self.TCP_TARGET_FRAME != "substrate":
+            raise ValueError("RunResult: TCP_TARGET_FRAME must be 'substrate' (strict invariant).")
+
+    # ------------------------------------------------------------
+    # recipe attachment (STRICT)
+    # ------------------------------------------------------------
+
+    def attach_recipe(self, recipe: Any) -> None:
+        """
+        Attaches a Recipe object reference (UI-side) to this RunResult.
+
+        STRICT:
+          - recipe must not be None
+          - no persistence; this is runtime-only
+        """
+        if recipe is None:
+            raise ValueError("RunResult.attach_recipe: recipe is None (strict)")
+        self._attached_recipe = recipe
+
+    def _require_attached_recipe(self) -> Any:
+        r = self._attached_recipe
+        if r is None:
+            raise RuntimeError("RunResult: recipe not attached. Call rr.attach_recipe(recipe) first.")
+        return r
 
     # ------------------------------------------------------------
     # basic setters
@@ -337,53 +334,8 @@ class RunResult:
         self.invalid_reason = str(reason or "invalid")
 
     # ------------------------------------------------------------
-    # formatting helpers (STRICT: do not collapse False/0 to empty)
+    # counters
     # ------------------------------------------------------------
-
-    @staticmethod
-    def _fmt_bool(v: Any) -> str:
-        if v is True:
-            return "true"
-        if v is False:
-            return "false"
-        return "–"
-
-    @staticmethod
-    def _fmt_num3(v: Any) -> str:
-        if v is None:
-            return "–"
-        if isinstance(v, bool):
-            return "true" if v else "false"
-        if isinstance(v, (int, float)):
-            return f"{float(v):.3f}"
-        return str(v)
-
-    @staticmethod
-    def _fmt_text(v: Any) -> str:
-        if v is None:
-            return "–"
-        if isinstance(v, bool):
-            return "true" if v else "false"
-        s = str(v).strip()
-        return s if s else "–"
-
-    @staticmethod
-    def _pad_table(rows: list[tuple[str, str, str]]) -> str:
-        if not rows:
-            return ""
-        c0 = max(len(r[0]) for r in rows)
-        c1 = max(len(r[1]) for r in rows)
-        c2 = max(len(r[2]) for r in rows)
-
-        def line(a: str, b: str, c: str) -> str:
-            return f"{a.ljust(c0)} | {b.ljust(c1)} | {c.ljust(c2)}"
-
-        out: list[str] = []
-        out.append(line("topic", "planned", "executed"))
-        out.append(line("-" * 5, "-" * 6, "-" * 8))
-        for a, b, c in rows:
-            out.append(line(a, b, c))
-        return "\n".join(out)
 
     @staticmethod
     def _count_tcp_poses(doc: Any) -> int:
@@ -422,195 +374,366 @@ class RunResult:
                     total += len(pts2)
         return int(total)
 
-    def report_text(
-        self,
-        *,
-        title: str = "=== CURRENT RUN (Live) ===",
-        include_traj: bool = True,
-        include_tcp: bool = True,
-        include_reason: bool = True,
-    ) -> str:
-        """
-        Builds the exact table string for the UI. Panel must only display this string.
-
-        IMPORTANT:
-          - Uses unified top-level eval fields if present (planned_score/executed_score, planned_valid/executed_valid).
-        """
-        pl_tcp = self.planned_run.get("tcp") if isinstance(self.planned_run, dict) else {}
-        ex_tcp = self.executed_run.get("tcp") if isinstance(self.executed_run, dict) else {}
-        pl_traj = self.planned_run.get("traj") if isinstance(self.planned_run, dict) else {}
-        ex_traj = self.executed_run.get("traj") if isinstance(self.executed_run, dict) else {}
-
-        ev = self.eval if isinstance(self.eval, dict) else {}
-
-        thr = ev.get("threshold", None)
-        overall_valid = ev.get("valid", None)
-
-        total_score = ev.get("score")
-        if total_score is None and isinstance(ev.get("total"), dict):
-            total_score = ev["total"].get("score")
-
-        # prefer explicit top-level per-mode fields
-        p_score = ev.get("planned_score", None)
-        e_score = ev.get("executed_score", None)
-        p_thr_ok = ev.get("planned_valid", None)
-        e_thr_ok = ev.get("executed_valid", None)
-
-        # fallback to legacy nested modes
-        p_mode = ev.get("planned") if isinstance(ev.get("planned"), dict) else {}
-        e_mode = ev.get("executed") if isinstance(ev.get("executed"), dict) else {}
-        if p_score is None:
-            p_score = p_mode.get("score")
-        if e_score is None:
-            e_score = e_mode.get("score")
-
-        rows: list[tuple[str, str, str]] = []
-
-        if include_traj:
-            rows.append(("traj_points", str(self._count_traj_points(pl_traj)), str(self._count_traj_points(ex_traj))))
-
-        if include_tcp:
-            rows.append(("tcp_poses", str(self._count_tcp_poses(pl_tcp)), str(self._count_tcp_poses(ex_tcp))))
-            rows.append(("tcp_frame", self._fmt_text(pl_tcp.get("frame")), self._fmt_text(ex_tcp.get("frame"))))
-
-        rows.append(("eval_valid", self._fmt_bool(overall_valid), self._fmt_bool(overall_valid)))
-        rows.append(("eval_thr", self._fmt_num3(thr), self._fmt_num3(thr)))
-        rows.append(("eval_score", self._fmt_num3(total_score), self._fmt_num3(total_score)))
-
-        # threshold-aware per-mode flags (if present)
-        if p_thr_ok is not None or e_thr_ok is not None:
-            rows.append(("mode_ok", self._fmt_bool(p_thr_ok), self._fmt_bool(e_thr_ok)))
-
-        # per-mode scores
-        if p_score is not None or e_score is not None:
-            rows.append(("mode_score", self._fmt_num3(p_score), self._fmt_num3(e_score)))
-
-        comp = ev.get("comparison")
-        if isinstance(comp, list):
-            for r in comp:
-                if not isinstance(r, dict):
-                    continue
-                metric = self._fmt_text(r.get("metric"))
-                rows.append((f"metric:{metric}", self._fmt_text(r.get("planned")), self._fmt_text(r.get("executed"))))
-
-        out: list[str] = []
-        out.append(str(title or "").strip())
-        out.append(self._pad_table(rows))
-
-        if include_reason:
-            inv = self._fmt_text(ev.get("invalid_reason"))
-            if inv != "–":
-                out.append("")
-                out.append(f"reason: {inv}")
-
-        return "\n".join(out).strip()
-
     # ------------------------------------------------------------
-    # eval persistence helpers (split planned/executed)
+    # Speed metric helpers (display-only; no scoring)
     # ------------------------------------------------------------
 
     @staticmethod
-    def _split_eval_for_tcp_docs(full_eval: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """
-        Convert a unified evaluator output into two per-TCP eval dicts:
+    def _duration_s_from_tfs(tfs: Any) -> float:
+        # supports {"sec","nanosec"} or [sec,nsec]
+        if isinstance(tfs, dict):
+            sec = int(tfs.get("sec", 0))
+            nsec = int(tfs.get("nanosec", 0))
+            return float(sec) + float(nsec) * 1e-9
+        if isinstance(tfs, (list, tuple)) and len(tfs) >= 2:
+            sec = int(tfs[0])
+            nsec = int(tfs[1])
+            return float(sec) + float(nsec) * 1e-9
+        return 0.0
 
-          - planned_tcp.eval   -> planned score/valid/invalid_reason
-          - executed_tcp.eval  -> executed score/valid/invalid_reason
+    @classmethod
+    def _segment_duration_s_from_traj(cls, traj_doc: Dict[str, Any], seg_name: str) -> Optional[float]:
+        segs = traj_doc.get("segments")
+        if not isinstance(segs, dict):
+            return None
+        seg = segs.get(seg_name)
+        if not isinstance(seg, dict):
+            return None
+        pts = seg.get("points")
+        if not isinstance(pts, list) or len(pts) < 2:
+            # also allow nested joint_trajectory.points
+            jt = seg.get("joint_trajectory")
+            if isinstance(jt, dict):
+                pts = jt.get("points")
+        if not isinstance(pts, list) or len(pts) < 2:
+            return None
 
-        STRICT:
-          - Prefer evaluator-provided fields:
-              planned_valid / executed_valid  (threshold-aware)
-              planned_score / executed_score
-          - Fallback to legacy nested dicts if those are absent.
-        """
-        ev = _dict(full_eval)
+        # duration from first->last time_from_start (assumes monotonic)
+        t0 = cls._duration_s_from_tfs(_dict(pts[0]).get("time_from_start"))
+        t1 = cls._duration_s_from_tfs(_dict(pts[-1]).get("time_from_start"))
+        dt = float(t1 - t0)
+        if dt <= 0.0:
+            return None
+        return dt
 
-        # threshold (fallback only)
-        thr = ev.get("threshold", None)
-        try:
-            thr_f = float(thr) if thr is not None else 90.0
-        except Exception:
-            thr_f = 90.0
-
-        p_mode = _dict(ev.get("planned"))
-        e_mode = _dict(ev.get("executed"))
-
-        def _float_or0(v: Any) -> float:
+    @staticmethod
+    def _extract_xyz_mm_from_pose(p: Any) -> Optional[Tuple[float, float, float]]:
+        # supports:
+        #   [x,y,z,qx,qy,qz,qw]
+        #   {"xyz":[...]} / {"position":[...]} / {"p":[...]} / {"xyz_mm":[...]}
+        if isinstance(p, (list, tuple)) and len(p) >= 3:
             try:
-                return float(v) if v is not None else 0.0
+                return (float(p[0]), float(p[1]), float(p[2]))
             except Exception:
-                return 0.0
+                return None
+        if isinstance(p, dict):
+            for k in ("xyz_mm", "xyz", "position", "p"):
+                v = p.get(k)
+                if isinstance(v, (list, tuple)) and len(v) == 3:
+                    try:
+                        return (float(v[0]), float(v[1]), float(v[2]))
+                    except Exception:
+                        return None
+        return None
 
-        # scores: prefer top-level
-        p_score = ev.get("planned_score", None)
-        e_score = ev.get("executed_score", None)
-        if p_score is None:
-            p_score = p_mode.get("score")
-            if p_score is None and isinstance(p_mode.get("total"), dict):
-                p_score = p_mode["total"].get("score")
-        if e_score is None:
-            e_score = e_mode.get("score")
-            if e_score is None and isinstance(e_mode.get("total"), dict):
-                e_score = e_mode["total"].get("score")
+    @classmethod
+    def _tcp_segment_poses_quat(cls, tcp_doc: Dict[str, Any], seg_name: str) -> Optional[List[Any]]:
+        """
+        STRICT-ish: only returns poses if segmentation exists in tcp doc.
+        We do NOT guess across all poses, because you explicitly want recipe-segment-only.
+        Supported shapes:
+          tcp["segments"][seg]["poses_quat"]
+          tcp["sides"][side]["segments"][seg]["poses_quat"]
+        """
+        segs = tcp_doc.get("segments")
+        if isinstance(segs, dict):
+            seg = segs.get(seg_name)
+            if isinstance(seg, dict):
+                pq = seg.get("poses_quat")
+                if isinstance(pq, list) and len(pq) >= 2:
+                    return pq
 
-        p_score_f = _float_or0(p_score)
-        e_score_f = _float_or0(e_score)
+        sides = tcp_doc.get("sides")
+        if isinstance(sides, dict):
+            for _, s in sides.items():
+                if not isinstance(s, dict):
+                    continue
+                ssegs = s.get("segments")
+                if not isinstance(ssegs, dict):
+                    continue
+                seg = ssegs.get(seg_name)
+                if not isinstance(seg, dict):
+                    continue
+                pq = seg.get("poses_quat")
+                if isinstance(pq, list) and len(pq) >= 2:
+                    return pq
 
-        # validity: prefer threshold-aware booleans if evaluator provides them
-        if "planned_valid" in ev:
-            p_valid = bool(ev.get("planned_valid"))
-        else:
-            # legacy: mode.valid meant computed_ok; apply threshold here as fallback
-            p_valid = bool(p_mode.get("valid", False)) and (p_score_f >= thr_f)
+        return None
 
-        if "executed_valid" in ev:
-            e_valid = bool(ev.get("executed_valid"))
-        else:
-            e_valid = bool(e_mode.get("valid", False)) and (e_score_f >= thr_f)
+    @classmethod
+    def _tcp_length_mm_from_poses(cls, poses_quat: List[Any]) -> Optional[float]:
+        import math
 
-        base: Dict[str, Any] = dict(ev)
-        base.pop("fk_meta", None)
+        prev = None
+        L = 0.0
+        for p in poses_quat:
+            xyz = cls._extract_xyz_mm_from_pose(p)
+            if xyz is None:
+                continue
+            if prev is not None:
+                dx = xyz[0] - prev[0]
+                dy = xyz[1] - prev[1]
+                dz = xyz[2] - prev[2]
+                L += math.sqrt(dx * dx + dy * dy + dz * dz)
+            prev = xyz
+        if L <= 0.0:
+            return None
+        return float(L)
 
-        # mode-specific invalid reasons:
-        # - if computed failed: keep mode invalid_reason
-        # - else if threshold failed: score_below_threshold
-        def _mode_reason(mode: Dict[str, Any], ok: bool, *, score: float) -> str:
-            if ok:
-                return ""
-            mr = mode.get("invalid_reason")
-            if isinstance(mr, str) and mr.strip():
-                return mr.strip()
-            if score < thr_f:
-                return "score_below_threshold"
-            # last resort: propagate global invalid_reason
-            ir = ev.get("invalid_reason")
-            return str(ir or "invalid")
+    @staticmethod
+    def _speed_setpoint_mm_s(recipe: Any) -> Optional[float]:
+        # display-only; omit if not present
+        try:
+            params = getattr(recipe, "parameters", None)
+            if isinstance(params, dict):
+                v = params.get("speed_mm_s", None)
+            else:
+                v = getattr(params, "speed_mm_s", None) if params is not None else None
+            if v is None:
+                return None
+            vv = float(v)
+            if vv <= 0.0:
+                return None
+            return vv
+        except Exception:
+            return None
 
-        planned_ev = dict(base)
-        planned_ev["mode"] = "planned"
-        planned_ev["valid"] = bool(p_valid)
-        planned_ev["score"] = float(p_score_f)
-        planned_ev["total"] = {"score": float(p_score_f)}
-        planned_ev["invalid_reason"] = _mode_reason(p_mode, p_valid, score=p_score_f)
+    def _compute_avg_speed_recipe_segment(
+        self,
+        *,
+        recipe: Any,
+        which: str,
+        seg_name: str,
+    ) -> Optional[Dict[str, float]]:
+        which = str(which or "").strip().lower()
+        if which not in ("planned", "executed"):
+            raise ValueError(f"which must be planned/executed, got {which!r}")
 
-        executed_ev = dict(base)
-        executed_ev["mode"] = "executed"
-        executed_ev["valid"] = bool(e_valid)
-        executed_ev["score"] = float(e_score_f)
-        executed_ev["total"] = {"score": float(e_score_f)}
-        executed_ev["invalid_reason"] = _mode_reason(e_mode, e_valid, score=e_score_f)
+        speed_set = self._speed_setpoint_mm_s(recipe)
+        if speed_set is None:
+            return None
 
-        return planned_ev, executed_ev
+        traj_doc = _dict((_dict(self.planned_run) if which == "planned" else _dict(self.executed_run)).get("traj"))
+        tcp_doc = _dict((_dict(self.planned_run) if which == "planned" else _dict(self.executed_run)).get("tcp"))
+
+        dt = self._segment_duration_s_from_traj(traj_doc, seg_name)
+        if dt is None:
+            return None
+
+        pq = self._tcp_segment_poses_quat(tcp_doc, seg_name)
+        if pq is None:
+            return None
+
+        L = self._tcp_length_mm_from_poses(pq)
+        if L is None:
+            return None
+
+        v = float(L / dt) if dt > 0.0 else 0.0
+        pct = float(100.0 * (v / speed_set)) if speed_set > 0.0 else 0.0
+
+        return {
+            "speed_set_mm_s": float(speed_set),
+            "avg_speed_mm_s": float(v),
+            "speed_percent": float(pct),
+        }
+
+    # ------------------------------------------------------------
+    # report formatting (TWO columns: planned + executed)
+    # ------------------------------------------------------------
+
+    @staticmethod
+    def _fmt_float(v: Any, nd: int) -> str:
+        try:
+            return f"{float(v):.{nd}f}"
+        except Exception:
+            return "0.000" if nd >= 3 else "0.000"
+
+    @staticmethod
+    def _fmt_bool_yesno(v: Any) -> str:
+        return "yes" if bool(v) else "no"
+
+    def report_text(self, *, title: str = "=== CURRENT RUN (Live) ===") -> str:
+        """
+        EXACT UI string (stable) with TWO columns: planned + executed.
+
+        Speed is display-only and will be shown if recipe is attached and
+        both planned/executed values exist in eval summaries.
+        """
+        ev = _dict(self.eval)
+
+        sel = _dict(ev.get("selection"))
+        recipe_id = sel.get("recipe", None)
+        tool = sel.get("tool", None)
+        substrate = sel.get("substrate", None)
+        mount = sel.get("mount", None)
+
+        pl_traj = _dict(_dict(self.planned_run).get("traj"))
+        ex_traj = _dict(_dict(self.executed_run).get("traj"))
+        pl_tcp = _dict(_dict(self.planned_run).get("tcp"))
+        ex_tcp = _dict(_dict(self.executed_run).get("tcp"))
+
+        pl_traj_points = self._count_traj_points(pl_traj)
+        ex_traj_points = self._count_traj_points(ex_traj)
+        pl_tcp_samples = self._count_tcp_poses(pl_tcp)
+        ex_tcp_samples = self._count_tcp_poses(ex_tcp)
+
+        overall_valid = bool(ev.get("valid", False))
+        reason = str(ev.get("invalid_reason") or "").strip()
+        reason_txt = "no" if overall_valid else (reason if reason else "yes")
+
+        thr = float(ev.get("threshold", 90.0))
+        overall_score = float(ev.get("score", 0.0))
+
+        pl_ok = bool(ev.get("planned_valid", False))
+        ex_ok = bool(ev.get("executed_valid", False))
+        pl_score = float(ev.get("planned_score", 0.0))
+        ex_score = float(ev.get("executed_score", 0.0))
+
+        pl_sum = _dict(_dict(ev.get("planned")).get("summary"))
+        ex_sum = _dict(_dict(ev.get("executed")).get("summary"))
+
+        def gsum(d: Dict[str, Any], key: str, default: Optional[float] = None) -> Optional[float]:
+            if not isinstance(d, dict) or key not in d:
+                return default
+            try:
+                v = float(d.get(key))
+            except Exception:
+                return default
+            return v
+
+        # position
+        pl_pos_mean = gsum(pl_sum, "mean_l2_mm", 0.0) or 0.0
+        pl_pos_p95 = gsum(pl_sum, "p95_l2_mm", 0.0) or 0.0
+        pl_pos_worst = gsum(pl_sum, "max_l2_mm", 0.0) or 0.0
+
+        ex_pos_mean = gsum(ex_sum, "mean_l2_mm", 0.0) or 0.0
+        ex_pos_p95 = gsum(ex_sum, "p95_l2_mm", 0.0) or 0.0
+        ex_pos_worst = gsum(ex_sum, "max_l2_mm", 0.0) or 0.0
+
+        # orientation
+        pl_ori_mean = gsum(pl_sum, "mean_angle_deg", 0.0) or 0.0
+        pl_ori_p95 = gsum(pl_sum, "p95_angle_deg", 0.0) or 0.0
+        pl_ori_worst = gsum(pl_sum, "max_angle_deg", 0.0) or 0.0
+
+        ex_ori_mean = gsum(ex_sum, "mean_angle_deg", 0.0) or 0.0
+        ex_ori_p95 = gsum(ex_sum, "p95_angle_deg", 0.0) or 0.0
+        ex_ori_worst = gsum(ex_sum, "max_angle_deg", 0.0) or 0.0
+
+        # stand-off Z
+        pl_z_mean = gsum(pl_sum, "mean_abs_dz_mm", 0.0) or 0.0
+        pl_z_p95 = gsum(pl_sum, "p95_abs_dz_mm", 0.0) or 0.0
+        pl_z_worst = gsum(pl_sum, "max_abs_dz_mm", 0.0) or 0.0
+
+        ex_z_mean = gsum(ex_sum, "mean_abs_dz_mm", 0.0) or 0.0
+        ex_z_p95 = gsum(ex_sum, "p95_abs_dz_mm", 0.0) or 0.0
+        ex_z_worst = gsum(ex_sum, "max_abs_dz_mm", 0.0) or 0.0
+
+        # path length delta
+        pl_delta_L = gsum(pl_sum, "delta_L_percent", 0.0) or 0.0
+        ex_delta_L = gsum(ex_sum, "delta_L_percent", 0.0) or 0.0
+
+        # --------------------------------------------------------
+        # Speed (display-only, recipe-derived; NO have_speed gate)
+        # We show speed only if keys exist (no NaN logic).
+        # --------------------------------------------------------
+        sp = gsum(ex_sum, "speed_set_mm_s", None)
+        if sp is None:
+            sp = gsum(pl_sum, "speed_set_mm_s", None)
+
+        pl_v = gsum(pl_sum, "avg_speed_mm_s", None)
+        ex_v = gsum(ex_sum, "avg_speed_mm_s", None)
+        pl_vpct = gsum(pl_sum, "speed_percent", None)
+        ex_vpct = gsum(ex_sum, "speed_percent", None)
+
+        show_speed = (sp is not None) and (pl_v is not None) and (ex_v is not None) and (pl_vpct is not None) and (ex_vpct is not None)
+
+        lines: list[str] = []
+        lines.append(str(title or "").strip())
+        lines.append(f"Recipe:    {recipe_id if recipe_id is not None else 'None'}")
+        lines.append(f"Valid:             {self._fmt_bool_yesno(overall_valid)}")
+        lines.append(f"Reason:            {reason_txt}")
+        lines.append("")
+        lines.append(f"Tool:      {tool if tool is not None else '-'}")
+        lines.append(f"Substrate: {substrate if substrate is not None else '-'}")
+        lines.append(f"Mount:     {mount if mount is not None else '-'}")
+        lines.append("")
+
+        lines.append("Counts (planned | executed):")
+        lines.append(f"  Trajectory points: {pl_traj_points} | {ex_traj_points}")
+        lines.append(f"  TCP samples:       {pl_tcp_samples} | {ex_tcp_samples}")
+        lines.append("")
+
+        lines.append("Deviations vs. draft (planned | executed):")
+        lines.append(
+            f"  Position (XYZ) mean:    {self._fmt_float(pl_pos_mean, 3)} mm | {self._fmt_float(ex_pos_mean, 3)} mm"
+        )
+        lines.append(
+            f"  Position (XYZ) p95:     {self._fmt_float(pl_pos_p95, 3)} mm | {self._fmt_float(ex_pos_p95, 3)} mm"
+        )
+        lines.append(
+            f"  Position (XYZ) worst:   {self._fmt_float(pl_pos_worst, 3)} mm | {self._fmt_float(ex_pos_worst, 3)} mm"
+        )
+        lines.append("")
+        lines.append(
+            f"  Orientation (RPY) mean: {self._fmt_float(pl_ori_mean, 3)} deg | {self._fmt_float(ex_ori_mean, 3)} deg"
+        )
+        lines.append(
+            f"  Orientation (RPY) p95:  {self._fmt_float(pl_ori_p95, 3)} deg | {self._fmt_float(ex_ori_p95, 3)} deg"
+        )
+        lines.append(
+            f"  Orientation (RPY) worst:{self._fmt_float(pl_ori_worst, 3)} deg | {self._fmt_float(ex_ori_worst, 3)} deg"
+        )
+        lines.append("")
+        lines.append(
+            f"  Stand-off (Z) mean:     {self._fmt_float(pl_z_mean, 3)} mm | {self._fmt_float(ex_z_mean, 3)} mm"
+        )
+        lines.append(
+            f"  Stand-off (Z) p95:      {self._fmt_float(pl_z_p95, 3)} mm | {self._fmt_float(ex_z_p95, 3)} mm"
+        )
+        lines.append(
+            f"  Stand-off (Z) worst:    {self._fmt_float(pl_z_worst, 3)} mm | {self._fmt_float(ex_z_worst, 3)} mm"
+        )
+        lines.append("")
+        lines.append(f"Path length delta:  {self._fmt_float(pl_delta_L, 3)} % | {self._fmt_float(ex_delta_L, 3)} %")
+
+        if show_speed:
+            lines.append("")
+            lines.append("Avg speed (recipe segment) (planned | executed):")
+            lines.append(f"  Target: {self._fmt_float(sp, 1)} mm/s")
+            lines.append(
+                f"  Achieved: {self._fmt_float(pl_v, 1)} mm/s ({self._fmt_float(pl_vpct, 1)} %) | "
+                f"{self._fmt_float(ex_v, 1)} mm/s ({self._fmt_float(ex_vpct, 1)} %)"
+            )
+
+        lines.append("")
+        lines.append(f"Eval threshold:    {self._fmt_float(thr, 3)}")
+        lines.append(f"Mode valid:        {self._fmt_bool_yesno(pl_ok)} | {self._fmt_bool_yesno(ex_ok)}")
+        lines.append(f"Mode score:        {self._fmt_float(pl_score, 3)} / 100 | {self._fmt_float(ex_score, 3)} / 100")
+        lines.append(f"Overall score:     {self._fmt_float(overall_score, 3)} / 100")
+
+        return "\n".join(lines).rstrip()
+
+    # ------------------------------------------------------------
+    # eval persistence (STRICT)
+    # ------------------------------------------------------------
 
     def set_eval(self, eval_dict: Dict[str, Any] | None) -> None:
         """
-        Stores eval dict on RunResult AND embeds per-mode eval into planned/executed TCP YAML docs.
+        Stores eval dict on RunResult and embeds it into tcp docs.
 
-        Additionally:
-          - Writes prebuilt report strings so UI panels only display them.
-            * self.eval["report_text_live"]
-            * self.eval["report_text_disk"]
-            * planned_tcp.eval["report_text"] / executed_tcp.eval["report_text"]  (disk view)
+        STRICT:
+          - No legacy splitting/fallback.
+          - planned_run.tcp.eval and executed_run.tcp.eval each get the same eval dict.
         """
         self.eval = _dict(eval_dict)
 
@@ -621,146 +744,16 @@ class RunResult:
             pl_tcp_doc["fk_meta"] = dict(self.fk_meta)
             ex_tcp_doc["fk_meta"] = dict(self.fk_meta)
 
-        # Precompute report strings (do this BEFORE splitting, uses self.eval)
+        # Precompute report string (the UI can display exactly this)
         if self.eval:
-            try:
-                self.eval["report_text_live"] = self.report_text(
-                    title="=== CURRENT RUN (Live) ===", include_traj=True, include_tcp=True, include_reason=True
-                )
-            except Exception:
-                pass
-            try:
-                self.eval["report_text_disk"] = self.report_text(
-                    title="=== STORED EVAL (Disk) ===", include_traj=False, include_tcp=True, include_reason=True
-                )
-            except Exception:
-                pass
+            self.eval["report_text_live"] = self.report_text(title="=== CURRENT RUN (Live) ===")
+            self.eval["report_text_disk"] = self.report_text(title="=== STORED EVAL (Disk) ===")
 
-        if self.eval:
-            pl_eval, ex_eval = self._split_eval_for_tcp_docs(self.eval)
-
-            rep_disk = self.eval.get("report_text_disk")
-            if isinstance(rep_disk, str) and rep_disk.strip():
-                pl_eval["report_text"] = rep_disk
-                ex_eval["report_text"] = rep_disk
-
-            pl_tcp_doc["eval"] = pl_eval
-            ex_tcp_doc["eval"] = ex_eval
+        pl_tcp_doc["eval"] = dict(self.eval)
+        ex_tcp_doc["eval"] = dict(self.eval)
 
         self.planned_run["tcp"] = pl_tcp_doc
         self.executed_run["tcp"] = ex_tcp_doc
-
-    # ------------------------------------------------------------
-    # derived helpers (UI / persist)
-    # ------------------------------------------------------------
-
-    def eval_invalid_reason(self) -> str:
-        if not self.eval:
-            return "unevaluated"
-        v = self.eval.get("valid")
-        if v is True:
-            return ""
-        return str(self.eval.get("invalid_reason") or "eval_invalid")
-
-    def eval_summary_line(self) -> str:
-        if not self.eval:
-            return "unevaluated"
-
-        valid = self.eval.get("valid")
-        dom = self.eval.get("domain") or ""
-        total = _get_nested(self.eval, ["total", "score"], None)
-        thr = self.eval.get("threshold", None)
-
-        parts = []
-        if dom:
-            parts.append(str(dom))
-        if total is not None:
-            try:
-                parts.append(f"score={float(total):.3f}")
-            except Exception:
-                parts.append(f"score={total}")
-        if thr is not None:
-            try:
-                parts.append(f"thr={float(thr):.3f}")
-            except Exception:
-                parts.append(f"thr={thr}")
-        if valid is True:
-            parts.append("VALID")
-        elif valid is False:
-            parts.append("INVALID")
-        else:
-            parts.append("unknown")
-
-        return " | ".join(parts) if parts else "–"
-
-    def format_eval_text(self, *, include_tcp: bool = True) -> str:
-        """
-        UI text:
-          - overall eval line
-          - per-segment summary if present
-          - tcp pose counts (global sides)
-          - fk_meta essentials
-        """
-        lines: list[str] = []
-        lines.append(self.eval_summary_line())
-
-        if self.eval and isinstance(self.eval, dict):
-            inv = self.eval.get("invalid_reason") or ""
-            if inv:
-                lines.append(f"reason: {inv}")
-
-            segs = self.eval.get("segments") or self.eval.get("by_segment")
-            if isinstance(segs, dict) and segs:
-                lines.append("")
-                lines.append("segments:")
-                for seg_id, seg_v in segs.items():
-                    if not isinstance(seg_v, dict):
-                        continue
-                    score = _get_nested(seg_v, ["score"], None)
-                    if score is None:
-                        score = _get_nested(seg_v, ["total", "score"], None)
-                    v = seg_v.get("valid", None)
-                    ok = "OK" if v is True else ("FAIL" if v is False else "UNK")
-                    if score is not None:
-                        try:
-                            s_txt = f"{float(score):.3f}"
-                        except Exception:
-                            s_txt = str(score)
-                        lines.append(f"  - {seg_id}: {ok} | score={s_txt}")
-                    else:
-                        lines.append(f"  - {seg_id}: {ok}")
-
-        if include_tcp:
-            pl_tcp = self.planned_run.get("tcp") if isinstance(self.planned_run, dict) else {}
-            ex_tcp = self.executed_run.get("tcp") if isinstance(self.executed_run, dict) else {}
-
-            f_pl = (pl_tcp.get("frame") if isinstance(pl_tcp, dict) else "") or ""
-            f_ex = (ex_tcp.get("frame") if isinstance(ex_tcp, dict) else "") or ""
-            frame_txt = f" frame(planned={f_pl or 'n/a'}, executed={f_ex or 'n/a'})"
-            lines.append("")
-            lines.append(
-                f"tcp: planned={self._count_tcp_poses(pl_tcp)} poses | executed={self._count_tcp_poses(ex_tcp)} poses |{frame_txt}"
-            )
-
-        if self.fk_meta:
-            ee = self.fk_meta.get("ee_link") or ""
-            step = self.fk_meta.get("step_mm")
-            base = self.fk_meta.get("base_link") or ""
-            segs = self.fk_meta.get("segments_included") or self.fk_meta.get("segment_order") or []
-            lines.append("")
-            if base:
-                lines.append(f"fk: base_link={base}")
-            if ee:
-                lines.append(f"fk: ee_link={ee}")
-            if step is not None:
-                try:
-                    lines.append(f"fk: step_mm={float(step):.3f}")
-                except Exception:
-                    lines.append(f"fk: step_mm={step}")
-            if isinstance(segs, list) and segs:
-                lines.append(f"fk: segments={len(segs)}")
-
-        return "\n".join(lines).strip() if lines else "–"
 
     # ------------------------------------------------------------
     # payloads (ProcessThread -> UI)
@@ -870,9 +863,6 @@ class RunResult:
         self.urdf_xml = urdf_xml
         self.srdf_xml = srdf_xml
 
-        if self.TCP_TARGET_FRAME != "substrate":
-            raise ValueError(f"RunResult TCP_TARGET_FRAME must be 'substrate', got {self.TCP_TARGET_FRAME!r}")
-
         robot_model = TrajFkBuilder.build_robot_model_from_urdf_srdf(urdf_xml=urdf_xml, srdf_xml=srdf_xml)
 
         planned_traj = _dict(self.planned_run.get("traj"))
@@ -899,7 +889,6 @@ class RunResult:
             include_segments=seg_ids,
             require_all_segments=True,
         )
-
         executed_tcp = TrajFkBuilder.build_tcp_draft_yaml(
             executed_traj,
             robot_model=robot_model,
@@ -911,24 +900,25 @@ class RunResult:
             require_all_segments=True,
         )
 
-        # STRICT: always transform into substrate.
+        # STRICT: always transform into substrate
         if base_link != "robot_mount":
             raise ValueError(
                 f"postprocess_from_urdf_srdf: expected cfg.base_link='robot_mount' for offline substrate transform, got {base_link!r}"
             )
-
         if not scene_yaml_path or not robot_yaml_path or not mounts_yaml_path:
-            raise ValueError(
-                "postprocess_from_urdf_srdf: substrate transform requires scene_yaml_path, robot_yaml_path, mounts_yaml_path."
-            )
+            raise ValueError("postprocess_from_urdf_srdf: substrate transform requires scene/robot/mounts yaml paths.")
 
         T_substrate_robot_mount = _compute_T_substrate_robot_mount_mm(
             scene_yaml_path=str(scene_yaml_path),
             robot_yaml_path=str(robot_yaml_path),
             mounts_yaml_path=str(mounts_yaml_path),
         )
-        planned_tcp = TrajFkBuilder.transform_draft_yaml(planned_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate")
-        executed_tcp = TrajFkBuilder.transform_draft_yaml(executed_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate")
+        planned_tcp = TrajFkBuilder.transform_draft_yaml(
+            planned_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate"
+        )
+        executed_tcp = TrajFkBuilder.transform_draft_yaml(
+            executed_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate"
+        )
 
         self.planned_run["tcp"] = _dict(planned_tcp)
         self.executed_run["tcp"] = _dict(executed_tcp)
@@ -940,7 +930,7 @@ class RunResult:
             "max_points": int(cfg.max_points),
             "segment_order": list(seg_ids),
             "backend": "kdl",
-            "tcp_frame": str((_dict(self.planned_run.get("tcp"))).get("frame") or base_link),
+            "tcp_frame": "substrate",
             "segments_included": list(seg_ids),
         }
 
@@ -963,31 +953,74 @@ class RunResult:
     def evaluate_tcp_against_draft(
         self,
         *,
-        recipe: Any,
+        recipe: Any | None = None,
         segment_order: Optional[Sequence[str]] = None,
         domain: str = "tcp",
         gate_valid_on_eval: bool = False,
     ) -> Dict[str, Any]:
         """
-        Explicit evaluation step. Intended to be called in RecipePanel (NOT in process thread).
-        Stores result via set_eval() and embeds per-mode eval into TCP docs.
+        Evaluate planned/executed TCP against draft reference.
+
+        STRICT:
+          - recipe MUST be available (either passed, or attached via attach_recipe()).
         """
+        if recipe is None:
+            recipe = self._require_attached_recipe()
+
         planned_tcp = _dict(self.planned_run.get("tcp"))
         executed_tcp = _dict(self.executed_run.get("tcp"))
 
-        try:
-            from .recipe_eval import RecipeEvaluator  # local import to avoid circulars
+        from .recipe_eval import RecipeEvaluator  # strict (no fallback module)
 
-            evaluator = RecipeEvaluator()
-            eval_dict = evaluator.evaluate_runs(
-                recipe=recipe,
-                planned_tcp=planned_tcp,
-                executed_tcp=executed_tcp,
-                segment_order=list(segment_order) if segment_order else None,
-                domain=str(domain or "tcp"),
-            )
-        except Exception as e:
-            eval_dict = {"valid": False, "invalid_reason": f"eval_failed: {e}", "domain": str(domain or "tcp")}
+        evaluator = RecipeEvaluator()
+        eval_dict = evaluator.evaluate_runs(
+            recipe=recipe,
+            planned_tcp=planned_tcp,
+            executed_tcp=executed_tcp,
+            segment_order=list(segment_order) if segment_order else None,
+            domain=str(domain or "tcp"),
+            traj_points_planned=self._count_traj_points(_dict(self.planned_run.get("traj"))),
+            traj_points_executed=self._count_traj_points(_dict(self.executed_run.get("traj"))),
+            tcp_poses_planned=self._count_tcp_poses(planned_tcp),
+            tcp_poses_executed=self._count_tcp_poses(executed_tcp),
+        )
+
+        # --------------------------------------------------------
+        # Add SPEED metric (display-only; no score impact)
+        # - recipe segment only
+        # - only if we can compute it strictly (segmented TCP + traj times)
+        # --------------------------------------------------------
+        try:
+            seg_recipe = self.DEFAULT_RECIPE_SEGMENT
+            if segment_order:
+                for s in list(segment_order):
+                    if str(s).strip() == self.DEFAULT_RECIPE_SEGMENT:
+                        seg_recipe = self.DEFAULT_RECIPE_SEGMENT
+                        break
+
+            pl_speed = self._compute_avg_speed_recipe_segment(recipe=recipe, which="planned", seg_name=seg_recipe)
+            ex_speed = self._compute_avg_speed_recipe_segment(recipe=recipe, which="executed", seg_name=seg_recipe)
+
+            if isinstance(pl_speed, dict) and isinstance(ex_speed, dict):
+                eval_dict = _dict(eval_dict)
+                eval_dict.setdefault("planned", {})
+                eval_dict.setdefault("executed", {})
+                eval_dict["planned"] = _dict(eval_dict.get("planned"))
+                eval_dict["executed"] = _dict(eval_dict.get("executed"))
+                eval_dict["planned"].setdefault("summary", {})
+                eval_dict["executed"].setdefault("summary", {})
+                ps = _dict(eval_dict["planned"].get("summary"))
+                es = _dict(eval_dict["executed"].get("summary"))
+
+                for k in ("speed_set_mm_s", "avg_speed_mm_s", "speed_percent"):
+                    ps[k] = float(pl_speed[k])
+                    es[k] = float(ex_speed[k])
+
+                eval_dict["planned"]["summary"] = ps
+                eval_dict["executed"]["summary"] = es
+        except Exception:
+            # strict: do not fake values; just omit
+            pass
 
         self.set_eval(_dict(eval_dict))
 

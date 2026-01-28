@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # File: src/tabs/process/recipe_panel/recipe_panel.py
+
 from __future__ import annotations
 
 import logging
@@ -25,7 +26,7 @@ from model.recipe.recipe_run_result import RunResult
 
 # NEW location (no legacy)
 from model.spray_paths import recipe_markers
-from model.spray_paths.draft import Draft  # <-- FIX: use Draft API for points extraction
+from model.spray_paths.draft import Draft  # strict Draft API for points extraction
 
 from config.startup import require_env_dir, resolve_path
 
@@ -45,9 +46,9 @@ class RecipePanel(QWidget):
       - Offline TF paths are derived deterministically from ctx.content and ctx.ros.
       - ROS bridge methods required by this panel are enforced.
 
-    UI simplification:
-      - RecipePanel does NOT build tables itself.
-      - It only displays prebuilt report strings from RunResult / stored TCP eval.
+    UI:
+      - Top row: Active Recipe | Info (CENTER, BIGGEST) | Spray Paths
+      - Bottom row: Recipe Params | Stored Eval | Current Run
     """
 
     sig_recipe_selected = QtCore.pyqtSignal(str, object)
@@ -76,12 +77,12 @@ class RecipePanel(QWidget):
         Layout:
 
         vbox(
-          hbox( ActiveRecipe, Info, SprayPaths ),
+          hbox( ActiveRecipe, Info (biggest), SprayPaths ),
           hbox( RecipeParams, StoredEval, CurrentEval )
         )
         """
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
 
         # ============================================================
@@ -92,6 +93,7 @@ class RecipePanel(QWidget):
         htop.setContentsMargins(0, 0, 0, 0)
         htop.setSpacing(8)
 
+        # --- Active Recipe (left, bounded width) ---
         self.grpActive = QGroupBox("Active Recipe", top)
         vactive = QVBoxLayout(self.grpActive)
         vactive.setContentsMargins(8, 8, 8, 8)
@@ -113,29 +115,39 @@ class RecipePanel(QWidget):
         self.txtActiveInfo = QTextEdit(self.grpActive)
         self.txtActiveInfo.setReadOnly(True)
         self.txtActiveInfo.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.txtActiveInfo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         vactive.addWidget(self.txtActiveInfo, 1)
 
+        self.grpActive.setMinimumWidth(320)
+        self.grpActive.setMaximumWidth(520)
         spA = self.grpActive.sizePolicy()
         spA.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+        spA.setVerticalPolicy(QSizePolicy.Policy.Expanding)
         self.grpActive.setSizePolicy(spA)
-        self.grpActive.setMinimumWidth(360)
-        self.grpActive.setMaximumWidth(560)
 
+        # --- Info (center, BIGGEST) ---
         self.infoBox = InfoGroupBox(top, title="Info")
         spI = self.infoBox.sizePolicy()
-        spI.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+        spI.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        spI.setVerticalPolicy(QSizePolicy.Policy.Expanding)
         self.infoBox.setSizePolicy(spI)
-        self.infoBox.setMinimumWidth(320)
-        self.infoBox.setMaximumWidth(520)
+        self.infoBox.setMinimumWidth(520)  # make it dominate the row
+        self.infoBox.setMaximumWidth(99999)
 
+        # --- Spray Paths (right, bounded width) ---
         self.sprayPathBox = SprayPathBox(ros=self.ros, parent=top)
         spS = self.sprayPathBox.sizePolicy()
-        spS.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        spS.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
+        spS.setVerticalPolicy(QSizePolicy.Policy.Expanding)
         self.sprayPathBox.setSizePolicy(spS)
+        self.sprayPathBox.setMinimumWidth(260)
+        self.sprayPathBox.setMaximumWidth(420)
 
+        # Stretch: Info must be biggest
         htop.addWidget(self.grpActive, 0)
-        htop.addWidget(self.infoBox, 0)
-        htop.addWidget(self.sprayPathBox, 1)
+        htop.addWidget(self.infoBox, 2)  # BIGGEST
+        htop.addWidget(self.sprayPathBox, 0)
+
         root.addWidget(top, 0)
 
         # ============================================================
@@ -154,25 +166,34 @@ class RecipePanel(QWidget):
         self.txtRecipeParams = QTextEdit(self.grpRecipeParams)
         self.txtRecipeParams.setReadOnly(True)
         self.txtRecipeParams.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.txtRecipeParams.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         vparams.addWidget(self.txtRecipeParams, 1)
 
         self.grpStored = QGroupBox("Stored Eval (Disk)", bottom)
         vstored = QVBoxLayout(self.grpStored)
         vstored.setContentsMargins(8, 8, 8, 8)
+        vstored.setSpacing(6)
         self.txtStored = QTextEdit(self.grpStored)
         self.txtStored.setReadOnly(True)
+        self.txtStored.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.txtStored.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         vstored.addWidget(self.txtStored, 1)
 
         self.grpCurrent = QGroupBox("Current Run (Live)", bottom)
         vcur = QVBoxLayout(self.grpCurrent)
         vcur.setContentsMargins(8, 8, 8, 8)
+        vcur.setSpacing(6)
         self.txtNewRun = QTextEdit(self.grpCurrent)
         self.txtNewRun.setReadOnly(True)
+        self.txtNewRun.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.txtNewRun.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         vcur.addWidget(self.txtNewRun, 1)
 
+        # Stretch: params biggest, evals smaller
         hbot.addWidget(self.grpRecipeParams, 2)
         hbot.addWidget(self.grpStored, 1)
         hbot.addWidget(self.grpCurrent, 1)
+
         root.addWidget(bottom, 1)
 
     # --------------- Recipe binding ----------------
@@ -299,6 +320,15 @@ class RecipePanel(QWidget):
 
     @QtCore.pyqtSlot(str, object, object)
     def on_run_finished(self, key: str, payload: object, rr_obj: object) -> None:
+        """
+        Strict V2:
+
+        Accepts either:
+          - rr_obj: RunResult (preferred), or
+          - payload: dict process payload -> RunResult.from_process_payload(payload)
+
+        No legacy aliases; no guessing beyond these two shapes.
+        """
         key = str(key or "").strip()
         self.txtNewRun.setPlaceholderText("")
 
@@ -306,12 +336,30 @@ class RecipePanel(QWidget):
             self.txtNewRun.setPlainText("Run finished, but key is empty.")
             return
 
-        if not isinstance(rr_obj, RunResult):
-            self.txtNewRun.setPlainText(f"Run finished for {key}, but rr is not RunResult.")
-            _LOG.error("RecipePanel.on_run_finished: rr_obj invalid type=%s", type(rr_obj).__name__)
-            return
+        rr: Optional[RunResult] = None
 
-        rr: RunResult = rr_obj
+        if isinstance(rr_obj, RunResult):
+            rr = rr_obj
+        elif isinstance(payload, dict):
+            try:
+                rr = RunResult.from_process_payload(payload)
+            except Exception as e:
+                rr = None
+                _LOG.error("RecipePanel.on_run_finished: from_process_payload failed (key=%s): %s", key, e)
+
+        if rr is None:
+            self.txtNewRun.setPlainText(
+                f"Run finished for {key}, but no RunResult was provided and payload is invalid.\n"
+                f"payload type: {type(payload).__name__}\n"
+                f"rr_obj type: {type(rr_obj).__name__}"
+            )
+            _LOG.error(
+                "RecipePanel.on_run_finished: invalid rr (key=%s) payload=%s rr_obj=%s",
+                key,
+                type(payload).__name__,
+                type(rr_obj).__name__,
+            )
+            return
 
         recipe_disk: Optional[Recipe]
         try:
@@ -319,6 +367,16 @@ class RecipePanel(QWidget):
         except Exception as e:
             recipe_disk = None
             _LOG.error("RecipePanel: load_for_process failed (key=%s): %s", key, e)
+
+        # ------------------------------------------------------------
+        # Attach recipe (for speed setpoint display, etc.)
+        # STRICT: do NOT attach None
+        # ------------------------------------------------------------
+        try:
+            if recipe_disk is not None:
+                rr.attach_recipe(recipe_disk)
+        except Exception as e:
+            _LOG.error("RecipePanel: rr.attach_recipe failed (key=%s): %s", key, e)
 
         seg_order = list(self._default_segment_order())
 
@@ -348,13 +406,11 @@ class RecipePanel(QWidget):
 
         eval_err: Optional[str] = None
         try:
-            if recipe_disk is not None:
-                rr.evaluate_tcp_against_draft(
-                    recipe=recipe_disk,
-                    segment_order=seg_order,
-                    domain="tcp",
-                    gate_valid_on_eval=False,
-                )
+            rr.evaluate_tcp_against_draft(
+                segment_order=seg_order,
+                domain="tcp",
+                gate_valid_on_eval=False,
+            )
         except Exception as e:
             eval_err = str(e)
             _LOG.error("RecipePanel: rr.evaluate_tcp_against_draft failed (key=%s): %s", key, e)
@@ -461,7 +517,7 @@ class RecipePanel(QWidget):
 
         self._update_stored_view(fresh)
 
-        # FIX: InfoBox must update whenever we rebind the recipe from disk
+        # InfoBox must update whenever we rebind the recipe from disk
         self._update_infobox_from_recipe(fresh)
 
         self._republish_spraypaths_for_key(key, fresh)
@@ -476,9 +532,12 @@ class RecipePanel(QWidget):
             return None
         ev = getattr(tcp_obj, "eval", None)
         if isinstance(ev, dict):
-            s = ev.get("report_text")
-            if isinstance(s, str) and s.strip():
-                return s.strip()
+            # RunResult.set_eval stores "report_text_live"/"report_text_disk" in rr.eval,
+            # while tcp docs contain a full eval dict; stored recipes may persist either.
+            for k in ("report_text_disk", "report_text_live", "report_text"):
+                s = ev.get(k)
+                if isinstance(s, str) and s.strip():
+                    return s.strip()
         return None
 
     def _stored_report_text(self, recipe: Recipe) -> str:
@@ -492,7 +551,7 @@ class RecipePanel(QWidget):
         if s:
             return s
 
-        return "=== STORED EVAL (Disk) ===\nmissing: planned_tcp.eval['report_text'] / executed_tcp.eval['report_text']"
+        return "=== STORED EVAL (Disk) ===\nmissing: planned_tcp.eval['report_text*'] / executed_tcp.eval['report_text*']"
 
     def _current_run_report_text(self, rr: RunResult) -> str:
         ev = rr.eval if isinstance(getattr(rr, "eval", None), dict) else {}
@@ -501,7 +560,7 @@ class RecipePanel(QWidget):
             return s.strip()
 
         if hasattr(rr, "report_text") and callable(getattr(rr, "report_text")):
-            return rr.report_text(title="=== CURRENT RUN (Live) ===", include_traj=True, include_tcp=True, include_reason=True)
+            return rr.report_text(title="=== CURRENT RUN (Live) ===")
 
         return "=== CURRENT RUN (Live) ===\nmissing: rr.eval['report_text_live'] and rr.report_text()"
 
@@ -510,8 +569,6 @@ class RecipePanel(QWidget):
     # ============================================================
 
     def _ros_req(self, name: str):
-        if self.ros is None:
-            raise RuntimeError("ros is None (strict)")
         fn = getattr(self.ros, name, None)
         if not callable(fn):
             raise RuntimeError(f"ROS bridge missing required method: {name} (strict)")
@@ -603,7 +660,7 @@ class RecipePanel(QWidget):
                 self._ros_req("spray_set_executed")(new_markers=ma)
 
     # ============================================================
-    # InfoBox (FIX)
+    # InfoBox
     # ============================================================
 
     @staticmethod
@@ -654,6 +711,10 @@ class RecipePanel(QWidget):
             self.txtStored.setPlainText(self._stored_report_text(recipe))
         except Exception as e:
             self.txtStored.setPlainText(f"=== STORED EVAL (Disk) ===\n(render failed: {e})")
+
+    # ============================================================
+    # UI actions
+    # ============================================================
 
     def _on_load_clicked(self) -> None:
         keys = self.repo.list_recipes()

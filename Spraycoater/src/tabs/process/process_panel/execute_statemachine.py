@@ -31,20 +31,15 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
     """
     Execute run (STRICT, collect-only):
 
-    GOAL (per user requirement):
-      - Execute shall drive the whole path "in one piece" (single MoveIt execute call),
-        i.e. no segment-by-segment waiting/stepping like Validate.
+    GOAL:
+      - Execute drives the whole path "in one piece" (single MoveIt execute call).
+      - State machine must NOT step through MOVE_RECIPE/MOVE_RETREAT/etc. waiting for additional
+        motionResult signals (those will not come in single-piece mode).
 
-    Implementation:
-      - Build ONE concatenated RobotTrajectoryMsg from planned_traj (all segments present).
-      - Execute once.
-      - Keep planned YAML v1 segmented as-is.
-      - If executed capture ends up being a single segment blob, split it back into
-        JTBySegment segments deterministically using planned point counts.
-
-    Notes:
+    Contract:
+      - Planned baseline is recipe.planned_traj (JTBySegment YAML v1).
+      - Executed capture may arrive as one blob -> we split it deterministically by planned point counts.
       - No evaluation here. Only trajectory collection into RunResult.
-      - This class relies on BaseProcessStatemachine's capture logic for executed trajectories.
     """
 
     ROLE = "execute"
@@ -78,7 +73,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         self._planned_loaded_yaml: Dict[str, Any] = {}
         self._yaml_segments_present: Dict[str, bool] = {}
 
-        # cached planned JT dict per segment (for strict pairing) -> normalized time_from_start dict
+        # cached planned JT dict per segment (normalized time_from_start dict)
         self._planned_jt_by_segment: Dict[str, Dict[str, Any]] = {}
 
         # last "motion command" for retry (execute only)
@@ -86,9 +81,13 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         self._inflight_traj: Optional[RobotTrajectoryMsg] = None
 
         # single-trajectory execution cache
-        self._exec_seg_ids: List[str] = []
+        self._exec_seg_ids: List[str] = []  # ALL segments present in YAML, for concat/splitting (independent of SM gating)
         self._exec_traj_msg: Optional[RobotTrajectoryMsg] = None
         self._planned_point_counts: Dict[str, int] = {}
+
+        # Segment name used for state-machine pairing / capture bucketing
+        # In single-piece mode we commit exactly ONE pair under this segment key.
+        self._commit_seg_name: str = STATE_MOVE_PREDISPENSE
 
     # ------------------------------------------------------------------
     # STOP OVERRIDE
@@ -117,6 +116,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         self._exec_traj_msg = None
         self._exec_seg_ids = []
         self._planned_point_counts = {}
+        self._commit_seg_name = STATE_MOVE_PREDISPENSE
 
         planned_traj = getattr(self._recipe, "planned_traj", None)
         if planned_traj is None:
@@ -146,7 +146,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         for seg_name in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME):
             self._yaml_segments_present[seg_name] = self._segment_has_points(seg_name)
 
-        # build strict planned JT dicts for pairing (normalize time_from_start to dict)
+        # Build strict planned JT dicts (normalize time_from_start to dict)
         try:
             self._planned_jt_by_segment = {}
             for seg_name, present in self._yaml_segments_present.items():
@@ -157,11 +157,24 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             self._error_msg = f"Execute: build planned JT cache failed: {e}"
             return False
 
-        # Determine execute segment order (only segments present)
-        self._exec_seg_ids = [s for s in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME) if self._segment_exists(s)]
+        # Determine ALL execute segments in order (for concat + splitting) - DO NOT use _segment_exists here
+        self._exec_seg_ids = [
+            s
+            for s in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT, STATE_MOVE_HOME)
+            if bool(self._yaml_segments_present.get(s, False))
+        ]
         if not self._exec_seg_ids:
             self._error_msg = "Execute: no segments present in planned_traj (nothing to execute)."
             return False
+
+        # Commit bucket: we always commit the single executed blob under MOVE_PREDISPENSE
+        # (state machine will only run this state in single-piece mode)
+        if not bool(self._yaml_segments_present.get(STATE_MOVE_PREDISPENSE, False)):
+            # If predispense is missing but recipe exists, we still need a deterministic first state.
+            # STRICT: require predispense segment presence in planned_traj for Execute.
+            self._error_msg = f"Execute: planned_traj missing required segment {STATE_MOVE_PREDISPENSE!r}."
+            return False
+        self._commit_seg_name = STATE_MOVE_PREDISPENSE
 
         # Cache planned point counts for deterministic executed splitting
         try:
@@ -260,10 +273,18 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         return isinstance(pts, list) and len(pts) >= 2
 
     # ------------------------------------------------------------------
-    # Segment gating
+    # Segment gating (STATE MACHINE)
     # ------------------------------------------------------------------
 
     def _segment_exists(self, seg_name: str) -> bool:
+        """
+        IMPORTANT:
+          - In single-piece mode we MUST only run ONE state to avoid waiting for
+            non-existent per-segment EXECUTED:OK signals.
+          - We commit the executed blob under MOVE_PREDISPENSE.
+        """
+        if self.EXECUTE_AS_SINGLE_TRAJECTORY:
+            return seg_name == self._commit_seg_name
         return bool(self._yaml_segments_present.get(seg_name, False))
 
     # ------------------------------------------------------------------
@@ -310,8 +331,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             return False
         if seg_name != self._current_state:
             return False
-
-        # In single-trajectory mode, we retry the same single inflight command.
         if not self._inflight_traj:
             return False
 
@@ -323,7 +342,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         )
 
         try:
-            # Keep segment id stable for capture correlation
             self._ros.moveit_execute_trajectory(self._inflight_traj, segment=str(self._inflight_seg or seg_name))
             return True
         except Exception as e:
@@ -364,9 +382,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         jt.joint_names = [str(x) for x in joint_names]
 
         for p in points:
-            if not isinstance(p, dict):
-                continue
-            if "positions" not in p:
+            if not isinstance(p, dict) or "positions" not in p:
                 continue
 
             pt = JointTrajectoryPoint()
@@ -448,7 +464,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             if not isinstance(pts, list) or len(pts) < 2:
                 raise ValueError(f"concat: segment {seg_name!r} has <2 points")
 
-            # Segment local start time (ns) so we can normalize within segment
             seg_start_ns = self._tfs_to_ns(pts[0].get("time_from_start")) if isinstance(pts[0], dict) else 0
 
             for i, p in enumerate(pts):
@@ -467,7 +482,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
                     local_ns = 0
                 t_ns = offset_ns + local_ns
 
-                # Set time_from_start
                 d = RosDuration()
                 d.sec = int(t_ns // 1_000_000_000)
                 d.nanosec = int(t_ns - d.sec * 1_000_000_000)
@@ -482,7 +496,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
 
                 jt.points.append(pt)
 
-            # Update offset_ns by segment duration (last - first)
             last_ns = self._tfs_to_ns(pts[-1].get("time_from_start")) if isinstance(pts[-1], dict) else 0
             seg_dur_ns = max(0, last_ns - seg_start_ns)
             offset_ns += seg_dur_ns
@@ -496,40 +509,33 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         return msg
 
     # ------------------------------------------------------------------
-    # Execution per segment (EXECUTE: single-piece)
+    # Execution entry (single-piece)
     # ------------------------------------------------------------------
 
     def _on_enter_segment(self, seg_name: str) -> None:
-        # If segment not present, behave as before
-        if not bool(self._yaml_segments_present.get(seg_name, False)):
-            QtCore.QTimer.singleShot(0, self._sig_done.emit)
-            return
-
-        # Execute runs in one piece: start ONLY once when the first state enters.
+        # In single-piece mode, the state machine runs exactly one state (MOVE_PREDISPENSE).
         if self.EXECUTE_AS_SINGLE_TRAJECTORY:
-            if self._inflight_traj is not None:
-                # Already executing; ignore any re-entries.
+            if seg_name != self._commit_seg_name:
+                self._signal_error(f"Execute: expected only state {self._commit_seg_name}, got {seg_name}")
                 return
 
-            if seg_name != STATE_MOVE_PREDISPENSE:
-                # Start must happen at the first state; otherwise signal error (strict).
-                self._signal_error(f"Execute: expected first state {STATE_MOVE_PREDISPENSE}, got {seg_name}")
+            if self._inflight_traj is not None:
+                # Already executing; ignore re-entry.
                 return
 
             if not self._exec_traj_msg:
                 self._signal_error("Execute: missing concatenated trajectory (prepare failed?)")
                 return
 
-            # Seed planned pending for ALL segments so EXECUTED:OK can commit pairs
-            for s in self._exec_seg_ids:
-                planned_jt = self._planned_jt_by_segment.get(s)
-                if not isinstance(planned_jt, dict):
-                    self._signal_error(f"Execute: missing planned baseline JT for seg={s}")
-                    return
-                self._pending_planned_step[s] = copy.deepcopy(planned_jt)
-                self._pending_executed_step[s] = None
+            # IMPORTANT: pre-seed planned pending for commit bucket so Base can commit on EXECUTED:OK only.
+            planned_jt = self._planned_jt_by_segment.get(self._commit_seg_name)
+            if not isinstance(planned_jt, dict):
+                self._signal_error(f"Execute: missing planned JT baseline for seg={self._commit_seg_name}")
+                return
+            self._pending_planned_step[self._commit_seg_name] = copy.deepcopy(planned_jt)
+            self._pending_executed_step[self._commit_seg_name] = None
 
-            # Use stable segment id for capture correlation (single execution)
+            # Use stable segment id for correlation on the ROS side (even if Base buckets into MOVE_PREDISPENSE)
             self._inflight_seg = str(self.ALL_SEGMENT_ID)
             self._inflight_traj = self._exec_traj_msg
 
@@ -539,7 +545,11 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
                 self._signal_error(f"Execute: moveit_execute_trajectory failed: {e}")
             return
 
-        # Fallback (should not be used for Execute)
+        # Fallback (should not be used for Execute, but kept strict)
+        if not bool(self._yaml_segments_present.get(seg_name, False)):
+            QtCore.QTimer.singleShot(0, self._sig_done.emit)
+            return
+
         try:
             traj_msg = self._robot_trajectory_from_yaml(seg_name)
         except Exception as e:
@@ -559,11 +569,10 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
     # ------------------------------------------------------------------
 
     def _build_traj_payload(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        # Planned should be persisted in JTBySegment YAML v1 format (time_from_start as [sec,nsec])
         planned = copy.deepcopy(self._planned_loaded_yaml)
         executed = self._jt_by_segment_yaml(which="executed")
 
-        # If capture produced a single blob segment in single-piece mode, split it back.
+        # If single-piece capture produced one segment, split it back into real segments.
         if self.EXECUTE_AS_SINGLE_TRAJECTORY:
             try:
                 executed = self._split_executed_if_single_blob(executed)
@@ -595,7 +604,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
 
     def _split_executed_if_single_blob(self, executed: Dict[str, Any]) -> Dict[str, Any]:
         """
-        If executed capture yields only one segment (e.g. "__EXECUTE_ALL__"),
+        If executed capture yields only one segment (e.g. MOVE_PREDISPENSE bucket or "__EXECUTE_ALL__"),
         split points back into segments using planned point counts.
         """
         if not isinstance(executed, dict):
@@ -620,7 +629,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         if not (isinstance(pts, list) and isinstance(jn, list) and len(pts) >= 2):
             return executed
 
-        # We can only split if we have planned counts for all exec segments
         if not self._exec_seg_ids or not self._planned_point_counts:
             return executed
 
@@ -628,14 +636,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         for s in self._exec_seg_ids:
             total_needed += int(self._planned_point_counts.get(s, 0))
 
-        # Note: concatenation removed boundary duplicates (we drop i==0 for subsequent segments).
-        # Capture may or may not include duplicates; we accept ">= expected minus duplicates".
-        if len(pts) < 2:
-            return executed
-
-        # Build slices: we prefer to split by planned counts, but we must handle the dropped boundary.
-        # Our concatenation drops first point of subsequent segments, so expected concatenated length is:
-        #   sum(counts) - (num_segments-1)
         expected_concat = total_needed - max(0, (len(self._exec_seg_ids) - 1))
         if len(pts) < expected_concat:
             _LOG.warning(
@@ -643,11 +643,8 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
                 int(len(pts)),
                 int(expected_concat),
             )
-            # Still attempt best-effort split (may yield <2 points for last segment) -> keep original if unsafe
-            # STRICT: do not create invalid segments with <2 points
             return executed
 
-        # Split points sequentially with the same boundary-drop convention
         out_segments: Dict[str, Any] = {}
         idx = 0
         first = True
@@ -657,11 +654,8 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             if n_planned < 2:
                 continue
 
-            # In concatenated form we dropped boundary first point for subsequent segs => take n_planned points,
-            # but for subsequent segs we only have (n_planned-1) available in blob for that segment boundary.
             take = n_planned if first else (n_planned - 1)
             if take < 2:
-                # would become invalid
                 return executed
 
             seg_pts = pts[idx : idx + take]
@@ -669,7 +663,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             if not isinstance(seg_pts, list) or len(seg_pts) < 2:
                 return executed
 
-            # Normalize time_from_start to segment-local 0
             seg_pts_norm = self._normalize_points_time_from_start(seg_pts)
 
             out_segments[seg_name] = {
@@ -704,7 +697,6 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
             if t_ns < 0:
                 t_ns = 0
             if last_ns >= 0 and t_ns < last_ns:
-                # enforce monotonic after normalization
                 t_ns = last_ns
             last_ns = t_ns
 

@@ -8,14 +8,8 @@ from typing import Any, Dict, Optional, Tuple, List, Sequence
 
 import numpy as np
 
-# STRICT IMPORTS: Use the new models directly
 from model.spray_paths.draft import Draft, PoseQuat
 from .recipe import Recipe
-
-
-# ============================================================
-# Data containers
-# ============================================================
 
 
 @dataclass
@@ -39,24 +33,16 @@ class EvalResult:
         }
 
 
-# ============================================================
-# Evaluator (TCP vs Draft; prefer MOVE_RECIPE segment)
-# ============================================================
-
-
 class RecipeEvaluator:
     """
-    Evaluates geometric accuracy between a Reference (Draft) and a Test Path (TCP).
+    STRICT TCP-vs-Draft evaluator.
 
-    STRICT:
-      - REQUIRED_FRAME: substrate
-      - Prefer segment isolation for MOVE_RECIPE if tcp YAML provides segments[seg]['sides']
-      - Otherwise fall back to global sides
-      - Reference must be recipe-only for MOVE_RECIPE (NOT predispense/retreat)
-
-    NOTE:
-      - Report string generation is handled by RunResult (post-eval) so UI panels only display strings.
-      - Evaluator returns structured metrics and threshold gating booleans (planned_valid/executed_valid).
+    Contracts:
+      - REQUIRED_FRAME = 'substrate'
+      - Reference = recipe.draft (Draft) and MUST be recipe-only for MOVE_RECIPE
+      - Test = TCP YAML dict from TrajFkBuilder (may contain segments)
+      - Returns STRICT schema consumed by RunResult.report_text()
+      - No legacy/fallback output keys
     """
 
     REQUIRED_FRAME = "substrate"
@@ -66,7 +52,7 @@ class RecipeEvaluator:
         self,
         *,
         weights: Optional[EvalWeights] = None,
-        clamp_mm: Tuple[float, float, float] = (1.0, 3.0, 8.0),  # mean, p95, max targets
+        clamp_mm: Tuple[float, float, float] = (1.0, 3.0, 8.0),  # mean, p95, max (position targets)
         tcp_resample_n: int = 600,
     ) -> None:
         self.weights = weights or EvalWeights()
@@ -74,7 +60,7 @@ class RecipeEvaluator:
         self.tcp_resample_n = int(max(50, int(tcp_resample_n)))
 
     # ============================================================
-    # Helpers
+    # Strict helpers
     # ============================================================
 
     @staticmethod
@@ -93,23 +79,7 @@ class RecipeEvaluator:
         if fr and fr != self.REQUIRED_FRAME:
             raise ValueError(f"{who} frame mismatch: {fr!r} != {self.REQUIRED_FRAME!r}")
 
-    def _draft_from_tcp_yaml_for_segment(
-        self,
-        tcp_doc: Dict[str, Any],
-        *,
-        seg_id: str,
-    ) -> Dict[str, Any]:
-        """
-        Returns a YAML dict shaped like Draft.from_yaml_dict expects:
-          {"frame": ..., "sides": {...}}
-
-        Prefer:  tcp_doc["segments"][seg_id]["sides"]
-        Fallback: tcp_doc["sides"]
-
-        NOTE:
-          - Draft model does not necessarily carry "frame". We still validate tcp_doc["frame"]
-            here to keep strictness on the TCP docs.
-        """
+    def _draft_from_tcp_yaml_for_segment(self, tcp_doc: Dict[str, Any], *, seg_id: str) -> Dict[str, Any]:
         if not isinstance(tcp_doc, dict):
             return {}
 
@@ -154,39 +124,18 @@ class RecipeEvaluator:
         raise ValueError(f"recipe.draft invalid type: {type(d).__name__}")
 
     def _ref_recipe_segment_poses(self, ref_draft: Draft, *, side: str, seg_id: str) -> List[PoseQuat]:
-        """
-        STRICT: Reference poses must be recipe-only for MOVE_RECIPE.
-
-        Draft implements poses_quat_segment() and ensures MOVE_RECIPE maps to recipe-only poses.
-        """
-        try:
-            v = ref_draft.poses_quat_segment(side, seg_id)
-            return list(v or [])
-        except Exception:
-            # last resort: keep legacy safety without capability probing
-            return list(ref_draft.poses_quat(side) or [])
+        # STRICT: Draft.poses_quat_segment must map MOVE_RECIPE to recipe-only poses
+        v = ref_draft.poses_quat_segment(side, seg_id)
+        return list(v or [])
 
     @staticmethod
     def _threshold_from_recipe(recipe: Recipe) -> float:
-        # Prefer recipe.parameters as dict-like; otherwise look for attribute.
         thr = None
         params = getattr(recipe, "parameters", None)
-
         if isinstance(params, dict):
             thr = params.get("eval_threshold", None)
         else:
             thr = getattr(params, "eval_threshold", None) if params is not None else None
-
-        # fallback: params dict from to_params_dict if present
-        if thr is None:
-            fn = getattr(recipe, "to_params_dict", None)
-            if callable(fn):
-                try:
-                    d = fn()
-                    if isinstance(d, dict):
-                        thr = d.get("eval_threshold", None)
-                except Exception:
-                    pass
 
         try:
             return float(thr) if thr is not None else 90.0
@@ -194,7 +143,7 @@ class RecipeEvaluator:
             return 90.0
 
     # ============================================================
-    # Math Helpers (Quaternions & SLERP)
+    # Scoring + quaternion math
     # ============================================================
 
     @staticmethod
@@ -207,10 +156,6 @@ class RecipeEvaluator:
 
     @staticmethod
     def _quat_angle_deg_vec(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
-        """
-        Vectorized quaternion angular error (deg) for arrays Nx4.
-        Uses abs(dot) to account for q and -q equivalence.
-        """
         if q1.size == 0 or q2.size == 0:
             return np.zeros((0,), dtype=float)
 
@@ -236,19 +181,14 @@ class RecipeEvaluator:
 
         n0 = float(np.linalg.norm(q0))
         n1 = float(np.linalg.norm(q1))
-        if n0 > 1e-12:
-            q0 = q0 / n0
-        else:
-            q0 = np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
-        if n1 > 1e-12:
-            q1 = q1 / n1
-        else:
-            q1 = np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
+        q0 = q0 / n0 if n0 > 1e-12 else np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
+        q1 = q1 / n1 if n1 > 1e-12 else np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
 
         dot = float(np.dot(q0, q1))
         if dot < 0.0:
             q1 = -q1
             dot = -dot
+
         if dot > 0.9995:
             res = (1.0 - t) * q0 + t * q1
             nr = float(np.linalg.norm(res))
@@ -267,7 +207,7 @@ class RecipeEvaluator:
         return res / nr if nr > 1e-12 else np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
 
     # ============================================================
-    # Extraction & Resampling
+    # Extraction + resampling
     # ============================================================
 
     def _extract_arrays(self, poses: List[PoseQuat]) -> Tuple[np.ndarray, np.ndarray]:
@@ -295,7 +235,6 @@ class RecipeEvaluator:
 
         if i_end > i_start:
             return test_pts[i_start : i_end + 1], test_quats[i_start : i_end + 1]
-
         return test_pts, test_quats
 
     def _resample_pose_mm_quat(self, pts: np.ndarray, quats: np.ndarray, n: int) -> Tuple[np.ndarray, np.ndarray]:
@@ -318,7 +257,6 @@ class RecipeEvaluator:
         seg_idx = 0
         max_idx = len(s) - 2
         out_quats[0] = quats[0]
-
         for i in range(1, n):
             val = float(target_s[i])
             while seg_idx < max_idx and s[seg_idx + 1] < val:
@@ -331,20 +269,14 @@ class RecipeEvaluator:
         return out_pts, out_quats
 
     # ============================================================
-    # Core
+    # Core per-side evaluation
     # ============================================================
 
-    def evaluate_side(
-        self,
-        *,
-        ref_poses: List[PoseQuat],
-        test_poses: List[PoseQuat],
-        label: str,
-    ) -> EvalResult:
+    def evaluate_side(self, *, ref_poses: List[PoseQuat], test_poses: List[PoseQuat], label: str) -> EvalResult:
         ref_p, ref_q = self._extract_arrays(ref_poses)
         test_p, test_q = self._extract_arrays(test_poses)
 
-        metrics = {
+        metrics: Dict[str, Any] = {
             "label": label,
             "num_ref": int(len(ref_p)),
             "num_test_raw": int(len(test_p)),
@@ -361,8 +293,7 @@ class RecipeEvaluator:
         ref_rp, ref_rq = self._resample_pose_mm_quat(ref_p, ref_q, self.tcp_resample_n)
         test_rp, test_rq = self._resample_pose_mm_quat(test_p_trim, test_q_trim, self.tcp_resample_n)
 
-        n = int(len(ref_rp))
-        if n < 2:
+        if len(ref_rp) < 2:
             return EvalResult(score=0.0, metrics=metrics, details={"reason": "not_enough_points"})
 
         err_mm = np.linalg.norm(ref_rp - test_rp, axis=1)
@@ -372,30 +303,51 @@ class RecipeEvaluator:
 
         angle_errs = self._quat_angle_deg_vec(ref_rq, test_rq)
         mean_deg = float(np.mean(angle_errs)) if angle_errs.size else 0.0
+        p95_deg = float(np.percentile(angle_errs, 95)) if angle_errs.size else 0.0
         max_deg = float(np.max(angle_errs)) if angle_errs.size else 0.0
+
+        dz = np.abs(ref_rp[:, 2] - test_rp[:, 2])
+        mean_abs_dz = float(np.mean(dz))
+        p95_abs_dz = float(np.percentile(dz, 95))
+        max_abs_dz = float(np.max(dz))
+
+        ref_len = float(np.sum(np.linalg.norm(np.diff(ref_rp, axis=0), axis=1)))
+        test_len = float(np.sum(np.linalg.norm(np.diff(test_rp, axis=0), axis=1)))
+        delta_L_percent = float(100.0 * (test_len - ref_len) / max(ref_len, 1e-6))
 
         metrics.update(
             {
+                # position
                 "mean_l2_mm": mean_mm,
                 "p95_l2_mm": p95_mm,
                 "max_l2_mm": max_mm,
+                # orientation (quaternion angle)
                 "mean_angle_deg": mean_deg,
+                "p95_angle_deg": p95_deg,
                 "max_angle_deg": max_deg,
+                # stand-off in Z (absolute dz)
+                "mean_abs_dz_mm": mean_abs_dz,
+                "p95_abs_dz_mm": p95_abs_dz,
+                "max_abs_dz_mm": max_abs_dz,
+                # path length delta (%)
+                "delta_L_percent": delta_L_percent,
             }
         )
 
+        # scoring (kept stable; you can tune clamps externally if needed)
         s_mean = self._score_from_error(mean_mm, self.clamp_mean)
         s_p95 = self._score_from_error(p95_mm, self.clamp_p95)
         s_max = self._score_from_error(max_mm, self.clamp_max)
-
         score_pos = (self.weights.w_mean * s_mean) + (self.weights.w_p95 * s_p95) + (self.weights.w_max * s_max)
+
+        # rotation weight: mean angle target 3 deg (stable)
         s_rot = self._score_from_error(mean_deg, target_val=3.0)
 
         total_score = (0.7 * score_pos) + (0.3 * s_rot)
-        return EvalResult(score=total_score, metrics=metrics)
+        return EvalResult(score=float(total_score), metrics=metrics, details={})
 
     # ============================================================
-    # Facade
+    # Facade (RunResult calls this)
     # ============================================================
 
     def evaluate_tcp_against_draft(
@@ -406,31 +358,21 @@ class RecipeEvaluator:
         executed_tcp: Optional[Draft | Dict[str, Any]],
         segment_order: Optional[Sequence[str]] = None,
         domain: str = "tcp",
+        traj_points_planned: Optional[int] = None,
+        traj_points_executed: Optional[int] = None,
+        tcp_poses_planned: Optional[int] = None,
+        tcp_poses_executed: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """
-        Entry point used by RunResult.evaluate_tcp_against_draft().
-
-        IMPORTANT:
-          - planned_tcp/executed_tcp are TCP YAML dicts from TrajFkBuilder (with segments)
-          - recipe.draft is Draft (reference)
-          - STRICT: reference is segment-sliced MOVE_RECIPE (recipe-only)
-        """
         if recipe is None:
             return {"valid": False, "invalid_reason": "recipe_none", "domain": str(domain or "tcp")}
 
         seg_id = self._pick_segment(segment_order)
 
-        # Reference draft (recipe)
-        try:
-            ref_draft = self._draft_from_recipe_draft(recipe)
-        except Exception as e:
-            return {"valid": False, "invalid_reason": f"no_draft: {e}", "domain": str(domain or "tcp")}
-
+        ref_draft = self._draft_from_recipe_draft(recipe)
         sides = list(getattr(ref_draft, "sides", {}).keys())
         if not sides:
             return {"valid": False, "invalid_reason": "draft_empty", "domain": str(domain or "tcp")}
 
-        # Normalize TCP objects: accept Draft or dict, but if dict -> select seg_id sides
         def to_tcp_draft(obj: Optional[Draft | Dict[str, Any]], *, name: str) -> Optional[Draft]:
             if obj is None:
                 return None
@@ -444,143 +386,112 @@ class RecipeEvaluator:
                 if not dd:
                     return None
                 return Draft.from_yaml_dict(dd)
-            return None
+            raise ValueError(f"{name} invalid type: {type(obj).__name__}")
 
         pl = to_tcp_draft(planned_tcp, name="planned_tcp")
         ex = to_tcp_draft(executed_tcp, name="executed_tcp")
 
         def run_mode(tcp_draft: Optional[Draft], mode_name: str) -> Dict[str, Any]:
-            if not tcp_draft:
-                return {"valid": False, "invalid_reason": "missing_tcp"}
+            if tcp_draft is None:
+                return {"data_ok": False, "invalid_reason": "missing_tcp", "score": 0.0, "summary": {}}
 
-            side_results: Dict[str, Any] = {}
+            by_side: Dict[str, Any] = {}
             scores: List[float] = []
-            metrics_first: Dict[str, Any] = {}
+            first_summary: Dict[str, Any] = {}
             bad_sides: List[str] = []
 
             for idx, side in enumerate(sides):
                 ref = self._ref_recipe_segment_poses(ref_draft, side=side, seg_id=seg_id)
-
-                try:
-                    test = list(tcp_draft.poses_quat_segment(side, seg_id) or [])
-                except Exception:
-                    test = list(tcp_draft.poses_quat(side) or [])
+                test = list(tcp_draft.poses_quat_segment(side, seg_id) or [])
 
                 res = self.evaluate_side(ref_poses=ref, test_poses=test, label=f"{mode_name}/{seg_id}/{side}")
                 dct = res.to_dict()
-                side_results[side] = dct
+                by_side[side] = dct
                 scores.append(float(res.score))
 
-                if idx == 0:
-                    m = dct.get("metrics")
-                    if isinstance(m, dict):
-                        metrics_first = dict(m)
+                if idx == 0 and isinstance(dct.get("metrics"), dict):
+                    first_summary = dict(dct["metrics"])
 
                 det = dct.get("details")
                 if isinstance(det, dict) and det.get("reason") == "not_enough_points":
                     bad_sides.append(str(side))
 
-            computed_ok = (len(bad_sides) == 0) and bool(scores)
+            data_ok = (len(bad_sides) == 0) and bool(scores)
             avg_score = float(np.mean(scores)) if scores else 0.0
 
             out = {
-                "valid": bool(computed_ok),  # STRICT: computed_ok
+                "data_ok": bool(data_ok),
                 "score": float(avg_score),
-                "segment": seg_id,
-                "by_side": side_results,
-                "metrics": metrics_first,
+                "segment": str(seg_id),
+                "by_side": by_side,
+                "summary": first_summary,  # what RunResult.report_text uses
             }
-            if not computed_ok:
+            if not data_ok:
                 out["invalid_reason"] = f"not_enough_points sides={bad_sides}" if bad_sides else "not_enough_points"
             return out
 
         p_eval = run_mode(pl, "planned")
         e_eval = run_mode(ex, "executed")
 
-        thr = self._threshold_from_recipe(recipe)
-        p_score = float(p_eval.get("score", 0.0) or 0.0)
-        e_score = float(e_eval.get("score", 0.0) or 0.0)
+        thr = float(self._threshold_from_recipe(recipe))
+        p_score = float(p_eval.get("score", 0.0))
+        e_score = float(e_eval.get("score", 0.0))
 
-        # Threshold-aware gating
-        planned_ok = bool(p_eval.get("valid", False)) and (p_score >= thr)
-        executed_ok = bool(e_eval.get("valid", False)) and (e_score >= thr)
+        planned_ok = bool(p_eval.get("data_ok", False)) and (p_score >= thr)
+        executed_ok = bool(e_eval.get("data_ok", False)) and (e_score >= thr)
+
         valid = bool(planned_ok and executed_ok)
-
         overall_score = float(min(p_score, e_score))
 
-        def _fmt(x: Any) -> str:
-            if isinstance(x, (float, int)):
-                return f"{float(x):.3f}"
-            return "-"
+        invalid_reason = ""
+        if not valid:
+            if not bool(p_eval.get("data_ok", False)) or not bool(e_eval.get("data_ok", False)):
+                invalid_reason = "evaluation failed: insufficient valid points in MOVE_RECIPE"
+            else:
+                invalid_reason = "evaluation failed: score below threshold"
 
-        pm, em = p_eval.get("metrics", {}), e_eval.get("metrics", {})
-        table = [
-            {"metric": "Score", "planned": _fmt(p_score), "executed": _fmt(e_score)},
-            {"metric": "Ø Pos (mm)", "planned": _fmt(pm.get("mean_l2_mm")), "executed": _fmt(em.get("mean_l2_mm"))},
-            {"metric": "Max Pos (mm)", "planned": _fmt(pm.get("max_l2_mm")), "executed": _fmt(em.get("max_l2_mm"))},
-            {"metric": "Ø Rot (deg)", "planned": _fmt(pm.get("mean_angle_deg")), "executed": _fmt(em.get("mean_angle_deg"))},
-        ]
-
-        reason_parts: List[str] = []
-        if not bool(p_eval.get("valid", False)):
-            reason_parts.append(f"planned:{p_eval.get('invalid_reason') or 'invalid'}")
-        if not bool(e_eval.get("valid", False)):
-            reason_parts.append(f"executed:{e_eval.get('invalid_reason') or 'invalid'}")
-
-        # If both computed_ok but threshold failed, say so explicitly.
-        if not reason_parts and not valid:
-            if p_score < thr:
-                reason_parts.append("planned:score_below_threshold")
-            if e_score < thr:
-                reason_parts.append("executed:score_below_threshold")
-            if not reason_parts:
-                reason_parts.append("score_below_threshold")
-
-        return {
-            "version": 4,
-            "domain": str(domain or "tcp"),
-            "segment": seg_id,
-            "threshold": float(thr),
-
-            # Unified summary for RunResult.eval (overall gating = min(planned, executed))
-            "valid": bool(valid),
-            "score": float(overall_score),
-            "total": {"score": float(overall_score)},
-
-            # Mode gating booleans (threshold-aware)
-            "planned_valid": bool(planned_ok),
-            "executed_valid": bool(executed_ok),
-
-            # Convenience for splitting (RunResult embeds per-mode into tcp docs)
-            "planned_score": float(p_score),
-            "executed_score": float(e_score),
-
-            # For RunResult.format_eval_text()
-            "segments": {
-                str(seg_id): {
-                    "valid": bool(valid),
-                    "score": float(overall_score),
-                    "planned_score": float(p_score),
-                    "executed_score": float(e_score),
-                }
-            },
-
-            # Metrics rows for the planned/executed column table
-            "comparison": table,
-
-            "planned": p_eval,
-            "executed": e_eval,
-            "invalid_reason": "" if valid else "; ".join(reason_parts),
+        selection = {
+            "recipe": getattr(recipe, "recipe_id", None),
+            "tool": getattr(recipe, "tool", None),
+            "substrate": getattr(recipe, "substrate", None),
+            "mount": getattr(recipe, "substrate_mount", None),
         }
 
+        # STRICT output schema expected by RunResult.report_text()
+        out: Dict[str, Any] = {
+            "version": 6,
+            "domain": str(domain or "tcp"),
+            "segment": str(seg_id),
+            "threshold": float(thr),
+            "selection": selection,
+            "valid": bool(valid),
+            "invalid_reason": str(invalid_reason),
+            "score": float(overall_score),
+            "planned_valid": bool(planned_ok),
+            "executed_valid": bool(executed_ok),
+            "planned_score": float(p_score),
+            "executed_score": float(e_score),
+            "planned": p_eval,
+            "executed": e_eval,
+            # optional counts (not required by RunResult, but useful for later)
+            "counts": {
+                "traj_points_planned": int(traj_points_planned) if traj_points_planned is not None else None,
+                "traj_points_executed": int(traj_points_executed) if traj_points_executed is not None else None,
+                "tcp_poses_planned": int(tcp_poses_planned) if tcp_poses_planned is not None else None,
+                "tcp_poses_executed": int(tcp_poses_executed) if tcp_poses_executed is not None else None,
+            },
+        }
+        return out
+
     def evaluate_runs(self, **kwargs) -> Dict[str, Any]:
-        """
-        Accepts extra kwargs safely (segment_order, domain, etc.).
-        """
         return self.evaluate_tcp_against_draft(
             recipe=kwargs.get("recipe"),
             planned_tcp=kwargs.get("planned_tcp"),
             executed_tcp=kwargs.get("executed_tcp"),
             segment_order=kwargs.get("segment_order"),
             domain=kwargs.get("domain", "tcp"),
+            traj_points_planned=kwargs.get("traj_points_planned"),
+            traj_points_executed=kwargs.get("traj_points_executed"),
+            tcp_poses_planned=kwargs.get("tcp_poses_planned"),
+            tcp_poses_executed=kwargs.get("tcp_poses_executed"),
         )
