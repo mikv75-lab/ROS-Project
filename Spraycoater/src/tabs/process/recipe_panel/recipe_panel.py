@@ -19,6 +19,8 @@ from PyQt6.QtWidgets import (
     QLabel,
     QInputDialog,
     QSizePolicy,
+    QMessageBox,
+    QCheckBox,
 )
 
 from model.recipe.recipe import Recipe
@@ -66,6 +68,10 @@ class RecipePanel(QWidget):
         self.ctx, self.repo, self.ros = ctx, repo, ros
         self._recipe: Optional[Recipe] = None
         self._recipe_key: Optional[str] = None
+
+        # Persist confirmation (session-local)
+        self._confirm_overwrite: bool = True
+        self._last_run_mode: str = ""
 
         self._build_ui()
         self.btnLoad.clicked.connect(self._on_load_clicked)
@@ -314,9 +320,76 @@ class RecipePanel(QWidget):
 
     @QtCore.pyqtSlot(str, str)
     def on_run_started(self, mode: str, key: str) -> None:
+        self._last_run_mode = str(mode or "")
         self.txtNewRun.clear()
         self.txtNewRun.setPlaceholderText(f"Running {mode} for {key}...")
         _LOG.info("RecipePanel: Run started (mode=%s, key=%s)", mode, key)
+
+    def _confirm_overwrite_run_artifacts(self, *, key: str, rr: RunResult, recipe_disk: Optional[Recipe]) -> bool:
+        """
+        Ask user before overwriting stored planned/executed artifacts.
+        Returns True if we should persist, False to skip.
+
+        Policy:
+          - Ask only if the run produced NEW planned/executed data AND disk already has that artifact.
+          - Session-local "don't ask again" toggle (no persistence to disk/config).
+        """
+        if not self._confirm_overwrite:
+            return True
+
+        if rr is None:
+            return True
+
+        # What did this run produce?
+        p_tcp_new = rr.planned_run.get("tcp") if isinstance(rr.planned_run, dict) else None
+        e_tcp_new = rr.executed_run.get("tcp") if isinstance(rr.executed_run, dict) else None
+        p_traj_new = rr.planned_run.get("traj") if isinstance(rr.planned_run, dict) else None
+        e_traj_new = rr.executed_run.get("traj") if isinstance(rr.executed_run, dict) else None
+
+        will_write_planned = (isinstance(p_tcp_new, dict) and bool(p_tcp_new)) or (isinstance(p_traj_new, dict) and bool(p_traj_new))
+        will_write_executed = (isinstance(e_tcp_new, dict) and bool(e_tcp_new)) or (isinstance(e_traj_new, dict) and bool(e_traj_new))
+
+        if not (will_write_planned or will_write_executed):
+            return True  # nothing new -> no overwrite
+
+        # What exists on disk already?
+        # STRICT: check only explicit known attributes; if your Recipe doesn't have traj fields, it's fine.
+        has_planned_disk = bool(getattr(recipe_disk, "planned_tcp", None)) or bool(getattr(recipe_disk, "planned_traj", None))
+        has_executed_disk = bool(getattr(recipe_disk, "executed_tcp", None)) or bool(getattr(recipe_disk, "executed_traj", None))
+
+        need_ask = (will_write_planned and has_planned_disk) or (will_write_executed and has_executed_disk)
+        if not need_ask:
+            return True
+
+        parts: List[str] = []
+        if will_write_planned and has_planned_disk:
+            parts.append("planned (planned_tcp / planned_traj)")
+        if will_write_executed and has_executed_disk:
+            parts.append("executed (executed_tcp / executed_traj)")
+
+        mode = self._last_run_mode or "run"
+        recipe_name = getattr(recipe_disk, "id", None) or getattr(recipe_disk, "key", None) or key
+
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setWindowTitle("Overwrite stored run artifacts?")
+        msg.setText(f"Recipe '{recipe_name}': This {mode} run will overwrite stored artifacts.")
+        msg.setInformativeText("Overwrite: " + ", ".join(parts))
+        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg.setDefaultButton(QMessageBox.StandardButton.No)
+
+        cb = QCheckBox("Don't ask again (this session)", msg)
+        msg.setCheckBox(cb)
+
+        ret_int = int(msg.exec())
+        if cb.isChecked():
+            self._confirm_overwrite = False
+
+        try:
+            ret = QMessageBox.StandardButton(ret_int)
+        except Exception:
+            return False
+        return ret == QMessageBox.StandardButton.Yes
 
     @QtCore.pyqtSlot(str, object, object)
     def on_run_finished(self, key: str, payload: object, rr_obj: object) -> None:
@@ -416,8 +489,13 @@ class RecipePanel(QWidget):
             _LOG.error("RecipePanel: rr.evaluate_tcp_against_draft failed (key=%s): %s", key, e)
 
         persist_err: Optional[str] = None
+        persisted: bool = False
         try:
-            self.repo.save_run_result_if_valid(key, run_result=rr)
+            if not self._confirm_overwrite_run_artifacts(key=key, rr=rr, recipe_disk=recipe_disk):
+                persist_err = "persist skipped by user (overwrite denied)"
+            else:
+                self.repo.save_run_result_if_valid(key, run_result=rr)
+                persisted = True
         except Exception as e:
             persist_err = str(e)
             _LOG.error("RecipePanel: save_run_result_if_valid failed (key=%s): %s", key, e)
@@ -437,11 +515,14 @@ class RecipePanel(QWidget):
         except Exception as e:
             self.txtNewRun.setPlainText(f"Run finished for {key}, but report render failed: {e}")
 
-        try:
-            self._refresh_stored_from_disk(key)
-        except Exception as e:
-            _LOG.error("RecipePanel: refresh stored after run failed: %s", e)
+        # Refresh stored view only if we actually persisted
+        if persisted:
+            try:
+                self._refresh_stored_from_disk(key)
+            except Exception as e:
+                _LOG.error("RecipePanel: refresh stored after run failed: %s", e)
 
+        # Always publish "new run" overlays (live)
         try:
             self._republish_newrun_overlays_from_rr(rr)
         except Exception as e:

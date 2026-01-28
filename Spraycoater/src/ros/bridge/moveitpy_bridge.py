@@ -8,7 +8,7 @@ import json
 from PyQt6 import QtCore
 
 from std_msgs.msg import String as MsgString, Bool as MsgBool, Float64 as MsgFloat64, Empty as MsgEmpty
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PoseArray
 from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg
 
 from config.startup import AppContent, TopicSpec
@@ -33,7 +33,7 @@ class MoveItPySignals(QtCore.QObject):
         - robot_description_semantic    (latched)
 
       UI -> Node:
-        - plan_pose, plan_named, execute, stop, set_speed_mm_s, set_planner_cfg
+        - plan_pose, plan_pose_array, plan_named, execute, stop, set_speed_mm_s, set_planner_cfg
         - execute_trajectory            (RobotTrajectoryMsg)
         - optimize_trajectory           (RobotTrajectoryMsg)
         - set_segment                   (String) optional tagging
@@ -49,10 +49,12 @@ class MoveItPySignals(QtCore.QObject):
     moveToHomeRequestedWithSpeed = QtCore.pyqtSignal(float)
     moveToServiceRequestedWithSpeed = QtCore.pyqtSignal(float)
 
-    moveToPoseRequested = QtCore.pyqtSignal(object)  # PoseStamped
-    stopRequested = QtCore.pyqtSignal()              # -> publish stop topic
+    moveToPoseRequested = QtCore.pyqtSignal(object)       # PoseStamped
+    planPoseArrayRequested = QtCore.pyqtSignal(object)    # PoseArray (NEW)
 
-    # NEW: replay/optimize path (joint-space)
+    stopRequested = QtCore.pyqtSignal()                   # -> publish stop topic
+
+    # replay/optimize path (joint-space)
     executeTrajectoryRequested = QtCore.pyqtSignal(object)   # RobotTrajectoryMsg
     optimizeTrajectoryRequested = QtCore.pyqtSignal(object)  # RobotTrajectoryMsg
     segmentChanged = QtCore.pyqtSignal(str)                  # "MOVE_RECIPE" etc. (optional)
@@ -62,7 +64,10 @@ class MoveItPySignals(QtCore.QObject):
     plannedTrajectoryChanged = QtCore.pyqtSignal(object)     # RobotTrajectoryMsg
     executedTrajectoryChanged = QtCore.pyqtSignal(object)    # RobotTrajectoryMsg
     optimizedTrajectoryChanged = QtCore.pyqtSignal(object)   # RobotTrajectoryMsg
-    trajCacheClearChanged = QtCore.pyqtSignal()              # Empty "clear caches" boundary signal
+
+    # NOTE: boundary signal (non-latched) from node
+    trajCacheClearChanged = QtCore.pyqtSignal()
+
     robotDescriptionChanged = QtCore.pyqtSignal(str)         # URDF string (latched)
     robotDescriptionSemanticChanged = QtCore.pyqtSignal(str) # SRDF string (latched)
 
@@ -77,13 +82,13 @@ class MoveItPySignals(QtCore.QObject):
         self._last_urdf: str = ""
         self._last_srdf: str = ""
 
-    def _set_last_planned(self, msg: RobotTrajectoryMsg) -> None:
+    def _set_last_planned(self, msg: Optional[RobotTrajectoryMsg]) -> None:
         self._last_planned = msg
 
-    def _set_last_executed(self, msg: RobotTrajectoryMsg) -> None:
+    def _set_last_executed(self, msg: Optional[RobotTrajectoryMsg]) -> None:
         self._last_executed = msg
 
-    def _set_last_optimized(self, msg: RobotTrajectoryMsg) -> None:
+    def _set_last_optimized(self, msg: Optional[RobotTrajectoryMsg]) -> None:
         self._last_optimized = msg
 
     def _set_last_urdf(self, text: str) -> None:
@@ -146,12 +151,12 @@ class MoveItPyBridge(BaseBridge):
         s.moveToHomeRequestedWithSpeed.connect(self._on_move_home_with_speed)
         s.moveToServiceRequestedWithSpeed.connect(self._on_move_service_with_speed)
         s.moveToPoseRequested.connect(self._on_move_to_pose)
+        s.planPoseArrayRequested.connect(self._on_plan_pose_array_requested)
         s.stopRequested.connect(self._on_stop_requested)
 
         s.motionSpeedChanged.connect(self._on_motion_speed_changed)
         s.plannerCfgChanged.connect(self._on_planner_cfg_changed)
 
-        # NEW
         s.executeTrajectoryRequested.connect(self._on_execute_trajectory_requested)
         s.optimizeTrajectoryRequested.connect(self._on_optimize_trajectory_requested)
         s.segmentChanged.connect(self._on_segment_changed)
@@ -159,6 +164,7 @@ class MoveItPyBridge(BaseBridge):
         # ---------------- UI -> Node (Node subscribes) ----------------
         self._ensure_pub("plan_named", MsgString)
         self._ensure_pub("plan_pose", PoseStamped)
+        self._ensure_pub("plan_pose_array", PoseArray)
         self._ensure_pub("execute", MsgBool)
         self._ensure_pub("stop", MsgEmpty)
         self._ensure_pub("set_speed_mm_s", MsgFloat64)
@@ -173,10 +179,9 @@ class MoveItPyBridge(BaseBridge):
         self._ensure_sub("motion_result", MsgString, self._on_motion_result)
         self._ensure_sub("planned_trajectory_rt", RobotTrajectoryMsg, self._on_planned_traj)
         self._ensure_sub("executed_trajectory_rt", RobotTrajectoryMsg, self._on_executed_traj)
-
         self._maybe_ensure_sub("optimized_trajectory_rt", RobotTrajectoryMsg, self._on_optimized_traj)
 
-        # NEW: cache-clear signal (should exist if you added the topic id to YAML)
+        # boundary cache-clear signal (non-latched)
         self._maybe_ensure_sub("traj_cache_clear", MsgEmpty, self._on_traj_cache_clear)
 
         self._ensure_sub("robot_description", MsgString, self._on_robot_description)
@@ -255,27 +260,45 @@ class MoveItPyBridge(BaseBridge):
     # Inbound vom MoveItPy Node (Node -> UI)
     # ─────────────────────────────────────────────────────────────
 
-    def _on_traj_cache_clear(self, _msg: MsgEmpty) -> None:
+    @staticmethod
+    def _is_empty_robot_trajectory(msg: RobotTrajectoryMsg) -> bool:
         """
-        Boundary signal: Node announced that caches must be cleared for the new move call.
-        We clear ONLY local caches and (optionally) inform UI widgets.
+        New node clears latched topics by publishing empty RobotTrajectory messages.
+        Treat them as 'clear caches' boundary locally (do not forward as real trajectory).
         """
+        try:
+            jt = getattr(msg, "joint_trajectory", None)
+            if jt is None:
+                return True
+            names = list(getattr(jt, "joint_names", []) or [])
+            pts = list(getattr(jt, "points", []) or [])
+            return (len(names) == 0) and (len(pts) == 0)
+        except Exception:
+            return False
+
+    def _clear_local_traj_caches(self) -> None:
         self._last_planned_traj = None
         self._last_executed_traj = None
         self._last_optimized_traj = None
 
-        # also clear cached signals so reemit_cached can't re-push old segment data
-        self.signals._set_last_planned(None)    # type: ignore[arg-type]
-        self.signals._set_last_executed(None)   # type: ignore[arg-type]
-        self.signals._set_last_optimized(None)  # type: ignore[arg-type]
+        # also clear cached signals so reemit_cached can't re-push old data
+        self.signals._set_last_planned(None)
+        self.signals._set_last_executed(None)
+        self.signals._set_last_optimized(None)
 
+    def _on_traj_cache_clear(self, _msg: MsgEmpty) -> None:
+        """
+        Boundary signal: Node announced that caches must be cleared for the new move call.
+        We clear ONLY local caches and inform UI widgets.
+        """
+        self._clear_local_traj_caches()
         self.signals.trajCacheClearChanged.emit()
 
     def _on_motion_result(self, msg: MsgString) -> None:
         text = (msg.data or "").strip()
         self.signals.last_result = text
 
-        # Auto-Execute nach Planning (wie bisher)
+        # Auto-Execute nach Planning (wie bisher) – NUR für Named/Pose
         if self._pending_named:
             if text.startswith("PLANNED:OK") and f"named='{self._pending_named}'" in text:
                 self._publish_execute(True)
@@ -293,16 +316,34 @@ class MoveItPyBridge(BaseBridge):
         self.signals.motionResultChanged.emit(text)
 
     def _on_planned_traj(self, msg: RobotTrajectoryMsg) -> None:
+        if self._is_empty_robot_trajectory(msg):
+            # node cleared latched planned trajectory -> treat as boundary clear
+            self._clear_local_traj_caches()
+            self.signals.trajCacheClearChanged.emit()
+            return
+
         self._last_planned_traj = msg
         self.signals._set_last_planned(msg)
         self.signals.plannedTrajectoryChanged.emit(msg)
 
     def _on_executed_traj(self, msg: RobotTrajectoryMsg) -> None:
+        if self._is_empty_robot_trajectory(msg):
+            # node cleared latched executed trajectory -> treat as boundary clear
+            self._clear_local_traj_caches()
+            self.signals.trajCacheClearChanged.emit()
+            return
+
         self._last_executed_traj = msg
         self.signals._set_last_executed(msg)
         self.signals.executedTrajectoryChanged.emit(msg)
 
     def _on_optimized_traj(self, msg: RobotTrajectoryMsg) -> None:
+        if self._is_empty_robot_trajectory(msg):
+            # node cleared latched optimized trajectory -> treat as boundary clear
+            self._clear_local_traj_caches()
+            self.signals.trajCacheClearChanged.emit()
+            return
+
         self._last_optimized_traj = msg
         self.signals._set_last_optimized(msg)
         self.signals.optimizedTrajectoryChanged.emit(msg)
@@ -353,6 +394,27 @@ class MoveItPyBridge(BaseBridge):
         out.pose = pose.pose
         self._pub_ui_to_node("plan_pose").publish(out)
 
+    def _on_plan_pose_array_requested(self, pa: object) -> None:
+        """
+        Plan a full waypoint list as ONE MoveIt planned trajectory (cartesian path).
+
+        IMPORTANT:
+          - We do NOT auto-execute here.
+          - Validate/Process statemachine decides when to execute/optimize.
+        """
+        if pa is None:
+            return
+        if not isinstance(pa, PoseArray):
+            raise TypeError(f"planPoseArrayRequested expects PoseArray, got {type(pa)!r}")
+        if not self._has_pub("plan_pose_array"):
+            raise RuntimeError(
+                "MoveItPyBridge: topic 'plan_pose_array' nicht gebunden. "
+                "Prüfe topics.yaml (moveit_py.subscribe id=plan_pose_array)."
+            )
+
+        # PoseArray has no header; node assumes WORLD. Keep msg as-is.
+        self._pub_ui_to_node("plan_pose_array").publish(pa)
+
     def _on_stop_requested(self) -> None:
         self.publish_stop()
 
@@ -369,7 +431,7 @@ class MoveItPyBridge(BaseBridge):
     def _publish_execute(self, flag: bool) -> None:
         self._pub_ui_to_node("execute").publish(MsgBool(data=bool(flag)))
 
-    # ---------------- NEW: execute/optimize trajectory / segment tagging ----------------
+    # ---------------- execute/optimize trajectory / segment tagging ----------------
 
     def _on_execute_trajectory_requested(self, traj: object) -> None:
         if traj is None:
@@ -381,6 +443,8 @@ class MoveItPyBridge(BaseBridge):
                 "MoveItPyBridge: topic 'execute_trajectory' nicht gebunden. "
                 "Prüfe topics.yaml (moveit_py.subscribe id=execute_trajectory)."
             )
+
+        # Node now enforces time_from_start starts at 0; we keep bridge minimal and publish as-is.
         self._pub_ui_to_node("execute_trajectory").publish(traj)
 
     def _on_optimize_trajectory_requested(self, traj: object) -> None:
@@ -393,6 +457,8 @@ class MoveItPyBridge(BaseBridge):
                 "MoveItPyBridge: topic 'optimize_trajectory' nicht gebunden. "
                 "Prüfe topics.yaml (moveit_py.subscribe id=optimize_trajectory)."
             )
+
+        # Node normalizes time and publishes optimized_trajectory_rt + motion_result.
         self._pub_ui_to_node("optimize_trajectory").publish(traj)
 
     def _on_segment_changed(self, seg: str) -> None:
@@ -405,6 +471,16 @@ class MoveItPyBridge(BaseBridge):
 
     def publish_stop(self) -> None:
         self._pub_ui_to_node("stop").publish(MsgEmpty())
+
+    def publish_plan_pose_array(self, pa: PoseArray, *, segment: str = "") -> None:
+        """
+        Public API for Validate statemachine:
+          - optionally tag segment
+          - publish PoseArray to node (plan as ONE trajectory)
+        """
+        if segment:
+            self._on_segment_changed(segment)
+        self._on_plan_pose_array_requested(pa)
 
     def publish_execute_trajectory(self, traj: RobotTrajectoryMsg, *, segment: str = "") -> None:
         if segment:

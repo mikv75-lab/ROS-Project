@@ -53,81 +53,83 @@ topics:
         qos: latched
 
   moveit_py:
-    subscribe:
-      - id: plan_pose
-        name: moveit_py/plan_pose
-        type: geometry_msgs/msg/PoseStamped
-        qos: default
-
+    subscribe:   # UI -> Node (Node subscribes)
       - id: plan_named
-        name: moveit_py/plan_named
+        name: spraycoater/moveit_py/plan_named
         type: std_msgs/msg/String
         qos: default
 
+      - id: plan_pose
+        name: spraycoater/moveit_py/plan_pose
+        type: geometry_msgs/msg/PoseStamped
+        qos: default
+
+      - id: plan_pose_array
+        name: spraycoater/moveit_py/plan_pose_array
+        type: geometry_msgs/msg/PoseArray
+        qos: default
+
       - id: execute
-        name: moveit_py/execute
+        name: spraycoater/moveit_py/execute
         type: std_msgs/msg/Bool
         qos: default
 
       - id: stop
-        name: moveit_py/stop
+        name: spraycoater/moveit_py/stop
         type: std_msgs/msg/Empty
         qos: default
 
       - id: set_speed_mm_s
-        name: moveit_py/set_speed_mm_s
+        name: spraycoater/moveit_py/set_speed_mm_s
         type: std_msgs/msg/Float64
         qos: default
 
       - id: set_planner_cfg
-        name: moveit_py/set_planner_cfg
+        name: spraycoater/moveit_py/set_planner_cfg
         type: std_msgs/msg/String
         qos: default
 
-      # Replay from YAML (treat as "external move" -> node clears latched planned/executed/optimized before use)
       - id: execute_trajectory
-        name: moveit_py/execute_trajectory
+        name: spraycoater/moveit_py/execute_trajectory
         type: moveit_msgs/msg/RobotTrajectory
         qos: default
 
-      # Segment tagging (optional; node may clear here too if you add that behavior)
+      - id: optimize_trajectory
+        name: spraycoater/moveit_py/optimize_trajectory
+        type: moveit_msgs/msg/RobotTrajectory
+        qos: default
+
       - id: set_segment
-        name: moveit_py/set_segment
+        name: spraycoater/moveit_py/set_segment
         type: std_msgs/msg/String
         qos: default
 
-      # Optimize input (external post-process; node clears latched planned/executed/optimized before output)
-      - id: optimize_trajectory
-        name: moveit_py/optimize_trajectory
-        type: moveit_msgs/msg/RobotTrajectory
+    publish:     # Node -> UI (Node publishes)
+      - id: motion_result
+        name: spraycoater/moveit_py/motion_result
+        type: std_msgs/msg/String
         qos: default
 
-    publish:
-      - id: traj_cache_clear
-        name: moveit_py/traj_cache_clear
-        type: std_msgs/msg/Empty
-        qos: default
-      # -------------------------------------------------
-      # SSoT for runs (joint space) - ALL LATCHED
-      # -------------------------------------------------
       - id: planned_trajectory_rt
-        name: moveit_py/planned_trajectory_rt
+        name: spraycoater/moveit_py/planned_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
-        qos: latched
+        qos: default
 
       - id: executed_trajectory_rt
-        name: moveit_py/executed_trajectory_rt
+        name: spraycoater/moveit_py/executed_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
-        qos: latched
+        qos: default
 
       - id: optimized_trajectory_rt
-        name: moveit_py/optimized_trajectory_rt
+        name: spraycoater/moveit_py/optimized_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
-        qos: latched
+        qos: default
 
-      # -------------------------------------------------
-      # Robot model strings for Offline-FK in GUI (latched)
-      # -------------------------------------------------
+      - id: traj_cache_clear
+        name: spraycoater/moveit_py/traj_cache_clear
+        type: std_msgs/msg/Empty
+        qos: default
+
       - id: robot_description
         name: robot_description
         type: std_msgs/msg/String
@@ -138,11 +140,6 @@ topics:
         type: std_msgs/msg/String
         qos: latched
 
-      # State machine trigger (published last by node)
-      - id: motion_result
-        name: moveit_py/motion_result
-        type: std_msgs/msg/String
-        qos: default
 
 
   scene:

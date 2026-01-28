@@ -2,7 +2,9 @@
 # File: tabs/process/validate_statemachine.py
 from __future__ import annotations
 
+import copy
 import logging
+from dataclasses import dataclass
 from typing import Optional, Any, Dict, List, Tuple
 
 from PyQt6 import QtCore
@@ -18,6 +20,18 @@ from .base_statemachine import (
 )
 
 _LOG = logging.getLogger("tabs.process.validate_statemachine")
+
+
+@dataclass
+class _JTBySegmentYamlV1:
+    """
+    Minimal wrapper so downstream (Optimize/Execute) can rely on the API:
+      recipe.planned_traj.to_yaml_dict() -> Dict[str, Any]
+    """
+    yaml: Dict[str, Any]
+
+    def to_yaml_dict(self) -> Dict[str, Any]:
+        return copy.deepcopy(self.yaml)
 
 
 class ProcessValidateStatemachine(BaseProcessStatemachine):
@@ -39,6 +53,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
     IMPORTANT:
       - No slicing like recipe[0] / recipe[-1] anymore.
       - We rely on Base helper `_draft_segment_pose_tuples()` so the contract is enforced in one place.
+      - Validate MUST write recipe.planned_traj (JTBySegment YAML v1) so Optimize/Execute can consume it.
     """
 
     ROLE = "validate"
@@ -90,6 +105,10 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         except Exception:
             self._joint_sig_connected = False
 
+    # ------------------------------------------------------------------
+    # STOP
+    # ------------------------------------------------------------------
+
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
         self._await_joint_update_for_next_pose = False
@@ -102,7 +121,9 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             pass
         super().request_stop()
 
-    # --------- Retry Hook (called by Base) ---------
+    # ------------------------------------------------------------------
+    # Retry Hook (called by Base)
+    # ------------------------------------------------------------------
 
     def _on_retry_last_motion(self, seg_name: str, attempt: int, last_error: str) -> bool:
         if self._stop_requested:
@@ -132,7 +153,9 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._ros_move_pose_tuple(pose)
         return True
 
-    # --------- Prepare / Segment wiring ---------
+    # ------------------------------------------------------------------
+    # Prepare / Segment wiring
+    # ------------------------------------------------------------------
 
     def _prepare_run(self) -> bool:
         # STRICT: frame for pose commands in this architecture
@@ -177,9 +200,9 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             self._signal_error(f"Validate: retreat fehlt (side='{self._side}').")
             return False
 
-        self._cmd_poses_by_seg[STATE_MOVE_PREDISPENSE] = list(pre[:1])  # exactly one
-        self._cmd_poses_by_seg[STATE_MOVE_RECIPE] = list(recipe)        # full recipe list
-        self._cmd_poses_by_seg[STATE_MOVE_RETREAT] = list(ret[:1])      # exactly one
+        self._cmd_poses_by_seg[STATE_MOVE_PREDISPENSE] = list(pre[:1])   # exactly one
+        self._cmd_poses_by_seg[STATE_MOVE_RECIPE] = list(recipe)         # full recipe list
+        self._cmd_poses_by_seg[STATE_MOVE_RETREAT] = list(ret[:1])       # exactly one
         self._cmd_poses_by_seg[STATE_MOVE_HOME] = []
 
         self._pending_recipe_poses = list(self._cmd_poses_by_seg[STATE_MOVE_RECIPE])
@@ -228,9 +251,14 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
 
         return True
 
+    # ------------------------------------------------------------------
+    # Segment gating / enter
+    # ------------------------------------------------------------------
+
     def _segment_exists(self, seg_name: str) -> bool:
         if seg_name in (STATE_MOVE_PREDISPENSE, STATE_MOVE_RECIPE, STATE_MOVE_RETREAT):
             return bool(self._cmd_poses_by_seg.get(seg_name))
+        # HOME always exists
         return True
 
     def _on_enter_segment(self, seg_name: str) -> None:
@@ -287,6 +315,10 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
 
         return True
 
+    # ------------------------------------------------------------------
+    # Segment runners
+    # ------------------------------------------------------------------
+
     def _run_single_pose_segment(self, seg_name: str) -> None:
         poses = self._cmd_poses_by_seg.get(seg_name) or []
         if not poses:
@@ -325,6 +357,10 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             self._inflight_seg = STATE_MOVE_HOME
         except Exception as ex:
             self._signal_error(f"Validate: move_home failed: {ex}")
+
+    # ------------------------------------------------------------------
+    # Joint update gating for streaming
+    # ------------------------------------------------------------------
 
     def _arm_joint_fallback_timer(self) -> None:
         try:
@@ -373,6 +409,10 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._await_joint_update_for_next_pose = False
         QtCore.QTimer.singleShot(self._NEXT_POSE_QT_DELAY_MS, self._send_next_recipe_pose)
 
+    # ------------------------------------------------------------------
+    # ROS command: pose tuple -> MoveIt request
+    # ------------------------------------------------------------------
+
     def _ros_move_pose_tuple(self, p: Tuple[float, ...]) -> None:
         if len(p) < 7:
             self._signal_error(f"Validate: Invalid pose tuple len={len(p)}")
@@ -415,6 +455,42 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
             self._ros.moveitpy.signals.moveToPoseRequested.emit(ps)
         except Exception as ex:
             self._signal_error(f"Validate: move_pose failed ({x:.1f},{y:.1f},{z:.1f}): {ex}")
+
+    # ------------------------------------------------------------------
+    # FINISH: build JTBySegment YAML v1 and write recipe.planned_traj
+    # ------------------------------------------------------------------
+
+    def _on_finished(self) -> None:
+        # Base provides raw snapshots; we persist both planned/executed by segment.
+        planned = self._jt_by_segment_yaml(which="planned")
+        executed = self._jt_by_segment_yaml(which="executed")
+
+        # STRICT: planned must not be empty, because Optimize/Execute depend on it
+        p_segs = planned.get("segments") if isinstance(planned, dict) else None
+        if not (isinstance(p_segs, dict) and p_segs):
+            self.notifyError.emit(
+                "Validate finished, but planned trajectory capture is empty. "
+                "Check MoveItPyNode planned_trajectory publish + Base capture timeout."
+            )
+            self._cleanup()
+            return
+
+        # Persist planned_traj into recipe for downstream stages (Optimize/Execute)
+        try:
+            setattr(self._recipe, "planned_traj", _JTBySegmentYamlV1(planned))
+        except Exception as e:
+            self.notifyError.emit(f"Validate: failed to write recipe.planned_traj: {e}")
+            self._cleanup()
+            return
+
+        self._rr.set_planned(traj=copy.deepcopy(planned))
+        self._rr.set_executed(traj=copy.deepcopy(executed))
+        self.notifyFinished.emit(self._rr.to_process_payload())
+        self._cleanup()
+
+    # ------------------------------------------------------------------
+    # Cleanup
+    # ------------------------------------------------------------------
 
     def _cleanup(self) -> None:
         try:

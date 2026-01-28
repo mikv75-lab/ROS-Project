@@ -211,10 +211,17 @@ class RecipeRepo:
 
     def save_run_result_if_valid(self, recipe_id: str, *, run_result: RunResult) -> bool:
         """
-        STRICT:
-          - run_result is kw-only and must be RunResult.
-          - saves ONLY if run_result.valid is True.
-          - converts dicts to strict objects (JTBySegment/Draft).
+        STRICT + MERGE (Keep-on-missing):
+
+        - saves ONLY if run_result.valid is True
+        - converts dicts to strict objects (JTBySegment/Draft)
+        - IMPORTANT POLICY:
+            * if a new artifact is present -> overwrite
+            * if a new artifact is missing -> keep existing on disk (do NOT delete)
+            This matches:
+            - executed_* overwrites executed_* when execute produced it
+            - planned_* overwrites planned_* when validate/optimize produced it
+            - missing parts never delete previous artifacts
         """
         rid = self._norm_rid(recipe_id)
         if not rid:
@@ -225,16 +232,35 @@ class RecipeRepo:
         if not bool(getattr(run_result, "valid", False)):
             return False
 
+        # --- build "new" artifacts from RunResult (strict parsing) ---
         p_traj_dict = dict((run_result.planned_run or {}).get("traj") or {})
         e_traj_dict = dict((run_result.executed_run or {}).get("traj") or {})
         p_tcp_dict = dict((run_result.planned_run or {}).get("tcp") or {})
         e_tcp_dict = dict((run_result.executed_run or {}).get("tcp") or {})
 
-        planned_traj = JTBySegment.from_yaml_dict(p_traj_dict) if p_traj_dict else None
-        executed_traj = JTBySegment.from_yaml_dict(e_traj_dict) if e_traj_dict else None
-        planned_tcp = Draft.from_yaml_dict(p_tcp_dict) if p_tcp_dict else None
-        executed_tcp = Draft.from_yaml_dict(e_tcp_dict) if e_tcp_dict else None
+        new_planned_traj = JTBySegment.from_yaml_dict(p_traj_dict) if p_traj_dict else None
+        new_executed_traj = JTBySegment.from_yaml_dict(e_traj_dict) if e_traj_dict else None
+        new_planned_tcp = Draft.from_yaml_dict(p_tcp_dict) if p_tcp_dict else None
+        new_executed_tcp = Draft.from_yaml_dict(e_tcp_dict) if e_tcp_dict else None
 
+        # --- MERGE/KEEP: if new is None -> keep existing on disk ---
+        p = self._paths(rid)
+
+        def _keep_traj(path: str) -> Optional[JTBySegment]:
+            d = self._read_yaml_dict_or_none(path)
+            return JTBySegment.from_yaml_dict(d) if d else None
+
+        def _keep_tcp(path: str) -> Optional[Draft]:
+            d = self._read_yaml_dict_or_none(path)
+            return Draft.from_yaml_dict(d) if d else None
+
+        planned_traj = new_planned_traj if new_planned_traj is not None else _keep_traj(str(getattr(p, "planned_traj_yaml", "") or ""))
+        executed_traj = new_executed_traj if new_executed_traj is not None else _keep_traj(str(getattr(p, "executed_traj_yaml", "") or ""))
+        planned_tcp = new_planned_tcp if new_planned_tcp is not None else _keep_tcp(str(getattr(p, "planned_tcp_yaml", "") or ""))
+        executed_tcp = new_executed_tcp if new_executed_tcp is not None else _keep_tcp(str(getattr(p, "executed_tcp_yaml", "") or ""))
+
+        # Now save_run_artifacts will NOT delete anything unintentionally,
+        # because missing parts were filled with existing disk values.
         self.save_run_artifacts(
             rid,
             planned_traj=planned_traj,

@@ -28,27 +28,23 @@ _LOG = logging.getLogger("tabs.process.optimize_sm")
 
 class ProcessOptimizeStatemachine(BaseProcessStatemachine):
     """
-    Optimize run (STRICT, collect-only):
+    Optimize run (STRICT, collect-only) – UPDATED for new MoveItPy node behavior.
 
-    - Input: recipe.planned_traj (JTBySegment YAML v1) from Validate
-    - Action:
-        1) request optimization: ros.moveit_optimize_trajectory(in_rt, segment=...)
-        2) on optimizedTrajectoryChanged -> execute optimized: ros.moveit_execute_trajectory(opt_rt, segment=...)
-    - Pairing:
-        - We seed Base pending planned slot BEFORE executing optimized trajectory, because PLANNED:OK may not arrive.
-        - Executed capture comes from Base caches/getters.
-    - No evaluation here. Only collect planned/executed trajectories into RunResult payload.
+    Flow:
+      1) request optimization via ros.moveit_optimize_trajectory(in_rt, segment=SEG)
+      2) wait for optimizedTrajectoryChanged (or fallback getter on timeout)
+      3) execute optimized via ros.moveit_execute_trajectory(opt_rt, segment=SEG)
 
-    Retry model (via Base):
-      - On ERROR:* the Base will call _on_retry_last_motion().
-      - We retry either:
-          - optimize request (if failure happened during optimize stage)
-          - execute (if failure happened during execute stage)
+    Pairing contract (important with new node):
+      - For execute_trajectory, PLANNED:OK may be absent -> we seed Base pending planned
+        right before execute (and again on retry).
+      - Node may emit traj_cache_clear before each move; Base clears only cached
+        last_planned/last_executed, but our seeded pending planned must survive.
     """
 
     ROLE = "optimize"
 
-    _OPTIMIZE_TIMEOUT_MS = 6000  # allow a bit more, optimization can be slow
+    _OPTIMIZE_TIMEOUT_MS = 6000  # optimization can be slow
 
     def __init__(
         self,
@@ -78,7 +74,7 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
         # optimized RobotTrajectoryMsg cache per segment (for execute + retry)
         self._optimized_rt_by_segment: Dict[str, RobotTrajectoryMsg] = {}
 
-        # optimize config
+        # optimize config (flat cfg to node)
         self._opt_cfg: Dict[str, Any] = {}
         self._opt_planner_cfg_json: str = ""
 
@@ -96,6 +92,7 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
         self._inflight_stage: str = ""  # "", "optimize", "execute"
         self._inflight_opt_in: Optional[RobotTrajectoryMsg] = None
         self._inflight_exec_rt: Optional[RobotTrajectoryMsg] = None
+        self._inflight_exec_planned_jt: Optional[Dict[str, Any]] = None  # seed planned on execute retry
 
         # connect optimized trajectory signal (best-effort)
         self._opt_sig_connected: bool = False
@@ -115,10 +112,13 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
     def request_stop(self) -> None:
         self._opt_waiting = False
         self._opt_wait_seg = ""
+
         self._inflight_seg = ""
         self._inflight_stage = ""
         self._inflight_opt_in = None
         self._inflight_exec_rt = None
+        self._inflight_exec_planned_jt = None
+
         try:
             self._opt_timeout_timer.stop()
         except Exception:
@@ -140,6 +140,7 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
             return False
 
         stage = str(self._inflight_stage or "")
+
         if stage == "optimize" and self._inflight_opt_in is not None:
             _LOG.warning(
                 "Optimize: retry OPTIMIZE request attempt %d for seg=%s reason=%s",
@@ -156,6 +157,12 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
                 str(seg_name),
                 str(last_error),
             )
+
+            # CRITICAL: re-seed planned pending for execute retry (PLANNED:OK may not arrive)
+            if isinstance(self._inflight_exec_planned_jt, dict):
+                self._pending_planned_step[seg_name] = copy.deepcopy(self._inflight_exec_planned_jt)
+                self._pending_executed_step[seg_name] = None
+
             try:
                 self._ros.moveit_execute_trajectory(self._inflight_exec_rt, segment=str(seg_name))
                 return True
@@ -174,12 +181,21 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
 
         self._opt_waiting = True
         self._opt_wait_seg = str(seg_name)
+
         try:
             self._opt_timeout_timer.stop()
         except Exception:
             pass
         self._opt_timeout_timer.start(int(self._OPTIMIZE_TIMEOUT_MS))
+
         self._opt_prev_msg = self._safe_get_optimized_msg()
+
+        # inflight state
+        self._inflight_seg = str(seg_name)
+        self._inflight_stage = "optimize"
+        self._inflight_opt_in = in_rt
+        self._inflight_exec_rt = None
+        self._inflight_exec_planned_jt = None
 
         try:
             self._ros.moveit_optimize_trajectory(in_rt, segment=str(seg_name))
@@ -203,6 +219,7 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
         self._inflight_stage = ""
         self._inflight_opt_in = None
         self._inflight_exec_rt = None
+        self._inflight_exec_planned_jt = None
 
         planned_traj = getattr(self._recipe, "planned_traj", None)
         if planned_traj is None:
@@ -318,9 +335,11 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
                 t_sec = int(tfs[0])
                 t_nsec = int(tfs[1])
 
-            q: Dict[str, Any] = {"positions": [float(x) for x in pos], "time_from_start": {"sec": t_sec, "nanosec": t_nsec}}
+            q: Dict[str, Any] = {
+                "positions": [float(x) for x in pos],
+                "time_from_start": {"sec": t_sec, "nanosec": t_nsec},
+            }
 
-            # preserve optional arrays if present (not required)
             if "velocities" in p and isinstance(p.get("velocities"), list):
                 q["velocities"] = [float(x) for x in p.get("velocities") or []]
             if "accelerations" in p and isinstance(p.get("accelerations"), list):
@@ -441,11 +460,13 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
 
         self._opt_waiting = True
         self._opt_wait_seg = str(seg_name)
+
         try:
             self._opt_timeout_timer.stop()
         except Exception:
             pass
         self._opt_timeout_timer.start(int(self._OPTIMIZE_TIMEOUT_MS))
+
         self._opt_prev_msg = self._safe_get_optimized_msg()
 
         # inflight for retry
@@ -453,6 +474,7 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
         self._inflight_stage = "optimize"
         self._inflight_opt_in = in_rt
         self._inflight_exec_rt = None
+        self._inflight_exec_planned_jt = None
 
         try:
             self._ros.moveit_optimize_trajectory(in_rt, segment=str(seg_name))
@@ -486,7 +508,7 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
 
         self._optimized_rt_by_segment[seg] = msg
 
-        # normalize optimized into JT dict (Base expects normalized dict time_from_start)
+        # Normalize optimized into JT dict (for planned payload + seeding)
         opt_jt = self._jt_from_any(msg)
         if isinstance(opt_jt, dict):
             self._planned_jt_by_segment[seg] = opt_jt
@@ -523,7 +545,7 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
             self._signal_error("Optimize: Internal error (no optimized traj)")
             return
 
-        # CRITICAL: seed planned pending for this segment right before execute (PLANNED:OK may be absent)
+        # CRITICAL: seed planned pending right before execute (PLANNED:OK may be absent)
         planned_jt = self._planned_jt_by_segment.get(seg_name)
         if isinstance(planned_jt, dict):
             self._pending_planned_step[seg_name] = copy.deepcopy(planned_jt)
@@ -533,7 +555,7 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
         self._inflight_seg = str(seg_name)
         self._inflight_stage = "execute"
         self._inflight_exec_rt = rt
-        # keep _inflight_opt_in around; harmless
+        self._inflight_exec_planned_jt = copy.deepcopy(planned_jt) if isinstance(planned_jt, dict) else None
 
         try:
             self._ros.moveit_execute_trajectory(rt, segment=str(seg_name))
@@ -560,6 +582,7 @@ class ProcessOptimizeStatemachine(BaseProcessStatemachine):
             tfs = p.get("time_from_start")
             if not isinstance(pos, list):
                 continue
+
             sec = 0
             nsec = 0
             if isinstance(tfs, dict):

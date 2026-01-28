@@ -15,12 +15,13 @@ Publishes (per config_hub topics.yaml):
   - motion_result                (std_msgs/msg/String)             [default]
 
 Subscribes:
-  - plan_pose       (geometry_msgs/msg/PoseStamped)
-  - plan_named      (std_msgs/msg/String)
-  - execute         (std_msgs/msg/Bool)
-  - stop            (std_msgs/msg/Empty)
-  - set_speed_mm_s  (std_msgs/msg/Float64)
-  - set_planner_cfg (std_msgs/msg/String)
+  - plan_pose        (geometry_msgs/msg/PoseStamped)
+  - plan_pose_array  (geometry_msgs/msg/PoseArray)   [NEW]
+  - plan_named       (std_msgs/msg/String)
+  - execute          (std_msgs/msg/Bool)
+  - stop             (std_msgs/msg/Empty)
+  - set_speed_mm_s   (std_msgs/msg/Float64)
+  - set_planner_cfg  (std_msgs/msg/String)
 
 Extended:
   - execute_trajectory  (moveit_msgs/msg/RobotTrajectory)
@@ -30,13 +31,16 @@ Extended:
 Design:
   - publish trajectories BEFORE motion_result (race-free for statemachine)
   - CLEAR caches via traj_cache_clear BEFORE each external "move" call
-    (plan_pose, plan_named, execute_trajectory, optimize_trajectory)
+    (plan_pose, plan_pose_array, plan_named, execute_trajectory, optimize_trajectory)
   - do NOT clear before "execute" (execute consumes the current planned)
   - publish robot_description(_semantic) ONCE after MoveItPy init (latched)
   - also best-effort re-publish robot_description on first plan request
     (covers UI starting late / transient-local mismatch)
 
-NOTE (your change request):
+Fixes (your request):
+  - Segment switch is a hard context switch: clears latched planned/executed/optimized + clears local plan state.
+  - Each segment trajectory starts at time_from_start=0 (execute_trajectory + optimize_trajectory normalize times).
+  - External move calls clear caches AND clear latched SSoT topics to avoid stale GUI/statemachine reads.
   - The former 'scene' frame is removed; use 'substrate' instead.
 """
 
@@ -54,7 +58,7 @@ from rclpy.duration import Duration
 from rclpy.action import ActionClient
 
 from std_msgs.msg import String as MsgString, Bool as MsgBool, Empty as MsgEmpty, Float64 as MsgFloat64
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PoseArray
 
 from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg, PlanningScene
 from moveit_msgs.srv import GetPlanningScene
@@ -346,6 +350,15 @@ class MoveItPyNode(Node):
             self._on_plan_pose,
             self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "plan_pose"),
         )
+
+        # NEW: plan full waypoint list as ONE trajectory
+        self.create_subscription(
+            PoseArray,
+            self.cfg_topics.subscribe_topic(NODE_KEY, "plan_pose_array"),
+            self._on_plan_pose_array,
+            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "plan_pose_array"),
+        )
+
         self.create_subscription(
             MsgString,
             self.cfg_topics.subscribe_topic(NODE_KEY, "plan_named"),
@@ -437,12 +450,87 @@ class MoveItPyNode(Node):
         self.log.info("MoveItPyNode init done (MoveItPy is initializing in background).")
 
     # ------------------------------------------------------------
+    # Trajectory helpers (clear latched + normalize time)
+    # ------------------------------------------------------------
+    def _make_empty_traj_msg(self) -> RobotTrajectoryMsg:
+        return RobotTrajectoryMsg()
+
+    def _publish_empty_latched_trajs(self, *, reason: str) -> None:
+        """
+        Clear latched planned/executed/optimized trajectories by publishing empty messages.
+        This is crucial when switching segments or before any external move call to avoid GUI/SM
+        consuming stale latched data.
+        """
+        try:
+            empty = self._make_empty_traj_msg()
+            self.pub_planned.publish(empty)
+            self.pub_executed.publish(empty)
+            self.pub_optimized.publish(empty)
+            self.log.info(f"[traj] cleared latched planned/executed/optimized (reason='{reason}')")
+        except Exception as e:
+            self.log.warning(f"[traj] clear latched publish failed: {e!r}")
+
+    @staticmethod
+    def _tfs_to_ns(p) -> int:
+        sec = int(getattr(p.time_from_start, "sec", 0))
+        nsec = int(getattr(p.time_from_start, "nanosec", 0))
+        return sec * 1_000_000_000 + nsec
+
+    @staticmethod
+    def _ns_to_tfs(ns: int):
+        sec = int(ns // 1_000_000_000)
+        nsec = int(ns % 1_000_000_000)
+        return sec, nsec
+
+    def _normalize_joint_traj_time_zero(self, jt) -> bool:
+        """
+        Ensure time_from_start begins at 0 and is strictly monotonic increasing.
+        Returns True if modified.
+        """
+        pts = list(getattr(jt, "points", []) or [])
+        if len(pts) < 1:
+            return False
+
+        t0 = self._tfs_to_ns(pts[0])
+        changed = False
+
+        # subtract t0 if needed
+        if t0 != 0:
+            for p in pts:
+                ns = self._tfs_to_ns(p) - t0
+                if ns < 0:
+                    ns = 0
+                sec, nsec = self._ns_to_tfs(ns)
+                p.time_from_start.sec = sec
+                p.time_from_start.nanosec = nsec
+            changed = True
+
+        # enforce strictly increasing
+        last = -1
+        for p in pts:
+            ns = self._tfs_to_ns(p)
+            if ns <= last:
+                ns = last + 1_000_000  # +1ms
+                sec, nsec = self._ns_to_tfs(ns)
+                p.time_from_start.sec = sec
+                p.time_from_start.nanosec = nsec
+                changed = True
+            last = ns
+
+        return changed
+
+    # ------------------------------------------------------------
     # CLEAR helpers (explicit clear topic)
     # ------------------------------------------------------------
     def _clear_traj_cache(self, *, reason: str) -> None:
         """
-        Emit an explicit cache-clear signal for GUI/Bridge/Statemachine.
+        Emit an explicit cache-clear signal for GUI/Bridge/Statemachine,
+        AND clear latched planned/executed/optimized messages to avoid stale consumption.
         """
+        # 1) Clear latched SSoT topics first (critical)
+        self._publish_empty_latched_trajs(reason=reason)
+
+        # 2) Pulse non-latched cache-clear
         try:
             self.pub_traj_cache_clear.publish(MsgEmpty())
             self.log.info(f"[traj] cache clear signaled (reason='{reason}')")
@@ -461,13 +549,13 @@ class MoveItPyNode(Node):
             c = DEFAULT_TRAJ_CONTROLLER
 
         ns = self._ns_prefix()
-        out = []
+        out: List[str] = []
         if ns:
             out.append(f"/{ns}/{c}/follow_joint_trajectory")
         out.append(f"/{c}/follow_joint_trajectory")
 
         seen = set()
-        uniq = []
+        uniq: List[str] = []
         for x in out:
             if x not in seen:
                 seen.add(x)
@@ -722,7 +810,18 @@ class MoveItPyNode(Node):
     # segment tag input
     # ------------------------------------------------------------
     def _on_set_segment(self, msg: MsgString) -> None:
-        self._current_segment = str(msg.data or "").strip()
+        seg = str(msg.data or "").strip()
+        if seg == self._current_segment:
+            return
+
+        self._current_segment = seg
+
+        # Hard context switch: clear local + clear latched cache
+        self._planned = None
+        self._last_goal_pose = None
+        self._clear_traj_cache(reason=f"set_segment:{seg or 'EMPTY'}")
+
+        self.log.info(f"[segment] set_segment -> '{seg}'")
 
     # ------------------------------------------------------------
     # TF helpers for goal input
@@ -817,6 +916,89 @@ class MoveItPyNode(Node):
 
             self.pub_planned.publish(msg_traj)
             self._emit_with_segment("PLANNED:OK pose")
+
+        except Exception as e:
+            self._emit_with_segment(f"ERROR:EX {e}")
+
+    def _on_plan_pose_array(self, msg: PoseArray) -> None:
+        """
+        Plan a whole waypoint sequence as ONE trajectory and publish planned_trajectory_rt once.
+
+        Note:
+          - PoseArray has NO header -> we assume WORLD frame for all poses.
+          - This is the API you need so Validate can plan MOVE_RECIPE in ONE go.
+        """
+        if self._busy:
+            self._emit_with_segment("ERROR:BUSY")
+            return
+        if not self._require_moveit_ready():
+            return
+
+        poses = list(getattr(msg, "poses", []) or [])
+        if len(poses) < 2:
+            self._emit_with_segment("ERROR:POSE_ARRAY_TOO_SHORT")
+            return
+
+        self._clear_traj_cache(reason="plan_pose_array")
+        self._publish_robot_model_strings_once()
+
+        self._planned = None
+        self._last_goal_pose = None
+
+        fn = getattr(self.arm, "compute_cartesian_path", None)
+        if not callable(fn):
+            # STRICT: do not silently fall back to point-streaming (would re-create your bug)
+            self._emit_with_segment("ERROR:NO_CARTESIAN_API")
+            return
+
+        try:
+            self.arm.set_start_state_to_current_state()
+
+            # Defaults (tune if needed)
+            max_step = 0.005  # meters (~5mm)
+            jump_threshold = 0.0
+
+            out = None
+            try:
+                out = fn(poses, max_step, jump_threshold)
+            except TypeError:
+                out = fn(waypoints=poses, max_step=max_step, jump_threshold=jump_threshold)
+
+            traj_core = None
+            fraction = None
+
+            if isinstance(out, tuple) and len(out) >= 1:
+                traj_core = out[0]
+                if len(out) >= 2:
+                    fraction = out[1]
+            else:
+                traj_core = (
+                    getattr(out, "solution", None)
+                    or getattr(out, "trajectory", None)
+                    or getattr(out, "traj", None)
+                )
+                fraction = getattr(out, "fraction", None)
+
+            if traj_core is None:
+                self._emit_with_segment("ERROR:NO_TRAJ pose_array")
+                return
+
+            if hasattr(traj_core, "get_robot_trajectory_msg"):
+                msg_traj = traj_core.get_robot_trajectory_msg()
+                self._planned = traj_core if isinstance(traj_core, RobotTrajectoryCore) else None
+            elif isinstance(traj_core, RobotTrajectoryMsg):
+                msg_traj = traj_core
+                self._planned = None
+            else:
+                self._emit_with_segment(f"ERROR:UNSUPPORTED_TRAJ_TYPE {type(traj_core).__name__}")
+                return
+
+            self.pub_planned.publish(msg_traj)
+
+            if fraction is None:
+                self._emit_with_segment("PLANNED:OK pose_array")
+            else:
+                self._emit_with_segment(f"PLANNED:OK pose_array fraction={float(fraction):.3f}")
 
         except Exception as e:
             self._emit_with_segment(f"ERROR:EX {e}")
@@ -929,6 +1111,15 @@ class MoveItPyNode(Node):
         jt = getattr(msg, "joint_trajectory", None)
         if jt is None or not getattr(jt, "joint_names", None) or not getattr(jt, "points", None):
             self._emit_with_segment("ERROR:EMPTY_TRAJ")
+            return
+
+        # FORCE: each segment starts at time_from_start=0
+        try:
+            changed = self._normalize_joint_traj_time_zero(jt)
+            if changed:
+                self.log.info("[traj] execute_trajectory: normalized time_from_start to start at 0 (and monotonic).")
+        except Exception as e:
+            self._emit_with_segment(f"ERROR:TIME_NORMALIZE {e}")
             return
 
         self._mode_mgr.ensure_mode("TRAJ")
@@ -1044,6 +1235,13 @@ class MoveItPyNode(Node):
             self._emit_with_segment("ERROR:TRAJ_TOO_SHORT")
             return
 
+        # normalize to segment-local time (start at 0)
+        try:
+            self._normalize_joint_traj_time_zero(jt)
+        except Exception as e:
+            self._emit_with_segment(f"ERROR:TIME_NORMALIZE {e}")
+            return
+
         self._busy = True
         self._cancel = False
         try:
@@ -1051,6 +1249,14 @@ class MoveItPyNode(Node):
             planner_id = str(self._planner_cfg.get("planner_id") or "IterativeParabolicTimeParameterization").strip()
 
             out_msg = self._optimize_robot_trajectory(msg, pipeline=pipeline, planner_id=planner_id)
+
+            # post-condition: start at 0, monotonic
+            try:
+                out_jt = getattr(out_msg, "joint_trajectory", None)
+                if out_jt is not None:
+                    self._normalize_joint_traj_time_zero(out_jt)
+            except Exception:
+                pass
 
             try:
                 self.pub_optimized.publish(out_msg)
@@ -1071,6 +1277,7 @@ class MoveItPyNode(Node):
         pipeline: str,
         planner_id: str,
     ) -> RobotTrajectoryMsg:
+        # keep behavior identical to your current file: no real post binding yet
         try:
             raise RuntimeError("MoveIt post-processing Python binding not wired")
         except Exception as e:
@@ -1092,9 +1299,7 @@ class MoveItPyNode(Node):
 
         last_ns = -1
         for p in msg.joint_trajectory.points:
-            sec = int(getattr(p.time_from_start, "sec", 0))
-            nsec = int(getattr(p.time_from_start, "nanosec", 0))
-            ns = sec * 1_000_000_000 + nsec
+            ns = self._tfs_to_ns(p)
 
             ns2 = int(float(ns) * float(scale))
             if ns2 <= last_ns:
@@ -1123,6 +1328,12 @@ class MoveItPyNode(Node):
             q.time_from_start.sec = ns2 // 1_000_000_000
             q.time_from_start.nanosec = ns2 % 1_000_000_000
             out.joint_trajectory.points.append(q)
+
+        # ensure start at 0 (scaled tfs can still be non-zero if input segment didn't start at 0)
+        try:
+            self._normalize_joint_traj_time_zero(out.joint_trajectory)
+        except Exception:
+            pass
 
         return out
 
@@ -1192,9 +1403,17 @@ class MoveItPyNode(Node):
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = MoveItPyNode()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    finally:
+        try:
+            node.destroy_node()
+        except Exception:
+            pass
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
