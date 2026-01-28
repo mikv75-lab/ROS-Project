@@ -46,7 +46,7 @@ recipe_params:
       unit: "deg"
       default: 0.0
       plc: false
-      
+
     pre_dispense_s:
       type: number
       min: 0.0
@@ -185,7 +185,7 @@ recipe_params:
     retreat_offset_mm:     { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
 
 
-  # --- Spiral (Cylinder / Helix) ---
+    # --- Spiral (Cylinder / Helix) ---
   path.spiral.cylinder:
     radius_mm:        { type: number, min: 1.0, max: 2000, step: 0.1, unit: "mm", default: 50.0 }
     height_mm:        { type: number, min: 1.0, max: 2000, step: 1.0, unit: "mm", default: 100.0 }
@@ -194,6 +194,11 @@ recipe_params:
     start_from:       { type: enum, values: ["top","bottom"], default: "top" }
     direction:        { type: enum, values: ["cw","ccw"],     default: "ccw" }
 
+    # NEW: Z-Shift of the helix path before projection (can be negative).
+    # Use-case: make "bottom" helix start exactly at z=0 (or below) in local frame.
+    start_offset_mm:  { type: number, min: -100.0, max: 100.0, step: 0.1, unit: "mm", default: 0.0,
+                        description: "Z-Offset der Helix im lokalen Frame (±), vor Raycast/Projection" }
+
     # Post-Processing (trim)
     top_extend_mm:    { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0, description: "Verlängert die Spirale über Z-Top hinaus" }
     bottom_extend_mm: { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0, description: "Verlängert die Spirale über Z-Bottom hinaus" }
@@ -201,7 +206,6 @@ recipe_params:
     # Air Moves
     predispense_offset_mm: { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
     retreat_offset_mm:     { type: number, min: 0.0, max: 200, step: 0.1, unit: "mm", default: 0.0 }
-
 
   # --- Polyhelix (Pyramid) ---
   path.polyhelix.pyramid:

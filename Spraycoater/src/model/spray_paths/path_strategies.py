@@ -187,16 +187,25 @@ class SpiralCylinderPath(BasePath):
         N = max(2, int(L / max(float(step_mm), 1e-6)) + 1)
 
         t = np.linspace(0, 1, N)
+
+        # Base Z trajectory (local helix axis)
         z = (
             z_top - t * (z_top - z_bot)
-            if p.get("start_from", "top") == "top"
+            if str(p.get("start_from", "top")).lower() == "top"
             else z_bot + t * (z_top - z_bot)
         )
+
+        # NEW: signed Z-shift for helix start alignment (±)
+        z_off = float(p.get("start_offset_mm", 0.0) or 0.0)
+        if abs(z_off) > 1e-12:
+            z = z + z_off
+
         ang = t * turns * 2 * math.pi
         if str(p.get("direction", "ccw")).lower() == "cw":
             ang = -ang
 
         return self._decimate(np.c_[r * np.cos(ang), r * np.sin(ang), z], int(max_points))
+
 
 
 class PerimeterFollowPlanePath(BasePath):

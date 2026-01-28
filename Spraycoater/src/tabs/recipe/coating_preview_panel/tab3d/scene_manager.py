@@ -79,8 +79,8 @@ class PreviewResult:
     scene: Optional[PreviewScene]
 
     substrate_mesh: Optional[pv.PolyData]          # mount-top-frame mesh (for 2D)
-    path_xyz_mm: Optional[np.ndarray]              # display path (mount-top-frame; incl pre/ret)
-    final_tcp_world_mm: Optional[np.ndarray]       # kept name for API; here: mount-top-frame display path
+    path_xyz_mm: Optional[np.ndarray]              # display path (mount-top-frame; incl pre/ret) for ACTIVE side
+    final_tcp_world_mm: Optional[np.ndarray]       # kept name for API; here: mount-top-frame display path (ACTIVE side)
 
     renderables: List[Renderable]                  # WORLD renderables for 3D
 
@@ -425,234 +425,338 @@ class SceneManager:
         )
 
     def build_preview(self, *, recipe: Recipe, ctx: Any, overlay_cfg: Dict[str, Any]) -> PreviewResult:
+        """
+        MULTI-SIDE preview (Fix):
+        - enabled_sides (from recipe.parameters["enabled_sides"]) drive which sides are rendered.
+        - active_side (recipe.parameters["active_side"]) selects which side is returned for 2D/local path fields.
+        - 3D renderables include mask/path/overlays for ALL enabled sides (names are side-prefixed).
+        - valid = AND across enabled sides; invalid_reason carries first failing side.
+
+        Contract:
+        - substrate_mesh / substrate_bounds are mount-top-frame (local) for 2D.
+        - path_xyz_mm / final_tcp_world_mm are mount-top-frame display path for ACTIVE side.
+
+        HELIX FIX:
+        - For side in {"helix","polyhelix"}: do NOT force mask_world[:,2] = sub_top + stand_off + ...
+            (keep helix Z as defined by the path).
+        - Stand-off for helix is handled in cast_rays_for_side() (eff_stand_off=0 there).
+        """
         renderables: List[Renderable] = []
 
         scene = self.build_scene(recipe, ctx)
         if not scene:
-            return PreviewResult(recipe=recipe, valid=False, invalid_reason="scene_fail",
-                                 scene=None, substrate_mesh=None, path_xyz_mm=None, final_tcp_world_mm=None,
-                                 renderables=[], bounds=_DEFAULT_BOUNDS, substrate_bounds=None, meta={})
+            return PreviewResult(
+                recipe=recipe,
+                valid=False,
+                invalid_reason="scene_fail",
+                scene=None,
+                substrate_mesh=None,
+                path_xyz_mm=None,
+                final_tcp_world_mm=None,
+                renderables=[],
+                bounds=_DEFAULT_BOUNDS,
+                substrate_bounds=None,
+                meta={},
+            )
 
-        # Compute-frame origin = mount center XY, mount top Z in WORLD
         origin_world = (0.0, 0.0, 0.0)
         if scene.mount_mesh is not None:
             b = scene.mount_mesh.bounds
-            origin_world = (0.5 * (float(b[0]) + float(b[1])),
-                            0.5 * (float(b[2]) + float(b[3])),
-                            float(b[5]))
+            origin_world = (
+                0.5 * (float(b[0]) + float(b[1])),
+                0.5 * (float(b[2]) + float(b[3])),
+                float(b[5]),
+            )
 
         # Static WORLD renderables
         for layer_name, mesh in (("ground", scene.ground_mesh),
-                                 ("cage", scene.cage_mesh),
-                                 ("mount", scene.mount_mesh),
-                                 ("substrate", scene.substrate_mesh)):
+                                ("cage", scene.cage_mesh),
+                                ("mount", scene.mount_mesh),
+                                ("substrate", scene.substrate_mesh)):
             if mesh is not None:
-                renderables.append(Renderable(layer=layer_name, name=layer_name, poly=mesh,
-                                              render_kwargs=_render_kwargs_for(layer_name, mesh)))
+                renderables.append(Renderable(
+                    layer=layer_name,
+                    name=layer_name,
+                    poly=mesh,
+                    render_kwargs=_render_kwargs_for(layer_name, mesh),
+                ))
 
-        # Side + params
-        side = str(getattr(recipe, "parameters", {}).get("active_side", "top")).lower().strip()
-        if side not in _ALLOWED_SIDES:
-            side = "top"
         params = getattr(recipe, "parameters", {}) or {}
 
-        # 1) Mask in compute-frame (mount-top KS)
-        pd_mask = PathBuilder.from_side(
-            recipe,
-            side=side,
-            globals_params=params,
-            sample_step_mm=float(params.get("sample_step_mm", 1.0)),
-            max_points=int(params.get("max_points", 1000)),
-        )
-        mask_local = np.asarray(pd_mask.points_mm, dtype=float).reshape(-1, 3).copy()
+        active_side = str(params.get("active_side", "top") or "top").lower().strip()
+        if active_side not in _ALLOWED_SIDES:
+            active_side = "top"
+
+        enabled_sides_raw = params.get("enabled_sides", None)
+        if isinstance(enabled_sides_raw, list):
+            enabled_sides = [str(s).lower().strip() for s in enabled_sides_raw if str(s).strip()]
+        else:
+            enabled_sides = [active_side]
+
+        seen: set[str] = set()
+        enabled_sides = [s for s in enabled_sides if (s in _ALLOWED_SIDES and not (s in seen or seen.add(s)))]
+        if not enabled_sides:
+            enabled_sides = ["top"]
+
+        if active_side not in enabled_sides:
+            active_side = enabled_sides[0]
 
         if scene.substrate_mesh is None:
-            return PreviewResult(recipe=recipe, valid=False, invalid_reason="no_substrate",
-                                 scene=scene, substrate_mesh=None, path_xyz_mm=mask_local, final_tcp_world_mm=None,
-                                 renderables=renderables, bounds=scene.bounds or _DEFAULT_BOUNDS,
-                                 substrate_bounds=None, meta={"side": side, "frame": "mount_top", "origin_world_mm": origin_world})
+            try:
+                pd_mask = PathBuilder.from_side(
+                    recipe,
+                    side=active_side,
+                    globals_params=params,
+                    sample_step_mm=float(params.get("sample_step_mm", 1.0)),
+                    max_points=int(params.get("max_points", 1000)),
+                )
+                mask_local = np.asarray(pd_mask.points_mm, dtype=float).reshape(-1, 3).copy()
+            except Exception:
+                mask_local = None
 
-        # 2) Mask -> WORLD (ray start points). Anchor to substrate top + stand_off.
+            return PreviewResult(
+                recipe=recipe,
+                valid=False,
+                invalid_reason="no_substrate",
+                scene=scene,
+                substrate_mesh=None,
+                path_xyz_mm=mask_local,
+                final_tcp_world_mm=None,
+                renderables=renderables,
+                bounds=scene.bounds or _DEFAULT_BOUNDS,
+                substrate_bounds=None,
+                meta={
+                    "side": active_side,
+                    "enabled_sides": list(enabled_sides),
+                    "frame": "mount_top",
+                    "origin_world_mm": origin_world,
+                },
+            )
+
         sub_top_world_z = float(scene.substrate_mesh.bounds[5])
         stand_off = float(params.get("stand_off_mm", 50.0))
+        helix_sides = {"helix", "polyhelix"}
 
-        mask_world = _add_points_offset(mask_local, origin_world)
-        if mask_world.size:
-            mask_world[:, 2] = sub_top_world_z + stand_off + mask_local[:, 2]
-
-        # Render mask (WORLD)
-        mask_poly = _polyline(mask_world)
-        if mask_poly is not None:
-            renderables.append(Renderable(layer="mask", name="mask_poly", poly=mask_poly,
-                                          render_kwargs=_render_kwargs_for("mask", mask_poly)))
-
-        # 3) Raycast (WORLD) -> produces on-surface tcp + normals for valid points
-        rc, hit_p, miss_p, _tcp_p_from_projector = cast_rays_for_side(
-            P_world_start=mask_world,
-            sub_mesh_world=scene.substrate_mesh,
-            side=side,
-            stand_off_mm=stand_off,
-            # NEW: 0..45 deg nozzle-tilt constraint (0 disables filter)
-            max_nozzle_tilt_deg=float(params.get("max_nozzle_tilt_deg", 0.0) or 0.0),
-        )
-
-        v_raw = getattr(rc, "valid", None)
-        valid_mask = np.zeros((0,), dtype=bool) if v_raw is None else np.asarray(v_raw, dtype=bool).reshape(-1)
-        miss_n = int(len(valid_mask) - int(np.sum(valid_mask))) if len(valid_mask) else 0
-        preview_valid = (miss_n == 0)
-
-        # 4) Substrate for 2D (mount-top KS): copy + shift by origin_world
         substrate_local_mesh: Optional[pv.PolyData] = None
         substrate_bounds_local: Optional[Bounds] = None
         try:
-            substrate_local_mesh = scene.substrate_mesh.copy(deep=True) if scene.substrate_mesh is not None else None
-            if substrate_local_mesh is not None:
-                substrate_local_mesh.translate((-origin_world[0], -origin_world[1], -origin_world[2]), inplace=True)
-                substrate_bounds_local = tuple(substrate_local_mesh.bounds)  # type: ignore[arg-type]
+            substrate_local_mesh = scene.substrate_mesh.copy(deep=True)
+            substrate_local_mesh.translate((-origin_world[0], -origin_world[1], -origin_world[2]), inplace=True)
+            substrate_bounds_local = tuple(substrate_local_mesh.bounds)  # type: ignore[arg-type]
         except Exception:
             substrate_local_mesh = None
             substrate_bounds_local = None
 
-        display_path_local: Optional[np.ndarray] = None
+        per_side_miss_n: Dict[str, int] = {}
+        preview_valid_all = True
+        invalid_reason: Optional[str] = None
+        active_display_path_local: Optional[np.ndarray] = None
+        empty3 = np.zeros((0, 3), dtype=float)
 
-        # For overlays:
-        # - path_points_world_mm: display polyline (may include off-surface offsets!)
-        # - tcp_points_world_mm : ONLY main on-surface TCP points (must match rc.valid length semantics)
-        path_world_for_display: Optional[np.ndarray] = None
-        tcp_world_for_overlay: Optional[np.ndarray] = None
+        for side in enabled_sides:
+            # 1) Mask in compute-frame (mount-top KS)
+            try:
+                pd_mask = PathBuilder.from_side(
+                    recipe,
+                    side=side,
+                    globals_params=params,
+                    sample_step_mm=float(params.get("sample_step_mm", 1.0)),
+                    max_points=int(params.get("max_points", 1000)),
+                )
+                mask_local = np.asarray(pd_mask.points_mm, dtype=float).reshape(-1, 3).copy()
+            except Exception as e:
+                _LOG.warning("PathBuilder.from_side failed for side='%s': %s", side, e)
+                preview_valid_all = False
+                if invalid_reason is None:
+                    invalid_reason = f"mask_fail:{side}"
+                continue
 
-        if preview_valid:
-            p_side = (getattr(recipe, "paths_by_side", {}) or {}).get(side, {}) or {}
+            # 2) Mask -> WORLD (ray start points)
+            mask_world = _add_points_offset(mask_local, origin_world)
 
-            main_tcp_world, main_norms_world = _postprocess_compiled_path_strict(
-                getattr(rc, "tcp_mm", None),
-                getattr(rc, "normal", None),
-                side_path_params=p_side,
+            # FIX: only force-anchor Z for axis sides.
+            # For helix/polyhelix keep the path-defined Z (do not add stand_off/sub_top).
+            if mask_world.size:
+                if side in helix_sides:
+                    pass
+                else:
+                    mask_world[:, 2] = sub_top_world_z + stand_off + mask_local[:, 2]
+
+            mask_poly = _polyline(mask_world)
+            if mask_poly is not None:
+                renderables.append(Renderable(
+                    layer="mask",
+                    name=f"{side}_mask_poly",
+                    poly=mask_poly,
+                    render_kwargs=_render_kwargs_for("mask", mask_poly),
+                ))
+
+            # 3) Raycast
+            try:
+                rc, hit_p, miss_p, _tcp_p_from_projector = cast_rays_for_side(
+                    P_world_start=mask_world,
+                    sub_mesh_world=scene.substrate_mesh,
+                    side=side,
+                    stand_off_mm=stand_off,
+                    max_nozzle_tilt_deg=float(params.get("max_nozzle_tilt_deg", 0.0) or 0.0),
+                )
+            except Exception as e:
+                _LOG.warning("cast_rays_for_side failed for side='%s': %s", side, e)
+                preview_valid_all = False
+                if invalid_reason is None:
+                    invalid_reason = f"raycast_fail:{side}"
+                continue
+
+            v_raw = getattr(rc, "valid", None)
+            valid_mask = np.zeros((0,), dtype=bool) if v_raw is None else np.asarray(v_raw, dtype=bool).reshape(-1)
+            miss_n = int(len(valid_mask) - int(np.sum(valid_mask))) if len(valid_mask) else 0
+            per_side_miss_n[side] = miss_n
+
+            side_valid = (miss_n == 0)
+            if not side_valid:
+                preview_valid_all = False
+                if invalid_reason is None:
+                    invalid_reason = f"raycast_miss:{side}"
+
+            path_world_for_display: Optional[np.ndarray] = None
+            tcp_world_for_overlay: Optional[np.ndarray] = None
+
+            if side_valid:
+                p_side = (getattr(recipe, "paths_by_side", {}) or {}).get(side, {}) or {}
+
+                main_tcp_world, main_norms_world = _postprocess_compiled_path_strict(
+                    getattr(rc, "tcp_mm", None),
+                    getattr(rc, "normal", None),
+                    side_path_params=p_side,
+                )
+
+                tcp_world_for_overlay = main_tcp_world
+                main_tcp_local = _shift_points(main_tcp_world, origin_world) if main_tcp_world is not None else None
+
+                display_path_local: Optional[np.ndarray] = None
+
+                if main_tcp_local is not None and main_norms_world is not None:
+                    try:
+                        pre_mm = float((p_side or {}).get("predispense_offset_mm", 0.0) or 0.0)
+                    except Exception:
+                        pre_mm = 0.0
+                    try:
+                        ret_mm = float((p_side or {}).get("retreat_offset_mm", 0.0) or 0.0)
+                    except Exception:
+                        ret_mm = 0.0
+                    pre_mm = max(0.0, float(pre_mm))
+                    ret_mm = max(0.0, float(ret_mm))
+
+                    Pm = np.asarray(main_tcp_local, dtype=float).reshape(-1, 3)
+                    NmW = np.asarray(main_norms_world, dtype=float).reshape(-1, 3)
+
+                    n = int(min(Pm.shape[0], NmW.shape[0]))
+                    if n >= 2:
+                        Pm = Pm[:n]
+                        NmW = NmW[:n]
+
+                        main_poses = _compute_main_poses(Pm, NmW)
+                        if len(main_poses) >= 2:
+                            P_ext, has_pre, has_ret = _extend_pre_ret_points_local(Pm, pre_mm=pre_mm, ret_mm=ret_mm)
+
+                            poses_ext: List[PoseQuat] = []
+                            if has_pre:
+                                ppre = P_ext[0]
+                                qref = main_poses[0]
+                                poses_ext.append(PoseQuat(
+                                    x=float(ppre[0]), y=float(ppre[1]), z=float(ppre[2]),
+                                    qx=float(qref.qx), qy=float(qref.qy), qz=float(qref.qz), qw=float(qref.qw),
+                                ))
+
+                            poses_ext.extend(main_poses)
+
+                            if has_ret:
+                                pret = P_ext[-1]
+                                qref = main_poses[-1]
+                                poses_ext.append(PoseQuat(
+                                    x=float(pret[0]), y=float(pret[1]), z=float(pret[2]),
+                                    qx=float(qref.qx), qy=float(qref.qy), qz=float(qref.qz), qw=float(qref.qw),
+                                ))
+
+                            recipe.draft = self._merge_draft_side(
+                                getattr(recipe, "draft", None),
+                                side=side,
+                                poses=poses_ext,
+                                pre_mm=pre_mm,
+                                ret_mm=ret_mm,
+                            )
+
+                            display_path_local = _draft_display_points_local(recipe.draft, side)
+
+                if display_path_local is not None:
+                    path_world_for_display = _add_points_offset(display_path_local, origin_world)
+                else:
+                    path_world_for_display = main_tcp_world
+
+                path_poly = _polyline(path_world_for_display) if path_world_for_display is not None else None
+                if path_poly is not None:
+                    renderables.append(Renderable(
+                        layer="path",
+                        name=f"{side}_final_path_poly",
+                        poly=path_poly,
+                        render_kwargs=_render_kwargs_for("path", path_poly),
+                    ))
+
+                if side == active_side:
+                    active_display_path_local = display_path_local
+
+            cfg_all = dict(overlay_cfg or {})
+            if "visibility" not in cfg_all or not isinstance(cfg_all.get("visibility"), dict):
+                cfg_all["visibility"] = {}
+
+            out = self._overlay.render_for_side(
+                side=side,
+                raycast_result=rc,
+                hit_poly=hit_p,
+                miss_poly=miss_p,
+                overlay_cfg=cfg_all,
+                mask_points_world_mm=np.asarray(mask_world, dtype=float).reshape(-1, 3) if mask_world is not None else empty3,
+                path_points_world_mm=np.asarray(path_world_for_display, dtype=float).reshape(-1, 3) if path_world_for_display is not None else empty3,
+                tcp_points_world_mm=np.asarray(tcp_world_for_overlay, dtype=float).reshape(-1, 3) if tcp_world_for_overlay is not None else empty3,
             )
 
-            tcp_world_for_overlay = main_tcp_world  # IMPORTANT: overlays expect on-surface here
+            for attr, layer in self._ATTR_TO_LAYER.items():
+                poly = getattr(out, attr, None)
+                if poly is None:
+                    continue
+                renderables.append(Renderable(
+                    layer=layer,
+                    name=f"{side}_{attr}",
+                    poly=poly,
+                    render_kwargs=_render_kwargs_for(layer, poly),
+                ))
 
-            # Convert to local (mount-top KS) positions only (translation)
-            main_tcp_local = _shift_points(main_tcp_world, origin_world) if main_tcp_world is not None else None
-
-            if main_tcp_local is not None and main_norms_world is not None:
-                try:
-                    pre_mm = float((p_side or {}).get("predispense_offset_mm", 0.0) or 0.0)
-                except Exception:
-                    pre_mm = 0.0
-                try:
-                    ret_mm = float((p_side or {}).get("retreat_offset_mm", 0.0) or 0.0)
-                except Exception:
-                    ret_mm = 0.0
-                pre_mm = max(0.0, float(pre_mm))
-                ret_mm = max(0.0, float(ret_mm))
-
-                Pm = np.asarray(main_tcp_local, dtype=float).reshape(-1, 3)
-                NmW = np.asarray(main_norms_world, dtype=float).reshape(-1, 3)
-
-                n = int(min(Pm.shape[0], NmW.shape[0]))
-                if n >= 2:
-                    Pm = Pm[:n]
-                    NmW = NmW[:n]
-
-                    # 1) Build MAIN poses (on-surface) from normals
-                    main_poses = _compute_main_poses(Pm, NmW)
-                    if len(main_poses) >= 2:
-                        # 2) Extend points (pre/ret) AFTER raycast (can be off-surface)
-                        P_ext, has_pre, has_ret = _extend_pre_ret_points_local(Pm, pre_mm=pre_mm, ret_mm=ret_mm)
-
-                        # 3) Create EXTENDED poses by copying orientation from neighbor MAIN pose
-                        poses_ext: List[PoseQuat] = []
-                        if has_pre:
-                            ppre = P_ext[0]
-                            qref = main_poses[0]
-                            poses_ext.append(PoseQuat(x=float(ppre[0]), y=float(ppre[1]), z=float(ppre[2]),
-                                                      qx=float(qref.qx), qy=float(qref.qy), qz=float(qref.qz), qw=float(qref.qw)))
-
-                        # main poses as-is (positions already match Pm)
-                        poses_ext.extend(main_poses)
-
-                        if has_ret:
-                            pret = P_ext[-1]
-                            qref = main_poses[-1]
-                            poses_ext.append(PoseQuat(x=float(pret[0]), y=float(pret[1]), z=float(pret[2]),
-                                                      qx=float(qref.qx), qy=float(qref.qy), qz=float(qref.qz), qw=float(qref.qw)))
-
-                        # Merge into Draft (this is what should be persisted elsewhere)
-                        recipe.draft = self._merge_draft_side(
-                            getattr(recipe, "draft", None),
-                            side=side,
-                            poses=poses_ext,
-                            pre_mm=pre_mm,
-                            ret_mm=ret_mm,
-                        )
-
-                        display_path_local = _draft_display_points_local(recipe.draft, side)
-
-            # Render final path (WORLD) using display path (incl pre/ret)
-            if display_path_local is not None:
-                path_world_for_display = _add_points_offset(display_path_local, origin_world)
-            else:
-                path_world_for_display = main_tcp_world
-
-            path_poly = _polyline(path_world_for_display) if path_world_for_display is not None else None
-            if path_poly is not None:
-                renderables.append(Renderable(layer="path", name="final_path_poly", poly=path_poly,
-                                              render_kwargs=_render_kwargs_for("path", path_poly)))
-
-        # 5) Overlays (WORLD): ALWAYS build all overlay geometries.
-        cfg_all = dict(overlay_cfg or {})
-        cfg_all["visibility"] = {
-            "mask": True,
-            "path": True,
-            "tcp": True,
-            "hits": True,
-            "misses": True,
-            "normals": True,
-            "tcp_axes": False,
-        }
-
-        empty3 = np.zeros((0, 3), dtype=float)
-        out = self._overlay.render_for_side(
-            side=side,
-            raycast_result=rc,
-            hit_poly=hit_p,
-            miss_poly=miss_p,
-            overlay_cfg=cfg_all,
-            mask_points_world_mm=np.asarray(mask_world, dtype=float).reshape(-1, 3) if mask_world is not None else empty3,
-
-            # IMPORTANT FIX:
-            # - path_points can include off-surface offsets (pure display)
-            # - tcp_points MUST be on-surface (to avoid "offsets marked wrong")
-            path_points_world_mm=np.asarray(path_world_for_display, dtype=float).reshape(-1, 3) if path_world_for_display is not None else empty3,
-            tcp_points_world_mm=np.asarray(tcp_world_for_overlay, dtype=float).reshape(-1, 3) if tcp_world_for_overlay is not None else empty3,
-        )
-
-        for attr, layer in self._ATTR_TO_LAYER.items():
-            poly = getattr(out, attr, None)
-            if poly is None:
-                continue
-            renderables.append(Renderable(layer=layer, name=attr, poly=poly, render_kwargs=_render_kwargs_for(layer, poly)))
+        if preview_valid_all:
+            invalid_reason = None
+        else:
+            invalid_reason = invalid_reason or "invalid"
 
         return PreviewResult(
             recipe=recipe,
-            valid=preview_valid,
-            invalid_reason=None if preview_valid else "raycast_miss",
+            valid=preview_valid_all,
+            invalid_reason=invalid_reason,
             scene=scene,
             substrate_mesh=substrate_local_mesh,
-            path_xyz_mm=display_path_local,
-            final_tcp_world_mm=display_path_local,  # contract: mount-top-frame display path
+            path_xyz_mm=active_display_path_local,
+            final_tcp_world_mm=active_display_path_local,
             renderables=renderables,
             bounds=scene.bounds or _DEFAULT_BOUNDS,
             substrate_bounds=substrate_bounds_local,
             meta={
-                "miss_n": miss_n,
-                "side": side,
+                "miss_n_by_side": dict(per_side_miss_n),
+                "active_side": active_side,
+                "enabled_sides": list(enabled_sides),
                 "frame": "mount_top",
                 "origin_world_mm": origin_world,
                 "tcp_yaw_deg": float(_TCP_YAW_DEG),
             },
         )
+
 
     @staticmethod
     def _merge_draft_side(
@@ -680,7 +784,7 @@ class SceneManager:
             cur_sides.pop(s, None)
             return Draft(version=1, sides=cur_sides)
 
-        # If you generated explicit pre/ret, keep split, else treat everything as main.
+        # Convention: if you generated explicit pre/ret, keep split, else treat everything as main.
         # Here: convention = first is pre, last is ret, middle is main, BUT only if len>=3.
         if len(poses) >= 3:
             pre = poses[0]

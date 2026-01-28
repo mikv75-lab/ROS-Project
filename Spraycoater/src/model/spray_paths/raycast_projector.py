@@ -44,6 +44,10 @@ def _mesh_center_xy(mesh: pv.PolyData) -> Tuple[float, float]:
 
 
 def raydir_radial_xy(P_mm: np.ndarray, center_xy: Tuple[float, float] = (0.0, 0.0)) -> np.ndarray:
+    """
+    Radial inward ray direction in XY-plane:
+      D = normalize(center_xy - P_xy), Z=0
+    """
     P = _require_finite_array("P_mm", np.asarray(P_mm, dtype=float)).reshape(-1, 3)
     cx, cy = float(center_xy[0]), float(center_xy[1])
     V2 = np.array([cx, cy], dtype=float) - P[:, :2]
@@ -52,14 +56,23 @@ def raydir_radial_xy(P_mm: np.ndarray, center_xy: Tuple[float, float] = (0.0, 0.
 
 
 def _side_dir(side: str) -> np.ndarray:
+    """
+    Axis-aligned ray direction INTO the substrate.
+
+    Convention (matches typical "outside looking in"):
+      - top   : cast downwards (-Z)
+      - front : cast towards -Y (from +Y side into the object)
+      - back  : cast towards +Y (from -Y side into the object)
+      - left  : cast towards -X (from +X side into the object)
+      - right : cast towards +X (from -X side into the object)
+    """
     sd = str(side or "").strip().lower()
     base = {
-        "front": [0.0, 1.0, 0.0],
-        "back": [0.0, -1.0, 0.0],
-        "left": [1.0, 0.0, 0.0],
-        "right": [-1.0, 0.0, 0.0],
-        # default for "top": towards -Z
-        "top": [0.0, 0.0, -1.0],
+        "top":   [0.0, 0.0, -1.0],
+        "front": [0.0, -1.0, 0.0],
+        "back":  [0.0,  1.0, 0.0],
+        "left":  [-1.0, 0.0, 0.0],
+        "right": [1.0,  0.0, 0.0],
     }.get(sd)
     if base is None:
         raise ValueError(f"Unknown axis-aligned side {side!r}. Allowed: top/front/back/left/right.")
@@ -144,29 +157,21 @@ def _process_chunk(idx, starts, ends, D, obb, face_normals, cos_min: float, sin_
             if na > 1e-12:
                 a = a / na
             else:
-                # degenerate direction; keep original n (should not happen due to _side_dir/_normalize)
                 a = np.array([0.0, 0.0, 1.0], dtype=float)
 
-            # Build u = normalized component of n orthogonal to a
-            # n = c*a + s*u  (s = sin(theta))
             u = n - float(np.dot(n, a)) * a
             nu = float(np.linalg.norm(u))
             if nu < 1e-12:
-                # n already (anti)parallel to a; just set to a
                 n = a
             else:
                 u = u / nu
-                # Clamp to max tilt:
-                # n' = cos_min*a + sin_min*u
                 n = (float(cos_min) * a) + (float(sin_min) * u)
                 nn = float(np.linalg.norm(n))
                 if nn > 1e-12:
                     n = n / nn
 
-            # recompute c after clamp (for numerical sanity)
             c = -float(np.dot(d, n))
 
-        # NOTE: No rejection by tilt anymore (unless tilt_enabled==False and you want old behavior)
         valid[i] = True
         hits[i] = hit
         norms[i] = n
@@ -188,26 +193,25 @@ def cast_rays_for_side(
     ray_len_mm: float = 1000.0,
     start_lift_mm: float = 10.0,
     invert_dirs: bool = False,
-    # Optional override; if None -> auto from `side` (your rule)
     radial_xy: Optional[bool] = None,
-    # NEW: nozzle tilt constraint in degrees (0 disables clamping). Expected range: 0..45
     max_nozzle_tilt_deg: float = 0.0,
 ) -> tuple[RayProjectResult, pv.PolyData, pv.PolyData, pv.PolyData]:
     """
     Raycast projection used by editor/preview.
 
-    Direction selection (AUTO, per your rule):
-      - side in {"top","front","back","left","right"}  -> axis-aligned (NOT radial)
-      - any other side string                           -> radial in XY (radial_xy=True)
+    Direction selection (STRICT):
+      - side in {"top","front","back","left","right"} -> AXIS-ALIGNED into substrate (see _side_dir)
+      - side in {"helix","polyhelix"}                 -> RADIAL in XY (towards mesh center)
+      - any other side string                         -> RADIAL in XY (towards mesh center)
 
     Nozzle tilt constraint (CLAMP, not reject):
       - max_nozzle_tilt_deg <= 0 : disabled (use raw face normals)
-      - otherwise                : clamp surface normals such that
-                                  incidence angle <= max_nozzle_tilt_deg
+      - otherwise                : clamp surface normals such that incidence angle <= max_nozzle_tilt_deg
 
-    All math is done in the same frame as `sub_mesh_world` and `P_world_start`.
+    Stand-off rule (FIX):
+      - helix/polyhelix: stand_off_mm is NOT applied to tcp (tcp==hit in that sense)
+      - axis sides      : stand_off_mm is applied as tcp = hit + normal*stand_off_mm
     """
-
     if not isinstance(sub_mesh_world, pv.PolyData):
         raise ValueError(f"sub_mesh_world must be pyvista.PolyData, got {type(sub_mesh_world).__name__}")
 
@@ -225,12 +229,18 @@ def cast_rays_for_side(
         return empty, pv.PolyData(), pv.PolyData(), pv.PolyData()
 
     sd = str(side or "").strip().lower()
-    axis_sides = {"top", "front", "left", "right", "back"}
+    axis_sides = {"top", "front", "back", "left", "right"}
+    helix_sides = {"helix", "polyhelix"}
 
+    # explicit selection rule (your request)
     if radial_xy is None:
-        radial_xy = sd not in axis_sides
+        radial_xy = (sd in helix_sides) or (sd not in axis_sides)
 
-    mesh = sub_mesh_world.triangulate() if (hasattr(sub_mesh_world, "is_all_triangles") and not sub_mesh_world.is_all_triangles) else sub_mesh_world
+    mesh = (
+        sub_mesh_world.triangulate()
+        if (hasattr(sub_mesh_world, "is_all_triangles") and not sub_mesh_world.is_all_triangles)
+        else sub_mesh_world
+    )
     if mesh.n_cells <= 0:
         raise ValueError("sub_mesh_world has no cells; cannot raycast.")
 
@@ -251,7 +261,6 @@ def cast_rays_for_side(
         cos_min = float(math.cos(tilt_rad))
         sin_min = float(math.sin(tilt_rad))
     else:
-        # unused when disabled
         cos_min = -1.0
         sin_min = 0.0
 
@@ -266,7 +275,7 @@ def cast_rays_for_side(
     if invert_dirs:
         D = -D
 
-    # 2) Bracketing
+    # 2) Bracketing (start behind, end forward along ray dir)
     starts = P - D * float(start_lift_mm)
     ends = P + D * float(ray_len_mm)
 
@@ -312,8 +321,12 @@ def cast_rays_for_side(
             norms[idx] = n
             refl[idx] = r
 
-    # 4) Result (tcp uses the (possibly clamped) normals)
-    tcp = hits + norms * float(stand_off_mm)
+    # 4) Result (FIX: no stand-off for helix/polyhelix)
+    eff_stand_off = float(stand_off_mm)
+    if sd in helix_sides:
+        eff_stand_off = 0.0
+
+    tcp = hits + norms * eff_stand_off
 
     res = RayProjectResult(valid=valid, hit_mm=hits, normal=norms, refl_dir=refl, tcp_mm=tcp)
 

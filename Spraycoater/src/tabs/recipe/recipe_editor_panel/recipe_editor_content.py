@@ -207,6 +207,10 @@ class GlobalParamsBox(QGroupBox):
 
 
 class _TabBarWithChecks(QTabBar):
+    """
+    Tabs mit Checkboxes (pro Side).
+    SSoT: Der Check-Zustand ist die Definition, welche Sides "enabled" sind.
+    """
     checkedChanged = pyqtSignal(str, bool)
 
     def __init__(self, parent=None) -> None:
@@ -214,12 +218,12 @@ class _TabBarWithChecks(QTabBar):
         self.setMovable(False)
         self.setExpanding(False)
         self.setUsesScrollButtons(True)
-        self._checks: Dict[int, QWidget] = {}
+        self._checks: Dict[int, QCheckBox] = {}
         self._side_by_index: Dict[int, str] = {}
+        self._index_by_side: Dict[str, int] = {}
 
     def addTabWithCheck(self, label: str, side_name: str, checked: bool = True) -> int:
         idx = self.addTab(label)
-        from PyQt6.QtWidgets import QCheckBox  # local import
 
         cb = QCheckBox(self)
         cb.setChecked(bool(checked))
@@ -233,7 +237,38 @@ class _TabBarWithChecks(QTabBar):
 
         self._checks[idx] = cb
         self._side_by_index[idx] = side_name
+        self._index_by_side[side_name] = idx
         return idx
+
+    def side_for_index(self, idx: int) -> str:
+        return str(self._side_by_index.get(int(idx), "") or "")
+
+    def is_side_checked(self, side: str) -> bool:
+        idx = self._index_by_side.get(str(side))
+        if idx is None:
+            return False
+        cb = self._checks.get(idx)
+        return bool(cb.isChecked()) if cb is not None else False
+
+    def set_side_checked(self, side: str, checked: bool) -> None:
+        idx = self._index_by_side.get(str(side))
+        if idx is None:
+            return
+        cb = self._checks.get(idx)
+        if cb is None:
+            return
+        cb.blockSignals(True)
+        cb.setChecked(bool(checked))
+        cb.blockSignals(False)
+
+    def checked_sides(self) -> List[str]:
+        out: List[str] = []
+        for idx in range(self.count()):
+            side = self._side_by_index.get(idx)
+            cb = self._checks.get(idx)
+            if side and cb is not None and cb.isChecked():
+                out.append(str(side))
+        return out
 
     def clear_tabs(self) -> None:
         for i in range(self.count() - 1, -1, -1):
@@ -251,6 +286,7 @@ class _TabBarWithChecks(QTabBar):
 
         self._checks.clear()
         self._side_by_index.clear()
+        self._index_by_side.clear()
 
     def clear(self) -> None:  # type: ignore[override]
         self.clear_tabs()
@@ -258,13 +294,18 @@ class _TabBarWithChecks(QTabBar):
 
 class RecipeEditorContent(QWidget):
     """
-    Legacy storage model:
-      - Recipe ID (recipe_id) kommt aus Selection->Recipe (Catalog)
-      - Speicherung passiert NUR unter <recipes_root_dir>/<recipe_id>/
+    Editor-Inhalt inkl. Sides.
 
-    Meta:
-      - "Recipe Name" ist nur UI-Text (z.B. für Humans), NICHT Teil des Storage-Keys.
+    NEU (Fix):
+      - Side-Checkboxen bestimmen, welche Sides im Model landen:
+          model.parameters["enabled_sides"] = ["top","front",...]
+      - apply_ui_to_model() schreibt paths_by_side NUR für enabled_sides
+        (damit SceneManager nicht auf leere/untype'd Seiten läuft)
+      - model.parameters["active_side"] wird auf aktuell selektierten Tab gesetzt
+        (für 2D/Details)
     """
+
+    sig_side_enable_changed = pyqtSignal(str, bool)  # side, enabled
 
     def __init__(self, *, ctx, store: RecipeStore, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -290,6 +331,9 @@ class RecipeEditorContent(QWidget):
 
         self._side_editors: Dict[str, SidePathEditor] = {}
         self._side_order: List[str] = []
+
+        # local cache of enabled sides (mirrors tabbar checks)
+        self._side_enabled: Dict[str, bool] = {}
 
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
@@ -352,15 +396,8 @@ class RecipeEditorContent(QWidget):
         planners_l.setContentsMargins(0, 0, 0, 0)
         planners_l.setSpacing(8)
 
-        # PlannerGroupBox baut sich aus store.planner_catalog
         self._planner_box = PlannerGroupBox(parent=planners_host, title="Move planner", role="move", store=self.store)
-
-        self._optimize_box = PlannerGroupBox(
-            parent=planners_host,
-            title="Optimize planner",
-            role="optimize",
-            store=self.store,
-        )
+        self._optimize_box = PlannerGroupBox(parent=planners_host, title="Optimize planner", role="optimize", store=self.store)
 
         planners_l.addWidget(self._planner_box)
         planners_l.addWidget(self._optimize_box)
@@ -386,6 +423,58 @@ class RecipeEditorContent(QWidget):
 
         if self._side_tabbar is not None:
             self._side_tabbar.currentChanged.connect(self._on_side_tab_changed)
+            self._side_tabbar.checkedChanged.connect(self._on_side_checked_changed)
+
+    # ---------------- Side enable state ----------------
+
+    def checked_sides(self) -> List[str]:
+        if self._side_tabbar is None:
+            return []
+        return self._side_tabbar.checked_sides()
+
+    def _on_side_checked_changed(self, side: str, enabled: bool) -> None:
+        s = str(side or "").strip()
+        if not s:
+            return
+        self._side_enabled[s] = bool(enabled)
+        self.sig_side_enable_changed.emit(s, bool(enabled))
+
+    def _apply_side_checks_from_model(self, model: Recipe) -> None:
+        """
+        Restore enabled_sides from model.parameters if present.
+        If missing -> default: all enabled.
+        """
+        if self._side_tabbar is None:
+            return
+
+        enabled_sides: Optional[List[str]] = None
+        try:
+            params = getattr(model, "parameters", None)
+            if isinstance(params, dict):
+                es = params.get("enabled_sides", None)
+                if isinstance(es, list):
+                    enabled_sides = [str(x).strip() for x in es if str(x).strip()]
+        except Exception:
+            enabled_sides = None
+
+        if not enabled_sides:
+            # default: all checked
+            for s in self._side_order:
+                self._side_tabbar.set_side_checked(s, True)
+                self._side_enabled[s] = True
+            return
+
+        enabled_set = set(enabled_sides)
+        for s in self._side_order:
+            chk = (s in enabled_set)
+            self._side_tabbar.set_side_checked(s, chk)
+            self._side_enabled[s] = chk
+
+        # Ensure at least one enabled (fallback: first)
+        if not any(self._side_enabled.get(s, False) for s in self._side_order) and self._side_order:
+            s0 = self._side_order[0]
+            self._side_tabbar.set_side_checked(s0, True)
+            self._side_enabled[s0] = True
 
     # ---------------- Recipe Name API (UI only) ----------------
 
@@ -462,6 +551,20 @@ class RecipeEditorContent(QWidget):
         sides = list(sides_cfg.keys())
         self._rebuild_side_editors(sides=sides, model=model, rec_def=rec_def)
 
+        # Restore checks after tabs exist
+        self._apply_side_checks_from_model(model)
+
+        # Restore active_side if present
+        try:
+            params = getattr(model, "parameters", {}) or {}
+            a = str(params.get("active_side", "") or "").strip()
+            if a and a in self._side_order and self._side_tabbar is not None:
+                idx = self._side_order.index(a)
+                self._side_tabbar.setCurrentIndex(idx)
+                self._on_side_tab_changed(idx)
+        except Exception:
+            pass
+
     def _rebuild_side_editors(self, *, sides: List[str], model: Recipe, rec_def: Dict[str, Any]) -> None:
         for ed in self._side_editors.values():
             ed.setParent(None)
@@ -469,6 +572,7 @@ class RecipeEditorContent(QWidget):
         self._side_editors.clear()
 
         self._side_order = list(sides)
+        self._side_enabled = {str(s): True for s in self._side_order}
 
         if self._side_tabbar is not None:
             self._side_tabbar.blockSignals(True)
@@ -528,14 +632,49 @@ class RecipeEditorContent(QWidget):
         if self._optimize_box is not None:
             model.planner["optimize"] = self._optimize_box.collect_planner()
 
+        # --- Side enable SSoT ---
+        enabled = self.checked_sides()
+        if getattr(model, "parameters", None) is None:
+            model.parameters = {}
+        if not isinstance(model.parameters, dict):
+            raise TypeError(f"Recipe.parameters ist kein dict (got {type(model.parameters)}).")
+
+        model.parameters["enabled_sides"] = list(enabled)
+
+        # Active side = currently selected tab (for 2D etc.)
+        try:
+            if self._side_tabbar is not None:
+                idx = self._side_tabbar.currentIndex()
+                if 0 <= idx < len(self._side_order):
+                    model.parameters["active_side"] = self._side_order[idx]
+        except Exception:
+            pass
+
         if getattr(model, "paths_by_side", None) is None:
             model.paths_by_side = {}
+        if not isinstance(model.paths_by_side, dict):
+            raise TypeError(f"Recipe.paths_by_side ist kein dict (got {type(model.paths_by_side)}).")
+
+        # Collect ONLY enabled sides (fix: prevents empty/untype'd sides from being used)
+        model.paths_by_side.clear()
+
+        # Path planner per side: also only enabled sides
+        if not isinstance(model.planner.get("path"), dict):
+            model.planner["path"] = {}
+        else:
+            model.planner["path"].clear()
 
         for side, ed in self._side_editors.items():
-            model.paths_by_side[side] = ed.collect_path()
+            if side not in enabled:
+                continue
+
+            p = ed.collect_path()
+            if not isinstance(p, dict) or not str(p.get("type") or "").strip():
+                # Hard fail is better than silently producing type=""
+                raise ValueError(f"Side '{side}': path.type fehlt/leer (Side ist enabled).")
+
+            model.paths_by_side[side] = p
 
             pl = ed.collect_path_planner()
             if pl:
-                if not isinstance(model.planner.get("path"), dict):
-                    model.planner["path"] = {}
                 model.planner["path"][side] = pl
