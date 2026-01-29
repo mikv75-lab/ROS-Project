@@ -3,7 +3,48 @@
 """
 spraycoater_nodes_py/moveit_py_node.py
 
-MoveItPy wrapper node (MINIMAL TOPICS for GUI Offline-FK)
+MoveItPy wrapper node (MINIMAL TOPICS for GUI Offline-FK) - KEYED / OUT-OF-ORDER SAFE
+
+NEW CONTRACT (STRICT, NO FALLBACKS):
+  - All planning requests use ONE topic:
+      plan_request (std_msgs/msg/String) with JSON payload including a REQUIRED key.
+  - execute_trajectory / optimize_trajectory require the SAME key encoded as JSON in:
+      RobotTrajectoryMsg.joint_trajectory.header.frame_id
+  - Every published trajectory (planned/executed/optimized) carries the SAME key JSON in:
+      msg.joint_trajectory.header.frame_id
+  - motion_result is JSON and carries the SAME key.
+
+Key JSON (REQUIRED everywhere):
+  {
+    "run": "<uuid-or-string>",
+    "id": <int>,
+    "seg": "<segment-id>",
+    "op": "<operation>"          # e.g. "plan_pose", "plan_pose_array", "execute",
+                                 #      "execute_trajectory", "optimize_trajectory"
+  }
+
+plan_request JSON (REQUIRED shape):
+  {
+    "key": { ... as above ... },     # REQUIRED
+    "payload": { ... }              # REQUIRED, op-specific
+  }
+
+Payloads (STRICT):
+  - op="plan_pose":
+      payload = {
+        "frame": "<frame_id>",
+        "pose": {
+          "position": {"x":..,"y":..,"z":..},
+          "orientation": {"x":..,"y":..,"z":..,"w":..}
+        }
+      }
+  - op="plan_pose_array":
+      payload = {
+        "frame": "<frame_id>",
+        "poses": [ { "position":{...}, "orientation":{...} }, ... ]   # len >= 2
+      }
+  - op="execute":
+      payload = {}  # executes the LAST planned trajectory (STRICT: last plan must exist)
 
 Publishes (per config_hub topics.yaml):
   - planned_trajectory_rt        (moveit_msgs/msg/RobotTrajectory) [latched]
@@ -13,43 +54,52 @@ Publishes (per config_hub topics.yaml):
   - robot_description            (std_msgs/msg/String)             [latched]
   - robot_description_semantic   (std_msgs/msg/String)             [latched]
   - motion_result                (std_msgs/msg/String)             [default]
+  - tray_exec_ready              (std_msgs/msg/Bool)               [default]   # NEW (controller/action ready)
 
 Subscribes:
-  - plan_pose        (geometry_msgs/msg/PoseStamped)
-  - plan_pose_array  (geometry_msgs/msg/PoseArray)   [NEW]
-  - plan_named       (std_msgs/msg/String)
-  - execute          (std_msgs/msg/Bool)
-  - stop             (std_msgs/msg/Empty)
-  - set_speed_mm_s   (std_msgs/msg/Float64)
-  - set_planner_cfg  (std_msgs/msg/String)
+  - plan_request       (std_msgs/msg/String)           # unified planning+execute request
+  - stop               (std_msgs/msg/Empty)
+  - set_speed_mm_s     (std_msgs/msg/Float64)
+  - set_planner_cfg    (std_msgs/msg/String)
+  - execute_trajectory (moveit_msgs/msg/RobotTrajectory)
+  - optimize_trajectory(moveit_msgs/msg/RobotTrajectory)
 
-Extended:
-  - execute_trajectory  (moveit_msgs/msg/RobotTrajectory)
-  - optimize_trajectory (moveit_msgs/msg/RobotTrajectory)
-  - set_segment         (std_msgs/msg/String)
+BUSY (STRICT semantics):
+  - busy == "node is occupied" (planning OR executing OR optimizing OR canceling a move)
+  - If busy: requests reply ERROR:BUSY (keyed if possible)
+  - After motion done OR cancel resolved OR planning finished: busy becomes False
+  - STOP request clears busy immediately (so GUI can proceed), while the cancel is still in-flight.
+    Cancellation correctness is guarded by an execution token (no shared global cancel flag).
+
+STRICT:
+  - No segment fallbacks: key JSON MUST be present and valid for all keyed flows.
+  - optimize_trajectory performs REAL retiming (TOTG/IPTP) via MoveIt trajectory_processing bindings.
+    If bindings are not present, optimization FAILS (no fallback scaling, no stub success).
+  - executed_trajectory_rt is NEVER mirrored from planned. It is recorded from joint_states during execution.
+    If joint_states are missing or do not cover all required joints, recording FAILS (hard error).
+  - All published trajectories (planned/executed/optimized) satisfy FK/postprocess preconditions:
+      * joint_trajectory has >= 2 points
+      * time_from_start starts at 0 and is strictly monotonic
 
 Design:
   - publish trajectories BEFORE motion_result (race-free for statemachine)
   - CLEAR caches via traj_cache_clear BEFORE each external "move" call
-    (plan_pose, plan_pose_array, plan_named, execute_trajectory, optimize_trajectory)
-  - do NOT clear before "execute" (execute consumes the current planned)
+    (plan_request ops, execute_trajectory, optimize_trajectory)
   - publish robot_description(_semantic) ONCE after MoveItPy init (latched)
-  - also best-effort re-publish robot_description on first plan request
-    (covers UI starting late / transient-local mismatch)
+  - Each segment trajectory starts at time_from_start=0 (normalize on publish + on optimize input/output).
 
-Fixes (your request):
-  - Segment switch is a hard context switch: clears latched planned/executed/optimized + clears local plan state.
-  - Each segment trajectory starts at time_from_start=0 (execute_trajectory + optimize_trajectory normalize times).
-  - External move calls clear caches AND clear latched SSoT topics to avoid stale GUI/statemachine reads.
-  - The former 'scene' frame is removed; use 'substrate' instead.
+STOP FIX (2026-01):
+  - Never block the single-threaded executor with a synchronous execute().
+  - All execution (execute_trajectory AND plan_request op=execute) runs via FollowJointTrajectory async.
+  - stop cancels the active goal (cancel_goal_async) and results are keyed.
 """
 
 from __future__ import annotations
 
 import json
-import math
+import time
 from threading import Thread, Event, Lock
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Set
 
 import rclpy
 from rclpy.node import Node
@@ -57,8 +107,14 @@ from rclpy.time import Time as RclpyTime
 from rclpy.duration import Duration
 from rclpy.action import ActionClient
 
-from std_msgs.msg import String as MsgString, Bool as MsgBool, Empty as MsgEmpty, Float64 as MsgFloat64
-from geometry_msgs.msg import PoseStamped, PoseArray
+from std_msgs.msg import (
+    String as MsgString,
+    Empty as MsgEmpty,
+    Float64 as MsgFloat64,
+    Bool as MsgBool,  # NEW
+)
+from geometry_msgs.msg import PoseStamped, Pose
+from sensor_msgs.msg import JointState
 
 from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg, PlanningScene
 from moveit_msgs.srv import GetPlanningScene
@@ -89,11 +145,26 @@ DEFAULT_PLANNER_CFG: Dict[str, Any] = {
     "planner_id": "RRTConnectkConfigDefault",
     "planning_time": 10.0,
     "planning_attempts": 100,
-    "max_velocity_scaling_factor": 0.10,
-    "max_acceleration_scaling_factor": 0.10,
+    "max_velocity_scaling_factor": 1.00,
+    "max_acceleration_scaling_factor": 1.00,
 }
 
 DEFAULT_TRAJ_CONTROLLER = "omron_arm_controller"
+
+
+# ----------------------------
+# Retiming bindings (STRICT)
+# ----------------------------
+_HAVE_TRAJ_PROC = False
+try:
+    from moveit.core.robot_state import RobotState  # type: ignore
+    from moveit.core.trajectory_processing import (  # type: ignore
+        TimeOptimalTrajectoryGeneration,
+        IterativeParabolicTimeParameterization,
+    )
+    _HAVE_TRAJ_PROC = True
+except Exception:
+    _HAVE_TRAJ_PROC = False
 
 
 # ----------------------------
@@ -143,14 +214,12 @@ class _ModeManager:
                     pass
 
     def ensure_mode(self, mode: str) -> None:
-        import time as _time
-
         mode = (mode or "").strip().upper()
         if mode not in ("JOG", "TRAJ"):
             self.node.get_logger().warning(f"[ModeManager] unknown mode '{mode}'")
             return
 
-        now = _time.time()
+        now = time.time()
         if self._pending == mode or self._current_mode == mode:
             return
         if (now - self._last_req_t) < self.debounce_s:
@@ -198,11 +267,200 @@ class _ModeManager:
 
 
 # ----------------------------
-# MoveItPy Node
+# Executed trajectory recorder (STRICT: from joint_states)
+# ----------------------------
+class _ExecutedRecorder:
+    """
+    Records executed joint motion from JointState while a trajectory is executing.
+
+    STRICT:
+      - output is produced only if we have >=2 samples and joint name coverage is complete.
+      - timestamps are relative to start (time_from_start), strictly monotonic.
+    """
+
+    _MIN_SAMPLE_DT_NS = 5_000_000  # 5ms
+    _STAMP_MAX_SKEW_NS = 5_000_000_000  # 5s
+
+    def __init__(self, node: Node) -> None:
+        self._node = node
+        self._lock = Lock()
+        self._active: bool = False
+        self._start_ns: int = 0
+        self._jn: List[str] = []
+        self._samples: List[Tuple[int, List[float]]] = []
+        self._last_t_ns: int = -1
+
+        self._latest_names: List[str] = []
+        self._latest_pos: List[float] = []
+        self._latest_stamp_ns: int = 0
+
+    @staticmethod
+    def _norm_name(n: str) -> str:
+        return str(n or "").strip().lstrip("/")
+
+    @staticmethod
+    def _stamp_to_ns(msg: JointState) -> int:
+        try:
+            st = getattr(getattr(msg, "header", None), "stamp", None)
+            if st is not None:
+                return int(getattr(st, "sec", 0)) * 1_000_000_000 + int(getattr(st, "nanosec", 0))
+        except Exception:
+            pass
+        return 0
+
+    def _now_ns(self) -> int:
+        return int(self._node.get_clock().now().nanoseconds)
+
+    def _select_stamp_ns(self, msg_stamp_ns: int) -> int:
+        now_ns = self._now_ns()
+        if msg_stamp_ns <= 0:
+            return now_ns
+        if now_ns > 0 and abs(msg_stamp_ns - now_ns) > self._STAMP_MAX_SKEW_NS:
+            return now_ns
+        return msg_stamp_ns
+
+    def _vec_for_jn(self, names: List[str], pos: List[float], jn: List[str]) -> Optional[List[float]]:
+        if not names or not pos or len(names) != len(pos):
+            return None
+
+        name_to_i: Dict[str, int] = {}
+        for i, n in enumerate(names):
+            nn = self._norm_name(n)
+            if nn and nn not in name_to_i:
+                name_to_i[nn] = i
+
+        req = [self._norm_name(n) for n in (jn or [])]
+        if any((not r) or (r not in name_to_i) for r in req):
+            return None
+        return [float(pos[name_to_i[r]]) for r in req]
+
+    def feed_joint_state(self, msg: JointState) -> None:
+        try:
+            names = list(msg.name or [])
+            pos = list(msg.position or [])
+        except Exception:
+            return
+        if not names or not pos or len(names) != len(pos):
+            return
+
+        msg_stamp_ns = self._stamp_to_ns(msg)
+        stamp_ns = self._select_stamp_ns(msg_stamp_ns)
+
+        with self._lock:
+            self._latest_names = names
+            self._latest_pos = pos
+            self._latest_stamp_ns = stamp_ns
+
+            if not self._active or not self._jn:
+                return
+
+            vec = self._vec_for_jn(names, pos, self._jn)
+            if vec is None:
+                return
+
+            t_ns = stamp_ns - self._start_ns
+            if t_ns < 0:
+                t_ns = self._last_t_ns + self._MIN_SAMPLE_DT_NS if self._last_t_ns >= 0 else 0
+
+            if self._last_t_ns >= 0:
+                if t_ns <= self._last_t_ns:
+                    t_ns = self._last_t_ns + self._MIN_SAMPLE_DT_NS
+                elif (t_ns - self._last_t_ns) < self._MIN_SAMPLE_DT_NS:
+                    t_ns = self._last_t_ns + self._MIN_SAMPLE_DT_NS
+
+            self._last_t_ns = t_ns
+            self._samples.append((t_ns, vec))
+
+    def start(self, joint_names: List[str]) -> None:
+        jn = [self._norm_name(x) for x in (joint_names or [])]
+        jn = [x for x in jn if x]
+        if not jn:
+            raise ValueError("ExecutedRecorder.start: joint_names empty")
+
+        with self._lock:
+            self._active = True
+            self._jn = jn
+            self._samples = []
+            self._last_t_ns = -1
+            self._start_ns = self._now_ns()
+
+            vec0 = self._vec_for_jn(self._latest_names, self._latest_pos, self._jn)
+            if vec0 is not None:
+                self._samples.append((0, vec0))
+                self._last_t_ns = 0
+
+    def stop_and_build(self) -> RobotTrajectoryMsg:
+        with self._lock:
+            self._active = False
+            jn = list(self._jn)
+            samples = list(self._samples)
+
+            latest_names = list(self._latest_names)
+            latest_pos = list(self._latest_pos)
+            latest_stamp_ns = int(self._latest_stamp_ns)
+            start_ns = int(self._start_ns)
+            last_t = int(self._last_t_ns)
+
+            self._jn = []
+            self._samples = []
+            self._last_t_ns = -1
+            self._start_ns = 0
+
+        if not jn:
+            raise RuntimeError("ExecutedRecorder: no joint_names")
+
+        if len(samples) < 2:
+            vec_last = self._vec_for_jn(latest_names, latest_pos, jn)
+            if vec_last is None:
+                raise RuntimeError(
+                    "ExecutedRecorder: insufficient samples (<2) and latest joint_state lacks required joints"
+                )
+            t_ns = (
+                latest_stamp_ns - start_ns
+                if (latest_stamp_ns > 0 and start_ns > 0)
+                else (last_t + self._MIN_SAMPLE_DT_NS)
+            )
+            if t_ns <= last_t:
+                t_ns = last_t + self._MIN_SAMPLE_DT_NS
+            if t_ns <= 0:
+                t_ns = self._MIN_SAMPLE_DT_NS
+            samples.append((t_ns, vec_last))
+
+        if len(samples) < 2:
+            raise RuntimeError("ExecutedRecorder: insufficient samples (<2)")
+
+        out = RobotTrajectoryMsg()
+        out.joint_trajectory.joint_names = list(jn)
+
+        for t_ns, vec in samples:
+            if len(vec) != len(jn):
+                continue
+            pt = JointTrajectoryPoint()
+            pt.positions = list(vec)
+            pt.time_from_start.sec = int(t_ns // 1_000_000_000)
+            pt.time_from_start.nanosec = int(t_ns % 1_000_000_000)
+            out.joint_trajectory.points.append(pt)
+
+        if len(out.joint_trajectory.points) < 2:
+            raise RuntimeError("ExecutedRecorder: insufficient valid points after build")
+
+        return out
+
+    def cancel(self) -> None:
+        with self._lock:
+            self._active = False
+            self._jn = []
+            self._samples = []
+            self._last_t_ns = -1
+            self._start_ns = 0
+
+
+# ----------------------------
+# MoveItPy Node (KEYED)
 # ----------------------------
 class MoveItPyNode(Node):
     """
-    MoveItPy wrapper node (minimal topics).
+    MoveItPy wrapper node (minimal topics, keyed).
     """
 
     def __init__(self) -> None:
@@ -214,13 +472,8 @@ class MoveItPyNode(Node):
 
         self.cfg_topics = topics()
         self.cfg_frames = frames()
-
         self.frame_world = self.cfg_frames.resolve(self.cfg_frames.get("world", WORLD_FRAME))
 
-        # CHANGED: 'scene' frame removed -> use 'substrate'
-        self.frame_substrate = self.cfg_frames.resolve(self.cfg_frames.get("substrate", "substrate"))
-
-        # parameters
         if not self.has_parameter("backend"):
             self.declare_parameter("backend", "default")
         self.backend = self.get_parameter("backend").value or "default"
@@ -249,42 +502,45 @@ class MoveItPyNode(Node):
         if not self.traj_controller:
             self.traj_controller = DEFAULT_TRAJ_CONTROLLER
 
-        backend_lower = str(self.backend).lower()
-        self.is_real_backend = ("omron" in backend_lower) and ("sim" not in backend_lower)
-
         ns = self.get_namespace() or "/"
-        self.log.info(
-            f"MoveItPyNode starting (backend='{self.backend}', is_real_backend={self.is_real_backend}, ns='{ns}')"
-        )
+        self.log.info(f"MoveItPyNode starting (backend='{self.backend}', ns='{ns}')")
 
-        # controller mode manager
         self._mode_mgr = _ModeManager(self, traj_controller=self.traj_controller, debounce_s=0.25)
 
-        # TF listener
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=False)
 
-        # motion config
         self._speed_mm_s: float = 100.0
         self._planner_cfg: Dict[str, Any] = DEFAULT_PLANNER_CFG.copy()
         self._plan_params: Optional[PlanRequestParameters] = None
 
-        # state
-        self._planned: Optional[RobotTrajectoryCore] = None
+        # BUSY state (node occupied: planning/executing/optimizing/canceling)
         self._busy: bool = False
-        self._cancel: bool = False
-        self._last_goal_pose: Optional[PoseStamped] = None
 
-        # segment tag + external trajectory exec state
-        self._current_segment: str = ""
-        self._external_active_goal = None  # FollowJointTrajectory goal handle
+        # Execution token model (avoid global cancel races):
+        self._exec_token_ctr: int = 0
+        self._active_exec_token: int = 0
+        self._canceled_tokens: Set[int] = set()
+
+        # --- active execution tracking (for keyed stop) ---
+        self._external_active_goal = None
         self._external_active_traj: Optional[RobotTrajectoryMsg] = None
+        self._active_key: Optional[Dict[str, Any]] = None
+        self._active_key_json: str = ""
 
-        # Robot model publication guard (thread-safe)
         self._robot_model_lock = Lock()
         self._robot_model_published: bool = False
 
-        # publishers (ONLY the minimal set)
+        self._exec_rec = _ExecutedRecorder(self)
+
+        # last planned (for op=execute in plan_request)
+        self._last_planned_core: Optional[RobotTrajectoryCore] = None
+        self._last_planned_key_json: Optional[str] = None
+
+        # tray_exec_ready (NEW): publish change-only
+        self._last_traj_exec_ready: Optional[bool] = None
+
+        # publishers
         self.pub_planned = self.create_publisher(
             RobotTrajectoryMsg,
             self.cfg_topics.publish_topic(NODE_KEY, "planned_trajectory_rt"),
@@ -301,14 +557,12 @@ class MoveItPyNode(Node):
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "optimized_trajectory_rt"),
         )
 
-        # cache-clear signal (NOT latched)
         self.pub_traj_cache_clear = self.create_publisher(
             MsgEmpty,
             self.cfg_topics.publish_topic(NODE_KEY, "traj_cache_clear"),
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "traj_cache_clear"),
         )
 
-        # robot model strings for Offline-FK in GUI (latched via QoS)
         self.pub_robot_description = self.create_publisher(
             MsgString,
             self.cfg_topics.publish_topic(NODE_KEY, "robot_description"),
@@ -326,51 +580,36 @@ class MoveItPyNode(Node):
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "motion_result"),
         )
 
-        # omron cmd publisher (optional)
-        self.pub_omron_cmd: Optional[Any] = None
-        if self.is_real_backend:
-            topic_omron_cmd = self.cfg_topics.publish_topic("omron", "command")
-            qos_omron_cmd = self.cfg_topics.qos_by_id("publish", "omron", "command")
-            self.pub_omron_cmd = self.create_publisher(MsgString, topic_omron_cmd, qos_omron_cmd)
-            self.log.info(f"[{self.backend}] Omron cmd topic enabled: {topic_omron_cmd}")
-        else:
-            self.log.info(f"[{self.backend}] Omron cmd topic disabled (sim/shadow backend)")
+        # NEW: tray_exec_ready publisher
+        self.pub_traj_exec_ready = self.create_publisher(
+            MsgBool,
+            self.cfg_topics.publish_topic(NODE_KEY, "tray_exec_ready"),
+            self.cfg_topics.qos_by_id("publish", NODE_KEY, "tray_exec_ready"),
+        )
 
-        # FollowJointTrajectory ActionClients (namespaced + root fallback)
+        # FollowJT action
         self._followjt_clients: List[Tuple[str, ActionClient]] = []
         for action_name in self._followjt_action_candidates(self.traj_controller):
             self._followjt_clients.append((action_name, ActionClient(self, FollowJointTrajectory, action_name)))
         if self._followjt_clients:
             self.log.info("[followjt] action candidates: " + ", ".join(n for n, _ in self._followjt_clients))
 
-        # subscribers
-        self.create_subscription(
-            PoseStamped,
-            self.cfg_topics.subscribe_topic(NODE_KEY, "plan_pose"),
-            self._on_plan_pose,
-            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "plan_pose"),
-        )
+        # joint_states subscriptions (STRICT: include namespace!)
+        for jt_topic in self._joint_state_candidates():
+            self.create_subscription(JointState, jt_topic, self._on_joint_states, 10)
+            self.log.info(f"[joint_states] subscribed: {jt_topic}")
 
-        # NEW: plan full waypoint list as ONE trajectory
-        self.create_subscription(
-            PoseArray,
-            self.cfg_topics.subscribe_topic(NODE_KEY, "plan_pose_array"),
-            self._on_plan_pose_array,
-            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "plan_pose_array"),
-        )
-
+        # ----------------------------
+        # subscriptions (KEYED)
+        # ----------------------------
         self.create_subscription(
             MsgString,
-            self.cfg_topics.subscribe_topic(NODE_KEY, "plan_named"),
-            self._on_plan_named,
-            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "plan_named"),
+            self.cfg_topics.subscribe_topic(NODE_KEY, "plan_request"),
+            self._on_plan_request,
+            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "plan_request"),
         )
-        self.create_subscription(
-            MsgBool,
-            self.cfg_topics.subscribe_topic(NODE_KEY, "execute"),
-            self._on_execute,
-            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "execute"),
-        )
+        self.log.info("[topics] subscribed: plan_request")
+
         self.create_subscription(
             MsgEmpty,
             self.cfg_topics.subscribe_topic(NODE_KEY, "stop"),
@@ -390,50 +629,30 @@ class MoveItPyNode(Node):
             self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "set_planner_cfg"),
         )
 
-        # execute arbitrary trajectory (from YAML / optimize output)
-        try:
-            self.create_subscription(
-                RobotTrajectoryMsg,
-                self.cfg_topics.subscribe_topic(NODE_KEY, "execute_trajectory"),
-                self._on_execute_trajectory,
-                self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "execute_trajectory"),
-            )
-            self.log.info("[topics] subscribed: execute_trajectory")
-        except Exception as e:
-            self.log.warning(f"[topics] execute_trajectory not wired (topics.yaml missing?): {e!r}")
+        self.create_subscription(
+            RobotTrajectoryMsg,
+            self.cfg_topics.subscribe_topic(NODE_KEY, "execute_trajectory"),
+            self._on_execute_trajectory,
+            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "execute_trajectory"),
+        )
+        self.log.info("[topics] subscribed: execute_trajectory")
 
-        # optimize trajectory (post-processing / retime) in node
-        try:
-            self.create_subscription(
-                RobotTrajectoryMsg,
-                self.cfg_topics.subscribe_topic(NODE_KEY, "optimize_trajectory"),
-                self._on_optimize_trajectory,
-                self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "optimize_trajectory"),
-            )
-            self.log.info("[topics] subscribed: optimize_trajectory")
-        except Exception as e:
-            self.log.warning(f"[topics] optimize_trajectory not wired (topics.yaml missing?): {e!r}")
+        self.create_subscription(
+            RobotTrajectoryMsg,
+            self.cfg_topics.subscribe_topic(NODE_KEY, "optimize_trajectory"),
+            self._on_optimize_trajectory,
+            self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "optimize_trajectory"),
+        )
+        self.log.info("[topics] subscribed: optimize_trajectory")
 
-        # Optional segment tagging
-        try:
-            self.create_subscription(
-                MsgString,
-                self.cfg_topics.subscribe_topic(NODE_KEY, "set_segment"),
-                self._on_set_segment,
-                self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "set_segment"),
-            )
-            self.log.info("[topics] subscribed: set_segment")
-        except Exception:
-            pass
-
-        # planning scene cache service (optional but useful)
+        # planning scene cache service (optional)
         self._gps_srv = None
         self._gps_sub = None
         self._last_scene: Optional[PlanningScene] = None
         self._warned_no_scene = False
         self._ensure_get_planning_scene_cache_service()
 
-        # MoveItPy init in background
+        # MoveItPy init async
         self.moveit: Optional[MoveItPy] = None
         self.arm = None
         self.robot_model = None
@@ -447,20 +666,171 @@ class MoveItPyNode(Node):
         self.log.info(f"[moveitpy] init async: node_ns='{ns}', name_space='{self._name_space}'")
         Thread(target=self._init_moveitpy_background, daemon=True).start()
 
+        # NEW: timer to publish tray_exec_ready (change-only)
+        self._ready_timer = self.create_timer(0.10, self._on_ready_timer)  # 10 Hz
+        # publish initial state immediately
+        self._publish_traj_exec_ready(self._calc_traj_exec_ready())
+
         self.log.info("MoveItPyNode init done (MoveItPy is initializing in background).")
 
     # ------------------------------------------------------------
-    # Trajectory helpers (clear latched + normalize time)
+    # BUSY helpers
+    # ------------------------------------------------------------
+    def _set_busy(self, v: bool) -> None:
+        self._busy = bool(v)
+
+    def _is_busy(self) -> bool:
+        return bool(self._busy)
+
+    # ------------------------------------------------------------
+    # tray_exec_ready (NEW)
+    #   Definition: capability/availability (NOT occupancy):
+    #     ready := MoveItPy initialized AND FollowJT action server is ready
+    #   GUI combines (ready AND NOT busy) externally.
+    # ------------------------------------------------------------
+    def _calc_traj_exec_ready(self) -> bool:
+        if self._moveit_failed.is_set():
+            return False
+        if not self._moveit_ready.is_set():
+            return False
+        return self._pick_ready_followjt() is not None
+
+    def _publish_traj_exec_ready(self, v: bool) -> None:
+        vv = bool(v)
+        if self._last_traj_exec_ready is not None and self._last_traj_exec_ready == vv:
+            return
+        self._last_traj_exec_ready = vv
+        try:
+            self.pub_traj_exec_ready.publish(MsgBool(data=vv))
+        except Exception as e:
+            self.log.warning(f"[tray_exec_ready] publish failed: {e!r}")
+            return
+        self.log.info(f"[tray_exec_ready] {vv}")
+
+    def _on_ready_timer(self) -> None:
+        try:
+            self._publish_traj_exec_ready(self._calc_traj_exec_ready())
+        except Exception:
+            # STRICT: never throw inside timer callback
+            pass
+
+    # ------------------------------------------------------------
+    # joint_states candidates (namespace + root)
+    # ------------------------------------------------------------
+    def _joint_state_candidates(self) -> List[str]:
+        ns = (self.get_namespace() or "/").strip().strip("/")
+        cands: List[str] = []
+        if ns:
+            cands.append(f"/{ns}/joint_states")
+        cands.append("/joint_states")
+        out: List[str] = []
+        seen = set()
+        for t in cands:
+            if t not in seen:
+                seen.add(t)
+                out.append(t)
+        return out
+
+    def _on_joint_states(self, msg: JointState) -> None:
+        self._exec_rec.feed_joint_state(msg)
+
+    # ------------------------------------------------------------
+    # Key / JSON helpers (STRICT)
+    # ------------------------------------------------------------
+    @staticmethod
+    def _json_load_strict(s: str, *, what: str) -> Dict[str, Any]:
+        try:
+            v = json.loads(s)
+        except Exception as e:
+            raise ValueError(f"{what}: invalid JSON ({e!r})")
+        if not isinstance(v, dict):
+            raise ValueError(f"{what}: JSON must be object/dict")
+        return v
+
+    @staticmethod
+    def _require_key_obj(obj: Dict[str, Any]) -> Dict[str, Any]:
+        if "key" not in obj or not isinstance(obj["key"], dict):
+            raise ValueError("request: missing 'key' dict")
+        k = obj["key"]
+        for req in ("run", "id", "seg", "op"):
+            if req not in k:
+                raise ValueError(f"key: missing '{req}'")
+        if not isinstance(k["run"], str) or not k["run"].strip():
+            raise ValueError("key.run must be non-empty string")
+        if not isinstance(k["id"], int):
+            raise ValueError("key.id must be int")
+        if not isinstance(k["seg"], str) or not k["seg"].strip():
+            raise ValueError("key.seg must be non-empty string")
+        if not isinstance(k["op"], str) or not k["op"].strip():
+            raise ValueError("key.op must be non-empty string")
+        return {"run": k["run"].strip(), "id": int(k["id"]), "seg": k["seg"].strip(), "op": k["op"].strip()}
+
+    @staticmethod
+    def _key_to_json(k: Dict[str, Any]) -> str:
+        return json.dumps(
+            {"run": k["run"], "id": int(k["id"]), "seg": k["seg"], "op": k["op"]},
+            separators=(",", ":"),
+        )
+
+    @staticmethod
+    def _key_short(k: Dict[str, Any]) -> str:
+        return f"{k['op']}:{k['run']}:{int(k['id'])}:{k['seg']}"
+
+    def _emit_keyed(self, key: Dict[str, Any], status: str, *, extra: Optional[Dict[str, Any]] = None) -> None:
+        msg: Dict[str, Any] = {"key": dict(key), "status": str(status)}
+        if extra:
+            msg["extra"] = dict(extra)
+        self.pub_result.publish(MsgString(data=json.dumps(msg, separators=(",", ":"))))
+        self.log.info(f"[result] {status} ({self._key_short(key)})")
+
+    def _tag_traj_msg_with_key(self, msg: RobotTrajectoryMsg, key_json: str) -> None:
+        jt = getattr(msg, "joint_trajectory", None)
+        if jt is None:
+            raise RuntimeError("RobotTrajectoryMsg has no joint_trajectory")
+        hdr = getattr(jt, "header", None)
+        if hdr is None:
+            raise RuntimeError("RobotTrajectoryMsg.joint_trajectory has no header")
+        hdr.frame_id = key_json
+
+    def _key_from_traj_msg_strict(self, msg: RobotTrajectoryMsg) -> Tuple[Dict[str, Any], str]:
+        jt = getattr(msg, "joint_trajectory", None)
+        if jt is None:
+            raise ValueError("traj: missing joint_trajectory")
+        hdr = getattr(jt, "header", None)
+        if hdr is None:
+            raise ValueError("traj: missing header")
+        key_json = str(getattr(hdr, "frame_id", "") or "").strip()
+        if not key_json:
+            raise ValueError("traj: header.frame_id empty (missing key JSON)")
+        key_obj = self._json_load_strict(key_json, what="traj.key")
+        if "key" in key_obj and isinstance(key_obj["key"], dict):
+            key_obj = key_obj["key"]
+        for req in ("run", "id", "seg", "op"):
+            if req not in key_obj:
+                raise ValueError(f"traj.key: missing '{req}'")
+        if not isinstance(key_obj["run"], str) or not key_obj["run"].strip():
+            raise ValueError("traj.key.run must be non-empty string")
+        if not isinstance(key_obj["id"], int):
+            raise ValueError("traj.key.id must be int")
+        if not isinstance(key_obj["seg"], str) or not key_obj["seg"].strip():
+            raise ValueError("traj.key.seg must be non-empty string")
+        if not isinstance(key_obj["op"], str) or not key_obj["op"].strip():
+            raise ValueError("traj.key.op must be non-empty string")
+        key = {
+            "run": key_obj["run"].strip(),
+            "id": int(key_obj["id"]),
+            "seg": key_obj["seg"].strip(),
+            "op": key_obj["op"].strip(),
+        }
+        return key, self._key_to_json(key)
+
+    # ------------------------------------------------------------
+    # Trajectory helpers (STRICT postprocess preconditions)
     # ------------------------------------------------------------
     def _make_empty_traj_msg(self) -> RobotTrajectoryMsg:
         return RobotTrajectoryMsg()
 
     def _publish_empty_latched_trajs(self, *, reason: str) -> None:
-        """
-        Clear latched planned/executed/optimized trajectories by publishing empty messages.
-        This is crucial when switching segments or before any external move call to avoid GUI/SM
-        consuming stale latched data.
-        """
         try:
             empty = self._make_empty_traj_msg()
             self.pub_planned.publish(empty)
@@ -483,10 +853,6 @@ class MoveItPyNode(Node):
         return sec, nsec
 
     def _normalize_joint_traj_time_zero(self, jt) -> bool:
-        """
-        Ensure time_from_start begins at 0 and is strictly monotonic increasing.
-        Returns True if modified.
-        """
         pts = list(getattr(jt, "points", []) or [])
         if len(pts) < 1:
             return False
@@ -494,7 +860,6 @@ class MoveItPyNode(Node):
         t0 = self._tfs_to_ns(pts[0])
         changed = False
 
-        # subtract t0 if needed
         if t0 != 0:
             for p in pts:
                 ns = self._tfs_to_ns(p) - t0
@@ -505,7 +870,6 @@ class MoveItPyNode(Node):
                 p.time_from_start.nanosec = nsec
             changed = True
 
-        # enforce strictly increasing
         last = -1
         for p in pts:
             ns = self._tfs_to_ns(p)
@@ -519,23 +883,60 @@ class MoveItPyNode(Node):
 
         return changed
 
-    # ------------------------------------------------------------
-    # CLEAR helpers (explicit clear topic)
-    # ------------------------------------------------------------
-    def _clear_traj_cache(self, *, reason: str) -> None:
-        """
-        Emit an explicit cache-clear signal for GUI/Bridge/Statemachine,
-        AND clear latched planned/executed/optimized messages to avoid stale consumption.
-        """
-        # 1) Clear latched SSoT topics first (critical)
-        self._publish_empty_latched_trajs(reason=reason)
+    def _ensure_min_2_points(self, jt) -> bool:
+        pts = list(getattr(jt, "points", []) or [])
+        if len(pts) >= 2:
+            return False
+        if len(pts) == 0:
+            raise RuntimeError("joint_trajectory has 0 points (invalid)")
 
-        # 2) Pulse non-latched cache-clear
+        p0 = pts[0]
+        p1 = JointTrajectoryPoint()
+        p1.positions = list(getattr(p0, "positions", []) or [])
+
         try:
-            self.pub_traj_cache_clear.publish(MsgEmpty())
-            self.log.info(f"[traj] cache clear signaled (reason='{reason}')")
-        except Exception as e:
-            self.log.warning(f"[traj] cache clear publish failed: {e!r}")
+            if getattr(p0, "velocities", None):
+                p1.velocities = list(p0.velocities)
+        except Exception:
+            pass
+        try:
+            if getattr(p0, "accelerations", None):
+                p1.accelerations = list(p0.accelerations)
+        except Exception:
+            pass
+        try:
+            if getattr(p0, "effort", None):
+                p1.effort = list(p0.effort)
+        except Exception:
+            pass
+
+        p0.time_from_start.sec = 0
+        p0.time_from_start.nanosec = 0
+        p1.time_from_start.sec = 0
+        p1.time_from_start.nanosec = 1_000_000
+
+        jt.points.append(p1)
+        return True
+
+    def _sanitize_traj_msg_inplace(self, msg: RobotTrajectoryMsg, *, context: str) -> None:
+        jt = getattr(msg, "joint_trajectory", None)
+        if jt is None:
+            raise RuntimeError(f"{context}: no joint_trajectory in RobotTrajectoryMsg")
+        if not getattr(jt, "joint_names", None):
+            raise RuntimeError(f"{context}: joint_names empty")
+        if not getattr(jt, "points", None):
+            raise RuntimeError(f"{context}: points empty")
+
+        self._ensure_min_2_points(jt)
+        self._normalize_joint_traj_time_zero(jt)
+
+        if len(jt.points) < 2:
+            raise RuntimeError(f"{context}: sanitize failed (points<2)")
+
+    def _clear_traj_cache(self, *, reason: str) -> None:
+        self._publish_empty_latched_trajs(reason=reason)
+        self.pub_traj_cache_clear.publish(MsgEmpty())
+        self.log.info(f"[traj] cache clear signaled (reason='{reason}')")
 
     # ------------------------------------------------------------
     # FollowJT helpers
@@ -572,50 +973,30 @@ class MoveItPyNode(Node):
         return None
 
     # ------------------------------------------------------------
-    # Robot model publication (URDF/SRDF)
+    # Robot model publication
     # ------------------------------------------------------------
     def _publish_robot_model_strings_once(self) -> None:
-        """
-        Publish robot_description and robot_description_semantic (latched) exactly once.
-        """
         with self._robot_model_lock:
             if self._robot_model_published:
                 return
 
-            try:
-                urdf = str(self.get_parameter("robot_description").value or "")
-            except Exception:
-                urdf = ""
-            try:
-                srdf = str(self.get_parameter("robot_description_semantic").value or "")
-            except Exception:
-                srdf = ""
-
-            urdf = urdf.strip()
-            srdf = srdf.strip()
+            urdf = str(self.get_parameter("robot_description").value or "").strip()
+            srdf = str(self.get_parameter("robot_description_semantic").value or "").strip()
 
             if not urdf:
-                self.log.error(
-                    "[robot_model] robot_description parameter ist leer. "
-                    "Ohne URDF kann die GUI kein Offline-FK/TCP berechnen. "
-                    "Fix: Stelle sicher, dass der MoveIt launch robot_description an /moveit_py injiziert."
-                )
+                self.log.error("[robot_model] robot_description parameter ist leer.")
                 return
 
-            try:
-                self.pub_robot_description.publish(MsgString(data=urdf))
-                if srdf:
-                    self.pub_robot_description_semantic.publish(MsgString(data=srdf))
-                else:
-                    self.log.warning("[robot_model] robot_description_semantic ist leer (SRDF fehlt/optional).")
+            self.pub_robot_description.publish(MsgString(data=urdf))
+            if srdf:
+                self.pub_robot_description_semantic.publish(MsgString(data=srdf))
+            else:
+                self.log.warning("[robot_model] robot_description_semantic ist leer (SRDF fehlt/optional).")
 
-                self._robot_model_published = True
-                self.log.info(
-                    f"[robot_model] published robot_description ({len(urdf)} chars) "
-                    f"+ semantic ({len(srdf)} chars) [latched]"
-                )
-            except Exception as e:
-                self.log.error(f"[robot_model] publish failed: {e!r}")
+            self._robot_model_published = True
+            self.log.info(
+                f"[robot_model] published robot_description ({len(urdf)} chars) + semantic ({len(srdf)} chars) [latched]"
+            )
 
     # ------------------------------------------------------------
     # Init / Params
@@ -648,36 +1029,40 @@ class MoveItPyNode(Node):
                 self.arm = self.moveit.get_planning_component(GROUP_NAME)
                 self.robot_model = self.moveit.get_robot_model()
 
-                try:
-                    preset = self.plan_request_preset
-                    self._plan_params = PlanRequestParameters(self.moveit, preset)
-                    self._apply_planner_cfg_to_params()
-                    self.log.info(f"[config] PlanRequestParameters loaded preset='{preset}'")
-                except Exception as e:
-                    self._plan_params = None
-                    self.log.warning(
-                        f"[config] PlanRequestParameters nicht verfügbar ({e}). Nutze arm.plan() ohne explizite Parameter."
-                    )
+                preset = self.plan_request_preset
+                self._plan_params = PlanRequestParameters(self.moveit, preset)
+                self._apply_planner_cfg_to_params()
+                self.log.info(f"[config] PlanRequestParameters loaded preset='{preset}'")
 
-            # Publish robot model strings AFTER MoveItPy init
             self._publish_robot_model_strings_once()
 
             self._moveit_ready.set()
             self.log.info(f"MoveItPy ready (group={GROUP_NAME}, ns='{self.get_namespace() or '/'}')")
-            self.log.info(f"MoveItPyNode online (backend='{self.backend}').")
+            self.log.info("MoveItPyNode online.")
+
+            # NEW: publish readiness again after init
+            self._publish_traj_exec_ready(self._calc_traj_exec_ready())
 
         except Exception as e:
             self._moveit_err = repr(e)
             self._moveit_failed.set()
             self.log.error(f"[moveitpy] INIT FAILED: {e!r}")
+            # NEW: readiness becomes false
+            self._publish_traj_exec_ready(False)
 
-    def _require_moveit_ready(self) -> bool:
+    def _require_moveit_ready(self, *, key: Optional[Dict[str, Any]] = None, key_json: str = "") -> bool:
         if self._moveit_ready.is_set():
             return True
         if self._moveit_failed.is_set():
-            self._emit(f"ERROR:MOVEIT_INIT_FAILED {self._moveit_err}")
+            if key is not None:
+                self._emit_keyed(key, "ERROR:MOVEIT_INIT_FAILED", extra={"err": self._moveit_err or ""})
+            else:
+                self.pub_result.publish(MsgString(data="ERROR:MOVEIT_INIT_FAILED"))
             return False
-        self._emit("ERROR:MOVEIT_NOT_READY")
+        if key is not None:
+            self._emit_keyed(key, "ERROR:MOVEIT_NOT_READY", extra={"key_json": key_json})
+        else:
+            self.pub_result.publish(MsgString(data="ERROR:MOVEIT_NOT_READY"))
         return False
 
     # ------------------------------------------------------------
@@ -727,22 +1112,11 @@ class MoveItPyNode(Node):
         return res
 
     # ------------------------------------------------------------
-    # Utility
+    # Planner parameters
     # ------------------------------------------------------------
-    def _emit(self, text: str) -> None:
-        self.pub_result.publish(MsgString(data=text))
-        self.log.info(text)
-
-    def _emit_with_segment(self, text: str) -> None:
-        seg = (self._current_segment or "").strip()
-        if seg:
-            self._emit(f"{text} seg={seg}")
-        else:
-            self._emit(text)
-
     def _apply_planner_cfg_to_params(self) -> None:
         if self._plan_params is None:
-            return
+            raise RuntimeError("PlanRequestParameters not available")
 
         cfg = self._planner_cfg
         p = self._plan_params
@@ -750,24 +1124,12 @@ class MoveItPyNode(Node):
         pipeline_id = (str(cfg.get("pipeline") or "").strip()) or "ompl"
         planner_id = (str(cfg.get("planner_id") or "").strip()) or "RRTConnectkConfigDefault"
 
-        try:
-            p.planning_pipeline = pipeline_id  # type: ignore[attr-defined]
-        except Exception:
-            self.log.warning("[config] PlanRequestParameters has no attribute 'planning_pipeline'")
-
-        try:
-            p.planner_id = planner_id  # type: ignore[attr-defined]
-        except Exception:
-            self.log.warning("[config] PlanRequestParameters has no attribute 'planner_id'")
-
+        p.planning_pipeline = pipeline_id  # type: ignore[attr-defined]
+        p.planner_id = planner_id  # type: ignore[attr-defined]
         p.planning_time = float(cfg.get("planning_time", DEFAULT_PLANNER_CFG["planning_time"]))
         p.planning_attempts = int(cfg.get("planning_attempts", DEFAULT_PLANNER_CFG["planning_attempts"]))
-        p.max_velocity_scaling_factor = float(
-            cfg.get("max_velocity_scaling_factor", DEFAULT_PLANNER_CFG["max_velocity_scaling_factor"])
-        )
-        p.max_acceleration_scaling_factor = float(
-            cfg.get("max_acceleration_scaling_factor", DEFAULT_PLANNER_CFG["max_acceleration_scaling_factor"])
-        )
+        p.max_velocity_scaling_factor = float(cfg.get("max_velocity_scaling_factor", 1.0))
+        p.max_acceleration_scaling_factor = float(cfg.get("max_acceleration_scaling_factor", 1.0))
 
         self.log.info(
             f"[config] Planner applied: planning_pipeline='{pipeline_id}', planner_id='{planner_id}', "
@@ -785,91 +1147,57 @@ class MoveItPyNode(Node):
 
     def _on_set_planner_cfg(self, msg: MsgString) -> None:
         raw = msg.data or ""
-        try:
-            incoming = json.loads(raw)
-            if not isinstance(incoming, dict):
-                raise ValueError("planner_cfg JSON ist kein dict.")
+        incoming = json.loads(raw)
+        if not isinstance(incoming, dict):
+            raise ValueError("planner_cfg JSON ist kein dict.")
 
-            if "pipeline" in incoming and not str(incoming.get("pipeline") or "").strip():
-                incoming.pop("pipeline", None)
-            if "planner_id" in incoming and not str(incoming.get("planner_id") or "").strip():
-                incoming.pop("planner_id", None)
+        if "pipeline" in incoming and not str(incoming.get("pipeline") or "").strip():
+            incoming.pop("pipeline", None)
+        if "planner_id" in incoming and not str(incoming.get("planner_id") or "").strip():
+            incoming.pop("planner_id", None)
 
-            self._planner_cfg.update(incoming)
+        self._planner_cfg.update(incoming)
+        if not str(self._planner_cfg.get("pipeline") or "").strip():
+            self._planner_cfg["pipeline"] = self._default_pipeline_id()
 
-            if not str(self._planner_cfg.get("pipeline") or "").strip():
-                self._planner_cfg["pipeline"] = self._default_pipeline_id()
-
-            if self._moveit_ready.is_set():
-                self._apply_planner_cfg_to_params()
-
-        except Exception as e:
-            self.log.error(f"[config] set_planner_cfg: invalid JSON '{raw}': {e}")
+        if self._moveit_ready.is_set():
+            self._apply_planner_cfg_to_params()
 
     # ------------------------------------------------------------
-    # segment tag input
-    # ------------------------------------------------------------
-    def _on_set_segment(self, msg: MsgString) -> None:
-        seg = str(msg.data or "").strip()
-        if seg == self._current_segment:
-            return
-
-        self._current_segment = seg
-
-        # Hard context switch: clear local + clear latched cache
-        self._planned = None
-        self._last_goal_pose = None
-        self._clear_traj_cache(reason=f"set_segment:{seg or 'EMPTY'}")
-
-        self.log.info(f"[segment] set_segment -> '{seg}'")
-
-    # ------------------------------------------------------------
-    # TF helpers for goal input
+    # TF helpers
     # ------------------------------------------------------------
     def _lookup_tf(self, target: str, source: str):
         if not self.tf_buffer.can_transform(target, source, RclpyTime(), Duration(seconds=1.0)):
             raise RuntimeError(f"TF not available {target} <- {source}")
         return self.tf_buffer.lookup_transform(target, source, RclpyTime())
 
-    def _resolve_named_candidates(self, name: str) -> List[str]:
-        name = (name or "").strip().strip("/")
-        if not name:
-            return []
-        cand = [name]
-        ns = self._ns_prefix()
-        if ns:
-            cand.append(f"{ns}/{name}")
-        return cand
+    def _transform_pose_to_world(self, pose: Pose, frame_id: str) -> PoseStamped:
+        frame_id = (frame_id or "").strip()
+        if not frame_id:
+            raise ValueError("pose.frame empty")
 
-    def _lookup_tf_named(self, name: str):
-        last_err: Optional[Exception] = None
-        for cand in self._resolve_named_candidates(name):
-            try:
-                return self._lookup_tf(self.frame_world, cand), cand
-            except Exception as e:
-                last_err = e
-        raise RuntimeError(str(last_err) if last_err else f"TF not available {self.frame_world} <- {name}")
+        ps = PoseStamped()
+        ps.header.frame_id = frame_id
+        ps.header.stamp = self.get_clock().now().to_msg()
+        ps.pose = pose
 
-    def _transform_pose_stamped_to_world(self, msg: PoseStamped) -> PoseStamped:
-        in_frame = (msg.header.frame_id or "").strip() or self.frame_world
-
-        if in_frame == self.frame_world:
+        if frame_id == self.frame_world:
             out = PoseStamped()
             out.header.frame_id = self.frame_world
             out.header.stamp = self.get_clock().now().to_msg()
-            out.pose = msg.pose
+            out.pose = pose
             return out
 
         try:
-            out = self.tf_buffer.transform(msg, self.frame_world, timeout=Duration(seconds=1.0))
+            out = self.tf_buffer.transform(ps, self.frame_world, timeout=Duration(seconds=1.0))
             out.header.frame_id = self.frame_world
             out.header.stamp = self.get_clock().now().to_msg()
             return out
         except Exception as e_primary:
-            self.log.warning(f"[tf] buffer.transform failed ({in_frame} -> {self.frame_world}): {e_primary!r}")
+            self.log.warning(f"[tf] buffer.transform failed ({frame_id} -> {self.frame_world}): {e_primary!r}")
 
-        tf = self._lookup_tf(self.frame_world, in_frame)
-        p = do_transform_pose(msg.pose, tf)
+        tf = self._lookup_tf(self.frame_world, frame_id)
+        p = do_transform_pose(ps.pose, tf)
         out = PoseStamped()
         out.header.frame_id = self.frame_world
         out.header.stamp = self.get_clock().now().to_msg()
@@ -877,262 +1205,101 @@ class MoveItPyNode(Node):
         return out
 
     # ------------------------------------------------------------
-    # Planning / Execution handlers
+    # Plan request parsing helpers (STRICT)
     # ------------------------------------------------------------
-    def _on_plan_pose(self, msg: PoseStamped) -> None:
-        if self._busy:
-            self._emit_with_segment("ERROR:BUSY")
-            return
-        if not self._require_moveit_ready():
-            return
+    @staticmethod
+    def _pose_from_dict_strict(d: Dict[str, Any]) -> Pose:
+        if not isinstance(d, dict):
+            raise ValueError("pose must be dict")
+        pos = d.get("position")
+        ori = d.get("orientation")
+        if not isinstance(pos, dict) or not isinstance(ori, dict):
+            raise ValueError("pose.position and pose.orientation must be dict")
+        for k in ("x", "y", "z"):
+            if k not in pos:
+                raise ValueError(f"pose.position missing '{k}'")
+        for k in ("x", "y", "z", "w"):
+            if k not in ori:
+                raise ValueError(f"pose.orientation missing '{k}'")
+        p = Pose()
+        p.position.x = float(pos["x"])
+        p.position.y = float(pos["y"])
+        p.position.z = float(pos["z"])
+        p.orientation.x = float(ori["x"])
+        p.orientation.y = float(ori["y"])
+        p.orientation.z = float(ori["z"])
+        p.orientation.w = float(ori["w"])
+        return p
 
-        self._clear_traj_cache(reason="plan_pose")
-        self._publish_robot_model_strings_once()
+    # ------------------------------------------------------------
+    # Execution helper (async FollowJT; STOP works)
+    # ------------------------------------------------------------
+    def _next_exec_token(self) -> int:
+        self._exec_token_ctr += 1
+        if self._exec_token_ctr <= 0:
+            self._exec_token_ctr = 1
+        return int(self._exec_token_ctr)
 
-        self._planned = None
-        self._last_goal_pose = None
+    def _is_token_canceled(self, token: int) -> bool:
+        return int(token) in self._canceled_tokens
 
-        in_frame = msg.header.frame_id or self.frame_world
-        self.log.info(f"[plan_pose] in_frame={in_frame} → world={self.frame_world}")
-
-        try:
-            goal = self._transform_pose_stamped_to_world(msg)
-
-            self.arm.set_start_state_to_current_state()
-            self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
-
-            if self._plan_params is not None:
-                self._apply_planner_cfg_to_params()
-
-            result = self.arm.plan(single_plan_parameters=self._plan_params) if self._plan_params else self.arm.plan()
-            core = getattr(result, "trajectory", None)
-            if core is None:
-                self._emit_with_segment("ERROR:NO_TRAJ pose")
-                return
-
-            msg_traj = core.get_robot_trajectory_msg()
-            self._planned = core
-            self._last_goal_pose = goal
-
-            self.pub_planned.publish(msg_traj)
-            self._emit_with_segment("PLANNED:OK pose")
-
-        except Exception as e:
-            self._emit_with_segment(f"ERROR:EX {e}")
-
-    def _on_plan_pose_array(self, msg: PoseArray) -> None:
+    def _execute_traj_via_followjt_async(
+        self,
+        *,
+        key: Dict[str, Any],
+        key_json: str,
+        msg: RobotTrajectoryMsg,
+        source: str,
+    ) -> None:
         """
-        Plan a whole waypoint sequence as ONE trajectory and publish planned_trajectory_rt once.
+        Start async FollowJT execution for a sanitized+keyed RobotTrajectoryMsg.
 
-        Note:
-          - PoseArray has NO header -> we assume WORLD frame for all poses.
-          - This is the API you need so Validate can plan MOVE_RECIPE in ONE go.
+        STRICT:
+          - publishes planned before result
+          - records executed from joint_states
+          - Stop works via cancel_goal_async()
         """
-        if self._busy:
-            self._emit_with_segment("ERROR:BUSY")
-            return
-        if not self._require_moveit_ready():
-            return
-
-        poses = list(getattr(msg, "poses", []) or [])
-        if len(poses) < 2:
-            self._emit_with_segment("ERROR:POSE_ARRAY_TOO_SHORT")
-            return
-
-        self._clear_traj_cache(reason="plan_pose_array")
-        self._publish_robot_model_strings_once()
-
-        self._planned = None
-        self._last_goal_pose = None
-
-        fn = getattr(self.arm, "compute_cartesian_path", None)
-        if not callable(fn):
-            # STRICT: do not silently fall back to point-streaming (would re-create your bug)
-            self._emit_with_segment("ERROR:NO_CARTESIAN_API")
+        if self._is_busy():
+            self._emit_keyed(key, "ERROR:BUSY", extra={"src": source})
             return
 
         try:
-            self.arm.set_start_state_to_current_state()
-
-            # Defaults (tune if needed)
-            max_step = 0.005  # meters (~5mm)
-            jump_threshold = 0.0
-
-            out = None
-            try:
-                out = fn(poses, max_step, jump_threshold)
-            except TypeError:
-                out = fn(waypoints=poses, max_step=max_step, jump_threshold=jump_threshold)
-
-            traj_core = None
-            fraction = None
-
-            if isinstance(out, tuple) and len(out) >= 1:
-                traj_core = out[0]
-                if len(out) >= 2:
-                    fraction = out[1]
-            else:
-                traj_core = (
-                    getattr(out, "solution", None)
-                    or getattr(out, "trajectory", None)
-                    or getattr(out, "traj", None)
-                )
-                fraction = getattr(out, "fraction", None)
-
-            if traj_core is None:
-                self._emit_with_segment("ERROR:NO_TRAJ pose_array")
-                return
-
-            if hasattr(traj_core, "get_robot_trajectory_msg"):
-                msg_traj = traj_core.get_robot_trajectory_msg()
-                self._planned = traj_core if isinstance(traj_core, RobotTrajectoryCore) else None
-            elif isinstance(traj_core, RobotTrajectoryMsg):
-                msg_traj = traj_core
-                self._planned = None
-            else:
-                self._emit_with_segment(f"ERROR:UNSUPPORTED_TRAJ_TYPE {type(traj_core).__name__}")
-                return
-
-            self.pub_planned.publish(msg_traj)
-
-            if fraction is None:
-                self._emit_with_segment("PLANNED:OK pose_array")
-            else:
-                self._emit_with_segment(f"PLANNED:OK pose_array fraction={float(fraction):.3f}")
-
+            self._sanitize_traj_msg_inplace(msg, context=f"{source}:planned_in")
+            self._tag_traj_msg_with_key(msg, key_json)
         except Exception as e:
-            self._emit_with_segment(f"ERROR:EX {e}")
-
-    def _on_plan_named(self, msg: MsgString) -> None:
-        if self._busy:
-            self._emit_with_segment("ERROR:BUSY")
-            return
-        if not self._require_moveit_ready():
-            return
-
-        self._clear_traj_cache(reason="plan_named")
-        self._publish_robot_model_strings_once()
-
-        name = (msg.data or "").strip()
-        if not name:
-            self._emit_with_segment("ERROR:EMPTY_NAME")
-            return
-
-        self._planned = None
-        self._last_goal_pose = None
-
-        try:
-            tf, resolved = self._lookup_tf_named(name)
-            if resolved != name:
-                self.log.info(f"[plan_named] resolved '{name}' -> '{resolved}'")
-
-            goal = PoseStamped()
-            goal.header.frame_id = self.frame_world
-            goal.header.stamp = self.get_clock().now().to_msg()
-            goal.pose.position.x = tf.transform.translation.x
-            goal.pose.position.y = tf.transform.translation.y
-            goal.pose.position.z = tf.transform.translation.z
-            goal.pose.orientation = tf.transform.rotation
-
-            self.arm.set_start_state_to_current_state()
-            self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
-
-            if self._plan_params is not None:
-                self._apply_planner_cfg_to_params()
-
-            result = self.arm.plan(single_plan_parameters=self._plan_params) if self._plan_params else self.arm.plan()
-            core = getattr(result, "trajectory", None)
-            if core is None:
-                self._emit_with_segment("ERROR:NO_TRAJ named")
-                return
-
-            msg_traj = core.get_robot_trajectory_msg()
-            self._planned = core
-            self._last_goal_pose = goal
-
-            self.pub_planned.publish(msg_traj)
-            self._emit_with_segment(f"PLANNED:OK named='{name}'")
-
-        except Exception as e:
-            self._emit_with_segment(f"ERROR:EX {e}")
-
-    def _on_execute(self, msg: MsgBool) -> None:
-        if not msg.data:
-            self._on_stop(MsgEmpty())
+            self._emit_keyed(key, "ERROR:TRAJ_INVALID", extra={"err": repr(e), "src": source})
             return
 
         self._mode_mgr.ensure_mode("TRAJ")
 
-        if self._busy:
-            self._emit_with_segment("ERROR:BUSY")
-            return
-        if not self._require_moveit_ready():
-            return
-        if not self._planned:
-            self._emit_with_segment("ERROR:NO_PLAN")
-            return
+        # new execution token (cancellation is token-scoped)
+        token = self._next_exec_token()
+        self._active_exec_token = token
 
-        self._busy = True
-        self._cancel = False
+        self._set_busy(True)
 
-        try:
-            msg_traj = self._planned.get_robot_trajectory_msg()
+        self._active_key = dict(key)
+        self._active_key_json = str(key_json or "")
 
-            if self.is_real_backend:
-                ok = self._execute_via_omron(msg_traj)
-            else:
-                ok = self.moveit.execute(self._planned, controllers=[])  # type: ignore[union-attr]
-
-            if self._cancel:
-                self._emit_with_segment("STOPPED:USER")
-                return
-
-            if ok:
-                self.pub_executed.publish(msg_traj)
-                self._emit_with_segment("EXECUTED:OK")
-            else:
-                self._emit_with_segment("ERROR:EXEC")
-
-        except Exception as e:
-            self._emit_with_segment(f"ERROR:EX {e}")
-
-        finally:
-            self._busy = False
-
-    def _on_execute_trajectory(self, msg: RobotTrajectoryMsg) -> None:
-        if self._busy:
-            self._emit_with_segment("ERROR:BUSY")
-            return
-        if not self._require_moveit_ready():
-            return
-
-        self._clear_traj_cache(reason="execute_trajectory")
-
-        jt = getattr(msg, "joint_trajectory", None)
-        if jt is None or not getattr(jt, "joint_names", None) or not getattr(jt, "points", None):
-            self._emit_with_segment("ERROR:EMPTY_TRAJ")
-            return
-
-        # FORCE: each segment starts at time_from_start=0
-        try:
-            changed = self._normalize_joint_traj_time_zero(jt)
-            if changed:
-                self.log.info("[traj] execute_trajectory: normalized time_from_start to start at 0 (and monotonic).")
-        except Exception as e:
-            self._emit_with_segment(f"ERROR:TIME_NORMALIZE {e}")
-            return
-
-        self._mode_mgr.ensure_mode("TRAJ")
-
-        self._busy = True
-        self._cancel = False
         self._external_active_goal = None
         self._external_active_traj = msg
 
+        # publish planned BEFORE any result line
+        self.pub_planned.publish(msg)
+
+        # recorder start
         try:
-            self.pub_planned.publish(msg)
-        except Exception:
-            pass
+            self._exec_rec.start(list(msg.joint_trajectory.joint_names))
+        except Exception as e:
+            self._exec_rec.cancel()
+            self._external_active_goal = None
+            self._external_active_traj = None
+            self._active_key = None
+            self._active_key_json = ""
+            self._active_exec_token = 0
+            self._set_busy(False)
+            self._emit_keyed(key, "ERROR:RECORDER_START", extra={"err": repr(e), "src": source})
+            return
 
         picked = self._pick_ready_followjt()
         if picked is None:
@@ -1144,40 +1311,55 @@ class MoveItPyNode(Node):
             picked = self._pick_ready_followjt()
 
         if picked is None:
+            self._exec_rec.cancel()
             self._external_active_goal = None
             self._external_active_traj = None
-            self._busy = False
-            self._emit_with_segment("ERROR:NO_FOLLOWJT_SERVER")
+            self._active_key = None
+            self._active_key_json = ""
+            self._active_exec_token = 0
+            self._set_busy(False)
+            self._emit_keyed(key, "ERROR:NO_FOLLOWJT_SERVER", extra={"src": source})
             return
 
         action_name, client = picked
-        self.log.info(f"[followjt] using server: {action_name}")
+        self.log.info(f"[followjt] using server: {action_name} ({self._key_short(key)})")
 
         goal = FollowJointTrajectory.Goal()
-        goal.trajectory = jt
+        goal.trajectory = msg.joint_trajectory
 
         send_fut = client.send_goal_async(goal)
+
+        def _cleanup_after_done() -> None:
+            self._external_active_goal = None
+            self._external_active_traj = None
+            self._active_key = None
+            self._active_key_json = ""
+            if self._active_exec_token == token:
+                self._active_exec_token = 0
+            self._set_busy(False)
+            try:
+                self._mode_mgr.ensure_mode("JOG")
+            except Exception:
+                pass
 
         def _on_goal_sent(fut):
             try:
                 gh = fut.result()
             except Exception as e:
-                self._external_active_goal = None
-                self._external_active_traj = None
-                self._busy = False
-                self._emit_with_segment(f"ERROR:FOLLOWJT_SEND {e}")
+                self._exec_rec.cancel()
+                self._emit_keyed(key, "ERROR:FOLLOWJT_SEND", extra={"err": repr(e), "src": source})
+                _cleanup_after_done()
                 return
 
             if gh is None or not getattr(gh, "accepted", False):
-                self._external_active_goal = None
-                self._external_active_traj = None
-                self._busy = False
-                self._emit_with_segment("ERROR:GOAL_REJECTED")
+                self._exec_rec.cancel()
+                self._emit_keyed(key, "ERROR:GOAL_REJECTED", extra={"src": source})
+                _cleanup_after_done()
                 return
 
             self._external_active_goal = gh
 
-            if self._cancel:
+            if self._is_token_canceled(token):
                 try:
                     gh.cancel_goal_async()
                 except Exception:
@@ -1192,192 +1374,348 @@ class MoveItPyNode(Node):
                     status = getattr(wrapped, "status", None)
                     code = int(getattr(result, "error_code", -1)) if result is not None else -1
 
-                    if self._cancel:
-                        self._emit_with_segment("STOPPED:USER")
+                    if self._is_token_canceled(token):
+                        self._exec_rec.cancel()
+                        self._emit_keyed(key, "STOPPED:USER", extra={"src": source})
                         return
 
                     if code == 0:
-                        try:
-                            if self._external_active_traj is not None:
-                                self.pub_executed.publish(self._external_active_traj)
-                        except Exception:
-                            pass
-                        self._emit_with_segment("EXECUTED:OK")
+                        executed_msg = self._exec_rec.stop_and_build()
+                        self._sanitize_traj_msg_inplace(executed_msg, context=f"{source}:executed")
+                        self._tag_traj_msg_with_key(executed_msg, key_json)
+                        self.pub_executed.publish(executed_msg)
+                        self._emit_keyed(key, "EXECUTED:OK", extra={"src": source})
                     else:
-                        self._emit_with_segment(f"ERROR:EXEC code={code} status={status}")
+                        self._exec_rec.cancel()
+                        self._emit_keyed(key, "ERROR:EXEC", extra={"code": code, "status": status, "src": source})
 
                 except Exception as e:
-                    self._emit_with_segment(f"ERROR:FOLLOWJT_RESULT {e}")
+                    self._exec_rec.cancel()
+                    self._emit_keyed(key, "ERROR:FOLLOWJT_RESULT", extra={"err": repr(e), "src": source})
 
                 finally:
-                    self._external_active_goal = None
-                    self._external_active_traj = None
-                    self._busy = False
+                    _cleanup_after_done()
 
             res_fut.add_done_callback(_on_result_done)
 
         send_fut.add_done_callback(_on_goal_sent)
 
-    def _on_optimize_trajectory(self, msg: RobotTrajectoryMsg) -> None:
-        if self._busy:
-            self._emit_with_segment("ERROR:BUSY")
-            return
-        if not self._require_moveit_ready():
+    # ------------------------------------------------------------
+    # plan_request dispatcher (KEYED)
+    # ------------------------------------------------------------
+    def _on_plan_request(self, msg: MsgString) -> None:
+        if self._is_busy():
+            try:
+                obj = self._json_load_strict(msg.data or "", what="plan_request")
+                key = self._require_key_obj(obj)
+                self._emit_keyed(key, "ERROR:BUSY")
+            except Exception:
+                self.pub_result.publish(MsgString(data="ERROR:BUSY"))
             return
 
-        self._clear_traj_cache(reason="optimize_trajectory")
+        try:
+            obj = self._json_load_strict(msg.data or "", what="plan_request")
+            key = self._require_key_obj(obj)
+            key_json = self._key_to_json(key)
+            payload = obj.get("payload")
+            if not isinstance(payload, dict):
+                raise ValueError("request: missing 'payload' dict")
+        except Exception as e:
+            self.pub_result.publish(MsgString(data=f"ERROR:REQUEST_INVALID {e}"))
+            self.log.error(f"[plan_request] invalid: {e!r}")
+            return
+
+        if not self._require_moveit_ready(key=key, key_json=key_json):
+            return
+
+        op = key["op"]
+        reason = self._key_short(key)
+
+        # clear caches for ALL plan_request ops (including execute)
+        self._clear_traj_cache(reason=f"plan_request:{reason}")
+        self._publish_robot_model_strings_once()
+
+        # planning ops are synchronous -> mark busy for the duration
+        if op in ("plan_pose", "plan_pose_array"):
+            self._set_busy(True)
+            try:
+                if op == "plan_pose":
+                    self._handle_plan_pose(key, key_json, payload)
+                    return
+                if op == "plan_pose_array":
+                    self._handle_plan_pose_array(key, key_json, payload)
+                    return
+            except Exception as e:
+                self._emit_keyed(key, "ERROR:EX", extra={"err": repr(e)})
+                return
+            finally:
+                self._set_busy(False)
+
+        # execute op triggers async -> helper manages busy lifecycle
+        if op == "execute":
+            try:
+                self._handle_execute_last_planned(key, key_json, payload)
+            except Exception as e:
+                self._emit_keyed(key, "ERROR:EX", extra={"err": repr(e)})
+            return
+
+        self._emit_keyed(key, "ERROR:REQUEST_INVALID", extra={"err": f"unsupported op='{op}'"})
+
+    def _handle_plan_pose(self, key: Dict[str, Any], key_json: str, payload: Dict[str, Any]) -> None:
+        frame = payload.get("frame")
+        if not isinstance(frame, str) or not frame.strip():
+            raise ValueError("payload.frame must be non-empty string")
+        pose_d = payload.get("pose")
+        if not isinstance(pose_d, dict):
+            raise ValueError("payload.pose must be dict")
+
+        pose = self._pose_from_dict_strict(pose_d)
+        goal = self._transform_pose_to_world(pose, frame.strip())
+
+        self.arm.set_start_state_to_current_state()
+        self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
+
+        if self._plan_params is None:
+            raise RuntimeError("PlanRequestParameters not available")
+        self._apply_planner_cfg_to_params()
+
+        result = self.arm.plan(single_plan_parameters=self._plan_params)
+        core = getattr(result, "trajectory", None)
+        if core is None:
+            self._emit_keyed(key, "ERROR:NO_TRAJ", extra={"what": "plan_pose", "frame": frame.strip()})
+            return
+
+        msg_traj = core.get_robot_trajectory_msg()
+        self._sanitize_traj_msg_inplace(msg_traj, context="plan_pose:planned")
+        self._tag_traj_msg_with_key(msg_traj, key_json)
+
+        self.pub_planned.publish(msg_traj)
+
+        self._last_planned_core = core
+        self._last_planned_key_json = key_json
+
+        self._emit_keyed(key, "PLANNED:OK", extra={"op": "plan_pose", "frame": frame.strip()})
+
+    def _handle_plan_pose_array(self, key: Dict[str, Any], key_json: str, payload: Dict[str, Any]) -> None:
+        frame = payload.get("frame")
+        if not isinstance(frame, str) or not frame.strip():
+            raise ValueError("payload.frame must be non-empty string")
+        poses_list = payload.get("poses")
+        if not isinstance(poses_list, list) or len(poses_list) < 2:
+            raise ValueError("payload.poses must be list with len>=2")
+
+        poses_world: List[Pose] = []
+        for i, pd in enumerate(poses_list):
+            if not isinstance(pd, dict):
+                raise ValueError(f"payload.poses[{i}] must be dict")
+            p = self._pose_from_dict_strict(pd)
+            ps_w = self._transform_pose_to_world(p, frame.strip())
+            poses_world.append(ps_w.pose)
+
+        fn = getattr(self.arm, "compute_cartesian_path", None)
+        if not callable(fn):
+            raise RuntimeError("compute_cartesian_path not available on planning component")
+
+        self.arm.set_start_state_to_current_state()
+
+        max_step = 0.005
+        jump_threshold = 0.0
+
+        out = fn(poses_world, max_step, jump_threshold)
+
+        traj_core = None
+        fraction = None
+        if isinstance(out, tuple) and len(out) >= 1:
+            traj_core = out[0]
+            if len(out) >= 2:
+                fraction = out[1]
+        else:
+            traj_core = getattr(out, "trajectory", None)
+            fraction = getattr(out, "fraction", None)
+
+        if traj_core is None or not hasattr(traj_core, "get_robot_trajectory_msg"):
+            self._emit_keyed(key, "ERROR:NO_TRAJ", extra={"what": "plan_pose_array"})
+            return
+
+        msg_traj = traj_core.get_robot_trajectory_msg()
+        self._sanitize_traj_msg_inplace(msg_traj, context="plan_pose_array:planned")
+        self._tag_traj_msg_with_key(msg_traj, key_json)
+
+        self.pub_planned.publish(msg_traj)
+
+        self._last_planned_core = traj_core if isinstance(traj_core, RobotTrajectoryCore) else None
+        self._last_planned_key_json = key_json if self._last_planned_core is not None else None
+
+        extra = {"op": "plan_pose_array"}
+        if fraction is not None:
+            extra["fraction"] = float(fraction)
+        self._emit_keyed(key, "PLANNED:OK", extra=extra)
+
+    def _handle_execute_last_planned(self, key: Dict[str, Any], key_json: str, payload: Dict[str, Any]) -> None:
+        if payload:
+            raise ValueError("payload for op='execute' must be empty dict")
+
+        if self._last_planned_core is None or not self._last_planned_key_json:
+            self._emit_keyed(key, "ERROR:NO_PLAN", extra={"what": "execute"})
+            return
+
+        msg_traj = self._last_planned_core.get_robot_trajectory_msg()
+
+        # execute via async FollowJT (STOP works reliably)
+        self._execute_traj_via_followjt_async(
+            key=key,
+            key_json=key_json,
+            msg=msg_traj,
+            source="plan_request:execute",
+        )
+
+    # ------------------------------------------------------------
+    # execute_trajectory (STRICT: key from jt.header.frame_id JSON)
+    # ------------------------------------------------------------
+    def _on_execute_trajectory(self, msg: RobotTrajectoryMsg) -> None:
+        if self._is_busy():
+            self.pub_result.publish(MsgString(data="ERROR:BUSY"))
+            return
+
+        try:
+            key, key_json = self._key_from_traj_msg_strict(msg)
+        except Exception as e:
+            self.pub_result.publish(MsgString(data=f"ERROR:TRAJ_KEY_INVALID {e}"))
+            return
+
+        if not self._require_moveit_ready(key=key, key_json=key_json):
+            return
+
+        self._clear_traj_cache(reason=f"execute_trajectory:{self._key_short(key)}")
+        self._publish_robot_model_strings_once()
 
         jt = getattr(msg, "joint_trajectory", None)
         if jt is None or not getattr(jt, "joint_names", None) or not getattr(jt, "points", None):
-            self._emit_with_segment("ERROR:EMPTY_TRAJ")
-            return
-        if len(jt.points) < 2:
-            self._emit_with_segment("ERROR:TRAJ_TOO_SHORT")
+            self._emit_keyed(key, "ERROR:EMPTY_TRAJ")
             return
 
-        # normalize to segment-local time (start at 0)
+        # Execute via async helper (STOP works reliably)
+        self._execute_traj_via_followjt_async(
+            key=key,
+            key_json=key_json,
+            msg=msg,
+            source="execute_trajectory",
+        )
+
+    # ------------------------------------------------------------
+    # optimize_trajectory (STRICT: key from jt.header.frame_id JSON)
+    # ------------------------------------------------------------
+    def _on_optimize_trajectory(self, msg: RobotTrajectoryMsg) -> None:
+        if self._is_busy():
+            self.pub_result.publish(MsgString(data="ERROR:BUSY"))
+            return
+
         try:
-            self._normalize_joint_traj_time_zero(jt)
+            key, key_json = self._key_from_traj_msg_strict(msg)
         except Exception as e:
-            self._emit_with_segment(f"ERROR:TIME_NORMALIZE {e}")
+            self.pub_result.publish(MsgString(data=f"ERROR:TRAJ_KEY_INVALID {e}"))
             return
 
-        self._busy = True
-        self._cancel = False
+        if not self._require_moveit_ready(key=key, key_json=key_json):
+            return
+
+        if not _HAVE_TRAJ_PROC:
+            self._emit_keyed(key, "ERROR:OPTIMIZE_BINDINGS_MISSING")
+            return
+
+        self._clear_traj_cache(reason=f"optimize_trajectory:{self._key_short(key)}")
+        self._publish_robot_model_strings_once()
+
+        jt = getattr(msg, "joint_trajectory", None)
+        if jt is None or not getattr(jt, "joint_names", None) or not getattr(jt, "points", None):
+            self._emit_keyed(key, "ERROR:EMPTY_TRAJ")
+            return
+
         try:
-            pipeline = str(self._planner_cfg.get("pipeline") or "post").strip() or "post"
-            planner_id = str(self._planner_cfg.get("planner_id") or "IterativeParabolicTimeParameterization").strip()
+            self._sanitize_traj_msg_inplace(msg, context="optimize_trajectory:input")
+            self._tag_traj_msg_with_key(msg, key_json)  # normalized
+        except Exception as e:
+            self._emit_keyed(key, "ERROR:TRAJ_INVALID", extra={"err": repr(e)})
+            return
 
-            out_msg = self._optimize_robot_trajectory(msg, pipeline=pipeline, planner_id=planner_id)
+        self._set_busy(True)
+        try:
+            planner_id = str(self._planner_cfg.get("planner_id") or "").strip()
+            out_msg = self._retime_robot_trajectory(msg, retimer_name=planner_id)
 
-            # post-condition: start at 0, monotonic
-            try:
-                out_jt = getattr(out_msg, "joint_trajectory", None)
-                if out_jt is not None:
-                    self._normalize_joint_traj_time_zero(out_jt)
-            except Exception:
-                pass
+            self._sanitize_traj_msg_inplace(out_msg, context="optimize_trajectory:output")
+            self._tag_traj_msg_with_key(out_msg, key_json)
 
-            try:
-                self.pub_optimized.publish(out_msg)
-            except Exception:
-                pass
-
-            self._emit_with_segment("OPTIMIZED:OK")
+            self.pub_optimized.publish(out_msg)
+            self._emit_keyed(key, "OPTIMIZED:OK")
 
         except Exception as e:
-            self._emit_with_segment(f"ERROR:OPTIMIZE {e}")
+            self._emit_keyed(key, "ERROR:OPTIMIZE", extra={"err": repr(e)})
         finally:
-            self._busy = False
+            self._set_busy(False)
 
-    def _optimize_robot_trajectory(
-        self,
-        msg: RobotTrajectoryMsg,
-        *,
-        pipeline: str,
-        planner_id: str,
-    ) -> RobotTrajectoryMsg:
-        # keep behavior identical to your current file: no real post binding yet
-        try:
-            raise RuntimeError("MoveIt post-processing Python binding not wired")
-        except Exception as e:
-            self.log.warning(f"[opt] using fallback retime (no post binding): {e!r}")
-            return self._optimize_fallback_scale(msg, planner_id=planner_id)
+    def _retime_robot_trajectory(self, msg: RobotTrajectoryMsg, *, retimer_name: str) -> RobotTrajectoryMsg:
+        if self.robot_model is None:
+            raise RuntimeError("robot_model not available (MoveItPy not ready)")
+        if not _HAVE_TRAJ_PROC:
+            raise RuntimeError("trajectory_processing bindings missing")
 
-    def _optimize_fallback_scale(self, msg: RobotTrajectoryMsg, *, planner_id: str) -> RobotTrajectoryMsg:
-        try:
-            vs = float(self._planner_cfg.get("max_velocity_scaling_factor", 1.0))
-        except Exception:
-            vs = 1.0
-        if vs <= 1e-6:
-            vs = 1.0
+        jt = msg.joint_trajectory
+        if jt is None or not jt.joint_names or not jt.points or len(jt.points) < 2:
+            raise RuntimeError("input trajectory invalid/too short")
 
-        scale = 1.0 / vs
+        state = RobotState(self.robot_model)
+        p0 = jt.points[0]
+        if len(p0.positions) != len(jt.joint_names):
+            raise RuntimeError("first point positions size != joint_names size")
+        for name, val in zip(list(jt.joint_names), list(p0.positions)):
+            state.set_variable_position(str(name).lstrip("/"), float(val))  # type: ignore[attr-defined]
 
-        out = RobotTrajectoryMsg()
-        out.joint_trajectory.joint_names = list(msg.joint_trajectory.joint_names)
+        traj = RobotTrajectoryCore(self.robot_model, GROUP_NAME)
+        if not hasattr(traj, "set_robot_trajectory_msg"):
+            raise RuntimeError("RobotTrajectoryCore.set_robot_trajectory_msg missing in bindings")
+        traj.set_robot_trajectory_msg(state, msg)  # type: ignore[attr-defined]
 
-        last_ns = -1
-        for p in msg.joint_trajectory.points:
-            ns = self._tfs_to_ns(p)
+        r = (retimer_name or "").strip().lower()
+        use_iptp = ("parabolic" in r) or ("iptp" in r) or ("iterative" in r)
+        retimer = IterativeParabolicTimeParameterization() if use_iptp else TimeOptimalTrajectoryGeneration()
 
-            ns2 = int(float(ns) * float(scale))
-            if ns2 <= last_ns:
-                ns2 = last_ns + 1_000_000  # +1ms
-            last_ns = ns2
+        vel_scale = float(self._planner_cfg.get("max_velocity_scaling_factor", 1.0))
+        acc_scale = float(self._planner_cfg.get("max_acceleration_scaling_factor", 1.0))
+        vel_scale = max(0.01, min(1.00, vel_scale))
+        acc_scale = max(0.01, min(1.00, acc_scale))
 
-            q = JointTrajectoryPoint()
-            q.positions = list(p.positions)
+        fn = getattr(retimer, "compute_time_stamps", None)
+        if not callable(fn):
+            raise RuntimeError("retimer.compute_time_stamps missing in bindings")
 
-            try:
-                if getattr(p, "velocities", None):
-                    q.velocities = list(p.velocities)
-            except Exception:
-                pass
-            try:
-                if getattr(p, "accelerations", None):
-                    q.accelerations = list(p.accelerations)
-            except Exception:
-                pass
-            try:
-                if getattr(p, "effort", None):
-                    q.effort = list(p.effort)
-            except Exception:
-                pass
+        ok = bool(fn(traj, vel_scale, acc_scale))
+        if not ok:
+            raise RuntimeError(
+                f"retime failed (retimer={'IPTP' if use_iptp else 'TOTG'}, "
+                f"vel_scale={vel_scale:.3f}, acc_scale={acc_scale:.3f})"
+            )
 
-            q.time_from_start.sec = ns2 // 1_000_000_000
-            q.time_from_start.nanosec = ns2 % 1_000_000_000
-            out.joint_trajectory.points.append(q)
+        if not hasattr(traj, "get_robot_trajectory_msg"):
+            raise RuntimeError("RobotTrajectoryCore.get_robot_trajectory_msg missing in bindings")
 
-        # ensure start at 0 (scaled tfs can still be non-zero if input segment didn't start at 0)
-        try:
-            self._normalize_joint_traj_time_zero(out.joint_trajectory)
-        except Exception:
-            pass
-
+        out = traj.get_robot_trajectory_msg()  # type: ignore[attr-defined]
         return out
 
-    def _execute_via_omron(self, traj_msg: RobotTrajectoryMsg) -> bool:
-        if not self.is_real_backend or self.pub_omron_cmd is None:
-            self.log.error("[omron] _execute_via_omron called but omron publisher is disabled (not real backend).")
-            return False
-
-        jt = traj_msg.joint_trajectory
-        if not jt.points:
-            self.log.error("[omron] Trajektorie hat keine Punkte.")
-            return False
-
-        last = jt.points[-1]
-        positions = list(last.positions)
-
-        if len(positions) < 6:
-            self.log.error(f"[omron] Zu wenige Joints in Trajektorie (positions={len(positions)})")
-            return False
-
-        j_rad = positions[:6]
-        j_deg = [p * 180.0 / math.pi for p in j_rad]
-
-        v_mm_s = float(self._speed_mm_s) if self._speed_mm_s > 0 else 50.0
-        max_tcp = float(self.max_tcp_speed_mm_s) if self.max_tcp_speed_mm_s > 0 else 300.0
-        speed_pct = 100.0 * v_mm_s / max_tcp
-        speed_pct = max(5.0, min(100.0, speed_pct))
-
-        cmd = "MOVEJ " + " ".join(f"{a:.3f}" for a in j_deg) + f" {speed_pct:.1f}"
-        self.log.info(f"[omron] MOVEJ via TCP: {cmd}")
-        self.pub_omron_cmd.publish(MsgString(data=cmd))
-        return True
-
+    # ------------------------------------------------------------
+    # stop (KEYED, async-safe, clears busy immediately)
+    # ------------------------------------------------------------
     def _on_stop(self, _msg: MsgEmpty) -> None:
-        """
-        Stop/cancel current activity.
+        # cancel token-scoped (no global cancel flag!)
+        tok = int(self._active_exec_token)
+        if tok > 0:
+            self._canceled_tokens.add(tok)
 
-        Practical robustness:
-          - Always set cancel flag.
-          - Cancel FollowJT goal if active.
-          - Force local busy flag to False (avoid UI feeling "stuck" if a stop arrives mid-flow).
-          - Best-effort switch back to JOG mode so jogging/servo can resume.
-        """
-        self._cancel = True
+        # stop recorder now (STRICT)
+        try:
+            self._exec_rec.cancel()
+        except Exception:
+            pass
 
         gh = self._external_active_goal
         if gh is not None:
@@ -1386,18 +1724,26 @@ class MoveItPyNode(Node):
             except Exception as e:
                 self.log.warning(f"[stop] cancel_goal_async failed: {e!r}")
 
-        # reset local execution bookkeeping
+        # keyed stop notification if we have an active key
+        if self._active_key is not None:
+            try:
+                self._emit_keyed(dict(self._active_key), "STOP:REQ")
+            except Exception:
+                pass
+        else:
+            self.pub_result.publish(MsgString(data="STOP:REQ"))
+
+        # IMPORTANT: clear busy immediately (GUI can proceed),
+        # cancellation completion is handled by execution token in callbacks.
+        self._set_busy(False)
+
+        # also clear "active pointers" (callbacks use captured key)
         self._external_active_goal = None
         self._external_active_traj = None
-        self._busy = False
+        self._active_key = None
+        self._active_key_json = ""
 
-        # important for "jogging works again" after stopping a traj mode action
-        try:
-            self._mode_mgr.ensure_mode("JOG")
-        except Exception:
-            pass
-
-        self._emit_with_segment("STOP:REQ")
+        self.log.info("STOP:REQ")
 
 
 def main(args=None) -> None:

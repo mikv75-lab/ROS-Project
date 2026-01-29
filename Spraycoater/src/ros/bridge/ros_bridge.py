@@ -5,26 +5,37 @@ src/ros/bridge/ros_bridge.py
 Central ROS bridge wrapper that starts a small executor thread and hosts several
 UI<->ROS bridge nodes.
 
-Updated for SprayPath Cache Node (STRICT, 2026-01):
-- Facade methods for SprayPath updated to use set_planned(new_..., stored_...)
-- SprayPathState reflects new/stored availability structure.
+STRICT (2026-01):
 
-Updated for MoveItPy PoseArray planning (Way A2, 2026-01):
-- Add facade method moveit_plan_pose_array(PoseArray, segment=...)
-  to plan MOVE_RECIPE as ONE multi-waypoint trajectory inside MoveItPy.
+MoveItPy Variant A (single plan_request channel):
+- RosBridge forwards ONLY via MoveItPyBridge topics:
+    - publish_plan_request(dict envelope)
+    - publish_stop / publish_set_speed_mm_s / publish_set_planner_cfg
+    - publish_execute_trajectory / publish_optimize_trajectory
+- NO plan_named API in RosBridge (removed).
+- Provide *local-only* boundary reset helpers so UI statemachines can hard-clear
+  stale MoveIt state (results/latched traj) even if the node does not expose a
+  clear service.
 
-Updated for MoveItPy NEW cache clear behavior (STRICT, 2026-01):
-- MoveItPy node publishes explicit traj_cache_clear (Empty) before each move call
-- Node may also clear latched planned/executed/optimized topics by publishing EMPTY RobotTrajectory
-- RosBridge listens to trajCacheClearChanged and clears MoveItState consistently
+SprayPath Cache Node:
+- Facade uses set_planned(new_..., stored_...) and set_executed(new_..., stored_...).
+
+MoveItPy cache-clear behavior:
+- MoveItPy node may publish traj_cache_clear (Empty) and/or empty RobotTrajectory
+  to clear latched trajectories. RosBridge listens and clears UI state container.
+
+NEW (2026-01):
+- tray_exec_ready (std_msgs/Bool) is forwarded via MoveItPyBridge and stored in MoveItState.
+  This is "controller/action readiness" (capability), not busy/occupancy.
 """
 
 from __future__ import annotations
 
+import json
 import threading
 import logging
 from dataclasses import dataclass
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
@@ -105,12 +116,10 @@ class SprayPathState:
     """
     current: str = ""
 
-    # availability flags (used by UI checkboxes)
     compiled_available: bool = False
     planned_available: bool = False
     executed_available: bool = False
 
-    # Raw payloads (usually not read back by UI, but kept for consistency)
     compiled_poses: Optional[object] = None
     compiled_markers: Optional[object] = None
     planned_poses: Optional[object] = None
@@ -203,6 +212,12 @@ class MoveItState:
     urdf: str = ""
     srdf: str = ""
 
+    # Derived busy state (from MoveItPyBridge)
+    busy: bool = False
+
+    # NEW: controller/action readiness (from MoveItPyBridge tray_exec_ready)
+    tray_exec_ready: bool = False
+
 
 class MoveItStateAdapter:
     def __init__(self, st: MoveItState):
@@ -222,6 +237,13 @@ class MoveItStateAdapter:
 
     def _set_srdf(self, v: str) -> None:
         self.st.srdf = v or ""
+
+    def _set_busy(self, v: bool) -> None:
+        self.st.busy = bool(v)
+
+    # NEW
+    def _set_tray_exec_ready(self, v: bool) -> None:
+        self.st.tray_exec_ready = bool(v)
 
 
 # ---------------- Main RosBridge ----------------
@@ -266,6 +288,8 @@ class RosBridge:
     def namespace(self) -> str:
         return self._namespace
 
+    # ---------------- Lifecycle ----------------
+
     def start(self) -> None:
         with self._lock:
             if self._running:
@@ -296,7 +320,7 @@ class RosBridge:
             # wire bridge signals into states
             self._wire_all_into_states()
 
-            # reemit cached values
+            # reemit cached values (best-effort per node)
             self._reemit_cached()
 
             # executor thread
@@ -345,7 +369,8 @@ class RosBridge:
         if did_init and rclpy.ok():
             rclpy.shutdown()
 
-    # ---------- Wiring ----------
+    # ---------------- Wiring ----------------
+
     def _wire_all_into_states(self) -> None:
         if self.scene:
             sig = self.scene.signals
@@ -373,7 +398,6 @@ class RosBridge:
             if hasattr(sig, "currentChanged"):
                 sig.currentChanged.connect(self.spraypath_state._set_current)
 
-            # availability (combined new/stored)
             if hasattr(sig, "compiledAvailableChanged"):
                 sig.compiledAvailableChanged.connect(self.spraypath_state._set_compiled_available)
             if hasattr(sig, "plannedAvailableChanged"):
@@ -383,11 +407,14 @@ class RosBridge:
             if hasattr(sig, "executedAvailableChanged"):
                 sig.executedAvailableChanged.connect(self.spraypath_state._set_executed_available)
 
-            # payloads (optional)
             if hasattr(sig, "compiledPosesChanged"):
                 sig.compiledPosesChanged.connect(self.spraypath_state._set_compiled_poses)
             if hasattr(sig, "compiledMarkersChanged"):
                 sig.compiledMarkersChanged.connect(self.spraypath_state._set_compiled_markers)
+            if hasattr(sig, "plannedPosesChanged"):
+                sig.plannedPosesChanged.connect(self.spraypath_state._set_planned_poses)
+            if hasattr(sig, "executedPosesChanged"):
+                sig.executedPosesChanged.connect(self.spraypath_state._set_executed_poses)
 
         if self.robot:
             sig = self.robot.signals
@@ -404,55 +431,57 @@ class RosBridge:
 
         if self.moveitpy:
             sig = self.moveitpy.signals
-            if hasattr(sig, "plannedTrajectoryChanged"):
-                sig.plannedTrajectoryChanged.connect(self.moveit_state._set_planned)
-            if hasattr(sig, "executedTrajectoryChanged"):
-                sig.executedTrajectoryChanged.connect(self.moveit_state._set_executed)
-            if hasattr(sig, "optimizedTrajectoryChanged"):
-                sig.optimizedTrajectoryChanged.connect(self.moveit_state._set_optimized)
-            if hasattr(sig, "robotDescriptionChanged"):
-                sig.robotDescriptionChanged.connect(self.moveit_state._set_urdf)
-            if hasattr(sig, "robotDescriptionSemanticChanged"):
-                sig.robotDescriptionSemanticChanged.connect(self.moveit_state._set_srdf)
+            sig.plannedTrajectoryChanged.connect(self.moveit_state._set_planned)
+            sig.executedTrajectoryChanged.connect(self.moveit_state._set_executed)
+            sig.optimizedTrajectoryChanged.connect(self.moveit_state._set_optimized)
+            sig.robotDescriptionChanged.connect(self.moveit_state._set_urdf)
+            sig.robotDescriptionSemanticChanged.connect(self.moveit_state._set_srdf)
 
-            # NEW: cache boundary from node (Empty) and/or empty-trajectory clears
-            if hasattr(sig, "trajCacheClearChanged"):
-                sig.trajCacheClearChanged.connect(self._on_moveit_traj_cache_clear)
+            # busy derived in MoveItPyBridge
+            if hasattr(sig, "busyChanged"):
+                sig.busyChanged.connect(self.moveit_state._set_busy)
+
+            # NEW: controller/action readiness
+            if hasattr(sig, "trayExecReadyChanged"):
+                sig.trayExecReadyChanged.connect(self.moveit_state._set_tray_exec_ready)
+
+            # boundary clear from node (Empty) and/or empty-trajectory clears
+            sig.trajCacheClearChanged.connect(self._on_moveit_traj_cache_clear)
 
     def _reemit_cached(self) -> None:
+        """
+        Best-effort: only call reemit_cached on nodes that implement it.
+        (MoveItPy TOPIC-ONLY bridge does not need cached re-emit.)
+        """
         try:
-            if self.scene:
-                self.scene.signals.reemit_cached()
-            if self.poses:
-                self.poses.signals.reemit_cached()
-            if self.spray:
-                self.spray.signals.reemit_cached()
-            if self.servo:
-                self.servo.signals.reemit_cached()
-            if self.robot:
-                self.robot.signals.reemit_cached()
-            if self.moveitpy:
-                self.moveitpy.signals.reemit_cached()
+            for b in [self.scene, self.poses, self.spray, self.servo, self.robot, self.moveitpy]:
+                if b is None:
+                    continue
+                sig = getattr(b, "signals", None)
+                if sig is None:
+                    continue
+                if hasattr(sig, "reemit_cached"):
+                    sig.reemit_cached()
         except Exception:
             _LOG.exception("reemit_cached failed")
 
     def _on_moveit_traj_cache_clear(self) -> None:
         """
-        Boundary clear for MoveIt planned/executed/optimized.
+        Boundary clear for MoveIt planned/executed/optimized in RosBridge UI state.
 
-        NOTE:
-          - moveitpy_bridge already clears its internal caches when it receives
-            traj_cache_clear OR empty latched RobotTrajectory.
-          - Here we only clear RosBridge state container so UI has one clean source.
+        MoveItPyBridge clears its own internal caches when receiving:
+          - traj_cache_clear (Empty), and/or
+          - empty RobotTrajectory published on latched topics.
         """
         with self._lock:
             self._moveit_state.planned = None
             self._moveit_state.executed = None
             self._moveit_state.optimized = None
+            # NOTE:
+            # - busy is NOT cleared here; busy is controlled by busyChanged/result.
+            # - tray_exec_ready is NOT cleared here; it's capability and will be updated by topic.
 
-    # ---------------------------------------------------------------------
-    # Public Facade API
-    # ---------------------------------------------------------------------
+    # ---------------- Public Facade API ----------------
 
     def is_running(self) -> bool:
         try:
@@ -461,97 +490,201 @@ class RosBridge:
         except Exception:
             return bool(self._running)
 
-    # --- MoveIt ---
+    # --- MoveIt (Variant A) ---
+
+    def moveit_is_busy(self) -> bool:
+        """
+        Derived busy flag from MoveItPyBridge (publish->busy, terminal result->not busy).
+        """
+        try:
+            return bool(self._moveit_state.busy)
+        except Exception:
+            return False
+
+    def moveit_tray_exec_ready(self) -> bool:
+        """
+        Controller/action readiness (capability). Independent from busy.
+        Typical UI gate: can_execute = tray_exec_ready and not busy.
+        """
+        try:
+            return bool(self._moveit_state.tray_exec_ready)
+        except Exception:
+            return False
+
     def moveit_planned_trajectory(self) -> Any:
         try:
-            return self.moveitpy.last_planned_trajectory()
+            if self.moveitpy:
+                return self.moveitpy.last_planned_trajectory()
         except Exception:
-            return self._moveit_state.planned
+            pass
+        return self._moveit_state.planned
 
     def moveit_executed_trajectory(self) -> Any:
         try:
-            return self.moveitpy.last_executed_trajectory()
+            if self.moveitpy:
+                return self.moveitpy.last_executed_trajectory()
         except Exception:
-            return self._moveit_state.executed
+            pass
+        return self._moveit_state.executed
 
     def moveit_optimized_trajectory(self) -> Any:
         try:
-            return self.moveitpy.last_optimized_trajectory()
+            if self.moveitpy:
+                return self.moveitpy.last_optimized_trajectory()
         except Exception:
-            return self._moveit_state.optimized
-
-    def moveit_set_segment(self, seg: str) -> None:
-        if self.moveitpy:
-            self.moveitpy.signals.segmentChanged.emit(str(seg or ""))
-
-    def moveit_plan_pose_array(self, pose_array: Any, *, segment: str = "") -> None:
-        """
-        NEW (Way A2):
-        Plan a full waypoint list as ONE multi-waypoint trajectory in the MoveItPy node.
-
-        Expected input:
-          - geometry_msgs/msg/PoseArray (no header; node assumes WORLD frame)
-        """
-        if not self.moveitpy:
-            raise RuntimeError("MoveItPyBridge not started")
-
-        # Use the bridge public API (preferred) so it can tag segment + validate types.
-        if hasattr(self.moveitpy, "publish_plan_pose_array"):
-            self.moveitpy.publish_plan_pose_array(pose_array, segment=segment)
-            return
-
-        # Fallback: emit signals directly (should not happen in the updated bridge)
-        if segment:
-            self.moveit_set_segment(segment)
-
-        if not hasattr(self.moveitpy.signals, "planPoseArrayRequested"):
-            raise RuntimeError("MoveItPyBridge does not expose planPoseArrayRequested (update moveitpy_bridge.py).")
-        self.moveitpy.signals.planPoseArrayRequested.emit(pose_array)
-
-    def moveit_execute_trajectory(self, traj: Any, *, segment: str = "") -> None:
-        if not self.moveitpy:
-            raise RuntimeError("MoveItPyBridge not started")
-
-        # prefer explicit API (tags segment and validates type)
-        if hasattr(self.moveitpy, "publish_execute_trajectory"):
-            self.moveitpy.publish_execute_trajectory(traj, segment=segment)
-            return
-
-        if segment:
-            self.moveit_set_segment(segment)
-        self.moveitpy.signals.executeTrajectoryRequested.emit(traj)
-
-    def moveit_optimize_trajectory(self, traj: Any, *, segment: str = "") -> None:
-        if not self.moveitpy:
-            raise RuntimeError("MoveItPyBridge not started")
-
-        # prefer explicit API (tags segment and validates type)
-        if hasattr(self.moveitpy, "publish_optimize_trajectory"):
-            self.moveitpy.publish_optimize_trajectory(traj, segment=segment)
-            return
-
-        if segment:
-            self.moveit_set_segment(segment)
-        self.moveitpy.signals.optimizeTrajectoryRequested.emit(traj)
-
-    def moveit_move_home(self) -> None:
-        if self.moveitpy:
-            self.moveitpy.signals.moveToHomeRequested.emit()
-
-    def moveit_move_service(self) -> None:
-        if self.moveitpy:
-            self.moveitpy.signals.moveToServiceRequested.emit()
-
-    def moveit_stop(self) -> None:
-        if self.moveitpy:
-            self.moveitpy.signals.stopRequested.emit()
+            pass
+        return self._moveit_state.optimized
 
     def moveit_last_result(self) -> str:
         if not self.moveitpy:
             return ""
         return getattr(self.moveitpy.signals, "last_result", "") or ""
 
+    # ---- boundary reset helpers (UI-side, best-effort) ----
+
+    def moveit_clear_motion_result(self) -> None:
+        """
+        Local-only clear of last_result so statemachines don't parse stale JSON.
+        """
+        if not self.moveitpy:
+            return
+        try:
+            self.moveitpy.signals.last_result = ""
+            # optional: notify UI watchers
+            self.moveitpy.signals.motionResultChanged.emit("")
+        except Exception:
+            _LOG.exception("moveit_clear_motion_result failed")
+
+    def moveit_reset_motion_result(self) -> None:
+        self.moveit_clear_motion_result()
+
+    def moveit_clear_result(self) -> None:
+        self.moveit_clear_motion_result()
+
+    def moveit_clear_trajectory_cache(self) -> None:
+        """
+        Local-only clear of planned/executed/optimized trajectory state.
+        (Does NOT command the node; only clears UI-facing caches.)
+        """
+        try:
+            self._on_moveit_traj_cache_clear()
+            if self.moveitpy:
+                self.moveitpy.signals.trajCacheClearChanged.emit()
+        except Exception:
+            _LOG.exception("moveit_clear_trajectory_cache failed")
+
+    def moveit_clear_traj_cache(self) -> None:
+        self.moveit_clear_trajectory_cache()
+
+    def moveit_traj_cache_clear(self) -> None:
+        self.moveit_clear_trajectory_cache()
+
+    def moveit_clear_cache(self) -> None:
+        self.moveit_clear_trajectory_cache()
+        self.moveit_clear_motion_result()
+
+    # ---- planning/execution (Variant A, STRICT) ----
+
+    @staticmethod
+    def _require_seg(seg: str) -> str:
+        s = (seg or "").strip()
+        if not s:
+            raise ValueError("MoveItPy Variant-A requires non-empty seg (key.seg) [STRICT]")
+        return s
+
+    @staticmethod
+    def _pose_to_dict(pose) -> Dict[str, Any]:
+        return {
+            "position": {"x": float(pose.position.x), "y": float(pose.position.y), "z": float(pose.position.z)},
+            "orientation": {
+                "x": float(pose.orientation.x),
+                "y": float(pose.orientation.y),
+                "z": float(pose.orientation.z),
+                "w": float(pose.orientation.w),
+            },
+        }
+
+    @classmethod
+    def _pose_stamped_payload(cls, ps: Any) -> Dict[str, Any]:
+        hdr = getattr(ps, "header", None)
+        frame_id = str(getattr(hdr, "frame_id", "") or "").strip()
+        if not frame_id:
+            raise ValueError("PoseStamped.header.frame_id is empty (required)")
+        pose = getattr(ps, "pose", None)
+        if pose is None:
+            raise ValueError("PoseStamped.pose missing")
+        return {"frame": frame_id, "pose": cls._pose_to_dict(pose)}
+
+    @classmethod
+    def _pose_array_payload(cls, pa: Any) -> Dict[str, Any]:
+        hdr = getattr(pa, "header", None)
+        frame_id = str(getattr(hdr, "frame_id", "") or "").strip()
+        if not frame_id:
+            raise ValueError("PoseArray.header.frame_id is empty (required)")
+        poses = list(getattr(pa, "poses", []) or [])
+        if len(poses) < 2:
+            raise ValueError(f"PoseArray.poses too short (<2): {len(poses)}")
+        return {"frame": frame_id, "poses": [cls._pose_to_dict(p) for p in poses]}
+
+    def _moveit_publish_plan_request(self, *, key: Dict[str, Any], payload: Dict[str, Any]) -> None:
+        if not self.moveitpy:
+            raise RuntimeError("MoveItPyBridge not started")
+        req = {"key": dict(key), "payload": dict(payload)}
+        self.moveitpy.publish_plan_request(req)
+
+    def moveit_set_speed_mm_s(self, speed: float) -> None:
+        if not self.moveitpy:
+            raise RuntimeError("MoveItPyBridge not started")
+        self.moveitpy.publish_set_speed_mm_s(float(speed))
+
+    def moveit_set_planner_cfg(self, cfg: object) -> None:
+        if not self.moveitpy:
+            raise RuntimeError("MoveItPyBridge not started")
+        self.moveitpy.publish_set_planner_cfg(cfg)
+
+    def moveit_plan_pose(self, pose_stamped: Any, *, run: str, req_id: int, segment: str) -> None:
+        seg = self._require_seg(segment)
+        key = {"run": str(run or ""), "id": int(req_id), "seg": seg, "op": "plan_pose"}
+        payload = self._pose_stamped_payload(pose_stamped)
+        self._moveit_publish_plan_request(key=key, payload=payload)
+
+    def moveit_plan_pose_array(self, pose_array: Any, *, run: str, req_id: int, segment: str) -> None:
+        seg = self._require_seg(segment)
+        key = {"run": str(run or ""), "id": int(req_id), "seg": seg, "op": "plan_pose_array"}
+        payload = self._pose_array_payload(pose_array)
+        self._moveit_publish_plan_request(key=key, payload=payload)
+
+    def moveit_execute_last_planned(self, *, run: str, req_id: int, segment: str) -> None:
+        """
+        Variant-A execute op: executes LAST planned trajectory on the node.
+        """
+        seg = self._require_seg(segment)
+        key = {"run": str(run or ""), "id": int(req_id), "seg": seg, "op": "execute"}
+        self._moveit_publish_plan_request(key=key, payload={})
+
+    def moveit_execute_trajectory(self, traj: Any) -> None:
+        """
+        External replay: key MUST be embedded in traj.joint_trajectory.header.frame_id JSON.
+        """
+        if not self.moveitpy:
+            raise RuntimeError("MoveItPyBridge not started")
+        self.moveitpy.publish_execute_trajectory(traj)
+
+    def moveit_optimize_trajectory(self, traj: Any) -> None:
+        """
+        External optimize: key MUST be embedded in traj.joint_trajectory.header.frame_id JSON.
+        """
+        if not self.moveitpy:
+            raise RuntimeError("MoveItPyBridge not started")
+        self.moveitpy.publish_optimize_trajectory(traj)
+
+    def moveit_stop(self) -> None:
+        if not self.moveitpy:
+            return
+        self.moveitpy.publish_stop()
+
     # --- Robot ---
+
     def robot_init(self) -> None:
         if self.robot:
             self.robot.signals.initRequested.emit()
@@ -567,6 +700,7 @@ class RosBridge:
             self.robot_stop()
 
     # --- Poses ---
+
     def set_home(self) -> None:
         if self.poses:
             self.poses.set_home()
@@ -576,6 +710,7 @@ class RosBridge:
             self.poses.set_service()
 
     # --- SprayPath (STRICT: compiled, planned, executed) ---
+
     def spray_clear(self) -> None:
         if self.spray:
             self.spray.signals.clearRequested.emit()
@@ -597,7 +732,6 @@ class RosBridge:
             self.spray.set_executed(new_poses=new_poses, new_markers=new_markers, stored_markers=stored_markers)
 
     def spray_set_view(self, view: str) -> None:
-        # kept for API compatibility (UI may call it)
         _ = view
         return
 

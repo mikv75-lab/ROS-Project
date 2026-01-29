@@ -52,26 +52,15 @@ topics:
         type: std_msgs/msg/String
         qos: latched
 
+
   moveit_py:
-    subscribe:   # UI -> Node (Node subscribes)
-      - id: plan_named
-        name: spraycoater/moveit_py/plan_named
+    subscribe:
+      # ----------------------------
+      # ONE request channel (STRICT, keyed, out-of-order safe)
+      # ----------------------------
+      - id: plan_request
+        name: spraycoater/moveit_py/plan_request
         type: std_msgs/msg/String
-        qos: default
-
-      - id: plan_pose
-        name: spraycoater/moveit_py/plan_pose
-        type: geometry_msgs/msg/PoseStamped
-        qos: default
-
-      - id: plan_pose_array
-        name: spraycoater/moveit_py/plan_pose_array
-        type: geometry_msgs/msg/PoseArray
-        qos: default
-
-      - id: execute
-        name: spraycoater/moveit_py/execute
-        type: std_msgs/msg/Bool
         qos: default
 
       - id: stop
@@ -89,6 +78,7 @@ topics:
         type: std_msgs/msg/String
         qos: default
 
+      # Trajectory in/out: request-scoped key JSON in jt.header.frame_id
       - id: execute_trajectory
         name: spraycoater/moveit_py/execute_trajectory
         type: moveit_msgs/msg/RobotTrajectory
@@ -99,37 +89,45 @@ topics:
         type: moveit_msgs/msg/RobotTrajectory
         qos: default
 
-      - id: set_segment
-        name: spraycoater/moveit_py/set_segment
-        type: std_msgs/msg/String
+    publish:
+      - id: busy
+        name: spraycoater/moveit_py/busy
+        type: std_msgs/msg/Bool
         qos: default
-
-    publish:     # Node -> UI (Node publishes)
+      - id: tray_exec_ready
+        name: spraycoater/moveit_py/tray_exec_ready
+        type: std_msgs/msg/Bool
+        qos: default
+      
+      # Result/status lines must carry the same key JSON (run/id/seg/op/status/...)
       - id: motion_result
         name: spraycoater/moveit_py/motion_result
         type: std_msgs/msg/String
         qos: default
 
+      # Trajectories are "stateful last value" for UI/FK -> LATCHED
       - id: planned_trajectory_rt
         name: spraycoater/moveit_py/planned_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
-        qos: default
+        qos: latched
 
       - id: executed_trajectory_rt
         name: spraycoater/moveit_py/executed_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
-        qos: default
+        qos: latched
 
       - id: optimized_trajectory_rt
         name: spraycoater/moveit_py/optimized_trajectory_rt
         type: moveit_msgs/msg/RobotTrajectory
-        qos: default
+        qos: latched
 
+      # Event -> not latched
       - id: traj_cache_clear
         name: spraycoater/moveit_py/traj_cache_clear
         type: std_msgs/msg/Empty
         qos: default
 
+      # Robot model is static -> latched
       - id: robot_description
         name: robot_description
         type: std_msgs/msg/String
@@ -139,6 +137,7 @@ topics:
         name: robot_description_semantic
         type: std_msgs/msg/String
         qos: latched
+
 
 
 

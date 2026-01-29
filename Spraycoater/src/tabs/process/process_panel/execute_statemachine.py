@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import copy
+import json
 import logging
-from typing import Any, Dict, List, Optional
+import time
+from typing import Any, Dict, List, Optional, Tuple
 
 from PyQt6 import QtCore
 
 from plc.plc_client import PlcClientBase
 from model.recipe.recipe_run_result import RunResult
+from model.spray_paths.trajectory import JTBySegment
+
+from builtin_interfaces.msg import Duration as RosDuration  # type: ignore
+from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg  # type: ignore
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint  # type: ignore
 
 from .base_statemachine import (
     BaseProcessStatemachine,
@@ -17,29 +24,34 @@ from .base_statemachine import (
     STATE_MOVE_RECIPE,
     STATE_MOVE_RETREAT,
     STATE_MOVE_HOME,
+    SEG_ORDER,
 )
 
-from builtin_interfaces.msg import Duration as RosDuration  # type: ignore
-from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg  # type: ignore
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint  # type: ignore
+from .segment_runner import SegmentRunner, StepSpec
 
 _LOG = logging.getLogger("tabs.process.execute_sm")
 
 
 class ProcessExecuteStatemachine(BaseProcessStatemachine):
     """
-    Execute run (STRICT, collect-only).
+    Execute run (STRICT, SegmentRunner) — Variant-A external replay.
 
-    Contract (updated for NEW MoveItPy node behavior):
-      - Input: recipe.planned_traj (JTBySegment YAML v1) from Validate.
-      - Action: execute per segment via ros.moveit_execute_trajectory(rt, segment=STATE_*).
-      - Pairing: Base expects motion_result for the *current* segment.
-      - IMPORTANT:
-          * For execute_trajectory path, MoveItPy node typically DOES NOT emit "PLANNED:OK".
-          * Therefore we MUST seed pending planned right before execute.
-          * Node emits traj_cache_clear BEFORE each external move; Base clears only
-            cached last_planned/last_executed, but our seeded pending planned stays.
-      - No evaluation here. Only collect planned/executed trajectories into RunResult payload.
+    NEW (collect-only Base):
+      - BaseProcessStatemachine is ONLY transport wiring + stashes.
+      - Per segment we start ONE SegmentRunner with ONE step:
+            [execute_trajectory(rt_segment)]
+      - Segment completion is controlled ONLY by:
+            SegmentRunner.finished -> self.segment_done()
+            SegmentRunner.error    -> self.segment_error(msg)
+
+    Contract assumptions (Variant-A):
+      - execute_trajectory => motion_result status "EXECUTED:OK"
+      - executedTrajectoryChanged(rt) with the SAME key encoded in header.frame_id JSON
+
+    Notes:
+      - Input is recipe.planned_traj (JTBySegment YAML v1) from Validate.
+      - We do NOT plan anything here.
+      - We publish ros.moveit_execute_trajectory(rt_msg) once per segment.
     """
 
     ROLE = "execute"
@@ -52,7 +64,7 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         plc: PlcClientBase | None,
         run_result: RunResult,
         parent: Optional[QtCore.QObject] = None,
-        max_retries: int = 2,
+        max_retries: int = 0,  # API compat; unused in new model
         side: str = "top",
     ) -> None:
         super().__init__(
@@ -65,98 +77,56 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         self._plc = plc
         self._side: str = str(side or "top")
 
+        self._run_id: str = ""
+
         self._planned_loaded_yaml: Dict[str, Any] = {}
         self._yaml_segments_present: Dict[str, bool] = {}
         self._planned_jt_by_segment: Dict[str, Dict[str, Any]] = {}
 
-        # inflight bookkeeping (for strict retry)
-        self._inflight_seg: str = ""
-        self._inflight_rt: Optional[RobotTrajectoryMsg] = None
-        self._inflight_planned_jt: Optional[Dict[str, Any]] = None  # normalized JT dict for seeding planned
+        self._runner = SegmentRunner(ros=self._ros, parent=self)
+        self._runner.finished.connect(self._on_runner_finished)
+        self._runner.error.connect(self._on_runner_error)
 
-    # ------------------------------------------------------------------
-    # STOP
-    # ------------------------------------------------------------------
+        self._active_seg: str = ""
 
-    @QtCore.pyqtSlot()
-    def request_stop(self) -> None:
-        self._inflight_seg = ""
-        self._inflight_rt = None
-        self._inflight_planned_jt = None
-        super().request_stop()
-
-    # ------------------------------------------------------------------
-    # Retry hook (STRICT)
-    # ------------------------------------------------------------------
-
-    def _on_retry_last_motion(self, seg_name: str, attempt: int, last_error: str) -> bool:
-        if self._stop_requested:
-            return False
-        if self._machine is None:
-            return False
-        if seg_name != self._current_state:
-            return False
-        if self._inflight_seg != seg_name:
-            return False
-        if self._inflight_rt is None:
-            return False
-
-        _LOG.warning(
-            "Execute: retry attempt %d for seg=%s reason=%s",
-            int(attempt),
-            str(seg_name),
-            str(last_error),
-        )
-
-        # IMPORTANT:
-        # - Base will clear pairing slots before retry.
-        # - For execute_trajectory, PLANNED:OK may not arrive.
-        # - Therefore re-seed planned pending AGAIN for this retry.
-        if isinstance(self._inflight_planned_jt, dict):
-            self._pending_planned_step[seg_name] = copy.deepcopy(self._inflight_planned_jt)
-            self._pending_executed_step[seg_name] = None
-
-        try:
-            self._ros.moveit_execute_trajectory(self._inflight_rt, segment=str(seg_name))
-            return True
-        except Exception as e:
-            _LOG.error("Execute: retry execute failed for seg=%s: %r", str(seg_name), e)
-            return False
+        _ = max_retries  # API compat
 
     # ------------------------------------------------------------------
     # Prepare
     # ------------------------------------------------------------------
 
     def _prepare_run(self) -> bool:
+        # run id
+        self._run_id = str(getattr(self._rr, "run_id", "") or "").strip()
+        if not self._run_id:
+            self._run_id = f"run_{int(time.time() * 1000)}"
+
+        # best-effort: take side from recipe params
         try:
             params = getattr(self._recipe, "parameters", {}) or {}
             self._side = str(params.get("active_side", self._side) or self._side)
         except Exception:
             pass
 
-        self._inflight_seg = ""
-        self._inflight_rt = None
-        self._inflight_planned_jt = None
-
         planned_traj = getattr(self._recipe, "planned_traj", None)
         if planned_traj is None:
-            self._error_msg = "Execute: recipe.planned_traj fehlt (bitte erst Validate ausführen)."
+            self.segment_error("Execute: recipe.planned_traj fehlt (bitte erst Validate ausführen).")
             return False
 
         fn = getattr(planned_traj, "to_yaml_dict", None)
         if not callable(fn):
-            self._error_msg = "Execute: planned_traj API fehlt (to_yaml_dict)."
+            self.segment_error("Execute: planned_traj API fehlt (to_yaml_dict).")
             return False
 
         d = fn()
         if not isinstance(d, dict):
-            self._error_msg = "Execute: planned_traj daten ungültig (non-dict)."
+            self.segment_error("Execute: planned_traj daten ungültig (non-dict).")
             return False
 
         try:
             self._validate_jtbysegment_yaml_v1(d)
         except Exception as e:
-            self._error_msg = f"Execute: planned_traj YAML invalid: {e}"
+            self.segment_error(f"Execute: planned_traj YAML invalid: {e}")
             return False
 
         self._planned_loaded_yaml = d
@@ -172,11 +142,12 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
                     continue
                 self._planned_jt_by_segment[seg_name] = self._jt_dict_from_yaml_segment_normalized(seg_name)
         except Exception as e:
-            self._error_msg = f"Execute: build planned JT cache failed: {e}"
+            self.segment_error(f"Execute: build planned JT cache failed: {e}")
             return False
 
+        # STRICT: require external replay API
         if not callable(getattr(self._ros, "moveit_execute_trajectory", None)):
-            self._error_msg = "Execute: ros.moveit_execute_trajectory fehlt."
+            self.segment_error("Execute: ros.moveit_execute_trajectory(traj_msg) fehlt (Variant-A external replay).")
             return False
 
         return True
@@ -207,12 +178,13 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         segs = self._planned_loaded_yaml.get("segments", {})
         seg = segs.get(seg_name) if isinstance(segs, dict) else None
         if not isinstance(seg, dict):
-            raise ValueError(f"Execute: segment '{seg_name}' missing in planned_traj")
-
-        jn = seg.get("joint_names")
-        pts = seg.get("points")
-        if not (isinstance(jn, list) and jn and isinstance(pts, list) and len(pts) >= 2):
-            raise ValueError(f"Execute: segment '{seg_name}' invalid (joint_names/points)")
+            raise ValueError(f"segment {seg_name} missing")
+        jn = seg.get("joint_names") or []
+        pts = seg.get("points") or []
+        if not isinstance(jn, list) or not jn:
+            raise ValueError(f"segment {seg_name}: joint_names missing/empty")
+        if not isinstance(pts, list) or len(pts) < 2:
+            raise ValueError(f"segment {seg_name}: points missing/<2")
 
         out_pts: List[Dict[str, Any]] = []
         for p in pts:
@@ -220,31 +192,16 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
                 continue
             pos = p.get("positions")
             tfs = p.get("time_from_start")
-            if not isinstance(pos, list):
+            if not isinstance(pos, list) or len(pos) != len(jn):
                 continue
-
-            t_sec = 0
-            t_nsec = 0
-            if isinstance(tfs, dict):
-                t_sec = int(tfs.get("sec", 0))
-                t_nsec = int(tfs.get("nanosec", 0))
-            elif isinstance(tfs, (list, tuple)) and len(tfs) >= 2:
-                t_sec = int(tfs[0])
-                t_nsec = int(tfs[1])
-
-            q: Dict[str, Any] = {
-                "positions": [float(x) for x in pos],
-                "time_from_start": {"sec": t_sec, "nanosec": t_nsec},
-            }
-
-            if "velocities" in p and isinstance(p.get("velocities"), list):
-                q["velocities"] = [float(x) for x in p.get("velocities") or []]
-            if "accelerations" in p and isinstance(p.get("accelerations"), list):
-                q["accelerations"] = [float(x) for x in p.get("accelerations") or []]
-            if "effort" in p and isinstance(p.get("effort"), list):
-                q["effort"] = [float(x) for x in p.get("effort") or []]
-
-            out_pts.append(q)
+            if not isinstance(tfs, (list, tuple)) or len(tfs) < 2:
+                continue
+            out_pts.append(
+                {
+                    "positions": [float(x) for x in list(pos)],
+                    "time_from_start": {"sec": int(tfs[0]), "nanosec": int(tfs[1])},
+                }
+            )
 
         if len(out_pts) < 2:
             raise ValueError(f"Execute: segment '{seg_name}' has <2 valid points after normalization")
@@ -259,55 +216,125 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         return bool(self._yaml_segments_present.get(seg_name, False))
 
     # ------------------------------------------------------------------
-    # Segment enter
+    # Segment enter (core): ONE runner per segment, ONE step per segment
     # ------------------------------------------------------------------
 
     def _on_enter_segment(self, seg_name: str) -> None:
+        self._active_seg = str(seg_name)
+
         present = bool(self._yaml_segments_present.get(seg_name, False))
         if not present:
-            QtCore.QTimer.singleShot(0, self._sig_done.emit)
+            self.segment_done()
             return
 
-        try:
-            planned_jt = self._planned_jt_by_segment.get(seg_name)
-            if not isinstance(planned_jt, dict):
-                raise ValueError("missing planned jt dict")
-            rt = self._robot_trajectory_from_jt_dict(planned_jt)
-        except Exception as e:
-            self._signal_error(f"Execute: JT->RobotTrajectory failed for {seg_name}: {e}")
+        planned_jt = self._planned_jt_by_segment.get(seg_name)
+        if not isinstance(planned_jt, dict):
+            self.segment_error(f"Execute: missing planned JT for seg={seg_name}")
             return
 
-        # STRICT: for execute_trajectory, PLANNED:OK is typically absent -> seed planned pending now.
-        self._pending_planned_step[seg_name] = copy.deepcopy(planned_jt)
-        self._pending_executed_step[seg_name] = None
-
-        self._inflight_seg = str(seg_name)
-        self._inflight_rt = rt
-        self._inflight_planned_jt = copy.deepcopy(planned_jt)
+        # Build RobotTrajectoryMsg with embedded correlation JSON in header.frame_id.
+        # IMPORTANT: SegmentRunner expects ReqKey(run,id,seg,op). We generate a stable-ish int id.
+        req_id = int(time.time() * 1000)
 
         try:
-            # Node will:
-            #   - publish traj_cache_clear
-            #   - publish planned_trajectory_rt (best effort)
-            #   - execute via FollowJT
-            #   - publish executed_trajectory_rt
-            #   - then motion_result "EXECUTED:OK seg=..."
-            self._ros.moveit_execute_trajectory(rt, segment=str(seg_name))
+            rt = self._jt_dict_to_robottrajectory_msg(
+                planned_jt,
+                run=self._run_id,
+                req_id=req_id,
+                seg=str(seg_name),
+                op="execute_trajectory",
+            )
         except Exception as e:
-            self._signal_error(f"Execute: Execute failed: {e}")
+            self.segment_error(f"Execute: build RobotTrajectory failed for seg={seg_name}: {e}")
+            return
+
+        steps: List[StepSpec] = [
+            self._runner.make_execute_trajectory_step_bound(
+                run=self._run_id,
+                req_id=req_id,
+                seg=str(seg_name),
+                traj=rt,
+                label=f"{seg_name}:execute_trajectory",
+            )
+        ]
+        self._runner.run(steps)
+
+    def _jt_dict_to_robottrajectory_msg(
+        self,
+        jt_dict: Dict[str, Any],
+        *,
+        run: str,
+        req_id: int,
+        seg: str,
+        op: str,
+    ) -> RobotTrajectoryMsg:
+        jn = jt_dict.get("joint_names") or []
+        pts = jt_dict.get("points") or []
+        if not isinstance(jn, list) or not jn:
+            raise ValueError("jt_dict.joint_names missing/empty")
+        if not isinstance(pts, list) or len(pts) < 2:
+            raise ValueError("jt_dict.points missing/<2")
+
+        # STRICT Variant-A key tag in header.frame_id JSON
+        # Acceptable shapes:
+        #   {"key": {"run":..., "id":..., "seg":..., "op":...}}
+        # We send the nested form to be unambiguous.
+        frame_id = json.dumps(
+            {"key": {"run": str(run), "id": int(req_id), "seg": str(seg), "op": str(op)}},
+            ensure_ascii=False,
+        )
+
+        jt = JointTrajectory()
+        jt.joint_names = [str(x) for x in jn]
+        jt.header.frame_id = frame_id
+
+        out_pts: List[JointTrajectoryPoint] = []
+        for p in pts:
+            if not isinstance(p, dict):
+                continue
+            pos = p.get("positions")
+            tfs = p.get("time_from_start")
+            if not isinstance(pos, list) or len(pos) != len(jn):
+                continue
+            if not isinstance(tfs, dict):
+                continue
+
+            pt = JointTrajectoryPoint()
+            pt.positions = [float(x) for x in pos]
+
+            d = RosDuration()
+            d.sec = int(tfs.get("sec", 0))
+            d.nanosec = int(tfs.get("nanosec", 0))
+            pt.time_from_start = d
+
+            out_pts.append(pt)
+
+        if len(out_pts) < 2:
+            raise ValueError("RobotTrajectory would have <2 valid points")
+
+        jt.points = out_pts
+
+        rt = RobotTrajectoryMsg()
+        rt.joint_trajectory = jt
+        return rt
 
     # ------------------------------------------------------------------
-    # Segment completion hook
+    # Runner callbacks -> Base transition API
     # ------------------------------------------------------------------
 
-    def _on_segment_ok(self, seg_name: str) -> None:
-        super()._on_segment_ok(seg_name)
+    def _on_runner_finished(self) -> None:
+        if self._stop_requested or self._machine is None or self._error_msg:
+            return
+        if self.current_segment() != self._active_seg:
+            return
+        self.segment_done()
 
-        # clear inflight marker when the segment completed
-        if self._inflight_seg == seg_name:
-            self._inflight_seg = ""
-            self._inflight_rt = None
-            self._inflight_planned_jt = None
+    def _on_runner_error(self, msg: str) -> None:
+        if self._stop_requested or self._machine is None or self._error_msg:
+            return
+        if self.current_segment() != self._active_seg:
+            return
+        self.segment_error(str(msg or "Runner ERROR"))
 
     # ------------------------------------------------------------------
     # Final payload
@@ -317,52 +344,108 @@ class ProcessExecuteStatemachine(BaseProcessStatemachine):
         planned = copy.deepcopy(self._planned_loaded_yaml)
         executed = self._jt_by_segment_yaml(which="executed")
 
+        # Keep recipe fields aligned with the rest of your pipeline
+        try:
+            self._recipe.executed_traj = JTBySegment.from_yaml_dict(executed) if executed.get("segments") else None
+        except Exception:
+            self._recipe.executed_traj = None
+
         self._rr.set_planned(traj=copy.deepcopy(planned))
         self._rr.set_executed(traj=copy.deepcopy(executed))
         self.notifyFinished.emit(self._rr.to_process_payload())
         self._cleanup()
 
     # ------------------------------------------------------------------
-    # Helper: normalized JT dict -> RobotTrajectoryMsg
+    # JTBySegment packing (executed from Base stash; Variant-A keys)
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _duration_from_time_dict(tfs: Any) -> RosDuration:
-        d = RosDuration()
-        if isinstance(tfs, dict):
-            d.sec = int(tfs.get("sec", 0))
-            d.nanosec = int(tfs.get("nanosec", 0))
-            return d
-        if isinstance(tfs, (list, tuple)) and len(tfs) >= 2:
-            d.sec = int(tfs[0])
-            d.nanosec = int(tfs[1])
-            return d
-        d.sec = 0
-        d.nanosec = 0
-        return d
+    def _id_sort_key(rid: int) -> int:
+        try:
+            return int(rid)
+        except Exception:
+            return 2**63 - 1
 
-    def _robot_trajectory_from_jt_dict(self, jt: Dict[str, Any]) -> RobotTrajectoryMsg:
-        jn = jt.get("joint_names") or []
-        pts = jt.get("points") or []
+    def _jt_msg_to_dict(self, traj_msg: Any) -> Optional[Dict[str, Any]]:
+        if traj_msg is None:
+            return None
+        try:
+            jt = getattr(traj_msg, "joint_trajectory", None)
+            if jt is None:
+                return None
+            jn = [str(x) for x in list(getattr(jt, "joint_names") or [])]
+            pts_msg = list(getattr(jt, "points") or [])
+            if not jn or not pts_msg:
+                return None
+            pts: List[Dict[str, Any]] = []
+            for p in pts_msg:
+                tfs = getattr(p, "time_from_start", None)
+                sec = int(getattr(tfs, "sec", 0)) if tfs is not None else 0
+                nsec = int(getattr(tfs, "nanosec", 0)) if tfs is not None else 0
+                pts.append(
+                    {
+                        "positions": [float(x) for x in list(getattr(p, "positions", []) or [])],
+                        "time_from_start": [sec, nsec],
+                    }
+                )
+            return {"joint_names": jn, "points": pts}
+        except Exception:
+            return None
 
-        msg = RobotTrajectoryMsg()
-        msg.joint_trajectory = JointTrajectory()
-        msg.joint_trajectory.joint_names = [str(x) for x in list(jn)]
+    def _collect_steps_for_seg(self, *, seg: str) -> List[Tuple[int, Dict[str, Any]]]:
+        out: List[Tuple[int, Dict[str, Any]]] = []
+        store = getattr(self, "_traj_executed", {}) or {}
 
-        for p in pts:
-            if not isinstance(p, dict) or "positions" not in p:
+        # SegmentRunner uses op="execute_trajectory" for replay.
+        want_op = "execute_trajectory"
+
+        for (run, rid, s, op), msg in list(store.items()):
+            if str(run) != str(self._run_id):
                 continue
-            pt = JointTrajectoryPoint()
-            pt.positions = [float(x) for x in list(p.get("positions") or [])]
-            pt.time_from_start = self._duration_from_time_dict(p.get("time_from_start"))
+            if str(s) != str(seg):
+                continue
+            if str(op) != str(want_op):
+                continue
+            d = self._jt_msg_to_dict(msg)
+            if d:
+                out.append((int(rid), d))
 
-            if "velocities" in p and isinstance(p.get("velocities"), list):
-                pt.velocities = [float(x) for x in p.get("velocities") or []]
-            if "accelerations" in p and isinstance(p.get("accelerations"), list):
-                pt.accelerations = [float(x) for x in p.get("accelerations") or []]
-            if "effort" in p and isinstance(p.get("effort"), list):
-                pt.effort = [float(x) for x in p.get("effort") or []]
+        out.sort(key=lambda x: self._id_sort_key(x[0]))
+        return out
 
-            msg.joint_trajectory.points.append(pt)
+    def _concat_jt_dicts(self, dicts: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if not dicts:
+            return None
+        base_names = list(dicts[0].get("joint_names") or [])
+        merged_pts: List[Dict[str, Any]] = []
+        t_offset_ns = 0
+        last_global_ns = -1
 
-        return msg
+        for d in dicts:
+            pts = d.get("points") or []
+            for p in pts:
+                tfs = p.get("time_from_start") or [0, 0]
+                t_local_ns = int(tfs[0]) * 1_000_000_000 + int(tfs[1])
+                t_global_ns = t_offset_ns + t_local_ns
+                if t_global_ns <= last_global_ns:
+                    t_global_ns = last_global_ns + 1_000_000  # +1ms safety
+                q = copy.deepcopy(p)
+                q["time_from_start"] = [t_global_ns // 1_000_000_000, t_global_ns % 1_000_000_000]
+                merged_pts.append(q)
+                last_global_ns = t_global_ns
+            t_offset_ns = last_global_ns
+
+        return {"joint_names": base_names, "points": merged_pts}
+
+    def _jt_by_segment_yaml(self, *, which: str) -> Dict[str, Any]:
+        _ = which  # only "executed" used here; kept for API parity
+        segments: Dict[str, Any] = {}
+        for seg in SEG_ORDER:
+            steps = self._collect_steps_for_seg(seg=seg)
+            jts = [d for _, d in steps]
+            if not jts:
+                continue
+            merged = self._concat_jt_dicts(jts)
+            if merged:
+                segments[seg] = merged
+        return {"version": 1, "segments": segments}

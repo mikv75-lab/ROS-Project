@@ -82,10 +82,9 @@ class RecipePanel(QWidget):
     def _build_ui(self) -> None:
         """
         Layout:
-
         vbox(
           hbox( ActiveRecipe, Info (biggest), SprayPaths ),
-          hbox( RecipeParams, StoredEval, CurrentEval )
+          hbox( RecipeParams, StoredEval, CurrentEval ) -> Alle 3 exakt gleich breit
         )
         """
         root = QVBoxLayout(self)
@@ -122,37 +121,25 @@ class RecipePanel(QWidget):
         self.txtActiveInfo = QTextEdit(self.grpActive)
         self.txtActiveInfo.setReadOnly(True)
         self.txtActiveInfo.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        self.txtActiveInfo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         vactive.addWidget(self.txtActiveInfo, 1)
 
+        # Obere Reihe: Feste Breiten für die äußeren Boxen
         self.grpActive.setMinimumWidth(320)
         self.grpActive.setMaximumWidth(520)
-        spA = self.grpActive.sizePolicy()
-        spA.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
-        spA.setVerticalPolicy(QSizePolicy.Policy.Expanding)
-        self.grpActive.setSizePolicy(spA)
 
         # --- Info (center, BIGGEST) ---
         self.infoBox = InfoGroupBox(top, title="Info")
-        spI = self.infoBox.sizePolicy()
-        spI.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        spI.setVerticalPolicy(QSizePolicy.Policy.Expanding)
-        self.infoBox.setSizePolicy(spI)
-        self.infoBox.setMinimumWidth(520)  # make it dominate the row
+        self.infoBox.setMinimumWidth(520)
         self.infoBox.setMaximumWidth(99999)
 
         # --- Spray Paths (right, bounded width) ---
         self.sprayPathBox = SprayPathBox(ros=self.ros, parent=top)
-        spS = self.sprayPathBox.sizePolicy()
-        spS.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
-        spS.setVerticalPolicy(QSizePolicy.Policy.Expanding)
-        self.sprayPathBox.setSizePolicy(spS)
         self.sprayPathBox.setMinimumWidth(260)
         self.sprayPathBox.setMaximumWidth(420)
 
-        # Stretch: Info must be biggest
+        # Hinzufügen der oberen Widgets: Info (Mitte) bekommt Stretch 2
         htop.addWidget(self.grpActive, 0)
-        htop.addWidget(self.infoBox, 2)  # BIGGEST
+        htop.addWidget(self.infoBox, 2) 
         htop.addWidget(self.sprayPathBox, 0)
 
         root.addWidget(top, 0)
@@ -165,39 +152,35 @@ class RecipePanel(QWidget):
         hbot.setContentsMargins(0, 0, 0, 0)
         hbot.setSpacing(8)
 
+        # 1. Recipe Parameters
         self.grpRecipeParams = QGroupBox("Recipe Parameters", bottom)
         vparams = QVBoxLayout(self.grpRecipeParams)
         vparams.setContentsMargins(8, 8, 8, 8)
-        vparams.setSpacing(6)
-
         self.txtRecipeParams = QTextEdit(self.grpRecipeParams)
         self.txtRecipeParams.setReadOnly(True)
         self.txtRecipeParams.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        self.txtRecipeParams.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         vparams.addWidget(self.txtRecipeParams, 1)
 
+        # 2. Stored Eval (Disk)
         self.grpStored = QGroupBox("Stored Eval (Disk)", bottom)
         vstored = QVBoxLayout(self.grpStored)
         vstored.setContentsMargins(8, 8, 8, 8)
-        vstored.setSpacing(6)
         self.txtStored = QTextEdit(self.grpStored)
         self.txtStored.setReadOnly(True)
         self.txtStored.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        self.txtStored.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         vstored.addWidget(self.txtStored, 1)
 
+        # 3. Current Run (Live)
         self.grpCurrent = QGroupBox("Current Run (Live)", bottom)
         vcur = QVBoxLayout(self.grpCurrent)
         vcur.setContentsMargins(8, 8, 8, 8)
-        vcur.setSpacing(6)
         self.txtNewRun = QTextEdit(self.grpCurrent)
         self.txtNewRun.setReadOnly(True)
         self.txtNewRun.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        self.txtNewRun.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         vcur.addWidget(self.txtNewRun, 1)
 
-        # Stretch: params biggest, evals smaller
-        hbot.addWidget(self.grpRecipeParams, 2)
+        # WICHTIG: Hier alle drei mit Stretch-Faktor 1 hinzufügen für gleiche Breite
+        hbot.addWidget(self.grpRecipeParams, 1)
         hbot.addWidget(self.grpStored, 1)
         hbot.addWidget(self.grpCurrent, 1)
 
@@ -325,16 +308,20 @@ class RecipePanel(QWidget):
         self.txtNewRun.setPlaceholderText(f"Running {mode} for {key}...")
         _LOG.info("RecipePanel: Run started (mode=%s, key=%s)", mode, key)
 
+    
     @QtCore.pyqtSlot(str, object, object)
     def on_run_finished(self, key: str, payload: object, rr_obj: object) -> None:
         """
-        Strict V2:
+        Strict V2 (final persist policy):
 
-        Accepts either:
-          - rr_obj: RunResult (preferred), or
-          - payload: dict process payload -> RunResult.from_process_payload(payload)
-
-        No legacy aliases; no guessing beyond these two shapes.
+        1) Load recipe (disk) and attach to RunResult BEFORE eval (required for speed + selection).
+        2) Postprocess + Eval first
+        3) SHOW the new eval/report immediately
+        4) THEN ask whether planned_* should overwrite (only if needed)
+        5) Persist (ONLY if rr.valid True):
+           - executed_* saved when present (execute)
+           - planned_* saved when present (validate/optimize) but only after confirmation if overwrite
+           - missing parts never delete previous artifacts (repo merge policy)
         """
         key = str(key or "").strip()
         self.txtNewRun.setPlaceholderText("")
@@ -343,8 +330,10 @@ class RecipePanel(QWidget):
             self.txtNewRun.setPlainText("Run finished, but key is empty.")
             return
 
+        # ----------------------------
+        # Strict RunResult resolve
+        # ----------------------------
         rr: Optional[RunResult] = None
-
         if isinstance(rr_obj, RunResult):
             rr = rr_obj
         elif isinstance(payload, dict):
@@ -368,6 +357,9 @@ class RecipePanel(QWidget):
             )
             return
 
+        # ----------------------------
+        # Load recipe from disk (SSoT) and ATTACH CONTEXT BEFORE EVAL
+        # ----------------------------
         recipe_disk: Optional[Recipe]
         try:
             recipe_disk = self.repo.load_for_process(key)
@@ -375,18 +367,18 @@ class RecipePanel(QWidget):
             recipe_disk = None
             _LOG.error("RecipePanel: load_for_process failed (key=%s): %s", key, e)
 
-        # ------------------------------------------------------------
-        # Attach recipe (RunResult uses it for speed calc/report)
-        # STRICT: do NOT attach None
-        # ------------------------------------------------------------
         try:
             if recipe_disk is not None:
-                rr.attach_recipe(recipe_disk)
+                # STRICT: attach_recipe_context exists and is the ONLY API we use here.
+                rr.attach_recipe_context(recipe_disk)
         except Exception as e:
-            _LOG.error("RecipePanel: rr.attach_recipe failed (key=%s): %s", key, e)
+            _LOG.error("RecipePanel: rr.attach_recipe_context failed (key=%s): %s", key, e)
 
         seg_order = list(self._default_segment_order())
 
+        # ------------------------------------------------------------
+        # Postprocess + Eval FIRST (now with attached recipe context)
+        # ------------------------------------------------------------
         post_err: Optional[str] = None
         try:
             scene_yaml_path, robot_yaml_path, mounts_yaml_path = self._required_offline_tf_paths()
@@ -414,6 +406,7 @@ class RecipePanel(QWidget):
         eval_err: Optional[str] = None
         try:
             rr.evaluate_tcp_against_draft(
+                recipe=recipe_disk,  # explicit (even though attached)
                 segment_order=seg_order,
                 domain="tcp",
                 gate_valid_on_eval=False,
@@ -423,22 +416,8 @@ class RecipePanel(QWidget):
             _LOG.error("RecipePanel: rr.evaluate_tcp_against_draft failed (key=%s): %s", key, e)
 
         # ------------------------------------------------------------
-        # Persist policy:
-        #   - executed_* overwrites always when present
-        #   - planned_* overwrite only with user confirmation if disk already has planned_*
+        # SHOW report immediately (before any save prompt)
         # ------------------------------------------------------------
-        persist_err: Optional[str] = None
-        try:
-            if recipe_disk is not None:
-                if not self._confirm_planned_overwrite_if_needed(key, recipe_disk, rr):
-                    # user chose "keep existing planned_*" -> drop planned_* from rr before saving
-                    self._drop_planned_from_run_result(rr)
-
-            self.repo.save_run_result_if_valid(key, run_result=rr)
-        except Exception as e:
-            persist_err = str(e)
-            _LOG.error("RecipePanel: save_run_result_if_valid failed (key=%s): %s", key, e)
-
         try:
             txt = self._current_run_report_text(rr)
             extra: List[str] = []
@@ -446,23 +425,51 @@ class RecipePanel(QWidget):
                 extra.append(f"postprocess_error: {post_err}")
             if eval_err:
                 extra.append(f"eval_error: {eval_err}")
-            if persist_err:
-                extra.append(f"persist_error: {persist_err}")
             if extra:
                 txt = f"{txt}\n\n" + "\n".join(extra)
             self.txtNewRun.setPlainText(txt)
         except Exception as e:
             self.txtNewRun.setPlainText(f"Run finished for {key}, but report render failed: {e}")
 
+        # Overlays: show what was just evaluated
+        try:
+            self._republish_newrun_overlays_from_rr(rr)
+        except Exception as e:
+            _LOG.error("RecipePanel: republish newrun overlays failed: %s", e)
+
+        # ------------------------------------------------------------
+        # Persist ONLY if run is valid ("durchgelaufen")
+        # ------------------------------------------------------------
+        persist_err: Optional[str] = None
+        try:
+            if bool(getattr(rr, "valid", False)):
+                if recipe_disk is not None:
+                    # ask ONLY for planned overwrite (executed has no prompt)
+                    if not self._confirm_planned_overwrite_if_needed(key, recipe_disk, rr):
+                        # user chose keep existing planned_* -> ensure repo KEEP policy
+                        self._drop_planned_from_run_result(rr)
+
+                # single call does everything (repo merge keep-on-missing)
+                self.repo.save_run_result_if_valid(key, run_result=rr)
+        except Exception as e:
+            persist_err = str(e)
+            _LOG.error("RecipePanel: persist failed (key=%s): %s", key, e)
+
+        if persist_err:
+            try:
+                cur = self.txtNewRun.toPlainText().rstrip()
+                self.txtNewRun.setPlainText(f"{cur}\n\npersist_error: {persist_err}")
+            except Exception:
+                pass
+
+        # ------------------------------------------------------------
+        # Refresh disk view last
+        # ------------------------------------------------------------
         try:
             self._refresh_stored_from_disk(key)
         except Exception as e:
             _LOG.error("RecipePanel: refresh stored after run failed: %s", e)
 
-        try:
-            self._republish_newrun_overlays_from_rr(rr)
-        except Exception as e:
-            _LOG.error("RecipePanel: republish newrun overlays failed: %s", e)
 
     @QtCore.pyqtSlot(str, str)
     def on_run_error(self, key: str, message: str) -> None:

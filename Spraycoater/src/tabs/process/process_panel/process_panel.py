@@ -360,7 +360,6 @@ class ProcessPanel(QWidget):
     @QtCore.pyqtSlot(str)
     def _on_process_state(self, s: str) -> None:
         self.sig_process_state.emit(str(s))
-        self._log(f"STATE: {s}")
 
     def _finish_process_ui(self) -> None:
         pt = self._process_thread

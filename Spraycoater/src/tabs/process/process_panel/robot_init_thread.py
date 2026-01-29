@@ -17,13 +17,18 @@ class RobotInitThread(QtCore.QObject):
     """
     Persistent Worker + QThread (Ros-only)
 
-    Problem: stale MoveItPy motion_result / segment leaks from previous Process runs
-             into RobotInit HOME execution (ERROR:NO_TRAJ named seg=...).
+    Problem:
+      - stale MoveItPy motion_result / segment leaks from previous Process runs
+        into RobotInit HOME execution (ERROR:NO_TRAJ named seg=...).
+      - Stop can leave UI "blocked" if worker doesn't emit callbacks promptly.
 
     Fix:
       - HARD boundary reset on EVERY RobotInit start (pre-run).
       - Optional boundary reset on finish/error (post-run) as extra safety.
-      - CRITICAL: Segment-Kontext wird hart zurückgesetzt (auch wenn ros nur moveit_set_segment hat).
+      - request_stop() unblocks UI semantics immediately by clearing _running,
+        then asks worker to stop.
+      - CRITICAL: Segment context is reset best-effort (legacy compatibility),
+        but Variant-A is keyed and segment is provided per request anyway.
     """
 
     startSignal = QtCore.pyqtSignal()
@@ -83,7 +88,7 @@ class RobotInitThread(QtCore.QObject):
         )
 
     # ------------------------------------------------------------------
-    # Boundary reset (best-effort, ordered)
+    # Boundary reset helpers (best-effort, ordered)
     # ------------------------------------------------------------------
 
     def _call_first(self, names: Tuple[str, ...]) -> bool:
@@ -116,11 +121,10 @@ class RobotInitThread(QtCore.QObject):
 
     def _reset_segment_context(self) -> None:
         """
-        HARD reset of segment context to avoid leaking seg=... into RobotInit HOME execution.
+        Best-effort reset of legacy "segment context".
 
-        Supports:
-          - moveit_clear_segment()/moveit_reset_segment()/moveit_set_segment_none()
-          - moveit_set_segment(seg: str) fallback (set "" / best-effort None)
+        Variant-A does NOT require a set_segment topic (segment is per request),
+        but we keep this to guard older facades that may still leak state.
         """
         if self._call_first(("moveit_clear_segment", "moveit_reset_segment", "moveit_set_segment_none")):
             return
@@ -135,8 +139,14 @@ class RobotInitThread(QtCore.QObject):
 
     def _reset_run_boundary(self) -> None:
         """
-        Clear stale MoveItPy bridge state before/after RobotInit runs.
-        This prevents RobotInit HOME using the previous segment/result (e.g. MOVE_RECIPE).
+        Clear stale MoveIt/bridge state before/after RobotInit runs.
+
+        Goal:
+          - prevent RobotInit HOME using previous segment/result (e.g. MOVE_RECIPE)
+          - prevent UI/state-machine from seeing old motion_result / traj snapshots
+
+        Note:
+          This is best-effort because RosBridge may not expose all clear APIs.
         """
         # 1) stop any motion
         self._call_first(("moveit_stop", "stop_moveit", "moveit_cancel", "moveit_abort"))
@@ -154,11 +164,16 @@ class RobotInitThread(QtCore.QObject):
             )
         )
 
-        # 4) CRITICAL: clear segment context (also handles moveit_set_segment-only facades)
+        # 4) legacy: clear segment context
         self._reset_segment_context()
 
-        QCoreApplication.processEvents()
+        try:
+            QCoreApplication.processEvents()
+        except Exception:
+            pass
 
+    # ------------------------------------------------------------------
+    # Thread / worker lifecycle
     # ------------------------------------------------------------------
 
     def _start_thread_if_needed(self) -> None:
@@ -192,9 +207,15 @@ class RobotInitThread(QtCore.QObject):
 
     def request_stop(self) -> None:
         """
-        Stop RobotInit worker (best-effort) and also stop/reset MoveIt boundary
-        so that subsequent Init/Process doesn't inherit stale state.
+        Stop RobotInit worker (best-effort) and reset MoveIt boundary.
+
+        IMPORTANT UI semantics:
+          - immediately clear `_running` so UI can re-start without waiting for
+            an async callback (worker may still be shutting down).
         """
+        # Allow re-start immediately
+        self._running = False
+
         # Stop motion + clear boundary immediately
         try:
             self.logMessage.emit("RobotInitThread: boundary reset (request_stop)...")

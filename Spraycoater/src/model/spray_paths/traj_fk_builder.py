@@ -636,8 +636,9 @@ class TrajFkBuilder:
                 side = str(segment_to_side[seg_id] or default_side).strip() or default_side
 
             raw_poses = TrajFkBuilder._fk_segment_raw_kdl(seg_id=seg_id, seg=seg, km=km, cfg=cfg)
-            if len(raw_poses) < 2:
-                raise RuntimeError(f"TrajFkBuilder(KDL): FK ergab <2 Posen für Segment {seg_id!r}.")
+            if len(raw_poses) < 1:
+                raise RuntimeError(f"TrajFkBuilder(KDL): FK ergab 0 Posen für Segment {seg_id!r}.")
+
 
             sampled = TrajFkBuilder._resample_posequats_by_step_mm(
                 raw_poses,
@@ -793,9 +794,27 @@ class TrajFkBuilder:
         return out
 
     @staticmethod
-    def _resample_posequats_by_step_mm(poses: List[PoseQuat], *, step_mm: float, max_points: int = 0) -> List[PoseQuat]:
-        if not poses or len(poses) < 2:
-            return list(poses)
+    def _resample_posequats_by_step_mm(
+        poses: List[PoseQuat],
+        *,
+        step_mm: float,
+        max_points: int = 0,
+    ) -> List[PoseQuat]:
+        """
+        STRICT resampling by arc length in mm.
+
+        Guarantees:
+        - if poses is empty -> []
+        - if poses has 1 element -> returns [p, p] (>=2 for downstream consumers)
+        - if poses has >=2 but total path length ~0 (degenerate) -> returns [poses[0], poses[-1]] (>=2, may be equal)
+        - otherwise: samples by step_mm and ALWAYS returns at least [start, end] (>=2)
+        """
+        if not poses:
+            return []
+
+        if len(poses) == 1:
+            # STRICT: downstream requires >=2; duplicate the single FK sample
+            return [poses[0], poses[0]]
 
         out: List[PoseQuat] = [poses[0]]
 
@@ -840,6 +859,15 @@ class TrajFkBuilder:
                 qa[3] * s0 + qb[3] * s1,
             )
 
+        # Detect degenerate total length early (all segments ~0)
+        total_len = 0.0
+        for i in range(len(poses) - 1):
+            total_len += dist(poses[i], poses[i + 1])
+
+        if total_len <= 1e-9:
+            # STRICT: keep start/end; may be equal but yields >=2
+            return [poses[0], poses[-1]]
+
         accum = 0.0
         next_d = float(step_mm)
 
@@ -861,15 +889,30 @@ class TrajFkBuilder:
                 out.append(PoseQuat(x=x, y=y, z=z, qx=q[0], qy=q[1], qz=q[2], qw=q[3]))
 
                 if max_points and max_points > 0 and len(out) >= int(max_points):
+                    # Ensure >=2 even under max_points clamp
+                    if len(out) < 2:
+                        out.append(out[-1])
                     return out
 
                 next_d += float(step_mm)
 
             accum += seg_len
 
-        if out[-1] != poses[-1]:
-            out.append(poses[-1])
+        # ALWAYS append end pose to guarantee boundary closure (even if equal)
+        out.append(poses[-1])
+
+        # STRICT: enforce >=2
+        if len(out) < 2:
+            out = [poses[0], poses[-1]]
+
+        # If max_points is set and we exceeded it (rare here), clamp but keep >=2
+        if max_points and max_points > 0 and len(out) > int(max_points):
+            out = out[: int(max_points)]
+            if len(out) < 2:
+                out = [poses[0], poses[-1]]
+
         return out
+
 
     @staticmethod
     def _draft_to_yaml_dict(d: Draft) -> Dict[str, Any]:

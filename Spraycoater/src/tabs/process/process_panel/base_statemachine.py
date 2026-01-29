@@ -1,17 +1,15 @@
 # -*- coding: utf-8 -*-
-# File: tabs/process/base_statemachine.py
+# File: src/tabs/process/base_statemachine.py
 from __future__ import annotations
 
-import copy
+import json
 import logging
-from typing import Optional, Dict, Any, List, Tuple
+from dataclasses import dataclass
+from typing import Optional, Dict, Any, Tuple
 
 from PyQt6 import QtCore
 from PyQt6.QtStateMachine import QStateMachine, QState, QFinalState
 from PyQt6.sip import isdeleted
-
-from model.recipe.recipe import Recipe
-from model.recipe.recipe_run_result import RunResult
 
 _LOG = logging.getLogger("tabs.process.base_statemachine")
 
@@ -28,6 +26,141 @@ SEG_ORDER = [
 ]
 
 
+# =============================================================================
+# Helpers / Contracts (STRICT)
+# =============================================================================
+
+def _norm(s: Any) -> str:
+    return str(s or "").strip()
+
+
+def _as_dict(x: Any) -> Dict[str, Any]:
+    return x if isinstance(x, dict) else {}
+
+
+@dataclass(frozen=True)
+class ReqKey:
+    """
+    Correlation key (STRICT) for MoveItPy Variant-A envelope.
+
+    MUST match:
+      - motion_result JSON: {"key": {"run": "...", "id": <int>, "seg": "...", "op": "..."}, "status": "...", ...}
+      - RobotTrajectoryMsg.joint_trajectory.header.frame_id: JSON string containing at least the SAME "key" object
+        (either {"key":{...}} or just {run,id,seg,op}).
+    """
+    run: str
+    id: int
+    seg: str
+    op: str
+
+    def as_tuple(self) -> Tuple[str, int, str, str]:
+        return (self.run, int(self.id), self.seg, self.op)
+
+    def token_base(self) -> str:
+        return f"run={self.run}|id={int(self.id)}|seg={self.seg}|op={self.op}"
+
+
+def _parse_motion_result(text: str) -> Tuple[ReqKey, str, Dict[str, Any]]:
+    """
+    Parse motion_result string into (ReqKey, status, full_dict).
+    """
+    raw = _norm(text)
+    if not raw:
+        raise ValueError("motion_result empty")
+
+    try:
+        d = json.loads(raw)
+    except Exception as e:
+        raise ValueError(f"motion_result not valid JSON: {e!r}")
+
+    if not isinstance(d, dict):
+        raise ValueError("motion_result JSON is not an object")
+
+    key = _as_dict(d.get("key"))
+    status = _norm(d.get("status"))
+    if not key or not status:
+        raise ValueError("motion_result missing key/status")
+
+    run = _norm(key.get("run"))
+    seg = _norm(key.get("seg"))
+    op = _norm(key.get("op"))
+    rid = key.get("id")
+
+    if not run:
+        raise ValueError("motion_result.key.run empty")
+    if not isinstance(rid, int):
+        raise ValueError(f"motion_result.key.id must be int, got {type(rid).__name__}")
+    if not seg:
+        raise ValueError("motion_result.key.seg empty")
+    if not op:
+        raise ValueError("motion_result.key.op empty")
+
+    return ReqKey(run=run, id=int(rid), seg=seg, op=op), status, d
+
+
+def _parse_key_from_traj_header(obj: Any) -> ReqKey:
+    """
+    Extract ReqKey from RobotTrajectoryMsg.joint_trajectory.header.frame_id (JSON).
+    """
+    jt = getattr(obj, "joint_trajectory", None)
+    if jt is None:
+        raise ValueError("trajectory has no joint_trajectory")
+    hdr = getattr(jt, "header", None)
+    if hdr is None:
+        raise ValueError("trajectory.joint_trajectory has no header")
+    frame_id = _norm(getattr(hdr, "frame_id", ""))
+    if not frame_id:
+        raise ValueError("trajectory header.frame_id empty")
+
+    try:
+        d = json.loads(frame_id)
+    except Exception as e:
+        raise ValueError(f"trajectory key JSON invalid: {e!r}")
+    if not isinstance(d, dict):
+        raise ValueError("trajectory key JSON is not an object")
+
+    if "key" in d and isinstance(d.get("key"), dict):
+        k = _as_dict(d.get("key"))
+    else:
+        k = d
+
+    run = _norm(k.get("run"))
+    seg = _norm(k.get("seg"))
+    op = _norm(k.get("op"))
+    rid = k.get("id")
+
+    if not run:
+        raise ValueError("trajectory key.run empty")
+    if not isinstance(rid, int):
+        raise ValueError(f"trajectory key.id must be int, got {type(rid).__name__}")
+    if not seg:
+        raise ValueError("trajectory key.seg empty")
+    if not op:
+        raise ValueError("trajectory key.op empty")
+
+    return ReqKey(run=run, id=int(rid), seg=seg, op=op)
+
+
+def _is_empty_robot_trajectory(obj: Any) -> bool:
+    """
+    Node may publish empty RobotTrajectory to clear latched state.
+    Treat that as "ignore".
+    """
+    try:
+        jt = getattr(obj, "joint_trajectory", None)
+        if jt is None:
+            return True
+        names = list(getattr(jt, "joint_names", []) or [])
+        pts = list(getattr(jt, "points", []) or [])
+        return (len(names) == 0) and (len(pts) == 0)
+    except Exception:
+        return False
+
+
+# =============================================================================
+# Logging Handler -> Qt Signal
+# =============================================================================
+
 class _QtSignalHandler(logging.Handler):
     def __init__(self, owner: "BaseProcessStatemachine") -> None:
         super().__init__()
@@ -41,33 +174,19 @@ class _QtSignalHandler(logging.Handler):
             pass
 
 
+# =============================================================================
+# BaseProcessStatemachine (COLLECT-ONLY, SegmentRunner-driven)
+# =============================================================================
+
 class BaseProcessStatemachine(QtCore.QObject):
     """
-    Common base for Validate / Optimize / Execute.
+    Base class for Validate / Optimize / Execute — COLLECT-ONLY.
 
-    Deterministic pairing model:
-      - Wartet auf PLANNED:OK und EXECUTED:OK eines Segments.
-      - Kombiniert diese erst nach Eintreffen beider Signale zu einem committed Step.
-      - Nutzt RunResult als SSoT für die Rückgabe an die UI.
-
-    Retry model (STRICT):
-      - Bei motionResult "ERROR:*" wird NICHT sofort abgebrochen.
-      - Stattdessen wird bis max_retries die letzte Bewegung erneut ausgelöst
-        via Hook: _on_retry_last_motion(seg_name, attempt, last_error) -> bool.
-      - Nur wenn Retry nicht möglich oder max_retries überschritten => final error.
-
-    IMPORTANT (FIX for premature timeout while robot is still moving):
-      - Trajectory capture may only become available AFTER the robot finished moving.
-      - Therefore WAIT_RESULTS timeout starts ONLY once robot is NOT moving anymore.
-        While moving, we keep ticking but do not arm the timeout deadline.
-
-    Draft segmentation contract (STRICT helper, optional for subclasses):
-      - MOVE_PREDISPENSE must use draft.side.predispense (NOT recipe[0])
-      - MOVE_RECIPE must use recipe-only poses (draft.side.poses_quat only)
-      - MOVE_RETREAT must use draft.side.retreat (NOT recipe[-1])
-
-    This base class provides helper `_draft_segment_pose_tuples()` to obtain
-    segment-specific pose tuples from the current `Recipe` without guessing.
+    Features:
+      - Sequential segment state machine (SEG_ORDER).
+      - Collects inbound MoveItPy signals (motion_result + trajectories).
+      - **Automatic Deduplication**: On finish, ensures only the latest result/trajectory
+        per logical step (Segment + Op) is retained, removing duplicates from retries.
     """
 
     ROLE = "process"
@@ -81,195 +200,77 @@ class BaseProcessStatemachine(QtCore.QObject):
     _sig_done = QtCore.pyqtSignal()
     _sig_error = QtCore.pyqtSignal()
 
-    _RETRY_DELAY_MS = 250
-
-    # Timeout/loop for trajectory capture *after* motion ends
-    _WAIT_RESULTS_TIMEOUT_MS = 1000
-    _WAIT_RESULTS_TICK_MS = 15
-
     def __init__(
         self,
         *,
-        recipe: Recipe,
+        recipe: Any,
         ros: Any,
-        run_result: RunResult,
+        run_result: Any,
         parent: Optional[QtCore.QObject] = None,
-        max_retries: int = 3,
+        max_retries: int = 0,
     ) -> None:
         super().__init__(parent)
 
-        if not isinstance(run_result, RunResult):
-            raise TypeError("BaseProcessStatemachine: run_result muss RunResult sein.")
-        if not isinstance(recipe, Recipe):
-            raise TypeError("BaseProcessStatemachine: recipe muss vom Typ Recipe sein.")
-
         self._recipe = recipe
         self._ros = ros
-        self._rr: RunResult = run_result
+        self._rr = run_result
         self._role = str(getattr(self, "ROLE", "process") or "process")
 
-        self._max_retries = max(0, int(max_retries))
-
         self._stop_requested = False
-        self._stopped = False
-        self._stop_emitted = False  # STRICT: ensure we terminate exactly once on Stop
+        self._stop_emitted = False
         self._error_msg: Optional[str] = None
 
         self._machine: Optional[QStateMachine] = None
         self._current_state: str = ""
-        self._retry_count: int = 0
-        self._last_error_res: str = ""
 
-        # Snapshot Speicher für finale Trajektorien (Dicts im JointTrajectory Format)
-        self._planned_by_segment: Dict[str, Any] = {}
-        self._executed_by_segment: Dict[str, Any] = {}
+        # MoveItPy handles/signals (best-effort)
+        self._moveitpy = None
+        self._moveitpy_signals = None
+        try:
+            self._moveitpy = self._ros.moveitpy
+            if self._moveitpy is not None:
+                self._moveitpy_signals = self._moveitpy.signals
+        except Exception:
+            self._moveitpy = None
+            self._moveitpy_signals = None
 
-        # Puffer für Paare (ein Segment kann aus mehreren Teilbewegungen bestehen)
-        self._planned_steps_by_segment: Dict[str, List[Any]] = {}
-        self._executed_steps_by_segment: Dict[str, List[Any]] = {}
+        # Keyed stashes (run, id, seg, op) -> Data
+        # We collect ALL attempts here. Deduplication happens at the end.
+        self._results: Dict[Tuple[str, int, str, str], Dict[str, Any]] = {}
+        self._traj_planned: Dict[Tuple[str, int, str, str], Any] = {}
+        self._traj_executed: Dict[Tuple[str, int, str, str], Any] = {}
+        self._traj_optimized: Dict[Tuple[str, int, str, str], Any] = {}
 
-        # Pending Slots für asynchrones Pairing
-        self._pending_planned_step: Dict[str, Optional[Dict[str, Any]]] = {}
-        self._pending_executed_step: Dict[str, Optional[Dict[str, Any]]] = {}
-
-        # WAIT_RESULTS state (armed only once robot stopped moving)
-        self._wait_active: bool = False
-        self._wait_seg: str = ""
-        self._wait_deadline_ms: int = 0
-        self._wait_last_result: str = ""
-        self._wait_timeout_ms: int = int(self._WAIT_RESULTS_TIMEOUT_MS)
-        self._wait_deadline_armed: bool = False  # starts when robot is NOT moving
-
-        # Robot moving state (best-effort, cached from RosBridge.robot.signals.movingChanged)
-        self._robot_moving: bool = False
-
-        # MoveItPy Handles
-        self._moveitpy = getattr(self._ros, "moveitpy", None)
-        self._moveitpy_signals = getattr(self._moveitpy, "signals", None)
-
-        self._last_planned_any: Any = None
-        self._last_executed_any: Any = None
-
+        # logging handler -> Qt
         self._log_handler: Optional[_QtSignalHandler] = _QtSignalHandler(self)
         self._log_handler.setFormatter(logging.Formatter("%(message)s"))
         self._log_handler.setLevel(logging.INFO)
         _LOG.addHandler(self._log_handler)
 
-        if self._moveitpy_signals is not None and hasattr(self._moveitpy_signals, "motionResultChanged"):
-            try:
-                self._moveitpy_signals.motionResultChanged.connect(self._on_motion_result)
-            except Exception:
-                pass
+        # connect inbound
+        self._connect_motion_result_signal()
+        self._connect_traj_signals()
 
-        self._connect_traj_cache_signals()
-        self._connect_traj_cache_clear_signal()
-        self._connect_robot_moving_signal()
-        self._refresh_robot_moving_initial()
+        _ = max_retries
 
-    # ============================================================
-    # STRICT helper: draft segmentation → pose tuples
-    # ============================================================
+    # ------------------------------------------------------------------
+    # Subclass control API (explicit transitions)
+    # ------------------------------------------------------------------
 
-    @staticmethod
-    def _pose_to_tuple_mm_quat(p: Any) -> Tuple[float, float, float, float, float, float, float]:
-        """
-        Accepts either Draft PoseQuat-like object or dict and returns:
-          (x_mm, y_mm, z_mm, qx, qy, qz, qw)
-        """
-        if hasattr(p, "x"):
-            return (
-                float(p.x),
-                float(p.y),
-                float(p.z),
-                float(p.qx),
-                float(p.qy),
-                float(p.qz),
-                float(p.qw),
-            )
-        if isinstance(p, dict):
-            return (
-                float(p["x"]),
-                float(p["y"]),
-                float(p["z"]),
-                float(p["qx"]),
-                float(p["qy"]),
-                float(p["qz"]),
-                float(p["qw"]),
-            )
-        raise TypeError(f"pose has unsupported type: {type(p).__name__}")
+    def current_segment(self) -> str:
+        return str(self._current_state or "")
 
-    def _draft_segment_pose_tuples(
-        self,
-        *,
-        side: str,
-        seg: str,
-    ) -> List[Tuple[float, float, float, float, float, float, float]]:
-        """
-        STRICT extraction of segment poses from Recipe draft.
+    def segment_done(self) -> None:
+        if self._machine is None or self._stop_requested or self._error_msg:
+            return
+        QtCore.QTimer.singleShot(0, self._sig_done.emit)
 
-        Priority:
-          1) Recipe method `draft_poses_quat_segment(side, seg)` if available
-          2) Draft model method `draft.poses_quat_segment(side, seg)` if available
-          3) Dict-like draft schema:
-             sides[side].predispense / poses_quat / retreat  (single-point lists for predispense/retreat)
+    def segment_error(self, msg: str) -> None:
+        self._signal_error(str(msg or "ERROR"))
 
-        No silent guessing:
-          - If required keys are missing for the requested segment, raises ValueError.
-        """
-        s = str(side or "").strip()
-        seg_id = str(seg or "").strip()
-
-        # 1) Preferred: Recipe facade
-        fn = getattr(self._recipe, "draft_poses_quat_segment", None)
-        if callable(fn):
-            poses = fn(s, seg_id)
-            return [self._pose_to_tuple_mm_quat(p) for p in list(poses or [])]
-
-        # 2) Draft model
-        d = getattr(self._recipe, "draft", None)
-        fn2 = getattr(d, "poses_quat_segment", None) if d is not None else None
-        if callable(fn2):
-            poses = fn2(s, seg_id)
-            return [self._pose_to_tuple_mm_quat(p) for p in list(poses or [])]
-
-        # 3) Dict schema (your new draft yaml layout)
-        if isinstance(d, dict):
-            sides = d.get("sides")
-            if not isinstance(sides, dict):
-                raise ValueError("draft dict missing 'sides'")
-
-            sd = sides.get(s)
-            if not isinstance(sd, dict):
-                raise ValueError(f"draft dict missing side {s!r}")
-
-            if seg_id == STATE_MOVE_PREDISPENSE:
-                lst = sd.get("predispense")
-                if not isinstance(lst, list) or not lst:
-                    raise ValueError(f"draft side {s!r} missing non-empty 'predispense' for {seg_id}")
-                return [self._pose_to_tuple_mm_quat(lst[0])]
-
-            if seg_id == STATE_MOVE_RECIPE:
-                lst = sd.get("poses_quat")
-                if not isinstance(lst, list) or not lst:
-                    raise ValueError(f"draft side {s!r} missing non-empty 'poses_quat' for {seg_id}")
-                # IMPORTANT: recipe-only; do NOT inject predispense/retreat here.
-                return [self._pose_to_tuple_mm_quat(p) for p in lst]
-
-            if seg_id == STATE_MOVE_RETREAT:
-                lst = sd.get("retreat")
-                if not isinstance(lst, list) or not lst:
-                    raise ValueError(f"draft side {s!r} missing non-empty 'retreat' for {seg_id}")
-                return [self._pose_to_tuple_mm_quat(lst[0])]
-
-            # MOVE_HOME has no draft poses by contract
-            if seg_id == STATE_MOVE_HOME:
-                return []
-
-            raise ValueError(f"unknown segment {seg_id!r} for draft segmentation")
-
-        raise ValueError("draft has no segment-capable API (missing draft_poses_quat_segment / poses_quat_segment / dict schema)")
-
-    # ---------------- Machine ----------------
+    # ------------------------------------------------------------------
+    # Machine wiring
+    # ------------------------------------------------------------------
 
     def _build_machine(self) -> QStateMachine:
         m = QStateMachine(self)
@@ -297,61 +298,12 @@ class BaseProcessStatemachine(QtCore.QObject):
         return None
 
     def _segment_exists(self, seg_name: str) -> bool:
-        """Subclass prüft, ob das Segment im Rezept definiert ist."""
+        _ = seg_name
         return True
 
-    # ---------------- Robot moving gating (STRICT) ----------------
-
-    def _connect_robot_moving_signal(self) -> None:
-        try:
-            rb = getattr(self._ros, "robot", None)
-            sig = getattr(rb, "signals", None) if rb is not None else None
-            if sig is not None and hasattr(sig, "movingChanged"):
-                sig.movingChanged.connect(self._on_robot_moving_changed)
-        except Exception:
-            pass
-
-    def _refresh_robot_moving_initial(self) -> None:
-        # Best-effort: try to read current moving state if exposed by RosBridge.robot
-        try:
-            rb = getattr(self._ros, "robot", None)
-            cur = getattr(rb, "moving", None) if rb is not None else None
-            if cur is not None:
-                self._robot_moving = bool(cur)
-        except Exception:
-            pass
-
-    @QtCore.pyqtSlot(bool)
-    def _on_robot_moving_changed(self, v: bool) -> None:
-        self._robot_moving = bool(v)
-
-    def _robot_is_moving(self) -> bool:
-        # Prefer cached signal value; also try to refresh from attribute if present.
-        try:
-            rb = getattr(self._ros, "robot", None)
-            cur = getattr(rb, "moving", None) if rb is not None else None
-            if cur is not None:
-                self._robot_moving = bool(cur)
-        except Exception:
-            pass
-        return bool(self._robot_moving)
-
-    # ---------------- Segment capture reset ----------------
-
-    def _reset_segment_capture(self, seg_name: str, *, clear_steps: bool = True) -> None:
-        self._last_planned_any = None
-        self._last_executed_any = None
-        self._pending_planned_step[seg_name] = None
-        self._pending_executed_step[seg_name] = None
-
-        if self._wait_active and self._wait_seg == seg_name:
-            self._wait_active = False
-
-        if clear_steps:
-            self._planned_steps_by_segment[seg_name] = []
-            self._executed_steps_by_segment[seg_name] = []
-
-    # ---------------- Motion & Pairing ----------------
+    # ------------------------------------------------------------------
+    # Segment lifecycle
+    # ------------------------------------------------------------------
 
     def _on_state_enter(self, seg_name: str) -> None:
         self._current_state = seg_name
@@ -359,354 +311,178 @@ class BaseProcessStatemachine(QtCore.QObject):
         self.logMessage.emit(f"STATE: {seg_name}")
 
         if self._stop_requested:
-            self._signal_error("Gestoppt")
+            self._signal_error("STOPPED")
             return
 
-        self._retry_count = 0
-        self._last_error_res = ""
-        self._reset_segment_capture(seg_name, clear_steps=True)
-
         try:
-            fn = getattr(self._ros, "moveit_set_segment", None)
-            if callable(fn):
-                fn(seg_name)
+            self._on_enter_segment(seg_name)
+        except Exception as e:
+            self._signal_error(f"enter_segment failed: {e}")
+            return
+
+    # ------------------------------------------------------------------
+    # Inbound: motion_result + trajectories (Collect ALL)
+    # ------------------------------------------------------------------
+
+    def _connect_motion_result_signal(self) -> None:
+        sig = self._moveitpy_signals
+        if sig is None:
+            return
+        try:
+            sig.motionResultChanged.connect(self._on_motion_result)
         except Exception:
             pass
 
-        self._on_enter_segment(seg_name)
-
-    def _try_commit_pair(self, seg: str) -> bool:
-        pp = self._pending_planned_step.get(seg)
-        pe = self._pending_executed_step.get(seg)
-        if pp is None or pe is None:
-            return False
-
-        self._planned_steps_by_segment.setdefault(seg, []).append(copy.deepcopy(pp))
-        self._executed_steps_by_segment.setdefault(seg, []).append(copy.deepcopy(pe))
-        self._pending_planned_step[seg] = None
-        self._pending_executed_step[seg] = None
-        return True
-
-    def _start_wait_results(self, seg: str, *, result: str, timeout_ms: Optional[int] = None) -> None:
-        """
-        Start the "wait for trajectories" loop.
-
-        STRICT FIX:
-          - Do not arm timeout while robot is still moving.
-          - Deadline is armed only once robot is NOT moving.
-        """
-        if self._wait_active:
-            self._wait_last_result = str(result or "")
+    def _connect_traj_signals(self) -> None:
+        sig = self._moveitpy_signals
+        if sig is None:
             return
-
-        self._wait_active = True
-        self._wait_seg = str(seg)
-        self._wait_last_result = str(result or "")
-
-        self._wait_timeout_ms = int(timeout_ms) if timeout_ms is not None else int(self._WAIT_RESULTS_TIMEOUT_MS)
-        self._wait_deadline_ms = 0
-        self._wait_deadline_armed = False
-
-        QtCore.QTimer.singleShot(0, self._wait_results_tick)
-
-    def _wait_results_tick(self) -> None:
-        if not self._wait_active or self._stop_requested:
-            return
-
-        seg = self._wait_seg
-
-        # STRICT: wait until robot finished moving, then start timeout window.
-        if not self._wait_deadline_armed:
-            if self._robot_is_moving():
-                QtCore.QTimer.singleShot(int(self._WAIT_RESULTS_TICK_MS), self._wait_results_tick)
-                return
-
-            now0 = int(QtCore.QTime.currentTime().msecsSinceStartOfDay())
-            t_ms = int(self._wait_timeout_ms)
-            if t_ms <= 0:
-                t_ms = 1
-            self._wait_deadline_ms = now0 + t_ms
-            self._wait_deadline_armed = True
-            # fallthrough: try capture immediately on first "not moving" tick
-
-        if self._pending_planned_step.get(seg) is None:
-            p = self._capture_planned_step(seg)
-            if p:
-                self._pending_planned_step[seg] = copy.deepcopy(p)
-
-        if self._pending_executed_step.get(seg) is None:
-            e = self._capture_executed_step(seg)
-            if e:
-                self._pending_executed_step[seg] = copy.deepcopy(e)
-
-        if self._try_commit_pair(seg):
-            self._wait_active = False
-            self._after_motion_pair_ready(seg, self._wait_last_result)
-            return
-
-        now = int(QtCore.QTime.currentTime().msecsSinceStartOfDay())
-        if now >= int(self._wait_deadline_ms):
-            self._signal_error(f"Trajectory capture timeout for segment '{seg}'")
-            return
-
-        QtCore.QTimer.singleShot(int(self._WAIT_RESULTS_TICK_MS), self._wait_results_tick)
-
-    def _after_motion_pair_ready(self, seg: str, res: str) -> None:
-        if self._error_msg:
-            return
-        if self._should_transition_on_ok(seg, res):
-            self._on_segment_ok(seg)
-            QtCore.QTimer.singleShot(0, self._sig_done.emit)
-
-    # ---------------- Retry ----------------
-
-    def _handle_motion_error(self, seg: str, res: str) -> None:
-        if self._stop_requested or self._error_msg:
-            return
-
-        self._last_error_res = str(res or "ERROR")
-
-        if self._wait_active and self._wait_seg == seg:
-            self._wait_active = False
-
-        if self._max_retries <= 0:
-            self._signal_error(f"{self._last_error_res} seg={seg}")
-            return
-
-        if self._retry_count >= self._max_retries:
-            self._signal_error(
-                f"{self._last_error_res} seg={seg} (retries_exhausted={self._retry_count}/{self._max_retries})"
-            )
-            return
-
-        self._retry_count += 1
-        attempt = self._retry_count
-
-        self.logMessage.emit(
-            f"Retry(last-motion) {attempt}/{self._max_retries} for segment '{seg}' due to: {self._last_error_res}"
-        )
-
-        QtCore.QTimer.singleShot(int(self._RETRY_DELAY_MS), lambda: self._do_retry(seg, attempt, self._last_error_res))
-
-    def _do_retry(self, seg: str, attempt: int, last_error: str) -> None:
-        if self._stop_requested or self._error_msg:
-            return
-        if seg != self._current_state:
-            return
-
-        ok = False
         try:
-            ok = bool(self._on_retry_last_motion(seg, attempt, last_error))
-        except Exception as e:
-            ok = False
-            _LOG.error("Retry hook raised: %s", e)
-
-        if not ok:
-            self._signal_error(f"{last_error} seg={seg} (retry_failed attempt={attempt}/{self._max_retries})")
-            return
-
-        # reset ONLY current motion pairing slots
-        self._pending_planned_step[seg] = None
-        self._pending_executed_step[seg] = None
-        self._wait_active = False
-        self._wait_deadline_armed = False
-        self._wait_deadline_ms = 0
-
-    # ---------------- MotionResult slot ----------------
+            sig.plannedTrajectoryChanged.connect(self._on_planned_traj_changed)
+        except Exception:
+            pass
+        try:
+            sig.executedTrajectoryChanged.connect(self._on_executed_traj_changed)
+        except Exception:
+            pass
+        try:
+            sig.optimizedTrajectoryChanged.connect(self._on_optimized_traj_changed)
+        except Exception:
+            pass
 
     @QtCore.pyqtSlot(str)
-    def _on_motion_result(self, result: str) -> None:
-        # IMPORTANT: Do NOT gate on isRunning(); signals can arrive during transitions.
+    def _on_motion_result(self, text: str) -> None:
+        if self._machine is None or self._stop_requested:
+            return
+        raw = _norm(text)
+        if not raw:
+            return
+
+        try:
+            key, status, d = _parse_motion_result(raw)
+        except Exception as e:
+            _LOG.warning("motion_result ignored: %s", e)
+            return
+
+        # Stash everything (dedupe later)
+        try:
+            self._results[key.as_tuple()] = dict(d)
+        except Exception:
+            self._results[key.as_tuple()] = {"raw": raw, "status": str(status)}
+
+    @QtCore.pyqtSlot(object)
+    def _on_planned_traj_changed(self, obj: object) -> None:
+        self._stash_traj(kind="planned", obj=obj)
+
+    @QtCore.pyqtSlot(object)
+    def _on_executed_traj_changed(self, obj: object) -> None:
+        self._stash_traj(kind="executed", obj=obj)
+
+    @QtCore.pyqtSlot(object)
+    def _on_optimized_traj_changed(self, obj: object) -> None:
+        self._stash_traj(kind="optimized", obj=obj)
+
+    def _stash_traj(self, *, kind: str, obj: Any) -> None:
         if self._machine is None or self._stop_requested or self._error_msg:
             return
-
-        res = (result or "").strip()
-        if not res:
+        if obj is None or _is_empty_robot_trajectory(obj):
             return
-
-        if self._wait_active:
-            return
-
-        seg = self._current_state
-
-        if res.startswith("ERROR"):
-            self._handle_motion_error(seg, res)
-            return
-
-        if res.startswith("PLANNED:OK"):
-            p = self._capture_planned_step(seg)
-            if p:
-                self._pending_planned_step[seg] = copy.deepcopy(p)
-
-        elif res.startswith("EXECUTED:OK"):
-            e = self._capture_executed_step(seg)
-            if e:
-                self._pending_executed_step[seg] = copy.deepcopy(e)
-
-            # IMPORTANT: wait until robot stops, then arm timeout and capture remaining pieces
-            self._start_wait_results(seg, result=res)
-
-    # ---------------- Trajectory extraction (FULL RECURSION) ----------------
-
-    @classmethod
-    def _jt_from_any(cls, obj: Any, *, _depth: int = 0, _max_depth: int = 8) -> Optional[Dict[str, Any]]:
-        if obj is None or _depth > _max_depth:
-            return None
 
         try:
-            if hasattr(obj, "joint_names") and hasattr(obj, "points"):
-                out = cls._jt_msg_to_dict(obj)
-                if out:
-                    return out
-        except Exception:
-            pass
-
-        try:
-            jt = getattr(obj, "joint_trajectory", None)
-            if jt is not None:
-                out = cls._jt_msg_to_dict(jt)
-                if out:
-                    return out
-        except Exception:
-            pass
-
-        if isinstance(obj, dict) and obj:
-            try:
-                if isinstance(obj.get("joint_names"), list) and isinstance(obj.get("points"), list):
-                    return obj
-            except Exception:
-                pass
-
-            for k in ("joint_trajectory", "planned", "executed", "trajectory", "result", "plan"):
-                try:
-                    v = obj.get(k)
-                    out = cls._jt_from_any(v, _depth=_depth + 1, _max_depth=_max_depth)
-                    if out:
-                        return out
-                except Exception:
-                    pass
-
-            for v in obj.values():
-                out = cls._jt_from_any(v, _depth=_depth + 1, _max_depth=_max_depth)
-                if out:
-                    return out
-
-        for attr in ("trajectory", "robot_trajectory", "planned_trajectory", "executed_trajectory", "result", "plan"):
-            try:
-                v = getattr(obj, attr, None)
-                out = cls._jt_from_any(v, _depth=_depth + 1, _max_depth=_max_depth)
-                if out:
-                    return out
-            except Exception:
-                pass
-
-        return None
-
-    @classmethod
-    def _jt_msg_to_dict(cls, jt_msg: Any) -> Optional[Dict[str, Any]]:
-        if jt_msg is None:
-            return None
-        try:
-            jn = [str(x) for x in list(getattr(jt_msg, "joint_names") or [])]
-            pts_msg = list(getattr(jt_msg, "points") or [])
-            pts = []
-            for p in pts_msg:
-                pts.append(
-                    {
-                        "positions": [float(x) for x in list(getattr(p, "positions", []) or [])],
-                        "time_from_start": {
-                            "sec": int(getattr(p.time_from_start, "sec", 0)),
-                            "nanosec": int(getattr(p.time_from_start, "nanosec", 0)),
-                        },
-                    }
-                )
-            return {"joint_names": jn, "points": pts} if jn and pts else None
-        except Exception:
-            return None
-
-    # ---------------- Concatenation & YAML Packing ----------------
-
-    def _snapshot_trajs_for_segment(self, seg_name: str) -> None:
-        p_steps = self._planned_steps_by_segment.get(seg_name) or []
-        e_steps = self._executed_steps_by_segment.get(seg_name) or []
-        if not p_steps or not e_steps:
+            key = _parse_key_from_traj_header(obj)
+        except Exception as e:
+            self._signal_error(f"{kind} trajectory missing/invalid key: {e}")
             return
-        self._planned_by_segment[seg_name] = self._concat_joint_traj_dicts(p_steps)
-        self._executed_by_segment[seg_name] = self._concat_joint_traj_dicts(e_steps)
 
-    def _concat_joint_traj_dicts(self, dicts: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        if not dicts:
-            return None
-        base_names = list(dicts[0].get("joint_names") or [])
-        merged_pts = []
-        t_offset_ns = 0
-        last_global_ns = -1
+        if kind == "planned":
+            self._traj_planned[key.as_tuple()] = obj
+        elif kind == "executed":
+            self._traj_executed[key.as_tuple()] = obj
+        else:
+            self._traj_optimized[key.as_tuple()] = obj
 
-        for d in dicts:
-            pts = d.get("points") or []
-            for p in pts:
-                tfs = p.get("time_from_start")
-                t_local_ns = int(tfs["sec"]) * 1000000000 + int(tfs["nanosec"])
-                t_global_ns = t_offset_ns + t_local_ns
-                if t_global_ns <= last_global_ns:
-                    t_global_ns = last_global_ns + 1000000  # +1ms safety
+    # ------------------------------------------------------------------
+    # Data Deduplication
+    # ------------------------------------------------------------------
 
-                q = copy.deepcopy(p)
-                q["time_from_start"] = {"sec": t_global_ns // 1000000000, "nanosec": t_global_ns % 1000000000}
-                merged_pts.append(q)
-                last_global_ns = t_global_ns
-            t_offset_ns = last_global_ns
-        return {"joint_names": base_names, "points": merged_pts}
+    def _deduplicate_storage(self) -> None:
+        """
+        Filters all stored dictionaries (_results, _traj_*) to keep only the
+        LATEST entry for each logical step (Segment + Operation).
+        
+        Logic:
+          1. Uses a temporary dict mapping (seg, op) -> (full_key, value).
+          2. Since Python dicts preserve insertion order, the last inserted
+             item for a given (seg, op) overwrites previous ones (retries).
+          3. Reconstructs the class dicts with only the unique/latest items.
+        """
+        self._results = self._filter_latest(self._results)
+        self._traj_planned = self._filter_latest(self._traj_planned)
+        self._traj_executed = self._filter_latest(self._traj_executed)
+        self._traj_optimized = self._filter_latest(self._traj_optimized)
 
-    # ---------------- Finalization & Cleanup ----------------
+    def _filter_latest(self, source: Dict[Tuple, Any]) -> Dict[Tuple, Any]:
+        if not source:
+            return {}
+        
+        # Intermediate storage: (seg, op) -> (full_key, value)
+        latest_map = {}
+        
+        # Iteration order ensures we process older entries first, newer last.
+        for full_key, val in source.items():
+            # full_key is (run, id, seg, op) -> indices 2 and 3 are seg, op
+            seg, op = full_key[2], full_key[3]
+            latest_map[(seg, op)] = (full_key, val)
+            
+        # Reconstruct dict with original key structure (full_key)
+        return {k: v for k, v in latest_map.values()}
+
+    # ------------------------------------------------------------------
+    # Finalization & cleanup
+    # ------------------------------------------------------------------
 
     def _on_finished(self) -> None:
-        planned = self._jt_by_segment_yaml(which="planned")
-        executed = self._jt_by_segment_yaml(which="executed")
+        # 1. Clean up duplicates (retries) so RunResult gets only the latest data
+        self._deduplicate_storage()
 
-        self._rr.set_planned(traj=planned)
-        self._rr.set_executed(traj=executed)
+        try:
+            fn = getattr(self._rr, "attach_recipe_context", None)
+            if callable(fn):
+                fn(self._recipe)
+        except Exception:
+            pass
 
-        self.notifyFinished.emit(self._rr.to_process_payload())
+        try:
+            # self._rr (RunResult) will now read the cleaner self._traj_* dicts
+            payload = self._rr.to_process_payload()
+        except Exception:
+            payload = {"ok": True}
+
+        self.notifyFinished.emit(payload)
         self._cleanup()
-
-    def _jt_by_segment_yaml(self, *, which: str) -> Dict[str, Any]:
-        src = self._planned_by_segment if which == "planned" else self._executed_by_segment
-        segments = {}
-        for seg in SEG_ORDER:
-            jt = src.get(seg)
-            if jt:
-                out_pts = []
-                for p in jt["points"]:
-                    out_pts.append(
-                        {
-                            "positions": p["positions"],
-                            "time_from_start": [p["time_from_start"]["sec"], p["time_from_start"]["nanosec"]],
-                        }
-                    )
-                segments[seg] = {"joint_names": jt["joint_names"], "points": out_pts}
-        return {"version": 1, "segments": segments}
 
     def _signal_error(self, msg: str) -> None:
         if self._error_msg:
             return
-        self._error_msg = msg
-        _LOG.error("Statemachine Error: %s", msg)
+        self._error_msg = str(msg or "ERROR")
+        _LOG.error("Statemachine Error: %s", self._error_msg)
         QtCore.QTimer.singleShot(0, self._sig_error.emit)
 
     def _on_error(self) -> None:
+        # Even on error, we might want to dedupe results for diagnostics,
+        # but usually we want full history on error? 
+        # Let's dedupe to keep output clean unless debugging.
+        self._deduplicate_storage()
+
         try:
-            self._ros.moveit_stop()
+            if hasattr(self._ros, "moveit_stop") and callable(self._ros.moveit_stop):
+                self._ros.moveit_stop()
         except Exception:
             pass
-        self.notifyError.emit(self._error_msg or "Unbekannter Fehler")
+        self.notifyError.emit(self._error_msg or "ERROR")
         self._cleanup()
 
     def _cleanup(self) -> None:
-        self._wait_active = False
-        self._wait_deadline_armed = False
-        self._wait_deadline_ms = 0
-
         if self._machine:
             try:
                 self._machine.stop()
@@ -722,15 +498,21 @@ class BaseProcessStatemachine(QtCore.QObject):
                 pass
             self._log_handler = None
 
-    # ---------------- Public API ----------------
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     @QtCore.pyqtSlot()
     def start(self) -> None:
-        # STRICT: reset stop guards for clean restarts
         self._stop_requested = False
-        self._stopped = False
         self._stop_emitted = False
         self._error_msg = None
+
+        # Clear previous run data
+        self._results.clear()
+        self._traj_planned.clear()
+        self._traj_executed.clear()
+        self._traj_optimized.clear()
 
         if not self._prepare_run():
             self.notifyError.emit(self._error_msg or "Prepare failed")
@@ -741,24 +523,23 @@ class BaseProcessStatemachine(QtCore.QObject):
 
     @QtCore.pyqtSlot()
     def request_stop(self) -> None:
-        # STRICT: idempotent cancel -> route through existing error path so ProcessThread always gets an end-signal
         if self._stop_requested:
             return
-
         self._stop_requested = True
 
         try:
-            self._ros.moveit_stop()
+            if hasattr(self._ros, "stop_all") and callable(self._ros.stop_all):
+                self._ros.stop_all()
+            elif hasattr(self._ros, "moveit_stop") and callable(self._ros.moveit_stop):
+                self._ros.moveit_stop()
         except Exception:
             pass
 
-        # Ensure the state machine transitions to the error final state and emits notifyError exactly once.
         if not self._stop_emitted:
             self._stop_emitted = True
             if not self._error_msg:
-                self._error_msg = "Gestoppt"
+                self._error_msg = "STOPPED"
 
-            # If machine not started yet, directly emit notifyError + cleanup to avoid deadlocks.
             if self._machine is None:
                 self.notifyError.emit(self._error_msg)
                 self._cleanup()
@@ -766,66 +547,13 @@ class BaseProcessStatemachine(QtCore.QObject):
 
             QtCore.QTimer.singleShot(0, self._sig_error.emit)
 
-    # ---------------- Hooks for Subclasses ----------------
+    # ------------------------------------------------------------------
+    # Hooks for subclasses
+    # ------------------------------------------------------------------
 
     def _prepare_run(self) -> bool:
         return True
 
     def _on_enter_segment(self, seg_name: str) -> None:
-        pass
-
-    def _on_segment_ok(self, seg_name: str) -> None:
-        self._snapshot_trajs_for_segment(seg_name)
-
-    def _should_transition_on_ok(self, seg_name: str, result: str) -> bool:
-        return True
-
-    def _on_retry_last_motion(self, seg_name: str, attempt: int, last_error: str) -> bool:
-        """
-        Subclass must re-issue the last motion command for seg_name.
-        Return True if a retry was triggered, otherwise False.
-        """
-        return False
-
-    def _capture_planned_step(self, seg: str):
-        rp = getattr(self._ros, "moveit_planned_trajectory", None)
-        return self._jt_from_any(rp() if callable(rp) else self._last_planned_any)
-
-    def _capture_executed_step(self, seg: str):
-        re = getattr(self._ros, "moveit_executed_trajectory", None)
-        return self._jt_from_any(re() if callable(re) else self._last_executed_any)
-
-    def _connect_traj_cache_signals(self):
-        sig = self._moveitpy_signals
-        if sig:
-            if hasattr(sig, "plannedTrajectoryChanged"):
-                try:
-                    sig.plannedTrajectoryChanged.connect(self._on_planned_traj_changed)
-                except Exception:
-                    pass
-            if hasattr(sig, "executedTrajectoryChanged"):
-                try:
-                    sig.executedTrajectoryChanged.connect(self._on_executed_traj_changed)
-                except Exception:
-                    pass
-
-    def _connect_traj_cache_clear_signal(self):
-        sig = self._moveitpy_signals
-        if sig and hasattr(sig, "trajCacheClearChanged"):
-            try:
-                sig.trajCacheClearChanged.connect(self._on_traj_cache_clear)
-            except Exception:
-                pass
-
-    @QtCore.pyqtSlot()
-    def _on_traj_cache_clear(self):
-        self._last_planned_any = None
-        self._last_executed_any = None
-
-    @QtCore.pyqtSlot(object)
-    def _on_planned_traj_changed(self, obj):
-        self._last_planned_any = obj
-
-    @QtCore.pyqtSlot(object)
-    def _on_executed_traj_changed(self, obj):
-        self._last_executed_any = obj
+        _ = seg_name
+        raise NotImplementedError

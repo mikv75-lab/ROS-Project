@@ -230,18 +230,8 @@ def _compute_T_substrate_robot_mount_mm(
 class RunResult:
     """
     STRICT run result container.
-
-    IMPORTANT COMPATIBILITY:
-      - Some parts of the stack create RunResult(urdf_xml=..., srdf_xml=...) directly.
-      - Others pass process payload with nested robot_description.
-      => This class supports BOTH shapes.
-
-    NOTE:
-      - attach_recipe() attaches a Recipe object to enable display-only metrics
-        such as speed setpoint.
     """
 
-    # MUST EXIST: fixes "unexpected keyword argument 'urdf_xml'"
     urdf_xml: str = ""
     srdf_xml: str = ""
 
@@ -407,12 +397,28 @@ class RunResult:
 
     @staticmethod
     def _extract_xyz_mm_from_pose(p: Any) -> Optional[Tuple[float, float, float]]:
+        """
+        STRICT support for your PoseQuat YAML entries:
+
+          {x: mm, y: mm, z: mm, qx:..., qy:..., qz:..., qw:...}
+
+        plus simple list-like [x,y,z].
+        """
         if isinstance(p, (list, tuple)) and len(p) >= 3:
             try:
                 return (float(p[0]), float(p[1]), float(p[2]))
             except Exception:
                 return None
+
         if isinstance(p, dict):
+            # --- exact PoseQuat dict used in planned_tcp/executed_tcp
+            if ("x" in p) and ("y" in p) and ("z" in p):
+                try:
+                    return (float(p["x"]), float(p["y"]), float(p["z"]))
+                except Exception:
+                    return None
+
+            # (keep minimal extra key for internal cases)
             for k in ("xyz_mm", "xyz", "position", "p"):
                 v = p.get(k)
                 if isinstance(v, (list, tuple)) and len(v) == 3:
@@ -420,33 +426,30 @@ class RunResult:
                         return (float(v[0]), float(v[1]), float(v[2]))
                     except Exception:
                         return None
+
         return None
 
     @classmethod
     def _tcp_segment_poses_quat(cls, tcp_doc: Dict[str, Any], seg_name: str) -> Optional[List[Any]]:
-        segs = tcp_doc.get("segments")
-        if isinstance(segs, dict):
-            seg = segs.get(seg_name)
-            if isinstance(seg, dict):
-                pq = seg.get("poses_quat")
-                if isinstance(pq, list) and len(pq) >= 2:
-                    return pq
+        """
+        Your current TCP YAML (planned_tcp / executed_tcp) is:
 
+          version: 1
+          sides:
+            top:
+              poses_quat: [ {x,y,z,qx,qy,qz,qw}, ... ]
+
+        This helper returns the first side with >=2 poses_quat.
+        (Segments are not expected in the TCP YAML.)
+        """
         sides = tcp_doc.get("sides")
         if isinstance(sides, dict):
             for _, s in sides.items():
                 if not isinstance(s, dict):
                     continue
-                ssegs = s.get("segments")
-                if not isinstance(ssegs, dict):
-                    continue
-                seg = ssegs.get(seg_name)
-                if not isinstance(seg, dict):
-                    continue
-                pq = seg.get("poses_quat")
+                pq = s.get("poses_quat")
                 if isinstance(pq, list) and len(pq) >= 2:
                     return pq
-
         return None
 
     @classmethod
@@ -455,74 +458,27 @@ class RunResult:
 
         prev = None
         L = 0.0
+        n_valid = 0
+
         for p in poses_quat:
             xyz = cls._extract_xyz_mm_from_pose(p)
             if xyz is None:
                 continue
+            n_valid += 1
             if prev is not None:
                 dx = xyz[0] - prev[0]
                 dy = xyz[1] - prev[1]
                 dz = xyz[2] - prev[2]
                 L += math.sqrt(dx * dx + dy * dy + dz * dz)
             prev = xyz
+
+        if n_valid < 2:
+            return None
         if L <= 0.0:
             return None
         return float(L)
 
-    @staticmethod
-    def _speed_setpoint_mm_s(recipe: Any) -> Optional[float]:
-        """
-        STRICT but robust extraction:
-          - prefer recipe.to_params_dict()
-          - else recipe.parameters / recipe.params dict-like
-          - allow nesting globals.speed_mm_s
-        """
-        if recipe is None:
-            return None
 
-        # 1) to_params_dict() (preferred)
-        try:
-            fn = getattr(recipe, "to_params_dict", None)
-            if callable(fn):
-                d = fn()
-                if isinstance(d, dict):
-                    # common layouts:
-                    # - {"globals": {"speed_mm_s": ...}}
-                    # - {"speed_mm_s": ...}
-                    g = d.get("globals")
-                    if isinstance(g, dict) and "speed_mm_s" in g:
-                        v = g.get("speed_mm_s")
-                    else:
-                        v = d.get("speed_mm_s")
-                    if v is not None:
-                        vv = float(v)
-                        return vv if vv > 0.0 else None
-        except Exception:
-            pass
-
-        # 2) recipe.parameters or recipe.params
-        try:
-            params = getattr(recipe, "parameters", None)
-            if params is None:
-                params = getattr(recipe, "params", None)
-
-            if isinstance(params, dict):
-                if "speed_mm_s" in params:
-                    vv = float(params["speed_mm_s"])
-                    return vv if vv > 0.0 else None
-                g = params.get("globals")
-                if isinstance(g, dict) and "speed_mm_s" in g:
-                    vv = float(g["speed_mm_s"])
-                    return vv if vv > 0.0 else None
-
-            # 3) object-like: params.speed_mm_s
-            if params is not None and hasattr(params, "speed_mm_s"):
-                vv = float(getattr(params, "speed_mm_s"))
-                return vv if vv > 0.0 else None
-        except Exception:
-            pass
-
-        return None
 
     def _compute_avg_speed_recipe_segment(
         self,
@@ -530,14 +486,14 @@ class RunResult:
         recipe: Any,
         which: str,
         seg_name: str,
-    ) -> Optional[Dict[str, float]]:
+    ) -> Dict[str, Any]:
         which = str(which or "").strip().lower()
         if which not in ("planned", "executed"):
-            raise ValueError(f"which must be planned/executed, got {which!r}")
+            return {"ok": False, "reason": f"invalid_which:{which!r}"}
 
-        speed_set = self._speed_setpoint_mm_s(recipe)
+        speed_set = recipe.parameters['speed_mm_s']
         if speed_set is None:
-            return None
+            return {"ok": False, "reason": "missing_speed_setpoint(speed_mm_s)"}
 
         run_doc = _dict(self.planned_run) if which == "planned" else _dict(self.executed_run)
         traj_doc = _dict(run_doc.get("traj"))
@@ -545,27 +501,32 @@ class RunResult:
 
         dt = self._segment_duration_s_from_traj(traj_doc, seg_name)
         if dt is None:
-            return None
+            return {"ok": False, "reason": f"missing_segment_duration(traj:{seg_name})", "speed_set_mm_s": float(speed_set)}
 
         pq = self._tcp_segment_poses_quat(tcp_doc, seg_name)
         if pq is None:
-            return None
+            return {"ok": False, "reason": f"missing_tcp_poses_quat(tcp:{seg_name})", "speed_set_mm_s": float(speed_set)}
 
         L = self._tcp_length_mm_from_poses(pq)
         if L is None:
-            return None
+            return {"ok": False, "reason": f"tcp_length_invalid_or_zero(tcp:{seg_name})", "speed_set_mm_s": float(speed_set)}
 
         v = float(L / dt) if dt > 0.0 else 0.0
         pct = float(100.0 * (v / speed_set)) if speed_set > 0.0 else 0.0
 
         return {
+            "ok": True,
             "speed_set_mm_s": float(speed_set),
             "avg_speed_mm_s": float(v),
             "speed_percent": float(pct),
+            "seg_name": str(seg_name),
+            "which": str(which),
+            "duration_s": float(dt),
+            "path_len_mm": float(L),
         }
 
     # ------------------------------------------------------------
-    # report formatting (TWO columns: planned + executed)
+    # report formatting
     # ------------------------------------------------------------
 
     @staticmethod
@@ -579,6 +540,11 @@ class RunResult:
     def _fmt_bool_yesno(v: Any) -> str:
         return "yes" if bool(v) else "no"
 
+    @staticmethod
+    def _created_local_str() -> str:
+        dt = __import__("datetime").datetime.now().astimezone()
+        return dt.strftime("%Y-%m-%d %H:%M:%S.") + f"{int(dt.microsecond / 1000):03d}"
+
     def report_text(self, *, title: str = "=== CURRENT RUN (Live) ===") -> str:
         ev = _dict(self.eval)
 
@@ -587,6 +553,8 @@ class RunResult:
         tool = sel.get("tool", None)
         substrate = sel.get("substrate", None)
         mount = sel.get("mount", None)
+
+        created = self._created_local_str()
 
         pl_traj = _dict(_dict(self.planned_run).get("traj"))
         ex_traj = _dict(_dict(self.executed_run).get("traj"))
@@ -652,15 +620,27 @@ class RunResult:
         sp = gsum(ex_sum, "speed_set_mm_s", None)
         if sp is None:
             sp = gsum(pl_sum, "speed_set_mm_s", None)
+
         pl_v = gsum(pl_sum, "avg_speed_mm_s", None)
         ex_v = gsum(ex_sum, "avg_speed_mm_s", None)
         pl_vpct = gsum(pl_sum, "speed_percent", None)
         ex_vpct = gsum(ex_sum, "speed_percent", None)
-        show_speed = (sp is not None) and (pl_v is not None) and (ex_v is not None) and (pl_vpct is not None) and (ex_vpct is not None)
+
+        pl_reason = str(pl_sum.get("speed_reason") or "").strip()
+        ex_reason = str(ex_sum.get("speed_reason") or "").strip()
+
+        show_speed_block = (
+            (sp is not None)
+            or bool(pl_reason)
+            or bool(ex_reason)
+            or (pl_v is not None)
+            or (ex_v is not None)
+        )
 
         lines: list[str] = []
         lines.append(str(title or "").strip())
         lines.append(f"Recipe:    {recipe_id if recipe_id is not None else 'None'}")
+        lines.append(f"created:   {created}")
         lines.append(f"Valid:             {self._fmt_bool_yesno(overall_valid)}")
         lines.append(f"Reason:            {reason_txt}")
         lines.append("")
@@ -675,28 +655,57 @@ class RunResult:
         lines.append("")
 
         lines.append("Deviations vs. draft (planned | executed):")
-        lines.append(f"  Position (XYZ) mean:    {self._fmt_float(pl_pos_mean, 3)} mm | {self._fmt_float(ex_pos_mean, 3)} mm")
-        lines.append(f"  Position (XYZ) p95:     {self._fmt_float(pl_pos_p95, 3)} mm | {self._fmt_float(ex_pos_p95, 3)} mm")
-        lines.append(f"  Position (XYZ) worst:   {self._fmt_float(pl_pos_worst, 3)} mm | {self._fmt_float(ex_pos_worst, 3)} mm")
+        lines.append(
+            f"  Position (XYZ) mean:    {self._fmt_float(pl_pos_mean, 3)} mm | {self._fmt_float(ex_pos_mean, 3)} mm"
+        )
+        lines.append(
+            f"  Position (XYZ) p95:     {self._fmt_float(pl_pos_p95, 3)} mm | {self._fmt_float(ex_pos_p95, 3)} mm"
+        )
+        lines.append(
+            f"  Position (XYZ) worst:   {self._fmt_float(pl_pos_worst, 3)} mm | {self._fmt_float(ex_pos_worst, 3)} mm"
+        )
         lines.append("")
-        lines.append(f"  Orientation (RPY) mean: {self._fmt_float(pl_ori_mean, 3)} deg | {self._fmt_float(ex_ori_mean, 3)} deg")
-        lines.append(f"  Orientation (RPY) p95:  {self._fmt_float(pl_ori_p95, 3)} deg | {self._fmt_float(ex_ori_p95, 3)} deg")
-        lines.append(f"  Orientation (RPY) worst:{self._fmt_float(pl_ori_worst, 3)} deg | {self._fmt_float(ex_ori_worst, 3)} deg")
+        lines.append(
+            f"  Orientation (RPY) mean: {self._fmt_float(pl_ori_mean, 3)} deg | {self._fmt_float(ex_ori_mean, 3)} deg"
+        )
+        lines.append(
+            f"  Orientation (RPY) p95:  {self._fmt_float(pl_ori_p95, 3)} deg | {self._fmt_float(ex_ori_p95, 3)} deg"
+        )
+        lines.append(
+            f"  Orientation (RPY) worst:{self._fmt_float(pl_ori_worst, 3)} deg | {self._fmt_float(ex_ori_worst, 3)} deg"
+        )
         lines.append("")
-        lines.append(f"  Stand-off (Z) mean:     {self._fmt_float(pl_z_mean, 3)} mm | {self._fmt_float(ex_z_mean, 3)} mm")
-        lines.append(f"  Stand-off (Z) p95:      {self._fmt_float(pl_z_p95, 3)} mm | {self._fmt_float(ex_z_p95, 3)} mm")
-        lines.append(f"  Stand-off (Z) worst:    {self._fmt_float(pl_z_worst, 3)} mm | {self._fmt_float(ex_z_worst, 3)} mm")
+        lines.append(
+            f"  Stand-off (Z) mean:     {self._fmt_float(pl_z_mean, 3)} mm | {self._fmt_float(ex_z_mean, 3)} mm"
+        )
+        lines.append(
+            f"  Stand-off (Z) p95:      {self._fmt_float(pl_z_p95, 3)} mm | {self._fmt_float(ex_z_p95, 3)} mm"
+        )
+        lines.append(
+            f"  Stand-off (Z) worst:    {self._fmt_float(pl_z_worst, 3)} mm | {self._fmt_float(ex_z_worst, 3)} mm"
+        )
         lines.append("")
         lines.append(f"Path length delta:  {self._fmt_float(pl_delta_L, 3)} % | {self._fmt_float(ex_delta_L, 3)} %")
 
-        if show_speed:
+        if show_speed_block:
             lines.append("")
             lines.append("Avg speed (recipe segment) (planned | executed):")
-            lines.append(f"  Target: {self._fmt_float(sp, 1)} mm/s")
-            lines.append(
-                f"  Achieved: {self._fmt_float(pl_v, 1)} mm/s ({self._fmt_float(pl_vpct, 1)} %) | "
-                f"{self._fmt_float(ex_v, 1)} mm/s ({self._fmt_float(ex_vpct, 1)} %)"
-            )
+            if sp is not None:
+                lines.append(f"  Target:   {self._fmt_float(sp, 1)} mm/s")
+            else:
+                lines.append("  Target:   -")
+
+            if (pl_v is not None) and (pl_vpct is not None):
+                pl_txt = f"{self._fmt_float(pl_v, 1)} mm/s ({self._fmt_float(pl_vpct, 1)} %)"
+            else:
+                pl_txt = f"- (reason: {pl_reason})" if pl_reason else "-"
+
+            if (ex_v is not None) and (ex_vpct is not None):
+                ex_txt = f"{self._fmt_float(ex_v, 1)} mm/s ({self._fmt_float(ex_vpct, 1)} %)"
+            else:
+                ex_txt = f"- (reason: {ex_reason})" if ex_reason else "-"
+
+            lines.append(f"  Achieved: {pl_txt} | {ex_txt}")
 
         lines.append("")
         lines.append(f"Eval threshold:    {self._fmt_float(thr, 3)}")
@@ -735,14 +744,10 @@ class RunResult:
     # ------------------------------------------------------------
 
     def to_process_payload(self) -> Dict[str, Any]:
-        # COMPAT: write both shapes (flat + nested)
         return {
             "urdf_xml": self.urdf_xml,
             "srdf_xml": self.srdf_xml,
-            "robot_description": {
-                "urdf_xml": self.urdf_xml,
-                "srdf_xml": self.srdf_xml,
-            },
+            "robot_description": {"urdf_xml": self.urdf_xml, "srdf_xml": self.srdf_xml},
             "planned_run": self.planned_run,
             "executed_run": self.executed_run,
             "fk_meta": self.fk_meta,
@@ -756,7 +761,6 @@ class RunResult:
         if not isinstance(payload, dict):
             raise ValueError("RunResult.from_process_payload: payload muss dict sein.")
 
-        # COMPAT: accept flat OR nested
         urdf_xml = str(payload.get("urdf_xml") or "")
         srdf_xml = str(payload.get("srdf_xml") or "")
 
@@ -897,12 +901,8 @@ class RunResult:
             robot_yaml_path=str(robot_yaml_path),
             mounts_yaml_path=str(mounts_yaml_path),
         )
-        planned_tcp = TrajFkBuilder.transform_draft_yaml(
-            planned_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate"
-        )
-        executed_tcp = TrajFkBuilder.transform_draft_yaml(
-            executed_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate"
-        )
+        planned_tcp = TrajFkBuilder.transform_draft_yaml(planned_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate")
+        executed_tcp = TrajFkBuilder.transform_draft_yaml(executed_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate")
 
         self.planned_run["tcp"] = _dict(planned_tcp)
         self.executed_run["tcp"] = _dict(executed_tcp)
@@ -963,37 +963,57 @@ class RunResult:
             tcp_poses_executed=self._count_tcp_poses(executed_tcp),
         )
 
-        # SPEED (display-only; strictly computed; omit if cannot)
+        # SPEED (display-only; include reason if not computable)
         try:
             seg_recipe = self.DEFAULT_RECIPE_SEGMENT
-            if segment_order:
-                for s in list(segment_order):
-                    if str(s).strip() == self.DEFAULT_RECIPE_SEGMENT:
-                        seg_recipe = self.DEFAULT_RECIPE_SEGMENT
-                        break
+            if segment_order and self.DEFAULT_RECIPE_SEGMENT in [str(s).strip() for s in segment_order]:
+                seg_recipe = self.DEFAULT_RECIPE_SEGMENT
 
             pl_speed = self._compute_avg_speed_recipe_segment(recipe=recipe, which="planned", seg_name=seg_recipe)
             ex_speed = self._compute_avg_speed_recipe_segment(recipe=recipe, which="executed", seg_name=seg_recipe)
 
-            if isinstance(pl_speed, dict) and isinstance(ex_speed, dict):
-                eval_dict = _dict(eval_dict)
-                eval_dict.setdefault("planned", {})
-                eval_dict.setdefault("executed", {})
-                eval_dict["planned"] = _dict(eval_dict.get("planned"))
-                eval_dict["executed"] = _dict(eval_dict.get("executed"))
-                eval_dict["planned"].setdefault("summary", {})
-                eval_dict["executed"].setdefault("summary", {})
-                ps = _dict(eval_dict["planned"].get("summary"))
-                es = _dict(eval_dict["executed"].get("summary"))
+            eval_dict = _dict(eval_dict)
+            eval_dict.setdefault("planned", {})
+            eval_dict.setdefault("executed", {})
+            eval_dict["planned"] = _dict(eval_dict.get("planned"))
+            eval_dict["executed"] = _dict(eval_dict.get("executed"))
+            eval_dict["planned"].setdefault("summary", {})
+            eval_dict["executed"].setdefault("summary", {})
+            ps = _dict(eval_dict["planned"].get("summary"))
+            es = _dict(eval_dict["executed"].get("summary"))
 
-                for k in ("speed_set_mm_s", "avg_speed_mm_s", "speed_percent"):
+            if pl_speed.get("speed_set_mm_s") is not None:
+                ps["speed_set_mm_s"] = float(pl_speed["speed_set_mm_s"])
+            if ex_speed.get("speed_set_mm_s") is not None:
+                es["speed_set_mm_s"] = float(ex_speed["speed_set_mm_s"])
+
+            if bool(pl_speed.get("ok")) and bool(ex_speed.get("ok")):
+                for k in ("avg_speed_mm_s", "speed_percent"):
                     ps[k] = float(pl_speed[k])
                     es[k] = float(ex_speed[k])
+                ps["speed_dbg"] = {"seg": pl_speed.get("seg_name"), "dt_s": pl_speed.get("duration_s"), "L_mm": pl_speed.get("path_len_mm")}
+                es["speed_dbg"] = {"seg": ex_speed.get("seg_name"), "dt_s": ex_speed.get("duration_s"), "L_mm": ex_speed.get("path_len_mm")}
+            else:
+                ps["speed_reason"] = str(pl_speed.get("reason") or "unknown")
+                es["speed_reason"] = str(ex_speed.get("reason") or "unknown")
 
-                eval_dict["planned"]["summary"] = ps
-                eval_dict["executed"]["summary"] = es
-        except Exception:
-            pass
+            eval_dict["planned"]["summary"] = ps
+            eval_dict["executed"]["summary"] = es
+        except Exception as e:
+            eval_dict = _dict(eval_dict)
+            eval_dict.setdefault("planned", {})
+            eval_dict.setdefault("executed", {})
+            eval_dict["planned"] = _dict(eval_dict.get("planned"))
+            eval_dict["executed"] = _dict(eval_dict.get("executed"))
+            eval_dict["planned"].setdefault("summary", {})
+            eval_dict["executed"].setdefault("summary", {})
+            ps = _dict(eval_dict["planned"].get("summary"))
+            es = _dict(eval_dict["executed"].get("summary"))
+            msg = f"speed_exception:{type(e).__name__}:{e}"
+            ps["speed_reason"] = msg
+            es["speed_reason"] = msg
+            eval_dict["planned"]["summary"] = ps
+            eval_dict["executed"]["summary"] = es
 
         self.set_eval(_dict(eval_dict))
 
