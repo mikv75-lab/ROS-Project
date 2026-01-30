@@ -94,6 +94,7 @@ topics:
         name: spraycoater/moveit_py/busy
         type: std_msgs/msg/Bool
         qos: default
+        
       - id: tray_exec_ready
         name: spraycoater/moveit_py/tray_exec_ready
         type: std_msgs/msg/Bool

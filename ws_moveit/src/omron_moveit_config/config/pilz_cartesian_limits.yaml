@@ -1,6 +1,6 @@
 # Limits for the Pilz planner
 cartesian_limits:
-  max_trans_vel: 1.0
-  max_trans_acc: 2.25
-  max_trans_dec: -5.0
+  max_trans_vel: 0.5   # 500 mm/s (reicht meist völlig)
+  max_trans_acc: 0.5   # 0.5 m/s² (sanfter Anlauf)
+  max_trans_dec: -0.5  # -0.5 m/s² (sanftes Bremsen)
   max_rot_vel: 1.57

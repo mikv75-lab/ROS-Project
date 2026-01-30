@@ -4,94 +4,6 @@
 spraycoater_nodes_py/moveit_py_node.py
 
 MoveItPy wrapper node (MINIMAL TOPICS for GUI Offline-FK) - KEYED / OUT-OF-ORDER SAFE
-
-NEW CONTRACT (STRICT, NO FALLBACKS):
-  - All planning requests use ONE topic:
-      plan_request (std_msgs/msg/String) with JSON payload including a REQUIRED key.
-  - execute_trajectory / optimize_trajectory require the SAME key encoded as JSON in:
-      RobotTrajectoryMsg.joint_trajectory.header.frame_id
-  - Every published trajectory (planned/executed/optimized) carries the SAME key JSON in:
-      msg.joint_trajectory.header.frame_id
-  - motion_result is JSON and carries the SAME key.
-
-Key JSON (REQUIRED everywhere):
-  {
-    "run": "<uuid-or-string>",
-    "id": <int>,
-    "seg": "<segment-id>",
-    "op": "<operation>"          # e.g. "plan_pose", "plan_pose_array", "execute",
-                                 #      "execute_trajectory", "optimize_trajectory"
-  }
-
-plan_request JSON (REQUIRED shape):
-  {
-    "key": { ... as above ... },     # REQUIRED
-    "payload": { ... }              # REQUIRED, op-specific
-  }
-
-Payloads (STRICT):
-  - op="plan_pose":
-      payload = {
-        "frame": "<frame_id>",
-        "pose": {
-          "position": {"x":..,"y":..,"z":..},
-          "orientation": {"x":..,"y":..,"z":..,"w":..}
-        }
-      }
-  - op="plan_pose_array":
-      payload = {
-        "frame": "<frame_id>",
-        "poses": [ { "position":{...}, "orientation":{...} }, ... ]   # len >= 2
-      }
-  - op="execute":
-      payload = {}  # executes the LAST planned trajectory (STRICT: last plan must exist)
-
-Publishes (per config_hub topics.yaml):
-  - planned_trajectory_rt        (moveit_msgs/msg/RobotTrajectory) [latched]
-  - executed_trajectory_rt       (moveit_msgs/msg/RobotTrajectory) [latched]
-  - optimized_trajectory_rt      (moveit_msgs/msg/RobotTrajectory) [latched]
-  - traj_cache_clear             (std_msgs/msg/Empty)              [default, NOT latched]
-  - robot_description            (std_msgs/msg/String)             [latched]
-  - robot_description_semantic   (std_msgs/msg/String)             [latched]
-  - motion_result                (std_msgs/msg/String)             [default]
-  - tray_exec_ready              (std_msgs/msg/Bool)               [default]   # NEW (controller/action ready)
-
-Subscribes:
-  - plan_request       (std_msgs/msg/String)           # unified planning+execute request
-  - stop               (std_msgs/msg/Empty)
-  - set_speed_mm_s     (std_msgs/msg/Float64)
-  - set_planner_cfg    (std_msgs/msg/String)
-  - execute_trajectory (moveit_msgs/msg/RobotTrajectory)
-  - optimize_trajectory(moveit_msgs/msg/RobotTrajectory)
-
-BUSY (STRICT semantics):
-  - busy == "node is occupied" (planning OR executing OR optimizing OR canceling a move)
-  - If busy: requests reply ERROR:BUSY (keyed if possible)
-  - After motion done OR cancel resolved OR planning finished: busy becomes False
-  - STOP request clears busy immediately (so GUI can proceed), while the cancel is still in-flight.
-    Cancellation correctness is guarded by an execution token (no shared global cancel flag).
-
-STRICT:
-  - No segment fallbacks: key JSON MUST be present and valid for all keyed flows.
-  - optimize_trajectory performs REAL retiming (TOTG/IPTP) via MoveIt trajectory_processing bindings.
-    If bindings are not present, optimization FAILS (no fallback scaling, no stub success).
-  - executed_trajectory_rt is NEVER mirrored from planned. It is recorded from joint_states during execution.
-    If joint_states are missing or do not cover all required joints, recording FAILS (hard error).
-  - All published trajectories (planned/executed/optimized) satisfy FK/postprocess preconditions:
-      * joint_trajectory has >= 2 points
-      * time_from_start starts at 0 and is strictly monotonic
-
-Design:
-  - publish trajectories BEFORE motion_result (race-free for statemachine)
-  - CLEAR caches via traj_cache_clear BEFORE each external "move" call
-    (plan_request ops, execute_trajectory, optimize_trajectory)
-  - publish robot_description(_semantic) ONCE after MoveItPy init (latched)
-  - Each segment trajectory starts at time_from_start=0 (normalize on publish + on optimize input/output).
-
-STOP FIX (2026-01):
-  - Never block the single-threaded executor with a synchronous execute().
-  - All execution (execute_trajectory AND plan_request op=execute) runs via FollowJointTrajectory async.
-  - stop cancels the active goal (cancel_goal_async) and results are keyed.
 """
 
 from __future__ import annotations
@@ -111,7 +23,7 @@ from std_msgs.msg import (
     String as MsgString,
     Empty as MsgEmpty,
     Float64 as MsgFloat64,
-    Bool as MsgBool,  # NEW
+    Bool as MsgBool,
 )
 from geometry_msgs.msg import PoseStamped, Pose
 from sensor_msgs.msg import JointState
@@ -119,6 +31,7 @@ from sensor_msgs.msg import JointState
 from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg, PlanningScene
 from moveit_msgs.srv import GetPlanningScene
 
+# MoveItPy Imports
 from moveit.planning import MoveItPy, PlanRequestParameters
 from moveit.core.robot_trajectory import RobotTrajectory as RobotTrajectoryCore
 
@@ -126,9 +39,10 @@ from tf2_ros import Buffer, TransformListener
 from tf2_geometry_msgs import do_transform_pose
 
 from controller_manager_msgs.srv import SwitchController
-from control_msgs.action import FollowJointTrajectory  # type: ignore
+from control_msgs.action import FollowJointTrajectory 
 from trajectory_msgs.msg import JointTrajectoryPoint
 
+# Config helper (muss im Projekt existieren)
 from spraycoater_nodes_py.utils.config_hub import topics, frames
 
 
@@ -157,8 +71,8 @@ DEFAULT_TRAJ_CONTROLLER = "omron_arm_controller"
 # ----------------------------
 _HAVE_TRAJ_PROC = False
 try:
-    from moveit.core.robot_state import RobotState  # type: ignore
-    from moveit.core.trajectory_processing import (  # type: ignore
+    from moveit.core.robot_state import RobotState
+    from moveit.core.trajectory_processing import (
         TimeOptimalTrajectoryGeneration,
         IterativeParabolicTimeParameterization,
     )
@@ -173,11 +87,7 @@ except Exception:
 class _ModeManager:
     """
     Minimal controller mode arbiter (embedded).
-    Modes:
-      - "JOG":  Trajectory controller OFF
-      - "TRAJ": Trajectory controller ON
     """
-
     def __init__(
         self,
         node: Node,
@@ -272,10 +182,6 @@ class _ModeManager:
 class _ExecutedRecorder:
     """
     Records executed joint motion from JointState while a trajectory is executing.
-
-    STRICT:
-      - output is produced only if we have >=2 samples and joint name coverage is complete.
-      - timestamps are relative to start (time_from_start), strictly monotonic.
     """
 
     _MIN_SAMPLE_DT_NS = 5_000_000  # 5ms
@@ -684,9 +590,6 @@ class MoveItPyNode(Node):
 
     # ------------------------------------------------------------
     # tray_exec_ready (NEW)
-    #   Definition: capability/availability (NOT occupancy):
-    #     ready := MoveItPy initialized AND FollowJT action server is ready
-    #   GUI combines (ready AND NOT busy) externally.
     # ------------------------------------------------------------
     def _calc_traj_exec_ready(self) -> bool:
         if self._moveit_failed.is_set():

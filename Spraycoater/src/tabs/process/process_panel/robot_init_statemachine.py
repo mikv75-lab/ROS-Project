@@ -15,19 +15,7 @@ _LOG = logging.getLogger("tabs.process.robot_init_sm")
 class RobotInitStatemachine(QtCore.QObject):
     """
     Robot Init + Home — STRICT (RosBridge facade, topic-only)
-
-    Contract (now):
-      - Home pose is available at: ros._poses_state.home   (PoseStamped)
-      - MoveIt requests are sent via RosBridge facade (topics):
-          ros.moveit_plan_pose(home_pose, run=..., req_id=..., segment="ROBOT_INIT")
-          ros.moveit_execute_last_planned(run=..., req_id=..., segment="ROBOT_INIT")
-
-      - MoveIt result is keyed JSON string in ros.moveit_last_result():
-          {"key": {"run": "...", "id": <int>, "seg": "...", "op": "..."}, "status": "PLANNED:OK"|"EXECUTED:OK"|...}
-
-    STRICT:
-      - No silent fallbacks; missing contract fails at start().
-      - Statemachine does not talk to MoveItPyBridge signals directly.
+    With Robust Retry-Logic and Delay.
     """
 
     notifyFinished = QtCore.pyqtSignal()
@@ -41,6 +29,7 @@ class RobotInitStatemachine(QtCore.QObject):
     S_INIT_REQUESTED = "INIT_REQUESTED"
     S_HOME_PLAN_REQUESTED = "HOME_PLAN_REQUESTED"
     S_WAIT_HOME_PLANNED = "WAIT_HOME_PLANNED"
+    S_WAIT_BEFORE_EXEC = "WAIT_BEFORE_EXEC"  # NEW: Stability delay
     S_HOME_EXEC_REQUESTED = "HOME_EXEC_REQUESTED"
     S_WAIT_HOME_EXEC = "WAIT_HOME_EXEC"
     S_FINISHED = "FINISHED"
@@ -60,8 +49,8 @@ class RobotInitStatemachine(QtCore.QObject):
         home_pose_timeout_s: float = 10.0,
         moveit_ready_timeout_s: float = 10.0,
         moveit_ack_timeout_s: float = 5.0,
-        pos_tol_mm: float = 1.0,       # kept for API compatibility
-        ack_timeout_s: float = 5.0,    # kept for API compatibility (unused)
+        pos_tol_mm: float = 1.0,
+        ack_timeout_s: float = 5.0,
         do_execute: bool = True,
         parent: Optional[QtCore.QObject] = None,
     ) -> None:
@@ -73,11 +62,7 @@ class RobotInitStatemachine(QtCore.QObject):
         self._home_pose_timeout_s = float(home_pose_timeout_s)
         self._moveit_ready_timeout_s = float(moveit_ready_timeout_s)
         self._moveit_ack_timeout_s = float(moveit_ack_timeout_s)
-
-        # keep (thread passes them)
         self._pos_tol_mm = float(pos_tol_mm)
-        self._ack_timeout_s = float(ack_timeout_s)
-
         self._do_execute = bool(do_execute)
 
         self._stop_requested: bool = False
@@ -86,16 +71,20 @@ class RobotInitStatemachine(QtCore.QObject):
         self._state: str = self.S_WAIT_HOME_AVAILABLE
         self._deadline_ms: int = 0
 
-        # correlation for keyed result
         self._run: str = ""
         self._req_id: int = 0
 
-        # send-once latches
         self._init_sent_once: bool = False
         self._plan_sent_once: bool = False
         self._exec_sent_once: bool = False
 
+        # --- RETRY LOGIC ---
+        self._exec_retry_count: int = 0
+        self._max_exec_retries: int = 20  
         self._last_result_snapshot: str = ""
+        
+        # Stability Delay
+        self._wait_before_exec_ms: int = 500  # 500ms Pause vor Execute
 
         self._timer = QTimer(self)
         self._timer.setInterval(50)
@@ -115,7 +104,8 @@ class RobotInitStatemachine(QtCore.QObject):
         self._init_sent_once = False
         self._plan_sent_once = False
         self._exec_sent_once = False
-
+        
+        self._exec_retry_count = 0
         self._run = ""
         self._req_id = 0
 
@@ -128,9 +118,6 @@ class RobotInitStatemachine(QtCore.QObject):
             "RobotInit: start "
             f"(init_timeout={self._init_timeout_s:.1f}s, "
             f"home_timeout={self._home_timeout_s:.1f}s, "
-            f"moveit_ready_timeout={self._moveit_ready_timeout_s:.1f}s, "
-            f"ack_timeout={self._moveit_ack_timeout_s:.1f}s, "
-            f"tol={self._pos_tol_mm:.2f}mm, "
             f"do_execute={self._do_execute})"
         )
 
@@ -152,28 +139,17 @@ class RobotInitStatemachine(QtCore.QObject):
     def _require_contract(self) -> None:
         if self._ros is None:
             raise RuntimeError("RobotInit: ros is None")
-
-        # global stop
         if not callable(self._ros.stop_all):
             raise RuntimeError("RobotInit: ros.stop_all() missing")
-
-        # robot init
         if not callable(self._ros.robot_init):
             raise RuntimeError("RobotInit: ros.robot_init() missing")
-
-        # moveit result
         if not callable(self._ros.moveit_last_result):
             raise RuntimeError("RobotInit: ros.moveit_last_result() missing")
-
-        # moveit plan/execute facade (topic-only)
         if not callable(self._ros.moveit_plan_pose):
-            raise RuntimeError("RobotInit: ros.moveit_plan_pose(...) missing (must publish plan_request)")
-
+            raise RuntimeError("RobotInit: ros.moveit_plan_pose(...) missing")
         if self._do_execute:
             if not callable(self._ros.moveit_execute_last_planned):
                 raise RuntimeError("RobotInit: do_execute=True but ros.moveit_execute_last_planned(...) missing")
-
-        # home pose must exist in _poses_state
         if not hasattr(self._ros, "_poses_state"):
             raise RuntimeError("RobotInit: ros._poses_state missing")
         if not hasattr(self._ros._poses_state, "home"):
@@ -203,8 +179,7 @@ class RobotInitStatemachine(QtCore.QObject):
             _LOG.info(msg)
 
     def _finish_ok(self) -> None:
-        if self._done:
-            return
+        if self._done: return
         self._done = True
         self._timer.stop()
         self._set_state(self.S_FINISHED)
@@ -212,8 +187,7 @@ class RobotInitStatemachine(QtCore.QObject):
         self.notifyFinished.emit()
 
     def _finish_err(self, msg: str) -> None:
-        if self._done:
-            return
+        if self._done: return
         self._done = True
         self._timer.stop()
         self._set_state(self.S_ERROR)
@@ -221,8 +195,7 @@ class RobotInitStatemachine(QtCore.QObject):
         self.notifyError.emit(msg)
 
     def _finish_stopped(self) -> None:
-        if self._done:
-            return
+        if self._done: return
         self._done = True
         self._timer.stop()
         self._set_state(self.S_STOPPED)
@@ -230,15 +203,11 @@ class RobotInitStatemachine(QtCore.QObject):
         self.notifyError.emit("STOPPED")
 
     # ------------------------------------------------------------------
-    # Home pose availability
+    # Helpers
     # ------------------------------------------------------------------
 
     def _home_pose_available(self) -> bool:
         return self._ros._poses_state.home is not None
-
-    # ------------------------------------------------------------------
-    # MoveIt result helpers (KEYED)
-    # ------------------------------------------------------------------
 
     def _last_motion_result(self) -> str:
         return str(self._ros.moveit_last_result() or "").strip()
@@ -246,30 +215,16 @@ class RobotInitStatemachine(QtCore.QObject):
     @staticmethod
     def _parse_keyed_result(res: str) -> Optional[Tuple[Dict[str, Any], str]]:
         s = (res or "").strip()
-        if not s or not s.startswith("{"):
+        if not s or not s.startswith("{"): return None
+        try:
+            obj = json.loads(s)
+            if not isinstance(obj, dict): return None
+            key = obj.get("key")
+            status = obj.get("status")
+            if not isinstance(key, dict) or not isinstance(status, str): return None
+            return key, status.strip()
+        except Exception:
             return None
-        obj = json.loads(s)
-        if not isinstance(obj, dict):
-            return None
-        key = obj.get("key")
-        status = obj.get("status")
-        if not isinstance(key, dict) or not isinstance(status, str):
-            return None
-
-        run = key.get("run")
-        rid = key.get("id")
-        seg = key.get("seg")
-        op = key.get("op")
-        if not isinstance(run, str) or not run.strip():
-            return None
-        if not isinstance(rid, int):
-            return None
-        if not isinstance(seg, str) or not seg.strip():
-            return None
-        if not isinstance(op, str) or not op.strip():
-            return None
-
-        return {"run": run.strip(), "id": int(rid), "seg": seg.strip(), "op": op.strip()}, status.strip()
 
     @staticmethod
     def _is_error_status(status: str) -> bool:
@@ -285,42 +240,31 @@ class RobotInitStatemachine(QtCore.QObject):
         )
 
     # ------------------------------------------------------------------
-    # Actions (STRICT)
+    # Actions
     # ------------------------------------------------------------------
 
     def _send_robot_init_once(self) -> None:
-        if self._init_sent_once:
-            return
+        if self._init_sent_once: return
         self._init_sent_once = True
         self._log("RobotInit: sending robot_init()")
         self._ros.robot_init()
 
     def _request_home_plan_pose_once(self) -> None:
-        if self._plan_sent_once:
-            return
+        if self._plan_sent_once: return
         self._plan_sent_once = True
-
         home = self._ros._poses_state.home
-        if home is None:
-            raise RuntimeError("RobotInit: home pose is None")
-
-        # correlation: run + int id
+        if home is None: raise RuntimeError("RobotInit: home pose is None")
         now = self._now_ms()
         self._run = f"robot_init_{now}"
         self._req_id = int(now)
-
         self._last_result_snapshot = self._last_motion_result()
-
         self._log("RobotInit: request HOME plan_pose via RosBridge (plan_request)")
         self._ros.moveit_plan_pose(home, run=self._run, req_id=self._req_id, segment=self._SEG)
 
     def _request_execute_last_planned_once(self) -> None:
-        if not self._do_execute:
-            return
-        if self._exec_sent_once:
-            return
+        if not self._do_execute: return
+        if self._exec_sent_once: return
         self._exec_sent_once = True
-
         self._last_result_snapshot = self._last_motion_result()
         self._log("RobotInit: request execute-last-planned via RosBridge (plan_request)")
         self._ros.moveit_execute_last_planned(run=self._run, req_id=self._req_id, segment=self._SEG)
@@ -349,7 +293,6 @@ class RobotInitStatemachine(QtCore.QObject):
 
         # ---------------- WAIT_MOVEIT_READY ----------------
         if st == self.S_WAIT_MOVEIT_READY:
-            # In deinem System reicht "Bridge läuft" – wenn du hier mehr willst, musst du es explizit publishen.
             self._log("RobotInit: moveit ready")
             self._set_state(self.S_INIT_REQUESTED)
             self._deadline_ms = 0
@@ -362,7 +305,6 @@ class RobotInitStatemachine(QtCore.QObject):
             except Exception as e:
                 self._finish_err(f"robot_init() failed: {e!r}")
                 return
-
             self._set_state(self.S_HOME_PLAN_REQUESTED)
             self._deadline_ms = 0
             return
@@ -374,7 +316,6 @@ class RobotInitStatemachine(QtCore.QObject):
             except Exception as e:
                 self._finish_err(f"HOME plan_pose request failed: {e!r}")
                 return
-
             self._set_state(self.S_WAIT_HOME_PLANNED)
             self._set_deadline(self._moveit_ack_timeout_s)
             return
@@ -382,37 +323,39 @@ class RobotInitStatemachine(QtCore.QObject):
         # ---------------- WAIT_HOME_PLANNED ----------------
         if st == self.S_WAIT_HOME_PLANNED:
             cur = self._last_motion_result()
-
             if cur and cur != self._last_result_snapshot:
                 self._log(f"RobotInit: moveit result update: {cur}")
                 self._last_result_snapshot = cur
-
                 parsed = self._parse_keyed_result(cur)
                 if parsed is None:
-                    if cur.upper().startswith("ERROR"):
-                        self._finish_err(f"Home plan failed: {cur}")
+                    if cur.upper().startswith("ERROR"): self._finish_err(f"Home plan failed: {cur}")
                     return
-
                 key, status = parsed
-
-                if not self._match_key(key, op=self._OP_PLAN_POSE):
-                    return
+                if not self._match_key(key, op=self._OP_PLAN_POSE): return
 
                 if status == "PLANNED:OK":
                     self._log("RobotInit: home planned (motion_result)")
                     if not self._do_execute:
                         self._finish_ok()
                         return
-                    self._set_state(self.S_HOME_EXEC_REQUESTED)
-                    self._deadline_ms = 0
+                    
+                    # NEW: Insert delay before execute
+                    self._set_state(self.S_WAIT_BEFORE_EXEC)
+                    self._set_deadline(0.5) # 500ms delay
                     return
-
+                
                 if self._is_error_status(status):
                     self._finish_err(f"Home plan failed: {status}")
                     return
-
             if self._deadline_passed():
                 self._finish_err(f"Timeout waiting for PLANNED:OK (last='{cur}')")
+            return
+
+        # ---------------- WAIT_BEFORE_EXEC (NEW) ----------------
+        if st == self.S_WAIT_BEFORE_EXEC:
+            if self._deadline_passed():
+                self._set_state(self.S_HOME_EXEC_REQUESTED)
+                self._deadline_ms = 0
             return
 
         # ---------------- HOME_EXEC_REQUESTED ----------------
@@ -422,7 +365,6 @@ class RobotInitStatemachine(QtCore.QObject):
             except Exception as e:
                 self._finish_err(f"Execute request failed: {e!r}")
                 return
-
             self._set_state(self.S_WAIT_HOME_EXEC)
             self._set_deadline(self._home_timeout_s)
             return
@@ -430,31 +372,45 @@ class RobotInitStatemachine(QtCore.QObject):
         # ---------------- WAIT_HOME_EXEC ----------------
         if st == self.S_WAIT_HOME_EXEC:
             cur = self._last_motion_result()
-
             if cur and cur != self._last_result_snapshot:
                 self._log(f"RobotInit: moveit result update: {cur}")
                 self._last_result_snapshot = cur
-
                 parsed = self._parse_keyed_result(cur)
+                
+                # --- RETRY LOGIC for GOAL_REJECTED ---
+                if parsed is None or self._is_error_status(parsed[1]):
+                    status_str = parsed[1] if parsed else cur
+                    
+                    if "GOAL_REJECTED" in status_str.upper() or "BUSY" in status_str.upper():
+                        if self._exec_retry_count < self._max_exec_retries:
+                            self._exec_retry_count += 1
+                            self._log(f"RobotInit: GOAL_REJECTED, retry {self._exec_retry_count}/{self._max_exec_retries} (RE-PLANNING)...")
+                            
+                            # Reset flags to allow re-sending EVERYTHING (Plan + Exec)
+                            # Often a plan becomes invalid if execution was rejected.
+                            self._plan_sent_once = False
+                            self._exec_sent_once = False
+                            
+                            # Go back to PLAN request state
+                            self._set_state(self.S_HOME_PLAN_REQUESTED)
+                            self._last_result_snapshot = "" 
+                            return
+                # -------------------------------------
+
                 if parsed is None:
-                    if cur.upper().startswith("ERROR"):
-                        self._finish_err(f"Home execute failed: {cur}")
+                    if cur.upper().startswith("ERROR"): self._finish_err(f"Home execute failed: {cur}")
                     return
-
+                
                 key, status = parsed
-
-                if not self._match_key(key, op=self._OP_EXECUTE):
-                    return
+                if not self._match_key(key, op=self._OP_EXECUTE): return
 
                 if status == "EXECUTED:OK":
                     self._log("RobotInit: home executed (motion_result)")
                     self._finish_ok()
                     return
-
                 if status in ("STOP:REQ", "STOPPED:USER", "STOPPED"):
                     self._finish_stopped()
                     return
-
                 if self._is_error_status(status):
                     self._finish_err(f"Home execute failed: {status}")
                     return
@@ -463,5 +419,4 @@ class RobotInitStatemachine(QtCore.QObject):
                 self._finish_err(f"Timeout waiting for EXECUTED:OK (last='{cur}')")
             return
 
-        # ---------------- Unknown ----------------
         self._finish_err(f"Unknown state '{st}'")

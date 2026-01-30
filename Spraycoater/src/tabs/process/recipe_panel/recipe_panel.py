@@ -56,6 +56,13 @@ class RecipePanel(QWidget):
       - planned_*: overwrite only if validate/optimize produced it;
                   if it would overwrite an existing planned_* on disk -> ask user.
       - missing parts never delete previous artifacts (handled by repo merge policy)
+
+    FIXES (2026-01):
+      - Avoid double republish on recipe load (set_recipe used to refresh+republish and then
+        republish again -> clears twice).
+      - Preserve "newrun overlays" after a disk refresh:
+          refresh_stored_from_disk() calls spray_clear() via republish_spraypaths_for_key().
+          Therefore newrun overlays must be republished AFTER refresh if we want them visible.
     """
 
     sig_recipe_selected = QtCore.pyqtSignal(str, object)
@@ -139,7 +146,7 @@ class RecipePanel(QWidget):
 
         # Hinzufügen der oberen Widgets: Info (Mitte) bekommt Stretch 2
         htop.addWidget(self.grpActive, 0)
-        htop.addWidget(self.infoBox, 2) 
+        htop.addWidget(self.infoBox, 2)
         htop.addWidget(self.sprayPathBox, 0)
 
         root.addWidget(top, 0)
@@ -204,7 +211,8 @@ class RecipePanel(QWidget):
         self.txtActiveInfo.setPlainText(self._format_active_recipe_info(model))
         self.txtRecipeParams.setPlainText(self._format_recipe_params(model))
 
-        # Disk SSoT refresh on load
+        # Disk SSoT refresh on load (includes spray republish).
+        # FIX: do NOT republish again after this call (used to clear twice).
         self._refresh_stored_from_disk(key)
 
         # NOTE: _refresh_stored_from_disk() updates self._recipe -> use that for infobox
@@ -213,10 +221,7 @@ class RecipePanel(QWidget):
 
         self.txtNewRun.clear()
 
-        # Publish current recipe draft + stored ghosts
-        if self._recipe is not None:
-            self._republish_spraypaths_for_key(key, self._recipe)
-
+        # No extra republish here: refresh already did it.
         self.sig_recipe_selected.emit(key, self._recipe if self._recipe is not None else model)
 
     def _format_active_recipe_info(self, model: Recipe) -> str:
@@ -308,7 +313,6 @@ class RecipePanel(QWidget):
         self.txtNewRun.setPlaceholderText(f"Running {mode} for {key}...")
         _LOG.info("RecipePanel: Run started (mode=%s, key=%s)", mode, key)
 
-    
     @QtCore.pyqtSlot(str, object, object)
     def on_run_finished(self, key: str, payload: object, rr_obj: object) -> None:
         """
@@ -431,7 +435,7 @@ class RecipePanel(QWidget):
         except Exception as e:
             self.txtNewRun.setPlainText(f"Run finished for {key}, but report render failed: {e}")
 
-        # Overlays: show what was just evaluated
+        # Overlays: show what was just evaluated (NEW)
         try:
             self._republish_newrun_overlays_from_rr(rr)
         except Exception as e:
@@ -466,10 +470,15 @@ class RecipePanel(QWidget):
         # Refresh disk view last
         # ------------------------------------------------------------
         try:
-            self._refresh_stored_from_disk(key)
+            self._refresh_stored_from_disk(key)  # clears + republishes stored
         except Exception as e:
             _LOG.error("RecipePanel: refresh stored after run failed: %s", e)
 
+        # FIX: refresh clears markers -> re-publish NEW overlays last so they're still visible.
+        try:
+            self._republish_newrun_overlays_from_rr(rr)
+        except Exception as e:
+            _LOG.error("RecipePanel: republish newrun overlays (post-refresh) failed: %s", e)
 
     @QtCore.pyqtSlot(str, str)
     def on_run_error(self, key: str, message: str) -> None:
@@ -526,7 +535,10 @@ class RecipePanel(QWidget):
     def _drop_planned_from_run_result(rr: RunResult) -> None:
         """
         Make planned_run effectively 'missing' so RecipeRepo keeps old planned_*.
-        IMPORTANT: repo merge treats empty dict as missing (=> None) and keeps on disk.
+
+        IMPORTANT:
+          - Repo merge treats empty dict as missing (=> None) and keeps on disk.
+          - If repo doesn't treat empty dict as missing, this MUST be adjusted there.
         """
         if getattr(rr, "planned_run", None) is None or not isinstance(rr.planned_run, dict):
             rr.planned_run = {}
@@ -600,6 +612,7 @@ class RecipePanel(QWidget):
         # InfoBox must update whenever we rebind the recipe from disk
         self._update_infobox_from_recipe(fresh)
 
+        # NOTE: This clears markers via spray_clear().
         self._republish_spraypaths_for_key(key, fresh)
 
     # ============================================================
@@ -673,6 +686,7 @@ class RecipePanel(QWidget):
         if has_poses or has_markers:
             self._ros_req("spray_set_compiled")(poses=pa if has_poses else None, markers=ma if has_markers else None)
 
+        # Disk SSoT for stored ghosts (explicit reload to ensure latest on disk)
         recipe_disk = self.repo.load_for_process(key)
 
         planned_obj = getattr(recipe_disk, "planned_tcp", None)
