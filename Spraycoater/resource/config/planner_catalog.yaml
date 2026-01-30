@@ -3,149 +3,100 @@ version: 1
 planner_catalog:
 
   # -------------------------------------------------------------------
-  # Param-Profile (einmalig, dann per params_ref wiederverwenden)
+  # Param-Profiles (Zentrale Definition der Hardware-Limits)
   # -------------------------------------------------------------------
   param_profiles:
 
-    # Gemeinsame Parameter für "Motion Planner"
+    # Diese Keys entsprechen exakt den .get() Aufrufen im moveit_py_node.py
     motion_common:
-      planning_time_s:       { type: number,  min: 0.1, max: 60.0, step: 0.1,  default: 2.0 }
-      attempts:              { type: integer, min: 1,   max: 100,  step: 1,    default: 1 }
-      velocity_scaling:      { type: number,  min: 0.0, max: 1.0,  step: 0.01, default: 0.1 } # Default sicher auf 0.1
-      acceleration_scaling:  { type: number,  min: 0.0, max: 1.0,  step: 0.01, default: 0.1 } # Default sicher auf 0.1
-      blend_radius:          { type: number,  min: 0.0, max: 100.0, step: 0.001, default: 0.0 } # Feiner Step für Radien
+      planning_time:                   { type: number,  min: 0.1, max: 60.0, step: 0.1,  default: 5.0 } 
+      planning_attempts:               { type: integer, min: 1,   max: 100,  step: 1,    default: 5 }
+      
+      # WICHTIG: 0.1 verhindert Dynamik-Fehler (ERROR:EX) bei Pilz LIN
+      max_velocity_scaling_factor:     { type: number,  min: 0.01, max: 1.0,  step: 0.01, default: 0.1 }
+      max_acceleration_scaling_factor: { type: number,  min: 0.01, max: 1.0,  step: 0.01, default: 0.1 }
+      
+      # Blending: 0.01 (10mm) erlaubt flüssige Kurven ohne Stop-and-Go
+      blend_radius:                    { type: number,  min: 0.0, max: 0.5, step: 0.001, default: 0.01 } 
 
-    # Optional: (wenn UI/Pipeline das unterstützt)
+    # Kartesische Parameter für die Spirale (plan_pose_array)
     cartesian_common:
-      cartesian.eef_step_mm:    { type: number, min: 0.01, max: 50.0, step: 0.01, default: 1.0 }
-      cartesian.jump_threshold: { type: number, min: 0.0,  max: 10.0, step: 0.1,  default: 0.0 }
-      blend_radius:          { type: number,  min: 0.0, max: 100.0, step: 0.001, default: 0.0 }
+      cartesian_max_step:              { type: number,  min: 0.0001, max: 0.05, step: 0.001, default: 0.002 }
+      cartesian_jump_threshold:        { type: number,  min: 0.0,    max: 10.0, step: 0.1,   default: 0.0 }
 
-    # Post-Processing
+    # Parameter für das Post-Processing (TOTG Retiming)
     post_common:
-      velocity_scaling:      { type: number, min: 0.0, max: 1.0, step: 0.01, default: 1.0 }
-      acceleration_scaling:  { type: number, min: 0.0, max: 1.0, step: 0.01, default: 1.0 }
+      max_velocity_scaling_factor:     { type: number, min: 0.01, max: 1.0, step: 0.01, default: 0.1 }
+      max_acceleration_scaling_factor: { type: number, min: 0.01, max: 1.0, step: 0.01, default: 0.1 }
 
   # -------------------------------------------------------------------
-  # Rollen -> welche Planner sind je Kategorie erlaubt?
+  # Roles (Verfügbarkeit im UI nach Kategorie)
   # -------------------------------------------------------------------
   roles:
-
     validate_move:
-      - "RRTstarkConfigDefault"
-      - "RRTConnectkConfigDefault"
-      - "RRTkConfigDefault"
       - "PTP"
       - "LIN"
+      - "RRTConnectkConfigDefault"
 
     validate_path:
-      - "RRTstarkConfigDefault"
-      - "RRTConnectkConfigDefault"
-      - "RRTkConfigDefault"
-      - "PTP"
       - "LIN"
+      - "PTP"
       - "CIRC"
-
-    refine:
-      - "CHOMP"
-      - "STOMP"
+      - "RRTstarkConfigDefault"
 
     optimize:
       - "TimeOptimalTrajectoryGeneration"
 
-    service:
-      - "RRTstarkConfigDefault"
-      - "RRTConnectkConfigDefault"
-      - "RRTkConfigDefault"
-      - "PTP"
-      - "LIN"
-
   # -------------------------------------------------------------------
-  # Planner-Sets pro Path-Typ (HIER WAREN DIE FIXES NÖTIG)
-  # -------------------------------------------------------------------
-  path_types:
-
-    path.meander.plane:
-      validate_move: ["PTP", "RRTConnectkConfigDefault"]
-      validate_path: ["LIN", "PTP", "RRTstarkConfigDefault"]
-
-    path.spiral.plane:
-      validate_move: ["PTP", "RRTConnectkConfigDefault"]
-      # FIX: LIN und PTP hinzugefügt!
-      validate_path: ["LIN", "PTP", "RRTstarkConfigDefault"]
-
-    path.perimeter_follow.plane:
-      validate_move: ["PTP", "RRTConnectkConfigDefault"]
-      validate_path: ["LIN", "PTP", "RRTstarkConfigDefault"]
-
-    path.spiral.cylinder:
-      validate_move: ["PTP", "RRTConnectkConfigDefault"]
-      # FIX: LIN hinzugefügt
-      validate_path: ["LIN", "PTP", "RRTstarkConfigDefault"]
-
-    path.polyhelix.pyramid:
-      validate_move: ["PTP", "RRTConnectkConfigDefault"]
-      # FIX: LIN hinzugefügt
-      validate_path: ["LIN", "PTP", "RRTstarkConfigDefault"]
-
-    path.polyhelix.cube:
-      validate_move: ["PTP", "RRTConnectkConfigDefault"]
-      # FIX: LIN hinzugefügt
-      validate_path: ["LIN", "PTP", "RRTstarkConfigDefault"]
-
-  # -------------------------------------------------------------------
-  # Detail-Tabelle: alle Planner pro Pipeline
+  # Pipelines (Detail-Konfiguration)
   # -------------------------------------------------------------------
   pipelines:
 
     ompl:
       RRTConnectkConfigDefault:
-        description: "OMPL RRTConnect (MoveIt Default)"
-        params_ref: ["motion_common","cartesian_common"]
-
-      RRTkConfigDefault:
-        description: "OMPL RRT"
-        params_ref: ["motion_common","cartesian_common"]
+        description: "OMPL Standard (PTP)"
+        params_ref: ["motion_common", "cartesian_common"]
 
       RRTstarkConfigDefault:
-        description: "OMPL RRT*"
-        params_ref: ["motion_common","cartesian_common"]
+        description: "OMPL RRT* (Optimierend)"
+        params_ref: ["motion_common", "cartesian_common"]
+        params_override:
+          planning_time: { default: 10.0 }
 
-    # Korrekter Name für ROS 2 MoveIt
+    # Pilz Industrial Motion Planner
     pilz_industrial_motion_planner:
       PTP:
-        description: "Pilz PTP (Point-to-Point)"
+        description: "Pilz PTP (Gelenk-Anfahrt)"
         params_ref: ["motion_common"]
         params_override:
-          planning_time_s: { default: 1.0 }
+          planning_time: { default: 1.0 } 
 
       LIN:
-        description: "Pilz LIN (Linear + Blending)"
+        description: "Pilz LIN (Präzise Linie)"
         params_ref: ["motion_common"]
         params_override:
-          planning_time_s: { default: 1.0 }
+          planning_time: { default: 1.0 }
+          blend_radius: { default: 0.01 } 
 
       CIRC:
-        description: "Pilz CIRC (Circular)"
+        description: "Pilz CIRC (Kreisbahn)"
         params_ref: ["motion_common"]
         params_override:
-          planning_time_s: { default: 1.0 }
-
-    chomp:
-      CHOMP:
-        description: "CHOMP pipeline"
-        params_ref: ["motion_common"]
-        params_override:
-          planning_time_s: { default: 5.0 }
-
-    stomp:
-      STOMP:
-        description: "STOMP pipeline"
-        params_ref: ["motion_common"]
-        params_override:
-          planning_time_s: { default: 5.0 }
+          planning_time: { default: 1.0 }
 
     post:
       TimeOptimalTrajectoryGeneration:
-        description: "TOTG Retiming"
+        description: "TOTG (Zeit-Optimierung)"
         params_ref: ["post_common"]
+
+  # -------------------------------------------------------------------
+  # Path-Types (Vorauswahl für Pfad-Algorithmen)
+  # -------------------------------------------------------------------
+  path_types:
+    path.spiral.plane:
+      validate_move: ["PTP"]
+      validate_path: ["LIN", "RRTstarkConfigDefault"]
+
+    path.meander.plane:
+      validate_move: ["PTP"]
+      validate_path: ["LIN", "RRTConnectkConfigDefault"]

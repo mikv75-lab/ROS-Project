@@ -11,7 +11,7 @@ from std_msgs.msg import (
     String as MsgString,
     Float64 as MsgFloat64,
     Empty as MsgEmpty,
-    Bool as MsgBool,  # NEW
+    Bool as MsgBool,
 )
 from moveit_msgs.msg import RobotTrajectory as RobotTrajectoryMsg
 
@@ -38,7 +38,7 @@ class MoveItPySignals(QtCore.QObject):
       - Bridge setzt busy=False bei terminal motion_result Status (oder bei STOP).
       - Kein eigener ROS topic dafür (TOPIC-ONLY bleibt: busy wird aus Transport+Result abgeleitet).
 
-    READY (NEU):
+    READY:
       - tray_exec_ready == "Controller/Action ready" (Capability, NICHT occupancy)
       - kommt als std_msgs/Bool vom Node.
       - GUI kann dann z.B. can_execute = tray_exec_ready && !busy rechnen.
@@ -48,7 +48,7 @@ class MoveItPySignals(QtCore.QObject):
     planRequestRequested = QtCore.pyqtSignal(object)          # dict: {"key":{...},"payload":{...}}
     stopRequested = QtCore.pyqtSignal()
     motionSpeedChanged = QtCore.pyqtSignal(float)
-    plannerCfgChanged = QtCore.pyqtSignal(object)            # dict or json-string
+    plannerCfgChanged = QtCore.pyqtSignal(object)            # STRICT: dict only
 
     executeTrajectoryRequested = QtCore.pyqtSignal(object)   # RobotTrajectoryMsg (key in jt.header.frame_id JSON)
     optimizeTrajectoryRequested = QtCore.pyqtSignal(object)  # RobotTrajectoryMsg (key in jt.header.frame_id JSON)
@@ -63,7 +63,7 @@ class MoveItPySignals(QtCore.QObject):
     robotDescriptionChanged = QtCore.pyqtSignal(str)         # URDF
     robotDescriptionSemanticChanged = QtCore.pyqtSignal(str) # SRDF
 
-    trayExecReadyChanged = QtCore.pyqtSignal(bool)           # NEW: tray_exec_ready topic
+    trayExecReadyChanged = QtCore.pyqtSignal(bool)           # tray_exec_ready topic
 
     # ---------------- Derived state (UI convenience, from topics) ----------------
     busyChanged = QtCore.pyqtSignal(bool)
@@ -72,8 +72,6 @@ class MoveItPySignals(QtCore.QObject):
         super().__init__(parent)
         self.last_result: str = ""
         self._busy: bool = False
-
-        # NEW: last readiness
         self._tray_exec_ready: bool = False
 
     @property
@@ -124,7 +122,7 @@ class MoveItPyBridge(BaseBridge):
         - traj_cache_clear (std_msgs/Empty)
         - robot_description (std_msgs/String) [latched]
         - robot_description_semantic (std_msgs/String) [latched]
-        - tray_exec_ready (std_msgs/Bool)   # NEW
+        - tray_exec_ready (std_msgs/Bool)
 
     STRICT:
       - REQUIRED topic ids müssen existieren, sonst Fehler (keine Fallbacks).
@@ -156,7 +154,7 @@ class MoveItPyBridge(BaseBridge):
         self._last_urdf: str = ""
         self._last_srdf: str = ""
 
-        # NEW: readiness cache
+        # readiness cache
         self._last_tray_exec_ready: bool = False
 
         super().__init__("moveitpy_bridge", content, namespace=namespace)
@@ -188,7 +186,7 @@ class MoveItPyBridge(BaseBridge):
         self._ensure_sub("robot_description", MsgString, self._on_robot_description)
         self._ensure_sub("robot_description_semantic", MsgString, self._on_robot_description_semantic)
 
-        # NEW: tray_exec_ready
+        # tray_exec_ready
         self._ensure_sub("tray_exec_ready", MsgBool, self._on_tray_exec_ready)
 
         self.get_logger().info(
@@ -384,7 +382,6 @@ class MoveItPyBridge(BaseBridge):
         self._last_srdf = text
         self.signals.robotDescriptionSemanticChanged.emit(text)
 
-    # NEW: tray_exec_ready
     def _on_tray_exec_ready(self, msg: MsgBool) -> None:
         v = bool(getattr(msg, "data", False))
         self._last_tray_exec_ready = v
@@ -403,10 +400,12 @@ class MoveItPyBridge(BaseBridge):
         self._pub_ui_to_node("set_speed_mm_s").publish(MsgFloat64(data=float(speed)))
 
     def publish_set_planner_cfg(self, cfg: object) -> None:
-        if isinstance(cfg, str):
-            raw = cfg
-        else:
-            raw = json.dumps(cfg, ensure_ascii=False)
+        """
+        STRICT: cfg must be dict-like (will be JSON encoded for std_msgs/String).
+        """
+        if not isinstance(cfg, dict):
+            raise TypeError(f"publish_set_planner_cfg expects dict, got {type(cfg)!r}")
+        raw = json.dumps(cfg, ensure_ascii=False, separators=(",", ":"))
         self._pub_ui_to_node("set_planner_cfg").publish(MsgString(data=str(raw)))
 
     def publish_plan_request(self, req: object) -> None:
@@ -484,6 +483,5 @@ class MoveItPyBridge(BaseBridge):
     def last_robot_description_semantic(self) -> str:
         return self._last_srdf
 
-    # NEW: readiness getter (optional)
     def last_tray_exec_ready(self) -> bool:
         return bool(self._last_tray_exec_ready)

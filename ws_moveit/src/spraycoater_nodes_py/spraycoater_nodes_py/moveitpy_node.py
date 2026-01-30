@@ -4,6 +4,19 @@
 spraycoater_nodes_py/moveit_py_node.py
 
 MoveItPy wrapper node (MINIMAL TOPICS for GUI Offline-FK) - KEYED / OUT-OF-ORDER SAFE
+
+Refactor status (2026-01):
+- Planning-only logic extracted to: spraycoater_nodes_py/moveit_ops/plan_requests.py
+- Execution-only logic extracted to: spraycoater_nodes_py/moveit_ops/execute_requests.py
+- Executed trajectory recorder extracted to: spraycoater_nodes_py/moveit_ops/executed_recorder.py
+
+Node responsibilities (remain here):
+- ROS entities (publishers/subscribers/services/action clients)
+- Busy / tray_exec_ready
+- TF transformation helpers
+- Trajectory sanitation + key tagging
+- FollowJointTrajectory async execution + STOP support
+- Router for plan_request to the correct handler
 """
 
 from __future__ import annotations
@@ -38,12 +51,19 @@ from moveit.core.robot_trajectory import RobotTrajectory as RobotTrajectoryCore
 from tf2_ros import Buffer, TransformListener
 from tf2_geometry_msgs import do_transform_pose
 
-from controller_manager_msgs.srv import SwitchController
-from control_msgs.action import FollowJointTrajectory 
+from controller_manager_msgs.srv import SwitchController, ListControllers
+from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 # Config helper (muss im Projekt existieren)
 from spraycoater_nodes_py.utils.config_hub import topics, frames
+
+# NEW: extracted handlers
+from spraycoater_nodes_py.moveit_ops.plan_requests import PlanRequestHandler
+from spraycoater_nodes_py.moveit_ops.execute_requests import ExecuteRequestHandler
+
+# NEW: executed recorder extracted
+from spraycoater_nodes_py.moveit_ops.executed_recorder import ExecutedRecorder
 
 
 # ----------------------------
@@ -67,27 +87,16 @@ DEFAULT_TRAJ_CONTROLLER = "omron_arm_controller"
 
 
 # ----------------------------
-# Retiming bindings (STRICT)
-# ----------------------------
-_HAVE_TRAJ_PROC = False
-try:
-    from moveit.core.robot_state import RobotState
-    from moveit.core.trajectory_processing import (
-        TimeOptimalTrajectoryGeneration,
-        IterativeParabolicTimeParameterization,
-    )
-    _HAVE_TRAJ_PROC = True
-except Exception:
-    _HAVE_TRAJ_PROC = False
-
-
-# ----------------------------
 # Controller Mode Manager
 # ----------------------------
 class _ModeManager:
     """
     Minimal controller mode arbiter (embedded).
+
+    - Mode "TRAJ": ensure trajectory controller active (FollowJT)
+    - Mode "JOG": deactivate trajectory controller (so servo/jog can take over)
     """
+
     def __init__(
         self,
         node: Node,
@@ -177,191 +186,6 @@ class _ModeManager:
 
 
 # ----------------------------
-# Executed trajectory recorder (STRICT: from joint_states)
-# ----------------------------
-class _ExecutedRecorder:
-    """
-    Records executed joint motion from JointState while a trajectory is executing.
-    """
-
-    _MIN_SAMPLE_DT_NS = 5_000_000  # 5ms
-    _STAMP_MAX_SKEW_NS = 5_000_000_000  # 5s
-
-    def __init__(self, node: Node) -> None:
-        self._node = node
-        self._lock = Lock()
-        self._active: bool = False
-        self._start_ns: int = 0
-        self._jn: List[str] = []
-        self._samples: List[Tuple[int, List[float]]] = []
-        self._last_t_ns: int = -1
-
-        self._latest_names: List[str] = []
-        self._latest_pos: List[float] = []
-        self._latest_stamp_ns: int = 0
-
-    @staticmethod
-    def _norm_name(n: str) -> str:
-        return str(n or "").strip().lstrip("/")
-
-    @staticmethod
-    def _stamp_to_ns(msg: JointState) -> int:
-        try:
-            st = getattr(getattr(msg, "header", None), "stamp", None)
-            if st is not None:
-                return int(getattr(st, "sec", 0)) * 1_000_000_000 + int(getattr(st, "nanosec", 0))
-        except Exception:
-            pass
-        return 0
-
-    def _now_ns(self) -> int:
-        return int(self._node.get_clock().now().nanoseconds)
-
-    def _select_stamp_ns(self, msg_stamp_ns: int) -> int:
-        now_ns = self._now_ns()
-        if msg_stamp_ns <= 0:
-            return now_ns
-        if now_ns > 0 and abs(msg_stamp_ns - now_ns) > self._STAMP_MAX_SKEW_NS:
-            return now_ns
-        return msg_stamp_ns
-
-    def _vec_for_jn(self, names: List[str], pos: List[float], jn: List[str]) -> Optional[List[float]]:
-        if not names or not pos or len(names) != len(pos):
-            return None
-
-        name_to_i: Dict[str, int] = {}
-        for i, n in enumerate(names):
-            nn = self._norm_name(n)
-            if nn and nn not in name_to_i:
-                name_to_i[nn] = i
-
-        req = [self._norm_name(n) for n in (jn or [])]
-        if any((not r) or (r not in name_to_i) for r in req):
-            return None
-        return [float(pos[name_to_i[r]]) for r in req]
-
-    def feed_joint_state(self, msg: JointState) -> None:
-        try:
-            names = list(msg.name or [])
-            pos = list(msg.position or [])
-        except Exception:
-            return
-        if not names or not pos or len(names) != len(pos):
-            return
-
-        msg_stamp_ns = self._stamp_to_ns(msg)
-        stamp_ns = self._select_stamp_ns(msg_stamp_ns)
-
-        with self._lock:
-            self._latest_names = names
-            self._latest_pos = pos
-            self._latest_stamp_ns = stamp_ns
-
-            if not self._active or not self._jn:
-                return
-
-            vec = self._vec_for_jn(names, pos, self._jn)
-            if vec is None:
-                return
-
-            t_ns = stamp_ns - self._start_ns
-            if t_ns < 0:
-                t_ns = self._last_t_ns + self._MIN_SAMPLE_DT_NS if self._last_t_ns >= 0 else 0
-
-            if self._last_t_ns >= 0:
-                if t_ns <= self._last_t_ns:
-                    t_ns = self._last_t_ns + self._MIN_SAMPLE_DT_NS
-                elif (t_ns - self._last_t_ns) < self._MIN_SAMPLE_DT_NS:
-                    t_ns = self._last_t_ns + self._MIN_SAMPLE_DT_NS
-
-            self._last_t_ns = t_ns
-            self._samples.append((t_ns, vec))
-
-    def start(self, joint_names: List[str]) -> None:
-        jn = [self._norm_name(x) for x in (joint_names or [])]
-        jn = [x for x in jn if x]
-        if not jn:
-            raise ValueError("ExecutedRecorder.start: joint_names empty")
-
-        with self._lock:
-            self._active = True
-            self._jn = jn
-            self._samples = []
-            self._last_t_ns = -1
-            self._start_ns = self._now_ns()
-
-            vec0 = self._vec_for_jn(self._latest_names, self._latest_pos, self._jn)
-            if vec0 is not None:
-                self._samples.append((0, vec0))
-                self._last_t_ns = 0
-
-    def stop_and_build(self) -> RobotTrajectoryMsg:
-        with self._lock:
-            self._active = False
-            jn = list(self._jn)
-            samples = list(self._samples)
-
-            latest_names = list(self._latest_names)
-            latest_pos = list(self._latest_pos)
-            latest_stamp_ns = int(self._latest_stamp_ns)
-            start_ns = int(self._start_ns)
-            last_t = int(self._last_t_ns)
-
-            self._jn = []
-            self._samples = []
-            self._last_t_ns = -1
-            self._start_ns = 0
-
-        if not jn:
-            raise RuntimeError("ExecutedRecorder: no joint_names")
-
-        if len(samples) < 2:
-            vec_last = self._vec_for_jn(latest_names, latest_pos, jn)
-            if vec_last is None:
-                raise RuntimeError(
-                    "ExecutedRecorder: insufficient samples (<2) and latest joint_state lacks required joints"
-                )
-            t_ns = (
-                latest_stamp_ns - start_ns
-                if (latest_stamp_ns > 0 and start_ns > 0)
-                else (last_t + self._MIN_SAMPLE_DT_NS)
-            )
-            if t_ns <= last_t:
-                t_ns = last_t + self._MIN_SAMPLE_DT_NS
-            if t_ns <= 0:
-                t_ns = self._MIN_SAMPLE_DT_NS
-            samples.append((t_ns, vec_last))
-
-        if len(samples) < 2:
-            raise RuntimeError("ExecutedRecorder: insufficient samples (<2)")
-
-        out = RobotTrajectoryMsg()
-        out.joint_trajectory.joint_names = list(jn)
-
-        for t_ns, vec in samples:
-            if len(vec) != len(jn):
-                continue
-            pt = JointTrajectoryPoint()
-            pt.positions = list(vec)
-            pt.time_from_start.sec = int(t_ns // 1_000_000_000)
-            pt.time_from_start.nanosec = int(t_ns % 1_000_000_000)
-            out.joint_trajectory.points.append(pt)
-
-        if len(out.joint_trajectory.points) < 2:
-            raise RuntimeError("ExecutedRecorder: insufficient valid points after build")
-
-        return out
-
-    def cancel(self) -> None:
-        with self._lock:
-            self._active = False
-            self._jn = []
-            self._samples = []
-            self._last_t_ns = -1
-            self._start_ns = 0
-
-
-# ----------------------------
 # MoveItPy Node (KEYED)
 # ----------------------------
 class MoveItPyNode(Node):
@@ -380,6 +204,9 @@ class MoveItPyNode(Node):
         self.cfg_frames = frames()
         self.frame_world = self.cfg_frames.resolve(self.cfg_frames.get("world", WORLD_FRAME))
 
+        # ----------------------------
+        # Params
+        # ----------------------------
         if not self.has_parameter("backend"):
             self.declare_parameter("backend", "default")
         self.backend = self.get_parameter("backend").value or "default"
@@ -411,7 +238,20 @@ class MoveItPyNode(Node):
         ns = self.get_namespace() or "/"
         self.log.info(f"MoveItPyNode starting (backend='{self.backend}', ns='{ns}')")
 
+        # ----------------------------
+        # State
+        # ----------------------------
         self._mode_mgr = _ModeManager(self, traj_controller=self.traj_controller, debounce_s=0.25)
+
+        # controller_manager list_controllers for readiness checks
+        ns_clean = (self.get_namespace() or "").rstrip("/")
+        cm_base = f"{ns_clean}/controller_manager" if ns_clean else "/controller_manager"
+        self._list_ctrl_srv_name = f"{cm_base}/list_controllers"
+        self._list_ctrl_cli = self.create_client(ListControllers, self._list_ctrl_srv_name)
+
+        self._ctrl_state_lock = Lock()
+        self._ctrl_active_cache: Dict[str, bool] = {}
+        self._ctrl_cache_t = 0.0
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=False)
@@ -428,7 +268,7 @@ class MoveItPyNode(Node):
         self._active_exec_token: int = 0
         self._canceled_tokens: Set[int] = set()
 
-        # --- active execution tracking (for keyed stop) ---
+        # active execution tracking (for keyed stop)
         self._external_active_goal = None
         self._external_active_traj: Optional[RobotTrajectoryMsg] = None
         self._active_key: Optional[Dict[str, Any]] = None
@@ -437,16 +277,23 @@ class MoveItPyNode(Node):
         self._robot_model_lock = Lock()
         self._robot_model_published: bool = False
 
-        self._exec_rec = _ExecutedRecorder(self)
+        # executed recorder
+        self._exec_rec = ExecutedRecorder(self)
 
         # last planned (for op=execute in plan_request)
         self._last_planned_core: Optional[RobotTrajectoryCore] = None
         self._last_planned_key_json: Optional[str] = None
 
-        # tray_exec_ready (NEW): publish change-only
+        # extracted handlers
+        self._plan_req = PlanRequestHandler(api=self)         # planning-only
+        self._exec_req = ExecuteRequestHandler(api=self)      # execution-only
+
+        # tray_exec_ready (publish change-only)
         self._last_traj_exec_ready: Optional[bool] = None
 
-        # publishers
+        # ----------------------------
+        # Publishers
+        # ----------------------------
         self.pub_planned = self.create_publisher(
             RobotTrajectoryMsg,
             self.cfg_topics.publish_topic(NODE_KEY, "planned_trajectory_rt"),
@@ -462,13 +309,11 @@ class MoveItPyNode(Node):
             self.cfg_topics.publish_topic(NODE_KEY, "optimized_trajectory_rt"),
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "optimized_trajectory_rt"),
         )
-
         self.pub_traj_cache_clear = self.create_publisher(
             MsgEmpty,
             self.cfg_topics.publish_topic(NODE_KEY, "traj_cache_clear"),
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "traj_cache_clear"),
         )
-
         self.pub_robot_description = self.create_publisher(
             MsgString,
             self.cfg_topics.publish_topic(NODE_KEY, "robot_description"),
@@ -479,39 +324,40 @@ class MoveItPyNode(Node):
             self.cfg_topics.publish_topic(NODE_KEY, "robot_description_semantic"),
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "robot_description_semantic"),
         )
-
         self.pub_result = self.create_publisher(
             MsgString,
             self.cfg_topics.publish_topic(NODE_KEY, "motion_result"),
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "motion_result"),
         )
-
-        # NEW: tray_exec_ready publisher
         self.pub_traj_exec_ready = self.create_publisher(
             MsgBool,
             self.cfg_topics.publish_topic(NODE_KEY, "tray_exec_ready"),
             self.cfg_topics.qos_by_id("publish", NODE_KEY, "tray_exec_ready"),
         )
 
-        # FollowJT action
+        # ----------------------------
+        # FollowJT action clients
+        # ----------------------------
         self._followjt_clients: List[Tuple[str, ActionClient]] = []
         for action_name in self._followjt_action_candidates(self.traj_controller):
             self._followjt_clients.append((action_name, ActionClient(self, FollowJointTrajectory, action_name)))
         if self._followjt_clients:
             self.log.info("[followjt] action candidates: " + ", ".join(n for n, _ in self._followjt_clients))
 
+        # ----------------------------
         # joint_states subscriptions (STRICT: include namespace!)
+        # ----------------------------
         for jt_topic in self._joint_state_candidates():
             self.create_subscription(JointState, jt_topic, self._on_joint_states, 10)
             self.log.info(f"[joint_states] subscribed: {jt_topic}")
 
         # ----------------------------
-        # subscriptions (KEYED)
+        # Subscriptions (KEYED)
         # ----------------------------
         self.create_subscription(
             MsgString,
             self.cfg_topics.subscribe_topic(NODE_KEY, "plan_request"),
-            self._on_plan_request,
+            self._on_plan_request_router,
             self.cfg_topics.qos_by_id("subscribe", NODE_KEY, "plan_request"),
         )
         self.log.info("[topics] subscribed: plan_request")
@@ -572,12 +418,78 @@ class MoveItPyNode(Node):
         self.log.info(f"[moveitpy] init async: node_ns='{ns}', name_space='{self._name_space}'")
         Thread(target=self._init_moveitpy_background, daemon=True).start()
 
-        # NEW: timer to publish tray_exec_ready (change-only)
+        # timer to publish tray_exec_ready (change-only)
         self._ready_timer = self.create_timer(0.10, self._on_ready_timer)  # 10 Hz
-        # publish initial state immediately
         self._publish_traj_exec_ready(self._calc_traj_exec_ready())
 
         self.log.info("MoveItPyNode init done (MoveItPy is initializing in background).")
+
+    # ============================================================
+    # Handler API (duck-typed surface)
+    # ============================================================
+    @property
+    def plan_params(self) -> Optional[PlanRequestParameters]:
+        return self._plan_params
+
+    @property
+    def ee_link(self) -> str:
+        return EE_LINK
+
+    def is_busy(self) -> bool:
+        return self._is_busy()
+
+    def set_busy(self, v: bool) -> None:
+        self._set_busy(v)
+
+    def require_moveit_ready(self, *, key: Optional[Dict[str, Any]] = None, key_json: str = "") -> bool:
+        return self._require_moveit_ready(key=key, key_json=key_json)
+
+    def clear_traj_cache(self, *, reason: str) -> None:
+        self._clear_traj_cache(reason=reason)
+
+    def publish_robot_model_strings_once(self) -> None:
+        self._publish_robot_model_strings_once()
+
+    def apply_planner_cfg_to_params(self) -> None:
+        self._apply_planner_cfg_to_params()
+
+    def transform_pose_to_world(self, pose: Pose, frame_id: str) -> PoseStamped:
+        return self._transform_pose_to_world(pose, frame_id)
+
+    def sanitize_traj_msg_inplace(self, msg: RobotTrajectoryMsg, context: str) -> None:
+        self._sanitize_traj_msg_inplace(msg, context=context)
+
+    def tag_traj_msg_with_key(self, msg: RobotTrajectoryMsg, key_json: str) -> None:
+        self._tag_traj_msg_with_key(msg, key_json)
+
+    def emit_keyed(self, key: Dict[str, Any], status: str, extra: Optional[Dict[str, Any]] = None) -> None:
+        self._emit_keyed(key, status, extra=extra)
+
+    def pub_planned_publish(self, msg: RobotTrajectoryMsg) -> None:
+        self.pub_planned.publish(msg)
+
+    def get_last_planned(self) -> Tuple[Optional[RobotTrajectoryCore], Optional[str]]:
+        return self._last_planned_core, self._last_planned_key_json
+
+    def set_last_planned(self, core: Optional[RobotTrajectoryCore], key_json: Optional[str]) -> None:
+        self._last_planned_core = core
+        self._last_planned_key_json = key_json
+
+    def execute_traj_via_followjt_async(
+        self,
+        *,
+        key: Dict[str, Any],
+        key_json: str,
+        msg: RobotTrajectoryMsg,
+        source: str,
+    ) -> None:
+        self._execute_traj_via_followjt_async(key=key, key_json=key_json, msg=msg, source=source)
+
+    def publish_raw_result(self, s: str) -> None:
+        self.pub_result.publish(MsgString(data=str(s)))
+
+    def log_error(self, s: str) -> None:
+        self.log.error(str(s))
 
     # ------------------------------------------------------------
     # BUSY helpers
@@ -588,15 +500,96 @@ class MoveItPyNode(Node):
     def _is_busy(self) -> bool:
         return bool(self._busy)
 
-    # ------------------------------------------------------------
-    # tray_exec_ready (NEW)
-    # ------------------------------------------------------------
+    def _is_traj_controller_active(self) -> bool:
+        """
+        Best-effort controller state check (cached, async-safe).
+
+        IMPORTANT:
+        - Never force False just because list_controllers future isn't done yet.
+        - While a query is in-flight, return last-known state (stabilizes tray_exec_ready).
+        """
+        name = (self.traj_controller or "").strip() or DEFAULT_TRAJ_CONTROLLER
+        now = time.time()
+
+        # lazy init (keeps patch drop-in)
+        if not hasattr(self, "_ctrl_query_inflight"):
+            self._ctrl_query_inflight = False
+
+        with self._ctrl_state_lock:
+            last_known = bool(self._ctrl_active_cache.get(name, False))
+            cache_t = float(self._ctrl_cache_t or 0.0)
+            cache_age = now - cache_t
+
+            # if cache is still reasonably fresh -> use it
+            if cache_age < 0.5:
+                return last_known
+
+            # if a request is already running -> do NOT override with False
+            if self._ctrl_query_inflight:
+                return last_known
+
+            # mark in-flight and start async query below
+            self._ctrl_query_inflight = True
+
+        cli = getattr(self, "_list_ctrl_cli", None)
+        if cli is None:
+            with self._ctrl_state_lock:
+                self._ctrl_query_inflight = False
+                self._ctrl_cache_t = now
+            return last_known
+
+        try:
+            if not cli.service_is_ready():
+                cli.wait_for_service(timeout_sec=0.0)
+            if not cli.service_is_ready():
+                with self._ctrl_state_lock:
+                    self._ctrl_query_inflight = False
+                    self._ctrl_cache_t = now
+                return last_known
+        except Exception:
+            with self._ctrl_state_lock:
+                self._ctrl_query_inflight = False
+                self._ctrl_cache_t = now
+            return last_known
+
+        req = ListControllers.Request()
+        fut = cli.call_async(req)
+
+        def _done_cb(_f):
+            active = False
+            try:
+                resp = _f.result()
+                for c in list(getattr(resp, "controller", []) or []):
+                    if str(getattr(c, "name", "") or "") == name:
+                        active = (str(getattr(c, "state", "") or "").lower() == "active")
+                        break
+            except Exception:
+                # keep active=False on failure, but still update timestamp
+                active = False
+            finally:
+                with self._ctrl_state_lock:
+                    self._ctrl_active_cache[name] = bool(active)
+                    self._ctrl_cache_t = time.time()
+                    self._ctrl_query_inflight = False
+
+        fut.add_done_callback(_done_cb)
+
+        # while async request runs, return last-known value (stable)
+        return last_known
+
+
+
     def _calc_traj_exec_ready(self) -> bool:
         if self._moveit_failed.is_set():
             return False
         if not self._moveit_ready.is_set():
             return False
-        return self._pick_ready_followjt() is not None
+        # MUST have a ready action server AND controller must be active
+        if self._pick_ready_followjt() is None:
+            return False
+        if not self._is_traj_controller_active():
+            return False
+        return True
 
     def _publish_traj_exec_ready(self, v: bool) -> None:
         vv = bool(v)
@@ -614,7 +607,6 @@ class MoveItPyNode(Node):
         try:
             self._publish_traj_exec_ready(self._calc_traj_exec_ready())
         except Exception:
-            # STRICT: never throw inside timer callback
             pass
 
     # ------------------------------------------------------------
@@ -694,38 +686,6 @@ class MoveItPyNode(Node):
         if hdr is None:
             raise RuntimeError("RobotTrajectoryMsg.joint_trajectory has no header")
         hdr.frame_id = key_json
-
-    def _key_from_traj_msg_strict(self, msg: RobotTrajectoryMsg) -> Tuple[Dict[str, Any], str]:
-        jt = getattr(msg, "joint_trajectory", None)
-        if jt is None:
-            raise ValueError("traj: missing joint_trajectory")
-        hdr = getattr(jt, "header", None)
-        if hdr is None:
-            raise ValueError("traj: missing header")
-        key_json = str(getattr(hdr, "frame_id", "") or "").strip()
-        if not key_json:
-            raise ValueError("traj: header.frame_id empty (missing key JSON)")
-        key_obj = self._json_load_strict(key_json, what="traj.key")
-        if "key" in key_obj and isinstance(key_obj["key"], dict):
-            key_obj = key_obj["key"]
-        for req in ("run", "id", "seg", "op"):
-            if req not in key_obj:
-                raise ValueError(f"traj.key: missing '{req}'")
-        if not isinstance(key_obj["run"], str) or not key_obj["run"].strip():
-            raise ValueError("traj.key.run must be non-empty string")
-        if not isinstance(key_obj["id"], int):
-            raise ValueError("traj.key.id must be int")
-        if not isinstance(key_obj["seg"], str) or not key_obj["seg"].strip():
-            raise ValueError("traj.key.seg must be non-empty string")
-        if not isinstance(key_obj["op"], str) or not key_obj["op"].strip():
-            raise ValueError("traj.key.op must be non-empty string")
-        key = {
-            "run": key_obj["run"].strip(),
-            "id": int(key_obj["id"]),
-            "seg": key_obj["seg"].strip(),
-            "op": key_obj["op"].strip(),
-        }
-        return key, self._key_to_json(key)
 
     # ------------------------------------------------------------
     # Trajectory helpers (STRICT postprocess preconditions)
@@ -943,14 +903,12 @@ class MoveItPyNode(Node):
             self.log.info(f"MoveItPy ready (group={GROUP_NAME}, ns='{self.get_namespace() or '/'}')")
             self.log.info("MoveItPyNode online.")
 
-            # NEW: publish readiness again after init
             self._publish_traj_exec_ready(self._calc_traj_exec_ready())
 
         except Exception as e:
             self._moveit_err = repr(e)
             self._moveit_failed.set()
             self.log.error(f"[moveitpy] INIT FAILED: {e!r}")
-            # NEW: readiness becomes false
             self._publish_traj_exec_ready(False)
 
     def _require_moveit_ready(self, *, key: Optional[Dict[str, Any]] = None, key_json: str = "") -> bool:
@@ -969,7 +927,7 @@ class MoveItPyNode(Node):
         return False
 
     # ------------------------------------------------------------
-    # Planning scene cache service (optional)
+    # planning scene cache service (optional)
     # ------------------------------------------------------------
     def _ensure_get_planning_scene_cache_service(self) -> None:
         if self._gps_srv is not None:
@@ -1050,9 +1008,14 @@ class MoveItPyNode(Node):
 
     def _on_set_planner_cfg(self, msg: MsgString) -> None:
         raw = msg.data or ""
-        incoming = json.loads(raw)
+        try:
+            incoming = json.loads(raw)
+        except Exception as e:
+            self.log.error(f"[config] set_planner_cfg invalid JSON: {e!r}")
+            return
         if not isinstance(incoming, dict):
-            raise ValueError("planner_cfg JSON ist kein dict.")
+            self.log.error("[config] set_planner_cfg JSON ist kein dict.")
+            return
 
         if "pipeline" in incoming and not str(incoming.get("pipeline") or "").strip():
             incoming.pop("pipeline", None)
@@ -1064,7 +1027,10 @@ class MoveItPyNode(Node):
             self._planner_cfg["pipeline"] = self._default_pipeline_id()
 
         if self._moveit_ready.is_set():
-            self._apply_planner_cfg_to_params()
+            try:
+                self._apply_planner_cfg_to_params()
+            except Exception as e:
+                self.log.error(f"[config] apply_planner_cfg failed: {e!r}")
 
     # ------------------------------------------------------------
     # TF helpers
@@ -1108,31 +1074,102 @@ class MoveItPyNode(Node):
         return out
 
     # ------------------------------------------------------------
-    # Plan request parsing helpers (STRICT)
+    # plan_request router (STRICT)
     # ------------------------------------------------------------
-    @staticmethod
-    def _pose_from_dict_strict(d: Dict[str, Any]) -> Pose:
-        if not isinstance(d, dict):
-            raise ValueError("pose must be dict")
-        pos = d.get("position")
-        ori = d.get("orientation")
-        if not isinstance(pos, dict) or not isinstance(ori, dict):
-            raise ValueError("pose.position and pose.orientation must be dict")
-        for k in ("x", "y", "z"):
-            if k not in pos:
-                raise ValueError(f"pose.position missing '{k}'")
-        for k in ("x", "y", "z", "w"):
-            if k not in ori:
-                raise ValueError(f"pose.orientation missing '{k}'")
-        p = Pose()
-        p.position.x = float(pos["x"])
-        p.position.y = float(pos["y"])
-        p.position.z = float(pos["z"])
-        p.orientation.x = float(ori["x"])
-        p.orientation.y = float(ori["y"])
-        p.orientation.z = float(ori["z"])
-        p.orientation.w = float(ori["w"])
-        return p
+    def _on_plan_request_router(self, msg: MsgString) -> None:
+        """
+        Router so PlanRequestHandler stays planning-only and ExecuteRequestHandler stays execution-only.
+
+        plan_request JSON:
+          {"key": {"run": "...", "id": 1, "seg": "...", "op": "..."}, "payload": {...}}
+        """
+        raw = (msg.data or "").strip()
+
+        # If malformed, let planning handler produce REQUEST_INVALID (it has best error text).
+        if not raw or not raw.startswith("{"):
+            self._plan_req.on_plan_request(msg)
+            return
+
+        try:
+            obj = self._json_load_strict(raw, what="plan_request")
+            key = self._require_key_obj(obj)
+            op = str(key.get("op") or "").strip()
+        except Exception:
+            self._plan_req.on_plan_request(msg)
+            return
+
+        # Route execute to execution handler; everything else to planning handler.
+        if op == "execute":
+            self._exec_req.on_plan_request(msg)
+        else:
+            self._plan_req.on_plan_request(msg)
+
+    # ------------------------------------------------------------
+    # execute_trajectory / optimize_trajectory entry points
+    # ------------------------------------------------------------
+    def _on_execute_trajectory(self, msg: RobotTrajectoryMsg) -> None:
+        self._exec_req.on_execute_trajectory(msg)
+
+    def _on_optimize_trajectory(self, msg: RobotTrajectoryMsg) -> None:
+        """
+        Keep the topic for UI contract, but this node currently does not implement optimization here.
+        If you already had optimization in the old monolith file, extract it to moveit_ops/ (future)
+        and call it here analog to ExecuteRequestHandler.
+        """
+        try:
+            # best-effort: parse key for a proper keyed error
+            key_json = str(getattr(getattr(msg, "joint_trajectory", None), "header", None).frame_id or "").strip()
+            key_obj = self._json_load_strict(key_json, what="traj.key") if key_json else {}
+            if "key" in key_obj and isinstance(key_obj["key"], dict):
+                key_obj = key_obj["key"]
+            if all(k in key_obj for k in ("run", "id", "seg", "op")):
+                key = {
+                    "run": str(key_obj["run"]),
+                    "id": int(key_obj["id"]),
+                    "seg": str(key_obj["seg"]),
+                    "op": str(key_obj["op"]),
+                }
+                self._emit_keyed(key, "ERROR:NOT_IMPLEMENTED", extra={"what": "optimize_trajectory"})
+                return
+        except Exception:
+            pass
+
+        self.publish_raw_result("ERROR:NOT_IMPLEMENTED optimize_trajectory")
+
+    # ------------------------------------------------------------
+    # STOP handling (KEYED)
+    # ------------------------------------------------------------
+    def _on_stop(self, _msg: MsgEmpty) -> None:
+        """
+        Stop current FollowJT execution (if any).
+
+        STRICT semantics:
+        - mark active token canceled
+        - request goal cancel if we have a handle
+        - emit STOP:REQ keyed (if we know the key)
+        """
+        try:
+            token = int(self._active_exec_token)
+            if token > 0:
+                self._canceled_tokens.add(token)
+
+            if self._active_key is not None:
+                self._emit_keyed(dict(self._active_key), "STOP:REQ")
+
+            gh = self._external_active_goal
+            if gh is not None:
+                try:
+                    gh.cancel_goal_async()
+                except Exception as e:
+                    self.log.warning(f"[stop] cancel_goal_async failed: {e!r}")
+            else:
+                # no goal handle; still ensure we leave TRAJ mode
+                try:
+                    self._mode_mgr.ensure_mode("JOG")
+                except Exception:
+                    pass
+        except Exception as e:
+            self.log.error(f"[stop] exception: {e!r}")
 
     # ------------------------------------------------------------
     # Execution helper (async FollowJT; STOP works)
@@ -1154,16 +1191,17 @@ class MoveItPyNode(Node):
         msg: RobotTrajectoryMsg,
         source: str,
     ) -> None:
-        """
-        Start async FollowJT execution for a sanitized+keyed RobotTrajectoryMsg.
-
-        STRICT:
-          - publishes planned before result
-          - records executed from joint_states
-          - Stop works via cancel_goal_async()
-        """
         if self._is_busy():
             self._emit_keyed(key, "ERROR:BUSY", extra={"src": source})
+            return
+
+        # STRICT: do not execute unless controller/action is actually ready
+        if not self._calc_traj_exec_ready():
+            self._emit_keyed(
+                key,
+                "ERROR:EXEC_NOT_READY",
+                extra={"src": source, "controller": self.traj_controller},
+            )
             return
 
         try:
@@ -1175,7 +1213,22 @@ class MoveItPyNode(Node):
 
         self._mode_mgr.ensure_mode("TRAJ")
 
-        # new execution token (cancellation is token-scoped)
+        # Optional micro-wait after controller switch; reduces flakiness.
+        # (Main gate is tray_exec_ready.)
+        t_end = time.time() + 0.50
+        while time.time() < t_end:
+            if self._calc_traj_exec_ready():
+                break
+            time.sleep(0.02)
+
+        if not self._calc_traj_exec_ready():
+            self._emit_keyed(
+                key,
+                "ERROR:EXEC_NOT_READY",
+                extra={"src": source, "controller": self.traj_controller, "phase": "post_switch_wait"},
+            )
+            return
+
         token = self._next_exec_token()
         self._active_exec_token = token
 
@@ -1187,10 +1240,10 @@ class MoveItPyNode(Node):
         self._external_active_goal = None
         self._external_active_traj = msg
 
-        # publish planned BEFORE any result line
+        # publish planned (latched)
         self.pub_planned.publish(msg)
 
-        # recorder start
+        # start executed recorder
         try:
             self._exec_rec.start(list(msg.joint_trajectory.joint_names))
         except Exception as e:
@@ -1204,6 +1257,7 @@ class MoveItPyNode(Node):
             self._emit_keyed(key, "ERROR:RECORDER_START", extra={"err": repr(e), "src": source})
             return
 
+        # pick FollowJT server
         picked = self._pick_ready_followjt()
         if picked is None:
             for _name, cli in self._followjt_clients:
@@ -1245,6 +1299,18 @@ class MoveItPyNode(Node):
             except Exception:
                 pass
 
+        def _finish_exec_ok() -> None:
+            try:
+                executed_msg = self._exec_rec.stop_and_build()
+                self._sanitize_traj_msg_inplace(executed_msg, context=f"{source}:executed")
+                self._tag_traj_msg_with_key(executed_msg, key_json)
+                self.pub_executed.publish(executed_msg)
+            except Exception as e:
+                self._exec_rec.cancel()
+                self._emit_keyed(key, "ERROR:RECORDER_BUILD", extra={"err": repr(e), "src": source})
+                return
+            self._emit_keyed(key, "EXECUTED:OK", extra={"src": source})
+
         def _on_goal_sent(fut):
             try:
                 gh = fut.result()
@@ -1262,6 +1328,7 @@ class MoveItPyNode(Node):
 
             self._external_active_goal = gh
 
+            # if token already canceled -> request cancel
             if self._is_token_canceled(token):
                 try:
                     gh.cancel_goal_async()
@@ -1279,23 +1346,22 @@ class MoveItPyNode(Node):
 
                     if self._is_token_canceled(token):
                         self._exec_rec.cancel()
-                        self._emit_keyed(key, "STOPPED:USER", extra={"src": source})
+                        self._emit_keyed(key, "STOPPED:USER", extra={"src": source, "status": int(status or 0)})
                         return
 
                     if code == 0:
-                        executed_msg = self._exec_rec.stop_and_build()
-                        self._sanitize_traj_msg_inplace(executed_msg, context=f"{source}:executed")
-                        self._tag_traj_msg_with_key(executed_msg, key_json)
-                        self.pub_executed.publish(executed_msg)
-                        self._emit_keyed(key, "EXECUTED:OK", extra={"src": source})
-                    else:
-                        self._exec_rec.cancel()
-                        self._emit_keyed(key, "ERROR:EXEC", extra={"code": code, "status": status, "src": source})
+                        _finish_exec_ok()
+                        return
 
+                    self._exec_rec.cancel()
+                    self._emit_keyed(
+                        key,
+                        "ERROR:EXEC_FAILED",
+                        extra={"src": source, "error_code": int(code), "status": int(status or 0)},
+                    )
                 except Exception as e:
                     self._exec_rec.cancel()
                     self._emit_keyed(key, "ERROR:FOLLOWJT_RESULT", extra={"err": repr(e), "src": source})
-
                 finally:
                     _cleanup_after_done()
 
@@ -1304,365 +1370,23 @@ class MoveItPyNode(Node):
         send_fut.add_done_callback(_on_goal_sent)
 
     # ------------------------------------------------------------
-    # plan_request dispatcher (KEYED)
+    # PlanRequest preset / planner cfg is already handled above.
     # ------------------------------------------------------------
-    def _on_plan_request(self, msg: MsgString) -> None:
-        if self._is_busy():
-            try:
-                obj = self._json_load_strict(msg.data or "", what="plan_request")
-                key = self._require_key_obj(obj)
-                self._emit_keyed(key, "ERROR:BUSY")
-            except Exception:
-                self.pub_result.publish(MsgString(data="ERROR:BUSY"))
-            return
 
-        try:
-            obj = self._json_load_strict(msg.data or "", what="plan_request")
-            key = self._require_key_obj(obj)
-            key_json = self._key_to_json(key)
-            payload = obj.get("payload")
-            if not isinstance(payload, dict):
-                raise ValueError("request: missing 'payload' dict")
-        except Exception as e:
-            self.pub_result.publish(MsgString(data=f"ERROR:REQUEST_INVALID {e}"))
-            self.log.error(f"[plan_request] invalid: {e!r}")
-            return
 
-        if not self._require_moveit_ready(key=key, key_json=key_json):
-            return
-
-        op = key["op"]
-        reason = self._key_short(key)
-
-        # clear caches for ALL plan_request ops (including execute)
-        self._clear_traj_cache(reason=f"plan_request:{reason}")
-        self._publish_robot_model_strings_once()
-
-        # planning ops are synchronous -> mark busy for the duration
-        if op in ("plan_pose", "plan_pose_array"):
-            self._set_busy(True)
-            try:
-                if op == "plan_pose":
-                    self._handle_plan_pose(key, key_json, payload)
-                    return
-                if op == "plan_pose_array":
-                    self._handle_plan_pose_array(key, key_json, payload)
-                    return
-            except Exception as e:
-                self._emit_keyed(key, "ERROR:EX", extra={"err": repr(e)})
-                return
-            finally:
-                self._set_busy(False)
-
-        # execute op triggers async -> helper manages busy lifecycle
-        if op == "execute":
-            try:
-                self._handle_execute_last_planned(key, key_json, payload)
-            except Exception as e:
-                self._emit_keyed(key, "ERROR:EX", extra={"err": repr(e)})
-            return
-
-        self._emit_keyed(key, "ERROR:REQUEST_INVALID", extra={"err": f"unsupported op='{op}'"})
-
-    def _handle_plan_pose(self, key: Dict[str, Any], key_json: str, payload: Dict[str, Any]) -> None:
-        frame = payload.get("frame")
-        if not isinstance(frame, str) or not frame.strip():
-            raise ValueError("payload.frame must be non-empty string")
-        pose_d = payload.get("pose")
-        if not isinstance(pose_d, dict):
-            raise ValueError("payload.pose must be dict")
-
-        pose = self._pose_from_dict_strict(pose_d)
-        goal = self._transform_pose_to_world(pose, frame.strip())
-
-        self.arm.set_start_state_to_current_state()
-        self.arm.set_goal_state(pose_stamped_msg=goal, pose_link=EE_LINK)
-
-        if self._plan_params is None:
-            raise RuntimeError("PlanRequestParameters not available")
-        self._apply_planner_cfg_to_params()
-
-        result = self.arm.plan(single_plan_parameters=self._plan_params)
-        core = getattr(result, "trajectory", None)
-        if core is None:
-            self._emit_keyed(key, "ERROR:NO_TRAJ", extra={"what": "plan_pose", "frame": frame.strip()})
-            return
-
-        msg_traj = core.get_robot_trajectory_msg()
-        self._sanitize_traj_msg_inplace(msg_traj, context="plan_pose:planned")
-        self._tag_traj_msg_with_key(msg_traj, key_json)
-
-        self.pub_planned.publish(msg_traj)
-
-        self._last_planned_core = core
-        self._last_planned_key_json = key_json
-
-        self._emit_keyed(key, "PLANNED:OK", extra={"op": "plan_pose", "frame": frame.strip()})
-
-    def _handle_plan_pose_array(self, key: Dict[str, Any], key_json: str, payload: Dict[str, Any]) -> None:
-        frame = payload.get("frame")
-        if not isinstance(frame, str) or not frame.strip():
-            raise ValueError("payload.frame must be non-empty string")
-        poses_list = payload.get("poses")
-        if not isinstance(poses_list, list) or len(poses_list) < 2:
-            raise ValueError("payload.poses must be list with len>=2")
-
-        poses_world: List[Pose] = []
-        for i, pd in enumerate(poses_list):
-            if not isinstance(pd, dict):
-                raise ValueError(f"payload.poses[{i}] must be dict")
-            p = self._pose_from_dict_strict(pd)
-            ps_w = self._transform_pose_to_world(p, frame.strip())
-            poses_world.append(ps_w.pose)
-
-        fn = getattr(self.arm, "compute_cartesian_path", None)
-        if not callable(fn):
-            raise RuntimeError("compute_cartesian_path not available on planning component")
-
-        self.arm.set_start_state_to_current_state()
-
-        max_step = 0.005
-        jump_threshold = 0.0
-
-        out = fn(poses_world, max_step, jump_threshold)
-
-        traj_core = None
-        fraction = None
-        if isinstance(out, tuple) and len(out) >= 1:
-            traj_core = out[0]
-            if len(out) >= 2:
-                fraction = out[1]
-        else:
-            traj_core = getattr(out, "trajectory", None)
-            fraction = getattr(out, "fraction", None)
-
-        if traj_core is None or not hasattr(traj_core, "get_robot_trajectory_msg"):
-            self._emit_keyed(key, "ERROR:NO_TRAJ", extra={"what": "plan_pose_array"})
-            return
-
-        msg_traj = traj_core.get_robot_trajectory_msg()
-        self._sanitize_traj_msg_inplace(msg_traj, context="plan_pose_array:planned")
-        self._tag_traj_msg_with_key(msg_traj, key_json)
-
-        self.pub_planned.publish(msg_traj)
-
-        self._last_planned_core = traj_core if isinstance(traj_core, RobotTrajectoryCore) else None
-        self._last_planned_key_json = key_json if self._last_planned_core is not None else None
-
-        extra = {"op": "plan_pose_array"}
-        if fraction is not None:
-            extra["fraction"] = float(fraction)
-        self._emit_keyed(key, "PLANNED:OK", extra=extra)
-
-    def _handle_execute_last_planned(self, key: Dict[str, Any], key_json: str, payload: Dict[str, Any]) -> None:
-        if payload:
-            raise ValueError("payload for op='execute' must be empty dict")
-
-        if self._last_planned_core is None or not self._last_planned_key_json:
-            self._emit_keyed(key, "ERROR:NO_PLAN", extra={"what": "execute"})
-            return
-
-        msg_traj = self._last_planned_core.get_robot_trajectory_msg()
-
-        # execute via async FollowJT (STOP works reliably)
-        self._execute_traj_via_followjt_async(
-            key=key,
-            key_json=key_json,
-            msg=msg_traj,
-            source="plan_request:execute",
-        )
-
-    # ------------------------------------------------------------
-    # execute_trajectory (STRICT: key from jt.header.frame_id JSON)
-    # ------------------------------------------------------------
-    def _on_execute_trajectory(self, msg: RobotTrajectoryMsg) -> None:
-        if self._is_busy():
-            self.pub_result.publish(MsgString(data="ERROR:BUSY"))
-            return
-
-        try:
-            key, key_json = self._key_from_traj_msg_strict(msg)
-        except Exception as e:
-            self.pub_result.publish(MsgString(data=f"ERROR:TRAJ_KEY_INVALID {e}"))
-            return
-
-        if not self._require_moveit_ready(key=key, key_json=key_json):
-            return
-
-        self._clear_traj_cache(reason=f"execute_trajectory:{self._key_short(key)}")
-        self._publish_robot_model_strings_once()
-
-        jt = getattr(msg, "joint_trajectory", None)
-        if jt is None or not getattr(jt, "joint_names", None) or not getattr(jt, "points", None):
-            self._emit_keyed(key, "ERROR:EMPTY_TRAJ")
-            return
-
-        # Execute via async helper (STOP works reliably)
-        self._execute_traj_via_followjt_async(
-            key=key,
-            key_json=key_json,
-            msg=msg,
-            source="execute_trajectory",
-        )
-
-    # ------------------------------------------------------------
-    # optimize_trajectory (STRICT: key from jt.header.frame_id JSON)
-    # ------------------------------------------------------------
-    def _on_optimize_trajectory(self, msg: RobotTrajectoryMsg) -> None:
-        if self._is_busy():
-            self.pub_result.publish(MsgString(data="ERROR:BUSY"))
-            return
-
-        try:
-            key, key_json = self._key_from_traj_msg_strict(msg)
-        except Exception as e:
-            self.pub_result.publish(MsgString(data=f"ERROR:TRAJ_KEY_INVALID {e}"))
-            return
-
-        if not self._require_moveit_ready(key=key, key_json=key_json):
-            return
-
-        if not _HAVE_TRAJ_PROC:
-            self._emit_keyed(key, "ERROR:OPTIMIZE_BINDINGS_MISSING")
-            return
-
-        self._clear_traj_cache(reason=f"optimize_trajectory:{self._key_short(key)}")
-        self._publish_robot_model_strings_once()
-
-        jt = getattr(msg, "joint_trajectory", None)
-        if jt is None or not getattr(jt, "joint_names", None) or not getattr(jt, "points", None):
-            self._emit_keyed(key, "ERROR:EMPTY_TRAJ")
-            return
-
-        try:
-            self._sanitize_traj_msg_inplace(msg, context="optimize_trajectory:input")
-            self._tag_traj_msg_with_key(msg, key_json)  # normalized
-        except Exception as e:
-            self._emit_keyed(key, "ERROR:TRAJ_INVALID", extra={"err": repr(e)})
-            return
-
-        self._set_busy(True)
-        try:
-            planner_id = str(self._planner_cfg.get("planner_id") or "").strip()
-            out_msg = self._retime_robot_trajectory(msg, retimer_name=planner_id)
-
-            self._sanitize_traj_msg_inplace(out_msg, context="optimize_trajectory:output")
-            self._tag_traj_msg_with_key(out_msg, key_json)
-
-            self.pub_optimized.publish(out_msg)
-            self._emit_keyed(key, "OPTIMIZED:OK")
-
-        except Exception as e:
-            self._emit_keyed(key, "ERROR:OPTIMIZE", extra={"err": repr(e)})
-        finally:
-            self._set_busy(False)
-
-    def _retime_robot_trajectory(self, msg: RobotTrajectoryMsg, *, retimer_name: str) -> RobotTrajectoryMsg:
-        if self.robot_model is None:
-            raise RuntimeError("robot_model not available (MoveItPy not ready)")
-        if not _HAVE_TRAJ_PROC:
-            raise RuntimeError("trajectory_processing bindings missing")
-
-        jt = msg.joint_trajectory
-        if jt is None or not jt.joint_names or not jt.points or len(jt.points) < 2:
-            raise RuntimeError("input trajectory invalid/too short")
-
-        state = RobotState(self.robot_model)
-        p0 = jt.points[0]
-        if len(p0.positions) != len(jt.joint_names):
-            raise RuntimeError("first point positions size != joint_names size")
-        for name, val in zip(list(jt.joint_names), list(p0.positions)):
-            state.set_variable_position(str(name).lstrip("/"), float(val))  # type: ignore[attr-defined]
-
-        traj = RobotTrajectoryCore(self.robot_model, GROUP_NAME)
-        if not hasattr(traj, "set_robot_trajectory_msg"):
-            raise RuntimeError("RobotTrajectoryCore.set_robot_trajectory_msg missing in bindings")
-        traj.set_robot_trajectory_msg(state, msg)  # type: ignore[attr-defined]
-
-        r = (retimer_name or "").strip().lower()
-        use_iptp = ("parabolic" in r) or ("iptp" in r) or ("iterative" in r)
-        retimer = IterativeParabolicTimeParameterization() if use_iptp else TimeOptimalTrajectoryGeneration()
-
-        vel_scale = float(self._planner_cfg.get("max_velocity_scaling_factor", 1.0))
-        acc_scale = float(self._planner_cfg.get("max_acceleration_scaling_factor", 1.0))
-        vel_scale = max(0.01, min(1.00, vel_scale))
-        acc_scale = max(0.01, min(1.00, acc_scale))
-
-        fn = getattr(retimer, "compute_time_stamps", None)
-        if not callable(fn):
-            raise RuntimeError("retimer.compute_time_stamps missing in bindings")
-
-        ok = bool(fn(traj, vel_scale, acc_scale))
-        if not ok:
-            raise RuntimeError(
-                f"retime failed (retimer={'IPTP' if use_iptp else 'TOTG'}, "
-                f"vel_scale={vel_scale:.3f}, acc_scale={acc_scale:.3f})"
-            )
-
-        if not hasattr(traj, "get_robot_trajectory_msg"):
-            raise RuntimeError("RobotTrajectoryCore.get_robot_trajectory_msg missing in bindings")
-
-        out = traj.get_robot_trajectory_msg()  # type: ignore[attr-defined]
-        return out
-
-    # ------------------------------------------------------------
-    # stop (KEYED, async-safe, clears busy immediately)
-    # ------------------------------------------------------------
-    def _on_stop(self, _msg: MsgEmpty) -> None:
-        # cancel token-scoped (no global cancel flag!)
-        tok = int(self._active_exec_token)
-        if tok > 0:
-            self._canceled_tokens.add(tok)
-
-        # stop recorder now (STRICT)
-        try:
-            self._exec_rec.cancel()
-        except Exception:
-            pass
-
-        gh = self._external_active_goal
-        if gh is not None:
-            try:
-                gh.cancel_goal_async()
-            except Exception as e:
-                self.log.warning(f"[stop] cancel_goal_async failed: {e!r}")
-
-        # keyed stop notification if we have an active key
-        if self._active_key is not None:
-            try:
-                self._emit_keyed(dict(self._active_key), "STOP:REQ")
-            except Exception:
-                pass
-        else:
-            self.pub_result.publish(MsgString(data="STOP:REQ"))
-
-        # IMPORTANT: clear busy immediately (GUI can proceed),
-        # cancellation completion is handled by execution token in callbacks.
-        self._set_busy(False)
-
-        # also clear "active pointers" (callbacks use captured key)
-        self._external_active_goal = None
-        self._external_active_traj = None
-        self._active_key = None
-        self._active_key_json = ""
-
-        self.log.info("STOP:REQ")
-
-
-def main(args=None) -> None:
-    rclpy.init(args=args)
-    node = MoveItPyNode()
+def main(argv: Optional[List[str]] = None) -> None:
+    rclpy.init(args=argv)
+    node: Optional[MoveItPyNode] = None
     try:
+        node = MoveItPyNode()
         rclpy.spin(node)
     finally:
         try:
-            node.destroy_node()
-        except Exception:
-            pass
-        try:
-            rclpy.shutdown()
-        except Exception:
-            pass
+            if node is not None:
+                node.destroy_node()
+        finally:
+            if rclpy.ok():
+                rclpy.shutdown()
 
 
 if __name__ == "__main__":

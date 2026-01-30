@@ -17,9 +17,6 @@ MoveItPy Variant A (single plan_request channel):
   stale MoveIt state (results/latched traj) even if the node does not expose a
   clear service.
 
-SprayPath Cache Node:
-- Facade uses set_planned(new_..., stored_...) and set_executed(new_..., stored_...).
-
 MoveItPy cache-clear behavior:
 - MoveItPy node may publish traj_cache_clear (Empty) and/or empty RobotTrajectory
   to clear latched trajectories. RosBridge listens and clears UI state container.
@@ -27,11 +24,16 @@ MoveItPy cache-clear behavior:
 NEW (2026-01):
 - tray_exec_ready (std_msgs/Bool) is forwarded via MoveItPyBridge and stored in MoveItState.
   This is "controller/action readiness" (capability), not busy/occupancy.
+
+NO-LEGACY GUARANTEE (important for your crash):
+- No code path is allowed to send JSON strings for plan_request.
+- Public API:
+    - moveit_plan_request(op, payload, run, req_id, segment)  # builds key + dict payload
+    - moveit_publish_plan_request(key=dict, payload=dict)      # dict-only
 """
 
 from __future__ import annotations
 
-import json
 import threading
 import logging
 from dataclasses import dataclass
@@ -241,7 +243,6 @@ class MoveItStateAdapter:
     def _set_busy(self, v: bool) -> None:
         self.st.busy = bool(v)
 
-    # NEW
     def _set_tray_exec_ready(self, v: bool) -> None:
         self.st.tray_exec_ready = bool(v)
 
@@ -441,7 +442,7 @@ class RosBridge:
             if hasattr(sig, "busyChanged"):
                 sig.busyChanged.connect(self.moveit_state._set_busy)
 
-            # NEW: controller/action readiness
+            # controller/action readiness
             if hasattr(sig, "trayExecReadyChanged"):
                 sig.trayExecReadyChanged.connect(self.moveit_state._set_tray_exec_ready)
 
@@ -468,18 +469,13 @@ class RosBridge:
     def _on_moveit_traj_cache_clear(self) -> None:
         """
         Boundary clear for MoveIt planned/executed/optimized in RosBridge UI state.
-
-        MoveItPyBridge clears its own internal caches when receiving:
-          - traj_cache_clear (Empty), and/or
-          - empty RobotTrajectory published on latched topics.
         """
         with self._lock:
             self._moveit_state.planned = None
             self._moveit_state.executed = None
             self._moveit_state.optimized = None
-            # NOTE:
-            # - busy is NOT cleared here; busy is controlled by busyChanged/result.
-            # - tray_exec_ready is NOT cleared here; it's capability and will be updated by topic.
+            # busy is controlled by busyChanged/result
+            # tray_exec_ready is capability, updated by topic
 
     # ---------------- Public Facade API ----------------
 
@@ -493,19 +489,12 @@ class RosBridge:
     # --- MoveIt (Variant A) ---
 
     def moveit_is_busy(self) -> bool:
-        """
-        Derived busy flag from MoveItPyBridge (publish->busy, terminal result->not busy).
-        """
         try:
             return bool(self._moveit_state.busy)
         except Exception:
             return False
 
     def moveit_tray_exec_ready(self) -> bool:
-        """
-        Controller/action readiness (capability). Independent from busy.
-        Typical UI gate: can_execute = tray_exec_ready and not busy.
-        """
         try:
             return bool(self._moveit_state.tray_exec_ready)
         except Exception:
@@ -543,14 +532,10 @@ class RosBridge:
     # ---- boundary reset helpers (UI-side, best-effort) ----
 
     def moveit_clear_motion_result(self) -> None:
-        """
-        Local-only clear of last_result so statemachines don't parse stale JSON.
-        """
         if not self.moveitpy:
             return
         try:
             self.moveitpy.signals.last_result = ""
-            # optional: notify UI watchers
             self.moveitpy.signals.motionResultChanged.emit("")
         except Exception:
             _LOG.exception("moveit_clear_motion_result failed")
@@ -562,10 +547,6 @@ class RosBridge:
         self.moveit_clear_motion_result()
 
     def moveit_clear_trajectory_cache(self) -> None:
-        """
-        Local-only clear of planned/executed/optimized trajectory state.
-        (Does NOT command the node; only clears UI-facing caches.)
-        """
         try:
             self._on_moveit_traj_cache_clear()
             if self.moveitpy:
@@ -591,6 +572,47 @@ class RosBridge:
         if not s:
             raise ValueError("MoveItPy Variant-A requires non-empty seg (key.seg) [STRICT]")
         return s
+
+    # ----------------------------
+    # NO-LEGACY public senders (dict-only)
+    # ----------------------------
+
+    def moveit_publish_plan_request(self, *, key: Dict[str, Any], payload: Dict[str, Any]) -> None:
+        """
+        STRICT dict-only sender for plan_request envelope.
+        Callers MUST NOT pass JSON strings.
+        """
+        if not isinstance(key, dict):
+            raise TypeError(f"moveit_publish_plan_request: key must be dict, got {type(key)!r}")
+        if not isinstance(payload, dict):
+            raise TypeError(f"moveit_publish_plan_request: payload must be dict, got {type(payload)!r}")
+        self._moveit_publish_plan_request(key=key, payload=payload)
+
+    def moveit_plan_request(
+        self,
+        *,
+        op: str,
+        payload: Dict[str, Any],
+        run: str,
+        req_id: int,
+        segment: str,
+    ) -> None:
+        """
+        STRICT helper: builds key and publishes plan_request.
+        """
+        seg = self._require_seg(segment)
+        op_s = str(op or "").strip()
+        if not op_s:
+            raise ValueError("moveit_plan_request: op must be non-empty")
+        if not isinstance(payload, dict):
+            raise TypeError("moveit_plan_request: payload must be dict")
+
+        key = {"run": str(run or ""), "id": int(req_id), "seg": seg, "op": op_s}
+        self._moveit_publish_plan_request(key=key, payload=dict(payload))
+
+    # ----------------------------
+    # payload helpers
+    # ----------------------------
 
     @staticmethod
     def _pose_to_dict(pose) -> Dict[str, Any]:
@@ -642,25 +664,23 @@ class RosBridge:
             raise RuntimeError("MoveItPyBridge not started")
         self.moveitpy.publish_set_planner_cfg(cfg)
 
+    # ----------------------------
+    # typed convenience ops (still Variant-A plan_request)
+    # ----------------------------
+
     def moveit_plan_pose(self, pose_stamped: Any, *, run: str, req_id: int, segment: str) -> None:
-        seg = self._require_seg(segment)
-        key = {"run": str(run or ""), "id": int(req_id), "seg": seg, "op": "plan_pose"}
         payload = self._pose_stamped_payload(pose_stamped)
-        self._moveit_publish_plan_request(key=key, payload=payload)
+        self.moveit_plan_request(op="plan_pose", payload=payload, run=run, req_id=req_id, segment=segment)
 
     def moveit_plan_pose_array(self, pose_array: Any, *, run: str, req_id: int, segment: str) -> None:
-        seg = self._require_seg(segment)
-        key = {"run": str(run or ""), "id": int(req_id), "seg": seg, "op": "plan_pose_array"}
         payload = self._pose_array_payload(pose_array)
-        self._moveit_publish_plan_request(key=key, payload=payload)
+        self.moveit_plan_request(op="plan_pose_array", payload=payload, run=run, req_id=req_id, segment=segment)
 
     def moveit_execute_last_planned(self, *, run: str, req_id: int, segment: str) -> None:
         """
         Variant-A execute op: executes LAST planned trajectory on the node.
         """
-        seg = self._require_seg(segment)
-        key = {"run": str(run or ""), "id": int(req_id), "seg": seg, "op": "execute"}
-        self._moveit_publish_plan_request(key=key, payload={})
+        self.moveit_plan_request(op="execute", payload={}, run=run, req_id=req_id, segment=segment)
 
     def moveit_execute_trajectory(self, traj: Any) -> None:
         """
@@ -724,7 +744,7 @@ class RosBridge:
             self.spray.set_planned(new_poses=new_poses, new_markers=new_markers, stored_markers=stored_markers)
 
     def spray_set_traj(self, *, poses=None, markers=None) -> None:
-        # Legacy alias -> maps to NEW planned
+        # Legacy alias -> maps to NEW planned (kept for compatibility)
         self.spray_set_planned(new_poses=poses, new_markers=markers)
 
     def spray_set_executed(self, *, new_poses=None, new_markers=None, stored_markers=None) -> None:

@@ -1,151 +1,355 @@
 # -*- coding: utf-8 -*-
-# File: src/tabs/process/process_panel/movement_strategies.py
+"""
+File: src/tabs/process/process_panel/movement_strategies.py
+
+Movement strategies for Validate/Execute pipelines.
+
+STRICT goals:
+- Strategy decides which SegmentRunner steps to emit.
+- Strategy is config-driven (planner_cfg), but does NOT send planner_cfg to MoveIt;
+  it derives pilz-sequence payload fields from planner_cfg["params"].
+
+Notes:
+- PtpStrategy -> plan_pose + execute (per pose).
+- PilzSequenceStrategy -> plan_pilz_sequence + execute (single blended sequence),
+  with strict payload dict (frame, sequence[], blend/vel/acc/time).
+
+Assumptions / Contracts:
+- SegmentRunner provides:
+    - make_plan_pose_step_bound(...)
+    - make_execute_last_planned_step_bound(...)
+    - make_plan_pilz_sequence_step_bound(run, req_id, seg, payload, label)
+- The ROS bridge publishes a keyed plan_request with op="plan_pilz_sequence"
+  and payload being a dict with:
+    {
+      "frame": "<frame>",
+      "sequence": [{"cmd":"LIN|PTP","pose":{position:{...},orientation:{...}}}, ...],
+      "blend_radius_m": float,
+      "planning_time_s": float,
+      "vel_scale": float,
+      "acc_scale": float,
+      "start": "current"|"first_pose"
+    }
+"""
+
 from __future__ import annotations
 
 import time
 import copy
+import logging
 from abc import ABC, abstractmethod
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Dict
 
-# Wir brauchen PoseArray, um die Daten korrekt für die Bridge zu verpacken
-from geometry_msgs.msg import PoseArray, PoseStamped
+from geometry_msgs.msg import PoseStamped
 
-# WICHTIG: Import passend zu deinem Dateinamen 'segment_runner.py'
-from .segment_runner import SegmentRunner, StepSpec
+from .segment_runner import SegmentRunner, StepSpec  # NOTE: file is segmentrunner.py
+
+_LOG = logging.getLogger("tabs.process.movement_strategies")
+
+
+# =============================================================================
+# Base
+# =============================================================================
 
 class MoveStrategy(ABC):
     """
-    Abstrakte Basisklasse für Bewegungsstrategien.
-    Jede Strategie weiß selbst, wie sie eine Liste von Posen in Steps umwandelt.
+    Base movement strategy.
+
+    planner_cfg (segment-specific):
+      {
+        "pipeline": "...",
+        "planner_id": "...",
+        "params": {...}
+      }
     """
-    def __init__(self, runner: SegmentRunner, run_id: str):
+
+    def __init__(self, runner: SegmentRunner, run_id: str, planner_cfg: Optional[Dict[str, Any]] = None):
         self.runner = runner
-        self.run_id = run_id
+        self.run_id = str(run_id or "")
+        self.planner_cfg: Dict[str, Any] = dict(planner_cfg or {})
 
     @abstractmethod
     def create_steps(self, seg_name: str, poses: List[Any]) -> List[StepSpec]:
-        """Wandelt eine Liste von PoseStamped in StepSpecs um."""
-        pass
+        raise NotImplementedError
 
     def _new_id(self, i: int) -> int:
-        return int(time.time() * 1000) + i
+        # monotonic-ish per call; OK for UI correlation
+        return int(time.time() * 1000) + int(i)
 
+    # ----------------------------
+    # TF helper (source -> target_frame)
+    # ----------------------------
+    def _transform_stamped(self, ps: PoseStamped, target_frame: str) -> Optional[PoseStamped]:
+        """
+        Uses ros.tf_buffer (if available) to transform PoseStamped into target_frame.
+        Best-effort; returns None on failure.
+        """
+        try:
+            ros = self.runner._ros  # existing pattern in your codebase
+            tfb = getattr(ros, "tf_buffer", None)
+            if tfb is None:
+                return None
+
+            source_frame = str(getattr(getattr(ps, "header", None), "frame_id", "") or "").strip()
+            target_frame = str(target_frame or "").strip()
+            if not source_frame or not target_frame:
+                return None
+            if source_frame == target_frame:
+                return ps
+
+            from rclpy.time import Time
+            from rclpy.duration import Duration
+
+            # Prefer tf_buffer.transform if available (Buffer interface)
+            try:
+                # timeout must be Duration (not None)
+                out = tfb.transform(ps, target_frame, timeout=Duration(seconds=0.25))
+                out.header.frame_id = target_frame
+                return out
+            except Exception:
+                pass
+
+            # Fallback via lookup_transform + do_transform_pose (PoseStamped)
+            from tf2_geometry_msgs import do_transform_pose  # type: ignore
+
+            if not tfb.can_transform(target_frame, source_frame, Time(), timeout=Duration(seconds=0.25)):
+                return None
+
+            tf = tfb.lookup_transform(target_frame, source_frame, Time())
+
+            out = PoseStamped()
+            out.header.frame_id = target_frame
+            out.header.stamp = ps.header.stamp
+            # do_transform_pose expects PoseStamped OR Pose depending on binding; safest: give PoseStamped
+            try:
+                out = do_transform_pose(ps, tf)  # type: ignore[arg-type]
+                out.header.frame_id = target_frame
+                return out
+            except Exception:
+                # if binding expects Pose, transform just pose and keep header
+                out.pose = do_transform_pose(ps.pose, tf)  # type: ignore[arg-type]
+                return out
+
+        except Exception as e:
+            _LOG.warning(f"Strategy Transform failed: {e!r}")
+        return None
+
+
+# =============================================================================
+# PTP strategy
+# =============================================================================
 
 class PtpStrategy(MoveStrategy):
     """
-    Klassisches Point-to-Point (PTP) in einer Schleife.
-    Verhalten: Stop-and-Go bei jedem Punkt.
-    Nutzt: plan_pose (Einzelpunkte)
+    Plans+executes each pose individually via plan_pose (PTP or OMPL).
     """
+
     def create_steps(self, seg_name: str, poses: List[Any]) -> List[StepSpec]:
-        steps = []
-        for i, pose in enumerate(poses):
+        steps: List[StepSpec] = []
+        for i, pose in enumerate(list(poses or [])):
             rid = self._new_id(i)
-            
-            # 1. Planen (Einzelner Punkt)
-            steps.append(self.runner.make_plan_pose_step_bound(
-                run=self.run_id, req_id=rid, seg=seg_name, pose=pose, label=f"{seg_name}:ptp:plan[{i}]"
-            ))
-            
-            # 2. Ausführen
-            steps.append(self.runner.make_execute_last_planned_step_bound(
-                run=self.run_id, req_id=rid, seg=seg_name, label=f"{seg_name}:ptp:exec[{i}]"
-            ))
+            steps.append(
+                self.runner.make_plan_pose_step_bound(
+                    run=self.run_id,
+                    req_id=rid,
+                    seg=seg_name,
+                    pose=pose,
+                    label=f"{seg_name}:ptp:plan[{i}]",
+                )
+            )
+            steps.append(
+                self.runner.make_execute_last_planned_step_bound(
+                    run=self.run_id,
+                    req_id=rid,
+                    seg=seg_name,
+                    label=f"{seg_name}:ptp:exec[{i}]",
+                )
+            )
         return steps
 
 
-class CartesianStrategy(MoveStrategy):
-    """
-    Linearer Pfad (LIN/Cartesian) via MoveIt Cartesian Interpolator.
-    Verhalten: Eine flüssige Bewegung durch alle Punkte (strikte Linie).
-    Nutzt: plan_cartesian
-    """
-    def create_steps(self, seg_name: str, poses: List[Any]) -> List[StepSpec]:
-        if not poses: return []
-        rid = self._new_id(0)
-        
-        # Cartesian Path Interpolator akzeptiert meist direkt eine Liste von Posen
-        steps = [self.runner.make_plan_cartesian_step_bound(
-            run=self.run_id, req_id=rid, seg=seg_name, poses=poses, label=f"{seg_name}:cart:plan"
-        )]
-        
-        steps.append(self.runner.make_execute_last_planned_step_bound(
-            run=self.run_id, req_id=rid, seg=seg_name, label=f"{seg_name}:cart:exec"
-        ))
-        return steps
-
+# =============================================================================
+# Pilz sequence strategy (LIN/PTP w/ blending)
+# =============================================================================
 
 class PilzSequenceStrategy(MoveStrategy):
     """
-    Pilz Sequence: Sendet alle Punkte als PoseArray.
-    Der Pilz-Planer verbindet sie flüssig (PTP/LIN/CIRC Blending).
-    
-    INTELLIGENT (TCP UPDATE): 
-    - Wenn < 2 Punkte: Hole aktuelle TCP-Position vom Roboter (via RobotBridge).
-    - Baue Sequenz: [Current_Pos, Target_Pos].
-    - Sende LIN Sequenz.
+    Builds a single blended sequence request (Pilz LIN/PTP) instead of per-point planning.
+
+    planner_cfg["params"] mapping (all optional):
+      - blend_radius_m (float, default 0.0)
+      - planning_time_s (float, default 5.0)
+      - vel_scale (float, default 1.0)
+      - acc_scale (float, default 1.0)
+      - cmd (str: "LIN"|"PTP", default "LIN")
+      - cmds (list[str], optional per-point command list, len==N)
+      - start (str: "current"|"first_pose", default "current")
     """
+
+    def _pilz_payload_fields(self) -> Dict[str, Any]:
+        raw = self.planner_cfg.get("params")
+        params = raw if isinstance(raw, dict) else {}
+
+        def _f(name: str, default: float, *, lo: Optional[float] = None, hi: Optional[float] = None) -> float:
+            try:
+                v = float(params.get(name, default))
+            except Exception:
+                v = float(default)
+            if lo is not None:
+                v = max(lo, v)
+            if hi is not None:
+                v = min(hi, v)
+            return float(v)
+
+        blend = _f("blend_radius_m", 0.0, lo=0.0)
+        planning_time = _f("planning_time_s", 5.0, lo=0.01)
+        vel = _f("vel_scale", 1.0, lo=0.01, hi=1.0)
+        acc = _f("acc_scale", 1.0, lo=0.01, hi=1.0)
+
+        cmd = str(params.get("cmd", "LIN") or "LIN").strip().upper()
+        if cmd not in ("LIN", "PTP"):
+            cmd = "LIN"
+
+        start = str(params.get("start", "current") or "current").strip().lower()
+        if start not in ("current", "first_pose"):
+            start = "current"
+
+        cmds_raw = params.get("cmds", None)
+        cmds: Optional[List[str]] = None
+        if isinstance(cmds_raw, list) and cmds_raw:
+            tmp: List[str] = []
+            ok = True
+            for x in cmds_raw:
+                s = str(x or "").strip().upper()
+                if s not in ("LIN", "PTP"):
+                    ok = False
+                    break
+                tmp.append(s)
+            if ok:
+                cmds = tmp
+
+        return {
+            "blend_radius_m": blend,
+            "planning_time_s": planning_time,
+            "vel_scale": vel,
+            "acc_scale": acc,
+            "cmd": cmd,
+            "cmds": cmds,  # may be None
+            "start": start,
+        }
+
+    @staticmethod
+    def _pose_to_dict(ps: PoseStamped) -> Dict[str, Any]:
+        p = ps.pose
+        return {
+            "position": {"x": float(p.position.x), "y": float(p.position.y), "z": float(p.position.z)},
+            "orientation": {
+                "x": float(p.orientation.x),
+                "y": float(p.orientation.y),
+                "z": float(p.orientation.z),
+                "w": float(p.orientation.w),
+            },
+        }
+
+    def _build_pilz_sequence_payload(self, *, frame: str, poses: List[PoseStamped]) -> Dict[str, Any]:
+        fields = self._pilz_payload_fields()
+
+        base_cmd = str(fields["cmd"]).strip().upper()
+        cmds = fields.get("cmds", None)
+
+        if isinstance(cmds, list) and len(cmds) == len(poses):
+            cmds_list = [str(x).strip().upper() for x in cmds]
+        else:
+            cmds_list = [base_cmd for _ in poses]
+
+        seq: List[Dict[str, Any]] = []
+        for ps, cmd in zip(poses, cmds_list):
+            if cmd not in ("LIN", "PTP"):
+                cmd = base_cmd
+            seq.append({"cmd": cmd, "pose": self._pose_to_dict(ps)})
+
+        return {
+            "frame": str(frame),
+            "sequence": seq,
+            "blend_radius_m": float(fields["blend_radius_m"]),
+            "planning_time_s": float(fields["planning_time_s"]),
+            "vel_scale": float(fields["vel_scale"]),
+            "acc_scale": float(fields["acc_scale"]),
+            "start": str(fields["start"]),
+        }
+
     def create_steps(self, seg_name: str, poses: List[Any]) -> List[StepSpec]:
-        if not poses: return []
-        
+        if not poses:
+            return []
+
         rid = self._new_id(0)
         final_poses = list(poses)
 
-        # --- INTELLIGENTER STARTPUNKT ---
-        # Wenn wir nur einen Zielpunkt haben (z.B. Predispense),
-        # bauen wir uns eine Linie vom aktuellen Roboter-Standort zum Ziel.
-        if len(final_poses) < 2:
-            current_pose = self._try_get_current_pose()
-            if current_pose:
-                # Wir fügen die aktuelle Position VORNE an
-                final_poses.insert(0, current_pose)
-            else:
-                # Fallback, falls wir die Position nicht lesen können -> Single Point PTP
-                return self._fallback_single_ptp(seg_name, poses[0], rid)
-
-        # --- NORMALFALL: SEQUENZ (jetzt >= 2 Punkte) ---
-        pa = PoseArray()
-        
-        # Header vom ersten Punkt übernehmen (Frame ID ist wichtig!)
-        if hasattr(final_poses[0], "header"):
-            pa.header.frame_id = final_poses[0].header.frame_id
-            pa.header.stamp = final_poses[0].header.stamp
-        
-        # Nur die .pose Anteile extrahieren
-        pa.poses = [p.pose for p in final_poses]
-
-        steps = [self.runner.make_plan_pose_array_step_bound(
-            run=self.run_id, req_id=rid, seg=seg_name, poses=pa, label=f"{seg_name}:seq:plan"
-        )]
-
-        steps.append(self.runner.make_execute_last_planned_step_bound(
-            run=self.run_id, req_id=rid, seg=seg_name, label=f"{seg_name}:seq:exec"
-        ))
-        return steps
-
-    def _try_get_current_pose(self) -> Optional[PoseStamped]:
-        """
-        Versucht, die aktuelle TCP-Pose aus der RobotBridge zu lesen.
-        Pfad: ros_bridge -> robot (RobotBridge) -> tcp_pose
-        """
+        # Determine target frame from first pose (default substrate)
+        target_frame = "substrate"
         try:
-            ros = self.runner._ros
-            # Zugriff auf die RobotBridge Instanz
-            if hasattr(ros, "robot") and ros.robot is not None:
-                # Zugriff auf das tcp_pose Attribut (wie in robot_bridge.py definiert)
-                if hasattr(ros.robot, "tcp_pose") and ros.robot.tcp_pose is not None:
-                    return copy.deepcopy(ros.robot.tcp_pose)
+            if isinstance(final_poses[0], PoseStamped):
+                target_frame = str(final_poses[0].header.frame_id or "").strip() or "substrate"
         except Exception:
-            return None
-        return None
+            target_frame = "substrate"
 
-    def _fallback_single_ptp(self, seg_name: str, pose: Any, rid: int) -> List[StepSpec]:
-        """Alter Fallback für Einzelpunkte."""
+        # Need >=2 for pilz sequence; else fallback
+        if len(final_poses) < 2:
+            return self._fallback_single_ptp(seg_name, final_poses[-1], rid)
+
+        # Normalize to PoseStamped and ensure all in target_frame
+        norm: List[PoseStamped] = []
+        for i, ps in enumerate(final_poses):
+            if not isinstance(ps, PoseStamped):
+                _LOG.warning(f"Strategy: poses[{i}] is not PoseStamped -> fallback PTP.")
+                return self._fallback_single_ptp(seg_name, final_poses[-1], rid)
+
+            src = str(ps.header.frame_id or "").strip()
+            if src and src != target_frame:
+                tps = self._transform_stamped(ps, target_frame)
+                if tps is None:
+                    _LOG.warning(f"Strategy: TF failed for pose[{i}] {src}->{target_frame}, fallback PTP.")
+                    return self._fallback_single_ptp(seg_name, final_poses[-1], rid)
+                norm.append(tps)
+            else:
+                if not src:
+                    cps = copy.deepcopy(ps)
+                    cps.header.frame_id = target_frame
+                    norm.append(cps)
+                else:
+                    norm.append(ps)
+
+        payload = self._build_pilz_sequence_payload(frame=target_frame, poses=norm)
+
         return [
-            self.runner.make_plan_pose_step_bound(
-                run=self.run_id, req_id=rid, seg=seg_name, pose=pose, label=f"{seg_name}:seq:single"
+            self.runner.make_plan_pilz_sequence_step_bound(
+                run=self.run_id,
+                req_id=rid,
+                seg=seg_name,
+                payload=payload,
+                label=f"{seg_name}:seq:plan(pilz)",
             ),
             self.runner.make_execute_last_planned_step_bound(
-                run=self.run_id, req_id=rid, seg=seg_name, label=f"{seg_name}:seq:exec"
-            )
+                run=self.run_id,
+                req_id=rid,
+                seg=seg_name,
+                label=f"{seg_name}:seq:exec",
+            ),
+        ]
+
+    def _fallback_single_ptp(self, seg_name: str, pose: Any, rid: int) -> List[StepSpec]:
+        return [
+            self.runner.make_plan_pose_step_bound(
+                run=self.run_id,
+                req_id=rid,
+                seg=seg_name,
+                pose=pose,
+                label=f"{seg_name}:seq:single",
+            ),
+            self.runner.make_execute_last_planned_step_bound(
+                run=self.run_id,
+                req_id=rid,
+                seg=seg_name,
+                label=f"{seg_name}:seq:exec",
+            ),
         ]
