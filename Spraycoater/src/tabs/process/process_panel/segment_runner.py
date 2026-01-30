@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
-# File: src/tabs/process/process_panel/segmentrunner.py
+# File: src/tabs/process/process_panel/segment_runner.py
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from typing import Any, Optional, Callable, List, Dict
@@ -16,7 +15,7 @@ from .process_contract import (
 )
 from .process_serialization import is_empty_robot_trajectory
 
-_LOG = logging.getLogger("tabs.process.segmentrunner")
+_LOG = logging.getLogger("tabs.process.segment_runner")
 
 
 # =============================================================================
@@ -67,7 +66,7 @@ class StepRunner(QtCore.QObject):
                 "delay": int(goal_rejected_retry_delay_ms),
                 "count": 0,
             },
-            # Wir nutzen EXEC_ERROR Konfig jetzt als generischen Error-Retry
+            # EXEC_ERROR = generic error retry
             "EXEC_ERROR": {
                 "max": int(max_exec_error_retries),
                 "delay": int(exec_error_retry_delay_ms),
@@ -80,7 +79,7 @@ class StepRunner(QtCore.QObject):
 
         # Stability (Hysteresis)
         self._stability_counter = 0
-        self._required_stability_cycles = 4  # e.g., 4 * 50ms = 200ms stable "OK"
+        self._required_stability_cycles = 4  # 4 * 50ms = 200ms stable "ok"
 
         self._active: bool = False
         self._stop: bool = False
@@ -90,11 +89,17 @@ class StepRunner(QtCore.QObject):
 
         self._connect_signals()
 
+    # ---------------------------------------------------------------------
+    # Wiring
+    # ---------------------------------------------------------------------
+
     def _connect_signals(self) -> None:
-        """Dynamic connection of MoveItPy signals."""
+        """
+        Dynamic connection of MoveItPy signals.
+        Expected: ros.moveitpy.signals.{motionResultChanged, plannedTrajectoryChanged, ...}
+        """
         mp = getattr(self._ros, "moveitpy", None)
         signals = getattr(mp, "signals", None) if mp else None
-
         if not signals:
             return
 
@@ -108,49 +113,51 @@ class StepRunner(QtCore.QObject):
         for sig_name, slot in mapping:
             try:
                 sig = getattr(signals, sig_name, None)
-                if sig:
+                if sig is not None:
                     sig.connect(slot)
             except Exception:
                 pass
 
-    # --- Logging Helper ---
+    # ---------------------------------------------------------------------
+    # UI logging helper (forward to SegmentRunner parent)
+    # ---------------------------------------------------------------------
 
     def _ui_log(self, msg: str) -> None:
-        """Forward a log line to parent SegmentRunner (and further to UI)."""
         text = str(msg or "").strip()
         if not text:
             return
         try:
             p = self.parent()
             if p and hasattr(p, "_emit_log"):
-                p._emit_log(text)  # type: ignore
+                p._emit_log(text)  # type: ignore[attr-defined]
             elif p and hasattr(p, "logLine"):
                 getattr(p, "logLine").emit(text)
         except Exception:
             pass
 
-    # --- Gating Logic with Stability Check ---
+    # ---------------------------------------------------------------------
+    # Gating logic with stability check
+    # ---------------------------------------------------------------------
 
     def _try_send_current(self) -> None:
         if not self._active or self._stop or self._spec is None:
             return
 
-        # 1. Instant check
+        # 1) Instant check
         is_busy = False
         is_ready = True
         try:
             if callable(getattr(self._ros, "moveit_is_busy", None)):
-                is_busy = self._ros.moveit_is_busy()
+                is_busy = bool(self._ros.moveit_is_busy())
             if callable(getattr(self._ros, "moveit_tray_exec_ready", None)):
-                is_ready = self._ros.moveit_tray_exec_ready()
+                is_ready = bool(self._ros.moveit_tray_exec_ready())
         except Exception:
             pass
 
         state = "busy" if is_busy else ("not_ready" if not is_ready else "ok")
 
-        # 2. Status evaluation
+        # 2) Status evaluation
         if state != "ok":
-            # If NOT ready -> Reset counter immediately!
             self._stability_counter = 0
 
             if state != self._gate_last_state:
@@ -160,27 +167,29 @@ class StepRunner(QtCore.QObject):
             QtCore.QTimer.singleShot(self._ready_poll_delay_ms, self._try_send_current)
             return
 
-        # 3. Status is "ok" -> Is it stable?
+        # 3) Status ok -> require stability
         self._stability_counter += 1
-
         if self._stability_counter < self._required_stability_cycles:
-            # Not enough stable cycles yet.
+            if self._gate_last_state != "stabilizing":
+                self._ui_log(f"{self._spec.label}: wait (stabilizing)")
             self._gate_last_state = "stabilizing"
             QtCore.QTimer.singleShot(self._ready_poll_delay_ms, self._try_send_current)
             return
 
-        # 4. Stable OK -> SEND
+        # 4) Stable ok -> send
         self._gate_last_state = "ok"
         try:
             self._ui_log(f"{self._spec.label}: send")
             self._spec.send()
         except Exception as e:
-            self._fail(f"send failed: {e}")
+            self._fail(f"send failed: {e!r}")
             return
 
         self._maybe_finish()
 
-    # --- Public API ---
+    # ---------------------------------------------------------------------
+    # Public API
+    # ---------------------------------------------------------------------
 
     def request_stop(self) -> None:
         self._stop = True
@@ -189,55 +198,62 @@ class StepRunner(QtCore.QObject):
         if self._active:
             self.error.emit("StepRunner: already active")
             return
+
         self._active = True
         self._stop = False
         self._spec = spec
 
-        # Reset State
         self._got_result = False
         self._got_traj = (spec.expect_traj_kind is None)
+
         self._retry_config["GOAL_REJECTED"]["count"] = 0
         self._retry_config["EXEC_ERROR"]["count"] = 0
-        self._gate_last_state = ""
 
-        # Reset stability
+        self._gate_last_state = ""
         self._stability_counter = 0
 
-        # Start Gating Loop (with initial pause)
         QtCore.QTimer.singleShot(self._ready_poll_delay_ms, self._try_send_current)
 
-    # --- Retry Logic (Improved) ---
+    # ---------------------------------------------------------------------
+    # Retry logic
+    # ---------------------------------------------------------------------
 
     def _attempt_retry(self, retry_key: str, error_msg: str) -> bool:
-        """Generic retry handler. Returns True if retry initiated."""
-        cfg = self._retry_config[retry_key]
+        """
+        Generic retry handler.
+        Returns True if retry was initiated.
+        """
+        cfg = self._retry_config.get(retry_key)
+        if not cfg:
+            return False
+
         if cfg["count"] >= cfg["max"]:
             return False
 
         cfg["count"] += 1
 
-        # Log warning only occasionally to avoid spam
         if cfg["count"] % 5 == 0 or cfg["count"] == 1:
             _LOG.warning("StepRunner: %s retry %d/%d", retry_key, cfg["count"], cfg["max"])
-            self._ui_log(f"{self._spec.label}: {retry_key} retry {cfg['count']}/{cfg['max']} ({error_msg})")
+            if self._spec is not None:
+                self._ui_log(
+                    f"{self._spec.label}: {retry_key} retry {cfg['count']}/{cfg['max']} ({error_msg})"
+                )
 
-        # Reset flags
         self._got_result = False
-        self._got_traj = (self._spec.expect_traj_kind is None)
+        self._got_traj = (self._spec.expect_traj_kind is None) if self._spec else False
         self._gate_last_state = ""
-
-        # Stability reset on retry
         self._stability_counter = 0
 
-        # Strategic delay: longer cool-down for EXEC_ERROR
-        delay = max(0, cfg["delay"])
+        delay = max(0, int(cfg["delay"]))
         if retry_key == "EXEC_ERROR":
             delay = max(delay, 500)
 
         QtCore.QTimer.singleShot(delay, self._try_send_current)
         return True
 
-    # --- Callbacks ---
+    # ---------------------------------------------------------------------
+    # Callbacks
+    # ---------------------------------------------------------------------
 
     @QtCore.pyqtSlot(str)
     def _on_motion_result(self, text: str) -> None:
@@ -255,12 +271,12 @@ class StepRunner(QtCore.QObject):
         up = str(status or "").strip().upper()
         msg = str(d.get("msg") or d.get("error") or up).upper()
 
-        # 1) FATAL: invalid request
+        # 1) Fatal invalid request
         if "INVALID" in up or "INVALID" in msg:
             self._fail(f"FATAL: Invalid Request: {msg}")
             return
 
-        # 2) RETRYABLE: any error
+        # 2) Retryable errors
         if up.startswith("ERROR") or "ERROR" in up:
             if up.startswith("ERROR:GOAL_REJECTED") or "GOAL_REJECTED" in msg:
                 if self._attempt_retry("GOAL_REJECTED", msg):
@@ -270,7 +286,7 @@ class StepRunner(QtCore.QObject):
             self._fail(f"ERROR final: {msg}")
             return
 
-        # success gate
+        # 3) Success only if matches expected status
         if up != str(self._spec.expect_status).upper():
             return
 
@@ -281,8 +297,8 @@ class StepRunner(QtCore.QObject):
     def _consume_traj(self, *, kind: str, obj: Any) -> None:
         if not self._active or self._stop or self._spec is None:
             return
-        spec = self._spec
 
+        spec = self._spec
         if spec.expect_traj_kind != kind:
             return
         if not spec.expect_traj_key:
@@ -314,33 +330,22 @@ class StepRunner(QtCore.QObject):
     def _on_optimized_traj(self, o: object) -> None:
         self._consume_traj(kind="optimized", obj=o)
 
+    # ---------------------------------------------------------------------
+    # Finish / fail
+    # ---------------------------------------------------------------------
+
     def _fail(self, msg: str) -> None:
+        label = self._spec.label if self._spec else "StepRunner"
         self._active = False
-        self.error.emit(f"{self._spec.label}: {msg}")
+        self.error.emit(f"{label}: {msg}")
 
     def _maybe_finish(self) -> None:
-        if not self._active or self._stop:
+        if not self._active or self._stop or self._spec is None:
             return
         if self._got_result and self._got_traj:
             self._ui_log(f"{self._spec.label}: DONE")
             self._active = False
-            self._emit_log("segment: DONE")
             QtCore.QTimer.singleShot(50, self.finished.emit)
-
-    def _emit_log(self, text: str) -> None:
-        """Internal log forwarder."""
-        if not text:
-            return
-        try:
-            self.logLine.emit(text)  # type: ignore[attr-defined]
-        except Exception:
-            pass
-        try:
-            p = self.parent()
-            if p and hasattr(p, "logMessage"):
-                p.logMessage.emit(text)  # type: ignore
-        except Exception:
-            pass
 
 
 # =============================================================================
@@ -377,6 +382,10 @@ class SegmentRunner(QtCore.QObject):
         self._step_runner.finished.connect(self._on_step_finished)
         self._step_runner.error.connect(self._on_step_error)
 
+    # -------------------------------------------------------------------------
+    # Logging forward
+    # -------------------------------------------------------------------------
+
     def _emit_log(self, text: str) -> None:
         msg = str(text or "")
         try:
@@ -387,7 +396,7 @@ class SegmentRunner(QtCore.QObject):
         p = self.parent()
         if p and hasattr(p, "logMessage"):
             try:
-                p.logMessage.emit(msg)  # type: ignore
+                p.logMessage.emit(msg)  # type: ignore[attr-defined]
             except Exception:
                 pass
 
@@ -401,33 +410,28 @@ class SegmentRunner(QtCore.QObject):
         self._idx = 0
 
     # -------------------------------------------------------------------------
-    # STRICT plan_request sender (single channel, keyed)
+    # STRICT plan_request sender (Variant-A) - RosBridge compatible
     # -------------------------------------------------------------------------
+
     def _emit_plan_request(self, *, key: ReqKey, payload: Optional[Dict[str, Any]]) -> None:
         """
-        STRICT: everything that is "planner-side" MUST go through moveitpy.signals.planRequestRequested.
+        STRICT: uses RosBridge.moveit_publish_plan_request(*, key=dict, payload=dict)
 
-        plan_request JSON:
-          {"key":{"run":..,"id":..,"seg":..,"op":..}, "payload":{...}}
+        This avoids sending JSON strings from the UI and matches your RosBridge API.
         """
         ros = self._ros
-        mp = getattr(ros, "moveitpy", None)
-        sigs = getattr(mp, "signals", None) if mp else None
-        emitter = getattr(sigs, "planRequestRequested", None) if sigs else None
-        emit_fn = getattr(emitter, "emit", None) if emitter else None
-        if emit_fn is None or not callable(emit_fn):
-            raise AttributeError("RosBridge missing moveitpy.signals.planRequestRequested.emit(json_str)")
+        fn = getattr(ros, "moveit_publish_plan_request", None)
+        if fn is None or not callable(fn):
+            raise AttributeError("RosBridge missing moveit_publish_plan_request(*, key: dict, payload: dict)")
 
-        msg = json.dumps(
-            {
-                "key": {"run": key.run, "id": int(key.id), "seg": key.seg, "op": key.op},
-                "payload": dict(payload or {}),
-            },
-            separators=(",", ":"),
-        )
-        emit_fn(msg)
+        key_dict = {"run": str(key.run), "id": int(key.id), "seg": str(key.seg), "op": str(key.op)}
+        payload_dict = dict(payload or {})
 
-    # ----- Bound Step Builders -----
+        fn(key=key_dict, payload=payload_dict)  # keyword-only call (matches ros_bridge.py)
+
+    # -------------------------------------------------------------------------
+    # Bound Step Builders
+    # -------------------------------------------------------------------------
 
     def make_plan_pilz_sequence_step_bound(
         self,
@@ -438,31 +442,27 @@ class SegmentRunner(QtCore.QObject):
         payload: Dict[str, Any],
         label: str,
     ) -> StepSpec:
+        """
+        Pilz sequence planning through the single plan_request channel (op=plan_pilz_sequence).
+        """
         key = ReqKey(run=str(run), id=int(req_id), seg=str(seg), op="plan_pilz_sequence")
 
-        def _send_plan_request() -> None:
-            ros = self._ros
-            if not callable(getattr(ros, "moveit_publish_plan_request", None)):
-                raise AttributeError("RosBridge missing moveit_publish_plan_request(req: dict)")
-
-            req = {
-                "key": {"run": key.run, "id": key.id, "seg": key.seg, "op": key.op},
-                "payload": dict(payload or {}),
-            }
-            ros.moveit_publish_plan_request(req)  # <-- dict ONLY
+        def _send() -> None:
+            self._emit_plan_request(key=key, payload=dict(payload or {}))
 
         return StepSpec(
             label=str(label),
-            send=_send_plan_request,
+            send=_send,
             expect_result_key=key,
             expect_status="PLANNED:OK",
             expect_traj_kind="planned",
             expect_traj_key=key,
         )
 
-
     def make_plan_pose_step_bound(self, *, run: str, req_id: int, seg: str, pose: Any, label: str) -> StepSpec:
-        """PTP: Single pose planning (existing RosBridge facade)."""
+        """
+        plan_pose via RosBridge facade (still plan_request under the hood).
+        """
         key = ReqKey(run=str(run), id=int(req_id), seg=str(seg), op="plan_pose")
         return StepSpec(
             label=str(label),
@@ -482,7 +482,10 @@ class SegmentRunner(QtCore.QObject):
         poses: List[Any],
         label: str,
     ) -> StepSpec:
-        """CARTESIAN: Linear path interpolation (existing RosBridge facade)."""
+        """
+        CARTESIAN planning via RosBridge facade (if present).
+        NOTE: requires ros.moveit_plan_cartesian_path(...) to exist.
+        """
         key = ReqKey(run=str(run), id=int(req_id), seg=str(seg), op="plan_cartesian")
         return StepSpec(
             label=str(label),
@@ -495,8 +498,8 @@ class SegmentRunner(QtCore.QObject):
 
     def make_execute_last_planned_step_bound(self, *, run: str, req_id: int, seg: str, label: str) -> StepSpec:
         """
-        EXECUTE must go through plan_request op='execute' (node routes to ExecuteRequestHandler).
-        Uses node-side last_planned.
+        Execute must go through plan_request op='execute'.
+        Node routes it to ExecuteRequestHandler and uses its last_planned.
         """
         key = ReqKey(run=str(run), id=int(req_id), seg=str(seg), op="execute")
         return StepSpec(
@@ -508,8 +511,11 @@ class SegmentRunner(QtCore.QObject):
             expect_traj_key=key,
         )
 
-    def make_execute_trajectory_step_bound(self, *, run: str, req_id: int, seg: str, traj: Any, label: str) -> StepSpec:
-        """Execute explicit RobotTrajectory via execute_trajectory topic (kept for your other pipelines)."""
+    def make_execute_trajectory_step_bound(self, *, traj: Any, label: str) -> StepSpec:
+        """
+        Execute explicit RobotTrajectory via execute_trajectory topic (external replay).
+        Result key MUST match the embedded key from traj header JSON.
+        """
         key = parse_key_from_traj_header(traj)
         return StepSpec(
             label=str(label),
@@ -520,7 +526,11 @@ class SegmentRunner(QtCore.QObject):
             expect_traj_key=key,
         )
 
-    def make_optimize_trajectory_step_bound(self, *, run: str, req_id: int, seg: str, traj: Any, label: str) -> StepSpec:
+    def make_optimize_trajectory_step_bound(self, *, traj: Any, label: str) -> StepSpec:
+        """
+        Optimize explicit RobotTrajectory via optimize_trajectory topic.
+        Result key MUST match the embedded key from traj header JSON.
+        """
         key = parse_key_from_traj_header(traj)
         return StepSpec(
             label=str(label),
@@ -531,20 +541,25 @@ class SegmentRunner(QtCore.QObject):
             expect_traj_key=key,
         )
 
-    # ----- execution -----
+    # -------------------------------------------------------------------------
+    # Execution
+    # -------------------------------------------------------------------------
 
     def run(self, steps: List[StepSpec]) -> None:
         self._stop = False
         self._steps = list(steps or [])
         self._idx = 0
+
         if not self._steps:
             QtCore.QTimer.singleShot(0, self.finished.emit)
             return
+
         self._start_current()
 
     def _start_current(self) -> None:
         if self._stop:
             return
+
         if self._idx >= len(self._steps):
             QtCore.QTimer.singleShot(0, self.finished.emit)
             return

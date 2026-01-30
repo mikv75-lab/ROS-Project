@@ -16,9 +16,9 @@ class RobotInitStatemachine(QtCore.QObject):
     """
     Robot Init + Home — STRICT (RosBridge facade, plan_request-only)
 
-    Fixes (2026-01):
-      ✅ tray_exec_ready is DEBOUNCED (must be stable True for N ms)
-      ✅ HOME_EXEC_REQUESTED has its own gate-timeout (no infinite hang)
+    2026-01 (simplified):
+      ✅ NO wait-for-moveit-ready gate here (no tray_exec_ready / busy waits)
+      ✅ Only waits on keyed motion_result (ack_timeout + home_timeout)
       ✅ Execute result op accepts aliases ("execute", "execute_last_planned", "execute_trajectory")
     """
 
@@ -30,7 +30,6 @@ class RobotInitStatemachine(QtCore.QObject):
 
     # ---------------- States ----------------
     S_WAIT_HOME_AVAILABLE = "WAIT_HOME_AVAILABLE"
-    S_WAIT_MOVEIT_READY = "WAIT_MOVEIT_READY"
     S_INIT_REQUESTED = "INIT_REQUESTED"
     S_HOME_PLAN_REQUESTED = "HOME_PLAN_REQUESTED"
     S_WAIT_HOME_PLANNED = "WAIT_HOME_PLANNED"
@@ -59,16 +58,11 @@ class RobotInitStatemachine(QtCore.QObject):
         init_timeout_s: float = 10.0,
         home_timeout_s: float = 60.0,
         home_pose_timeout_s: float = 10.0,
-        moveit_ready_timeout_s: float = 20.0,
-        moveit_ack_timeout_s: float = 20.0,   # IMPORTANT: was too short at 5s
+        moveit_ack_timeout_s: float = 20.0,
         pos_tol_mm: float = 1.0,
         do_execute: bool = True,
         wait_before_exec_ms: int = 500,
         max_exec_retries: int = 20,
-        # NEW: execution gate timeout (tray_exec_ready/busy gate in HOME_EXEC_REQUESTED)
-        exec_gate_timeout_s: float = 20.0,
-        # NEW: tray_exec_ready must be stable True for this long
-        tray_ready_stable_ms: int = 500,
         parent: Optional[QtCore.QObject] = None,
     ) -> None:
         super().__init__(parent)
@@ -77,16 +71,9 @@ class RobotInitStatemachine(QtCore.QObject):
         self._init_timeout_s = float(init_timeout_s)
         self._home_timeout_s = float(home_timeout_s)
         self._home_pose_timeout_s = float(home_pose_timeout_s)
-        self._moveit_ready_timeout_s = float(moveit_ready_timeout_s)
         self._moveit_ack_timeout_s = float(moveit_ack_timeout_s)
         self._pos_tol_mm = float(pos_tol_mm)
         self._do_execute = bool(do_execute)
-
-        # NEW
-        self._exec_gate_timeout_s = float(exec_gate_timeout_s)
-        self._tray_ready_stable_ms = int(max(0, tray_ready_stable_ms))
-        self._tray_ready_since_ms: int = 0
-        self._exec_gate_started: bool = False
 
         self._stop_requested: bool = False
         self._done: bool = False
@@ -136,10 +123,6 @@ class RobotInitStatemachine(QtCore.QObject):
         self._run = ""
         self._req_id = 0
 
-        # NEW: reset readiness debouncer + exec gate
-        self._tray_ready_since_ms = 0
-        self._exec_gate_started = False
-
         # snapshot baseline
         self._last_result_snapshot = self._last_motion_result()
 
@@ -150,11 +133,8 @@ class RobotInitStatemachine(QtCore.QObject):
             "RobotInit: start "
             f"(init_timeout={self._init_timeout_s:.1f}s, "
             f"home_timeout={self._home_timeout_s:.1f}s, "
-            f"moveit_ready_timeout={self._moveit_ready_timeout_s:.1f}s, "
             f"ack_timeout={self._moveit_ack_timeout_s:.1f}s, "
-            f"do_execute={self._do_execute}, "
-            f"exec_gate_timeout={self._exec_gate_timeout_s:.1f}s, "
-            f"tray_stable={self._tray_ready_stable_ms}ms)"
+            f"do_execute={self._do_execute})"
         )
 
         self._timer.start()
@@ -247,46 +227,6 @@ class RobotInitStatemachine(QtCore.QObject):
 
     def _home_pose_available(self) -> bool:
         return self._ros._poses_state.home is not None
-
-    def _moveit_tray_exec_ready(self) -> Optional[bool]:
-        fn = getattr(self._ros, "moveit_tray_exec_ready", None)
-        if callable(fn):
-            try:
-                return bool(fn())
-            except Exception:
-                return None
-        return None
-
-    def _moveit_is_busy(self) -> Optional[bool]:
-        fn = getattr(self._ros, "moveit_is_busy", None)
-        if callable(fn):
-            try:
-                return bool(fn())
-            except Exception:
-                return None
-        return None
-
-    def _tray_exec_ready_stable(self) -> Optional[bool]:
-        """
-        Debounced tray_exec_ready:
-          - returns True only if tray_exec_ready stayed True for _tray_ready_stable_ms
-          - returns False if currently False (and resets stability timer)
-          - returns None if signal not available (optional contract)
-        """
-        r = self._moveit_tray_exec_ready()
-        if r is None:
-            return None
-
-        now = self._now_ms()
-        if r:
-            if self._tray_ready_since_ms <= 0:
-                self._tray_ready_since_ms = now
-            if self._tray_ready_stable_ms <= 0:
-                return True
-            return (now - self._tray_ready_since_ms) >= self._tray_ready_stable_ms
-        # r == False
-        self._tray_ready_since_ms = 0
-        return False
 
     def _clear_motion_result_best_effort(self) -> None:
         """
@@ -422,10 +362,6 @@ class RobotInitStatemachine(QtCore.QObject):
         self._last_result_snapshot = ""
         self._clear_motion_result_best_effort()
 
-        # NEW: reset debouncer + exec gate (fresh attempt)
-        self._tray_ready_since_ms = 0
-        self._exec_gate_started = False
-
     # ------------------------------------------------------------------
     # Tick
     # ------------------------------------------------------------------
@@ -442,34 +378,10 @@ class RobotInitStatemachine(QtCore.QObject):
         if st == self.S_WAIT_HOME_AVAILABLE:
             if self._home_pose_available():
                 self._log("RobotInit: home pose available")
-                self._set_state(self.S_WAIT_MOVEIT_READY)
-                self._set_deadline(self._moveit_ready_timeout_s)
+                self._set_state(self.S_INIT_REQUESTED)
+                self._deadline_ms = 0
             elif self._deadline_passed():
                 self._finish_err(f"Home pose not available (timeout {self._home_pose_timeout_s:.1f}s)")
-            return
-
-        # ---------------- WAIT_MOVEIT_READY ----------------
-        if st == self.S_WAIT_MOVEIT_READY:
-            # gate: tray_exec_ready (capability) if available (DEBOUNCED)
-            ready = self._tray_exec_ready_stable()
-            if ready is False:
-                if self._deadline_passed():
-                    self._finish_err(
-                        f"MoveIt tray_exec_ready not stable-true "
-                        f"(timeout {self._moveit_ready_timeout_s:.1f}s)"
-                    )
-                return
-
-            # gate: busy must be False if available
-            busy = self._moveit_is_busy()
-            if busy is True:
-                if self._deadline_passed():
-                    self._finish_err(f"MoveIt stayed busy too long (timeout {self._moveit_ready_timeout_s:.1f}s)")
-                return
-
-            self._log("RobotInit: moveit ready")
-            self._set_state(self.S_INIT_REQUESTED)
-            self._deadline_ms = 0
             return
 
         # ---------------- INIT_REQUESTED ----------------
@@ -532,7 +444,6 @@ class RobotInitStatemachine(QtCore.QObject):
                     else:
                         self._set_state(self.S_HOME_EXEC_REQUESTED)
                         self._deadline_ms = 0
-                        self._exec_gate_started = False
                     return
 
                 if self._is_error_status(status):
@@ -548,29 +459,11 @@ class RobotInitStatemachine(QtCore.QObject):
             if self._deadline_passed():
                 self._set_state(self.S_HOME_EXEC_REQUESTED)
                 self._deadline_ms = 0
-                self._exec_gate_started = False
             return
 
         # ---------------- HOME_EXEC_REQUESTED ----------------
         if st == self.S_HOME_EXEC_REQUESTED:
-            # NEW: explicit gate-timeout to avoid infinite hang here
-            if not self._exec_gate_started:
-                self._exec_gate_started = True
-                self._set_deadline(self._exec_gate_timeout_s)
-
-            # gate execute: tray_exec_ready && !busy if available
-            ready = self._tray_exec_ready_stable()
-            busy = self._moveit_is_busy()
-
-            if ready is False or busy is True:
-                if self._deadline_passed():
-                    self._finish_err(
-                        f"Execute gate not ready "
-                        f"(tray_exec_ready={ready}, busy={busy}) "
-                        f"(timeout {self._exec_gate_timeout_s:.1f}s)"
-                    )
-                return
-
+            # NO tray/busy gating here — request and wait for keyed EXECUTED:OK
             try:
                 self._request_execute_last_planned_once()
             except Exception as e:
