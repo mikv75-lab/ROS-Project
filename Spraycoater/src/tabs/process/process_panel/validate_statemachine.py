@@ -14,7 +14,7 @@ IMPORTANT:
   so it can derive pilz payload fields from planner_cfg["params"] (strict contract).
 
 Also: _on_finished now merges planned trajectories for additional op:
-  - plan_pose_array_pilz
+  - plan_pilz_sequence
 So planned_traj YAML contains MOVE_RECIPE even when planned by Pilz sequence.
 """
 
@@ -68,7 +68,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         # Cache for active segment planner selection
         self._active_planner_pipeline: str = "ompl"
         self._active_planner_id: str = "PTP"
-        self._active_planner_cfg: Dict[str, Any] = {}  # NEW: pass-through for strategies
+        self._active_planner_cfg: Dict[str, Any] = {}  # pass-through for strategies
 
         self._runner = SegmentRunner(ros=self._ros, parent=self, max_goal_rejected_retries=int(max_retries))
         self._runner.finished.connect(self._on_runner_finished)
@@ -167,11 +167,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
 
         # defaults if missing
         if not isinstance(conf_data, dict):
-            conf_data = {
-                "pipeline": "ompl",
-                "planner_id": "RRTConnectkConfigDefault",
-                "params": {},
-            }
+            conf_data = {"pipeline": "ompl", "planner_id": "RRTConnectkConfigDefault", "params": {}}
 
         pipeline = str(conf_data.get("pipeline") or "ompl").strip()
         planner_id = str(conf_data.get("planner_id") or "").strip()
@@ -179,11 +175,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         if not isinstance(params, dict):
             params = {}
 
-        cfg_msg: Dict[str, Any] = {
-            "pipeline": pipeline,
-            "planner_id": planner_id,
-            "params": params,
-        }
+        cfg_msg: Dict[str, Any] = {"pipeline": pipeline, "planner_id": planner_id, "params": params}
 
         # send to ROS
         try:
@@ -197,7 +189,7 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         self._active_planner_id = planner_id.upper()
         self._active_planner_cfg = copy.deepcopy(cfg_msg)
 
-        _LOG.info(f"Validate Config Applied for '{seg_name}' -> Pipeline: {pipeline}, ID: {planner_id}")
+        _LOG.info("Validate Config Applied for '%s' -> Pipeline: %s, ID: %s", seg_name, pipeline, planner_id)
         return True
 
     # ------------------------------------------------------------
@@ -205,16 +197,10 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
     # ------------------------------------------------------------
     def _get_strategy_for_segment(self) -> MoveStrategy:
         """
-        Strategy choice based on the segment's loaded config.
-        - PilzSequenceStrategy only when pipeline contains "pilz" and planner_id is LIN/CIRC.
-        - Everything else: PtpStrategy.
+        TEMPORARY OVERRIDE (2026-01):
+        Always use PtpStrategy (plan_pose + execute per pose), even for pilz/LIN,
+        until PilzSequenceStrategy is fixed.
         """
-        is_pilz = "pilz" in (self._active_planner_pipeline or "")
-        is_linear_seq = (self._active_planner_id or "") in ("LIN", "CIRC")
-
-        if is_pilz and is_linear_seq:
-            return PilzSequenceStrategy(self._runner, self._run_id, self._active_planner_cfg)
-
         return PtpStrategy(self._runner, self._run_id, self._active_planner_cfg)
 
     # ------------------------------------------------------------
@@ -232,9 +218,11 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         if not self._load_and_apply_config_for_segment(seg_name):
             return
 
-        # 2) apply speed
+        # 2) apply speed (FIXED)
+        try:
             self._ros.moveit_set_speed_mm_s(float(self._speed_mm_s))
-      
+        except Exception:
+            pass
 
         # 3) build & run steps
         steps = self._build_steps(seg_name)
@@ -257,8 +245,6 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
         ps_list = [self._pq_to_ps(pq) for pq in poses_quat]
 
         strategy = self._get_strategy_for_segment()
-
-        # STRICT: no synthetic anchor here; strategy may add anchor if it needs (pilz sequence)
         return strategy.create_steps(seg, ps_list)
 
     def _build_home_steps(self) -> List[StepSpec]:
@@ -327,24 +313,26 @@ class ProcessValidateStatemachine(BaseProcessStatemachine):
     def _on_finished(self) -> None:
         self._deduplicate_storage()
 
+        def _merge(target: Dict[str, Any], source: Dict[str, Any]) -> None:
+            if not isinstance(source, dict):
+                return
+            segs = source.get("segments")
+            if not isinstance(segs, dict) or not segs:
+                return
+            if "segments" not in target or not isinstance(target.get("segments"), dict):
+                target["segments"] = {}
+            target["segments"].update(segs)
+
         # Planned: merge all planning ops that may exist
         p_ptp = self._build_trajectory_yaml(self._traj_planned, which_op="plan_pose")
         p_cart = self._build_trajectory_yaml(self._traj_planned, which_op="plan_cartesian")
         p_seq = self._build_trajectory_yaml(self._traj_planned, which_op="plan_pose_array")
         p_pilz_seq = self._build_trajectory_yaml(self._traj_planned, which_op="plan_pilz_sequence")
-        
-        _merge(planned, p_pilz_seq)
+
         planned = copy.deepcopy(p_ptp)
-
-        def _merge(target: Dict[str, Any], source: Dict[str, Any]) -> None:
-            if source.get("segments"):
-                if "segments" not in target:
-                    target["segments"] = {}
-                target["segments"].update(source["segments"])
-
         _merge(planned, p_cart)
         _merge(planned, p_seq)
-        _merge(planned, p_pilz_seq)  # NEW
+        _merge(planned, p_pilz_seq)
 
         executed = self._build_trajectory_yaml(self._traj_executed, which_op="execute")
 

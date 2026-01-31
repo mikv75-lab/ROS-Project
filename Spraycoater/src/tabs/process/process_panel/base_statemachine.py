@@ -227,11 +227,17 @@ class BaseProcessStatemachine(QtCore.QObject):
         else: self._traj_optimized[t] = obj
 
     def _deduplicate_storage(self) -> None:
-        """Entfernt Duplikate (Retries), behält nur das Neuste pro (seg, op)."""
+        """
+        Entfernt Duplikate (Retries).
+        WICHTIG: Nur motion results deduplizieren (letzter Status pro seg/op).
+        Trajektorien müssen ALLE rids behalten, damit concat pro Segment funktioniert.
+        """
         self._results = self._filter_latest(self._results)
-        self._traj_planned = self._filter_latest(self._traj_planned)
-        self._traj_executed = self._filter_latest(self._traj_executed)
-        self._traj_optimized = self._filter_latest(self._traj_optimized)
+
+        # DO NOT deduplicate trajectories by (seg, op) – we need ALL rids!
+        # self._traj_planned = self._filter_latest(self._traj_planned)
+        # self._traj_executed = self._filter_latest(self._traj_executed)
+        # self._traj_optimized = self._filter_latest(self._traj_optimized)
     
     def _filter_latest(self, source: Dict[Tuple, Any]) -> Dict[Tuple, Any]:
         if not source: return {}

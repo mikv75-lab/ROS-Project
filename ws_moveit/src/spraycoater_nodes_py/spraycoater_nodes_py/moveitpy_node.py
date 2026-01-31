@@ -53,7 +53,7 @@ from spraycoater_nodes_py.moveit_ops.plan_requests import PlanRequestHandler
 from spraycoater_nodes_py.moveit_ops.execute_requests import ExecuteRequestHandler
 from spraycoater_nodes_py.moveit_ops.optimize_requests import OptimizeRequestHandler
 from spraycoater_nodes_py.moveit_ops.executed_recorder import ExecutedRecorder
-
+from spraycoater_nodes_py.moveit_ops.pilz_sequence_planner import PilzSequencePlanner
 
 NODE_KEY = "moveit_py"
 GROUP_NAME = "omron_arm_group"
@@ -253,6 +253,15 @@ class MoveItPyNode(Node):
         self._exec_req = ExecuteRequestHandler(api=self)
         self._opt_req = OptimizeRequestHandler(api=self)
 
+        # ✅ NEW: Pilz-sequence planner (node-side, action-based)
+        # Safe to construct now; it will fetch robot_model lazily at plan-time.
+        self._pilz_seq = PilzSequencePlanner(
+            self,
+            group_name=GROUP_NAME,
+            ee_link=EE_LINK,
+            world_frame=self.frame_world,
+        )
+
         # tray_exec_ready
         self._last_traj_exec_ready: Optional[bool] = None
 
@@ -397,13 +406,13 @@ class MoveItPyNode(Node):
             v, reason = self._calc_traj_exec_ready_reason()
             self._publish_traj_exec_ready(v, reason=reason)
         except Exception:
-            # fallback (no reason)
             self._publish_traj_exec_ready(False, reason="init_exception")
 
         # ✅ Default to TRAJ (best-effort; not spammed every 100ms anymore)
         self._mode_mgr.ensure_mode("TRAJ")
 
         self.log.info("MoveItPyNode init done (MoveItPy is initializing in background).")
+
 
     # ============================================================
     # Duck-typed API for handlers
@@ -961,6 +970,44 @@ class MoveItPyNode(Node):
                 self._apply_planner_cfg_to_params()
             except Exception as e:
                 self.log.error(f"[config] apply_planner_cfg failed: {e!r}")
+
+    def plan_pilz_sequence_core(
+        self,
+        *,
+        cmds: List[str],
+        goals_world: List[PoseStamped],
+        blend_radius_m: float,
+        vel_scale: float,
+        acc_scale: float,
+        planning_time_s: float,
+        start: str,
+    ) -> RobotTrajectoryCore:
+        if self._plan_params is None:
+            raise RuntimeError("PlanRequestParameters not available (self._plan_params is None)")
+
+        # ✅ Force pilz pipeline for this op (don't depend on global cfg)
+        pipeline_id = "pilz_industrial_motion_planner"
+        attempts = int(self._planner_cfg.get("planning_attempts", 1))
+
+        pt = float(max(0.01, planning_time_s))
+
+        self.log.info(
+            f"[pilz_seq] n={len(cmds)} blend={blend_radius_m:.3f} "
+            f"vel={vel_scale:.3f} acc={acc_scale:.3f} pt={pt:.2f}s start={start}"
+        )
+
+        return self._pilz_seq.plan_core(
+            cmds=list(cmds),
+            goals_world=list(goals_world),
+            blend_radius_m=float(max(0.0, blend_radius_m)),
+            vel_scale=float(max(0.01, min(1.0, vel_scale))),
+            acc_scale=float(max(0.01, min(1.0, acc_scale))),
+            planning_time_s=pt,
+            start=str(start or "current"),
+            pipeline_id=pipeline_id,
+            attempts=attempts,
+        )
+
 
     # ------------------------------------------------------------
     # TF helpers

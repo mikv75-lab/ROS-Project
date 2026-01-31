@@ -418,9 +418,14 @@ class TrajFkBuilder:
         "meta": {"segment_slices": {seg: {side: [a,b]}}},
         "segments_included": [...]
       }
+
+    NOTE (2026-01 STRICT eval):
+      - DEFAULT should be MOVE_RECIPE only. If you want to export additional segments
+        (e.g. retreat) for preview, pass include_segments explicitly.
     """
 
-    DEFAULT_TCP_SEGMENTS: Tuple[str, str] = ("MOVE_RECIPE", "MOVE_RETREAT")
+    # STRICT: only MOVE_RECIPE by default (evaluation must compare recipe-section only)
+    DEFAULT_TCP_SEGMENTS: Tuple[str, ...] = ("MOVE_RECIPE",)
 
     # ------------------------------------------------------------
     # Robot model (KDL)
@@ -489,6 +494,7 @@ class TrajFkBuilder:
           - transforms top-level sides
           - transforms nested segments[seg].sides too (if present)
           - keeps meta.segment_slices unchanged (indices remain valid)
+          - PRESERVES all other keys in each segment dict (e.g. 'frame', future meta)
         """
         if not isinstance(draft, dict):
             raise TypeError("transform_draft_yaml: draft must be dict")
@@ -539,23 +545,23 @@ class TrajFkBuilder:
                 out_sides[str(side)] = {"poses_quat": _xform_pose_list(sobj.get("poses_quat"))}
             out["sides"] = out_sides
 
-        # nested segments
+        # nested segments (PRESERVE keys)
         segs = out.get("segments")
         if isinstance(segs, dict):
             out_segs: Dict[str, Any] = {}
             for seg_id, seg_obj in segs.items():
                 if not isinstance(seg_obj, dict):
                     continue
+                seg_out = dict(seg_obj)
                 ss = seg_obj.get("sides")
-                if not isinstance(ss, dict):
-                    out_segs[str(seg_id)] = dict(seg_obj)
-                    continue
-                out_ss: Dict[str, Any] = {}
-                for side, sobj in ss.items():
-                    if not isinstance(sobj, dict):
-                        continue
-                    out_ss[str(side)] = {"poses_quat": _xform_pose_list(sobj.get("poses_quat"))}
-                out_segs[str(seg_id)] = {"sides": out_ss}
+                if isinstance(ss, dict):
+                    out_ss: Dict[str, Any] = {}
+                    for side, sobj in ss.items():
+                        if not isinstance(sobj, dict):
+                            continue
+                        out_ss[str(side)] = {"poses_quat": _xform_pose_list(sobj.get("poses_quat"))}
+                    seg_out["sides"] = out_ss
+                out_segs[str(seg_id)] = seg_out
             out["segments"] = out_segs
 
         if out_frame is not None:
@@ -638,7 +644,6 @@ class TrajFkBuilder:
             raw_poses = TrajFkBuilder._fk_segment_raw_kdl(seg_id=seg_id, seg=seg, km=km, cfg=cfg)
             if len(raw_poses) < 1:
                 raise RuntimeError(f"TrajFkBuilder(KDL): FK ergab 0 Posen für Segment {seg_id!r}.")
-
 
             sampled = TrajFkBuilder._resample_posequats_by_step_mm(
                 raw_poses,
@@ -913,7 +918,6 @@ class TrajFkBuilder:
 
         return out
 
-
     @staticmethod
     def _draft_to_yaml_dict(d: Draft) -> Dict[str, Any]:
         sides_obj = getattr(d, "sides", None)
@@ -941,4 +945,8 @@ class TrajFkBuilder:
             sides_out[str(side)] = {"poses_quat": poses}
 
         ver = int(getattr(d, "version", 1) or 1)
-        return {"version": ver, "sides": sides_out}
+        frame = getattr(d, "frame", None)
+        out: Dict[str, Any] = {"version": ver, "sides": sides_out}
+        if isinstance(frame, str) and frame.strip():
+            out["frame"] = str(frame.strip())
+        return out

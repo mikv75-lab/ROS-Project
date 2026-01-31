@@ -43,6 +43,7 @@ planner_catalog:
       - "PTP"
       - "CIRC"
       - "RRTstarkConfigDefault"
+      - "RRTConnectkConfigDefault"
 
     optimize:
       - "TimeOptimalTrajectoryGeneration"

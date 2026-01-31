@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Sequence, Tuple, List
 
-import os
-import yaml
 import functools
+import os
+
+import yaml
 
 
 def _dict(v: Any) -> Dict[str, Any]:
@@ -27,111 +28,7 @@ def _require_list3(v: Any, name: str) -> Tuple[float, float, float]:
 
 
 # ============================================================
-# Minimal rigid transform helpers (mm)
-# ============================================================
-
-
-def _rpy_deg_to_quat_xyzw(r: float, p: float, y: float) -> Tuple[float, float, float, float]:
-    import math
-
-    rr = math.radians(float(r))
-    pp = math.radians(float(p))
-    yy = math.radians(float(y))
-
-    cr = math.cos(rr * 0.5)
-    sr = math.sin(rr * 0.5)
-    cp = math.cos(pp * 0.5)
-    sp = math.sin(pp * 0.5)
-    cy = math.cos(yy * 0.5)
-    sy = math.sin(yy * 0.5)
-
-    qw = cr * cp * cy + sr * sp * sy
-    qx = sr * cp * cy - cr * sp * sy
-    qy = cr * sp * cy + sr * cp * sy
-    qz = cr * cp * sy - sr * sp * cy
-
-    n = (qx * qx + qy * qy + qz * qz + qw * qw) ** 0.5
-    if n <= 0.0:
-        raise ValueError("quat norm is zero")
-    return (qx / n, qy / n, qz / n, qw / n)
-
-
-def _quat_to_rot3(q: Tuple[float, float, float, float]) -> list[list[float]]:
-    import math
-
-    qx, qy, qz, qw = q
-    n = math.sqrt(qx * qx + qy * qy + qz * qz + qw * qw)
-    if n <= 0.0:
-        raise ValueError("quat norm is zero")
-    qx, qy, qz, qw = qx / n, qy / n, qz / n, qw / n
-
-    xx = qx * qx
-    yy = qy * qy
-    zz = qz * qz
-    xy = qx * qy
-    xz = qx * qz
-    yz = qy * qz
-    wx = qw * qx
-    wy = qw * qy
-    wz = qw * qz
-
-    return [
-        [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy)],
-        [2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)],
-        [2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy)],
-    ]
-
-
-def _mat4_from_xyz_quat_mm(
-    xyz_mm: Tuple[float, float, float],
-    q: Tuple[float, float, float, float],
-) -> list[list[float]]:
-    R = _quat_to_rot3(q)
-    tx, ty, tz = xyz_mm
-    return [
-        [R[0][0], R[0][1], R[0][2], float(tx)],
-        [R[1][0], R[1][1], R[1][2], float(ty)],
-        [R[2][0], R[2][1], R[2][2], float(tz)],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
-
-
-def _mat4_mul(A: list[list[float]], B: list[list[float]]) -> list[list[float]]:
-    out = [[0.0] * 4 for _ in range(4)]
-    for i in range(4):
-        for j in range(4):
-            out[i][j] = (
-                A[i][0] * B[0][j]
-                + A[i][1] * B[1][j]
-                + A[i][2] * B[2][j]
-                + A[i][3] * B[3][j]
-            )
-    return out
-
-
-def _mat4_inv_rigid(T: list[list[float]]) -> list[list[float]]:
-    R = [[T[r][c] for c in range(3)] for r in range(3)]
-    t = [T[r][3] for r in range(3)]
-    Rt = [
-        [R[0][0], R[1][0], R[2][0]],
-        [R[0][1], R[1][1], R[2][1]],
-        [R[0][2], R[1][2], R[2][2]],
-    ]
-    tinv = [
-        -(Rt[0][0] * t[0] + Rt[0][1] * t[1] + Rt[0][2] * t[2]),
-        -(Rt[1][0] * t[0] + Rt[1][1] * t[1] + Rt[1][2] * t[2]),
-        -(Rt[2][0] * t[0] + Rt[2][1] * t[1] + Rt[2][2] * t[2]),
-    ]
-    return [
-        [Rt[0][0], Rt[0][1], Rt[0][2], tinv[0]],
-        [Rt[1][0], Rt[1][1], Rt[1][2], tinv[1]],
-        [Rt[2][0], Rt[2][1], Rt[2][2], tinv[2]],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
-
-
-# ============================================================
-# YAML loading + scene/mount helpers
+# YAML loading (cached)
 # ============================================================
 
 
@@ -156,71 +53,6 @@ def _load_yaml_file_cached(abs_path: str, mtime: float) -> Dict[str, Any]:
         return v if isinstance(v, dict) else {}
 
 
-def _scene_object_by_id(scene_doc: Dict[str, Any], oid: str) -> Dict[str, Any]:
-    objs = scene_doc.get("scene_objects")
-    if not isinstance(objs, list):
-        raise ValueError("scene.yaml: 'scene_objects' missing or not list")
-    for o in objs:
-        if isinstance(o, dict) and str(o.get("id", "")) == oid:
-            return o
-    raise KeyError(f"scene.yaml: object id={oid!r} not found")
-
-
-def _tf_from_scene_obj_meters(scene_obj: Dict[str, Any]) -> list[list[float]]:
-    pos_m = _require_list3(scene_obj.get("position"), "scene_obj.position(m)")
-    rpy = _require_list3(scene_obj.get("rpy_deg"), "scene_obj.rpy_deg(deg)")
-    pos_mm = (pos_m[0] * 1000.0, pos_m[1] * 1000.0, pos_m[2] * 1000.0)
-    q = _rpy_deg_to_quat_xyzw(rpy[0], rpy[1], rpy[2])
-    return _mat4_from_xyz_quat_mm(pos_mm, q)
-
-
-def _tf_world_robot_mount_from_robot_yaml(robot_doc: Dict[str, Any]) -> list[list[float]]:
-    blk = _require_dict(robot_doc.get("world_to_robot_mount"), "robot.yaml.world_to_robot_mount")
-    xyz_m = _require_list3(blk.get("xyz"), "robot.yaml.world_to_robot_mount.xyz(m)")
-    rpy = _require_list3(blk.get("rpy_deg"), "robot.yaml.world_to_robot_mount.rpy_deg(deg)")
-    xyz_mm = (xyz_m[0] * 1000.0, xyz_m[1] * 1000.0, xyz_m[2] * 1000.0)
-    q = _rpy_deg_to_quat_xyzw(rpy[0], rpy[1], rpy[2])
-    return _mat4_from_xyz_quat_mm(xyz_mm, q)
-
-
-def _tf_substrate_mount_to_substrate_from_mounts_yaml(*, mounts_doc: Dict[str, Any]) -> list[list[float]]:
-    active = str(mounts_doc.get("active_mount") or "").strip()
-    if not active:
-        raise ValueError("substrate_mounts.yaml: active_mount missing/empty")
-    mounts = _require_dict(mounts_doc.get("mounts"), "substrate_mounts.yaml.mounts")
-    m = _require_dict(mounts.get(active), f"substrate_mounts.yaml.mounts[{active!r}]")
-    so = _require_dict(m.get("scene_offset"), f"substrate_mounts.yaml.mounts[{active!r}].scene_offset")
-    xyz = _require_list3(so.get("xyz"), f"scene_offset.xyz(mm) for mount {active!r}")
-    rpy = _require_list3(so.get("rpy_deg"), f"scene_offset.rpy_deg(deg) for mount {active!r}")
-    q = _rpy_deg_to_quat_xyzw(rpy[0], rpy[1], rpy[2])
-    return _mat4_from_xyz_quat_mm((xyz[0], xyz[1], xyz[2]), q)
-
-
-def _compute_T_substrate_robot_mount_mm(
-    *,
-    scene_yaml_path: str,
-    robot_yaml_path: str,
-    mounts_yaml_path: str,
-    substrate_mount_id: str = "substrate_mount",
-) -> list[list[float]]:
-    scene_doc = _load_yaml_file(scene_yaml_path)
-    robot_doc = _load_yaml_file(robot_yaml_path)
-    mounts_doc = _load_yaml_file(mounts_yaml_path)
-
-    o_mount = _scene_object_by_id(scene_doc, substrate_mount_id)
-    if str(o_mount.get("frame", "world")) != "world":
-        raise ValueError("scene.yaml: substrate_mount.frame must be 'world' for this helper")
-    T_world_sub_mount = _tf_from_scene_obj_meters(o_mount)
-
-    T_sub_mount_substrate = _tf_substrate_mount_to_substrate_from_mounts_yaml(mounts_doc=mounts_doc)
-    T_world_substrate = _mat4_mul(T_world_sub_mount, T_sub_mount_substrate)
-
-    T_world_robot_mount = _tf_world_robot_mount_from_robot_yaml(robot_doc)
-
-    T_substrate_world = _mat4_inv_rigid(T_world_substrate)
-    return _mat4_mul(T_substrate_world, T_world_robot_mount)
-
-
 # ============================================================
 # RunResult (STRICT, no legacy/fallback)
 # ============================================================
@@ -230,6 +62,14 @@ def _compute_T_substrate_robot_mount_mm(
 class RunResult:
     """
     STRICT run result container.
+
+    Key changes (2026-01-30):
+      - Offline substrate transform is computed in ONE place only:
+          model.spray_paths.traj_fk_builder.compute_T_substrate_robot_mount_mm_from_paths()
+        This prevents "double mount offset" and "two competing chains" bugs.
+
+    Units:
+      - All position-related values handled in this module are in millimeters (mm).
     """
 
     urdf_xml: str = ""
@@ -323,6 +163,26 @@ class RunResult:
     def _count_tcp_poses(doc: Any) -> int:
         if not isinstance(doc, dict):
             return 0
+
+        # Prefer per-segment if present (more accurate for MOVE_RECIPE-only)
+        segs = doc.get("segments")
+        if isinstance(segs, dict) and segs:
+            total = 0
+            for _, seg in segs.items():
+                if not isinstance(seg, dict):
+                    continue
+                sides = seg.get("sides")
+                if not isinstance(sides, dict):
+                    continue
+                for _, s in sides.items():
+                    if not isinstance(s, dict):
+                        continue
+                    pq = s.get("poses_quat")
+                    if isinstance(pq, list):
+                        total += len(pq)
+            return int(total)
+
+        # Fallback: global sides
         sides = doc.get("sides")
         if not isinstance(sides, dict):
             return 0
@@ -398,11 +258,11 @@ class RunResult:
     @staticmethod
     def _extract_xyz_mm_from_pose(p: Any) -> Optional[Tuple[float, float, float]]:
         """
-        STRICT support for your PoseQuat YAML entries:
+        STRICT support for PoseQuat YAML entries (positions are mm):
 
           {x: mm, y: mm, z: mm, qx:..., qy:..., qz:..., qw:...}
 
-        plus simple list-like [x,y,z].
+        plus list-like [x,y,z].
         """
         if isinstance(p, (list, tuple)) and len(p) >= 3:
             try:
@@ -411,14 +271,12 @@ class RunResult:
                 return None
 
         if isinstance(p, dict):
-            # --- exact PoseQuat dict used in planned_tcp/executed_tcp
             if ("x" in p) and ("y" in p) and ("z" in p):
                 try:
                     return (float(p["x"]), float(p["y"]), float(p["z"]))
                 except Exception:
                     return None
 
-            # (keep minimal extra key for internal cases)
             for k in ("xyz_mm", "xyz", "position", "p"):
                 v = p.get(k)
                 if isinstance(v, (list, tuple)) and len(v) == 3:
@@ -432,16 +290,30 @@ class RunResult:
     @classmethod
     def _tcp_segment_poses_quat(cls, tcp_doc: Dict[str, Any], seg_name: str) -> Optional[List[Any]]:
         """
-        Your current TCP YAML (planned_tcp / executed_tcp) is:
+        STRICT (2026-01-30 fix):
+          - If tcp_doc.segments exists (non-empty): use ONLY tcp_doc.segments[seg_name].sides[*].poses_quat.
+            No fallback to global sides, because that may represent a different aggregation.
+          - Only if tcp_doc.segments does NOT exist: fallback to tcp_doc.sides[*].poses_quat.
 
-          version: 1
-          sides:
-            top:
-              poses_quat: [ {x,y,z,qx,qy,qz,qw}, ... ]
-
-        This helper returns the first side with >=2 poses_quat.
-        (Segments are not expected in the TCP YAML.)
+        Returns the FIRST side with >=2 poses (display-only).
         """
+        segs = tcp_doc.get("segments")
+        if isinstance(segs, dict) and segs:
+            seg = segs.get(seg_name)
+            if not isinstance(seg, dict):
+                return None
+            sides = seg.get("sides")
+            if not isinstance(sides, dict):
+                return None
+            for _, s in sides.items():
+                if not isinstance(s, dict):
+                    continue
+                pq = s.get("poses_quat")
+                if isinstance(pq, list) and len(pq) >= 2:
+                    return pq
+            return None
+
+        # fallback ONLY if there are no segments
         sides = tcp_doc.get("sides")
         if isinstance(sides, dict):
             for _, s in sides.items():
@@ -478,8 +350,6 @@ class RunResult:
             return None
         return float(L)
 
-
-
     def _compute_avg_speed_recipe_segment(
         self,
         *,
@@ -491,7 +361,13 @@ class RunResult:
         if which not in ("planned", "executed"):
             return {"ok": False, "reason": f"invalid_which:{which!r}"}
 
-        speed_set = recipe.parameters['speed_mm_s']
+        params = getattr(recipe, "parameters", None)
+        speed_set = None
+        if isinstance(params, dict):
+            speed_set = params.get("speed_mm_s", None)
+        else:
+            speed_set = getattr(params, "speed_mm_s", None) if params is not None else None
+
         if speed_set is None:
             return {"ok": False, "reason": "missing_speed_setpoint(speed_mm_s)"}
 
@@ -501,18 +377,30 @@ class RunResult:
 
         dt = self._segment_duration_s_from_traj(traj_doc, seg_name)
         if dt is None:
-            return {"ok": False, "reason": f"missing_segment_duration(traj:{seg_name})", "speed_set_mm_s": float(speed_set)}
+            return {
+                "ok": False,
+                "reason": f"missing_segment_duration(traj:{seg_name})",
+                "speed_set_mm_s": float(speed_set),
+            }
 
         pq = self._tcp_segment_poses_quat(tcp_doc, seg_name)
         if pq is None:
-            return {"ok": False, "reason": f"missing_tcp_poses_quat(tcp:{seg_name})", "speed_set_mm_s": float(speed_set)}
+            return {
+                "ok": False,
+                "reason": f"missing_tcp_poses_quat(tcp:{seg_name})",
+                "speed_set_mm_s": float(speed_set),
+            }
 
         L = self._tcp_length_mm_from_poses(pq)
         if L is None:
-            return {"ok": False, "reason": f"tcp_length_invalid_or_zero(tcp:{seg_name})", "speed_set_mm_s": float(speed_set)}
+            return {
+                "ok": False,
+                "reason": f"tcp_length_invalid_or_zero(tcp:{seg_name})",
+                "speed_set_mm_s": float(speed_set),
+            }
 
         v = float(L / dt) if dt > 0.0 else 0.0
-        pct = float(100.0 * (v / speed_set)) if speed_set > 0.0 else 0.0
+        pct = float(100.0 * (v / float(speed_set))) if float(speed_set) > 0.0 else 0.0
 
         return {
             "ok": True,
@@ -843,6 +731,7 @@ class RunResult:
         gate_valid_on_eval: bool = False,
     ) -> None:
         from model.spray_paths.traj_fk_builder import TrajFkBuilder, TrajFkConfig
+        from model.spray_paths.traj_fk_builder import compute_T_substrate_robot_mount_mm_from_paths
 
         urdf_xml = str(urdf_xml or "")
         srdf_xml = str(srdf_xml or "")
@@ -889,6 +778,9 @@ class RunResult:
             require_all_segments=True,
         )
 
+        # ------------------------------------------------------------
+        # Offline TF mapping into substrate (SINGLE SSoT!)
+        # ------------------------------------------------------------
         if base_link != "robot_mount":
             raise ValueError(
                 f"postprocess_from_urdf_srdf: expected cfg.base_link='robot_mount' for offline substrate transform, got {base_link!r}"
@@ -896,13 +788,19 @@ class RunResult:
         if not scene_yaml_path or not robot_yaml_path or not mounts_yaml_path:
             raise ValueError("postprocess_from_urdf_srdf: substrate transform requires scene/robot/mounts yaml paths.")
 
-        T_substrate_robot_mount = _compute_T_substrate_robot_mount_mm(
+        T_substrate_robot_mount = compute_T_substrate_robot_mount_mm_from_paths(
             scene_yaml_path=str(scene_yaml_path),
             robot_yaml_path=str(robot_yaml_path),
             mounts_yaml_path=str(mounts_yaml_path),
+            strict_mounts=True,
         )
-        planned_tcp = TrajFkBuilder.transform_draft_yaml(planned_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate")
-        executed_tcp = TrajFkBuilder.transform_draft_yaml(executed_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate")
+
+        planned_tcp = TrajFkBuilder.transform_draft_yaml(
+            planned_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate"
+        )
+        executed_tcp = TrajFkBuilder.transform_draft_yaml(
+            executed_tcp, T_to_from_mm=T_substrate_robot_mount, out_frame="substrate"
+        )
 
         self.planned_run["tcp"] = _dict(planned_tcp)
         self.executed_run["tcp"] = _dict(executed_tcp)
@@ -916,6 +814,13 @@ class RunResult:
             "backend": "kdl",
             "tcp_frame": "substrate",
             "segments_included": list(seg_ids),
+            "offline_tf": {
+                "source": "traj_fk_builder.compute_T_substrate_robot_mount_mm_from_paths",
+                "scene_yaml_path": str(scene_yaml_path),
+                "robot_yaml_path": str(robot_yaml_path),
+                "mounts_yaml_path": str(mounts_yaml_path),
+                "strict_mounts": True,
+            },
         }
 
         if require_tcp:
@@ -963,7 +868,7 @@ class RunResult:
             tcp_poses_executed=self._count_tcp_poses(executed_tcp),
         )
 
-        # SPEED (display-only; include reason if not computable)
+        # SPEED (display-only; include reason if not computable) — handled per-mode (no coupling)
         try:
             seg_recipe = self.DEFAULT_RECIPE_SEGMENT
             if segment_order and self.DEFAULT_RECIPE_SEGMENT in [str(s).strip() for s in segment_order]:
@@ -982,23 +887,43 @@ class RunResult:
             ps = _dict(eval_dict["planned"].get("summary"))
             es = _dict(eval_dict["executed"].get("summary"))
 
+            # setpoint: copy to both summaries if available anywhere
+            sp = None
             if pl_speed.get("speed_set_mm_s") is not None:
-                ps["speed_set_mm_s"] = float(pl_speed["speed_set_mm_s"])
-            if ex_speed.get("speed_set_mm_s") is not None:
-                es["speed_set_mm_s"] = float(ex_speed["speed_set_mm_s"])
+                sp = float(pl_speed["speed_set_mm_s"])
+            elif ex_speed.get("speed_set_mm_s") is not None:
+                sp = float(ex_speed["speed_set_mm_s"])
+            if sp is not None:
+                ps["speed_set_mm_s"] = float(sp)
+                es["speed_set_mm_s"] = float(sp)
 
-            if bool(pl_speed.get("ok")) and bool(ex_speed.get("ok")):
-                for k in ("avg_speed_mm_s", "speed_percent"):
-                    ps[k] = float(pl_speed[k])
-                    es[k] = float(ex_speed[k])
-                ps["speed_dbg"] = {"seg": pl_speed.get("seg_name"), "dt_s": pl_speed.get("duration_s"), "L_mm": pl_speed.get("path_len_mm")}
-                es["speed_dbg"] = {"seg": ex_speed.get("seg_name"), "dt_s": ex_speed.get("duration_s"), "L_mm": ex_speed.get("path_len_mm")}
+            # planned mode
+            if bool(pl_speed.get("ok")):
+                ps["avg_speed_mm_s"] = float(pl_speed["avg_speed_mm_s"])
+                ps["speed_percent"] = float(pl_speed["speed_percent"])
+                ps["speed_dbg"] = {
+                    "seg": pl_speed.get("seg_name"),
+                    "dt_s": pl_speed.get("duration_s"),
+                    "L_mm": pl_speed.get("path_len_mm"),
+                }
             else:
                 ps["speed_reason"] = str(pl_speed.get("reason") or "unknown")
+
+            # executed mode
+            if bool(ex_speed.get("ok")):
+                es["avg_speed_mm_s"] = float(ex_speed["avg_speed_mm_s"])
+                es["speed_percent"] = float(ex_speed["speed_percent"])
+                es["speed_dbg"] = {
+                    "seg": ex_speed.get("seg_name"),
+                    "dt_s": ex_speed.get("duration_s"),
+                    "L_mm": ex_speed.get("path_len_mm"),
+                }
+            else:
                 es["speed_reason"] = str(ex_speed.get("reason") or "unknown")
 
             eval_dict["planned"]["summary"] = ps
             eval_dict["executed"]["summary"] = es
+
         except Exception as e:
             eval_dict = _dict(eval_dict)
             eval_dict.setdefault("planned", {})

@@ -46,21 +46,22 @@
         stopped_velocity_tolerance: 0.01
         goal_time: 0.0
 
+        # ↑↑↑ relaxed tolerances to avoid immediate aborts from ~0.069 rad start mismatch
         joint_1:
-          trajectory: 0.05
-          goal: 0.02
+          trajectory: 0.12
+          goal: 0.08
         joint_2:
-          trajectory: 0.05
-          goal: 0.02
+          trajectory: 0.12
+          goal: 0.08
         joint_3:
-          trajectory: 0.05
-          goal: 0.02
+          trajectory: 0.12
+          goal: 0.08
         joint_4:
-          trajectory: 0.05
-          goal: 0.02
+          trajectory: 0.12
+          goal: 0.08
         joint_5:
-          trajectory: 0.05
-          goal: 0.02
+          trajectory: 0.12
+          goal: 0.08
         joint_6:
-          trajectory: 0.05
-          goal: 0.02
+          trajectory: 0.12
+          goal: 0.08

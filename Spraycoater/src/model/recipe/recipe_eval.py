@@ -37,12 +37,23 @@ class RecipeEvaluator:
     """
     STRICT TCP-vs-Draft evaluator.
 
+    Policy (2026-01):
+      - Always compare Draft vs Planned and Draft vs Executed.
+      - Matching is done by resampling BOTH ref+test to N where N is derived from
+        TCP sample counts (planned/executed), NOT from Draft length.
+      - Draft may be shorter and will be upsampled (1000 -> 100 style matching).
+
     Contracts:
       - REQUIRED_FRAME = 'substrate'
       - Reference = recipe.draft (Draft) and MUST be recipe-only for MOVE_RECIPE
       - Test = TCP YAML dict from TrajFkBuilder (may contain segments)
       - Returns STRICT schema consumed by RunResult.report_text()
       - No legacy/fallback output keys
+
+    XYZ scoring (FIX 2026-01):
+      - Position score is computed per-axis (abs(dx), abs(dy), abs(dz)) with mean/p95/max,
+        then averaged into score_xyz (score_x/y/z are exposed in metrics).
+      - L2 metrics are still reported for debug/compat but do NOT drive score_pos anymore.
     """
 
     REQUIRED_FRAME = "substrate"
@@ -80,6 +91,16 @@ class RecipeEvaluator:
             raise ValueError(f"{who} frame mismatch: {fr!r} != {self.REQUIRED_FRAME!r}")
 
     def _draft_from_tcp_yaml_for_segment(self, tcp_doc: Dict[str, Any], *, seg_id: str) -> Dict[str, Any]:
+        """
+        Extract a minimal Draft-YAML dict from a TCP YAML doc for a single segment.
+
+        Preferred:
+          tcp_doc.segments[seg_id].sides
+        Fallback:
+          tcp_doc.sides
+
+        Frame must be 'substrate' if present.
+        """
         if not isinstance(tcp_doc, dict):
             return {}
 
@@ -105,6 +126,10 @@ class RecipeEvaluator:
         return {}
 
     def _draft_from_recipe_draft(self, recipe: Recipe) -> Draft:
+        """
+        Reference draft is always recipe.draft.
+        Must be a Draft object or a Draft YAML dict.
+        """
         d = getattr(recipe, "draft", None)
         if d is None:
             raise ValueError("no_draft")
@@ -124,7 +149,9 @@ class RecipeEvaluator:
         raise ValueError(f"recipe.draft invalid type: {type(d).__name__}")
 
     def _ref_recipe_segment_poses(self, ref_draft: Draft, *, side: str, seg_id: str) -> List[PoseQuat]:
-        # STRICT: Draft.poses_quat_segment must map MOVE_RECIPE to recipe-only poses
+        """
+        STRICT: Draft.poses_quat_segment must map MOVE_RECIPE to recipe-only poses.
+        """
         v = ref_draft.poses_quat_segment(side, seg_id)
         return list(v or [])
 
@@ -148,6 +175,9 @@ class RecipeEvaluator:
 
     @staticmethod
     def _score_from_error(err_val: float, target_val: float) -> float:
+        """
+        Exponential half-life scoring: err==target -> 50.
+        """
         err = max(0.0, float(err_val))
         target = max(1e-9, float(target_val))
         x = err / target
@@ -156,6 +186,10 @@ class RecipeEvaluator:
 
     @staticmethod
     def _quat_angle_deg_vec(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
+        """
+        Quaternion angle distance (deg), vectorized.
+        Handles q and -q equivalence via abs(dot).
+        """
         if q1.size == 0 or q2.size == 0:
             return np.zeros((0,), dtype=float)
 
@@ -176,6 +210,9 @@ class RecipeEvaluator:
 
     @staticmethod
     def _slerp(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
+        """
+        Stable SLERP between two quaternions. Returns normalized quat.
+        """
         q0 = np.asarray(q0, dtype=float).reshape(4,)
         q1 = np.asarray(q1, dtype=float).reshape(4,)
 
@@ -223,28 +260,29 @@ class RecipeEvaluator:
         test_pts: np.ndarray,
         test_quats: np.ndarray,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        if len(ref_pts) < 2 or len(test_pts) < 2:
-            return test_pts, test_quats
+        """
+        NO-OP (strict).
 
-        a, b = ref_pts[0], ref_pts[-1]
-        d_start = np.linalg.norm(test_pts - a, axis=1)
-        d_end = np.linalg.norm(test_pts - b, axis=1)
-
-        i_start = int(np.argmin(d_start))
-        i_end = i_start + int(np.argmin(d_end[i_start:]))
-
-        if i_end > i_start:
-            return test_pts[i_start : i_end + 1], test_quats[i_start : i_end + 1]
+        Segment-Isolation is already correct from TrajFkBuilder.
+        Trimming by nearest start/end can break boustrophedon / zig-zag paths.
+        """
         return test_pts, test_quats
 
     def _resample_pose_mm_quat(self, pts: np.ndarray, quats: np.ndarray, n: int) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Arc-length resampling in mm + quaternion SLERP, to N samples.
+        """
         if len(pts) < 2:
             return pts, quats
+
+        n = int(max(2, int(n)))
 
         d = np.linalg.norm(np.diff(pts, axis=0), axis=1)
         s = np.concatenate([[0.0], np.cumsum(d)])
         total_len = float(s[-1])
+
         if total_len <= 1e-9:
+            # degenerate path: repeat first pose
             return np.repeat(pts[:1], n, axis=0), np.repeat(quats[:1], n, axis=0)
 
         target_s = np.linspace(0.0, total_len, n)
@@ -272,7 +310,22 @@ class RecipeEvaluator:
     # Core per-side evaluation
     # ============================================================
 
-    def evaluate_side(self, *, ref_poses: List[PoseQuat], test_poses: List[PoseQuat], label: str) -> EvalResult:
+    def evaluate_side(
+        self,
+        *,
+        ref_poses: List[PoseQuat],
+        test_poses: List[PoseQuat],
+        label: str,
+        n: int,
+    ) -> EvalResult:
+        """
+        Evaluate one side, resampling BOTH ref+test to the given N (TCP-driven).
+
+        IMPORTANT:
+          - N is derived from TCP sizes (planned/executed), not limited by Draft length.
+          - Draft may be shorter and will be upsampled.
+          - All units are mm for positions.
+        """
         ref_p, ref_q = self._extract_arrays(ref_poses)
         test_p, test_q = self._extract_arrays(test_poses)
 
@@ -281,66 +334,138 @@ class RecipeEvaluator:
             "num_ref": int(len(ref_p)),
             "num_test_raw": int(len(test_p)),
             "num_test_trim": int(len(test_p)),
+            "resample_n": int(n),
         }
+
         if len(ref_p) < 2 or len(test_p) < 2:
             return EvalResult(score=0.0, metrics=metrics, details={"reason": "not_enough_points"})
 
         test_p_trim, test_q_trim = self._trim_test_to_ref_span(ref_p, test_p, test_q)
         metrics["num_test_trim"] = int(len(test_p_trim))
+
         if len(test_p_trim) < 2:
             return EvalResult(score=0.0, metrics=metrics, details={"reason": "not_enough_points"})
 
-        ref_rp, ref_rq = self._resample_pose_mm_quat(ref_p, ref_q, self.tcp_resample_n)
-        test_rp, test_rq = self._resample_pose_mm_quat(test_p_trim, test_q_trim, self.tcp_resample_n)
+        n_use = int(max(50, min(int(n), self.tcp_resample_n)))
+        metrics["resample_n"] = int(n_use)
 
-        if len(ref_rp) < 2:
+        ref_rp, ref_rq = self._resample_pose_mm_quat(ref_p, ref_q, n_use)
+        test_rp, test_rq = self._resample_pose_mm_quat(test_p_trim, test_q_trim, n_use)
+
+        if len(ref_rp) < 2 or len(test_rp) < 2:
             return EvalResult(score=0.0, metrics=metrics, details={"reason": "not_enough_points"})
 
-        err_mm = np.linalg.norm(ref_rp - test_rp, axis=1)
+        # ------------------------------------------------------------
+        # Position errors in mm (XYZ + L2 for debug)
+        # ------------------------------------------------------------
+        dxyz = (ref_rp - test_rp)  # (N,3) in mm
+        dx = np.abs(dxyz[:, 0])
+        dy = np.abs(dxyz[:, 1])
+        dz = np.abs(dxyz[:, 2])
+
+        # L2 (kept for reference/debug)
+        err_mm = np.linalg.norm(dxyz, axis=1)
+
+        # Per-axis stats
+        mean_abs_dx = float(np.mean(dx))
+        p95_abs_dx = float(np.percentile(dx, 95))
+        max_abs_dx = float(np.max(dx))
+
+        mean_abs_dy = float(np.mean(dy))
+        p95_abs_dy = float(np.percentile(dy, 95))
+        max_abs_dy = float(np.max(dy))
+
+        mean_abs_dz = float(np.mean(dz))
+        p95_abs_dz = float(np.percentile(dz, 95))
+        max_abs_dz = float(np.max(dz))
+
+        # L2 stats (old keys)
         mean_mm = float(np.mean(err_mm))
         p95_mm = float(np.percentile(err_mm, 95))
         max_mm = float(np.max(err_mm))
 
+        # Orientation error (deg)
         angle_errs = self._quat_angle_deg_vec(ref_rq, test_rq)
         mean_deg = float(np.mean(angle_errs)) if angle_errs.size else 0.0
         p95_deg = float(np.percentile(angle_errs, 95)) if angle_errs.size else 0.0
         max_deg = float(np.max(angle_errs)) if angle_errs.size else 0.0
 
-        dz = np.abs(ref_rp[:, 2] - test_rp[:, 2])
-        mean_abs_dz = float(np.mean(dz))
-        p95_abs_dz = float(np.percentile(dz, 95))
-        max_abs_dz = float(np.max(dz))
-
+        # Path length delta
         ref_len = float(np.sum(np.linalg.norm(np.diff(ref_rp, axis=0), axis=1)))
         test_len = float(np.sum(np.linalg.norm(np.diff(test_rp, axis=0), axis=1)))
         delta_L_percent = float(100.0 * (test_len - ref_len) / max(ref_len, 1e-6))
 
         metrics.update(
             {
-                # position
+                # L2 (existing)
                 "mean_l2_mm": mean_mm,
                 "p95_l2_mm": p95_mm,
                 "max_l2_mm": max_mm,
-                # orientation (quaternion angle)
+
+                # Rotation (existing)
                 "mean_angle_deg": mean_deg,
                 "p95_angle_deg": p95_deg,
                 "max_angle_deg": max_deg,
-                # stand-off in Z (absolute dz)
+
+                # XYZ (new, explicit)
+                "mean_abs_dx_mm": mean_abs_dx,
+                "p95_abs_dx_mm": p95_abs_dx,
+                "max_abs_dx_mm": max_abs_dx,
+                "mean_abs_dy_mm": mean_abs_dy,
+                "p95_abs_dy_mm": p95_abs_dy,
+                "max_abs_dy_mm": max_abs_dy,
                 "mean_abs_dz_mm": mean_abs_dz,
                 "p95_abs_dz_mm": p95_abs_dz,
                 "max_abs_dz_mm": max_abs_dz,
-                # path length delta (%)
+
                 "delta_L_percent": delta_L_percent,
             }
         )
 
-        # scoring (kept stable; you can tune clamps externally if needed)
+        # ------------------------------------------------------------
+        # XYZ score (per-axis half-life) + L2 score (debug reference)
+        # ------------------------------------------------------------
+        # Per-axis score components (mean/p95/max for each axis)
+        sx_mean = self._score_from_error(mean_abs_dx, self.clamp_mean)
+        sx_p95 = self._score_from_error(p95_abs_dx, self.clamp_p95)
+        sx_max = self._score_from_error(max_abs_dx, self.clamp_max)
+
+        sy_mean = self._score_from_error(mean_abs_dy, self.clamp_mean)
+        sy_p95 = self._score_from_error(p95_abs_dy, self.clamp_p95)
+        sy_max = self._score_from_error(max_abs_dy, self.clamp_max)
+
+        sz_mean = self._score_from_error(mean_abs_dz, self.clamp_mean)
+        sz_p95 = self._score_from_error(p95_abs_dz, self.clamp_p95)
+        sz_max = self._score_from_error(max_abs_dz, self.clamp_max)
+
+        # Weighted mean/p95/max per axis
+        score_x = (self.weights.w_mean * sx_mean) + (self.weights.w_p95 * sx_p95) + (self.weights.w_max * sx_max)
+        score_y = (self.weights.w_mean * sy_mean) + (self.weights.w_p95 * sy_p95) + (self.weights.w_max * sy_max)
+        score_z = (self.weights.w_mean * sz_mean) + (self.weights.w_p95 * sz_p95) + (self.weights.w_max * sz_max)
+
+        # Final XYZ score: average axes (strict symmetric)
+        score_xyz = (score_x + score_y + score_z) / 3.0
+
+        # L2 score kept for debugging/monitoring only (not used for final score_pos)
         s_mean = self._score_from_error(mean_mm, self.clamp_mean)
         s_p95 = self._score_from_error(p95_mm, self.clamp_p95)
         s_max = self._score_from_error(max_mm, self.clamp_max)
-        score_pos = (self.weights.w_mean * s_mean) + (self.weights.w_p95 * s_p95) + (self.weights.w_max * s_max)
+        score_l2 = (self.weights.w_mean * s_mean) + (self.weights.w_p95 * s_p95) + (self.weights.w_max * s_max)
 
-        # rotation weight: mean angle target 3 deg (stable)
+        metrics.update(
+            {
+                "score_xyz": float(score_xyz),
+                "score_l2": float(score_l2),
+                "score_x": float(score_x),
+                "score_y": float(score_y),
+                "score_z": float(score_z),
+            }
+        )
+
+        # Position score now uses XYZ (FIX)
+        score_pos = float(score_xyz)
+
+        # Rotation score (stable): mean angle target 3 deg
         s_rot = self._score_from_error(mean_deg, target_val=3.0)
 
         total_score = (0.7 * score_pos) + (0.3 * s_rot)
@@ -368,6 +493,7 @@ class RecipeEvaluator:
 
         seg_id = self._pick_segment(segment_order)
 
+        # reference draft (recipe)
         ref_draft = self._draft_from_recipe_draft(recipe)
         sides = list(getattr(ref_draft, "sides", {}).keys())
         if not sides:
@@ -391,6 +517,29 @@ class RecipeEvaluator:
         pl = to_tcp_draft(planned_tcp, name="planned_tcp")
         ex = to_tcp_draft(executed_tcp, name="executed_tcp")
 
+        # ------------------------------------------------------------------
+        # Per-side N is derived from TCP sample counts (NOT Draft length).
+        # ------------------------------------------------------------------
+        n_by_side: Dict[str, int] = {}
+        for side in sides:
+            pl_n = 0
+            ex_n = 0
+            if pl is not None:
+                pl_n = int(len(list(pl.poses_quat_segment(side, seg_id) or [])))
+            if ex is not None:
+                ex_n = int(len(list(ex.poses_quat_segment(side, seg_id) or [])))
+
+            if pl_n >= 2 and ex_n >= 2:
+                n_common = min(pl_n, ex_n, self.tcp_resample_n)
+            elif pl_n >= 2:
+                n_common = min(pl_n, self.tcp_resample_n)
+            elif ex_n >= 2:
+                n_common = min(ex_n, self.tcp_resample_n)
+            else:
+                n_common = 0
+
+            n_by_side[side] = int(n_common)
+
         def run_mode(tcp_draft: Optional[Draft], mode_name: str) -> Dict[str, Any]:
             if tcp_draft is None:
                 return {"data_ok": False, "invalid_reason": "missing_tcp", "score": 0.0, "summary": {}}
@@ -404,7 +553,27 @@ class RecipeEvaluator:
                 ref = self._ref_recipe_segment_poses(ref_draft, side=side, seg_id=seg_id)
                 test = list(tcp_draft.poses_quat_segment(side, seg_id) or [])
 
-                res = self.evaluate_side(ref_poses=ref, test_poses=test, label=f"{mode_name}/{seg_id}/{side}")
+                n_common = int(n_by_side.get(side, 0))
+                if n_common < 2:
+                    res = EvalResult(
+                        score=0.0,
+                        metrics={
+                            "label": f"{mode_name}/{seg_id}/{side}",
+                            "num_ref": int(len(ref)),
+                            "num_test_raw": int(len(test)),
+                            "num_test_trim": int(len(test)),
+                            "resample_n": int(0),
+                        },
+                        details={"reason": "not_enough_points"},
+                    )
+                else:
+                    res = self.evaluate_side(
+                        ref_poses=ref,
+                        test_poses=test,
+                        label=f"{mode_name}/{seg_id}/{side}",
+                        n=n_common,
+                    )
+
                 dct = res.to_dict()
                 by_side[side] = dct
                 scores.append(float(res.score))
@@ -424,7 +593,7 @@ class RecipeEvaluator:
                 "score": float(avg_score),
                 "segment": str(seg_id),
                 "by_side": by_side,
-                "summary": first_summary,  # what RunResult.report_text uses
+                "summary": first_summary,  # consumed by RunResult.report_text()
             }
             if not data_ok:
                 out["invalid_reason"] = f"not_enough_points sides={bad_sides}" if bad_sides else "not_enough_points"
@@ -451,15 +620,14 @@ class RecipeEvaluator:
                 invalid_reason = "evaluation failed: score below threshold"
 
         selection = {
-            "recipe": getattr(recipe, "recipe_id", None),
+            "recipe": getattr(recipe, "id", None) or getattr(recipe, "recipe_id", None),
             "tool": getattr(recipe, "tool", None),
             "substrate": getattr(recipe, "substrate", None),
             "mount": getattr(recipe, "substrate_mount", None),
         }
 
-        # STRICT output schema expected by RunResult.report_text()
         out: Dict[str, Any] = {
-            "version": 6,
+            "version": 7,
             "domain": str(domain or "tcp"),
             "segment": str(seg_id),
             "threshold": float(thr),
@@ -473,13 +641,13 @@ class RecipeEvaluator:
             "executed_score": float(e_score),
             "planned": p_eval,
             "executed": e_eval,
-            # optional counts (not required by RunResult, but useful for later)
             "counts": {
                 "traj_points_planned": int(traj_points_planned) if traj_points_planned is not None else None,
                 "traj_points_executed": int(traj_points_executed) if traj_points_executed is not None else None,
                 "tcp_poses_planned": int(tcp_poses_planned) if tcp_poses_planned is not None else None,
                 "tcp_poses_executed": int(tcp_poses_executed) if tcp_poses_executed is not None else None,
             },
+            "resample_n_by_side": dict(n_by_side),
         }
         return out
 

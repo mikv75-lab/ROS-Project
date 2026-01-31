@@ -42,14 +42,10 @@ from typing import List, Any, Optional, Dict
 
 from geometry_msgs.msg import PoseStamped
 
-from .segment_runner import SegmentRunner, StepSpec  # NOTE: file is segmentrunner.py
+from .segment_runner import SegmentRunner, StepSpec
 
 _LOG = logging.getLogger("tabs.process.movement_strategies")
 
-
-# =============================================================================
-# Base
-# =============================================================================
 
 class MoveStrategy(ABC):
     """
@@ -73,12 +69,8 @@ class MoveStrategy(ABC):
         raise NotImplementedError
 
     def _new_id(self, i: int) -> int:
-        # monotonic-ish per call; OK for UI correlation
         return int(time.time() * 1000) + int(i)
 
-    # ----------------------------
-    # TF helper (source -> target_frame)
-    # ----------------------------
     def _transform_stamped(self, ps: PoseStamped, target_frame: str) -> Optional[PoseStamped]:
         """
         Uses ros.tf_buffer (if available) to transform PoseStamped into target_frame.
@@ -100,49 +92,37 @@ class MoveStrategy(ABC):
             from rclpy.time import Time
             from rclpy.duration import Duration
 
-            # Prefer tf_buffer.transform if available (Buffer interface)
             try:
-                # timeout must be Duration (not None)
                 out = tfb.transform(ps, target_frame, timeout=Duration(seconds=0.25))
                 out.header.frame_id = target_frame
                 return out
             except Exception:
                 pass
 
-            # Fallback via lookup_transform + do_transform_pose (PoseStamped)
             from tf2_geometry_msgs import do_transform_pose  # type: ignore
-
             if not tfb.can_transform(target_frame, source_frame, Time(), timeout=Duration(seconds=0.25)):
                 return None
 
             tf = tfb.lookup_transform(target_frame, source_frame, Time())
 
-            out = PoseStamped()
-            out.header.frame_id = target_frame
-            out.header.stamp = ps.header.stamp
-            # do_transform_pose expects PoseStamped OR Pose depending on binding; safest: give PoseStamped
             try:
                 out = do_transform_pose(ps, tf)  # type: ignore[arg-type]
                 out.header.frame_id = target_frame
                 return out
             except Exception:
-                # if binding expects Pose, transform just pose and keep header
+                out = PoseStamped()
+                out.header.frame_id = target_frame
+                out.header.stamp = ps.header.stamp
                 out.pose = do_transform_pose(ps.pose, tf)  # type: ignore[arg-type]
                 return out
 
         except Exception as e:
-            _LOG.warning(f"Strategy Transform failed: {e!r}")
+            _LOG.warning("Strategy Transform failed: %r", e)
         return None
 
 
-# =============================================================================
-# PTP strategy
-# =============================================================================
-
 class PtpStrategy(MoveStrategy):
-    """
-    Plans+executes each pose individually via plan_pose (PTP or OMPL).
-    """
+    """Plans+executes each pose individually via plan_pose (PTP or OMPL)."""
 
     def create_steps(self, seg_name: str, poses: List[Any]) -> List[StepSpec]:
         steps: List[StepSpec] = []
@@ -168,10 +148,6 @@ class PtpStrategy(MoveStrategy):
         return steps
 
 
-# =============================================================================
-# Pilz sequence strategy (LIN/PTP w/ blending)
-# =============================================================================
-
 class PilzSequenceStrategy(MoveStrategy):
     """
     Builds a single blended sequence request (Pilz LIN/PTP) instead of per-point planning.
@@ -179,8 +155,8 @@ class PilzSequenceStrategy(MoveStrategy):
     planner_cfg["params"] mapping (all optional):
       - blend_radius_m (float, default 0.0)
       - planning_time_s (float, default 5.0)
-      - vel_scale (float, default 1.0)
-      - acc_scale (float, default 1.0)
+      - vel_scale (float, default 0.10)   <-- IMPORTANT default
+      - acc_scale (float, default 0.10)   <-- IMPORTANT default
       - cmd (str: "LIN"|"PTP", default "LIN")
       - cmds (list[str], optional per-point command list, len==N)
       - start (str: "current"|"first_pose", default "current")
@@ -203,8 +179,10 @@ class PilzSequenceStrategy(MoveStrategy):
 
         blend = _f("blend_radius_m", 0.0, lo=0.0)
         planning_time = _f("planning_time_s", 5.0, lo=0.01)
-        vel = _f("vel_scale", 1.0, lo=0.01, hi=1.0)
-        acc = _f("acc_scale", 1.0, lo=0.01, hi=1.0)
+
+        # SAFE defaults (avoid Pilz joint-limit violations when params missing)
+        vel = _f("vel_scale", 0.10, lo=0.01, hi=1.0)
+        acc = _f("acc_scale", 0.10, lo=0.01, hi=1.0)
 
         cmd = str(params.get("cmd", "LIN") or "LIN").strip().upper()
         if cmd not in ("LIN", "PTP"):
@@ -234,7 +212,7 @@ class PilzSequenceStrategy(MoveStrategy):
             "vel_scale": vel,
             "acc_scale": acc,
             "cmd": cmd,
-            "cmds": cmds,  # may be None
+            "cmds": cmds,
             "start": start,
         }
 
@@ -285,7 +263,6 @@ class PilzSequenceStrategy(MoveStrategy):
         rid = self._new_id(0)
         final_poses = list(poses)
 
-        # Determine target frame from first pose (default substrate)
         target_frame = "substrate"
         try:
             if isinstance(final_poses[0], PoseStamped):
@@ -293,22 +270,20 @@ class PilzSequenceStrategy(MoveStrategy):
         except Exception:
             target_frame = "substrate"
 
-        # Need >=2 for pilz sequence; else fallback
         if len(final_poses) < 2:
             return self._fallback_single_ptp(seg_name, final_poses[-1], rid)
 
-        # Normalize to PoseStamped and ensure all in target_frame
         norm: List[PoseStamped] = []
         for i, ps in enumerate(final_poses):
             if not isinstance(ps, PoseStamped):
-                _LOG.warning(f"Strategy: poses[{i}] is not PoseStamped -> fallback PTP.")
+                _LOG.warning("Strategy: poses[%d] not PoseStamped -> fallback PTP.", i)
                 return self._fallback_single_ptp(seg_name, final_poses[-1], rid)
 
             src = str(ps.header.frame_id or "").strip()
             if src and src != target_frame:
                 tps = self._transform_stamped(ps, target_frame)
                 if tps is None:
-                    _LOG.warning(f"Strategy: TF failed for pose[{i}] {src}->{target_frame}, fallback PTP.")
+                    _LOG.warning("Strategy: TF failed for pose[%d] %s->%s, fallback PTP.", i, src, target_frame)
                     return self._fallback_single_ptp(seg_name, final_poses[-1], rid)
                 norm.append(tps)
             else:

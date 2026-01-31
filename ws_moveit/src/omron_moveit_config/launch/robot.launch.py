@@ -28,6 +28,38 @@ if str(_current_dir) not in sys.path:
 from moveit_common import create_omron_moveit_config
 
 
+# =============================================================================
+# Debug / Safety helpers: detect tuple params that crash launch_ros
+# =============================================================================
+def _assert_no_tuples(x, path="params"):
+    """
+    Walk nested structures (dict/list) and fail fast if any tuple is found.
+    launch_ros parameter evaluation only accepts scalar leaves and dict/list.
+    """
+    if isinstance(x, tuple):
+        raise RuntimeError(f"TUPLE PARAM FOUND at {path}: {x!r}")
+    if isinstance(x, dict):
+        for k, v in x.items():
+            _assert_no_tuples(v, f"{path}.{k}")
+    elif isinstance(x, list):
+        for i, v in enumerate(x):
+            _assert_no_tuples(v, f"{path}[{i}]")
+
+
+def _safe_params(x):
+    """
+    Optional sanitizer: convert tuple -> list recursively.
+    Use this only if you want to continue launching while hunting the source.
+    """
+    if isinstance(x, tuple):
+        return [_safe_params(v) for v in x]
+    if isinstance(x, dict):
+        return {k: _safe_params(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_safe_params(v) for v in x]
+    return x
+
+
 def generate_launch_description():
     cfg_pkg = get_package_share_directory("omron_moveit_config")
 
@@ -101,6 +133,16 @@ def generate_launch_description():
     omron_timeout = LaunchConfiguration("omron_timeout")
 
     moveit_config = create_omron_moveit_config()
+
+    # ---------------------------------------------------------------------
+    # Validate MoveIt params early (fail-fast, points to exact offending path)
+    # ---------------------------------------------------------------------
+    mc_dict_raw = moveit_config.to_dict()
+    _assert_no_tuples(mc_dict_raw, "moveit_config.to_dict()")
+
+    # If you prefer to keep launching while hunting the source, use:
+    # mc_dict = _safe_params(mc_dict_raw)
+    mc_dict = mc_dict_raw
 
     # ---------------------------------------------------------------------
     # TF
@@ -196,7 +238,7 @@ def generate_launch_description():
         package="moveit_ros_move_group",
         executable="move_group",
         namespace=namespace,
-        parameters=[moveit_config.to_dict(), {"use_sim_time": use_sim_time}],
+        parameters=[mc_dict, {"use_sim_time": use_sim_time}],
         output="screen",
     )
 
@@ -208,7 +250,7 @@ def generate_launch_description():
         executable="rviz2",
         namespace=namespace,
         arguments=["-d", rviz_cfg],
-        parameters=[moveit_config.to_dict(), {"use_sim_time": use_sim_time}],
+        parameters=[mc_dict, {"use_sim_time": use_sim_time}],
         condition=IfCondition(rviz),
     )
 
